@@ -6,9 +6,6 @@ import haxe.io.Bytes;
 /**
  * The sprite.
  */
-#if !debug
-@:noDebug
-#end
 @:publicFields
 class Sprite implements Element
 {

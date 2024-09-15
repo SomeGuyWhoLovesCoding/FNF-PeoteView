@@ -5,9 +5,6 @@ import lime.ui.KeyCode;
 /**
  * The basic state.
  */
-#if !debug
-@:noDebug
-#end
 class BasicState extends State {
 	var logo:Sprite;
 	var logo2:Sprite;
@@ -50,7 +47,7 @@ class BasicState extends State {
 		dispGP.addProgram(prgmGP);
 		dispUI.addProgram(prgmUI);
 
-		TextureSystem.createMultiTexture("tex0", ["assets/test0.png", "assets/test1.png", "assets/test2.png", "assets/test3.png", "assets/suzanneRGBA.png"]);
+		TextureSystem.createMultiTexture("tex0", ["assets/test0.png", "assets/test1.png", "assets/test2.png", "assets/test3.png", "assets/suzanneRGB.png"]);
 		TextureSystem.setTexture(prgmGP, "tex0", "custom");
 
 		logo = new Sprite(50, 50);

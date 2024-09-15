@@ -5,9 +5,6 @@ import lime.ui.Window;
 /**
  * The screen.
  */
-#if !debug
-@:noDebug
-#end
 @:publicFields
 class Screen extends Display {
 	/**

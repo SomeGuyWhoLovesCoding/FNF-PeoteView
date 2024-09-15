@@ -6,9 +6,6 @@ typedef GCBackend = #if cpp cpp.vm.Gc; #elseif hl hl.Gc; #else Int #end
  * The GC class abstracting over its target-specific gc implementations.
  * WARNING: USE THIS WISELY.
  */
-#if !debug
-@:noDebug
-#end
 @:publicFields
 abstract GC(GCBackend) {
 	/**
