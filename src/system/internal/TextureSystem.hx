@@ -5,6 +5,9 @@ import sys.io.File;
 /**
  * The texture system.
  */
+#if !debug
+@:noDebug
+#end
 @:publicFields
 class TextureSystem {
     /**
@@ -62,20 +65,15 @@ class TextureSystem {
         }
 
         var texturesToPush:Array<TextureData> = [];
-        var chosenFormat:TextureFormat = -1;
 
         var totalTextureWidth:Int = 0;
         var totalTextureHeight:Int = 0;
 
         for (i in 0...paths.length) {
             var textureBytes = File.getBytes(paths[i]);
-            var textureData = TextureData.fromFormatPNG(textureBytes);
+            var textureData = TextureData.RGBAfrom(TextureData.fromFormatPNG(textureBytes));
 
             texturesToPush.push(textureData);
-
-            if (chosenFormat == -1) {
-                chosenFormat = textureData.format;
-            }
 
             totalTextureWidth += textureData.width;
 
@@ -84,7 +82,7 @@ class TextureSystem {
             }
         }
 
-        var texture = new Texture(totalTextureWidth, totalTextureHeight, texturesToPush.length, {format: chosenFormat});
+        var texture = new Texture(totalTextureWidth, totalTextureHeight, texturesToPush.length);
 
         for (i in 0...texturesToPush.length) {
             texture.setData(texturesToPush[i], i);

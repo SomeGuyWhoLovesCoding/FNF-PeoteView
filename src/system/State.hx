@@ -10,6 +10,9 @@ import utils.Loader;
 /**
  * The state.
  */
+#if !debug
+@:noDebug
+#end
 @:publicFields
 class State {
     /**

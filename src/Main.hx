@@ -5,7 +5,9 @@ import haxe.CallStack;
 import lime.app.Application;
 import lime.ui.Window;
 
-
+#if !debug
+@:noDebug
+#end
 class Main extends Application
 {
 	override function onWindowCreate():Void

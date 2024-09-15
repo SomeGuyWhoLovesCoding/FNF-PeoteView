@@ -7,29 +7,91 @@ import audio.MiniAudio.MASound;
 import lime.media.vorbis.VorbisFile;
 import cpp.RawPointer;
 
+/**
+ * The audio.
+ */
+#if !debug
+@:noDebug
+#end
+@:publicFields
 class Audio
 {
-	var sound:RawPointer<MASound>;
+	/**
+	 * The raw miniaudio sound pointer.
+	 */
+	private var sound:RawPointer<MASound>;
 
-	public var volume(get, set):Float;
-	public var time(get, set):Float;
-	public var speed(get, set):Float;
-	public var looping(get, set):Bool;
-	public var playing(get, never):Bool;
-	public var finished(get, never):Bool;
-	public var length(get, never):Float;
-	// public var gamePaused:Bool = false;
+	/**
+	 * The audio's volume.
+	 */
+	var volume(get, set):Float;
 
-	var _length:Float = -1;
-	var _volume:Float = 1;
+	/**
+	 * Whenever the audio is playing.
+	 */
+	var playing(get, never):Bool;
 
-	static var engine:RawPointer<MAEngine>;
-	static var group:RawPointer<MAGroup>;
-	static var resourceManager:RawPointer<MAResMan>;
+	/**
+	 * Whenever the audio is finished.
+	 */
+	var finished(get, never):Bool;
 
-	static var addedSounds:Array<Audio> = [];
+	/**
+	 * Whenever the audio should be looping.
+	 */
+	var looping(get, set):Bool;
 
-	public  function new(filePath:String, grouped:Bool = false)
+	/**
+	 * The audio's time.
+	 */
+	var time(get, set):Float;
+
+	/**
+	 * The audio's length.
+	 */
+	var length(get, never):Float;
+
+	/**
+	 * The audio's speed.
+	 */
+	var speed(get, set):Float;
+
+	/**
+	 * The internal audio length.
+	 */
+	private var _length:Float = -1;
+
+	/**
+	 * The internal audio volume.
+	 */
+	private var _volume:Float = 1;
+
+	/**
+	 * The raw miniaudio engine pointer.
+	 */
+	private static var engine:RawPointer<MAEngine>;
+
+	/**
+	 * The raw miniaudio group pointer.
+	 */
+	private static var group:RawPointer<MAGroup>;
+
+	/**
+	 * The raw miniaudio resource manager pointer.
+	 */
+	private static var resourceManager:RawPointer<MAResMan>;
+
+	/**
+	 * The added audio tracks.
+	 */
+	private static var addedSounds:Array<Audio> = [];
+
+	/**
+	 * Construct an audio track.
+	 * @param filePath 
+	 * @param grouped 
+	 */
+	function new(filePath:String, grouped:Bool = false)
 	{
 		if (resourceManager == null)
 			resourceManager = MiniAudio.init_resource();
@@ -65,7 +127,10 @@ class Audio
 		addedSounds.push(this);
 	}
 
-	public function dispose()
+	/**
+	 * Dispose the audio.
+	 */
+	function dispose()
 	{
 		if (sound != null)
 		{
@@ -76,7 +141,10 @@ class Audio
 		addedSounds.remove(this);
 	}
 
-	static public function disposeEngine()
+	/**
+	 * Dispose the audio's engine.
+	 */
+	static function disposeEngine()
 	{
 		if (resourceManager != null)
 			MiniAudio.uninit_resource(resourceManager);
@@ -89,7 +157,10 @@ class Audio
 		group = null;
 	}
 
-	static public function disposeEverything()
+	/**
+	 * Dispose everything that is involved in the miniaudio engine.
+	 */
+	static function disposeEverything()
 	{
 		if (addedSounds != null)
 		{
@@ -103,30 +174,45 @@ class Audio
 		disposeEngine();
 	}
 
-	public function play()
+	/**
+	 * Play the audio.
+	 */
+	function play()
 	{
 		if (MiniAudio.startSound(sound) != 0)
 			trace("CAN'T PLAY SOUND");
 	}
 
-	public function pause()
+	/**
+	 * Pause the audio.
+	 */
+	function pause()
 	{
 		MiniAudio.pauseSound(sound);
 	}
 
-	public function stop()
+	/**
+	 * Stop the audio.
+	 */
+	function stop()
 	{
 		MiniAudio.stopSound(sound);
 	}
 
-	public static function createGroup()
+	/**
+	 * Create the audio group.
+	 */
+	static function createGroup()
 	{
 		if (group != null)
 			disposeGroup();
 		group = MiniAudio.makeGroup(engine);
 	}
 
-	public static function disposeGroup()
+	/**
+	 * Dispose the audio group.
+	 */
+	static function disposeGroup()
 	{
 		if (group != null)
 			MiniAudio.killGroup(group);
@@ -135,7 +221,10 @@ class Audio
 		group = null;
 	}
 
-	public static function playGroup()
+	/**
+	 * Play the audio group.
+	 */
+	static function playGroup()
 	{
 		if (group != null)
 			MiniAudio.startGroup(group);
@@ -143,7 +232,10 @@ class Audio
 			trace("NO GROUP TO PLAY");
 	}
 
-	public static function pauseGroup()
+	/**
+	 * Pause the audio group.
+	 */
+	static function pauseGroup()
 	{
 		if (group != null)
 			MiniAudio.haltGroup(group);
@@ -151,26 +243,47 @@ class Audio
 			trace("NO GROUP TO PAUSE");
 	}
 
+	/**
+	 * The getter for whenever the audio is playing.
+	 * @return Bool
+	 */
 	function get_playing():Bool
 	{
 		return MiniAudio.isPlaying(sound);
 	}
 
+	/**
+	 * The getter for whenever the audio is finished.
+	 * @return Bool
+	 */
 	function get_finished():Bool
 	{
 		return MiniAudio.isDone(sound);
 	}
 
+	/**
+	 * The getter for the audio's length.
+	 * @return Float
+	 */
 	inline function get_length():Float
 	{
 		return _length;
 	}
 
+	/**
+	 * The getter for the audio's volume.
+	 * @return Float
+	 */
 	inline function get_volume():Float
 	{
 		return _volume;
 	}
 
+	/**
+	 * The setter for the audio's volume.
+	 * @param newVol 
+	 * @return Float
+	 */
 	function set_volume(newVol:Float):Float
 	{
 		_volume = newVol;
@@ -178,11 +291,20 @@ class Audio
 		return newVol;
 	}
 
+	/**
+	 * The getter for the audio's time.
+	 * @return Float
+	 */
 	function get_time():Float
 	{
 		return MiniAudio.getTime(sound) * 1000;
 	}
 
+	/**
+	 * The setter for the audio's time.
+	 * @param newTime 
+	 * @return Float
+	 */
 	function set_time(newTime:Float):Float
 	{
 		if (newTime < 0 || newTime > length) // Prevent weird bugs with audio playback
@@ -194,22 +316,40 @@ class Audio
 		return newTime;
 	}
 
+	/**
+	 * The getter for the audio's speed.
+	 * @return Float
+	 */
 	function get_speed():Float
 	{
 		return MiniAudio.getPitch(sound);
 	}
 
+	/**
+	 * The setter for the audio's speed.
+	 * @param newSpeed 
+	 * @return Float
+	 */
 	function set_speed(newSpeed:Float):Float
 	{
 		MiniAudio.setPitch(sound, newSpeed);
 		return newSpeed;
 	}
 
+	/**
+	 * The getter for whenever the audio is looping.
+	 * @return Bool
+	 */
 	function get_looping():Bool
 	{
 		return MiniAudio.getLooping(sound);
 	}
 
+	/**
+	 * Toggle looping for the audio.
+	 * @param shouldLoop 
+	 * @return Bool
+	 */
 	function set_looping(shouldLoop:Bool):Bool
 	{
 		MiniAudio.setLooping(sound, shouldLoop);
