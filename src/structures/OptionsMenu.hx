@@ -63,6 +63,7 @@ class OptionsMenu {
 			Controls.Action.UI_RIGHT => { action: right },
 			Controls.Action.UI_UP => { action: up },
 			Controls.Action.UI_DOWN => { action: down },
+			Controls.Action.UI_BACK => { action: back }
 		];
 	}
 
@@ -121,6 +122,11 @@ class OptionsMenu {
 		var mm = Main.current.mainMenu;
 		var pf = Main.current.playField;
 
+		var window = lime.app.Application.current.window;
+		Main.current.controls.unBind();
+		window.onMouseDown.remove(mousePress);
+		window.onMouseWheel.remove(moveCategory_mouse);
+
 		if (mm != null) {
 			MainMenu.selectedAlpha = 1.0;
 			mm.addEvents();
@@ -129,11 +135,6 @@ class OptionsMenu {
 			pauseScreen.atOptionsMenu = false;
 			pauseScreen.addEvents();
 		}
-
-		var window = lime.app.Application.current.window;
-		Main.current.controls.unBind();
-		window.onMouseDown.remove(mousePress);
-		window.onMouseWheel.remove(moveCategory_mouse);
 
 		opened = false;
 	}

@@ -59,7 +59,7 @@ class PauseScreen {
 			Controls.Action.UI_UP => { action: up },
 			Controls.Action.UI_DOWN => { action: down },
 			Controls.Action.UI_ACCEPT => { action: accept },
-			Controls.Action.UI_BACK => { action: back },
+			Controls.Action.UI_BACK => { action: back }
 		];
 	}
 
@@ -92,7 +92,6 @@ class PauseScreen {
 	}
 
 	function down(isDown:Bool, param:Int) {
-		if (!isDown) return;
 		pauseOptionSelected++;
 		if (pauseOptionSelected >= pauseOptions.length) {
 			pauseOptionSelected = 0;
@@ -100,7 +99,6 @@ class PauseScreen {
 	}
 
 	function up(isDown:Bool, param:Int) {
-		if (!isDown) return;
 		pauseOptionSelected--;
 		if (pauseOptionSelected < 0) {
 			pauseOptionSelected = pauseOptions.length - 1;
@@ -108,12 +106,10 @@ class PauseScreen {
 	}
 
 	function accept(isDown:Bool, param:Int) {
-		if (!isDown) return;
 		doIt();
 	}
 
 	function back(isDown:Bool, param:Int) {
-		if (!isDown) return;
 		Main.current.playField.resume();
 	}
 
@@ -187,9 +183,8 @@ class PauseScreen {
 	}
 
 	function close() {
-		removeEvents();
-
 		opened = false;
+		removeEvents();
 	}
 
 	function shutDown() {

@@ -37,8 +37,8 @@ class SaveData {
 				down: KeyCode.DOWN,
 				up: KeyCode.UP,
 				right: KeyCode.RIGHT,
-				accept: [KeyCode.RETURN, KeyCode.SPACE],
-				back: [KeyCode.BACKSPACE, KeyCode.ESCAPE],
+				accept: KeyCode.RETURN,
+				back: KeyCode.BACKSPACE,
 			},
 			game: {
 				keybindArray: [
@@ -126,8 +126,8 @@ class Controls_UI {
 	var down:Int;
 	var up:Int;
 	var right:Int;
-	var accept:Array<Int>;
-	var back:Array<Int>;
+	var accept:Int;
+	var back:Int;
 }
 
 /**
@@ -136,7 +136,7 @@ class Controls_UI {
 @:structInit
 @:publicFields
 class Controls_Game {
-	var keybindArray:Array<Array<Array<Int>>>;
+	var keybindArray:Array<Array<Array<KeyCode>>>;
 	var pause:Int;
 	var reset:Int;
 	var debug:Int;

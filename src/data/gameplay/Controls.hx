@@ -42,13 +42,13 @@ class Controls {
 			},
 			{
 				action: Action.UI_ACCEPT,
-				keyboard: cast NestedArray.fromNestedArrayItem(controls.ui.accept),
-				gamepad: cast NestedArray.fromNestedArrayItem(controls.ui.accept)
+				keyboard: NestedArray.fromNestedArrayItem(controls.ui.accept),
+				gamepad: NestedArray.fromNestedArrayItem(controls.ui.accept)
 			},
 			{
 				action: Action.UI_BACK,
-				keyboard: cast NestedArray.fromNestedArrayItem(controls.ui.back),
-				gamepad: cast NestedArray.fromNestedArrayItem(controls.ui.back)
+				keyboard: NestedArray.fromNestedArrayItem(controls.ui.back),
+				gamepad: NestedArray.fromNestedArrayItem(controls.ui.back)
 			},
 			{
 				action: Action.GAME_PAUSE,
@@ -83,7 +83,6 @@ class Controls {
 class ControlsHandle {
 	var i2a:Input2Action;
 	var kb:KeyboardAction;
-	var gp:GamepadAction;
 
 	function new(config:ActionConfig) {
 		i2a = new Input2Action();
@@ -94,17 +93,13 @@ class ControlsHandle {
 		if(kb != null){
 			i2a.removeKeyboard(kb);
 		}
+
 		kb = new KeyboardAction(config, actions);
 		i2a.addKeyboard(kb);
-
-		//gp = new GamepadAction(config, actions);
-		//i2a.addGamepad(Main.current.gamepad, actions);
 	}
 
 	public function unBind() {
 		i2a.removeKeyboard(kb);
-
-		// i2a.removeGamepad();
 	}
 }
 

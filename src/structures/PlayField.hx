@@ -246,10 +246,11 @@ class PlayField implements State {
 	function resume() {
 		if (disposed || !paused || died) return;
 
-		paused = false;
 		if (!RenderingMode.enabled && songStarted && !songEnded && audioSystem != null) audioSystem.play();
 		if (noteSystem != null) noteSystem.resetReceptors();
 		pauseScreen.close();
+
+		paused = false;
 	}
 
 	inline function beatHit(beat:Float) {
