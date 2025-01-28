@@ -98,7 +98,7 @@ class MainMenu implements State {
 			Controls.Action.UI_UP => { action: up },
 			Controls.Action.UI_LEFT => { action: left },
 			Controls.Action.UI_RIGHT => { action: right },
-			Controls.Action.UI_ACCEPT => { action: accept },
+			Controls.Action.UI_ACCEPT => { action: accept }
 		];
 	}
 
@@ -135,15 +135,6 @@ class MainMenu implements State {
 	}
 
 	function up(isDown:Bool, param:Int) {
-		trace('up');
-		optionSelected++;
-		if (optionSelected >= optionBuf.length) {
-			optionSelected = 0;
-		}
-		updateMenuOptions();
-	}
-
-	function down(isDown:Bool, param:Int) {
 		optionSelected--;
 		if (optionSelected < 0) {
 			optionSelected = optionBuf.length - 1;
@@ -151,20 +142,25 @@ class MainMenu implements State {
 		updateMenuOptions();
 	}
 
+	function down(isDown:Bool, param:Int) {
+		optionSelected++;
+		if (optionSelected >= optionBuf.length) {
+			optionSelected = 0;
+		}
+		updateMenuOptions();
+	}
+
 	function left(isDown:Bool, param:Int) {
-		if (!isDown) return;
 		optionSelected = optionBuf.length - 1;
 		updateMenuOptions();
 	}
 
 	function right(isDown:Bool, param:Int) {
-		if (!isDown) return;
 		optionSelected = optionBuf.length - 2;
 		updateMenuOptions();
 	}
 
 	function accept(isDown:Bool, param:Int) {
-		if (!isDown) return;
 		doIt();
 	}
 
@@ -209,11 +205,10 @@ class MainMenu implements State {
 	}
 
 	function addEvents() {
-		trace('addEvents');
 		var window = lime.app.Application.current.window;
 
 		Main.current.controls.bindTo(actions);
-		// window.onMouseWheel.add(updateMenuOptions_mouse);
+		window.onMouseWheel.add(updateMenuOptions_mouse);
 		window.onMouseDown.add(doIt_mouse);
 	}
 
