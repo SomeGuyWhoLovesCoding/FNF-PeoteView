@@ -1,9 +1,5 @@
 package data.gameplay;
 
-import lime.ui.KeyCode;
-import lime.ui.ScanCode;
-import lime.ui.KeyModifier;
-import lime.app.Event;
 import input2action.*;
 import input2action.util.NestedArray;
 
@@ -15,15 +11,6 @@ import input2action.util.NestedArray;
 class Controls {
 	var handle:ControlsHandle;
 	var config:ActionConfig;
-	var map:ActionMap;
-
-	function setActionOnMap(action:Action, func:ActionFunction, up:Bool = false) {
-		if (!(untyped map).exists(action)) {
-			(untyped map).set(action, {action: func, up: up});
-		} else {
-			(untyped map).get(action).action = func;
-		}
-	}
 
 	function new() {
 		reload();
@@ -80,19 +67,15 @@ class Controls {
 			}
 		];
 
-		map = [
-			Action.UI_LEFT => {action: (d:Bool, p:Int) -> {var l = 0;}, up: false},
-			Action.UI_DOWN => {action: (d:Bool, p:Int) -> {var d = 1;}, up: false},
-			Action.UI_UP => {action: (d:Bool, p:Int) -> {var u = 2;}, up: false},
-			Action.UI_RIGHT => {action: (d:Bool, p:Int) -> {var r = 3;}, up: false},
-			Action.UI_ACCEPT => {action: (d:Bool, p:Int) -> {var a = 4;}, up: false},
-			Action.UI_BACK => {action: (d:Bool, p:Int) -> {var b = 5;}, up: false},
-			Action.GAME_PAUSE => {action: (d:Bool, p:Int) -> {var p = 6;}, up: false},
-			Action.GAME_RESET => {action: (d:Bool, p:Int) -> {var res = 7;}, up: false},
-			Action.GAME_DEBUG => {action: (d:Bool, p:Int) -> {var deb = 8;}, up: false}
-		];
+		handle = new ControlsHandle(config);
+	}
 
-		handle = new ControlsHandle(config, map);
+	public function bindTo(actions:ActionMap) {
+		handle.bindTo(config, actions);
+	}
+
+	public function unBind() {
+		handle.unBind();
 	}
 }
 
@@ -102,13 +85,26 @@ class ControlsHandle {
 	var kb:KeyboardAction;
 	var gp:GamepadAction;
 
-	function new(config:ActionConfig, map:ActionMap) {
+	function new(config:ActionConfig) {
 		i2a = new Input2Action();
 		i2a.registerKeyboardEvents(lime.app.Application.current.window);
-		kb = new KeyboardAction(config, map);
+	}
+
+	public function bindTo(config:ActionConfig, actions:ActionMap) {
+		if(kb != null){
+			i2a.removeKeyboard(kb);
+		}
+		kb = new KeyboardAction(config, actions);
 		i2a.addKeyboard(kb);
-		//gp = new GamepadAction(config, map);
-		//i2a.addGamepad(Main.current.gamepad, gp);
+
+		//gp = new GamepadAction(config, actions);
+		//i2a.addGamepad(Main.current.gamepad, actions);
+	}
+
+	public function unBind() {
+		i2a.removeKeyboard(kb);
+
+		// i2a.removeGamepad();
 	}
 }
 

@@ -1,5 +1,6 @@
 package structures;
 
+import input2action.ActionMap;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 import lime.ui.MouseButton;
@@ -21,6 +22,7 @@ class PauseScreen {
 	var pauseOptionSelected(default, null):Int = 0;
 	var opened(default, null):Bool;
 	var atOptionsMenu(default, null):Bool;
+	var actions:ActionMap;
 
 	static function init(disp:CustomDisplay) {
 		display = disp;
@@ -52,6 +54,13 @@ class PauseScreen {
 		diffText.changeID(cast difficulty);
 		diffText.x = Main.INITIAL_WIDTH - (diffText.w - 1);
 		diffText.y = 1;
+
+		actions = [
+			Controls.Action.UI_UP => { action: up },
+			Controls.Action.UI_DOWN => { action: down },
+			Controls.Action.UI_ACCEPT => { action: accept },
+			Controls.Action.UI_BACK => { action: back },
+		];
 	}
 
 	var alphaLerp:Float = 0.0;
@@ -165,17 +174,14 @@ class PauseScreen {
 
 	function addEvents() {
 		var window = lime.app.Application.current.window;
-		Main.current.controls.setActionOnMap(Controls.Action.UI_UP, up);
-		Main.current.controls.setActionOnMap(Controls.Action.UI_DOWN, down);
-		Main.current.controls.setActionOnMap(Controls.Action.UI_ACCEPT, accept);
-		Main.current.controls.setActionOnMap(Controls.Action.UI_BACK, back);
+		Main.current.controls.bindTo(actions);
 		window.onMouseDown.add(mousePress);
 		window.onMouseWheel.add(moveOption_mouse);
 	}
 
 	function removeEvents() {
 		var window = lime.app.Application.current.window;
-		Main.current.controls.map.clear();
+		Main.current.controls.unBind();
 		window.onMouseDown.remove(mousePress);
 		window.onMouseWheel.remove(moveOption_mouse);
 	}

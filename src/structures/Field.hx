@@ -1,5 +1,6 @@
 package structures;
 
+import input2action.ActionMap;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 
@@ -12,6 +13,7 @@ class Field {
 	var actors:Array<Actor>;
 
 	var spectator(get, set):Actor;
+	var actions(default, null):ActionMap;
 
 	inline function get_spectator() {
 		return actors[0];
@@ -80,6 +82,12 @@ class Field {
 		parent.view.scroll.y = -100;
 		targetCamera.x = 0;
 		targetCamera.y = 0;
+
+		actions = [
+			Controls.Action.UI_ACCEPT => { action: accept },
+			Controls.Action.UI_BACK => { action: back },
+			Controls.Action.GAME_RESET => { action: reset },
+		];
 	}
 
 	function beatHit(beat:Float) {
@@ -177,7 +185,6 @@ class Field {
 	}
 
 	function addCallbacks() {
-		Main.current.controls.setActionOnMap(Controls.Action.GAME_RESET, reset);
 		parent.onNoteHit.add(hitNote);
 		parent.onNoteMiss.add(missNote);
 		parent.onSustainComplete.add(completeSustain);
@@ -185,7 +192,6 @@ class Field {
 	}
 
 	function removeCallbacks() {
-		Main.current.controls.setActionOnMap(Controls.Action.GAME_RESET, () -> {});
 		parent.onNoteHit.remove(hitNote);
 		parent.onNoteMiss.remove(missNote);
 		parent.onSustainComplete.remove(completeSustain);
@@ -246,10 +252,10 @@ class Field {
 		actorOnGameOver.finishAnim = "deathLoop";
 		actorOnGameOver.shake = false;
 		actorOnGameOver.playAnimation("firstDeath");
-		actorOnGameOver.finishCallback = gameOverMusic.play;
 
-		Main.current.controls.setActionOnMap(Controls.Action.UI_ACCEPT, accept);
-		Main.current.controls.setActionOnMap(Controls.Action.UI_BACK, back);
+		actorOnGameOver.finishCallback = gameOverMusic.play;
+		
+		Main.current.controls.bindTo(actions);
 
 		isInGameOver = true;
 	}
@@ -276,7 +282,7 @@ class Field {
 		actorOnGameOver.finishAnim = "";
 		actorOnGameOver.playAnimation("deathConfirm");
 
-		Main.current.controls.map.clear();
+		Main.current.controls.unBind();
 	}
 
 	function back(isDown:Bool, param:Int) {

@@ -1,5 +1,6 @@
 package structures;
 
+import input2action.ActionMap;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 import lime.ui.MouseButton;
@@ -27,6 +28,8 @@ class OptionsMenu {
 
 	static var optionsDisplay(default, null):OptionsDisplay;
 
+	var actions(default, null):ActionMap;
+	
 	static function init(disp:CustomDisplay) {
 		display = disp;
 
@@ -53,6 +56,14 @@ class OptionsMenu {
 			optionsDisplay = new OptionsDisplay(this);
 		}
 		optionsDisplay.reload(cast optionSelected);
+
+
+		actions = [
+			Controls.Action.UI_LEFT => { action: left },
+			Controls.Action.UI_RIGHT => { action: right },
+			Controls.Action.UI_UP => { action: up },
+			Controls.Action.UI_DOWN => { action: down },
+		];
 	}
 
 	var alphaLerp:Float = 0.0;
@@ -95,11 +106,8 @@ class OptionsMenu {
 
 		haxe.Timer.delay(() -> {
 			var window = lime.app.Application.current.window;
-			Main.current.controls.setActionOnMap(Controls.Action.UI_LEFT, left);
-			Main.current.controls.setActionOnMap(Controls.Action.UI_RIGHT, right);
-			Main.current.controls.setActionOnMap(Controls.Action.UI_UP, up);
-			Main.current.controls.setActionOnMap(Controls.Action.UI_DOWN, down);
-			//Main.current.controls.setActionOnMap(Controls.Action.UI_ACCEPT, accept);
+			Main.current.controls.bindTo(actions);
+			
 			window.onMouseDown.add(mousePress);
 			window.onMouseWheel.add(moveCategory_mouse);
 		}, 200);
@@ -123,7 +131,7 @@ class OptionsMenu {
 		}
 
 		var window = lime.app.Application.current.window;
-		Main.current.controls.map.clear();
+		Main.current.controls.unBind();
 		window.onMouseDown.remove(mousePress);
 		window.onMouseWheel.remove(moveCategory_mouse);
 

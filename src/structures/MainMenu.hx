@@ -1,5 +1,7 @@
 package structures;
 
+import input2action.ActionMap;
+import input2action.KeyboardAction;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 import lime.ui.MouseButton;
@@ -27,6 +29,7 @@ class MainMenu implements State {
 	var optionSelected:Int = 0;
 
 	var disposed:Bool = false;
+	var actions:ActionMap;
 
 	function new() {}
 
@@ -89,6 +92,14 @@ class MainMenu implements State {
 		haxe.Timer.delay(addEvents, 1);
 
 		updateMenuOptions();
+
+		actions = [
+			Controls.Action.UI_DOWN => { action: down },
+			Controls.Action.UI_UP => { action: up },
+			Controls.Action.UI_LEFT => { action: left },
+			Controls.Action.UI_RIGHT => { action: right },
+			Controls.Action.UI_ACCEPT => { action: accept },
+		];
 	}
 
 	static var optionYLerps:Vector<Float> = new Vector<Float>(5);
@@ -124,7 +135,7 @@ class MainMenu implements State {
 	}
 
 	function up(isDown:Bool, param:Int) {
-		if (!isDown) return;
+		trace('up');
 		optionSelected++;
 		if (optionSelected >= optionBuf.length) {
 			optionSelected = 0;
@@ -133,7 +144,6 @@ class MainMenu implements State {
 	}
 
 	function down(isDown:Bool, param:Int) {
-		if (!isDown) return;
 		optionSelected--;
 		if (optionSelected < 0) {
 			optionSelected = optionBuf.length - 1;
@@ -199,19 +209,17 @@ class MainMenu implements State {
 	}
 
 	function addEvents() {
+		trace('addEvents');
 		var window = lime.app.Application.current.window;
-		Main.current.controls.setActionOnMap(Controls.Action.UI_LEFT, left);
-		Main.current.controls.setActionOnMap(Controls.Action.UI_RIGHT, right);
-		Main.current.controls.setActionOnMap(Controls.Action.UI_UP, up);
-		Main.current.controls.setActionOnMap(Controls.Action.UI_DOWN, down);
-		Main.current.controls.setActionOnMap(Controls.Action.UI_ACCEPT, accept);
-		window.onMouseWheel.add(updateMenuOptions_mouse);
+
+		Main.current.controls.bindTo(actions);
+		// window.onMouseWheel.add(updateMenuOptions_mouse);
 		window.onMouseDown.add(doIt_mouse);
 	}
 
 	function removeEvents() {
 		var window = lime.app.Application.current.window;
-		Main.current.controls.map.clear();
+		Main.current.controls.unBind();
 		window.onMouseWheel.remove(updateMenuOptions_mouse);
 		window.onMouseDown.remove(doIt_mouse);
 	}
