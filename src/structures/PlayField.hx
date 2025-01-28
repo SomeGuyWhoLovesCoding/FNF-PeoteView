@@ -237,6 +237,7 @@ class PlayField implements State {
 		paused = true;
 		if (!RenderingMode.enabled && songStarted && audioSystem != null) audioSystem.stop();
 		if (noteSystem != null) noteSystem.resetReceptors();
+		if (inputSystem != null) inputSystem.removeEvents();
 		pauseScreen.open();
 	}
 
@@ -248,6 +249,7 @@ class PlayField implements State {
 
 		if (!RenderingMode.enabled && songStarted && !songEnded && audioSystem != null) audioSystem.play();
 		if (noteSystem != null) noteSystem.resetReceptors();
+		if (inputSystem != null) haxe.Timer.delay(inputSystem.addEvents, 1);
 		pauseScreen.close();
 
 		paused = false;
