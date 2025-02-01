@@ -10,7 +10,7 @@ This project was started a few months ago, so expect this repository to be very 
 
 Instll these haxelibs:
 
-Lime - ``haxelib install lime``
+Lime - Clone (this lime fork)[https://github.com/swordcube/cubical-lime/tree/develop], do ``haxelib dev lime https://github.com/swordcube/cubical-lime.git``, THEN do ``lime rebuild tools`` and ``lime rebuild <platform>``, and for future rebuilds you just do the same ``lime rebuild <platform>``.
 
 Peote-view - ``haxelib git peote-view https://github.com/maitag/peote-view.git``
 
