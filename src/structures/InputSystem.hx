@@ -198,7 +198,7 @@ class InputSystem {
 	}
 
 	function press(code:KeyCode, mod:KeyModifier) {
-		if (code == KeyCode.RETURN && !parent.songEnded && !parent.paused && parent.ready) parent.pause();
+		if (code == SaveData.state.controls.game.pause && !parent.songEnded && !parent.paused && parent.ready) parent.pause();
 
 		if (parent.disposed || parent.botplay || RenderingMode.enabled || parent.paused) return;
 

@@ -88,6 +88,7 @@ class Field {
 			Controls.Action.UI_BACK => { action: back },
 			Controls.Action.GAME_RESET => { action: reset },
 		];
+		Main.current.controls.bindTo(actions);
 	}
 
 	function beatHit(beat:Float) {
@@ -128,6 +129,7 @@ class Field {
 					gameOverMusic.update();
 					Main.conductor.time = gameOverMusic.time;
 				}
+
 				if (gameOverMusic.finished) {
 					accept(true, 0);
 				}
@@ -254,8 +256,6 @@ class Field {
 		actorOnGameOver.playAnimation("firstDeath");
 
 		actorOnGameOver.finishCallback = gameOverMusic.play;
-		
-		Main.current.controls.bindTo(actions);
 
 		isInGameOver = true;
 	}

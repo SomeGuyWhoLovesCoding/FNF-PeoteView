@@ -234,11 +234,12 @@ class PlayField implements State {
 	function pause() {
 		if (disposed || paused || died) return;
 
-		paused = true;
+		pauseScreen.open();
 		if (!RenderingMode.enabled && songStarted && audioSystem != null) audioSystem.stop();
 		if (noteSystem != null) noteSystem.resetReceptors();
 		if (inputSystem != null) inputSystem.removeEvents();
-		pauseScreen.open();
+
+		paused = true;
 	}
 
 	/**
@@ -247,10 +248,10 @@ class PlayField implements State {
 	function resume() {
 		if (disposed || !paused || died) return;
 
+		pauseScreen.close();
 		if (!RenderingMode.enabled && songStarted && !songEnded && audioSystem != null) audioSystem.play();
 		if (noteSystem != null) noteSystem.resetReceptors();
 		if (inputSystem != null) haxe.Timer.delay(inputSystem.addEvents, 1);
-		pauseScreen.close();
 
 		paused = false;
 	}

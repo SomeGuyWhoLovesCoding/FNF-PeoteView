@@ -77,6 +77,10 @@ class Controls {
 	public function unBind() {
 		handle.unBind();
 	}
+
+	inline function unbinded() {
+		return handle.unbinded();
+	}
 }
 
 @:publicFields
@@ -89,17 +93,22 @@ class ControlsHandle {
 		i2a.registerKeyboardEvents(lime.app.Application.current.window);
 	}
 
-	public function bindTo(config:ActionConfig, actions:ActionMap) {
-		if(kb != null){
-			i2a.removeKeyboard(kb);
-		}
+	function bindTo(config:ActionConfig, actions:ActionMap) {
+		unBind();
 
 		kb = new KeyboardAction(config, actions);
 		i2a.addKeyboard(kb);
 	}
 
-	public function unBind() {
-		i2a.removeKeyboard(kb);
+	function unBind() {
+		if (kb != null) {
+			i2a.removeKeyboard(kb);
+			kb = null;
+		}
+	}
+
+	inline function unbinded() {
+		return i2a.activeKeyboardActions.length == 0;
 	}
 }
 
