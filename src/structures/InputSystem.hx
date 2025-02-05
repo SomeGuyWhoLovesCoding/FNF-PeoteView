@@ -198,7 +198,28 @@ class InputSystem {
 	}
 
 	function press(code:KeyCode, mod:KeyModifier) {
-		if (code == SaveData.state.controls.game.pause && !parent.songEnded && !parent.paused && parent.ready) parent.pause();
+		if (parent.ready && code == SaveData.state.controls.game.pause
+			&& !parent.songEnded) {
+			if (!parent.paused) parent.pause();
+			else if (parent.field.isInGameOver) parent.field.endGameOver();
+			return;
+		}
+
+		if (parent.ready && !parent.botplay
+			&& !parent.field.isInGameOver && !parent.songEnded
+			&& !parent.paused && code == SaveData.state.controls.game.reset) {
+			parent.gameOver(parent.chart, 1);
+			return;
+		}
+
+		if (parent.ready && parent.field.isInGameOver && !parent.songEnded) {
+			// Yoooooo
+			parent.field.endGameOver(
+				code == SaveData.state.controls.ui.back ? true :
+				code == SaveData.state.controls.ui.accept ? false : false
+			);
+			return;
+		}
 
 		if (parent.disposed || parent.botplay || RenderingMode.enabled || parent.paused) return;
 

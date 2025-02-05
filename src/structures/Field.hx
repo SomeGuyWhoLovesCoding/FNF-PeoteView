@@ -1,6 +1,5 @@
 package structures;
 
-import input2action.ActionMap;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 
@@ -13,7 +12,6 @@ class Field {
 	var actors:Array<Actor>;
 
 	var spectator(get, set):Actor;
-	var actions(default, null):ActionMap;
 
 	inline function get_spectator() {
 		return actors[0];
@@ -82,13 +80,6 @@ class Field {
 		parent.view.scroll.y = -100;
 		targetCamera.x = 0;
 		targetCamera.y = 0;
-
-		actions = [
-			Controls.Action.UI_ACCEPT => { action: accept },
-			Controls.Action.UI_BACK => { action: back },
-			Controls.Action.GAME_RESET => { action: reset },
-		];
-		Main.current.controls.bindTo(actions);
 	}
 
 	function beatHit(beat:Float) {
@@ -131,7 +122,7 @@ class Field {
 				}
 
 				if (gameOverMusic.finished) {
-					accept(true, 0);
+					endGameOver();
 				}
 			}
 	
@@ -260,8 +251,11 @@ class Field {
 		isInGameOver = true;
 	}
 
-	function accept(isDown:Bool, param:Int) {
-		if (!isDown) return;
+	function endGameOver(goBack:Bool = false) {
+		if (goBack) {
+			Main.switchState(MAIN_MENU);
+			return;
+		}
 
 		if (gameOverMusic != null) {
 			gameOverMusic.stop();
@@ -283,15 +277,5 @@ class Field {
 		actorOnGameOver.playAnimation("deathConfirm");
 
 		Main.current.controls.unBind();
-	}
-
-	function back(isDown:Bool, param:Int) {
-		if (!isDown) return;
-		Main.switchState(MAIN_MENU);
-	}
-
-	function reset(isDown:Bool, param:Int) {
-		if (!isDown) return;
-		gameOver();
 	}
 }
