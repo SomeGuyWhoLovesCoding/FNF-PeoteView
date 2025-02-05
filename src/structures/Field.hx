@@ -134,10 +134,7 @@ class Field {
 					parent.display.show();
 				}
 			}
-			return;
-		}
-
-		if (!isInGameOver && parent.died) {
+		} else if (parent.died) {
 			gameOver();
 		}
 	}
@@ -252,14 +249,14 @@ class Field {
 	}
 
 	function endGameOver(goBack:Bool = false) {
-		if (goBack) {
-			Main.switchState(MAIN_MENU);
-			return;
-		}
-
 		if (gameOverMusic != null) {
 			gameOverMusic.stop();
 			gameOverMusic = null;
+		}
+
+		if (goBack) {
+			Main.switchState(MAIN_MENU);
+			return;
 		}
 
 		var gameOverMeta = parent.chart.header.gameOver;

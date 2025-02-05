@@ -212,16 +212,19 @@ class InputSystem {
 			return;
 		}
 
-		if (parent.ready && parent.field.isInGameOver && !parent.songEnded) {
+		if (parent.ready && parent.field.isInGameOver
+			|| (code == SaveData.state.controls.ui.back ||
+				code == SaveData.state.controls.ui.accept)) {
 			// Yoooooo
-			parent.field.endGameOver(
-				code == SaveData.state.controls.ui.back ? true :
-				code == SaveData.state.controls.ui.accept ? false : false
-			);
+			parent.field.endGameOver(code == SaveData.state.controls.ui.back);
 			return;
 		}
 
-		if (parent.disposed || parent.botplay || RenderingMode.enabled || parent.paused) return;
+		if (parent.disposed || parent.botplay
+			|| parent.field.isInGameOver
+			|| RenderingMode.enabled || parent.paused) {
+			return;
+		}
 
 		if (!exists(code)) {
 			return;
@@ -252,7 +255,11 @@ class InputSystem {
 	}
 
 	function release(code:KeyCode, mod:KeyModifier) {
-		if (parent.disposed || parent.botplay || RenderingMode.enabled || parent.paused && parent.ready) return;
+		if (parent.disposed || parent.botplay
+			|| parent.field.isInGameOver
+			|| RenderingMode.enabled || parent.paused) {
+			return;
+		}
 
 		if (!exists(code)) {
 			return;
