@@ -85,12 +85,6 @@ class NoteSystem {
 	}
 
 	function dispose() {
-		parent.display.removeProgram(notesProg);
-		parent.display.removeProgram(sustainProg);
-
-		notesBuf.clear();
-		sustainsBuf.clear();
-
 		if (strumlines != null) {
 			while (strumlines.length != 0) {
 				var strumline = strumlines.pop();
@@ -99,5 +93,11 @@ class NoteSystem {
 	
 			strumlines = null;
 		}
+
+		notesBuf.clear();
+		sustainsBuf.clear();
+
+		parent.display.removeProgram(notesProg);
+		parent.display.removeProgram(sustainProg);
 	}
 }

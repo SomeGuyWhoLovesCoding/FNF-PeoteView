@@ -203,6 +203,9 @@ class PauseScreen {
 	}
 
 	function dispose() {
+		close();
+		shutDown();
+
 		if (opened) {
 			while (pauseOptions.length != 0) {
 				var pauseOption = pauseOptions.pop();
@@ -212,8 +215,5 @@ class PauseScreen {
 			pauseBuf.removeElement(diffText);
 			diffText = null;
 		}
-
-		close();
-		shutDown();
 	}
 }

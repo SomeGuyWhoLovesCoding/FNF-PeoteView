@@ -136,7 +136,5 @@ class Strumline {
 			}
 			notesToHit = null;
 		}
-		notesToHit.resize(0);
-		buffer.resize(0);
 	}
 }
