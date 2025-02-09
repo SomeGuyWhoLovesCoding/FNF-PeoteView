@@ -53,6 +53,8 @@ class HUD {
 		this.display = display;
 		this.parent = parent;
 
+		display.addProgram(uiProg);
+
 		healthBarWS = UISprite.healthBarProperties[2];
 		healthBarHS = UISprite.healthBarProperties[3];
 
@@ -185,8 +187,6 @@ class HUD {
 
 			var tex = TextureSystem.getTexture("uiTex");
 			UISprite.init(uiProg, "uiTex", tex);
-
-			display.addProgram(uiProg);
 		}
 	}
 
@@ -512,5 +512,7 @@ class HUD {
 		scoreTxt.dispose();
 		watermarkTxt.dispose();
 		timeBarTxt.dispose();
+
+		display.removeProgram(uiProg);
 	}
 }

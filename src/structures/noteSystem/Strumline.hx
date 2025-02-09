@@ -131,8 +131,10 @@ class Strumline {
 		if (notesToHit != null) {
 			while (notesToHit.length != 0) {
 				var grp = notesToHit.pop();
-				grp.resize(0);
-				grp = null;
+				if (grp != null) {
+					grp.resize(0);
+					grp = null;
+				}
 			}
 			notesToHit = null;
 		}
