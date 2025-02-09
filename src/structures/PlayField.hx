@@ -49,10 +49,10 @@ class PlayField implements State {
 	var downScroll(default, set):Bool;
 	inline function set_downScroll(value:Bool) {
 		downScroll = value;
-		/*if (noteSystem != null) {
-			noteSystem.resetReceptors(false);
-			noteSystem.updateNotes(Tools.betterInt64FromFloat((songPosition + latencyCompensation) * 100));
-		}*/
+		if (noteSystem != null) {
+			noteSystem.resetStrumlines(false);
+			//noteSystem.updateNotes(Tools.betterInt64FromFloat((songPosition + latencyCompensation) * 100));
+		}
 		if (hud != null) {
 			hud.updateHealthBar();
 			hud.updateHealthIcons();
@@ -231,7 +231,7 @@ class PlayField implements State {
 
 		pauseScreen.open();
 		if (!RenderingMode.enabled && songStarted && audioSystem != null) audioSystem.stop();
-		//if (noteSystem != null) noteSystem.resetReceptors();
+		if (noteSystem != null) noteSystem.resetStrumlines();
 		if (inputSystem != null) inputSystem.removeEvents();
 
 		paused = true;
@@ -245,7 +245,7 @@ class PlayField implements State {
 
 		pauseScreen.close();
 		if (!RenderingMode.enabled && songStarted && !songEnded && audioSystem != null) audioSystem.play();
-		//if (noteSystem != null) noteSystem.resetReceptors();
+		if (noteSystem != null) noteSystem.resetStrumlines();
 		if (inputSystem != null) haxe.Timer.delay(inputSystem.addEvents, 1);
 
 		paused = false;

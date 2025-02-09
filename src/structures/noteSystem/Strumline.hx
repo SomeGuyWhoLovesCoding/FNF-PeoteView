@@ -98,6 +98,16 @@ class Strumline {
 		rec.reset();
 	}
 
+	function resetAnimations() {
+		for (i in 0...length) {
+			var rec = buffer[i];
+			rec.reset();
+			try {
+				NoteSystem.notesBuf.updateElement(rec);
+			} catch (e) {}
+		}
+	}
+
 	function hitRegister(n:MetaNote) {
 		var grp = notesToHit[n.index];
 

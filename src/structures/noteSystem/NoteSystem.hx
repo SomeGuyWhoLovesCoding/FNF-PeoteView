@@ -68,6 +68,8 @@ class NoteSystem {
 				Math.floor(inputSystem.strumline[0]), inputSystem.strumline[1], mania, this);
 			strumlines.push(strumline);
 		}
+
+		update(0);
 	}
 
 	function update(pos:Int64) {
@@ -82,6 +84,15 @@ class NoteSystem {
 		/*if (noteSpawner != null) {
 			noteSpawner.drawNotes(parent.songPosition, notesBuf, sustainsBuf);
 		}*/
+	}
+
+	function resetStrumlines(resetAnims:Bool = true) {
+		for (i in 0...strumlines.length) {
+			var strumline = strumlines[i];
+			strumline.x = 50 + Math.floor(Main.INITIAL_WIDTH * (i * 0.5));
+			strumline.y = parent.downScroll ? Main.INITIAL_HEIGHT - 150 : 50;
+			strumline.resetAnimations();
+		}
 	}
 
 	function dispose() {
