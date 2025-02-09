@@ -18,6 +18,7 @@ import interfaces.*;
 #if FV_DEBUG import debug.*; #end
 import music.*;
 import structures.*;
+import structures.noteSystem.*;
 import system.*;
 import system.internal.*;
 import tests.*;

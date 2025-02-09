@@ -7,6 +7,7 @@ import lime.app.Event;
 	The home of the gameplay state.
 **/
 @:publicFields
+@:access(structures.noteSystem.Strumline)
 class PlayField implements State {
 	var roof(default, null):CustomDisplay;
 	var display(default, null):CustomDisplay;
@@ -31,8 +32,6 @@ class PlayField implements State {
 	var badScore:Int128 = 100;
 	var shitScore:Int128 = 50;
 	var accuracy(default, null):Accuracy = new Accuracy();
-	var numOfReceptors:Int;
-	var numOfNotes:Int;
 	var health:Float = 0.5;
 	var healthGain:Vector<Float>;
 	var healthLoss:Vector<Float>;
@@ -43,16 +42,17 @@ class PlayField implements State {
 
 	var scrollSpeed(default, set):Float = 1.0;
 	inline function set_scrollSpeed(value:Float) {
-		return noteSystem.setScrollSpeed(scrollSpeed = value);
+		//return noteSystem.setScrollSpeed(scrollSpeed = value);
+		return scrollSpeed = value;
 	}
 
 	var downScroll(default, set):Bool;
 	inline function set_downScroll(value:Bool) {
 		downScroll = value;
-		if (noteSystem != null) {
+		/*if (noteSystem != null) {
 			noteSystem.resetReceptors(false);
 			noteSystem.updateNotes(Tools.betterInt64FromFloat((songPosition + latencyCompensation) * 100));
-		}
+		}*/
 		if (hud != null) {
 			hud.updateHealthBar();
 			hud.updateHealthIcons();
@@ -69,7 +69,7 @@ class PlayField implements State {
 	var died(default, null):Bool;
 	var botplay(default, set):Bool;
 	inline function set_botplay(value:Bool) {
-		if (noteSystem != null) noteSystem.resetInputs();
+		//if (noteSystem != null) noteSystem.resetInputs();
 		return botplay = value;
 	}
 
@@ -104,7 +104,7 @@ class PlayField implements State {
 		songPosition = value;
 		if (audioSystem != null) audioSystem.setTime(songPosition);
 		if (hud != null && SaveData.state.preferences.ratingPopup) hud.hideRatingPopup();
-		if (noteSystem != null) noteSystem.resetNotes();
+		//if (noteSystem != null) noteSystem.resetNotes();
 		if (field != null) field.resetCharacters();
 	}
 
@@ -138,7 +138,8 @@ class PlayField implements State {
 
 		field = new Field(this);
 		inputSystem = new InputSystem(mania, this);
-		noteSystem = new NoteSystem(numOfReceptors, this);
+		NoteSystem.init();
+		noteSystem = new NoteSystem(this);
 		audioSystem = new AudioSystem(chart);
 		HUD.init(display);
 		if (!SaveData.state.preferences.hideHUD) hud = new HUD(display, this);
@@ -147,7 +148,6 @@ class PlayField implements State {
 		PauseScreen.init(roof);
 		pauseScreen = new PauseScreen(chart.header.difficulty);
 
-		numOfNotes = NoteSystem.notesBuf.length - numOfReceptors;
 		scrollSpeed = chart.header.speed;
 
 		var conductor = Main.conductor;
@@ -193,8 +193,8 @@ class PlayField implements State {
 
 			var pos = Tools.betterInt64FromFloat(songPosition * 100);
 
-			if (noteSystem != null) noteSystem.update(pos);
 			if (hud != null) hud.update(deltaTime);
+			if (noteSystem != null) noteSystem.update(pos);
 		} else {
 			if (noteSystem != null) {
 				noteSystem.dispose();
@@ -231,7 +231,7 @@ class PlayField implements State {
 
 		pauseScreen.open();
 		if (!RenderingMode.enabled && songStarted && audioSystem != null) audioSystem.stop();
-		if (noteSystem != null) noteSystem.resetReceptors();
+		//if (noteSystem != null) noteSystem.resetReceptors();
 		if (inputSystem != null) inputSystem.removeEvents();
 
 		paused = true;
@@ -245,7 +245,7 @@ class PlayField implements State {
 
 		pauseScreen.close();
 		if (!RenderingMode.enabled && songStarted && !songEnded && audioSystem != null) audioSystem.play();
-		if (noteSystem != null) noteSystem.resetReceptors();
+		//if (noteSystem != null) noteSystem.resetReceptors();
 		if (inputSystem != null) haxe.Timer.delay(inputSystem.addEvents, 1);
 
 		paused = false;
@@ -348,7 +348,7 @@ class PlayField implements State {
 	}
 
 	function completeSustain(note:MetaNote) {
-		if (noteSystem != null && noteSystem.getReceptor(note.index + inputSystem.strumlineIndexes[note.lane]).confirmed()) return;
+		//if (noteSystem != null && noteSystem.strumlines[note.lane].buffer[note.index].confirmed()) return;
 
 		if (!inputSystem.strumlinePlayable[note.lane]) {
 			health -= healthLoss[note.lane];
