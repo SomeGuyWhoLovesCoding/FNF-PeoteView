@@ -8,6 +8,7 @@ import lime.ui.MouseButton;
 	This is a simple window that is only meant to have a colored title bar with custom title test, dragged with, and not having extra features such as split screen logic.
 **/
 @:publicFields
+@:access(lime._internal.backend.native.NativeCFFI)
 class FakeWindow {
 	final windowOffset:Vector<Int> = Vector.fromData([-1, -9]);
 
@@ -152,15 +153,10 @@ class FakeWindow {
 	function drag(x:Float, y:Float) {
 		var window = lime.app.Application.current.window;
 
-		windowMousePos.x = x + window.x;
-		windowMousePos.y = y + window.y;
 		mousePos.x = x;
 		mousePos.y = y;
 
 		if (!_isDragging) return;
-
-		window.x = Math.floor(windowMousePos.x - initMousePos.x);
-		window.y = Math.floor(windowMousePos.y - initMousePos.y);
 	}
 
 	var isMouseDown:Bool;
@@ -199,6 +195,19 @@ class FakeWindow {
 
 		closeButtonClicked.c.aF = isHoveringCloseButton ? 1.0 : 0.0;
 		closeButtonBuffer.updateElement(closeButtonClicked);
+
+		if (!_isDragging) return;
+
+		var windowMousePosX = lime._internal.backend.native.NativeCFFI.lime_window_get_mouse_pos_x();
+		var windowMousePosY = lime._internal.backend.native.NativeCFFI.lime_window_get_mouse_pos_y();
+
+		trace(windowMousePosX);
+		trace(windowMousePosY);
+
+		var window = lime.app.Application.current.window;
+
+		window.x = Math.floor(windowMousePosX + initMousePos.x);
+		window.y = Math.floor(windowMousePosY + initMousePos.y);
 	}
 
 	function reload(width:Int, height:Int) {
