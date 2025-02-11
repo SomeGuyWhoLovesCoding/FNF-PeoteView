@@ -1,4 +1,4 @@
-package structures.noteSystem;
+package structures.gameplay;
 
 /**
 	Strumline class for the note system.

@@ -1,4 +1,4 @@
-package structures;
+package structures.gameplay;
 
 import input2action.ActionMap;
 import lime.ui.KeyCode;
@@ -35,6 +35,10 @@ class PauseScreen {
 			var tex = TextureSystem.getTexture("pauseScreenSheet");
 			PauseSprite.init(pauseProg, "pauseScreenSheet", tex);
 		}
+	}
+
+	inline static function active() {
+		return pauseProg.isIn(display);
 	}
 
 	function new(difficulty:Difficulty) {
@@ -180,6 +184,11 @@ class PauseScreen {
 		Main.current.controls.unBind();
 		window.onMouseDown.remove(mousePress);
 		window.onMouseWheel.remove(moveOption_mouse);
+	}
+
+	inline function onOptionsMenuClose() {
+		atOptionsMenu = false;
+		addEvents();
 	}
 
 	function close() {

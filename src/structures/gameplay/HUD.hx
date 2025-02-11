@@ -1,4 +1,4 @@
-package structures;
+package structures.gameplay;
 
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
@@ -8,7 +8,6 @@ import lime.ui.KeyModifier;
 	This is an internal structure and should only be used inside of the playfield NOT to be touched with.
 **/
 @:publicFields
-@:access(structures.PlayField)
 class HUD {
 	static var uiBuf(default, null):Buffer<UISprite>;
 	static var uiProg(default, null):Program;

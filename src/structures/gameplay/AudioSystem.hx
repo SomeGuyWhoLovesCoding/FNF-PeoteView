@@ -1,4 +1,4 @@
-package structures;
+package structures.gameplay;
 
 /**
 	The auditory system for the playfield.

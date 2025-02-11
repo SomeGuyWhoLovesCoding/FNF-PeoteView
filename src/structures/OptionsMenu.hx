@@ -10,10 +10,8 @@ import lime.ui.MouseWheelMode;
 	The playfield's options menu.
 **/
 @:publicFields
-@:access(structures.PauseScreen)
-@:access(Main)
 class OptionsMenu {
-	private static var display(default, null):CustomDisplay;
+	static var display(default, null):CustomDisplay;
 	static var optionsBuf(default, null):Buffer<OptionsSprite>;
 	static var optionsProg(default, null):Program;
 
@@ -132,8 +130,7 @@ class OptionsMenu {
 			mm.addEvents();
 		} else if (pf != null) {
 			var pauseScreen = pf.pauseScreen;
-			pauseScreen.atOptionsMenu = false;
-			pauseScreen.addEvents();
+			pauseScreen.onOptionsMenuClose();
 		}
 
 		opened = false;
@@ -179,12 +176,14 @@ class OptionsMenu {
 	}
 
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
-		if (button != RIGHT || !Main.current.fakeWindow.isMouseInsideApp()) return;
+		var window = Main.current.fakeWindow;
+		if (button != RIGHT || !window.isMouseInsideApp()) return;
 		close();
 	}
 
 	function moveCategory_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
-		if (!Main.current.fakeWindow.isMouseInsideApp()) return;
+		var window = Main.current.fakeWindow;
+		if (!window.isMouseInsideApp()) return;
 
 		categorySelected -= Math.floor(y);
 

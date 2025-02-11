@@ -9,7 +9,6 @@ import elements.text.TextCharSprite;
 	This is an internal structure and should only be used inside of the playfield NOT to be touched with.
 **/
 @:publicFields
-@:access(structures.OptionsMenu)
 class OptionsDisplay {
 	private static var display(get, never):CustomDisplay;
 

@@ -1,17 +1,16 @@
-package structures.noteSystem;
+package structures.gameplay;
 
 /**
 	The body of the note system.
 **/
 @:publicFields
+@:access(structures.gameplay.NoteSpawner)
 class NoteSystem {
 	static var sustainProg(default, null):Program;
 	static var sustainsBuf(default, null):Buffer<Sustain>;
 
 	static var notesProg(default, null):Program;
 	static var notesBuf(default, null):Buffer<Note>;
-
-	var noteSpawner(default, null):NoteSpawner;
 
 	static function init() {
 		if (notesBuf == null) {
@@ -39,7 +38,7 @@ class NoteSystem {
 		}
 	}
 
-	//var noteSpawner(default, null):NoteSpawner;
+	var noteSpawner(default, null):NoteSpawner;
 	var strumlines(default, null):Array<Strumline>;
 
 	var parent(default, null):PlayField;
@@ -56,13 +55,10 @@ class NoteSystem {
 
 		var inputSystem = parent.inputSystem;
 		var chart = parent.chart;
-		var scrollSpeed = chart.header.speed;
 
 		noteSpawner = new NoteSpawner(chart.file);
-		noteSpawner.setScrollSpeed(scrollSpeed);
 
 		var mania = chart.header.mania;
-		//var strumlineCount = chart.header.strumlines;
 
 		for (i in 0...2) {
 			var strumline = new Strumline(50 + Math.floor(Main.INITIAL_WIDTH * (i * 0.5)),
@@ -70,6 +66,8 @@ class NoteSystem {
 				Math.floor(inputSystem.strumline[0]), inputSystem.strumline[1], mania, this);
 			strumlines.push(strumline);
 		}
+
+		setScrollSpeed(chart.header.speed);
 
 		update(0);
 	}
@@ -86,6 +84,13 @@ class NoteSystem {
 		if (noteSpawner != null) {
 			noteSpawner.update(pos);
 		}
+	}
+
+	function setScrollSpeed(value:Float) {
+		noteSpawner.spawnDist = Math.floor(160000 / value);
+		noteSpawner.despawnDist = Math.floor(40000 / Math.min(value, 1.0));
+		parent.hitbox = 200 * value;
+		return value;
 	}
 
 	function resetStrumlines(resetAnims:Bool = true) {

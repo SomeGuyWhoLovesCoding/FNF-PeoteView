@@ -1,4 +1,4 @@
-package structures;
+package structures.gameplay;
 
 import lime.ui.KeyCode;
 import lime.app.Event;
@@ -7,7 +7,6 @@ import lime.app.Event;
 	The home of the gameplay state.
 **/
 @:publicFields
-@:access(structures.noteSystem.Strumline)
 class PlayField implements State {
 	var roof(default, null):CustomDisplay;
 	var display(default, null):CustomDisplay;
@@ -42,8 +41,7 @@ class PlayField implements State {
 
 	var scrollSpeed(default, set):Float = 1.0;
 	inline function set_scrollSpeed(value:Float) {
-		//return noteSystem.setScrollSpeed(scrollSpeed = value);
-		return scrollSpeed = value;
+		return noteSystem.setScrollSpeed(scrollSpeed = value);
 	}
 
 	var downScroll(default, set):Bool;
@@ -348,8 +346,6 @@ class PlayField implements State {
 	}
 
 	function completeSustain(note:MetaNote) {
-		//if (noteSystem != null && noteSystem.strumlines[note.lane].buffer[note.index].confirmed()) return;
-
 		if (!inputSystem.strumlinePlayable[note.lane]) {
 			health -= healthLoss[note.lane];
 

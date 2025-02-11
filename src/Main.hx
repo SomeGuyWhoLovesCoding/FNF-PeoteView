@@ -7,8 +7,6 @@ import lime.ui.KeyCode;
 import lime.ui.Gamepad;
 
 @:publicFields
-@:access(structures.PauseScreen)
-@:access(structures.OptionsMenu)
 class Main extends Application
 {
 	/**
@@ -217,7 +215,7 @@ class Main extends Application
 						}
 					}
 
-					if (PauseScreen.pauseProg.isIn(PauseScreen.display)) {
+					if (PauseScreen.active()) {
 						var pauseScreen = playField.pauseScreen;
 						pauseScreen.update(newDeltaTime);
 					}
@@ -234,15 +232,17 @@ class Main extends Application
 		Tools.profileFrame();
 	}
 
-	private inline function popupOptionsMenu() {
-		if (!optionsScreen.isIn(peoteView))
+	function popupOptionsMenu() {
+		if (!optionsScreen.isIn(peoteView)) {
 			peoteView.addDisplay(optionsScreen);
+		}
 		fakeWindow.reload(peoteView.width, peoteView.height);
 	}
 
-	private inline function removeOptionsMenu() {
-		if (optionsScreen.isIn(peoteView))
+	function removeOptionsMenu() {
+		if (optionsScreen.isIn(peoteView)) {
 			peoteView.removeDisplay(optionsScreen);
+		}
 		fakeWindow.reload(peoteView.width, peoteView.height);
 	}
 
