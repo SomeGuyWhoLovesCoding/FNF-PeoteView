@@ -11,6 +11,8 @@ class NoteSystem {
 	static var notesProg(default, null):Program;
 	static var notesBuf(default, null):Buffer<Note>;
 
+	var noteSpawner(default, null):NoteSpawner;
+
 	static function init() {
 		if (notesBuf == null) {
 			notesBuf = new Buffer<Note>(128, 128, false);
@@ -56,8 +58,8 @@ class NoteSystem {
 		var chart = parent.chart;
 		var scrollSpeed = chart.header.speed;
 
-		//noteSpawner = new NoteSpawner(chart);
-		//noteSpawner.setScrollSpeed(scrollSpeed);
+		noteSpawner = new NoteSpawner(chart.file);
+		noteSpawner.setScrollSpeed(scrollSpeed);
 
 		var mania = chart.header.mania;
 		//var strumlineCount = chart.header.strumlines;
@@ -81,9 +83,9 @@ class NoteSystem {
 			strumline.draw(notesBuf);
 		}
 
-		/*if (noteSpawner != null) {
-			noteSpawner.drawNotes(parent.songPosition, notesBuf, sustainsBuf);
-		}*/
+		if (noteSpawner != null) {
+			noteSpawner.update(pos);
+		}
 	}
 
 	function resetStrumlines(resetAnims:Bool = true) {

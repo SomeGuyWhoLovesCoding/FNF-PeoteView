@@ -76,7 +76,7 @@ class FakeWindow {
 
 	function isMouseAtCloseButton() {
 		var peoteView = Main.current.peoteView;
-		return mousePos.x >= closeButton.x && mousePos.x <= closeButton.x + closeButton.w &&
+		return mousePos.x >= closeButton.x && mousePos.x <= closeButton.x + closeButton.w - 1 &&
 			mousePos.y >= closeButton.y && mousePos.y <= closeButton.y + closeButton.h;
 	}
 
@@ -155,8 +155,6 @@ class FakeWindow {
 
 		mousePos.x = x;
 		mousePos.y = y;
-
-		if (!_isDragging) return;
 	}
 
 	var isMouseDown:Bool;
@@ -198,16 +196,13 @@ class FakeWindow {
 
 		if (!_isDragging) return;
 
-		var windowMousePosX = lime._internal.backend.native.NativeCFFI.lime_window_get_mouse_pos_x();
-		var windowMousePosY = lime._internal.backend.native.NativeCFFI.lime_window_get_mouse_pos_y();
-
-		trace(windowMousePosX);
-		trace(windowMousePosY);
+		var windowMousePosX:Int = lime._internal.backend.native.NativeCFFI.lime_window_get_mouse_pos_x();
+		var windowMousePosY:Int = lime._internal.backend.native.NativeCFFI.lime_window_get_mouse_pos_y();
 
 		var window = lime.app.Application.current.window;
 
-		window.x = Math.floor(windowMousePosX + initMousePos.x);
-		window.y = Math.floor(windowMousePosY + initMousePos.y);
+		window.x = Math.floor(windowMousePosX - initMousePos.x);
+		window.y = Math.floor(windowMousePosY - initMousePos.y);
 	}
 
 	function reload(width:Int, height:Int) {
