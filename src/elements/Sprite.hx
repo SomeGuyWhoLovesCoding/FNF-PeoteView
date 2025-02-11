@@ -82,9 +82,8 @@ class Sprite implements Element
 		Constructs a sprite.
 		@param x The sprite's x.
 		@param y The sprite's y.
-		@param z The sprite's z index.
 	**/
-	function new(x:Int = 0, y:Int = 0, z:Int = 0) {
+	function new(x:Int = 0, y:Int = 0) {
 		this.x = x;
 		this.y = y;
 	}
