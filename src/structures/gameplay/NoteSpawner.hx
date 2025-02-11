@@ -1,7 +1,7 @@
 package structures.gameplay;
 
 /**
-	The park of the note system.
+	The internal handler of the note system.
 **/
 @:publicFields
 class NoteSpawner {
@@ -16,8 +16,10 @@ class NoteSpawner {
 
 	var file(default, null):File;
 
-	var pool(default, null):NotePool;
-
+	/**
+	 * Creates the note spawner.
+	 * @param file The chart file to import onto the note spawner.
+	 */
 	function new(file:File) {
 		this.file = file;
 
@@ -28,12 +30,21 @@ class NoteSpawner {
 		curBottomNote = file.getNote(0);
 	}
 
+	/**
+	 * Updates the note spawner.
+	 * @param pos The song's position in the note position format.
+	 */
 	function update(pos:Int64) {
 		cullTop(pos);
 		cullBottom(pos);
 	}
 
-	function draw(notesBuf:Buffer<Note>, sustainBuf:Buffer<Sustain>) {
+	/**
+	 * Draws to the note system.
+	 * @param notesBuf The note buffer where the strumlines are also stored to.
+	 * @param sustainsBuf The sustain buffer behind the note buffer.
+	 */
+	function draw(notesBuf:Buffer<Note>, sustainsBuf:Buffer<Sustain>) {
 		var i = top;
 
 		while (i < bottom) {
@@ -42,6 +53,10 @@ class NoteSpawner {
 		}
 	}
 
+	/**
+	 * Culls the top note cull.
+	 * @param pos The song's position in the note position format.
+	 */
 	function cullTop(pos:Int64) {
 		var len = file.length;
 		while (top != len && (curTopNote.position - pos).low < spawnDist) {
@@ -50,6 +65,10 @@ class NoteSpawner {
 		}
 	}
 
+	/**
+	 * Culls the bottom note cull.
+	 * @param pos The song's position in the note position format.
+	 */
 	function cullBottom(pos:Int64) {
 		var len = file.length;
 		while (bottom != len &&

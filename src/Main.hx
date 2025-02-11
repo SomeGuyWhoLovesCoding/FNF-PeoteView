@@ -31,6 +31,48 @@ class Main extends Application
 		}
 	}
 
+	static public function switchState(newState:StateSelection) {
+		var instance = Main.current;
+
+		try {
+			switch (instance.currentState) {
+				case MAIN_MENU:
+					instance.mainMenu.dispose();
+					instance.mainMenu = null;
+				case FREEPLAY:
+				case GAMEPLAY:
+					instance.playField.dispose();
+					instance.playField = null;
+				case AWARDS:
+				case CREDITS:
+				case NONE:
+			}
+		} catch (_) trace(haxe.CallStack.toString(haxe.CallStack.exceptionStack()), _);
+
+		instance.currentState = newState;
+
+		switch (newState) {
+			case MAIN_MENU:
+				instance.mainMenu = new MainMenu();
+				instance.mainMenu.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
+			case FREEPLAY:
+			case GAMEPLAY:
+				instance.playField = new PlayField(Sys.args()[0]);
+				instance.playField.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
+				instance.playField.downScroll = SaveData.state.preferences.downScroll;
+			case AWARDS:
+			case CREDITS:
+			case NONE:
+		}
+
+		GC.run(10);
+		GC.enable(false);
+
+		var peoteView = Main.current.peoteView;
+
+		Main.current.fakeWindow.reload(peoteView.width, peoteView.height);
+	}
+
 	// ------------------------------------------------------------
 	// --------------------- GAME STARTS HERE ---------------------
 	// ------------------------------------------------------------
@@ -85,35 +127,12 @@ class Main extends Application
 		peoteView = new PeoteView(window);
 
 		haxe.Timer.delay(function() {
-			var stamp = haxe.Timer.stamp();
-			trace("Preloading textures...");
-			TextureSystem.createTexture("mainMenuBGTex", "assets/mainMenu/menuBG.png");
-			TextureSystem.createTexture("mainMenuSheet", "assets/mainMenu/sheet.png");
-			TextureSystem.createTexture("noteTex", "assets/notes/noteSheet.png");
-			TextureSystem.createTexture("uiTex", "assets/ui/uiSheet.png");
-			TextureSystem.createTexture("pauseScreenSheet", "assets/ui/pauseScreenSheet.png");
-			TextureSystem.createTexture("optionsMenuSheet", "assets/ui/optionsMenuSheet.png");
-			trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
-
-			var stamp = haxe.Timer.stamp();
-			trace("Creating displays...");
-
-			bottomDisplay = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
-			middleDisplay = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
-			topDisplay = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
-			optionsScreen = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
-			trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
+			createTextures();
+			createDisplays();
 
 			peoteView.start();
 
-			var stamp = haxe.Timer.stamp();
-			trace("Adding displays...");
-
-			peoteView.addDisplay(bottomDisplay);
-			peoteView.addDisplay(middleDisplay);
-			peoteView.addDisplay(topDisplay);
-			peoteView.addDisplay(optionsScreen);
-			trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
+			addDisplays();
 
 			conductor = new Conductor();
 
@@ -142,46 +161,37 @@ class Main extends Application
 		}, 100);
 	}
 
-	static public function switchState(newState:StateSelection) {
-		var instance = Main.current;
+	private function createTextures() {
+		var stamp = haxe.Timer.stamp();
+		trace("Preloading textures...");
+		TextureSystem.createTexture("mainMenuBGTex", "assets/mainMenu/menuBG.png");
+		TextureSystem.createTexture("mainMenuSheet", "assets/mainMenu/sheet.png");
+		TextureSystem.createTexture("noteTex", "assets/notes/noteSheet.png");
+		TextureSystem.createTexture("uiTex", "assets/ui/uiSheet.png");
+		TextureSystem.createTexture("pauseScreenSheet", "assets/ui/pauseScreenSheet.png");
+		TextureSystem.createTexture("optionsMenuSheet", "assets/ui/optionsMenuSheet.png");
+		trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
+	}
 
-		try {
-			switch (instance.currentState) {
-				case MAIN_MENU:
-					instance.mainMenu.dispose();
-					instance.mainMenu = null;
-				case FREEPLAY:
-				case GAMEPLAY:
-					instance.playField.dispose();
-					instance.playField = null;
-				case AWARDS:
-				case CREDITS:
-				case NONE:
-			}
-		} catch (_) trace(haxe.CallStack.toString(haxe.CallStack.exceptionStack()), _);
+	private function createDisplays() {
+		var stamp = haxe.Timer.stamp();
+		trace("Creating displays...");
+		bottomDisplay = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
+		middleDisplay = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
+		topDisplay = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
+		optionsScreen = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
+		trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
+	}
 
-		instance.currentState = newState;
+	private function addDisplays() {
+		var stamp = haxe.Timer.stamp();
+		trace("Adding displays...");
 
-		switch (newState) {
-			case MAIN_MENU:
-				instance.mainMenu = new MainMenu();
-				instance.mainMenu.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
-			case FREEPLAY:
-			case GAMEPLAY:
-				instance.playField = new PlayField(Sys.args()[0]);
-				instance.playField.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
-				instance.playField.downScroll = SaveData.state.preferences.downScroll;
-			case AWARDS:
-			case CREDITS:
-			case NONE:
-		}
-
-		GC.run(10);
-		GC.enable(false);
-
-		var peoteView = Main.current.peoteView;
-
-		Main.current.fakeWindow.reload(peoteView.width, peoteView.height);
+		peoteView.addDisplay(bottomDisplay);
+		peoteView.addDisplay(middleDisplay);
+		peoteView.addDisplay(topDisplay);
+		peoteView.addDisplay(optionsScreen);
+		trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 	}
 
 	var newDeltaTime:Float = 0;

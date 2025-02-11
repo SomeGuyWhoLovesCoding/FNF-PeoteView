@@ -39,6 +39,7 @@ class NoteSystem {
 	}
 
 	var noteSpawner(default, null):NoteSpawner;
+	var notePool(default, null):NotePool;
 	var strumlines(default, null):Array<Strumline>;
 
 	var parent(default, null):PlayField;
@@ -51,14 +52,15 @@ class NoteSystem {
 		display.addProgram(sustainProg);
 		display.addProgram(notesProg);
 
-		strumlines = [];
-
 		var inputSystem = parent.inputSystem;
 		var chart = parent.chart;
 
 		noteSpawner = new NoteSpawner(chart.file);
+		notePool = new NotePool(this);
 
 		var mania = chart.header.mania;
+
+		strumlines = [];
 
 		for (i in 0...2) {
 			var strumline = new Strumline(50 + Math.floor(Main.INITIAL_WIDTH * (i * 0.5)),
@@ -110,6 +112,15 @@ class NoteSystem {
 			}
 	
 			strumlines = null;
+		}
+
+		if (noteSpawner != null) {
+			noteSpawner = null;
+		}
+
+		if (notePool != null) {
+			notePool.dispose();
+			notePool = null;
 		}
 
 		notesBuf.clear();
