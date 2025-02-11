@@ -11,7 +11,7 @@ package data.chart;
 @:structInit
 class GameOverMeta {
 	/**
-		What to stylize the game over sounds to.
+		The music for the game over music fitting its style.
 	**/
 	var theme:String;
 
