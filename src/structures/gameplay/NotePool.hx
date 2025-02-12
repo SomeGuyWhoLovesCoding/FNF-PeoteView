@@ -42,7 +42,7 @@ class NotePool {
 	/**
 	 * Creates a new sustain and determines when to add it to note pool or not.
 	 */
-	function newSustain() {
+	function newSustain(parent:Note) {
 		var allocated = sustains[sustainsPos];
 		if (allocated == null) {
 			var tex = TextureSystem.getTexture("sustainTex"):
@@ -50,6 +50,9 @@ class NotePool {
 				Math.floor(tex.width / tex.tilesX),
 			        Math.floor(tex.height / tex.tilesY)
 			);
+		}
+		if (parent != null) {
+			parent.child = allocated;
 		}
 		++sustainsPos;
 		return allocated;
