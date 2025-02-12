@@ -44,6 +44,10 @@ class NoteSystem {
 
 	var parent(default, null):PlayField;
 
+	/**
+	 * Creates the note system.
+	 * @param parent The parent of this class.
+	**/
 	function new(parent:PlayField) {
 		this.parent = parent;
 
@@ -55,7 +59,7 @@ class NoteSystem {
 		var inputSystem = parent.inputSystem;
 		var chart = parent.chart;
 
-		noteSpawner = new NoteSpawner(chart.file);
+		noteSpawner = new NoteSpawner(chart.file, this);
 		notePool = new NotePool(this);
 
 		var mania = chart.header.mania;
@@ -66,6 +70,7 @@ class NoteSystem {
 			var strumline = new Strumline(50 + Math.floor(Main.INITIAL_WIDTH * (i * 0.5)),
 				parent.downScroll ? Main.INITIAL_HEIGHT - 50 : 50, 
 				Math.floor(inputSystem.strumline[0]), inputSystem.strumline[1], mania, this);
+			strumline.playable = parent.inputSystem.strumlinePlayable[i];
 			strumlines.push(strumline);
 		}
 
@@ -75,6 +80,8 @@ class NoteSystem {
 	}
 
 	function update(pos:Int64) {
+		notePool.resetPositions();
+
 		notesBuf.clear();
 		sustainsBuf.clear();
 
@@ -88,6 +95,133 @@ class NoteSystem {
 		}
 	}
 
+	/**
+	 * Again, do not fuck with this.
+	 * I put lots of effort into this abomination of a function.
+	 * This function was ported from the old note system.
+	 * Note hitreg and sustain inputs are handled here.
+	 * @param pos The song's position in note position format.
+	 * @param note The meta note you want to draw the note to.
+	**/
+	function drawNote(pos:Int64, note:MetaNote) {
+		var index = note.index;
+		var lane = note.lane;
+		var position = note.position;
+
+		var strumline = strumlines[lane];
+		var rec = strumline.buffer[index];
+
+		var id = parent.inputSystem.receptorIds[index];
+
+ 		var noteSpr = notePool.newNote(id, note);
+		var sustainSpr = note.duration > 5 ? notePool.newSustain(noteSpr, id) : null;
+		var sustainExists = sustainSpr != null;
+
+		var diff = (Int64.toInt(position - pos) * 0.01) * parent.scrollSpeed;
+		var leftover = Math.floor(Int64.toInt(pos - position) * 0.01);
+		var isHit = noteSpr.hit;
+
+		var noteSprX = rec.x;
+		var noteSprY = rec.y + (Math.floor(diff) * (parent.downScroll ? -1 : 1));
+
+		noteSpr.x = noteSprX;
+		noteSpr.y = noteSprY;
+		noteSpr.scale = rec.scale;
+
+		var playable = strumline.playable && !(parent.botplay || RenderingMode.enabled);
+
+		if (playable) {
+			if (!isHit) {
+				var noteToHit = strumline.notesToHit[index];
+				var noteToHitExists = noteToHit != null;
+				var hitPos = noteToHitExists ? noteToHit.data.position : 0;
+
+				if ((!noteSpr.missed && diff < parent.hitbox && !noteToHitExists) ||
+					(noteToHitExists && pos - hitPos > (position - hitPos) >> 1)) {
+					strumline.notesToHit[index] = noteSpr;
+				}
+
+				if (diff < -parent.hitbox && !noteSpr.missed) {
+					noteSpr.c.aF = 0.5;
+					noteSpr.missed = true;
+
+					parent.onNoteMiss.dispatch(note);
+
+					if (sustainExists && !sustainSpr.held) {
+						sustainSpr.c.aF = Sustain.defaultMissAlpha;
+						sustainSpr.held = true;
+						parent.onSustainRelease.dispatch(note);
+					}
+
+					strumline.notesToHit[index] = null;
+
+					var hud = parent.hud;
+					if (SaveData.state.preferences.ratingPopup && hud != null) {
+						hud.hideRatingPopup();
+					}
+				}
+			}
+		} else {
+			if (strumline.botHitsToCheck[index]) {
+				if (!rec.idle()) {
+					rec.reset();
+					strumline.botHitsToCheck[index] = false;
+				}
+			}
+
+			if (!isHit && diff < 0) {
+				isHit = noteSpr.hit = true;
+				strumline.sustainsToHold[index] = sustainSpr;
+
+				if (!rec.confirmed()) {
+					rec.confirm();
+				}
+
+				if (sustainExists) {
+					sustainSpr.followNote(rec);
+					sustainSpr.w = sustainSpr.length - leftover;
+					if (sustainSpr.w < 0) sustainSpr.w = 0;
+				}
+
+				parent.onNoteHit.dispatch(note, 0);
+				strumline.botHitsToCheck[index] = !sustainExists;
+			}
+		}
+
+		if (sustainExists) {
+			sustainSpr.parent = noteSpr;
+			sustainSpr.r = parent.downScroll ? -90 : 90;
+			sustainSpr.speed = parent.scrollSpeed;
+			sustainSpr.scale = rec.scale;
+
+			if (!isHit) {
+				sustainSpr.followNote(noteSpr);
+			} else if (sustainSpr.c.aF != 0) {
+				if (sustainSpr.w > 0) {
+					sustainSpr.followNote(rec);
+					sustainSpr.w = sustainSpr.length - leftover;
+					if (sustainSpr.w < 0) sustainSpr.w = 0;
+				}
+
+				if (pos > position + (sustainSpr.length * 100) - 75 && !sustainSpr.held && !noteSpr.missed) {
+					sustainSpr.held = true;
+					if (rec.confirmed()) {
+						if (playable) rec.press();
+						else rec.reset();
+					}
+					parent.onSustainComplete.dispatch(note);
+				}
+			}
+
+			if (!sustainSpr.held) sustainsBuf.addElement(sustainSpr);
+		}
+
+		if (!isHit) notesBuf.addElement(noteSpr);
+	}
+
+	/**
+	 * Change the scroll speed of this note system.
+	**/
 	function setScrollSpeed(value:Float) {
 		noteSpawner.spawnDist = Math.floor(160000 / value);
 		noteSpawner.despawnDist = Math.floor(40000 / Math.min(value, 1.0));
@@ -95,6 +229,9 @@ class NoteSystem {
 		return value;
 	}
 
+	/**
+	 * Resets the strumlines of this note system.
+	**/
 	function resetStrumlines(resetAnims:Bool = true) {
 		for (i in 0...strumlines.length) {
 			var strumline = strumlines[i];
@@ -104,6 +241,9 @@ class NoteSystem {
 		}
 	}
 
+	/**
+	 * Disposes the note system.
+	**/
 	function dispose() {
 		if (strumlines != null) {
 			while (strumlines.length != 0) {
@@ -126,7 +266,9 @@ class NoteSystem {
 		notesBuf.clear();
 		sustainsBuf.clear();
 
-		parent.display.removeProgram(notesProg);
-		parent.display.removeProgram(sustainProg);
+		var display = parent.display;
+
+		display.removeProgram(sustainProg);
+		display.removeProgram(notesProg);
 	}
 }

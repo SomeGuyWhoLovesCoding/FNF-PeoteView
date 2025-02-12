@@ -34,10 +34,7 @@ class PlayField implements State {
 	var health:Float = 0.5;
 	var healthGain:Vector<Float>;
 	var healthLoss:Vector<Float>;
-	var latencyCompensation(default, set):Int;
-	inline function set_latencyCompensation(value:Int) {
-		return latencyCompensation = value;
-	}
+	var latencyCompensation:Int;
 
 	var scrollSpeed(default, set):Float = 1.0;
 	inline function set_scrollSpeed(value:Float) {
@@ -49,7 +46,7 @@ class PlayField implements State {
 		downScroll = value;
 		if (noteSystem != null) {
 			noteSystem.resetStrumlines(false);
-			//noteSystem.updateNotes(Tools.betterInt64FromFloat((songPosition + latencyCompensation) * 100));
+			noteSystem.update(0);
 		}
 		if (hud != null) {
 			hud.updateHealthBar();
@@ -67,7 +64,14 @@ class PlayField implements State {
 	var died(default, null):Bool;
 	var botplay(default, set):Bool;
 	inline function set_botplay(value:Bool) {
-		//if (noteSystem != null) noteSystem.resetInputs();
+		if (noteSystem != null) {
+			var strumlines = noteSystem.strumlines;
+
+			for (i in 0...strumlines.length) {
+				var strumline = strumlines[i];
+				strumline.resetInputs();
+			}
+		}
 		return botplay = value;
 	}
 
@@ -346,6 +350,8 @@ class PlayField implements State {
 	}
 
 	function completeSustain(note:MetaNote) {
+		if (noteSystem != null && noteSystem.strumlines[note.lane].confirmed(note.index)) return;
+
 		if (!inputSystem.strumlinePlayable[note.lane]) {
 			health -= healthLoss[note.lane];
 

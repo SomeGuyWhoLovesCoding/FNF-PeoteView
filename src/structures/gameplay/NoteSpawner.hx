@@ -16,12 +16,15 @@ class NoteSpawner {
 
 	var file(default, null):File;
 
+	var parent(default, null):NoteSystem;
+
 	/**
 	 * Creates the note spawner.
 	 * @param file The chart file to import onto the note spawner.
 	 */
-	function new(file:File) {
+	function new(file:File, parent:NoteSystem) {
 		this.file = file;
+		this.parent = parent;
 
 		top = 0;
 		bottom = 0;
@@ -37,18 +40,12 @@ class NoteSpawner {
 	function update(pos:Int64) {
 		cullTop(pos);
 		cullBottom(pos);
-	}
 
-	/**
-	 * Draws to the note system.
-	 * @param notesBuf The note buffer where the strumlines are also stored to.
-	 * @param sustainsBuf The sustain buffer behind the note buffer.
-	 */
-	function draw(notesBuf:Buffer<Note>, sustainsBuf:Buffer<Sustain>) {
-		var i = top;
+		var i = bottom;
 
-		while (i < bottom) {
-
+		while (i < top) {
+			var note = file.getNote(i);
+			parent.drawNote(pos, note);
 			++i;
 		}
 	}
