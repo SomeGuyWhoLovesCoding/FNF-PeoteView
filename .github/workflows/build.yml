@@ -16,16 +16,18 @@ jobs:
     - name: Setup Haxe
       uses: krdlab/setup-haxe@v1
       with:
-        haxe-version: 4.3.1 # Specify your Haxe version
+        haxe-version: 4.3.6 # Specify your Haxe version
     
     - name: Install Dependencies
       run: |
-        haxelib install format
-        haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git
-        haxelib git peote-view https://github.com/maitag/peote-view.git
-        haxelib install hxcpp
-        haxelib git miniaudio https://github.com/alchemy-haxe/genkit_miniaudio.git
-        haxelib install input2action
+        haxelib install format --quiet
+        haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet
+        haxelib dev lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet
+        haxelib git peote-view https://github.com/maitag/peote-view.git --quiet
+        haxelib install hxcpp --quiet
+        haxelib install hxp --quiet
+        haxelib git miniaudio https://github.com/alchemy-haxe/genkit_miniaudio.git --quiet
+        haxelib install input2action --quiet
         haxelib run lime rebuild tools
         haxelib run lime rebuild html5
     
