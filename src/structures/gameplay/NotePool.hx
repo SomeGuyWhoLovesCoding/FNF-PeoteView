@@ -35,21 +35,18 @@ class NotePool {
 	 */
 	function newNote(id:Int, n:MetaNote) {
 		var allocated = notes[notesPos];
+
 		if (allocated == null) {
 			allocated = notes[notesPos] = new Note(0, 0, 0, 0);
 			allocated.toNote();
 		}
 
-		if (allocated.id != id) {
-			allocated.changeID(id);
-			allocated.toNote();
-		}
-
-		if (allocated.data != n) {
-			allocated.data = n;
-		}
+		allocated.changeID(id);
+		allocated.toNote();
+		allocated.data = n;
 
 		++notesPos;
+
 		return allocated;
 	}
 
@@ -60,6 +57,7 @@ class NotePool {
 	 */
 	function newSustain(parent:Note, id:Int) {
 		var allocated = sustains[sustainsPos];
+
 		if (allocated == null) {
 			var tex = TextureSystem.getTexture("sustainTex");
 			allocated = sustains[sustainsPos] = new Sustain(0, 0,
@@ -68,15 +66,14 @@ class NotePool {
 			);
 		}
 
-		if (allocated.id != id) {
-			allocated.changeID(id);
-		}
+		allocated.changeID(id);
 
 		if (parent != null) {
 			parent.child = allocated;
 		}
 
 		++sustainsPos;
+
 		return allocated;
 	}
 
