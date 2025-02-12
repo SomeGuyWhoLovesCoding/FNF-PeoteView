@@ -32,9 +32,3 @@ jobs:
     - name: Build Project
       run: |
         haxelib run lime build html5 -release
-    
-    - name: Upload HTML5 Build
-      uses: actions/upload-artifact@v3
-      with:
-        name: html5-build
-        path: export/html5/bin
