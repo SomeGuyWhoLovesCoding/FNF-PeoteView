@@ -61,7 +61,7 @@ class NotePool {
 	function newSustain(parent:Note, id:Int) {
 		var allocated = sustains[sustainsPos];
 		if (allocated == null) {
-			var tex = TextureSystem.getTexture("sustainTex"):
+			var tex = TextureSystem.getTexture("sustainTex");
 			allocated = sustains[sustainsPos] = new Sustain(0, 0,
 				Math.floor(tex.width / tex.tilesX),
 			        Math.floor(tex.height / tex.tilesY)
