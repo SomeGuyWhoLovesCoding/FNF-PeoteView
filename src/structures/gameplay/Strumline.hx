@@ -58,13 +58,15 @@ class Strumline {
 		return length = value;
 	}
 
-	private var notesToHit(default, null):Array<Array<MetaNote>>;
+	private var notesToHit(default, null):Array<Note>;
+	private var sustainsToHold(default, null):Array<Sustain>;
 	private var buffer(default, null):Array<Note>;
 
 	var parent(default, null):NoteSystem;
 
 	function new(x:Int, y:Int, gap:Int, scale:Float, length:Int, parent:NoteSystem) {
 		notesToHit = [];
+		sustainsToHold = [];
 		buffer = [];
 
 		this.parent = parent;
@@ -108,45 +110,14 @@ class Strumline {
 		}
 	}
 
-	function hitRegister(n:MetaNote) {
-		var grp = notesToHit[n.index];
-
-		if (grp == null) {
-			grp = notesToHit[n.index] = [];
-		}
-
-		grp.push(n);
-	}
-
-	function hitNotes(id:Int) {
-		if (id >= length) return;
-		if (id < 0) return;
-
-		var grp = notesToHit[id];
-
-		if (grp == null) {
-			grp = notesToHit[id] = [];
-		}
-
-		while (grp.length != 0) {
-			var noteToHit = grp.pop();
-			//parent.hitNote(noteToHit);
-		}
-
-		var rec = buffer[id];
-		rec.confirm();
-	}
-
 	function dispose() {
 		if (notesToHit != null) {
-			while (notesToHit.length != 0) {
-				var grp = notesToHit.pop();
-				if (grp != null) {
-					grp.resize(0);
-					grp = null;
-				}
-			}
+			while (notesToHit.pop() != null) {}
 			notesToHit = null;
+		}
+		if (sustainsToHold != null) {
+			while (sustainsToHold.pop() != null) {}
+			sustainsToHold = null;
 		}
 	}
 }
