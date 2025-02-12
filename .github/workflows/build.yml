@@ -20,7 +20,7 @@ jobs:
     
     - name: Install Dependencies
       run: |
-        haxelib dev lime https://github.com/SomeGuyWhoLovesCoding/lime.git
+        haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git
         haxelib run lime rebuild tools
         haxelib run lime rebuild html5
         haxelib git peote-view https://github.com/maitag/peote-view.git
