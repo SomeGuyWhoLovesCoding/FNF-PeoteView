@@ -6,7 +6,9 @@ package structures.gameplay;
 @:publicFields
 class NotePool {
 	private var notes(default, null):Array<Note>;
+	private var notesPos(default, null):Int;
 	private var sustains(default, null):Array<Sustain>;
+	private var sustainsPos(default, null):Int;
 
 	var parent(default, null):NoteSystem;
 
@@ -14,15 +16,37 @@ class NotePool {
 	 * Creates the note pool.
 	 * @param parent The parent of this class.
 	 */
-	function new(parent:NoteSystem) {
+	function new(parent:NoteSystem, notesToPrealloc:Int = 100, sustainsToPrealloc:Int = 20) {
 		this.parent = parent;
 
 		notes = [];
 		sustains = [];
+
+		notes.resize(notesToPrealloc);
+		sustains.resize(sustainsToPrealloc);
 	}
 
-	function addNote(n:MetaNote) {
-		// TODO
+	function newNote() {
+		var allocated = notes[notesPos];
+		if (allocated == null) {
+			allocated = notes[notesPos] = new Note(0, 0, 0, 0);
+			allocated.toNote();
+		}
+		++notesPos;
+		return allocated;
+	}
+
+	function newSustain() {
+		var allocated = sustains[sustainsPos];
+		if (allocated == null) {
+			var tex = TextureSystem.getTexture("sustainTex"):
+			allocated = sustains[sustainsPos] = new Sustain(0, 0,
+				Math.floor(tex.width / tex.tilesX),
+			        Math.floor(tex.height / tex.tilesY)
+			);
+		}
+		++sustainsPos;
+		return allocated;
 	}
 
 	/**
