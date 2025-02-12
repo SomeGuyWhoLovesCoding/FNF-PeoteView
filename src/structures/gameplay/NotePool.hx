@@ -15,6 +15,8 @@ class NotePool {
 	/**
 	 * Creates the note pool.
 	 * @param parent The parent of this class.
+	 * @param notesToPrealloc How many notes the note pool should preallocate.
+	 * @param sustainsToPrealloc How many sustains the note pool should preallocate.
 	 */
 	function new(parent:NoteSystem, notesToPrealloc:Int = 100, sustainsToPrealloc:Int = 20) {
 		this.parent = parent;
@@ -28,6 +30,8 @@ class NotePool {
 	
 	/**
 	 * Creates a new note and determines when to add it to note pool or not.
+	 * @param id The index the note sprite (existing or not) should change to.
+	 * @param n The underlying meta note the note sprite's data should be set to.
 	 */
 	function newNote(id:Int, n:MetaNote) {
 		var allocated = notes[notesPos];
@@ -51,6 +55,8 @@ class NotePool {
 
 	/**
 	 * Creates a new sustain and determines when to add it to note pool or not.
+	 * @param parent The parent of the sustain (existing or not).
+	 * @param id The index the sustain sprite (existing or not) should change to.
 	 */
 	function newSustain(parent:Note, id:Int) {
 		var allocated = sustains[sustainsPos];
