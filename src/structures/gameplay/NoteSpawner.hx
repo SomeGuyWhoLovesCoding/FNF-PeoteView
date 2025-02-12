@@ -8,8 +8,8 @@ class NoteSpawner {
 	var top:Int64;
 	var bottom:Int64;
 
-	var spawnDist(default, null):Int = 160000;
-	var despawnDist(default, null):Int = 30000;
+	var spawnDist:Int = 160000;
+	var despawnDist:Int = 30000;
 
 	var curTopNote(default, null):MetaNote;
 	var curBottomNote(default, null):MetaNote;
@@ -49,6 +49,8 @@ class NoteSpawner {
 			++i;
 		}
 	}
+
+	// TODO: Make it so the `hit` property of each note you just hit resets back to false
 
 	/**
 	 * Culls the top note cull.

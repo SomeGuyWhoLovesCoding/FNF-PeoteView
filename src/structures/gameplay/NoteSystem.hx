@@ -4,7 +4,6 @@ package structures.gameplay;
 	The body of the note system.
 **/
 @:publicFields
-@:access(structures.gameplay.NoteSpawner)
 class NoteSystem {
 	static var sustainProg(default, null):Program;
 	static var sustainsBuf(default, null):Buffer<Sustain>;
