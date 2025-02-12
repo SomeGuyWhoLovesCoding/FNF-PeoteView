@@ -1,4 +1,4 @@
-package structures;
+package structures.gameplay;
 
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
