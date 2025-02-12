@@ -38,6 +38,7 @@ class NotePool {
 
 		if (allocated.id != id) {
 			allocated.changeID(id);
+			allocated.toNote();
 		}
 
 		if (allocated.data != n) {
