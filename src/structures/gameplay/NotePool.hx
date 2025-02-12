@@ -25,7 +25,10 @@ class NotePool {
 		notes.resize(notesToPrealloc);
 		sustains.resize(sustainsToPrealloc);
 	}
-
+	
+	/**
+	 * Creates a new note and determines when to add it to note pool or not.
+	 */
 	function newNote() {
 		var allocated = notes[notesPos];
 		if (allocated == null) {
@@ -36,6 +39,9 @@ class NotePool {
 		return allocated;
 	}
 
+	/**
+	 * Creates a new sustain and determines when to add it to note pool or not.
+	 */
 	function newSustain() {
 		var allocated = sustains[sustainsPos];
 		if (allocated == null) {
