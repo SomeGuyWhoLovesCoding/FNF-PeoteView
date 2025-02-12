@@ -56,6 +56,13 @@ class NotePool {
 	}
 
 	/**
+	 * Resets the note pool positioning.
+	 */
+	inline function resetPositions() {
+		notesPos = sustainsPos = 0;
+	}
+
+	/**
 	 * Disposes the note pool.
 	 */
 	function dispose() {
