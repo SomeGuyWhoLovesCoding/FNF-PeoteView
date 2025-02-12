@@ -46,4 +46,4 @@ jobs:
     
     - name: Build Project
       run: |
-        haxelib run lime build html5 -release
+        haxelib run lime build cpp
