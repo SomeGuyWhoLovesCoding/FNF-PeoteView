@@ -90,6 +90,8 @@ class NoteSystem {
 		if (noteSpawner != null) {
 			noteSpawner.update(pos);
 		}
+
+		Sys.println(notesBuf.length);
 	}
 
 	/**

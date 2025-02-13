@@ -61,7 +61,7 @@ class ObjectPool<T>
 		{
 			var object:T = objectFactory();
 			__newElement(object);
-			__available.push(len);
+			__available.push(i);
 
 		}
 	}
@@ -100,7 +100,7 @@ class ObjectPool<T>
 	{
 		var element:ObjectBucket<T> = __pool[index];
 		__free.push(index);
-		return element.value;
+		return element != null ? element.value : null;
 	}
 
 	/**
