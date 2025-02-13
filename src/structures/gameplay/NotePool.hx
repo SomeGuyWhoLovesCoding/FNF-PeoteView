@@ -56,6 +56,7 @@ class NotePool {
 	 * Resets an inactive note object.
 	 */
 	inline function __resetNote(n:Note) {
+		if (n == null) return;
 		n.x = -9999;
 		n.y = -9999;
 		n.w = 0;
@@ -69,6 +70,7 @@ class NotePool {
 	 * Resets an inactive sustain object.
 	 */
 	inline function __resetSustain(s:Sustain) {
+		if (s == null) return;
 		s.x = -9999;
 		s.y = -9999;
 		s.w = 0;
