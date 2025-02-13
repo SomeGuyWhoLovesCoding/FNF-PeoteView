@@ -138,20 +138,6 @@ class PlayField implements State {
 		onKeyPress = new Event<KeyCode->Void>();
 		onKeyRelease = new Event<KeyCode->Void>();
 
-		field = new Field(this);
-		inputSystem = new InputSystem(mania, this);
-		NoteSystem.init();
-		noteSystem = new NoteSystem(this);
-		audioSystem = new AudioSystem(chart);
-		HUD.init(display);
-		if (!SaveData.state.preferences.hideHUD) hud = new HUD(display, this);
-		CountdownDisplay.setupSounds();
-		countdownDisp = new CountdownDisplay(HUD.uiBuf);
-		PauseScreen.init(roof);
-		pauseScreen = new PauseScreen(chart.header.difficulty);
-
-		scrollSpeed = chart.header.speed;
-
 		var conductor = Main.conductor;
 		var timeSig = chart.header.timeSig;
 		conductor.changeBpmAt(0, chart.header.bpm, timeSig[0], timeSig[1]);
@@ -167,6 +153,20 @@ class PlayField implements State {
 		onDeath.add(gameOver);
 
 		songPosition = -conductor.crochet * 4.5;
+
+		field = new Field(this);
+		inputSystem = new InputSystem(mania, this);
+		NoteSystem.init();
+		noteSystem = new NoteSystem(this);
+		audioSystem = new AudioSystem(chart);
+		HUD.init(display);
+		if (!SaveData.state.preferences.hideHUD) hud = new HUD(display, this);
+		CountdownDisplay.setupSounds();
+		countdownDisp = new CountdownDisplay(HUD.uiBuf);
+		PauseScreen.init(roof);
+		pauseScreen = new PauseScreen(chart.header.difficulty);
+
+		scrollSpeed = chart.header.speed;
 	}
 
 	/**

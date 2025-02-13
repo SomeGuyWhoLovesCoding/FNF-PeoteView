@@ -5,8 +5,8 @@ package structures.gameplay;
 **/
 @:publicFields
 class NoteSpawner {
-	var top:Int64;
 	var bottom:Int64;
+	var top:Int64;
 
 	var spawnDist:Int = 160000;
 	var despawnDist:Int = 30000;
@@ -26,8 +26,8 @@ class NoteSpawner {
 		this.file = file;
 		this.parent = parent;
 
-		top = 0;
 		bottom = 0;
+		top = 0;
 
 		curTopNote = file.getNote(0);
 		curBottomNote = file.getNote(0);

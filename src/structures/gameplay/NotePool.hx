@@ -41,6 +41,10 @@ class NotePool {
 			allocated.toNote();
 		}
 
+		if (allocated.hit && n.position - allocated.data.position > parent.noteSpawner.despawnDist) {
+			allocated.hit = false;
+		}
+
 		allocated.changeID(id);
 		allocated.toNote();
 		allocated.data = n;
@@ -52,10 +56,10 @@ class NotePool {
 
 	/**
 	 * Creates a new sustain and determines when to add it to note pool or not.
-	 * @param parent The parent of the sustain (existing or not).
+	 * @param parentNote The parent of the sustain (existing or not).
 	 * @param id The index the sustain sprite (existing or not) should change to.
 	 */
-	function newSustain(parent:Note, id:Int) {
+	function newSustain(parentNote:Note, id:Int) {
 		var allocated = sustains[sustainsPos];
 
 		if (allocated == null) {
@@ -68,8 +72,13 @@ class NotePool {
 
 		allocated.changeID(id);
 
-		if (parent != null) {
-			parent.child = allocated;
+		if (allocated.held && (allocated.parent != null && parentNote.data.position - allocated.parent.data.position > parent.noteSpawner.despawnDist)) {
+			allocated.held = false;
+		}
+
+		if (parentNote != null) {
+			allocated.parent = parentNote;
+			parentNote.child = allocated;
 		}
 
 		++sustainsPos;
