@@ -50,8 +50,6 @@ class NoteSpawner {
 		}
 	}
 
-	// TODO: Make it so the `hit` property of each note you just hit resets back to false
-
 	/**
 	 * Culls the top note cull.
 	 * @param pos The song's position in the note position format.
@@ -61,6 +59,8 @@ class NoteSpawner {
 		while (top != len && (curTopNote.position - pos).low < spawnDist) {
 			++top;
 			curTopNote = file.getNote(top);
+			parent.notePool.releaseNote();
+			if (curTopNote.duration > 100) parent.notePool.releaseSustain();
 		}
 	}
 
@@ -77,6 +77,8 @@ class NoteSpawner {
 			)) -
 			curBottomNote.position).low > despawnDist) {
 			++bottom;
+			parent.notePool.note();
+			if (curBottomNote.duration > 100) parent.notePool.sustain();
 			curBottomNote = file.getNote(bottom);
 		}
 	}

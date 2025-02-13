@@ -11,37 +11,37 @@ import lime.app.Event;
 class Conductor
 {
 	/**
-		The conductor's step event.
+		A signal that dispatches every step.
 	**/
 	var onStep:Event<Float->Void> = new Event<Float->Void>();
 
 	/**
-		The conductor's beat event.
+		A signal that dispatches every beat.
 	**/
 	var onBeat:Event<Float->Void> = new Event<Float->Void>();
 
 	/**
-		The conductor's measure event.
+		A signal that dispatches every measure.
 	**/
 	var onMeasure:Event<Float->Void> = new Event<Float->Void>();
 
 	/**
-		The conductor's step crochet.
+		The time of a step.
 	**/
 	var stepCrochet(default, null):Float = 150;
 
 	/**
-		The conductor's crochet.
+		The time of a beat.
 	**/
 	var crochet(default, null):Float = 600;
 
 	/**
-		The conductor's measure crochet.
+		The time of a measure.
 	**/
 	var measureCrochet(default, null):Float = 2400;
 
 	/**
-		The conductor's beats per minute.
+		The time measured as the tempo of a song.
 	**/
 	var bpm(default, null):Float = 100;
 
@@ -109,48 +109,26 @@ class Conductor
 	**/
 	var curMeasure(default, null):Float = 0;
 
-	/**
-		The step tracker.
-	**/
 	private var _stepTracker(default, null):Float = 0;
-
-	/**
-		The beat tracker.
-	**/
 	private var _beatTracker(default, null):Float = 0;
-
-	/**
-		The measure tracker.
-	**/
 	private var _measureTracker(default, null):Float = 0;
 
+	private var stepOffset(default, null):Float = 0;
+	private var beatOffset(default, null):Float = 0;
+	private var measureOffset(default, null):Float = 0;
+
 	/**
-		The time offset.
+		The time offsetted for bpm changes or time signatures.
 	**/
 	private var offsetTime(default, null):Float = 0;
 
 	/**
-		The step offset.
-	**/
-	private var stepOffset(default, null):Float = 0;
-
-	/**
-		The beat offset.
-	**/
-	private var beatOffset(default, null):Float = 0;
-
-	/**
-		The measure offset.
-	**/
-	private var measureOffset(default, null):Float = 0;
-
-	/**
-		The time signature steps.
+		The step count of a beat.
 	**/
 	var numerator:Float = 4;
 
 	/**
-		The time signature beats.
+		The beat count of a measure.
 	**/
 	var denominator:Float = 4;
 
@@ -159,8 +137,8 @@ class Conductor
 		This also includes time signatures.
 		@param position The position you want to execute the event on.
 		@param newBpm The new beats per minute.
-		@param newNumerator The new numerator of the time signature.
-		@param newDenominator The new denominator of the time signature.
+		@param newNumerator The new steps of the time signature.
+		@param newDenominator The new beats of the time signature.
 	**/
 	inline function changeBpmAt(position:Float, newBpm:Float = 0, newNumerator:Float = 4, newDenominator:Float = 4):Void
 	{
@@ -183,7 +161,7 @@ class Conductor
 	}
 
 	/**
-		Reset the conductor.
+		Resets the conductor.
 	**/
 	inline function reset():Void
 	{

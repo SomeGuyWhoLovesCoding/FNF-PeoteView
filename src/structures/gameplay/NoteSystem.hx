@@ -58,8 +58,8 @@ class NoteSystem {
 		var inputSystem = parent.inputSystem;
 		var chart = parent.chart;
 
-		noteSpawner = new NoteSpawner(chart.file, this);
 		notePool = new NotePool(this);
+		noteSpawner = new NoteSpawner(chart.file, this);
 
 		var mania = chart.header.mania;
 
@@ -79,8 +79,6 @@ class NoteSystem {
 	}
 
 	function update(pos:Int64) {
-		notePool.resetPositions();
-
 		notesBuf.clear();
 		sustainsBuf.clear();
 
@@ -112,8 +110,11 @@ class NoteSystem {
 
 		var id = parent.inputSystem.receptorIds[index];
 
- 		var noteSpr = notePool.newNote(id, note);
-		var sustainSpr = note.duration > 5 ? notePool.newSustain(noteSpr, id) : null;
+ 		var noteSpr = notePool.note();
+		noteSpr.changeID(id);
+		noteSpr.toNote();
+
+		var sustainSpr = note.duration > 100 ? notePool.sustain() : null;
 		var sustainExists = sustainSpr != null;
 
 		var diff = (Int64.toInt(position - pos) * 0.01) * parent.scrollSpeed;
@@ -188,10 +189,13 @@ class NoteSystem {
 		}
 
 		if (sustainExists) {
+			sustainSpr.changeID(id);
 			sustainSpr.parent = noteSpr;
 			sustainSpr.r = parent.downScroll ? -90 : 90;
 			sustainSpr.speed = parent.scrollSpeed;
 			sustainSpr.scale = rec.scale;
+
+			noteSpr.child = sustainSpr;
 
 			if (!isHit) {
 				sustainSpr.followNote(noteSpr);
