@@ -5,8 +5,10 @@ package structures.gameplay;
 **/
 @:publicFields
 class NotePool {
-	private var notes(default, null):ObjectPool<Note>;
-	private var sustains(default, null):ObjectPool<Sustain>;
+	private var notes(default, null):Array<Note>;
+	private var notesPos(default, null):Int;
+	private var sustains(default, null):Array<Sustain>;
+	private var sustainsPos(default, null):Int;
 
 	var parent(default, null):NoteSystem;
 
@@ -19,65 +21,62 @@ class NotePool {
 	function new(parent:NoteSystem, notesToPrealloc:Int = 100, sustainsToPrealloc:Int = 20) {
 		this.parent = parent;
 
-		var tex = TextureSystem.getTexture("sustainTex");
-		notes = new ObjectPool<Note>(() -> return new Note(0, 0, 0, 0), __resetNote, notesToPrealloc);
-		sustains = new ObjectPool<Sustain>(() -> return new Sustain(0, 0, Math.floor(tex.width / tex.tilesX), Math.floor(tex.height / tex.tilesY)), __resetSustain, sustainsToPrealloc);
-	}
+		notes = [];
+		sustains = [];
 
+		notes.resize(notesToPrealloc);
+		sustains.resize(sustainsToPrealloc);
+	}
+	
 	/**
 	 * Creates a new note and determines when to add it to note pool or not.
+	 * @param id The index the note sprite (existing or not) should change to.
+	 * @param n The underlying meta note the note sprite's data should be set to.
 	 */
-	inline function note() {
-		return notes.acquire();
+	function newNote(id:Int, n:MetaNote) {
+		var allocated = notes[notesPos];
+
+		if (allocated == null) {
+			allocated = notes[notesPos] = new Note(0, 0, 0, 0);
+			allocated.toNote();
+		}
+
+		allocated.changeID(id);
+		allocated.toNote();
+		allocated.data = n;
+
+		++notesPos;
+
+		return allocated;
 	}
 
 	/**
 	 * Creates a new sustain and determines when to add it to note pool or not.
+	 * @param id The index the sustain sprite (existing or not) should change to.
 	 */
-	inline function sustain() {
-		return sustains.acquire();
+	function newSustain(id:Int) {
+		var allocated = sustains[sustainsPos];
+
+		if (allocated == null) {
+			var tex = TextureSystem.getTexture("sustainTex");
+			allocated = sustains[sustainsPos] = new Sustain(0, 0,
+				Math.floor(tex.width / tex.tilesX),
+			        Math.floor(tex.height / tex.tilesY)
+			);
+		}
+
+		allocated.changeID(id);
+
+		++sustainsPos;
+
+		return allocated;
 	}
 
 	/**
-	 * Releases a note from its pool.
+	 * Resets the note pool positioning.
 	 */
-	inline function releaseNote() {
-		return notes.release(note());
-	}
-
-	/**
-	 * Releases a note from its pool.
-	 */
-	inline function releaseSustain() {
-		return sustains.release(sustain());
-	}
-
-	/**
-	 * Resets an inactive note object.
-	 */
-	inline function __resetNote(n:Note) {
-		if (n == null) return;
-		n.x = -9999;
-		n.y = -9999;
-		n.w = 0;
-		n.h = 0;
-		n.hit = false;
-		n.c.aF = 1;
-		n.changeID(0);
-	}
-
-	/**
-	 * Resets an inactive sustain object.
-	 */
-	inline function __resetSustain(s:Sustain) {
-		if (s == null) return;
-		s.x = -9999;
-		s.y = -9999;
-		s.w = 0;
-		s.h = 0;
-		s.held = false;
-		s.c.aF = 1;
-		s.changeID(0);
+	inline function resetPositions() {
+		notesPos = sustainsPos = 0;
 	}
 
 	/**
@@ -85,10 +84,12 @@ class NotePool {
 	 */
 	function dispose() {
 		if (notes != null) {
+			while (notes.pop() != null) {}
 			notes = null;
 		}
 
 		if (sustains != null) {
+			while (sustains.pop() != null) {}
 			sustains = null;
 		}
 	}

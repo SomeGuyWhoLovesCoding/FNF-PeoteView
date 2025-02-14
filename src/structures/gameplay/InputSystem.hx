@@ -180,7 +180,11 @@ class InputSystem {
 		var noteSystem = parent.noteSystem;
 
 		if (noteSystem != null) {
-			noteSystem.strumlines[lane].press(index);
+			var strumline = noteSystem.strumlines[lane];
+			if (!strumline.playerHitsToCheck[index]) {
+				strumline.playerHitsToCheck[index] = true;
+				strumline.press(index);
+			}
 		}
 
 		parent.onKeyPress.dispatch(code);
@@ -204,7 +208,11 @@ class InputSystem {
 		var noteSystem = parent.noteSystem;
 
 		if (noteSystem != null) {
-			noteSystem.strumlines[lane].release(index);
+			var strumline = noteSystem.strumlines[lane];
+			if (strumline.playerHitsToCheck[index]) {
+				strumline.playerHitsToCheck[index] = false;
+				strumline.release(index);
+			}
 		}
 
 		parent.onKeyRelease.dispatch(code);

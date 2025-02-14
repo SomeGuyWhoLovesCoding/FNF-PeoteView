@@ -5,9 +5,10 @@ package structures.gameplay;
 **/
 @:publicFields
 class Strumline {
-	var notesToHit(default, null):Array<Note>;
-	var sustainsToHold(default, null):Array<Sustain>;
+	var notesToHit(default, null):Array<Null<MetaNote>>;
+	var sustainsToHold(default, null):Array<Null<MetaNote>>;
 	var botHitsToCheck(default, null):Array<Bool>;
+	var playerHitsToCheck(default, null):Array<Bool>;
 	var buffer(default, null):Array<Note>;
 
 	var x(default, set):Int;
@@ -48,6 +49,7 @@ class Strumline {
 		notesToHit.resize(value);
 		sustainsToHold.resize(value);
 		botHitsToCheck.resize(value);
+		playerHitsToCheck.resize(value);
 		buffer.resize(value);
 
 		var ids = parent.parent.inputSystem.receptorIds;
@@ -72,6 +74,7 @@ class Strumline {
 		notesToHit = [];
 		sustainsToHold = [];
 		botHitsToCheck = [];
+		playerHitsToCheck = [];
 		buffer = [];
 
 		this.parent = parent;
@@ -93,19 +96,18 @@ class Strumline {
 		var noteToHit = notesToHit[index];
 		var rec = buffer[index];
 
-		if (noteToHit != null && !noteToHit.missed && !noteToHit.hit) {
+		if (noteToHit != null && !parent.notesMissed[noteToHit] && !parent.notesHit[noteToHit]) {
 			var pf = parent.parent;
 
 			if (!rec.confirmed()) {
 				rec.confirm();
 			}
 
-			noteToHit.hit = true;
-			sustainsToHold[index] = noteToHit.child;
+			parent.notesHit[noteToHit] = true;
+			sustainsToHold[index] = noteToHit;
 
-			var data = noteToHit.data;
 			var posWithLatency = Tools.betterInt64FromFloat((pf.songPosition + pf.latencyCompensation) * 100);
-			pf.onNoteHit.dispatch(data, Int64.toInt(Int64.div(data.position - posWithLatency, 100)));
+			pf.onNoteHit.dispatch(noteToHit, Int64.toInt(Int64.div(noteToHit.position - posWithLatency, 100)));
 			notesToHit[index] = null;
 		} else {
 			if (!rec.pressed()) {
@@ -118,12 +120,11 @@ class Strumline {
 		var sustainToRelease = sustainsToHold[index];
 		var rec = buffer[index];
 
-		if (sustainToRelease != null && (sustainToRelease.c.aF != 0 && sustainToRelease.w > 100)) {
+		if (sustainToRelease != null && (!parent.notesHeld[sustainToRelease] && !parent.notesHit[sustainToRelease])) {
 			var pf = parent.parent;
 
-			sustainToRelease.c.aF = Sustain.defaultMissAlpha;
-			sustainToRelease.held = true;
-			pf.onSustainRelease.dispatch(sustainToRelease.parent.data);
+			parent.notesHeld[sustainToRelease] = true;
+			pf.onSustainRelease.dispatch(sustainToRelease);
 			sustainsToHold[index] = null;
 
 			var hud = pf.hud;
@@ -144,8 +145,12 @@ class Strumline {
 	function resetInputs() {
 		notesToHit.resize(0);
 		sustainsToHold.resize(0);
+		botHitsToCheck.resize(0);
+		playerHitsToCheck.resize(0);
 		notesToHit.resize(length);
 		sustainsToHold.resize(length);
+		botHitsToCheck.resize(length);
+		playerHitsToCheck.resize(length);
 	}
 
 	function resetAnimations() {

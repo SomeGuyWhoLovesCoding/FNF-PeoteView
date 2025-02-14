@@ -41,6 +41,10 @@ class NoteSystem {
 	var notePool(default, null):NotePool;
 	var strumlines(default, null):Array<Strumline>;
 
+	var notesHit(default, null):Map<MetaNote, Bool>;
+	var notesMissed(default, null):Map<MetaNote, Bool>;
+	var notesHeld(default, null):Map<MetaNote, Bool>;
+
 	var parent(default, null):PlayField;
 
 	/**
@@ -48,6 +52,10 @@ class NoteSystem {
 	 * @param parent The parent of this class.
 	**/
 	function new(parent:PlayField) {
+		notesHit = [];
+		notesMissed = [];
+		notesHeld = [];
+
 		this.parent = parent;
 
 		var display = parent.display;
@@ -79,6 +87,8 @@ class NoteSystem {
 	}
 
 	function update(pos:Int64) {
+		notePool.resetPositions();
+
 		notesBuf.clear();
 		sustainsBuf.clear();
 
@@ -90,8 +100,6 @@ class NoteSystem {
 		if (noteSpawner != null) {
 			noteSpawner.update(pos);
 		}
-
-		Sys.println(notesBuf.length);
 	}
 
 	/**
@@ -112,19 +120,23 @@ class NoteSystem {
 
 		var id = parent.inputSystem.receptorIds[index];
 
- 		var noteSpr = notePool.note();
-		noteSpr.changeID(id);
-		noteSpr.toNote();
+		var noteSpr = notePool.newNote(id, note);
 
-		var sustainSpr = note.duration > 100 ? notePool.sustain() : null;
+		var sustainSpr = note.duration > 100 ? notePool.newSustain(id) : null;
 		var sustainExists = sustainSpr != null;
 
 		var diff = (Int64.toInt(position - pos) * 0.01) * parent.scrollSpeed;
 		var leftover = Math.floor(Int64.toInt(pos - position) * 0.01);
-		var isHit = noteSpr.hit;
+		var isHit = notesHit[note];
+		var isMissed = notesMissed[note];
+		var isHeld = notesHeld[note];
+
+		if (parent.downScroll) diff = -diff;
 
 		var noteSprX = rec.x;
-		var noteSprY = rec.y + (Math.floor(diff) * (parent.downScroll ? -1 : 1));
+		var noteSprY = rec.y + Math.floor(diff);
+
+		if (parent.downScroll) diff = -diff;
 
 		noteSpr.x = noteSprX;
 		noteSpr.y = noteSprY;
@@ -136,22 +148,22 @@ class NoteSystem {
 			if (!isHit) {
 				var noteToHit = strumline.notesToHit[index];
 				var noteToHitExists = noteToHit != null;
-				var hitPos = noteToHitExists ? noteToHit.data.position : 0;
+				var hitPos = noteToHitExists ? noteToHit.position : 0;
 
-				if ((!noteSpr.missed && diff < parent.hitbox && !noteToHitExists) ||
+				if ((!isMissed && diff < parent.hitbox && !noteToHitExists) ||
 					(noteToHitExists && pos - hitPos > (position - hitPos) >> 1)) {
-					strumline.notesToHit[index] = noteSpr;
+					strumline.notesToHit[index] = note;
 				}
 
-				if (diff < -parent.hitbox && !noteSpr.missed) {
+				if (diff < -parent.hitbox && !isMissed) {
 					noteSpr.c.aF = 0.5;
-					noteSpr.missed = true;
+					isMissed = notesMissed[note] = true;
 
 					parent.onNoteMiss.dispatch(note);
 
-					if (sustainExists && !sustainSpr.held) {
+					if (sustainExists && !isHeld) {
 						sustainSpr.c.aF = Sustain.defaultMissAlpha;
-						sustainSpr.held = true;
+						isHeld = notesHeld[note] = true;
 						parent.onSustainRelease.dispatch(note);
 					}
 
@@ -172,8 +184,8 @@ class NoteSystem {
 			}
 
 			if (!isHit && diff < 0) {
-				isHit = noteSpr.hit = true;
-				strumline.sustainsToHold[index] = sustainSpr;
+				isHit = notesHit[note] = true;
+				strumline.sustainsToHold[index] = note;
 
 				if (!rec.confirmed()) {
 					rec.confirm();
@@ -197,8 +209,6 @@ class NoteSystem {
 			sustainSpr.speed = parent.scrollSpeed;
 			sustainSpr.scale = rec.scale;
 
-			noteSpr.child = sustainSpr;
-
 			if (!isHit) {
 				sustainSpr.followNote(noteSpr);
 			} else if (sustainSpr.c.aF != 0) {
@@ -208,8 +218,8 @@ class NoteSystem {
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
 
-				if (pos > position + (sustainSpr.length * 100) - 75 && !sustainSpr.held && !noteSpr.missed) {
-					sustainSpr.held = true;
+				if (pos > position + (sustainSpr.length * 100) - 75 && (!isHeld && !isMissed)) {
+					isHeld = notesHeld[note] = true;
 					if (rec.confirmed()) {
 						if (playable) rec.press();
 						else rec.reset();
@@ -218,7 +228,7 @@ class NoteSystem {
 				}
 			}
 
-			if (!sustainSpr.held) sustainsBuf.addElement(sustainSpr);
+			sustainsBuf.addElement(sustainSpr);
 		}
 
 		if (!isHit) notesBuf.addElement(noteSpr);
@@ -244,6 +254,10 @@ class NoteSystem {
 			strumline.y = parent.downScroll ? Main.INITIAL_HEIGHT - 150 : 50;
 			strumline.resetAnimations();
 		}
+	}
+
+	function resetNotes() {
+		noteSpawner.resetNotes();
 	}
 
 	/**

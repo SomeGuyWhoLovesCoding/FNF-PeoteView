@@ -106,7 +106,7 @@ class PlayField implements State {
 		songPosition = value;
 		if (audioSystem != null) audioSystem.setTime(songPosition);
 		if (hud != null && SaveData.state.preferences.ratingPopup) hud.hideRatingPopup();
-		//if (noteSystem != null) noteSystem.resetNotes();
+		if (noteSystem != null) noteSystem.resetNotes();
 		if (field != null) field.resetCharacters();
 	}
 
@@ -266,6 +266,8 @@ class PlayField implements State {
 	}
 
 	function hitNote(note:MetaNote, timing:Int) {
+		Sys.println('Hit ${note.index}, $timing');
+
 		if (audioSystem != null) {
 			var voicesTrack = audioSystem.voices[note.lane];
 			if (voicesTrack == null) voicesTrack = audioSystem.voices[0];
