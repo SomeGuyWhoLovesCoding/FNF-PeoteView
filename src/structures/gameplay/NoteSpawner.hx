@@ -77,7 +77,7 @@ class NoteSpawner {
 			++bottom;
 			parent.notesHit.remove(curBottomNote);
 			parent.notesMissed.remove(curBottomNote);
-			parent.notesHeld.remove(curTopNote);
+			parent.notesHeld.remove(curBottomNote);
 			curBottomNote = file.getNote(bottom);
 		}
 	}

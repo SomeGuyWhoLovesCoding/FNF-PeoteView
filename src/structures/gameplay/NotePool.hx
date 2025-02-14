@@ -37,7 +37,7 @@ class NotePool {
 		var allocated = notes[notesPos];
 
 		if (allocated == null) {
-			allocated = notes[notesPos] = new Note(0, 0, 0, 0);
+			allocated = notes[notesPos] = new Note(-9999, -9999, 0, 0);
 			allocated.toNote();
 		}
 
@@ -59,7 +59,7 @@ class NotePool {
 
 		if (allocated == null) {
 			var tex = TextureSystem.getTexture("sustainTex");
-			allocated = sustains[sustainsPos] = new Sustain(0, 0,
+			allocated = sustains[sustainsPos] = new Sustain(-9999, -9999,
 				Math.floor(tex.width / tex.tilesX),
 			        Math.floor(tex.height / tex.tilesY)
 			);

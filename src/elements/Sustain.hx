@@ -31,11 +31,6 @@ class Sustain implements Element
 
 	public var length:Int;
 
-	// Custom despawn distance dedicated to the sustain note.
-	private var despawnDist:Int;
-
-	public var held:Bool;
-
 	@texTile var tile:Int = 0;
 
 	/**

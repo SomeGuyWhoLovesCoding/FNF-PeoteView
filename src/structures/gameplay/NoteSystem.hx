@@ -113,6 +113,7 @@ class NoteSystem {
 	function drawNote(pos:Int64, note:MetaNote) {
 		var index = note.index;
 		var lane = note.lane;
+		var duration = note.duration;
 		var position = note.position;
 
 		var strumline = strumlines[lane];
@@ -122,7 +123,7 @@ class NoteSystem {
 
 		var noteSpr = notePool.newNote(id, note);
 
-		var sustainSpr = note.duration > 100 ? notePool.newSustain(id) : null;
+		var sustainSpr = duration > 5 ? notePool.newSustain(id) : null;
 		var sustainExists = sustainSpr != null;
 
 		var diff = (Int64.toInt(position - pos) * 0.01) * parent.scrollSpeed;
@@ -208,18 +209,21 @@ class NoteSystem {
 			sustainSpr.r = parent.downScroll ? -90 : 90;
 			sustainSpr.speed = parent.scrollSpeed;
 			sustainSpr.scale = rec.scale;
+			sustainSpr.length = ((duration << 2) + duration) - 25;
 
 			if (!isHit) {
+				sustainSpr.w = sustainSpr.length;
 				sustainSpr.followNote(noteSpr);
 			} else if (sustainSpr.c.aF != 0) {
-				if (sustainSpr.w > 0) {
+				if (sustainSpr.w >= 0) {
 					sustainSpr.followNote(rec);
 					sustainSpr.w = sustainSpr.length - leftover;
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
 
-				if (pos > position + (sustainSpr.length * 100) - 75 && (!isHeld && !isMissed)) {
+				if (pos > position + (sustainSpr.length * 100) - 75 && !isHeld) {
 					isHeld = notesHeld[note] = true;
+					strumline.sustainsToHold[index] = null;
 					if (rec.confirmed()) {
 						if (playable) rec.press();
 						else rec.reset();

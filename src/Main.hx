@@ -110,19 +110,9 @@ class Main extends Application
 		current = this;
 
 		SaveData.init();
-
 		Sound.init();
 
-		Gamepad.onConnect.add((gamepad:Gamepad) -> {
-			trace('Gamepad ${gamepad.name} connected');
-		});
-
-		gamepad = new Gamepad(0);
-		controls = new Controls();
-
-		UISprite.healthBarProperties = Tools.parseHealthBarConfig('assets/ui');
-		UISprite.timeBarProperties = Tools.parseTimeBarConfig('assets/ui');
-		Tools.parseNoteskinData('assets/notes');
+		prepareGameplayState();
 
 		peoteView = new PeoteView(window);
 
@@ -159,6 +149,19 @@ class Main extends Application
 
 			window.opacity = 1;
 		}, 100);
+	}
+
+	private function prepareGameplayState() {
+		Gamepad.onConnect.add((gamepad:Gamepad) -> {
+			trace('Gamepad ${gamepad.name} connected');
+		});
+
+		gamepad = new Gamepad(0);
+		controls = new Controls();
+
+		UISprite.healthBarProperties = Tools.parseHealthBarConfig('assets/ui');
+		UISprite.timeBarProperties = Tools.parseTimeBarConfig('assets/ui');
+		Tools.parseNoteskinData('assets/notes');
 	}
 
 	private function createTextures() {
