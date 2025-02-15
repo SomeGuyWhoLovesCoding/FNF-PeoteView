@@ -221,7 +221,7 @@ class NoteSystem {
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
 
-				if (pos > position + (sustainSpr.length * 100) - 75 && !isHeld) {
+				if (pos > position + ((sustainSpr.length * 100) - 75) && !isHeld) {
 					isHeld = notesHeld[note] = true;
 					strumline.sustainsToHold[index] = null;
 					if (rec.confirmed()) {
