@@ -51,8 +51,6 @@ class NoteSpawner {
 			prev = n;
 			++i;
 		}
-
-		Sys.println('Bottom $bottom top $top');
 	}
 
 	/**
