@@ -88,8 +88,9 @@ class SaveData {
 	}
 
 	static function open() {
+		var result:SaveData = null;
 		try {
-			var result = SaveData_Securer.unlock(File.getContent("save.dat"));
+			result = SaveData_Securer.unlock(File.getContent("save.dat"));
 		} catch (e) {
 			FileSystem.deleteFile("save.dat");
 			save();
