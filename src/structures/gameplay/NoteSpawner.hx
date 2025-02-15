@@ -43,9 +43,12 @@ class NoteSpawner {
 
 		var i = bottom;
 
+		var prev:Null<MetaNote> = null;
 		while (i < top) {
-			var note = file.getNote(i);
-			parent.drawNote(pos, note);
+			var n = file.getNote(i);
+			var ghost = prev.position == n.position && prev.index == n.index && prev.lane == n.lane;
+			if (!ghost) parent.drawNote(pos, n);
+			prev = n;
 			++i;
 		}
 	}
@@ -74,10 +77,16 @@ class NoteSpawner {
 				((curBottomNote.duration << 2) + curBottomNote.duration) * 100
 			)) -
 			curBottomNote.position).low > despawnDist) {
-			++bottom;
 			parent.notesHit.remove(curBottomNote);
 			parent.notesMissed.remove(curBottomNote);
 			parent.notesHeld.remove(curBottomNote);
+
+			var notePool = parent.notePool;
+			notePool.putNote(curBottomNote);
+			notePool.putSustain(curBottomNote);
+
+			++bottom;
+
 			curBottomNote = file.getNote(bottom);
 		}
 	}

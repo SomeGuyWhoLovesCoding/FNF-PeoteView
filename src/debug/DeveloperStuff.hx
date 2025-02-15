@@ -5,15 +5,15 @@ import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 
 /**
-    This class is intended for developers of the engine to test new stuff.
+	This class is intended for developers of the engine to test new stuff.
 **/
 @:publicFields
 class DeveloperStuff {
-    static function init(window:Window, m:Main) {
-        window.onKeyDown.add(testPlayfieldInputStuff);
-    }
+	static function init(window:Window, m:Main) {
+		window.onKeyDown.add(testPlayfieldInputStuff);
+	}
 
-    static function testPlayfieldInputStuff(code:KeyCode, mod:KeyModifier) {
+	static function testPlayfieldInputStuff(code:KeyCode, mod:KeyModifier) {
 		var playField = Main.current.playField;
 		if (playField == null) return;
 		switch (code) {

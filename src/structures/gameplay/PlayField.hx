@@ -266,8 +266,6 @@ class PlayField implements State {
 	}
 
 	function hitNote(note:MetaNote, timing:Int) {
-		Sys.println('Hit ${note.index}, $timing');
-
 		if (audioSystem != null) {
 			var voicesTrack = audioSystem.voices[note.lane];
 			if (voicesTrack == null) voicesTrack = audioSystem.voices[0];

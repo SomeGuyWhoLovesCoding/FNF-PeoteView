@@ -87,7 +87,7 @@ class NoteSystem {
 	}
 
 	function update(pos:Int64) {
-		notePool.resetPositions();
+		//notePool.resetPositions();
 
 		notesBuf.clear();
 		sustainsBuf.clear();
@@ -123,7 +123,7 @@ class NoteSystem {
 
 		var noteSpr = notePool.newNote(id, note);
 
-		var sustainSpr = duration > 5 ? notePool.newSustain(id) : null;
+		var sustainSpr = duration > 5 ? notePool.newSustain(id, note) : null;
 		var sustainExists = sustainSpr != null;
 
 		var diff = (Int64.toInt(position - pos) * 0.01) * parent.scrollSpeed;

@@ -5,10 +5,10 @@ package structures.gameplay;
 **/
 @:publicFields
 class NotePool {
-	private var notes(default, null):Array<Note>;
-	private var notesPos(default, null):Int;
-	private var sustains(default, null):Array<Sustain>;
-	private var sustainsPos(default, null):Int;
+	var notes(default, null):Map<MetaNote, Note>;
+	var inactiveNotes(default, null):Array<Note>;
+	var sustains(default, null):Map<MetaNote, Sustain>;
+	var inactiveSustains(default, null):Array<Sustain>;
 
 	var parent(default, null):NoteSystem;
 
@@ -18,34 +18,34 @@ class NotePool {
 	 * @param notesToPrealloc How many notes the note pool should preallocate.
 	 * @param sustainsToPrealloc How many sustains the note pool should preallocate.
 	 */
-	function new(parent:NoteSystem, notesToPrealloc:Int = 100, sustainsToPrealloc:Int = 20) {
+	function new(parent:NoteSystem) {
 		this.parent = parent;
 
 		notes = [];
 		sustains = [];
-
-		notes.resize(notesToPrealloc);
-		sustains.resize(sustainsToPrealloc);
+		inactiveNotes = [];
+		inactiveSustains = [];
 	}
-	
+
 	/**
 	 * Creates a new note and determines when to add it to note pool or not.
 	 * @param id The index the note sprite (existing or not) should change to.
 	 * @param n The underlying meta note the note sprite's data should be set to.
 	 */
 	function newNote(id:Int, n:MetaNote) {
-		var allocated = notes[notesPos];
+		var allocated = notes[n];
 
 		if (allocated == null) {
-			allocated = notes[notesPos] = new Note(-9999, -9999, 0, 0);
-			allocated.toNote();
+			var inactiveObject = inactiveNotes.pop();
+			if (inactiveObject == null) inactiveObject = new Note(-9999, -9999, 0, 0);
+			inactiveObject.c.aF = 1;
+			inactiveObject.data = n;
+			allocated = notes[n] = inactiveObject;
 		}
 
+		allocated.data = n;
 		allocated.changeID(id);
 		allocated.toNote();
-		allocated.data = n;
-
-		++notesPos;
 
 		return allocated;
 	}
@@ -53,30 +53,57 @@ class NotePool {
 	/**
 	 * Creates a new sustain and determines when to add it to note pool or not.
 	 * @param id The index the sustain sprite (existing or not) should change to.
+	 * @param n The underlying meta note the sustain sprite's data should be set to.
 	 */
-	function newSustain(id:Int) {
-		var allocated = sustains[sustainsPos];
+	function newSustain(id:Int, n:MetaNote) {
+		var allocated = sustains[n];
 
 		if (allocated == null) {
 			var tex = TextureSystem.getTexture("sustainTex");
-			allocated = sustains[sustainsPos] = new Sustain(-9999, -9999,
+
+			var inactiveObject = inactiveSustains.pop();
+			if (inactiveObject == null) {
+				inactiveObject = new Sustain(-9999, -9999,
 				Math.floor(tex.width / tex.tilesX),
 			        Math.floor(tex.height / tex.tilesY)
-			);
+				);
+				inactiveObject.c.aF = Sustain.defaultAlpha;
+			}
+			allocated = sustains[n] = inactiveObject;
 		}
 
 		allocated.changeID(id);
-
-		++sustainsPos;
 
 		return allocated;
 	}
 
 	/**
-	 * Resets the note pool positioning.
+	 * Puts a note in its inactive list.
+	 * @param n The underlying meta note in which selects the note sprite to be put in the inactive list.
 	 */
-	inline function resetPositions() {
-		notesPos = sustainsPos = 0;
+	function putNote(n:MetaNote) {
+		var allocated:Note = notes[n];
+		if (notes.remove(n)) {
+			allocated.c.aF = 1;
+			allocated.x = -9999;
+			allocated.y = -9999;
+			inactiveNotes.push(allocated);
+		}
+	}
+
+	/**
+	 * Puts a sustain in its inactive list.
+	 * @param n The underlying meta note in which selects the sustain sprite to be put in the inactive list.
+	 */
+	function putSustain(n:MetaNote) {
+		var allocated:Sustain = sustains[n];
+		if (sustains.remove(n)) {
+			allocated.c.aF = 1;
+			allocated.x = -9999;
+			allocated.y = -9999;
+			allocated.c.aF = Sustain.defaultAlpha;
+			inactiveSustains.push(allocated);
+		}
 	}
 
 	/**
@@ -84,12 +111,12 @@ class NotePool {
 	 */
 	function dispose() {
 		if (notes != null) {
-			while (notes.pop() != null) {}
+			notes.clear();
 			notes = null;
 		}
 
 		if (sustains != null) {
-			while (sustains.pop() != null) {}
+			sustains.clear();
 			sustains = null;
 		}
 	}
