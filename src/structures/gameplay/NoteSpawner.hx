@@ -51,6 +51,8 @@ class NoteSpawner {
 			prev = n;
 			++i;
 		}
+
+		Sys.println('Bottom $bottom top $top');
 	}
 
 	/**
@@ -93,8 +95,9 @@ class NoteSpawner {
 
 	/**
 	 * Reload the notes.
+	 * @param songPosition The time from the song.
 	 */
-	function resetNotes() {
+	function resetNotes(songPosition:Float) {
 		var pf = parent.parent;
 
 		if (pf.disposed || pf.died) return;
@@ -154,23 +157,28 @@ class NoteSpawner {
 			decrementAmount = 50000000;
 		}
 
-		var songPos = Tools.betterInt64FromFloat(pf.songPosition * 100);
+		var songPos = Tools.betterInt64FromFloat(songPosition * 100);
 		var lenSub1 = len - 1;
 
 		if (top > incrementAmount) {
-			while (file.getNote(clampCull(top += incrementAmount, lenSub1)).position < songPos - spawnDist) {}
-			while (file.getNote(clampCull(top--, lenSub1)).position > songPos - spawnDist) {}
+			while (file.getNote(top += incrementAmount).position < songPos + spawnDist) {
+				if (top > lenSub1) top = lenSub1;
+			}
+			while (file.getNote(top--).position > songPos + spawnDist) {}
 		}
 
 		bottom = top;
 
 		if (bottom > decrementAmount) {
-			while (file.getNote(clampCull(bottom -= decrementAmount, lenSub1)).position > songPos) {}
-			while (file.getNote(clampCull(bottom++, lenSub1)).position < songPos) {}
+			while (file.getNote(bottom -= decrementAmount).position > songPos) {
+				if (bottom < zero) bottom = zero;
+			}
+			while (file.getNote(bottom++).position < songPos) {}
 		}
+
+		curBottomNote = file.getNote(bottom);
+		curTopNote = file.getNote(top);
 	}
 
-	inline function clampCull(val:Int64, max:Int64) {
-		return val < max ? val : max;
-	}
+	private var zero(default, null):Int64 = 0;
 }

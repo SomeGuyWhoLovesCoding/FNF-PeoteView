@@ -87,8 +87,6 @@ class NoteSystem {
 	}
 
 	function update(pos:Int64) {
-		//notePool.resetPositions();
-
 		notesBuf.clear();
 		sustainsBuf.clear();
 
@@ -260,8 +258,8 @@ class NoteSystem {
 		}
 	}
 
-	function resetNotes() {
-		noteSpawner.resetNotes();
+	function resetNotes(songPosition:Float) {
+		noteSpawner.resetNotes(songPosition);
 	}
 
 	/**

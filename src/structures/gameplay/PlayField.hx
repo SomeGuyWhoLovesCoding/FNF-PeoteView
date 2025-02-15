@@ -102,11 +102,10 @@ class PlayField implements State {
 	function setTime(value:Float, playAgain:Bool = false) {
 		if (disposed || !songStarted || songEnded || paused || died) return;
 
-		if (value < 0) value = 0;
-		songPosition = value;
+		songPosition = Math.max(value, 0.0);
 		if (audioSystem != null) audioSystem.setTime(songPosition);
 		if (hud != null && SaveData.state.preferences.ratingPopup) hud.hideRatingPopup();
-		if (noteSystem != null) noteSystem.resetNotes();
+		if (noteSystem != null) noteSystem.resetNotes(songPosition);
 		if (field != null) field.resetCharacters();
 	}
 
