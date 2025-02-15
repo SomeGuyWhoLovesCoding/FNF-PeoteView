@@ -123,7 +123,8 @@ class Strumline {
 		var sustainToRelease = sustainsToHold[index];
 		var rec = buffer[index];
 
-		if (sustainToRelease != null && !parent.notesHeld[sustainToRelease]) {
+		if (sustainToRelease != null && sustainToRelease.index == index &&
+			(parent.notesHit[sustainToRelease] && !parent.notesHeld[sustainToRelease])) {
 			var pf = parent.parent;
 
 			parent.notesHeld[sustainToRelease] = true;
