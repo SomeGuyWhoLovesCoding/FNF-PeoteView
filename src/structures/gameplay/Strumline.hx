@@ -104,7 +104,10 @@ class Strumline {
 			}
 
 			parent.notesHit[noteToHit] = true;
-			//sustainsToHold[index] = noteToHit; Trolled
+
+			if (noteToHit.duration > 20) {
+				sustainsToHold[index] = noteToHit;
+			}
 
 			var posWithLatency = Tools.betterInt64FromFloat((pf.songPosition + pf.latencyCompensation) * 100);
 			pf.onNoteHit.dispatch(noteToHit, Int64.toInt(Int64.div(noteToHit.position - posWithLatency, 100)));
