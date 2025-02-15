@@ -69,7 +69,6 @@ class SaveData {
 		},
 		graphics: {
 			frameRate: 60,
-			mipMapping: false,
 			antialiasing: true,
 			customTitleBarColor: 0xFFAA00FF,
 			customWindowOutlineColor: 0x999999FF,
@@ -165,7 +164,6 @@ class SaveData_Preferences {
 @:publicFields
 class SaveData_Graphics {
 	var frameRate:Int;
-	var mipMapping:Bool;
 	var antialiasing:Bool;
 	var customTitleBarColor:Int;
 	var customWindowOutlineColor:Int;

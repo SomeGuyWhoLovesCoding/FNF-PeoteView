@@ -67,7 +67,6 @@ class TextureSystem {
 
 		var currentSaveState = SaveData.state.graphics;
 		var antialiasing = currentSaveState.antialiasing && !disableAntialiasing;
-		var mipmapping = currentSaveState.mipMapping;
 
 		var textureBytes = File.getBytes(path);
 		var textureData = TextureData.fromFormatPNG(textureBytes);
@@ -76,9 +75,7 @@ class TextureSystem {
 			format: textureData.format,
 			powerOfTwo: false,
 			smoothExpand: antialiasing,
-			smoothShrink: antialiasing,
-			mipmap: mipmapping,
-			smoothMipmap: mipmapping
+			smoothShrink: antialiasing
 		});
 		texture.setData(textureData);
 
@@ -98,7 +95,6 @@ class TextureSystem {
 
 		var currentSaveState = SaveData.state.graphics;
 		var antialiasing = currentSaveState.antialiasing && !disableAntialiasing;
-		var mipmapping = currentSaveState.mipMapping;
 
 		var textureBytes = File.getBytes(path);
 		var textureData = TextureData.fromFormatPNG(textureBytes);
@@ -109,9 +105,7 @@ class TextureSystem {
 			format: textureData.format,
 			powerOfTwo: false,
 			smoothExpand: antialiasing,
-			smoothShrink: antialiasing,
-			mipmap: mipmapping,
-			smoothMipmap: mipmapping
+			smoothShrink: antialiasing
 		});
 		texture.setData(textureData);
 
@@ -132,8 +126,6 @@ class TextureSystem {
 
 		var currentSaveState = SaveData.state.graphics;
 		var antialiasing = currentSaveState.antialiasing && !disableAntialiasing;
-		var mipmapping = currentSaveState.mipMapping;
-
 		var texturesToPush:Array<TextureData> = [];
 
 		var totalTextureWidth:Int = 0;
@@ -166,9 +158,7 @@ class TextureSystem {
 			slotsY: 1,
 			powerOfTwo: false,
 			smoothExpand: antialiasing,
-			smoothShrink: antialiasing,
-			mipmap: mipmapping,
-			smoothMipmap: mipmapping
+			smoothShrink: antialiasing
 		});
 
 		for (i in 0...texturesToPush.length) {
