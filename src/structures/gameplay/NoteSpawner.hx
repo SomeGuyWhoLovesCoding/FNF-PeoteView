@@ -106,6 +106,4 @@ class NoteSpawner {
 		parent.notesMissed.clear();
 		parent.notesHeld.clear();
 	}
-
-	private var zero(default, null):Int64 = 0;
 }
