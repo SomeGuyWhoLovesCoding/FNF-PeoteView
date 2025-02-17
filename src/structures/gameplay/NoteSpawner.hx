@@ -100,41 +100,11 @@ class NoteSpawner {
 
 		if (pf.disposed || pf.died) return;
 
-		var strumlines = parent.strumlines;
-		for (i in 0...strumlines.length) {
-			var strumline = strumlines[i];
-			strumline.resetInputs();
-		}
+		parent.resetStrumlines();
 
 		parent.notesHit.clear();
 		parent.notesMissed.clear();
 		parent.notesHeld.clear();
-
-		var file = pf.chart.file;
-		var len = file.length;
-
-		var incrementAmount = (len / 100) * 20;
-		var decrementAmount = (len / 100) * 5;
-
-		var songPos = Tools.betterInt64FromFloat(songPosition * 100);
-		var lenSub1 = len - 1;
-
-		while (file.getNote(top).position < songPos + spawnDist) {
-			if ((top += incrementAmount) > lenSub1) top = lenSub1;
-		}
-		while (file.getNote(top--).position > songPos + spawnDist) {}
-
-		bottom = top;
-
-		while (file.getNote(bottom).position > songPos) {
-			if ((bottom -= decrementAmount) < zero) bottom = zero;
-		}
-		while (file.getNote(bottom++).position < songPos) {}
-
-		curBottomNote = file.getNote(bottom);
-		curTopNote = file.getNote(top);
-
-		Sys.println('Bottom $bottom Top $top');
 	}
 
 	private var zero(default, null):Int64 = 0;

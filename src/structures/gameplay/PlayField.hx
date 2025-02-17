@@ -65,12 +65,8 @@ class PlayField implements State {
 	var botplay(default, set):Bool;
 	inline function set_botplay(value:Bool) {
 		if (noteSystem != null) {
-			var strumlines = noteSystem.strumlines;
-
-			for (i in 0...strumlines.length) {
-				var strumline = strumlines[i];
-				strumline.resetInputs();
-			}
+			noteSystem.resetStrumlines();
+			noteSystem.update(0);
 		}
 		return botplay = value;
 	}

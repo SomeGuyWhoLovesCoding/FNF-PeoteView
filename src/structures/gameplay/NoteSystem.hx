@@ -254,7 +254,8 @@ class NoteSystem {
 			var strumline = strumlines[i];
 			strumline.x = 50 + Math.floor(Main.INITIAL_WIDTH * (i * 0.5));
 			strumline.y = parent.downScroll ? Main.INITIAL_HEIGHT - 150 : 50;
-			strumline.resetAnimations();
+			if (resetAnims) strumline.resetAnimations();
+			strumline.resetInputs();
 		}
 	}
 
