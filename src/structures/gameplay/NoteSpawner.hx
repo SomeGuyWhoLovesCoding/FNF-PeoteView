@@ -113,69 +113,28 @@ class NoteSpawner {
 		var file = pf.chart.file;
 		var len = file.length;
 
-		// This is the mess part and shit in which I've optimized
-
-		var incrementAmount = 10;
-
-		if (len > 100) {
-			incrementAmount = 20;
-		} else if (len > 1000) {
-			incrementAmount = 200;
-		} else if (len > 10000) {
-			incrementAmount = 2000;
-		} else if (len > 100000) {
-			incrementAmount = 20000;
-		} else if (len > 1000000) {
-			incrementAmount = 200000;
-		} else if (len > 10000000) {
-			incrementAmount = 2000000;
-		} else if (len > 100000000) {
-			incrementAmount = 20000000;
-		} else if (len > 1000000000) {
-			incrementAmount = 200000000;
-		}
-
-		var decrementAmount = 2;
-
-		if (len > 100) {
-			decrementAmount = 5;
-		} else if (len > 1000) {
-			decrementAmount = 50;
-		} else if (len > 10000) {
-			decrementAmount = 500;
-		} else if (len > 100000) {
-			decrementAmount = 5000;
-		} else if (len > 1000000) {
-			decrementAmount = 50000;
-		} else if (len > 10000000) {
-			decrementAmount = 500000;
-		} else if (len > 100000000) {
-			decrementAmount = 5000000;
-		} else if (len > 1000000000) {
-			decrementAmount = 50000000;
-		}
+		var incrementAmount = (len / 100) * 20;
+		var decrementAmount = (len / 100) * 5;
 
 		var songPos = Tools.betterInt64FromFloat(songPosition * 100);
 		var lenSub1 = len - 1;
 
-		if (top > incrementAmount) {
-			while (file.getNote(top += incrementAmount).position < songPos + spawnDist) {
-				if (top > lenSub1) top = lenSub1;
-			}
-			while (file.getNote(top--).position > songPos + spawnDist) {}
+		while (file.getNote(top).position < songPos + spawnDist) {
+			if ((top += incrementAmount) > lenSub1) top = lenSub1;
 		}
+		while (file.getNote(top--).position > songPos + spawnDist) {}
 
 		bottom = top;
 
-		if (bottom > decrementAmount) {
-			while (file.getNote(bottom -= decrementAmount).position > songPos) {
-				if (bottom < zero) bottom = zero;
-			}
-			while (file.getNote(bottom++).position < songPos) {}
+		while (file.getNote(bottom).position > songPos) {
+			if ((bottom -= decrementAmount) < zero) bottom = zero;
 		}
+		while (file.getNote(bottom++).position < songPos) {}
 
 		curBottomNote = file.getNote(bottom);
 		curTopNote = file.getNote(top);
+
+		Sys.println('Bottom $bottom Top $top');
 	}
 
 	private var zero(default, null):Int64 = 0;
