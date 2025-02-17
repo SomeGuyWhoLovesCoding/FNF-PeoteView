@@ -106,6 +106,7 @@ class Main extends Application
 	public function startSample(window:Window)
 	{
 		window.opacity = 0;
+		window.frameRate = 0;
 
 		current = this;
 
@@ -147,6 +148,7 @@ class Main extends Application
 
 			_started = true;
 
+			window.frameRate = window.displayMode.refreshRate;
 			window.opacity = 1;
 		}, 100);
 	}
