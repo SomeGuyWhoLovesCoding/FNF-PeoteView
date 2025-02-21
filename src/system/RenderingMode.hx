@@ -12,10 +12,9 @@ class RenderingMode {
 	static var process:Process;
 	static var enabled:Bool = false;
 
-	static var peoteView:PeoteView;
 	static var songName:String;
 
-	static function initRender(entryPoint:Main)
+	static function initRender(playField:PlayField)
 	{
 		var ffmpeg = "ffmpeg";
 		#if windows
@@ -35,14 +34,13 @@ class RenderingMode {
 
 		Sys.println("Rendering Mode System - Initializing...");
 
-		peoteView = entryPoint.peoteView;
-		songName = entryPoint.playField.chart.header.title;
+		songName = playField.chart.header.title;
 
 		process = new Process('ffmpeg', [
 			'-v', 'quiet', '-y', // START
 			'-f', 'rawvideo', // FILTER
 			'-pix_fmt', 'rgba', // PIXEL FORMAT
-			'-s', peoteView.width + 'x' + peoteView.height, // DIMENSIONS
+			'-s', Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT, // DIMENSIONS
 			'-r', '60', // FRAMERATE
 			'-display_hflip', '-display_rotation', '180', // This is here because the original output is mirrored and upside down
 			'-i', '-', // INPUT INIT
@@ -64,10 +62,10 @@ class RenderingMode {
 			return;
 
 		if (bytes == null) {
-			bytes = new haxe.io.UInt8Array(peoteView.width * peoteView.height * 4);
+			bytes = new haxe.io.UInt8Array(Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 4);
 		}
 
-		peoteView.gl.readPixels(0, 0, peoteView.width, peoteView.height, GL.RGBA, GL.UNSIGNED_BYTE, bytes);
+		Main.current.peoteView.gl.readPixels(1, 29, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, GL.RGBA, GL.UNSIGNED_BYTE, bytes);
 		process.stdin.write(untyped bytes.bytes);
 	}
 

@@ -20,7 +20,9 @@ class PlayField implements State {
 		this.roof = roof;
 		this.display = display;
 		this.view = view;
+
 		create(roof, display, chart.header.mania);
+		if (RenderingMode.enabled) RenderingMode.initRender(this);
 	}
 
 	var score:Int128 = 0;
@@ -218,6 +220,10 @@ class PlayField implements State {
 		if (countdownDisp != null) countdownDisp.update(deltaTime);
 
 		songPosition -= latencyCompensation;
+
+		if (RenderingMode.enabled && !songEnded) {
+			RenderingMode.pipeFrame();
+		}
 	}
 
 	/**

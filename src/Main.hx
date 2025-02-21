@@ -16,6 +16,16 @@ class Main extends Application
 	**/
 	static inline var INITIAL_WIDTH = 1280;
 	static inline var INITIAL_HEIGHT = 720;
+	static var VARIABLE_WIDTH(get, never):Int;
+	static var VARIABLE_HEIGHT(get, never):Int;
+
+	inline static function get_VARIABLE_WIDTH() {
+		return current.peoteView.width;
+	}
+
+	inline static function get_VARIABLE_HEIGHT() {
+		return current.peoteView.height;
+	}
 
 	// Internal variable for checking if the game has booted up
 	private var _started(default, null):Bool;
@@ -141,10 +151,6 @@ class Main extends Application
 			DeveloperStuff.init(window, this);
 			#end
 
-			if (RenderingMode.enabled) {
-				RenderingMode.initRender(this);
-			}
-
 			_started = true;
 
 			window.opacity = 1;
@@ -222,10 +228,6 @@ class Main extends Application
 				if (playField != null && !playField.disposed) {
 					if (!playField.paused) {
 						playField.update(newDeltaTime);
-
-						if (RenderingMode.enabled && !playField.songEnded) {
-							RenderingMode.pipeFrame();
-						}
 					}
 
 					if (PauseScreen.active()) {
