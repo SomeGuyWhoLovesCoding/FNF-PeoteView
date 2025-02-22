@@ -10,7 +10,7 @@ import lime.ui.MouseButton;
 @:publicFields
 @:access(lime._internal.backend.native.NativeCFFI)
 class FakeWindow {
-	final windowOffset:Vector<Int> = Vector.fromData([-1, -9]);
+	final windowOffset:Vector<Int> = Vector.fromData([-1, -8]);
 
 	// Internal stuff
 	var display:Display;
@@ -89,7 +89,7 @@ class FakeWindow {
 
 		var window = lime.app.Application.current.window;
 
-		titleBar = new Elem(1, 1, display.width - 2, 28, 0, 0, 0, 0, titleBarColor);
+		titleBar = new Elem(1, 1, display.width - 2, 30, 0, 0, 0, 0, titleBarColor);
 		windowBuffer.addElement(titleBar);
 
 		border = new Vector<Elem>(4);

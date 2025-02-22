@@ -20,11 +20,11 @@ class Main extends Application
 	static var VARIABLE_HEIGHT(get, never):Int;
 
 	inline static function get_VARIABLE_WIDTH() {
-		return current.peoteView.width;
+		return current.peoteView.width - 2;
 	}
 
 	inline static function get_VARIABLE_HEIGHT() {
-		return current.peoteView.height;
+		return current.peoteView.height - 32;
 	}
 
 	// Internal variable for checking if the game has booted up
@@ -122,6 +122,8 @@ class Main extends Application
 		SaveData.init();
 		Sound.init();
 
+		window.frameRate = SaveData.state.graphics.frameRate;
+
 		prepareGameplayState();
 
 		peoteView = new PeoteView(window);
@@ -216,10 +218,6 @@ class Main extends Application
 
 			newDeltaTime = (ts - timeStamp) * 1000;
 
-			if (RenderingMode.enabled) {
-				newDeltaTime = 1000 / 60;
-			}
-
 			try {
 				if (mainMenu != null && !mainMenu.disposed) {
 					mainMenu.update(newDeltaTime);
@@ -272,13 +270,13 @@ class Main extends Application
 	}
 
 	function centerDisplayOnWindow(display:CustomDisplay, w:Int, h:Int) {
-		var scale = (fakeWindow.visible ? (h - 30) : h) / INITIAL_HEIGHT;
+		var scale = (fakeWindow.visible ? (h - 32) : h) / INITIAL_HEIGHT;
 
 		if (fakeWindow.visible) {
 			display.x = 1;
 			display.width = w - 2;
-			display.y = 29;
-			display.height = h - 30;
+			display.y = 31;
+			display.height = h - 32;
 		} else {
 			display.x = 0;
 			display.width = w;

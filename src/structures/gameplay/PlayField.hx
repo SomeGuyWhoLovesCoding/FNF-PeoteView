@@ -177,6 +177,10 @@ class PlayField implements State {
 			return;
 		}
 
+		if (RenderingMode.enabled) {
+			deltaTime = 1000 / 60;
+		}
+
 		if (display.fov != 1) {
 			display.fov -= (display.fov - 1) * (deltaTime * 0.01);
 		}

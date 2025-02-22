@@ -65,7 +65,7 @@ class RenderingMode {
 			bytes = new haxe.io.UInt8Array(Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 4);
 		}
 
-		Main.current.peoteView.gl.readPixels(1, 29, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, GL.RGBA, GL.UNSIGNED_BYTE, bytes);
+		Main.current.peoteView.gl.readPixels(1, 1, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, GL.RGBA, GL.UNSIGNED_BYTE, bytes);
 		process.stdin.write(untyped bytes.bytes);
 	}
 
