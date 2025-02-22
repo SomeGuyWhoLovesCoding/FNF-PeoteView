@@ -57,7 +57,7 @@ class FakeWindow {
 	inline function set_titleTextFont(value:String) {
 		text.scale = 1;
 		text.font = value;
-		text.scale = (icon.h - 3) / text.height;
+		text.scale = (icon.h - 4) / text.height;
 		text.y = Math.round((titleBar.h - (text.height * text.scale)) * 0.5);
 		return titleTextFont = value;
 	}
@@ -109,7 +109,7 @@ class FakeWindow {
 		iconBuffer.addElement(icon);
 
 		text = new Text("windowText", titleBar.x + (icon.x + icon.w) + 4, titleBar.y, display, "Funkin' View", titleTextFont);
-		text.scale = (icon.h - 3) / text.height;
+		text.scale = (icon.h - 4) / text.height;
 		text.y = titleBar.y + Math.round((titleBar.h - (text.height * text.scale)) * 0.5);
 		text.color = 0x000000FF;
 
@@ -243,7 +243,7 @@ class FakeWindow {
 			windowBuffer.updateElement(part);
 		}
 
-		icon.x = titleBar.x + 8;
+		icon.x = titleBar.x + 7;
 		icon.y = titleBar.y + 6;
 		iconBuffer.updateElement(icon);
 
