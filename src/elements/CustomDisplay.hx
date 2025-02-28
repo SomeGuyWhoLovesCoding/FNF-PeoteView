@@ -32,9 +32,16 @@ class CustomDisplay extends Display {
 		scroll.update = updateScroll;
 	}
 
-	inline function updateScroll() {
+	function updateScroll() {
 		var scrollShiftMult = zoom - scale;
 		xOffset = -scroll.x - ((Main.INITIAL_WIDTH >> 1) * scrollShiftMult);
 		yOffset = -scroll.y - ((Main.INITIAL_HEIGHT >> 1) * scrollShiftMult);
+	}
+
+	function shake(x:Float, y:Float) {
+		if (x == 0) return;
+		scroll.x += Math.random() * (x * 16);
+		if (y == 0) return;
+		scroll.y += Math.random() * (y * 16);
 	}
 }
