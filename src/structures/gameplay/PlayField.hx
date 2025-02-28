@@ -38,6 +38,9 @@ class PlayField implements State {
 	var healthLoss:Vector<Float>;
 	var latencyCompensation:Int;
 
+	var dispShake:Point = {x: 0.2, y: 0.2};
+	var viewShake:Point = {x: 0.2, y: 0.2};
+
 	var scrollSpeed(default, set):Float = 1.0;
 	inline function set_scrollSpeed(value:Float) {
 		return noteSystem.setScrollSpeed(scrollSpeed = value);
@@ -222,6 +225,9 @@ class PlayField implements State {
 
 		if (field != null) field.update(deltaTime);
 		if (countdownDisp != null) countdownDisp.update(deltaTime);
+
+		display.shake(dispShake.x, dispShake.y);
+		view.shake(viewShake.x, viewShake.y);
 
 		songPosition -= latencyCompensation;
 
