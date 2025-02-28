@@ -99,11 +99,16 @@ class Field {
 	var targetCamera:Point = {x: 0, y: 0};
 
 	function update(deltaTime:Float) {
-		var sc = parent.view.scroll;
+		var view = parent.view;
+
+		var sc = view.scroll;
 		var ratio = deltaTime * 0.01;
 
-		parent.view.scroll.x = sc.x + ratio * (targetCamera.x - sc.x);
-		parent.view.scroll.y = sc.y + ratio * (targetCamera.y - sc.y);
+		var shake = parent.viewShake;
+
+		view.scroll.x = sc.x + ratio * (targetCamera.x - sc.x);
+		view.scroll.y = sc.y + ratio * (targetCamera.y - sc.y);
+		view.shake(shake.x, shake.y);
 
 		for (actor in actors) {
 			if (isInGameOver) {

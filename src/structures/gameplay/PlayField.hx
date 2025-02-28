@@ -184,13 +184,12 @@ class PlayField implements State {
 			deltaTime = 1000 / 60;
 		}
 
-		if (display.fov != 1) {
-			display.fov -= (display.fov - 1) * (deltaTime * 0.01);
-		}
+		display.update();
+		view.update();
 
-		if (view.fov != 1) {
-			view.fov -= (view.fov - 1) * (deltaTime * 0.01);
-		}
+		var ratio = (deltaTime * 0.01);
+		if (display.fov != 1) display.fov -= (display.fov - 1) * ratio;
+		if (view.fov != 1) view.fov -= (view.fov - 1) * ratio;
 
 		if (!died) {
 			if (audioSystem != null) audioSystem.update(this, deltaTime);

@@ -6,7 +6,7 @@ package utils;
 @:structInit
 @:publicFields
 class Point {
-	var update:Void->Void;
+	@:optional var update:Void->Void;
 
 	var x(default, set):Float;
 

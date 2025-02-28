@@ -10,7 +10,7 @@ class CustomDisplay extends Display {
 		if (value != scale) {
 			scale = value;
 			zoom = value * fov;
-			updateScroll();
+			update();
 		}
 		return value;
 	}
@@ -21,7 +21,7 @@ class CustomDisplay extends Display {
 		if (value != fov) {
 			fov = value;
 			zoom = fov * scale;
-			updateScroll();
+			update();
 		}
 		return value;
 	}
@@ -29,10 +29,10 @@ class CustomDisplay extends Display {
 	function new(x:Int, y:Int, w:Int, h:Int, c:Color) {
 		super(x, y, w, h, c);
 
-		scroll.update = updateScroll;
+		scroll.update = update;
 	}
 
-	function updateScroll() {
+	function update() {
 		var scrollShiftMult = zoom - scale;
 		xOffset = -scroll.x - ((Main.INITIAL_WIDTH >> 1) * scrollShiftMult);
 		yOffset = -scroll.y - ((Main.INITIAL_HEIGHT >> 1) * scrollShiftMult);
@@ -40,8 +40,10 @@ class CustomDisplay extends Display {
 
 	function shake(x:Float, y:Float) {
 		if (x == 0) return;
-		scroll.x += Math.random() * (x * 16);
+		var shakeX = Math.random() * (x * 16);
+		xOffset += shakeX;
 		if (y == 0) return;
-		scroll.y += Math.random() * (y * 16);
+		var shakeY = Math.random() * (x * 16);
+		yOffset += shakeY;
 	}
 }
