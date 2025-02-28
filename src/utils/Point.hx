@@ -6,12 +6,14 @@ package utils;
 @:structInit
 @:publicFields
 class Point {
+	var update:Void->Void;
+
 	var x(default, set):Float;
 
 	inline function set_x(value:Float) {
 		if (value != x) {
 			x = value;
-			update();
+			if (update != null) update();
 		}
 		return value;
 	}
@@ -21,10 +23,8 @@ class Point {
 	inline function set_y(value:Float) {
 		if (value != y) {
 			y = value;
-			update();
+			if (update != null) update();
 		}
 		return value;
 	}
-
-	dynamic function update():Void {}
 }
