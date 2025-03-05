@@ -7,7 +7,7 @@ import lime.ui.MouseButton;
 import lime.ui.MouseWheelMode;
 
 /**
-	The playfield's options menu.
+	The options submenu.
 **/
 @:publicFields
 class OptionsMenu {
@@ -61,7 +61,8 @@ class OptionsMenu {
 			Controls.Action.UI_RIGHT => { action: right },
 			Controls.Action.UI_UP => { action: up },
 			Controls.Action.UI_DOWN => { action: down },
-			Controls.Action.UI_BACK => { action: back }
+			Controls.Action.UI_BACK => { action: back },
+			Controls.Action.UI_ACCEPT => { action: enter }
 		];
 	}
 
@@ -159,6 +160,7 @@ class OptionsMenu {
 
 	function left(isDown:Bool, param:Int) {
 		if (!isDown) return;
+		optionSelected = 0;
 		categorySelected--;
 		if (categorySelected < 0) {
 			categorySelected = categorySprites.length - 1;
@@ -168,6 +170,7 @@ class OptionsMenu {
 
 	function right(isDown:Bool, param:Int) {
 		if (!isDown) return;
+		optionSelected = 0;
 		categorySelected++;
 		if (categorySelected >= categorySprites.length) {
 			categorySelected = 0;
@@ -175,9 +178,16 @@ class OptionsMenu {
 		optionsDisplay.reload(cast categorySelected);
 	}
 
+	function enter(isDown:Bool, param:Int) {
+		if (!isDown) return;
+		optionsDisplay.enter();
+	}
+
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
 		var window = Main.current.fakeWindow;
-		if (button != RIGHT || !window.isMouseInsideApp()) return;
+		var mouseInside = !window.isMouseInsideApp();
+		if (button == LEFT && mouseInside) enter(true, 0);
+		if (button != RIGHT || mouseInside) return;
 		close();
 	}
 

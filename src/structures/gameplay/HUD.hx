@@ -122,7 +122,7 @@ class HUD {
 		timeBarBG.type = TIME_BAR;
 		timeBarBG.changeID(0);
 		timeBarBG.x = (Main.INITIAL_WIDTH - timeBarBG.w) * 0.5;
-		timeBarBG.y = parent.downScroll ? 24 : Main.INITIAL_HEIGHT - 24;
+		timeBarBG.y = Main.INITIAL_HEIGHT - 24;
 
 		// TIME BAR PART SETUP
 
@@ -160,17 +160,15 @@ class HUD {
 		updateScoreText(0.0);
 
 		// RATING AND COMBO NUMBER POPUP SETUP
-		if (SaveData.state.preferences.ratingPopup) {
-			ratingPopup = new UISprite();
-			ratingPopup.type = RATING_POPUP;
-			ratingPopup.changeID(0);
-			ratingPopup.x = 500;
-			ratingPopup.y = 360;
-			ratingPopup.alpha = 0.0;
-			uiBuf.addElement(ratingPopup);
+		ratingPopup = new UISprite();
+		ratingPopup.type = RATING_POPUP;
+		ratingPopup.changeID(0);
+		ratingPopup.x = 500;
+		ratingPopup.y = 360;
+		ratingPopup.alpha = 0.0;
+		uiBuf.addElement(ratingPopup);
 
-			for (i in 0...3) addComboNumber();
-		}
+		for (i in 0...3) addComboNumber();
 
 		setHUDAlpha(0.0);
 	}
@@ -196,7 +194,7 @@ class HUD {
 	**/
 	function update(deltaTime:Float) {
 		var health = parent.health;
-		_smoothHealth = Tools.lerp(_smoothHealth, health, SaveData.state.preferences.smoothHealthbar ? Math.min(deltaTime / 60, 1.0) : 1.0);
+		_smoothHealth = Tools.lerp(_smoothHealth, health, SaveData.state.preferences.smoothHealthbar ? Math.max(Math.min(deltaTime / 60, 1.0), 0.0) : 1.0);
 
 		if (SaveData.state.preferences.ratingPopup) {
 			updateRatingPopup(deltaTime);
@@ -209,7 +207,7 @@ class HUD {
 		updateScoreText(deltaTime);
 
 		if (parent.songStarted && alphaLerp != 1.0) {
-			alphaLerp = Tools.lerp(alphaLerp, 1.0, Math.min(deltaTime * 0.015, 1.0));
+			alphaLerp = Tools.lerp(alphaLerp, 1.0, Math.max(Math.min(deltaTime * 0.015, 1.0), 0.0));
 			setHUDAlpha(alphaLerp);
 		}
 	}
@@ -252,11 +250,11 @@ class HUD {
 		if (ratingPopup == null) return;
 
 		if (ratingPopup.alpha != 0) {
-			ratingPopup.alpha -= ratingPopup.alpha * (deltaTime * 0.005);
+			ratingPopup.alpha -= ratingPopup.alpha * Math.min((deltaTime * 0.005), 1.0);
 		}
 
 		if (ratingPopup.y != 320) {
-			ratingPopup.y -= (ratingPopup.y - 320) * (deltaTime * 0.0125);
+			ratingPopup.y -= (ratingPopup.y - 320) * Math.min((deltaTime * 0.0125), 1.0);
 			uiBuf.updateElement(ratingPopup);
 		}
 	}
@@ -306,17 +304,15 @@ class HUD {
 		Adds a new combo number onto the ui buffer.
 	**/
 	function addComboNumber() {
-		if (SaveData.state.preferences.ratingPopup) {
-			// COMBO NUMBERS SETUP
-			var comboNumber = new UISprite();
-			comboNumber.type = COMBO_NUMBER;
-			comboNumber.changeID(0);
-			comboNumber.x = ratingPopup.x + 208 - ((comboNumber.w + 2) * comboNumbers.length);
-			comboNumber.y = ratingPopup.y + (ratingPopup.h + 5);
-			comboNumber.alpha = 0.0;
-			comboNumbers.push(comboNumber);
-			uiBuf.addElement(comboNumber);
-		}
+		// COMBO NUMBERS SETUP
+		var comboNumber = new UISprite();
+		comboNumber.type = COMBO_NUMBER;
+		comboNumber.changeID(0);
+		comboNumber.x = ratingPopup.x + 208 - ((comboNumber.w + 2) * comboNumbers.length);
+		comboNumber.y = ratingPopup.y + (ratingPopup.h + 5);
+		comboNumber.alpha = 0.0;
+		comboNumbers.push(comboNumber);
+		uiBuf.addElement(comboNumber);
 	}
 
 	private var _smoothHealth(default, null):Float;
@@ -408,7 +404,7 @@ class HUD {
 	**/
 	function updateScoreText(deltaTime:Float) {
 		scoreTxt.text = 'Score: ${parent.score}, Misses: ${parent.misses}, Accuracy: ${parent.accuracy.toString()}';
-		scoreTxt.scale = Tools.lerp(scoreTxt.scale, 1.0, deltaTime * 0.02);
+		scoreTxt.scale = Tools.lerp(scoreTxt.scale, 1.0, Math.min(deltaTime * 0.02, 1.0));
 		scoreTxt.x = Math.floor(healthBarBG.x) + ((healthBarBG.w - scoreTxt.width) * 0.5);
 		scoreTxt.y = Math.floor(healthBarBG.y) + (healthBarBG.h + 6);
 		scoreTxt.color.aF = 1.0;
@@ -450,7 +446,7 @@ class HUD {
 	/**
 		Hides the rating popup.
 	**/
-	inline function hideRatingPopup() {
+	function hideRatingPopup() {
 		if (parent.disposed || parent.died) return;
 
 		ratingPopup.alpha = 0.0;
@@ -460,7 +456,7 @@ class HUD {
 	/**
 		Wakes up the rating popup.
 	**/
-	inline function respondWithRatingID(id:Int) {
+	function respondWithRatingID(id:Int) {
 		if (parent.disposed || parent.died) return;
 
 		ratingPopup.alpha = 1.0;
@@ -473,16 +469,14 @@ class HUD {
 		Dispose the hud.
 	**/
 	function dispose() {
-		if (SaveData.state.preferences.ratingPopup) {
-			uiBuf.removeElement(ratingPopup);
-			ratingPopup = null;
-	
-			while (comboNumbers.length != 0) {
-				var comboNumber = comboNumbers.pop();
-				uiBuf.removeElement(comboNumber);
-			}
-			comboNumbers = null;
+		uiBuf.removeElement(ratingPopup);
+		ratingPopup = null;
+
+		while (comboNumbers.length != 0) {
+			var comboNumber = comboNumbers.pop();
+			uiBuf.removeElement(comboNumber);
 		}
+		comboNumbers = null;
 
 		uiBuf.removeElement(healthBarBG);
 		healthBarBG = null;

@@ -84,6 +84,12 @@ class OptionsSprite implements Element {
 			yValue = hValue * id;
 		}
 
+		if (isPreferenceOption) {
+			wValue = 574;
+			hValue = 55;
+			yValue = 135 + (hValue * id);
+		}
+
 		if ((w != wValue && clipWidth != wValue && clipSizeX != wValue) && (h != hValue && clipHeight != hValue && clipHeight != hValue)) {
 			w = clipWidth = clipSizeX = wValue;
 			h = clipHeight = clipSizeY = hValue;

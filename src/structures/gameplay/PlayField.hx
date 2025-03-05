@@ -38,8 +38,8 @@ class PlayField implements State {
 	var healthLoss:Vector<Float>;
 	var latencyCompensation:Int;
 
-	var dispShake:Point = {x: 0.2, y: 0.2};
-	var viewShake:Point = {x: 0.2, y: 0.2};
+	var dispShake:Point = {x: 1, y: 0};
+	var viewShake:Point = {x: 1, y: 0};
 
 	var scrollSpeed(default, set):Float = 1.0;
 	inline function set_scrollSpeed(value:Float) {
@@ -50,8 +50,9 @@ class PlayField implements State {
 	inline function set_downScroll(value:Bool) {
 		downScroll = value;
 		if (noteSystem != null) {
+			var pos = Tools.betterInt64FromFloat(songPosition * 100);
 			noteSystem.resetStrumlines(false);
-			noteSystem.update(0);
+			noteSystem.update(pos);
 		}
 		if (hud != null) {
 			hud.updateHealthBar();
@@ -167,6 +168,23 @@ class PlayField implements State {
 		pauseScreen = new PauseScreen(chart.header.difficulty);
 
 		scrollSpeed = chart.header.speed;
+	}
+
+	/**
+		Reests the playfield's HUD.
+	**/
+	function resetHUD() {
+		if (hud != null) {
+			hud.dispose();
+			hud = null;
+		}
+		
+		if (!SaveData.state.preferences.hideHUD) {
+			hud = new HUD(display, this);
+			hud.alphaLerp = 1;
+			hud.setHUDAlpha(1);
+			hud.update(Math.POSITIVE_INFINITY);
+		}
 	}
 
 	/**

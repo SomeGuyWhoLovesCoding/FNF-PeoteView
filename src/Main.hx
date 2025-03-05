@@ -187,10 +187,10 @@ class Main extends Application
 	private function createDisplays() {
 		var stamp = haxe.Timer.stamp();
 		trace("Creating displays...");
-		bottomDisplay = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
-		middleDisplay = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
-		topDisplay = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
-		optionsScreen = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
+		bottomDisplay = new CustomDisplay(0, 0, window.width, window.height, 0xFFFFFF33);
+		middleDisplay = new CustomDisplay(0, 0, window.width, window.height, 0xFFFFFF00);
+		topDisplay = new CustomDisplay(0, 0, window.width, window.height, 0xFFFFFF00);
+		optionsScreen = new CustomDisplay(0, 0, window.width, window.height, 0xFFFFFF00);
 		trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 	}
 

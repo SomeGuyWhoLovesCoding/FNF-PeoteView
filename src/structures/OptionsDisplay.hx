@@ -5,11 +5,21 @@ import lime.ui.KeyModifier;
 import elements.text.TextCharSprite;
 
 /**
-	The playfield's options display.
-	This is an internal structure and should only be used inside of the playfield NOT to be touched with.
+	The options submenu's display.
+	This is an internal structure and should only be used inside of the menu NOT to be touched with.
 **/
 @:publicFields
 class OptionsDisplay {
+	private static var prefsStr(default, null):Array<String> = [
+		"downScroll",
+		"hideHUD",
+		"smoothHealthbar",
+		"ratingPopup",
+		"scoreTxtBopping",
+		"cameraZooming",
+		"iconBopping"
+	];
+
 	private static var display(get, never):CustomDisplay;
 
 	inline private static function get_display() {
@@ -20,28 +30,11 @@ class OptionsDisplay {
 
 	var options(default, null):Array<OptionsSprite> = [];
 
-	static var keybind1Txt(default, null):Text;
-	static var keybind2Txt(default, null):Text;
-
 	function new(parent:OptionsMenu) {
 		this.parent = parent;
-
-		if (keybind1Txt == null) {
-			keybind1Txt = new Text("options_keybinds1", 520, 370, display, "  A       S     W      D       Enter   Backspace", "unispace");
-			keybind1Txt.scale = 0.75;
-			keybind1Txt.alpha = 0.0;
-			keybind1Txt.color = Color.BLUE;
-		}
-
-		if (keybind2Txt == null) {
-			keybind2Txt = new Text("options_keybinds2", 520, 470, display, "  A       S     W      D       Enter   Backspace", "unispace");
-			keybind2Txt.scale = 0.75;
-			keybind2Txt.alpha = 0.0;
-			keybind2Txt.color = Color.BLUE;
-		}
 	}
 
-	function reload(selection:OptionSelection) {
+	function reload(selection:OptionsCategorySelection) {
 		destroyOptions();
 
 		switch (selection) {
@@ -62,21 +55,52 @@ class OptionsDisplay {
 				options.push(subCat2);
 				OptionsMenu.optionsBuf.addElement(subCat2);
 			case PREFERENCES:
-				// TODO
+				for (i in 0...6) {
+					var option = new OptionsSprite();
+					option.type = PREFERENCE_OPTION;
+					option.changeID(i);
+					option.x = 400;
+					option.y = 200 + (option.h * i);
+					options.push(option);
+					OptionsMenu.optionsBuf.addElement(option);
+				}
 			case GAMEPLAY:
 				// TODO
+		}
+	}
+
+	function enter() {
+		switch ((parent.categorySelected:OptionsCategorySelection)) {
+			case PREFERENCES:
+				var field = prefsStr[parent.optionSelected];
+				var optionChecked = Reflect.getProperty(SaveData.state.preferences, field);
+				Reflect.setProperty(SaveData.state.preferences, field, !optionChecked);
+				var pf = Main.current.playField;
+				if (pf != null) {
+					switch (field) {
+						case "downScroll":
+							pf.downScroll = !optionChecked;
+						case "hideHUD" | "ratingPopup" | "smoothHealthbar":
+							pf.resetHUD();
+						default:
+					}
+				}
+			default:
 		}
 	}
 
 	function update(deltaTime:Float) {
 		for (i in 0...options.length) {
 			var option = options[i];
+			switch ((parent.categorySelected:OptionsCategorySelection)) {
+				case PREFERENCES:
+					var optionChecked = Reflect.getProperty(SaveData.state.preferences, prefsStr[i]);
+					option.c = i == parent.optionSelected ? (optionChecked ? 0x00FF00FF : 0xFF0000FF) : 0xFFFFFFFF;
+				default:
+			}
 			option.c.aF = parent.alphaLerp;
 			OptionsMenu.optionsBuf.updateElement(option);
 		}
-
-		keybind1Txt.alpha = parent.alphaLerp;
-		keybind2Txt.alpha = parent.alphaLerp;
 	}
 
 	function destroyOptions() {
@@ -94,20 +118,9 @@ class OptionsDisplay {
 }
 
 /**
-	Option display setups.
-/
-enum abstract OptionDisplaySetup(Int) {
-	// 0 = subcategory, 1 = keybind, 2 = checkmark, 3 = slider, 4 = color, 5 = text
-	var CONTROLS; //"10 11 21 31 41 51 61 20 11 21 31 41 51 61 71 30 13";
-	var PREFERENCES; //"12 22 32 42 52 62 72";
-	var GAMEPLAY; //"13 21 31 44 54 65";
-}
-*/
-
-/**
 	Enum abstract of the option selection.
 **/
-enum abstract OptionSelection(Int) {
+enum abstract OptionsCategorySelection(Int) from Int to Int {
 	var CONTROLS;
 	var PREFERENCES;
 	var GAMEPLAY;
