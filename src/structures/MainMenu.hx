@@ -72,7 +72,7 @@ class MainMenu implements State {
 		if (watermarkTxt == null) {
 			watermarkTxt = new Text("mainMenuWatermarkTxt", 0, 0, view, "FV TEST BUILD");
 			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height;
-		} else display.addProgram(watermarkTxt.program);
+		} else view.addProgram(watermarkTxt.program);
 
 		for (i in 0...optionAnims.length) {
 			var spr = new Actor(view, "mainMenu", 0, 0, 24, "", false);
@@ -224,6 +224,8 @@ class MainMenu implements State {
 	function dispose() {
 		removeEvents();
 
+		view.removeProgram(watermarkTxt.program);
+
 		display.removeProgram(optionProg);
 		display = null;
 		optionBuf.clear();
@@ -231,8 +233,6 @@ class MainMenu implements State {
 		view.removeProgram(backgroundProg);
 		view = null;
 		backgroundBuf.clear();
-
-		display.removeProgram(watermarkTxt.program);
 
 		disposed = true;
 	}
