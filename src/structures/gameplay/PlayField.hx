@@ -38,16 +38,16 @@ class PlayField implements State {
 	var healthLoss:Vector<Float>;
 	var latencyCompensation:Int;
 
-	var dispShake:Point = {x: 1, y: 0};
-	var viewShake:Point = {x: 1, y: 0};
+	var dispShake:Point = {x: 0, y: 0};
+	var viewShake:Point = {x: 0, y: 0};
 
 	var scrollSpeed(default, set):Float = 1.0;
-	inline function set_scrollSpeed(value:Float) {
+	function set_scrollSpeed(value:Float) {
 		return noteSystem.setScrollSpeed(scrollSpeed = value);
 	}
 
 	var downScroll(default, set):Bool;
-	inline function set_downScroll(value:Bool) {
+	function set_downScroll(value:Bool) {
 		downScroll = value;
 		if (noteSystem != null) {
 			var pos = Tools.betterInt64FromFloat(songPosition * 100);
@@ -69,10 +69,11 @@ class PlayField implements State {
 	var paused(default, null):Bool;
 	var died(default, null):Bool;
 	var botplay(default, set):Bool;
-	inline function set_botplay(value:Bool) {
+	function set_botplay(value:Bool) {
 		if (noteSystem != null) {
+			var pos = Tools.betterInt64FromFloat(songPosition * 100);
 			noteSystem.resetStrumlines();
-			noteSystem.update(0);
+			noteSystem.update(pos);
 		}
 		return botplay = value;
 	}
@@ -318,9 +319,10 @@ class PlayField implements State {
 		}
 
 		var preferences = SaveData.state.preferences;
+		var scoreTxt = HUD.scoreTxt;
 
-		if (hud != null && preferences.scoreTxtBopping) {
-			hud.scoreTxt.scale = 1.1;
+		if (scoreTxt != null && preferences.scoreTxtBopping) {
+			scoreTxt.scale = 1.1;
 		}
 
 		var absTiming = Math.abs(timing);
@@ -397,7 +399,7 @@ class PlayField implements State {
 		}
 	}
 
-	inline function releaseSustain(note:MetaNote) {
+	function releaseSustain(note:MetaNote) {
 		combo = 0;
 	}
 
@@ -455,7 +457,7 @@ class PlayField implements State {
 		if (char == null) char = field.actors[1 + field.numSpectators];
 
 		field.actorOnGameOver = char;
-		field.targetCamera.x = lane == 0 ? -50 : 50; // Prototype camera logic I have for now
+		field.targetCamera.x = lane == 0 ? -50 : 50;
 	}
 
 	/**

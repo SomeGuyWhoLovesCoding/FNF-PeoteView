@@ -24,7 +24,7 @@ class MainMenu implements State {
 	static var backgroundBuf:Buffer<Sprite>;
 	static var backgroundProg:Program;
 
-	var watermarkTxt:Text;
+	static var watermarkTxt:Text;
 
 	var optionSelected:Int = 0;
 
@@ -69,8 +69,10 @@ class MainMenu implements State {
 		display.addProgram(optionProg);
 		view.addProgram(backgroundProg);
 
-		watermarkTxt = new Text("mainMenuWatermarkTxt", 0, 0, view, "FV TEST BUILD");
-		watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height;
+		if (watermarkTxt == null) {
+			watermarkTxt = new Text("mainMenuWatermarkTxt", 0, 0, view, "FV TEST BUILD");
+			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height;
+		} else display.addProgram(watermarkTxt.program);
 
 		for (i in 0...optionAnims.length) {
 			var spr = new Actor(view, "mainMenu", 0, 0, 24, "", false);
@@ -230,7 +232,7 @@ class MainMenu implements State {
 		view = null;
 		backgroundBuf.clear();
 
-		watermarkTxt.dispose();
+		display.removeProgram(watermarkTxt.program);
 
 		disposed = true;
 	}

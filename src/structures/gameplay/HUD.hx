@@ -12,9 +12,9 @@ class HUD {
 	static var uiBuf(default, null):Buffer<UISprite>;
 	static var uiProg(default, null):Program;
 
-	var scoreTxt(default, null):Text;
-	var watermarkTxt(default, null):Text;
-	var timeBarTxt(default, null):Text;
+	static var scoreTxt(default, null):Text;
+	static var watermarkTxt(default, null):Text;
+	static var timeBarTxt(default, null):Text;
 
 	var ratingPopup(default, null):UISprite;
 	var comboNumbers(default, null):Array<UISprite> = [];
@@ -144,18 +144,23 @@ class HUD {
 
 		// TEXT SETUP
 
-		watermarkTxt = new Text("watermarkTxt", 0, 0, display, 'FV TEST BUILD');
-		watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height;
+		if (watermarkTxt == null) {
+			watermarkTxt = new Text("watermarkTxt", 0, 0, display, 'FV TEST BUILD');
+			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height;
+		} else display.addProgram(watermarkTxt.program);
 
-		timeBarTxt = new Text("timeBarTxt", 0, 0, display, Tools.formatTime(parent.audioSystem.inst.length - Math.max(parent.songPosition, 0)));
-		timeBarTxt.x = (Main.INITIAL_WIDTH - timeBarTxt.width) * 0.5;
-		timeBarTxt.y = timeBarBG.y - 2;
-		timeBarTxt.scale = 1.15;
-		timeBarTxt.outlineColor = 0x999999FF;
+		if (timeBarTxt == null) {
+			timeBarTxt = new Text("timeBarTxt", 0, 0, display, Tools.formatTime(parent.audioSystem.inst.length - Math.max(parent.songPosition, 0)));
+			timeBarTxt.x = (Main.INITIAL_WIDTH - timeBarTxt.width) * 0.5;
+			timeBarTxt.y = timeBarBG.y - 2;
+			timeBarTxt.scale = 1.15;
+			timeBarTxt.outlineColor = 0x000000FF;
+		} else display.addProgram(timeBarTxt.program);
 
 		updateTimeBarText();
 
-		scoreTxt = new Text("scoreTxt", 0, 0, display);
+		if (scoreTxt == null) scoreTxt = new Text("scoreTxt", 0, 0, display);
+		else display.addProgram(scoreTxt.program);
 
 		updateScoreText(0.0);
 
@@ -502,9 +507,9 @@ class HUD {
 		}
 		timeBarParts = null;
 
-		scoreTxt.dispose();
-		watermarkTxt.dispose();
-		timeBarTxt.dispose();
+		display.removeProgram(watermarkTxt.program);
+		display.removeProgram(timeBarTxt.program);
+		display.removeProgram(scoreTxt.program);
 
 		display.removeProgram(uiProg);
 	}
