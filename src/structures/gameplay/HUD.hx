@@ -145,7 +145,7 @@ class HUD {
 		// TEXT SETUP
 
 		if (watermarkTxt == null) {
-			watermarkTxt = new Text("watermarkTxt", 0, 0, display, 'FV TEST BUILD');
+			watermarkTxt = new Text("watermarkTxtPF", 0, 0, display, 'FV TEST BUILD');
 			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height;
 		} else display.addProgram(watermarkTxt.program);
 
