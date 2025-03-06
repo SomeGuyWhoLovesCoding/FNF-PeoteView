@@ -179,7 +179,7 @@ class PlayField implements State {
 			hud.dispose();
 			hud = null;
 		}
-		
+
 		if (!SaveData.state.preferences.hideHUD) {
 			hud = new HUD(display, this);
 			hud.alphaLerp = 1;
