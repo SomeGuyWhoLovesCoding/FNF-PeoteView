@@ -19,23 +19,10 @@ class HUD {
 	var ratingPopup(default, null):UISprite;
 	var comboNumbers(default, null):Array<UISprite> = [];
 
-	var healthBarParts(default, null):Array<UISprite> = [];
-	var healthBarBG(default, null):UISprite;
-
-	var healthIcons(default, null):Array<UISprite> = [];
-	var healthIconIDs(default, null):Array<Array<Int>> = [[0, 1], [2, 3]];
-	var healthIconColors:Array<Array<Color>> = [
-		[Color.WHITE, Color.BLUE, Color.YELLOW, Color.RED3, Color.GREY2, Color.CYAN],
-		[Color.LIME, Color.LIME, Color.LIME, Color.LIME, Color.LIME, Color.LIME]
-	];
+	var healthBar(default, null):HealthBar;
 
 	var timeBarParts(default, null):Array<UISprite> = [];
 	var timeBarBG(default, null):UISprite;
-
-	var healthBarWS(default, null):Float;
-	var healthBarHS(default, null):Float;
-	var healthBarXA(default, null):Float;
-	var healthBarYA(default, null):Float;
 
 	var timeBarWS(default, null):Float;
 	var timeBarHS(default, null):Float;
@@ -54,12 +41,6 @@ class HUD {
 
 		display.addProgram(uiProg);
 
-		healthBarWS = UISprite.healthBarProperties[2];
-		healthBarHS = UISprite.healthBarProperties[3];
-
-		healthBarXA = UISprite.healthBarProperties[4];
-		healthBarYA = UISprite.healthBarProperties[5];
-
 		timeBarWS = UISprite.timeBarProperties[2];
 		timeBarHS = UISprite.timeBarProperties[3];
 
@@ -67,54 +48,9 @@ class HUD {
 		timeBarYA = UISprite.timeBarProperties[5];
 
 		// HEALTH BAR SETUP
-		healthBarBG = new UISprite();
-		healthBarBG.type = HEALTH_BAR;
-		healthBarBG.changeID(0);
-		healthBarBG.x = 275;
-		healthBarBG.y = parent.downScroll ? 90 : Main.INITIAL_HEIGHT - 90;
 
-		var actors = parent.field.actors;
-
-		// HEALTH BAR PART SETUP
-		for (i in 0...2) {
-			var part = healthBarParts[i] = new UISprite();
-			part.h = healthBarBG.h - healthBarHS;
-			part.y = healthBarBG.y + healthBarYA;
-			part.gradientMode = 1.0;
-
-			part.setAllColors(actors[i].data.colors);
-
-			uiBuf.addElement(part);
-		}
-
-		uiBuf.addElement(healthBarBG);
-
-		updateHealthBar();
-
-		// HEALTH ICONS SETUP
-
-		var x = healthBarBG.x + (healthBarBG.w * 0.5);
-
-		for (i in 0...2) {
-			var healthIconIndexes = actors[i + 1].data.healthIconIndexes;
-			healthIconIDs[i] = [healthIconIndexes[0], healthIconIndexes[1]];
-		}
-
-		var oppIcon = healthIcons[0] = new UISprite();
-		oppIcon.type = HEALTH_ICON;
-		oppIcon.changeID(healthIconIDs[0][0]);
-
-		var plrIcon = healthIcons[1] = new UISprite();
-		plrIcon.type = HEALTH_ICON;
-		plrIcon.changeID(healthIconIDs[1][0]);
-
-		oppIcon.y = plrIcon.y = healthBarBG.y - 75;
-		plrIcon.flip = true;
-
-		uiBuf.addElement(oppIcon);
-		uiBuf.addElement(plrIcon);
-
-		updateHealthIcons();
+		HealthBar.init(display);
+		healthBar = new HealthBar(display, parent);
 
 		// TIME BAR SETUP
 
@@ -132,8 +68,8 @@ class HUD {
 			part.h = timeBarBG.h - timeBarHS;
 			part.x = timeBarBG.x + timeBarXA;
 			part.y = timeBarBG.y + timeBarYA;
-			part.gradientMode = 1.0;
-			part.setAllColors(new Vector<Color>(6,  i == 0 ? 0x000000FF : 0xFFFFFFFF));
+			part.plainColor = 1.0;
+			part.c = i == 0 ? 0x000000FF : 0xFFFFFFFF;
 
 			uiBuf.addElement(part);
 		}
@@ -198,15 +134,11 @@ class HUD {
 		Updates the HUD.
 	**/
 	function update(deltaTime:Float) {
-		var health = parent.health;
-		_smoothHealth = Tools.lerp(_smoothHealth, health, SaveData.state.preferences.smoothHealthbar ? Math.max(Math.min(deltaTime / 60, 1.0), 0.0) : 1.0);
-
 		if (SaveData.state.preferences.ratingPopup) {
 			updateRatingPopup(deltaTime);
 			updateComboNumbers();
 		}
-		updateHealthBar();
-		updateHealthIcons();
+		healthBar.update(deltaTime);
 		updateTimeBarParts();
 		updateTimeBarText();
 		updateScoreText(deltaTime);
@@ -221,17 +153,17 @@ class HUD {
 		Sets the entire hud's alpha. The watermark text won't be affected.
 	**/
 	function setHUDAlpha(alpha:Float) {
-		healthBarBG.alpha = alpha;
-		uiBuf.updateElement(healthBarBG);
+		healthBar.bg.alpha = alpha;
+		HealthBar.hbBuf.updateElement(healthBar.bg);
 
-		for (part in healthBarParts) {
+		for (part in healthBar.parts) {
 			part.alpha = alpha;
-			uiBuf.updateElement(part);
+			HealthBar.hbBuf.updateElement(part);
 		}
 
-		for (icon in healthIcons) {
+		for (icon in healthBar.healthIcons) {
 			icon.alpha = alpha;
-			uiBuf.updateElement(icon);
+			HealthBar.hbBuf.updateElement(icon);
 		}
 
 		timeBarBG.alpha = alpha;
@@ -320,98 +252,14 @@ class HUD {
 		uiBuf.addElement(comboNumber);
 	}
 
-	private var _smoothHealth(default, null):Float;
-
-	/**
-		Updates the health bar.
-	**/
-	function updateHealthBar() {
-		if (parent.disposed || parent.died) return;
-
-		healthBarBG.y = parent.downScroll ? 90 : Main.INITIAL_HEIGHT - 90;
-		uiBuf.updateElement(healthBarBG);
-
-		var actors = parent.field.actors;
-
-		var part1 = healthBarParts[0];
-
-		if (part1 == null) return;
-
-		var healthIconColor = actors[(parent.flipHealthBar ? 1 : 0) + 1].data.colors;
-
-		part1.setAllColors(healthIconColor);
-
-		part1.w = (healthBarBG.w - Math.floor(healthBarBG.w * (parent.flipHealthBar ? 1 - _smoothHealth : _smoothHealth))) - (healthBarWS * 2.0);
-		part1.x = healthBarBG.x + healthBarXA;
-		part1.y = healthBarBG.y + healthBarYA;
-
-		if (part1.w < 0) part1.w = 0;
-
-		uiBuf.updateElement(part1);
-
-		var part2 = healthBarParts[1];
-
-		if (part2 == null) return;
-
-		var healthIconColor = actors[(parent.flipHealthBar ? 0 : 1) + 1].data.colors;
-
-		part2.setAllColors(healthIconColor);
-
-		part2.w = (healthBarBG.w - part1.w) - (healthBarWS * 2.0);
-		part2.x = (healthBarBG.x + part1.w) + healthBarXA;
-		part2.y = healthBarBG.y + healthBarYA;
-
-		if (part2.w < 0) part2.w = 0;
-
-		uiBuf.updateElement(part2);
-	}
-
-	/**
-		Updates the health icons.
-	**/
-	function updateHealthIcons() {
-		if (parent.disposed || parent.died) return;
-
-		var part1 = healthBarParts[1];
-
-		if (part1 == null) return;
-
-		var health = parent.health;
-		var icons = healthIcons;
-		var ids = healthIconIDs;
-
-		var oppIcon = icons[0];
-		var plrIcon = icons[1];
-
-		var oppIcon = healthIcons[0];
-		oppIcon.x = part1.x - 118;
-
-		var plrIcon = healthIcons[1];
-		plrIcon.x = part1.x - 18;
-
-		oppIcon.y = plrIcon.y = healthBarBG.y - 75;
-
-		var oppIco = parent.flipHealthBar ? plrIcon : oppIcon;
-		var plrIco = parent.flipHealthBar ? oppIcon : plrIcon;
-
-		if (health > 0.75) oppIco.changeID(ids[0][1]);
-		else oppIco.changeID(ids[0][0]);
-
-		if (health < 0.25) plrIco.changeID(ids[1][1]);
-		else plrIco.changeID(ids[1][0]);
-
-		uiBuf.updateElement(oppIcon);
-		uiBuf.updateElement(plrIcon);
-	}
-
 	/**
 		Updates the score text.
 	**/
 	function updateScoreText(deltaTime:Float) {
 		scoreTxt.text = 'Score: ${parent.score}, Misses: ${parent.misses}, Accuracy: ${parent.accuracy.toString()}';
 		scoreTxt.scale = Tools.lerp(scoreTxt.scale, 1.0, Math.min(deltaTime * 0.02, 1.0));
-		scoreTxt.x = Math.floor(healthBarBG.x) + ((healthBarBG.w - scoreTxt.width) * 0.5);
-		scoreTxt.y = Math.floor(healthBarBG.y) + (healthBarBG.h + 6);
+		scoreTxt.x = Math.floor(healthBar.bg.x) + ((healthBar.bg.w - scoreTxt.width) * 0.5);
+		scoreTxt.y = Math.floor(healthBar.bg.y) + (healthBar.bg.h + 6);
 		scoreTxt.color.aF = 1.0;
 		scoreTxt.outlineColor.aF = 1.0;
 		/*scoreTxt.color = 0xFFDC8CFF;
@@ -483,20 +331,10 @@ class HUD {
 		}
 		comboNumbers = null;
 
-		uiBuf.removeElement(healthBarBG);
-		healthBarBG = null;
-
-		while (healthBarParts.length != 0) {
-			var healthBarPart = healthBarParts.pop();
-			uiBuf.removeElement(healthBarPart);
+		if (healthBar != null) {
+			healthBar.dispose();
+			healthBar = null;
 		}
-		healthBarParts = null;
-
-		while (healthIcons.length != 0) {
-			var healthIcon = healthIcons.pop();
-			uiBuf.removeElement(healthIcon);
-		}
-		healthIcons = null;
 
 		uiBuf.removeElement(timeBarBG);
 		timeBarBG = null;

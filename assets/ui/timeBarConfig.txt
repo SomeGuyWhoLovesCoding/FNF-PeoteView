@@ -1,1 +1,1 @@
-w 400, h 19, ws 4, hs 7, xa 4, ya 4
+w 400, h 19, ws 4, hs 7, xa 4, ya 3

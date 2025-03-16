@@ -55,8 +55,7 @@ class PlayField implements State {
 			noteSystem.update(pos);
 		}
 		if (hud != null) {
-			hud.updateHealthBar();
-			hud.updateHealthIcons();
+			hud.update(0.0);
 			hud.updateScoreText(0.0);
 		}
 		return value;

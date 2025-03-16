@@ -167,7 +167,7 @@ class Main extends Application
 		gamepad = new Gamepad(0);
 		controls = new Controls();
 
-		UISprite.healthBarProperties = Tools.parseHealthBarConfig('assets/ui');
+		HealthBarSprite.healthBarProperties = Tools.parseHealthBarConfig('assets/ui');
 		UISprite.timeBarProperties = Tools.parseTimeBarConfig('assets/ui');
 		Tools.parseNoteskinData('assets/notes');
 	}
@@ -179,6 +179,7 @@ class Main extends Application
 		TextureSystem.createTexture("mainMenuSheet", "assets/mainMenu/sheet.png");
 		TextureSystem.createTexture("noteTex", "assets/notes/noteSheet.png");
 		TextureSystem.createTexture("uiTex", "assets/ui/uiSheet.png");
+		TextureSystem.createTexture("hbTex", "assets/ui/hbSheet.png");
 		TextureSystem.createTexture("pauseScreenSheet", "assets/ui/pauseScreenSheet.png");
 		TextureSystem.createTexture("optionsMenuSheet", "assets/ui/optionsMenuSheet.png");
 		trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');

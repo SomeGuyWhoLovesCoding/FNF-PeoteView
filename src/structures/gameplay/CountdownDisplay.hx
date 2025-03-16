@@ -50,7 +50,7 @@ class CountdownDisplay {
 
 		_screenCenter();
 
-		sprite.c.aF = 0.0;
+		sprite.alpha = 0.0;
 
 		buffer.addElement(sprite);
 	}
@@ -70,7 +70,7 @@ class CountdownDisplay {
 		if (id != 0) {
 			var idBelowZero = id < 0;
 			sprite.changeID(idBelowZero ? 0 : id - 1);
-			sprite.c.aF = idBelowZero ? 0.0 : 1.0;
+			sprite.alpha = idBelowZero ? 0.0 : 1.0;
 
 			_screenCenter();
 
@@ -83,15 +83,15 @@ class CountdownDisplay {
 		@param deltaTime The time since the last frame.
 	**/
 	function update(deltaTime:Float) {
-		if (sprite.c.aF != 0) {
-			var a = sprite.c.aF;
+		if (sprite.alpha != 0) {
+			var a = sprite.alpha;
 			var multVal = (a * 0.5) * (deltaTime * 0.0145);
 			var alphaBoundCheck = a - multVal;
 
 			if (alphaBoundCheck < 0) {
-				sprite.c.aF = 0;
+				sprite.alpha = 0;
 			} else {
-				sprite.c.aF -= multVal;
+				sprite.alpha -= multVal;
 			}
 
 			buffer.updateElement(sprite);
@@ -107,6 +107,9 @@ class CountdownDisplay {
 		GC.run();
 	}
 
+	/**
+		Positions the countdown display at the center of the screen.
+	**/
 	inline function _screenCenter() {
 		sprite.x = (Main.INITIAL_WIDTH - sprite.w) * 0.5;
 		sprite.y = (Main.INITIAL_HEIGHT - sprite.h) * 0.5;
