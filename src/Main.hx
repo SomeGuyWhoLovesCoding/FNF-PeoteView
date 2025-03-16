@@ -213,10 +213,10 @@ class Main extends Application
 		switch (keyCode) {
 			case KeyCode.F12:
 				Sound.globalVolume += 0.1;
-				trace('Volume: ${Sound.globalVolume}');
+				Sys.println('NEW VOLUME: ${Sound.globalVolume}');
 			case KeyCode.F10:
 				Sound.globalVolume -= 0.1;
-				trace('Volume: ${Sound.globalVolume}');
+				Sys.println('NEW VOLUME: ${Sound.globalVolume}');
 			default:
 		}
 	}
