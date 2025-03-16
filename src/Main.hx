@@ -4,6 +4,7 @@ import haxe.CallStack;
 import lime.app.Application;
 import lime.ui.Window;
 import lime.ui.KeyCode;
+import lime.ui.KeyModifier;
 import lime.ui.Gamepad;
 
 @:publicFields
@@ -129,6 +130,7 @@ class Main extends Application
 		peoteView = new PeoteView(window);
 
 		haxe.Timer.delay(function() {
+
 			createTextures();
 			createDisplays();
 
@@ -148,6 +150,7 @@ class Main extends Application
 			switchState(MAIN_MENU);
 
 			window.onResize.add(resize);
+			window.onKeyDown.add(controlVolume);
 
 			#if FV_DEBUG
 			DeveloperStuff.init(window, this);
@@ -204,6 +207,18 @@ class Main extends Application
 		peoteView.addDisplay(topDisplay);
 		peoteView.addDisplay(optionsScreen);
 		trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
+	}
+
+	private function controlVolume(keyCode:KeyCode, keyModifier:KeyModifier) {
+		switch (keyCode) {
+			case KeyCode.F12:
+				Sound.globalVolume += 0.1;
+				trace('Volume: ${Sound.globalVolume}');
+			case KeyCode.F10:
+				Sound.globalVolume -= 0.1;
+				trace('Volume: ${Sound.globalVolume}');
+			default:
+		}
 	}
 
 	var newDeltaTime:Float = 0;

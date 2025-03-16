@@ -26,6 +26,21 @@ class Sound {
 	private var _dataSource:cpp.Star<MaDataSource>;
 	private var _playhead(default, null):Playhead = new Playhead();
 
+	static var globalVolume(get, set):Float;
+
+	inline static function get_globalVolume() {
+		return Miniaudio.ma_engine_get_volume(engine);
+	}
+
+	inline static function set_globalVolume(value:Float) {
+		value = Math.max(Math.min(value, 1.0), 0.0);
+		var result = Miniaudio.ma_engine_set_volume(engine, value);
+		if (result != MaResult.MA_SUCCESS) {
+			Sys.println("[Sound system] Failed to set engine volume");
+		}
+		return value;
+	}
+
 	var time(get, set):Float;
 
 	inline function get_time() {
