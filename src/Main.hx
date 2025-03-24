@@ -211,10 +211,10 @@ class Main extends Application
 
 	private function controlVolume(keyCode:KeyCode, keyModifier:KeyModifier) {
 		switch (keyCode) {
-			case KeyCode.F12:
+			case KeyCode.EQUALS:
 				Sound.globalVolume += 0.1;
 				Sys.println('NEW VOLUME: ${Sound.globalVolume}');
-			case KeyCode.F10:
+			case KeyCode.MINUS:
 				Sound.globalVolume -= 0.1;
 				Sys.println('NEW VOLUME: ${Sound.globalVolume}');
 			default:
