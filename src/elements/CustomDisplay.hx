@@ -43,7 +43,7 @@ class CustomDisplay extends Display {
 	}
 
 	function renderFB() {
-		
+		// TODO: Implement this
 	}
 
 	function shake(x:Float, y:Float) {
