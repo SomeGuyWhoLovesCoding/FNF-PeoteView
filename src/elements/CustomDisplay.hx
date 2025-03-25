@@ -1,5 +1,9 @@
 package elements;
 
+/**
+	CustomDisplay is a custom class that extends Display.
+	It adds a few extra properties to the Display class (such as scroll, scale, and fov), and most importantly, automatic framebuffer support for rotating support.
+**/
 @:publicFields
 class CustomDisplay extends Display {
 	var scroll(default, null):Point = {x: 0, y: 0};
