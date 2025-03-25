@@ -130,6 +130,7 @@ class Main extends Application
 		peoteView = new PeoteView(window);
 
 		haxe.Timer.delay(function() {
+
 			createTextures();
 			createDisplays();
 

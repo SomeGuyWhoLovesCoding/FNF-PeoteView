@@ -202,7 +202,6 @@ class PlayField implements State {
 			deltaTime = 1000 / 60;
 		}
 
-		roof.update();
 		display.update();
 		view.update();
 

@@ -109,10 +109,6 @@ class MainMenu implements State {
 	static var selectedAlpha:Float = 1.0;
 
 	function update(deltaTime:Float) {
-		display.update();
-		view.update();
-		roof.update();
-
 		for (i in 0...optionBuf.length) {
 			var option = optionBuf.getElement(i);
 
