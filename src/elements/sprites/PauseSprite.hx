@@ -57,10 +57,9 @@ class PauseSprite implements Element {
 		[207, 456, 82, 32],
 		[289, 456, 125, 32],
 		[414, 456, 113, 32],
-		[0, 488, 212, 32],
-		[212, 488, 113, 32],
-		[325, 488, 80, 32],
-		[405, 488, 80, 32]
+		[0, 488, 215, 32],
+		[215, 488, 80, 32],
+		[295, 488, 80, 32]
 	];
 
 	static function init(program:Program, name:String, texture:Texture) {
