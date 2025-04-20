@@ -30,22 +30,57 @@ class FreeplayMenu {
 	var actions(default, null):ActionMap;
 
 	function new() {
-		var songs:Array<String> = ["god-eater", "termination"];
+		var songs:Array<String> = ["assets/songs/god-eater", "assets/songs/termination"];
+
 		for (i in 0...songs.length) {
 			var path = songs[i];
-			songsAvailable.push(ChartSystem.parseHeader('assets/songs/$path'));
 
-			var spr = new Actor(display, "alphabetText", 0, 0, 24, "", false);
-			spr.playAnimation('', true);
-			spr.x = 20;
-			spr.y = 20 + (spr.h * i);
-			spr.c.aF = 0.0;
-			addAlphabetCharElement(spr);
+			var header = ChartSystem.parseHeader(path);
+			songsAvailable.push(header);
+
+			var title = header.title;
+
+			var x:Float = 20;
+
+			for (j in 0...title.length) {
+				var char = title.charAt(j).toLowerCase();
+
+				switch (char)
+				{
+					case '?':
+						char = 'question';
+					case '&':
+						char = 'ampersand';
+					case '<':
+						char = 'less';
+					case '"':
+						char = 'quote';
+					case ' ':
+						x += 20;
+						continue;
+				}
+
+				var spr = new Actor(display, "alphabetText", 0, 0, 24, "", false);
+				spr.playAnimation('$char bold instance 1', true);
+				spr.x = x;
+				spr.y = 20 + ((spr.h + 5) * i);
+
+				switch (char)
+				{
+					case "'" | '“' | '”' | '*' | '^' | '"' | '-':
+						spr.y += spr.h;
+					case '+':
+						spr.y += spr.h * .25;
+				}
+
+				spr.c.aF = 0.0;
+				addAlphabetCharElement(spr);
+
+				x += spr.w + 2;
+			}
 		}
 
 		actions = [
-			Controls.Action.UI_LEFT => { action: left },
-			Controls.Action.UI_RIGHT => { action: right },
 			Controls.Action.UI_UP => { action: up },
 			Controls.Action.UI_DOWN => { action: down },
 			Controls.Action.UI_BACK => { action: back },
@@ -83,11 +118,9 @@ class FreeplayMenu {
 
 		for (i in 0...songTextChars.length) {
 			var char = songTextChars[i];
-			var originalC = char.c;
-			if (i == curSelected) char.c = Color.WHITE;
-			else char.c = Color.GREY2;
 			char.c.aF = alphaLerp;
-			if (originalC != char.c) songTextsBuf.updateElement(char);
+			songTextsBuf.updateElement(char);
+			char.update(deltaTime);
 		}
 	}
 
@@ -98,8 +131,6 @@ class FreeplayMenu {
 		try {
 			for (i in 0...songTextChars.length) {
 				var char = songTextChars[i];
-				if (i == curSelected) char.c = Color.WHITE;
-				else char.c = Color.GREY2;
 				char.c.aF = 0.0;
 				songTextsBuf.addElement(char);
 			}
@@ -157,24 +188,6 @@ class FreeplayMenu {
 		}
 	}
 
-	function left(isDown:Bool, param:Int) {
-		if (!isDown) return;
-		curSelected = 0;
-		curSelected--;
-		if (curSelected < 0) {
-			curSelected = songsAvailable.length - 1;
-		}
-	}
-
-	function right(isDown:Bool, param:Int) {
-		if (!isDown) return;
-		curSelected = 0;
-		curSelected++;
-		if (curSelected >= songsAvailable.length) {
-			curSelected = 0;
-		}
-	}
-
 	function enter(isDown:Bool, param:Int) {
 		if (!isDown) return;
 		Main.songChosen = songsAvailable[curSelected].dir;
@@ -183,7 +196,7 @@ class FreeplayMenu {
 
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
 		var window = Main.current.fakeWindow;
-		var mouseInside = !window.isMouseInsideApp();
+		var mouseInside = window.isMouseInsideApp();
 		if (button == LEFT && mouseInside) enter(true, 0);
 		if (button != RIGHT || mouseInside) return;
 		close();

@@ -176,12 +176,11 @@ class Actor extends ActorElement
 	}
 
 	inline function stopAnimation() {
-		animationRunning = loop = false;
+		animationRunning = false;
 	}
 
 	inline function endOfAnimation():Bool {
 		if (frameIndex >= endingFrameIndex - startingFrameIndex) {
-			loop = false;
 			animationRunning = false;
 			if (finishAnim != "") {
 				if (finishCallback != null) {
@@ -197,7 +196,8 @@ class Actor extends ActorElement
 	}
 
 	function update(deltaTime:Float) {
-		buffers[displayName].updateElement(this);
+		var buffer = buffers[displayName];
+		if (buffer != null) buffer.updateElement(this);
 
 		if (!animationRunning) return;
 
@@ -211,7 +211,7 @@ class Actor extends ActorElement
 				frameIndex = startingShakeFrame;
 			}
 
-			if (endOfAnimation()) {
+			if (endOfAnimation() && !loop) {
 				return;
 			}
 

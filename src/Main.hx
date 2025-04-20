@@ -218,6 +218,7 @@ class Main extends Application
 		peoteView.addDisplay(middleDisplay);
 		peoteView.addDisplay(topDisplay);
 		peoteView.addDisplay(optionsScreen);
+		peoteView.addDisplay(freeplayScreen);
 		trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 	}
 

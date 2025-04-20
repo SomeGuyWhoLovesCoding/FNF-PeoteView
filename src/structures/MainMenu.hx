@@ -28,7 +28,7 @@ class MainMenu implements State {
 
 	static var watermarkTxt:Text;
 
-	var optionSelected:Int = 0;
+	static var optionSelected(default, null):Int = 0;
 
 	var disposed:Bool = false;
 	var actions:ActionMap;
@@ -37,6 +37,10 @@ class MainMenu implements State {
 
 	function init(roof:CustomDisplay, display:CustomDisplay, view:CustomDisplay) {
 		selectedAlpha = 1.0;
+
+		for (i in 0...alphaLerps.length) {
+			alphaLerps[i] = 1.0;
+		}
 
 		this.display = display;
 		this.view = view;
@@ -55,17 +59,33 @@ class MainMenu implements State {
 			optionProg.blendEnabled = true;
 
 			TextureSystem.setTexture(optionProg, "mainMenuSheet", "mainMenuSheet");
+
+			for (i in 0...optionAnims.length) {
+				var spr = new Actor(view, "mainMenu", 0, 0, 24, "", false);
+				spr.playAnimation(optionAnims[i] + ' basic', true);
+				spr.x = 20;
+				spr.y = 20 + (spr.h * i);
+				spr.c.aF = 0.0;
+				optionBuf.addElement(spr);
+			}
 		}
 
 		if (backgroundBuf == null) {
 			backgroundBuf = new Buffer<Sprite>(1);
-		}
 
-		if (backgroundProg == null) {
-			backgroundProg = new Program(backgroundBuf);
-			backgroundProg.blendEnabled = true;
+			if (backgroundProg == null) {
+				backgroundProg = new Program(backgroundBuf);
+				backgroundProg.blendEnabled = true;
 
-			TextureSystem.setTexture(backgroundProg, "mainMenuBGTex", "mainMenuBGTex");
+				TextureSystem.setTexture(backgroundProg, "mainMenuBGTex", "mainMenuBGTex");
+
+				var bg = new Sprite();
+				bg.clipWidth = bg.clipSizeX = bg.w = Main.INITIAL_WIDTH;
+				bg.clipHeight = bg.clipSizeY = bg.h = Main.INITIAL_HEIGHT;
+				backgroundBuf.addElement(bg);
+
+				backgroundBuf.updateElement(bg);
+			}
 		}
 
 		display.addProgram(optionProg);
@@ -76,28 +96,11 @@ class MainMenu implements State {
 			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height;
 		} else view.addProgram(watermarkTxt.program);
 
-		for (i in 0...optionAnims.length) {
-			var spr = new Actor(view, "mainMenu", 0, 0, 24, "", false);
-			spr.playAnimation(optionAnims[i] + ' basic', true);
-			spr.x = 20;
-			spr.y = 20 + (spr.h * i);
-			spr.c.aF = 0.0;
-			optionBuf.addElement(spr);
-		}
-
-		var bg = new Sprite();
-		bg.clipWidth = bg.clipSizeX = bg.w = Main.INITIAL_WIDTH;
-		bg.clipHeight = bg.clipSizeY = bg.h = Main.INITIAL_HEIGHT;
-		backgroundBuf.addElement(bg);
-
-		optionBuf.update();
-		backgroundBuf.updateElement(bg);
-
 		haxe.Timer.delay(addEvents, 1);
 
 		updateMenuOptions();
 
-		FreeplayMenu.init(roof);
+		optionBuf.update();
 
 		actions = [
 			Controls.Action.UI_DOWN => { action: down },
@@ -240,11 +243,9 @@ class MainMenu implements State {
 
 		display.removeProgram(optionProg);
 		display = null;
-		optionBuf.clear();
 
 		view.removeProgram(backgroundProg);
 		view = null;
-		backgroundBuf.clear();
 
 		disposed = true;
 	}

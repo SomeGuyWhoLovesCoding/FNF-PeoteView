@@ -183,7 +183,7 @@ class OptionsMenu {
 
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
 		var window = Main.current.fakeWindow;
-		var mouseInside = !window.isMouseInsideApp();
+		var mouseInside = window.isMouseInsideApp();
 		if (button == LEFT && mouseInside) enter(true, 0);
 		if (button != RIGHT || mouseInside) return;
 		close();
