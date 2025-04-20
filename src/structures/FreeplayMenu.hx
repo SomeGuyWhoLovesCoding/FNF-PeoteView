@@ -89,7 +89,6 @@ class FreeplayMenu {
 			alphaLerpWontBeZeroWhenLaunchingFreeplayForTheFirstTime = true;
 			alphaLerp = 0.0;
 		}
-		trace(alphaLerp);
 
 		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelected, ratio);
 		xLerp = Tools.lerp(xLerp, 90 - (curSelected * 32), ratio);
