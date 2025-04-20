@@ -133,7 +133,9 @@ class FreeplayMenu {
 				if (i >= 17) char = '.';
 
 				var spr = songTextCharGroup[i][j];
-				spr.playAnimation('$char bold instance 1', true);
+				if (!spr.endOfAnimation()) {
+					spr.playAnimation('$char bold instance 1', true);
+				}
 				spr.x = (x + 50) + (xLerp + (32 * i));
 				spr.y = yLerp + (112 * i) + 360;
 

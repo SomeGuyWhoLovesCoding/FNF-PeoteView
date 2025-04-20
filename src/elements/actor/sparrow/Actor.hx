@@ -24,7 +24,7 @@ class Actor extends ActorElement
 	var finishAnim:String = "";
 	var finishCallback:Void->Void;
 
-	private var folder:String = "";
+	var folder:String = "";
 
 	var display(default, null):CustomDisplay;
 
@@ -110,16 +110,16 @@ class Actor extends ActorElement
 	// Now for the animation stuff
 	// Part of the code is originally from jobf's sparrow atlas demo on peote-view
 
-	private var startingFrameIndex:Int;
-	private var endingFrameIndex:Int;
-	private var frameIndex:Int;
-	private var fps:Float;
-	private var frameDurationMs:Float;
-	private var frameTimeRemaining:Float;
-	private var loop:Bool;
-	private var indicesMode:Bool;
-	private var indices:Vector<Int>;
-	private var firstFrameWidth(get, default):Float;
+	var startingFrameIndex:Int;
+	var endingFrameIndex:Int;
+	var frameIndex:Int;
+	var fps:Float;
+	var frameDurationMs:Float;
+	var frameTimeRemaining:Float;
+	var loop:Bool;
+	var indicesMode:Bool;
+	var indices:Vector<Int>;
+	var firstFrameWidth(get, default):Float;
 
 	inline function get_firstFrameWidth() {
 		return firstFrameWidth * scale;
@@ -175,11 +175,11 @@ class Actor extends ActorElement
 		changeFrame();
 	}
 
-	inline function stopAnimation() {
+	function stopAnimation() {
 		animationRunning = false;
 	}
 
-	inline function endOfAnimation():Bool {
+	function endOfAnimation():Bool {
 		if (frameIndex >= endingFrameIndex - startingFrameIndex) {
 			animationRunning = false;
 			if (finishAnim != "") {
