@@ -2,7 +2,6 @@ package structures;
 
 import input2action.ActionMap;
 import lime.ui.KeyCode;
-import lime.ui.KeyModifier;
 import lime.ui.MouseButton;
 import lime.ui.MouseWheelMode;
 
@@ -54,7 +53,6 @@ class OptionsMenu {
 			optionsDisplay = new OptionsDisplay(this);
 		}
 		optionsDisplay.reload(cast optionSelected);
-
 
 		actions = [
 			Controls.Action.UI_LEFT => { action: left },
@@ -211,9 +209,9 @@ class OptionsMenu {
 		if (!optionsProg.isIn(display)) return;
 
 		for (i in 0...categorySprites.length) {
-			var categorySprites = categorySprites[i];
-			categorySprites.c.aF = 0.0;
-			optionsBuf.removeElement(categorySprites);
+			var categorySprite = categorySprites[i];
+			categorySprite.c.aF = 0.0;
+			optionsBuf.removeElement(categorySprite);
 		}
 
 		display.color = 0x00000000;

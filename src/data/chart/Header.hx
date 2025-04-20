@@ -11,6 +11,12 @@ package data.chart;
 @:structInit
 class Header {
 	/**
+		The song's directory (by the title).
+		This property is optional because it is not always used.
+	**/
+	@:optional var dir:String;
+
+	/**
 		The song's title.
 	**/
 	var title:String;

@@ -1,7 +1,6 @@
 package structures;
 
 import input2action.ActionMap;
-import input2action.KeyboardAction;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 import lime.ui.MouseButton;
@@ -13,6 +12,9 @@ import lime.ui.MouseWheelMode;
 @:publicFields
 class MainMenu implements State {
 	static var optionAnims:Vector<String> = Vector.fromData(['story mode', 'freeplay', 'awards', 'credits', 'options', 'backspace to exit']);
+
+	static var freeplaySubmenu:FreeplayMenu;
+	//static var awardsSubmenu:AwardsMenu;
 
 	var display:CustomDisplay;
 	var view:CustomDisplay;
@@ -94,6 +96,8 @@ class MainMenu implements State {
 		haxe.Timer.delay(addEvents, 1);
 
 		updateMenuOptions();
+
+		FreeplayMenu.init(roof);
 
 		actions = [
 			Controls.Action.UI_DOWN => { action: down },
@@ -191,7 +195,9 @@ class MainMenu implements State {
 				Main.switchState(GAMEPLAY);
 				removeEvents();
 			case 1: // FREEPLAY
-				// TODO
+				selectedAlpha = 0.0;
+				Main.current.freeplayMenu.open();
+				removeEvents();
 			case 2: // AWARDS
 				// TODO
 			case 3: // CREDITS
@@ -226,6 +232,8 @@ class MainMenu implements State {
 	}
 
 	function dispose() {
+		Main.current.freeplayMenu.dispose();
+
 		removeEvents();
 
 		view.removeProgram(watermarkTxt.program);

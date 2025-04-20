@@ -12,8 +12,8 @@ class PlayField implements State {
 	var display(default, null):CustomDisplay;
 	var view(default, null):CustomDisplay;
 
-	function new(songName:String) {
-		chart = new Chart('assets/songs/$songName');
+	function new(path:String) {
+		chart = new Chart(path);
 	}
 
 	function init(roof:CustomDisplay, display:CustomDisplay, view:CustomDisplay) {

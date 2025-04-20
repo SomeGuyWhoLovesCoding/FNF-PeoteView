@@ -32,7 +32,7 @@ class Chart {
 			ChartConverter.baseGame(path);
 		}
 
-		header = ChartSystem.parseHeader('$path/header.txt');
+		header = ChartSystem.parseHeader(path);
 
 		var stamp = haxe.Timer.stamp();
 		file = new File('$path/chart.cbin');

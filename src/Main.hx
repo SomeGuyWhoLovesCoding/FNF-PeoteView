@@ -36,11 +36,17 @@ class Main extends Application
 		switch (window.context.type)
 		{
 			case WEBGL, OPENGL, OPENGLES:
-				try startSample(window)
-				catch (_) trace(CallStack.toString(CallStack.exceptionStack()), _);
+				try {
+					songChosen = Sys.args()[0];
+					startSample(window);
+				} catch (_) {
+					trace(CallStack.toString(CallStack.exceptionStack()), _);
+				}
 			default: throw("Sorry, only works with OpenGL.");
 		}
 	}
+
+	static var songChosen:String = "";
 
 	static public function switchState(newState:StateSelection) {
 		var instance = Main.current;
@@ -68,7 +74,7 @@ class Main extends Application
 				instance.mainMenu.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
 			case FREEPLAY:
 			case GAMEPLAY:
-				instance.playField = new PlayField(Sys.args()[0]);
+				instance.playField = new PlayField(songChosen);
 				instance.playField.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
 				instance.playField.downScroll = SaveData.state.preferences.downScroll;
 			case AWARDS:
@@ -100,6 +106,7 @@ class Main extends Application
 	var middleDisplay:CustomDisplay;
 	var topDisplay:CustomDisplay;
 	var optionsScreen:CustomDisplay;
+	var freeplayScreen:CustomDisplay;
 	var fakeWindow:FakeWindow;
 
 	// STATES
@@ -107,8 +114,9 @@ class Main extends Application
 	var mainMenu:MainMenu;
 	var playField:PlayField;
 
-	// OPTIONS MENU
+	// MENUS
 	var optionsMenu(default, null):OptionsMenu;
+	var freeplayMenu(default, null):FreeplayMenu;
 
 	// CONTROLS
 	var controls(default, null):Controls;
@@ -141,6 +149,9 @@ class Main extends Application
 
 			OptionsMenu.init(optionsScreen);
 			optionsMenu = new OptionsMenu();
+
+			FreeplayMenu.init(freeplayScreen);
+			freeplayMenu = new FreeplayMenu();
 
 			fakeWindow = new FakeWindow(peoteView);
 
@@ -184,6 +195,7 @@ class Main extends Application
 		TextureSystem.createTexture("hbTex", "assets/ui/hbSheet.png");
 		TextureSystem.createTexture("pauseScreenSheet", "assets/ui/pauseScreenSheet.png");
 		TextureSystem.createTexture("optionsMenuSheet", "assets/ui/optionsMenuSheet.png");
+		TextureSystem.createTexture("alphabetSheet", "assets/alphabetText/sheet.png");
 		trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 	}
 
@@ -194,6 +206,7 @@ class Main extends Application
 		middleDisplay = new CustomDisplay(0, 0, window.width, window.height, 0xFFFFFF00);
 		topDisplay = new CustomDisplay(0, 0, window.width, window.height, 0xFFFFFF00);
 		optionsScreen = new CustomDisplay(0, 0, window.width, window.height, 0xFFFFFF00);
+		freeplayScreen = new CustomDisplay(0, 0, window.width, window.height, 0xFFFFFF00);
 		trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 	}
 
@@ -252,6 +265,10 @@ class Main extends Application
 				if (optionsMenu.active) {
 					optionsMenu.update(newDeltaTime);
 				}
+
+				if (freeplayMenu.active) {
+					freeplayMenu.update(deltaTime);
+				}
 			} catch (_) trace(haxe.CallStack.toString(haxe.CallStack.exceptionStack()), _);
 
 			timeStamp = stamp();
@@ -274,6 +291,20 @@ class Main extends Application
 		fakeWindow.reload(peoteView.width, peoteView.height);
 	}
 
+	function popupFreeplayMenu() {
+		if (!freeplayScreen.isIn(peoteView)) {
+			peoteView.addDisplay(freeplayScreen);
+		}
+		fakeWindow.reload(peoteView.width, peoteView.height);
+	}
+
+	function removeFreeplayMenu() {
+		if (freeplayScreen.isIn(peoteView)) {
+			peoteView.removeDisplay(freeplayScreen);
+		}
+		fakeWindow.reload(peoteView.width, peoteView.height);
+	}
+
 	function resize(w:Int, h:Int) {
 		peoteView.resize(w, h);
 		fakeWindow.reload(w, h);
@@ -282,6 +313,7 @@ class Main extends Application
 		centerDisplayOnWindow(middleDisplay, w, h);
 		centerDisplayOnWindow(topDisplay, w, h);
 		centerDisplayOnWindow(optionsScreen, w, h);
+		centerDisplayOnWindow(freeplayScreen, w, h);
 	}
 
 	function centerDisplayOnWindow(display:CustomDisplay, w:Int, h:Int) {

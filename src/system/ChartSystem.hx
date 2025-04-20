@@ -10,7 +10,7 @@ using StringTools;
 class ChartSystem
 {
 	inline static function parseHeader(path:String):Header {
-		var input = File.read(path, false);
+		var input = File.read('$path/header.txt', false);
 
 		var title = input.readLine().split(": ")[1].trim();
 		var artist = input.readLine().split(": ")[1].trim();
@@ -34,6 +34,7 @@ class ChartSystem
 		var gameOverBPM = Std.parseInt(input.readLine().split(": ")[1].trim());
 
 		var result:Header = {
+			dir: path,
 			title: title,
 			artist: artist,
 			genres: genres,
