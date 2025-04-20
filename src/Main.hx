@@ -130,6 +130,7 @@ class Main extends Application
 
 		SaveData.init();
 		Sound.init();
+		Tools.getIconGridMap('assets/ui');
 
 		window.frameRate = SaveData.state.graphics.frameRate;
 

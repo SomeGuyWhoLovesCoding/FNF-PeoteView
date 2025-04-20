@@ -5,6 +5,8 @@ using StringTools;
 
 @:publicFields
 class Tools {
+	static var iconGridMap:Map<String, Array<Int>> = [];
+
 	static function parseNoteskinData(path:String) {
 		cpp.NativeArray.zero(Note.offsetAndSizeFrames);
 		cpp.NativeArray.zero(Sustain.offsets);
@@ -161,5 +163,22 @@ class Tools {
 
 	inline static function lerp(a:Float, b:Float, ratio:Float):Float {
 		return a + ratio * (b - a);
+	}
+
+	static function getIconGridMap(path:String) {
+		var contents = File.getContent('$path/iconData.xml');
+		var xml = Xml.parse(contents);
+		var root = xml.firstElement();
+
+		for (element in root.elementsNamed("SubTexture")) {
+			var name = element.get("name");
+			var x = Std.parseInt(element.get("x"));
+			var y = Std.parseInt(element.get("y"));
+			iconGridMap.set(name, [x, y]);
+		}
+	}
+
+	static function fromIconGridXMLCharacter(path:String):Array<Int> {
+		return iconGridMap.get(path);
 	}
 }

@@ -89,8 +89,8 @@ class HealthBar {
 		var x = bg.x + (bg.w * 0.5);
 
 		for (i in 0...2) {
-			var healthIconIndexes = actors[i + 1].data.healthIconIndexes;
-			healthIconIDs[i] = [healthIconIndexes[0], healthIconIndexes[1]];
+			var healthIconIndexes = Tools.fromIconGridXMLCharacter(actors[i + 1].data.healthIcon);
+			healthIconIDs[i] = healthIconIndexes;
 		}
 
 		var oppIcon = healthIcons[0] = new HealthBarSprite();

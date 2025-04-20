@@ -206,7 +206,6 @@
 		350
 	],
 	"healthicon": "bf",
-	"healthicon_ids": [2, 3],
 	"flip_x": true,
 	"healthbar_colors": [
 		49,

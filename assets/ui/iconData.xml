@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TextureAtlas imagePath="alphabet.png">
+	<!-- Created with Adobe Animate version 23.0.2.103 -->
+	<!-- http://www.adobe.com/products/animate.html -->
+	<SubTexture name="face" x="0" y="1" />
+	<SubTexture name="bf" x="2" y="3" />
+	<SubTexture name="dad" x="4" y="4" />
+	<SubTexture name="gf0" x="5" y="5" />
+	<SubTexture name="pshaggy" x="6" y="7" />
+</TextureAtlas>

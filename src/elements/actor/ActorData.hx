@@ -7,7 +7,7 @@ class ActorData {
 	var colors:Vector<Color>;
 	var scale:Float;
 
-	var healthIconIndexes:Vector<Int>;
+	var healthIcon:String;
 
 	var adjPos:Vector<Float>;
 	var camPos:Vector<Float>;
@@ -38,16 +38,13 @@ class ActorData {
 			});
 		}
 
-		var healthIconIDs:Vector<Int> = Vector.fromData(json.healthicon_ids);
-		if (healthIconIDs == null) healthIconIDs = Vector.fromData([0, 1]);
-
 		var c:Vector<Color> = Vector.fromData(json.healthbar_colors);
 		var colors:Color = Color.RGB(c[0], c[1], c[2]);
 		var result:ActorData = {
 			flip: json.flip_x,
 			colors: new Vector<Color>(6, colors),
 			scale: json.scale,
-			healthIconIndexes: healthIconIDs,
+			healthIcon: json.healthicon,
 			adjPos: Vector.fromData(json.position),
 			camPos: Vector.fromData(json.camera_position),
 			data: _data
