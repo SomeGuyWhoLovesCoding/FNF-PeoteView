@@ -147,12 +147,9 @@ class InputSystem {
 		var game = controls.game;
 		var ui = controls.ui;
 
-		if (field.endedGameOver) return;
-
 		if (parent.ready && code == game.pause
 			&& !parent.songEnded) {
 			if (!parent.paused) parent.pause();
-			else if (isInGameOver) field.endGameOver();
 			return;
 		}
 
@@ -163,7 +160,7 @@ class InputSystem {
 			return;
 		}
 
-		if (parent.ready && (isInGameOver && code == ui.back)) {
+		if (parent.ready && isInGameOver || code == ui.back) {
 			// Yoooooo
 			field.endGameOver(code == ui.back);
 			return;

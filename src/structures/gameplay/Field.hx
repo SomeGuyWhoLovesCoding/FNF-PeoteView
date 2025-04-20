@@ -208,7 +208,6 @@ class Field {
 	// GAME OVER IMPL
 
 	var isInGameOver:Bool;
-	var endedGameOver:Bool;
 	static var gameOverSounds:Map<String, Map<String, Sound>> = [];
 	var gameOverSound:Sound;
 	var gameOverMusic:Sound;
@@ -255,9 +254,6 @@ class Field {
 	}
 
 	function endGameOver(goBack:Bool = false) {
-
-		endedGameOver = true;
-
 		if (gameOverMusic != null) {
 			gameOverMusic.stop();
 			gameOverMusic = null;
@@ -283,5 +279,6 @@ class Field {
 		actorOnGameOver.playAnimation("deathConfirm");
 
 		Main.current.controls.unBind();
+		parent.inputSystem.removeEvents();
 	}
 }

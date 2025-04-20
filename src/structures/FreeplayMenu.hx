@@ -78,10 +78,21 @@ class FreeplayMenu {
 	var curSelectedLerp:Float = 0.0;
 	var xLerp:Float = 0.0;
 
+	var alphaLerpWontBeZeroWhenLaunchingFreeplayForTheFirstTime:Bool; // This is a flag to check if the alphaLerp is 0.0 when launching freeplay for the first time. Cuz fuck you.
+
 	function update(deltaTime:Float) {
-		alphaLerp = Tools.lerp(alphaLerp, opened ? 1.0 : 0.0, Math.min(deltaTime * 0.015, 1.0));
-		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelected, Math.min(deltaTime * 0.015, 1.0));
-		xLerp = Tools.lerp(xLerp, 90 - (curSelected * 32), Math.min(deltaTime * 0.015, 1.0));
+		var ratio = Math.min(deltaTime * 0.015, 1.0);
+
+		alphaLerp = Tools.lerp(alphaLerp, opened ? 1.0 : 0.0, ratio);
+
+		if (!alphaLerpWontBeZeroWhenLaunchingFreeplayForTheFirstTime && alphaLerp != 0.0) {
+			alphaLerpWontBeZeroWhenLaunchingFreeplayForTheFirstTime = true;
+			alphaLerp = 0.0;
+		}
+		trace(alphaLerp);
+
+		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelected, ratio);
+		xLerp = Tools.lerp(xLerp, 90 - (curSelected * 32), ratio);
 
 		if (!opened && alphaLerp == 0.0) {
 			shutDown();
@@ -134,7 +145,7 @@ class FreeplayMenu {
 					case "“":
 						char = 'start quote';
 					case ' ':
-						char = '_'; // this is space for a reason, and it's hidden. If the sprite wasn't even created for it, it won't be drawn correctly for the pool.
+						char = '_'; // NOTE: This is space for a reason, and it's hidden. If the sprite wasn't even created for it, the pooling won't even run correctly.
 				}
 
 				if (j >= 17) char = '.';
@@ -156,7 +167,7 @@ class FreeplayMenu {
 						spr.y += spr.h * .25;
 				}
 
-				spr.c.aF = isInvalidCharacter ? 0.0 : (i == (curSelected - incrementBest) ? 1 : 0.5) * alphaLerp;
+				spr.c.aF = isInvalidCharacter ? 0.0 : (i == (curSelected - incrementBest) ? 1.0 : 0.5) * alphaLerp;
 				songTextsBuf.updateElement(spr);
 
 				x += spr.w + 2;
