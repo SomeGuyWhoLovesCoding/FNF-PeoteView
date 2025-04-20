@@ -161,21 +161,21 @@ class Field {
 		char.shake = shake;
 	}
 
-	inline function hitNote(note:MetaNote, timing:Int) {
+	function hitNote(note:MetaNote, timing:Int) {
 		sing(note.index, (note.lane == 0 ? opponent : player), false, note.duration > 12 && timing < parent.hitbox * 0.5);
 
 		targetCamera.x = note.lane == 0 ? -50 : 50; // Prototype camera logic I have for now
 	}
 
-	inline function missNote(note:MetaNote) {
+	function missNote(note:MetaNote) {
 		sing(note.index, (note.lane == 0 ? opponent : player), true, false);
 	}
 
-	inline function completeSustain(note:MetaNote) {
+	function completeSustain(note:MetaNote) {
 		sing(note.index, (note.lane == 0 ? opponent : player), false, false, true);
 	}
 
-	inline function releaseSustain(note:MetaNote) {
+	function releaseSustain(note:MetaNote) {
 		sing(note.index, (note.lane == 0 ? opponent : player), true, false);
 	}
 
@@ -208,6 +208,7 @@ class Field {
 	// GAME OVER IMPL
 
 	var isInGameOver:Bool;
+	var endedGameOver:Bool;
 	static var gameOverSounds:Map<String, Map<String, Sound>> = [];
 	var gameOverSound:Sound;
 	var gameOverMusic:Sound;
@@ -279,5 +280,7 @@ class Field {
 		actorOnGameOver.playAnimation("deathConfirm");
 
 		Main.current.controls.unBind();
+
+		endedGameOver = true;
 	}
 }

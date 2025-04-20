@@ -23,26 +23,96 @@ class FreeplayMenu {
 	static var songTextsProg(default, null):Program;
 
 	var songsAvailable(default, null):Array<Header> = [];
-	static var songTextChars(default, null):Array<Actor> = [];
+	static var songTextCharGroup(default, null):Array<Array<Actor>> = [];
 
 	var curSelected(default, null):Int = 0;
 
 	var actions(default, null):ActionMap;
 
 	function new() {
-		var songs:Array<String> = ["assets/songs/god-eater", "assets/songs/termination"];
+		var songs:Array<String> = ["assets/songs/god-eater", "assets/songs/termination", "assets/songs/spam", "assets/songs/unpredictable-6",
+		"assets/songs/god-eater", "assets/songs/termination", "assets/songs/spam", "assets/songs/unpredictable-6",
+		"assets/songs/god-eater", "assets/songs/termination", "assets/songs/spam", "assets/songs/unpredictable-6",
+		"assets/songs/god-eater", "assets/songs/termination", "assets/songs/spam", "assets/songs/unpredictable-6"];
+
+		songTextCharGroup = [
+			for (i in 0...8) [
+				for (i in 0...20) {
+					var spr = new Actor(display, "alphabetText", 0, 0, 24, "", false);
+					spr.c.aF = 0.0;
+					addAlphabetCharElement(spr);
+					spr;
+				}
+			]
+		];
 
 		for (i in 0...songs.length) {
 			var path = songs[i];
 
 			var header = ChartSystem.parseHeader(path);
 			songsAvailable.push(header);
+		}
 
-			var title = header.title;
+		actions = [
+			Controls.Action.UI_UP => { action: up },
+			Controls.Action.UI_DOWN => { action: down },
+			Controls.Action.UI_BACK => { action: back },
+			Controls.Action.UI_ACCEPT => { action: enter }
+		];
+	}
 
-			var x:Float = 20;
+	private function addAlphabetCharElement(spr:Actor) {
+		songTextsBuf.addElement(spr);
+	}
 
-			for (j in 0...title.length) {
+	static function init(disp:CustomDisplay):Void {
+		display = disp;
+
+		if (songTextsBuf == null) {
+			songTextsBuf = new Buffer<Actor>(256, 64, false);
+			songTextsProg = new Program(songTextsBuf);
+			songTextsProg.blendEnabled = true;
+
+			var tex = TextureSystem.getTexture("alphabetSheet");
+			TextureSystem.setTexture(songTextsProg, "alphabetSheet", "alphabetSheet");
+		}
+	}
+
+	var alphaLerp:Float = 0.0;
+	var yLerp:Float = 0.0;
+	var xLerp:Float = 0.0;
+
+	function update(deltaTime:Float) {
+		if (!opened && alphaLerp == 0.0) {
+			shutDown();
+			return;
+		}
+
+		alphaLerp = Tools.lerp(alphaLerp, opened ? 1.0 : 0.0, Math.min(deltaTime * 0.015, 1.0));
+		yLerp = Tools.lerp(yLerp, -curSelected * 112, Math.min(deltaTime * 0.015, 1.0));
+		xLerp = Tools.lerp(xLerp, 90 - (curSelected * 32), Math.min(deltaTime * 0.015, 1.0));
+
+		var startSelected = curSelected - 8;
+		if (startSelected < 0) {
+			startSelected = 0;
+		}
+
+		var endSelected = 8;
+		if (startSelected >= 8) {
+			endSelected = startSelected;
+		}
+
+		for (i in startSelected...endSelected) {
+			var song = songsAvailable[i];
+			var title = song.title;
+
+			var x:Float = 45;
+
+			for (j in 0...20) {
+				if (j >= title.length) {
+					break;
+				}
+
 				var char = title.charAt(j).toLowerCase();
 
 				switch (char)
@@ -60,10 +130,12 @@ class FreeplayMenu {
 						continue;
 				}
 
-				var spr = new Actor(display, "alphabetText", 0, 0, 24, "", false);
+				if (i >= 17) char = '.';
+
+				var spr = songTextCharGroup[i][j];
 				spr.playAnimation('$char bold instance 1', true);
-				spr.x = x;
-				spr.y = 20 + ((spr.h + 5) * i);
+				spr.x = (x + 50) + (xLerp + (32 * i));
+				spr.y = yLerp + (112 * i) + 360;
 
 				switch (char)
 				{
@@ -73,70 +145,17 @@ class FreeplayMenu {
 						spr.y += spr.h * .25;
 				}
 
-				spr.c.aF = 0.0;
-				addAlphabetCharElement(spr);
+				spr.c.aF = (i == curSelected ? 1 : 0.5) * alphaLerp;
+				songTextsBuf.updateElement(spr);
 
 				x += spr.w + 2;
 			}
-		}
-
-		actions = [
-			Controls.Action.UI_UP => { action: up },
-			Controls.Action.UI_DOWN => { action: down },
-			Controls.Action.UI_BACK => { action: back },
-			Controls.Action.UI_ACCEPT => { action: enter }
-		];
-	}
-
-	private function addAlphabetCharElement(spr:Actor) {
-		songTextChars.push(spr);
-		songTextsBuf.addElement(spr);
-	}
-
-	static function init(disp:CustomDisplay):Void {
-		display = disp;
-
-		if (songTextsBuf == null) {
-			songTextsBuf = new Buffer<Actor>(26);
-			songTextsProg = new Program(songTextsBuf);
-			songTextsProg.blendEnabled = true;
-
-			var tex = TextureSystem.getTexture("alphabetSheet");
-			TextureSystem.setTexture(songTextsProg, "alphabetSheet", "alphabetSheet");
-		}
-	}
-
-	var alphaLerp:Float = 0.0;
-
-	function update(deltaTime:Float) {
-		if (!opened && alphaLerp == 0.0) {
-			shutDown();
-			return;
-		}
-
-		alphaLerp = Tools.lerp(alphaLerp, opened ? 1.0 : 0.0, Math.min(deltaTime * 0.015, 1.0));
-
-		for (i in 0...songTextChars.length) {
-			var char = songTextChars[i];
-			char.c.aF = alphaLerp;
-			songTextsBuf.updateElement(char);
-			char.update(deltaTime);
 		}
 	}
 
 	function open() {
 		active = opened = true;
 		Main.current.popupFreeplayMenu();
-
-		try {
-			for (i in 0...songTextChars.length) {
-				var char = songTextChars[i];
-				char.c.aF = 0.0;
-				songTextsBuf.addElement(char);
-			}
-
-			alphaLerp = 0.0;
-		} catch (e) {}
 
 		haxe.Timer.delay(() -> {
 			var window = lime.app.Application.current.window;
@@ -219,12 +238,6 @@ class FreeplayMenu {
 	function shutDown() {
 		if (!songTextsProg.isIn(display)) return;
 
-		for (i in 0...songTextChars.length) {
-			var char = songTextChars[i];
-			char.c.aF = 0.0;
-			songTextsBuf.removeElement(char);
-		}
-
 		display.color = 0x00000000;
 		display.removeProgram(songTextsProg);
 
@@ -234,13 +247,5 @@ class FreeplayMenu {
 	function dispose() {
 		close();
 		shutDown();
-
-		if (opened) {
-			while (songTextChars.length != 0) {
-				var char = songTextChars.pop();
-				songTextsBuf.removeElement(char);
-				char = null;
-			}
-		}
 	}
 }
