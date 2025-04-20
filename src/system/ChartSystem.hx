@@ -9,7 +9,7 @@ using StringTools;
 @:publicFields
 class ChartSystem
 {
-	inline static function parseHeader(path:String):Header {
+	static function parseHeader(path:String):Header {
 		var input = File.read('$path/header.txt', false);
 
 		var title = input.readLine().split(": ")[1].trim();
