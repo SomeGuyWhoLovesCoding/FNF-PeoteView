@@ -255,6 +255,9 @@ class Field {
 	}
 
 	function endGameOver(goBack:Bool = false) {
+
+		endedGameOver = true;
+
 		if (gameOverMusic != null) {
 			gameOverMusic.stop();
 			gameOverMusic = null;
@@ -280,7 +283,5 @@ class Field {
 		actorOnGameOver.playAnimation("deathConfirm");
 
 		Main.current.controls.unBind();
-
-		endedGameOver = true;
 	}
 }

@@ -7,7 +7,7 @@ import lime.ui.MouseButton;
 /**
 	The input system for the playfield.
 	This is an internal structure and should only be used inside of the playfield NOT to be touched with.
-	Warning: 70% of inside this class is very messy.
+	Warning: 70% of this class is very messy inside.
 **/
 @:publicFields
 class InputSystem {
@@ -147,10 +147,12 @@ class InputSystem {
 		var game = controls.game;
 		var ui = controls.ui;
 
+		if (field.endedGameOver) return;
+
 		if (parent.ready && code == game.pause
 			&& !parent.songEnded) {
 			if (!parent.paused) parent.pause();
-			else if (isInGameOver && field.endedGameOver) field.endGameOver();
+			else if (isInGameOver) field.endGameOver();
 			return;
 		}
 
@@ -161,9 +163,7 @@ class InputSystem {
 			return;
 		}
 
-		if (parent.ready && isInGameOver
-			|| (code == ui.back ||
-				code == ui.accept)) {
+		if (parent.ready && (isInGameOver && code == ui.back)) {
 			// Yoooooo
 			field.endGameOver(code == ui.back);
 			return;

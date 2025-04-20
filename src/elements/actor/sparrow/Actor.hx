@@ -5,7 +5,8 @@ import elements.actor.*;
 using StringTools;
 
 /**
-	Sparrow atlas actor element object meant to be in the field of the gameplay state.
+	Sparrow atlas actor element object.
+	Originally meant to be in the field of the gameplay state.
 **/
 @:publicFields
 class Actor extends ActorElement
@@ -15,6 +16,8 @@ class Actor extends ActorElement
 	static var buffers:Map<String, Buffer<ActorElement>> = [];
 	static var programs:Map<String, Program> = [];
 	static var copiesOfCharacters:Map<String, Int> = [];
+	static var cachedActorDatas:Map<String, ActorData> = [];
+	static var cachedAtlases:Map<String, SparrowAtlas> = [];
 
 	var name(default, null):String;
 	var displayName(default, null):String;
@@ -39,15 +42,19 @@ class Actor extends ActorElement
 
 		var spritesheetDataPath = "";
 
-		if (pathExists(name, folder, XML)) {
+		if (cachedAtlases['$name/$folder'] == null && pathExists(name, folder, XML)) {
 			spritesheetDataPath = path(name, folder, XML);
-			atlas = SparrowAtlas.parse(sys.io.File.getContent(spritesheetDataPath));
+			cachedAtlases['$name/$folder'] = atlas = SparrowAtlas.parse(sys.io.File.getContent(spritesheetDataPath));
+		} else if (cachedAtlases['$name/$folder'] != null) {
+			atlas = cachedAtlases['$name/$folder'];
 		} else {
 			throw "Atlas data doesn't exist: " + path(name, folder, NONE);
 		}
 
-		if (pathExists(name, folder, DATA)) {
-			data = ActorData.parse(path(name, folder, DATA));
+		if (cachedActorDatas['$name/$folder'] == null && pathExists(name, folder, DATA)) {
+			cachedActorDatas['$name/$folder'] = data = ActorData.parse(path(name, folder, DATA));
+		} else if (cachedActorDatas['$name/$folder'] != null) {
+			data = cachedActorDatas['$name/$folder'];
 		}
 
 		if (atlas.imagePath != "" && addBufferAndProgram) {
@@ -231,7 +238,7 @@ class Actor extends ActorElement
 		var frameWidth = config.frameWidth == null ? 0 : config.frameWidth;
 
 		off_x = -xOffset * scale;
-		if (mirror) off_x = -off_x + (frameWidth - width); // This needs done
+		if (mirror) off_x = -off_x + (frameWidth - width);
 		off_y = -yOffset * scale;
 
 		w = width;

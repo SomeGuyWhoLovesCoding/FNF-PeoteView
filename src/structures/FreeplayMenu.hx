@@ -31,20 +31,9 @@ class FreeplayMenu {
 
 	function new() {
 		var songs:Array<String> = ["assets/songs/god-eater", "assets/songs/termination", "assets/songs/spam", "assets/songs/unpredictable-6",
+		"assets/songs/unpredictable-6", "assets/songs/spam", "assets/songs/termination", "assets/songs/god-eater",
 		"assets/songs/god-eater", "assets/songs/termination", "assets/songs/spam", "assets/songs/unpredictable-6",
-		"assets/songs/god-eater", "assets/songs/termination", "assets/songs/spam", "assets/songs/unpredictable-6",
-		"assets/songs/god-eater", "assets/songs/termination", "assets/songs/spam", "assets/songs/unpredictable-6"];
-
-		songTextCharGroup = [
-			for (i in 0...8) [
-				for (i in 0...20) {
-					var spr = new Actor(display, "alphabetText", 0, 0, 24, "", false);
-					spr.c.aF = 0.0;
-					addAlphabetCharElement(spr);
-					spr;
-				}
-			]
-		];
+		"assets/songs/unpredictable-6", "assets/songs/spam", "assets/songs/termination", "assets/songs/god-eater"];
 
 		for (i in 0...songs.length) {
 			var path = songs[i];
@@ -61,10 +50,6 @@ class FreeplayMenu {
 		];
 	}
 
-	private function addAlphabetCharElement(spr:Actor) {
-		songTextsBuf.addElement(spr);
-	}
-
 	static function init(disp:CustomDisplay):Void {
 		display = disp;
 
@@ -76,44 +61,47 @@ class FreeplayMenu {
 			var tex = TextureSystem.getTexture("alphabetSheet");
 			TextureSystem.setTexture(songTextsProg, "alphabetSheet", "alphabetSheet");
 		}
+
+		songTextCharGroup = [
+			for (i in 0...8) [
+				for (i in 0...20) {
+					var spr = new Actor(display, "alphabetText", 0, 0, 24, "", false);
+					spr.c.aF = 0.0;
+					songTextsBuf.addElement(spr);
+					spr;
+				}
+			]
+		];
 	}
 
 	var alphaLerp:Float = 0.0;
-	var yLerp:Float = 0.0;
+	var curSelectedLerp:Float = 0.0;
 	var xLerp:Float = 0.0;
 
 	function update(deltaTime:Float) {
+		alphaLerp = Tools.lerp(alphaLerp, opened ? 1.0 : 0.0, Math.min(deltaTime * 0.015, 1.0));
+		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelected, Math.min(deltaTime * 0.015, 1.0));
+		xLerp = Tools.lerp(xLerp, 90 - (curSelected * 32), Math.min(deltaTime * 0.015, 1.0));
+
 		if (!opened && alphaLerp == 0.0) {
 			shutDown();
 			return;
 		}
 
-		alphaLerp = Tools.lerp(alphaLerp, opened ? 1.0 : 0.0, Math.min(deltaTime * 0.015, 1.0));
-		yLerp = Tools.lerp(yLerp, -curSelected * 112, Math.min(deltaTime * 0.015, 1.0));
-		xLerp = Tools.lerp(xLerp, 90 - (curSelected * 32), Math.min(deltaTime * 0.015, 1.0));
+		var incrementBest = Math.floor(Math.min(Math.max(curSelectedLerp - 3, 0), songsAvailable.length - 8));
 
-		var startSelected = curSelected - 8;
-		if (startSelected < 0) {
-			startSelected = 0;
-		}
-
-		var endSelected = 8;
-		if (startSelected >= 8) {
-			endSelected = startSelected;
-		}
-
-		for (i in startSelected...endSelected) {
-			var song = songsAvailable[i];
+		for (i in 0...8) {
+			var k = i + incrementBest;
+			var kClamped = Math.floor(Math.min(Math.max(k, 0), songsAvailable.length - 1));
+			var song = songsAvailable[kClamped];
 			var title = song.title;
 
 			var x:Float = 45;
 
 			for (j in 0...20) {
-				if (j >= title.length) {
-					break;
-				}
-
 				var char = title.charAt(j).toLowerCase();
+
+				var isInvalidCharacter = j >= title.length || char == ' ';
 
 				switch (char)
 				{
@@ -125,29 +113,50 @@ class FreeplayMenu {
 						char = 'less';
 					case '"':
 						char = 'quote';
+					case "'":
+						char = 'apostrophe';
+					case '•':
+						char = 'bullet';
+					case ',':
+						char = 'comma';
+					case '!':
+						char = 'exclamation';
+					case '/':
+						char = 'forward slash';
+					case '\\':
+						char = 'back slash';
+					case '¿':
+						char = 'inverted question';
+					case '¡':
+						char = 'inverted exclamation';
+					case '.':
+						char = 'period';
+					case "“":
+						char = 'start quote';
 					case ' ':
-						x += 20;
-						continue;
+						char = '_'; // this is space for a reason, and it's hidden. If the sprite wasn't even created for it, it won't be drawn correctly for the pool.
 				}
 
-				if (i >= 17) char = '.';
+				if (j >= 17) char = '.';
 
 				var spr = songTextCharGroup[i][j];
-				if (!spr.endOfAnimation()) {
-					spr.playAnimation('$char bold instance 1', true);
-				}
-				spr.x = (x + 50) + (xLerp + (32 * i));
-				spr.y = yLerp + (112 * i) + 360;
+				spr.playAnimation('$char bold instance 1', true);
+				spr.x = (x + 50) + (xLerp + (32 * k)) + 60;
+				spr.y = (-curSelectedLerp * 130) + (130 * k) + 320;
 
 				switch (char)
 				{
-					case "'" | '“' | '”' | '*' | '^' | '"' | '-':
+					case '-':
 						spr.y += spr.h;
+					case 'comma':
+						spr.y += 47;
+					case '_':
+						spr.y += 46;
 					case '+':
 						spr.y += spr.h * .25;
 				}
 
-				spr.c.aF = (i == curSelected ? 1 : 0.5) * alphaLerp;
+				spr.c.aF = isInvalidCharacter ? 0.0 : (i == (curSelected - incrementBest) ? 1 : 0.5) * alphaLerp;
 				songTextsBuf.updateElement(spr);
 
 				x += spr.w + 2;
@@ -156,8 +165,9 @@ class FreeplayMenu {
 	}
 
 	function open() {
-		active = opened = true;
 		Main.current.popupFreeplayMenu();
+
+		active = opened = true;
 
 		haxe.Timer.delay(() -> {
 			var window = lime.app.Application.current.window;
@@ -165,7 +175,7 @@ class FreeplayMenu {
 			
 			window.onMouseDown.add(mousePress);
 			window.onMouseWheel.add(moveCategory_mouse);
-		}, 200);
+		}, 1);
 
 		if (!songTextsProg.isIn(display)) {
 			display.addProgram(songTextsProg);
