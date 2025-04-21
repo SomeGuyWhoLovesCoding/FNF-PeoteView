@@ -80,8 +80,10 @@ class OptionsDisplay {
 					switch (field) {
 						case "downScroll":
 							pf.downScroll = !optionChecked;
-						case "hideHUD" | "ratingPopup" | "smoothHealthbar":
+						case "hideHUD" | "ratingPopup":
 							pf.resetHUD();
+						case "smoothHealthbar":
+							pf.hud.healthBar.update(0);
 						default:
 					}
 				}
