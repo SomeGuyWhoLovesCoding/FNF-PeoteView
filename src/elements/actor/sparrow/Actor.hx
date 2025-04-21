@@ -137,6 +137,7 @@ class Actor extends ActorElement
 	var endingShakeFrame:Int;
 
 	var animationRunning(default, null):Bool;
+	var animationName(default, null):String;
 
 	function setFps(fps:Float) {
 		this.fps = fps;
@@ -144,8 +145,14 @@ class Actor extends ActorElement
 		frameTimeRemaining = frameDurationMs;
 	}
 
-	function playAnimation(name:String, loop:Bool = false) {
-		frameIndex = 0;
+	function playAnimation(name:String, loop:Bool = false, force:Bool = true) {
+		animationName = name;
+
+		if (!force) {
+			if (animationName != name) frameIndex = 0;
+			else return;
+		}
+
 		this.loop = loop;
 
 		var animDataMap = data.data;

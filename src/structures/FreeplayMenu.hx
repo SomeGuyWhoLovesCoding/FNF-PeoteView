@@ -30,10 +30,7 @@ class FreeplayMenu {
 	var actions(default, null):ActionMap;
 
 	function new() {
-		var songs:Array<String> = ["assets/songs/god-eater", "assets/songs/termination", "assets/songs/spam", "assets/songs/unpredictable-6",
-		"assets/songs/unpredictable-6", "assets/songs/spam", "assets/songs/termination", "assets/songs/god-eater",
-		"assets/songs/god-eater", "assets/songs/termination", "assets/songs/spam", "assets/songs/unpredictable-6",
-		"assets/songs/unpredictable-6", "assets/songs/spam", "assets/songs/termination", "assets/songs/god-eater"];
+		var songs:Array<String> = [for (i in 0...200) "assets/songs/god-eater"];
 
 		for (i in 0...songs.length) {
 			var path = songs[i];
@@ -66,6 +63,7 @@ class FreeplayMenu {
 			for (i in 0...8) [
 				for (i in 0...20) {
 					var spr = new Actor(display, "alphabetText", 0, 0, 24, "", false);
+					spr.playAnimation('a bold instance 1', true);
 					spr.c.aF = 0.0;
 					songTextsBuf.addElement(spr);
 					spr;
@@ -91,7 +89,7 @@ class FreeplayMenu {
 		}
 
 		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelected, ratio);
-		xLerp = Tools.lerp(xLerp, 90 - (curSelected * 32), ratio);
+		xLerp = Tools.lerp(xLerp, 30 - (curSelected * 24), ratio);
 
 		if (!opened && alphaLerp == 0.0) {
 			shutDown();
@@ -105,6 +103,7 @@ class FreeplayMenu {
 			var kClamped = Math.floor(Math.min(Math.max(k, 0), songsAvailable.length - 1));
 			var song = songsAvailable[kClamped];
 			var title = song.title;
+			var grp = songTextCharGroup[i];
 
 			var x:Float = 45;
 
@@ -149,9 +148,9 @@ class FreeplayMenu {
 
 				if (j >= 17) char = '.';
 
-				var spr = songTextCharGroup[i][j];
-				spr.playAnimation('$char bold instance 1', true);
-				spr.x = (x + 50) + (xLerp + (32 * k)) + 60;
+				var spr = grp[j];
+				spr.playAnimation('$char bold instance 1', true, false);
+				spr.x = (x + 50) + (xLerp + (24 * k));
 				spr.y = (-curSelectedLerp * 130) + (130 * k) + 320;
 
 				switch (char)
