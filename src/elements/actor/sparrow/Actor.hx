@@ -126,18 +126,13 @@ class Actor extends ActorElement
 	var loop:Bool;
 	var indicesMode:Bool;
 	var indices:Vector<Int>;
-	var firstFrameWidth(get, default):Float;
-
-	inline function get_firstFrameWidth() {
-		return firstFrameWidth * scale;
-	}
+	var firstFrameWidth(default, null):Float;
 
 	var shake:Bool;
 	var startingShakeFrame:Int;
 	var endingShakeFrame:Int;
 
 	var animationRunning(default, null):Bool;
-	var animationName(default, null):String;
 
 	function setFps(fps:Float) {
 		this.fps = fps;
@@ -145,14 +140,8 @@ class Actor extends ActorElement
 		frameTimeRemaining = frameDurationMs;
 	}
 
-	function playAnimation(name:String, loop:Bool = false, force:Bool = true) {
-		animationName = name;
-
-		if (!force) {
-			if (animationName != name) frameIndex = 0;
-			else return;
-		}
-
+	function playAnimation(name:String, loop:Bool = false) {
+		frameIndex = 0;
 		this.loop = loop;
 
 		var animDataMap = data.data;
@@ -237,6 +226,10 @@ class Actor extends ActorElement
 	public function configure(config:SubTexture) {
 		var width = config.width;
 		var height = config.height;
+
+		if (frameIndex == 0) {
+			firstFrameWidth = width;
+		}
 
 		var xOffset = config.frameX == null ? 0 : config.frameX;
 		var yOffset = config.frameY == null ? 0 : config.frameY;

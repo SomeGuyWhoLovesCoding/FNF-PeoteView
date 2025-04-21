@@ -30,7 +30,10 @@ class FreeplayMenu {
 	var actions(default, null):ActionMap;
 
 	function new() {
-		var songs:Array<String> = [for (i in 0...200) "assets/songs/god-eater"];
+		var songs:Array<String> = ["assets/songs/god-eater", "assets/songs/termination", "assets/songs/spam", "assets/songs/unpredictable-6",
+		"assets/songs/unpredictable-6", "assets/songs/spam", "assets/songs/termination", "assets/songs/god-eater",
+		"assets/songs/god-eater", "assets/songs/termination", "assets/songs/spam", "assets/songs/unpredictable-6",
+		"assets/songs/unpredictable-6", "assets/songs/spam", "assets/songs/termination", "assets/songs/god-eater"];
 
 		for (i in 0...songs.length) {
 			var path = songs[i];
@@ -63,7 +66,6 @@ class FreeplayMenu {
 			for (i in 0...8) [
 				for (i in 0...20) {
 					var spr = new Actor(display, "alphabetText", 0, 0, 24, "", false);
-					spr.playAnimation('a bold instance 1', true);
 					spr.c.aF = 0.0;
 					songTextsBuf.addElement(spr);
 					spr;
@@ -75,6 +77,7 @@ class FreeplayMenu {
 	var alphaLerp:Float = 0.0;
 	var curSelectedLerp:Float = 0.0;
 	var xLerp:Float = 0.0;
+	var xLerpPrev:Float = 0.0;
 
 	var alphaLerpWontBeZeroWhenLaunchingFreeplayForTheFirstTime:Bool; // This is a flag to check if the alphaLerp is 0.0 when launching freeplay for the first time. Cuz fuck you.
 
@@ -149,7 +152,17 @@ class FreeplayMenu {
 				if (j >= 17) char = '.';
 
 				var spr = grp[j];
-				spr.playAnimation('$char bold instance 1', true, false);
+
+				if (spr.frameIndex == 0) {
+					spr.playAnimation('$char bold instance 1', true);
+				}
+
+				if (Math.floor(xLerp) != Math.floor(xLerpPrev)) {
+					var ogFrameIndex = spr.frameIndex;
+					spr.playAnimation('$char bold instance 1', true);
+					spr.frameIndex = ogFrameIndex;
+				}
+
 				spr.x = (x + 50) + (xLerp + (24 * k));
 				spr.y = (-curSelectedLerp * 130) + (130 * k) + 320;
 
@@ -167,10 +180,13 @@ class FreeplayMenu {
 
 				spr.c.aF = isInvalidCharacter ? 0.0 : (i == (curSelected - incrementBest) ? 1.0 : 0.5) * alphaLerp;
 				songTextsBuf.updateElement(spr);
+				spr.update(deltaTime);
 
-				x += spr.w + 2;
+				x += spr.firstFrameWidth + 2;
 			}
 		}
+
+		xLerpPrev = xLerp;
 	}
 
 	function open() {
