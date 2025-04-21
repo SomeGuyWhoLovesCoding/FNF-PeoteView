@@ -10,7 +10,7 @@ import lime.ui.MouseButton;
 @:publicFields
 @:access(lime._internal.backend.native.NativeCFFI)
 class FakeWindow {
-	final windowOffset:Vector<Int> = Vector.fromData([-1, -8]);
+	final windowOffset:Vector<Int> = Vector.fromData([-1, -9]);
 
 	// Internal stuff
 	var display:Display;
@@ -71,7 +71,7 @@ class FakeWindow {
 	function isMouseInsideApp() {
 		var peoteView = Main.current.peoteView;
 		return mousePos.x >= 1 && mousePos.x <= peoteView.width + 1 &&
-			mousePos.y >= 29 && mousePos.y <= peoteView.height + 29;
+			mousePos.y >= 31 && mousePos.y <= peoteView.height + 31;
 	}
 
 	function isMouseAtCloseButton() {

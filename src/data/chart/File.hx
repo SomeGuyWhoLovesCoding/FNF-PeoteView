@@ -80,6 +80,9 @@ class File {
 			var buf:Pointer<Int64> = Pointer.ofArray(chunk);
 			Stdio.fread(buf.raw, 8, shortLen, file);
 		}
+
+		// Close the file
+		Stdio.fclose(file);
 	}
 
 	function getNote(atIndex:Int64):MetaNote {

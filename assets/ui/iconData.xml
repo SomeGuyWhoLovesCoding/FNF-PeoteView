@@ -5,6 +5,6 @@
 	<SubTexture name="face" x="0" y="1" />
 	<SubTexture name="bf" x="2" y="3" />
 	<SubTexture name="dad" x="4" y="4" />
-	<SubTexture name="gf0" x="5" y="5" />
+	<SubTexture name="gf" x="5" y="5" />
 	<SubTexture name="pshaggy" x="6" y="7" />
 </TextureAtlas>
