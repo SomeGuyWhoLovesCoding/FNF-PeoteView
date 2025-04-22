@@ -116,7 +116,7 @@ class MainMenu implements State {
 			var option = optionBuf.getElement(i);
 
 			var t = Math.min(deltaTime * 0.0115, 1);
-			if (t == 1) t = 0.0; // When loading the freeplay menu the first time it gets stuck at 1.0 for a single frame
+			if (t == 1) t = 0.0115; // When loading the freeplay menu the first time it gets stuck at 1.0 for a single frame
 
 			if (i != alphaLerps.length - 1) {
 				optionYLerps[i] = Tools.lerp(optionYLerps[i], (45 + (125 * i)) - (6 * Math.min(optionSelected, optionAnims.length - 2)), t);
