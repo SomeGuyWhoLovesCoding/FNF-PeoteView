@@ -176,8 +176,10 @@ class FreeplayMenu {
 
 				if (Math.floor(xLerp) != Math.floor(xLerpPrev)) {
 					var ogFrameIndex = spr.frameIndex;
+					var ogFrameTime = spr.frameTimeRemaining;
 					spr.playAnimation('$char bold instance 1', true);
 					spr.frameIndex = ogFrameIndex;
+					spr.frameTimeRemaining = ogFrameTime;
 				}
 
 				spr.x = (x + 50) + (xLerp + (20 * k));
