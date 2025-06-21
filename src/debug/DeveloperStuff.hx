@@ -17,9 +17,9 @@ class DeveloperStuff {
 		var playField = Main.current.playField;
 		if (playField == null) return;
 		switch (code) {
-			case KeyCode.EQUALS:
+			case KeyCode.PERIOD:
 				playField.setTime(playField.songPosition + 2000);
-			case KeyCode.MINUS:
+			case KeyCode.COMMA:
 				playField.setTime(playField.songPosition - 2000);
 			case KeyCode.F8:
 				playField.flipHealthBar = !playField.flipHealthBar;
