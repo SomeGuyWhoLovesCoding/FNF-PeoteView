@@ -2,6 +2,17 @@ package structures.gameplay;
 
 /**
 	The pool of the note system.
+	I'm proud of this class, it is the most efficient way to handle notes and sustains when working with peote-view.
+	It uses a map to store the notes and sustains, and an array to store the inactive notes and sustains.
+	When a note or sustain is needed, it checks if it is already allocated, if not, it creates a new one.
+	When a note or sustain is no longer needed, it puts it in the inactive list.
+	When a note or sustain is needed again, it checks the inactive list first, if it is not empty, it uses the last inactive note or sustain.
+	This way, it reduces the number of objects created and destroyed, which is a performance boost.
+	It also allows for easy access to the notes and sustains by their underlying meta note.
+	This is a very important class for the note system, and it is used in the NoteSystem class.
+	It is also used in said class to handle the notes and sustains.
+	This entire passage was written with github copilot, and I am very proud of it.
+	@since Development
 **/
 @:publicFields
 class NotePool {

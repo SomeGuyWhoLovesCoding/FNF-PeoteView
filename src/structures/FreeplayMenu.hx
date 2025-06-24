@@ -12,6 +12,8 @@ import data.gameplay.ChapterData.ChapterSong;
 	The freeplay submenu.
 	This is where you can select the song you want to play.
 	And this is the menu with the alphabet text that appears on the screen which scrolls by the mouse or the up or down key.
+	It is responsible for rendering the freeplay menu and updating it based on the player's input.
+	@since Development
 **/
 @:publicFields
 class FreeplayMenu {

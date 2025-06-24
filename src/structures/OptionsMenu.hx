@@ -7,6 +7,9 @@ import lime.ui.MouseWheelMode;
 
 /**
 	The options submenu.
+	This is where you can change the game's settings, such as controls, preferences, and gameplay options.
+	It is responsible for rendering the options menu and updating it based on the player's input.
+	@since Development
 **/
 @:publicFields
 class OptionsMenu {

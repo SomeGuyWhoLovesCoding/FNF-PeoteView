@@ -6,6 +6,9 @@ import lime.ui.KeyModifier;
 /**
 	The field of the gameplay state.
 	This is an internal structure and should only be used inside of the playfield NOT to be touched with.
+	It is responsible for managing the actors in the game, such as the player, opponent, and spectator.
+	It also handles the game over logic and camera movement.
+	@since Development
 **/
 @:publicFields
 class Field {

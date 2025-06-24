@@ -3,6 +3,7 @@ package structures.gameplay;
 /**
 	The countdown display.
 	Inspired from defective engine's countdown class.
+	@since Development
 **/
 #if !debug
 @:noDebug

@@ -1,7 +1,12 @@
 package structures.gameplay;
 
 /**
-	The body of the note system.
+	The note system.
+	This is the main class that handles the notes and sustains in the game.
+	It is responsible for spawning, drawing, and updating the notes and sustains.
+	It also handles the note hit registration and sustain inputs.
+	This class is used in the PlayField class to handle the notes and sustains.
+	@since Development
 **/
 @:publicFields
 class NoteSystem {

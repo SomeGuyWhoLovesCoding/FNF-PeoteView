@@ -6,8 +6,11 @@ import lime.ui.MouseButton;
 
 /**
 	The input system for the playfield.
-	This is an internal structure and should only be used inside of the playfield NOT to be touched with.
 	Warning: 70% of this class is very messy inside.
+	...And I don't recommend you touching this at all.
+	This class handles the input for the playfield, including key presses, releases, and mouse clicks.
+	It maps key codes to receptor IDs and manages the strumline for different mania modes.
+	But! It is very important to note that this class is not meant to be used outside of the playfield.
 **/
 @:publicFields
 class InputSystem {

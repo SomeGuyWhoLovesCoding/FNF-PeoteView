@@ -3,6 +3,11 @@ package structures.gameplay;
 /**
 	The playfield's health bar.
 	This is an internal structure and should only be used inside of the playfield NOT to be touched with.
+	It is used to display the health of the player and the opponent, with a bar that tries to mimic rpg fighting games like flixel's `FlxBar` is intended to do.
+	This class is responsible for rendering the health bar and updating it based on the player's health.
+	It also handles the health icons that are displayed above the health bar, which represent the player's and opponent's health status.
+	It is also responsible for updating the health bar's position and size based on the playfield's properties, such as the down scroll and the flip health bar settings.
+	@since Development
 **/
 @:publicFields
 class HealthBar {

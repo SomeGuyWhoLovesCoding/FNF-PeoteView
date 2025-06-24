@@ -8,6 +8,9 @@ import lime.ui.MouseWheelMode;
 
 /**
 	The first state of the game.
+	This is the main menu where the player can select options such as story mode, freeplay, awards, credits, options, and exit.
+	It is responsible for rendering the main menu and updating it based on the player's input.
+	@since Development
 **/
 @:publicFields
 class MainMenu implements State {

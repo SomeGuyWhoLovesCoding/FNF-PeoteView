@@ -6,6 +6,10 @@ import lime.ui.MouseButton;
 /**
 	The custom window for Funkin' View.
 	This is a simple window that is only meant to have a colored title bar with custom title test, dragged with, and not having extra features such as split screen logic.
+	It is used to display the main view of the application, and is responsible for rendering the window and updating it based on the user's input.
+	It also handles the close button logic, which allows the user to close the application by clicking the close button.
+	It is also responsible for updating the window's position and size based on the user's input and the application's properties, such as the window offset and the display size.
+	@since Development
 **/
 @:publicFields
 @:access(lime._internal.backend.native.NativeCFFI)

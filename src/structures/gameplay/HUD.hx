@@ -6,6 +6,9 @@ import lime.ui.KeyModifier;
 /**
 	The playfield's HUD.
 	This is an internal structure and should only be used inside of the playfield NOT to be touched with.
+	It is used to display the player's health, score, time bar, and rating popup.
+	It is responsible for rendering the HUD and updating it based on the player's input and game state.
+	@since Development
 **/
 @:publicFields
 class HUD {

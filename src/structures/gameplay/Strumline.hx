@@ -2,6 +2,11 @@ package structures.gameplay;
 
 /**
 	Strumline class for the note system.
+	This class represents a line of notes in the game, which can be hit or held by the player.
+	It manages the notes to hit, sustains to hold, and the buffer of notes.
+	It also handles the drawing of the notes and the input handling for hitting and releasing notes.
+	It is used in the NoteSystem class to manage the notes and sustains in the game.
+	@since Development
 **/
 @:publicFields
 class Strumline {

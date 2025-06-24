@@ -1,7 +1,11 @@
 package structures.gameplay;
 
 /**
-	The internal handler of the note system.
+	The internal note handler.
+	This class is responsible for spawning and despawning notes based on the song's position.
+	It handles the culling of notes that are too far away from the current position, and it draws the notes that are within the spawn distance.
+	It also handles the resetting of notes when the song position changes significantly.
+	@since Development
 **/
 @:publicFields
 class NoteSpawner {

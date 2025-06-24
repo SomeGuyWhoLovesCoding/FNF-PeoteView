@@ -7,7 +7,12 @@ import Miniaudio.MaDataSource;
 import Miniaudio.MaResult;
 
 /**
-	Sound class using miniaudio.
+	This class is used to handle sound playback, volume control, and playback tracking, all within *miniaudio*, the one c file externed to haxe.
+	It provides methods to initialize the sound engine, load sounds from files, play, stop, and seek within sounds.
+	It also includes a playback tracking system that can use different methods to track the playback position of sounds
+	and provides a global volume control for all sounds.
+	It is used in the PlayField class to handle sound playback and tracking.
+	@since Development
 **/
 @:publicFields
 class Sound {

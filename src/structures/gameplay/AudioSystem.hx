@@ -6,6 +6,10 @@ import Miniaudio.MaResult;
 /**
 	The auditory system for the playfield.
 	This is an internal structure and should only be used inside of the playfield NOT to be touched with.
+	Please hope to god the fucking miniaudio mixing shit can actually be written in the future.
+	E.g. the developer's been having this issue that all the sounds' timing don't match up at the exact same moment when you change the time of an audio VERY frequently or when it happens due to minor lag from background processes.
+	I swear, please make this end.
+	@since Development
 **/
 @:publicFields
 @:access(structures.PlayField)

@@ -5,7 +5,12 @@ import lime.app.Event;
 /**
 	The conductor. Steps, beats, and measures use floats because this class was carried over from the original version from fnf zenith.
 	Also, time signature changing math was implemented here.
-	Revamped math by sword_352: https://github.com/Sword352
+	I hope this is useful for you, as it was for me.
+	This class is used to keep track of the time in a song, and dispatches events for every step, beat, and measure.
+	It also allows for changing the tempo and time signature of the song dynamically.
+	It is used in the PlayField class to handle the time and tempo of the song.
+	@since Development
+	@see https://github.com/Sword352 (Revamped math and time signature changing)
 **/
 @:publicFields
 class Conductor

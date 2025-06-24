@@ -5,6 +5,10 @@ import lime.app.Event;
 
 /**
 	The home of the gameplay state.
+	This is the main class that handles the playfield and all of its components.
+	It is responsible for initializing the playfield, updating it, and disposing of it when the game is over.
+	This class is used in the Main class to handle the gameplay state.
+	@since Development
 **/
 @:publicFields
 class PlayField implements State {

@@ -9,6 +9,9 @@ import lime.ui.MouseWheelMode;
 /**
 	The playfield's pause menu.
 	This is an internal structure and should only be used inside of the playfield NOT to be touched with.
+	It is used to pause the game and display options such as resuming, restarting, changing options, and exiting to the main menu.
+	It is responsible for rendering the pause menu and updating it based on the player's input.
+	@since Development
 **/
 @:publicFields
 class PauseScreen {

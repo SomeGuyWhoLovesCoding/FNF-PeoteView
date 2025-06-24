@@ -7,6 +7,9 @@ import elements.text.TextCharSprite;
 /**
 	The options submenu's display.
 	This is an internal structure and should only be used inside of the menu NOT to be touched with.
+	It is used to display the options available to the player, such as controls, preferences, and gameplay options.
+	It is responsible for rendering the options and updating them based on the player's input and game state.
+	@since Development
 **/
 @:publicFields
 class OptionsDisplay {
