@@ -37,7 +37,7 @@ class FreeplayMenu {
 	var actions(default, null):ActionMap;
 
 	function new() {
-		var chapterData:ChapterData = haxe.Json.parse(sys.io.File.getContent("assets/data/chapters/chapter1.json"));
+		var chapterData:ChapterData = haxe.Json.parse(sys.io.File.getContent("assets/data/chapters/chapter1/data.json"));
 		var songs:Array<ChapterSong> = chapterData.songs;
 
 		for (i in 0...songs.length) {
