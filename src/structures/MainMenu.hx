@@ -16,9 +16,6 @@ import lime.ui.MouseWheelMode;
 class MainMenu implements State {
 	static var optionAnims:Vector<String> = Vector.fromData(['story mode', 'freeplay', 'awards', 'credits', 'options', 'backspace to exit']);
 
-	static var freeplaySubmenu:FreeplayMenu;
-	//static var awardsSubmenu:AwardsMenu;
-
 	var display:CustomDisplay;
 	var view:CustomDisplay;
 	var roof:CustomDisplay;
