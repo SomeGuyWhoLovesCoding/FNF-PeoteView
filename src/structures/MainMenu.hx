@@ -191,7 +191,8 @@ class MainMenu implements State {
 	function doIt() {
 		switch (optionSelected) {
 			case 0: // STORY MODE
-				Main.switchState(GAMEPLAY);
+				selectedAlpha = 0.0;
+				Main.current.storyMenu.open();
 				removeEvents();
 			case 1: // FREEPLAY
 				selectedAlpha = 0.0;

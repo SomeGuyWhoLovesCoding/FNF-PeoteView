@@ -107,6 +107,7 @@ class Main extends Application
 	var topDisplay:CustomDisplay;
 	var optionsScreen:CustomDisplay;
 	var freeplayScreen:CustomDisplay;
+	var storyScreen:CustomDisplay;
 	var fakeWindow:FakeWindow;
 
 	// STATES
@@ -117,6 +118,7 @@ class Main extends Application
 	// MENUS
 	var optionsMenu(default, null):OptionsMenu;
 	var freeplayMenu(default, null):FreeplayMenu;
+	var storyMenu(default, null):StoryMenu;
 
 	// CONTROLS
 	var controls(default, null):Controls;
@@ -153,6 +155,9 @@ class Main extends Application
 
 			FreeplayMenu.init(freeplayScreen);
 			freeplayMenu = new FreeplayMenu();
+
+			StoryMenu.init(storyScreen);
+			storyMenu = new StoryMenu();
 
 			fakeWindow = new FakeWindow(peoteView);
 
@@ -208,6 +213,7 @@ class Main extends Application
 		topDisplay = new CustomDisplay(0, 0, window.width, window.height, 0xFFFFFF00);
 		optionsScreen = new CustomDisplay(0, 0, window.width, window.height, 0xFFFFFF00);
 		freeplayScreen = new CustomDisplay(0, 0, window.width, window.height, 0xFFFFFF00);
+		storyScreen = new CustomDisplay(0, 0, window.width, window.height, 0xFFFFFF00);
 		trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 	}
 
@@ -269,6 +275,10 @@ class Main extends Application
 				if (freeplayMenu.active) {
 					freeplayMenu.update(deltaTime);
 				}
+
+				if (storyMenu.active) {
+					storyMenu.update(deltaTime);
+				}
 			} catch (_) trace(haxe.CallStack.toString(haxe.CallStack.exceptionStack()), _);
 
 			timeStamp = stamp();
@@ -305,6 +315,22 @@ class Main extends Application
 		fakeWindow.reload(peoteView.width, peoteView.height);
 	}
 
+	function popupStoryMenu() {
+		if (!storyScreen.isIn(peoteView)) {
+			peoteView.addDisplay(storyScreen);
+			trace('added storyScreen');
+		}
+		fakeWindow.reload(peoteView.width, peoteView.height);
+	}
+
+	function removeStoryMenu() {
+		if (storyScreen.isIn(peoteView)) {
+			peoteView.removeDisplay(storyScreen);
+		}
+		fakeWindow.reload(peoteView.width, peoteView.height);
+	}
+
+
 	function resize(w:Int, h:Int) {
 		peoteView.resize(w, h);
 		fakeWindow.reload(w, h);
@@ -314,6 +340,7 @@ class Main extends Application
 		centerDisplayOnWindow(topDisplay, w, h);
 		centerDisplayOnWindow(optionsScreen, w, h);
 		centerDisplayOnWindow(freeplayScreen, w, h);
+		centerDisplayOnWindow(storyScreen, w, h);
 	}
 
 	function centerDisplayOnWindow(display:CustomDisplay, w:Int, h:Int) {
