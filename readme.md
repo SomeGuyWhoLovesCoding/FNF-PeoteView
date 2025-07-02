@@ -67,3 +67,14 @@ And you're all set up! Just run `lime test cpp` and it works!
 - 494kd
 
 : First compile of the android build and failed because of genkit_miniaudio error
+
+# Frequently Asked Questions
+
+Q1. Funkin' View takes a very long time to boot! What should I do!?
+A1. Just reboot your computer and everything will be fine.
+- Explanation: My co-programmer jobf AKA half had experienced the issue half an hour before writing this first FAQ.
+Q2. Funkin' View's codebase is very hard to understand.
+A2. I mean, what did you expect? It's written in a very low level programming language and I recommend that you learn it before digging around the repository.
+Q3. Why do you use static variables for the program and buffer? Isn't that like, unclean?
+A3. I use static variables to cache the memory inside the app before it was closed.
+- Explanation: It's obvious. Look in a class on the "structures" package.
