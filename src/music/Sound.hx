@@ -115,7 +115,7 @@ class Sound {
 
 	function fromFile(path:String) {
 		var result = Miniaudio.ma_sound_init_from_file(engine, path,
-		0x00000001 | 0x00002000, null, null, sound);
+		0x00000001, null, null, sound);
 
 		if (result != MaResult.MA_SUCCESS) {
 			if (path != "") {

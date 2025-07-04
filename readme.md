@@ -78,3 +78,5 @@ A2. I mean, what did you expect? It's written in a very low level programming la
 Q3. Why do you use static variables for the program and buffer? Isn't that like, unclean?
 A3. I use static variables to cache the memory inside the app before it was closed.
 - Explanation: It's obvious. Look in a class on the "structures" package.
+Q4. My game won't open when compiling with `-D FV_PROFILE`. What should I do?
+A4. This is a normal issue I've experienced, so for now, you can delete the `haxe` and `obj` folders and try again.
