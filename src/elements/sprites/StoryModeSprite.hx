@@ -1,10 +1,11 @@
-// EVERYTHING RELATED TO THE PAUSE SCREEN SHEET IN THE CLASS IS 100% HARDCODED.
-// This is a cheap copy of UISprite with less things in mind because it's meant for the pause screen.
+// EVERYTHING RELATED TO THE STORY MENU SHEET IN THE CLASS IS 100% HARDCODED.
+// This is a cheap copy of UISprite with less things in mind because it's meant for the story menu.
+// This was originally meant for the pause menu, but it was later used for the story menu.
 
 package elements.sprites;
 
 @:publicFields
-class PauseSprite implements Element {
+class StoryModeSprite implements Element {
 	// position in pixel (relative to upper left corner of Display)
 	@posX var x:Float = 0.0;
 	@posY var y:Float = 0.0;
@@ -27,7 +28,7 @@ class PauseSprite implements Element {
 
 	@color var c:Color = 0xFFFFFFFF;
 
-	var type:PauseSpriteType = NONE;
+	var type:StoryModeSpriteType = NONE;
 
 	var isNone(get, never):Bool;
 
@@ -47,6 +48,12 @@ class PauseSprite implements Element {
 		return type == DIFF_TEXT;
 	}
 
+	var isStoryMenuPiece(get, never):Bool;
+
+	inline function get_isStoryMenuPiece() {
+		return type == STORY_MENU_PIECE;
+	}
+
 	var curID(default, null):Int;
 
 	var OPTIONS = { texRepeatX: false, texRepeatY: false, blend: true };
@@ -60,6 +67,11 @@ class PauseSprite implements Element {
 		[0, 488, 215, 32],
 		[215, 488, 80, 32],
 		[295, 488, 80, 32]
+	];
+
+	private static var hardcoded_story_menu_piece_values(default, null):Array<Array<Int>> = [
+		[0, 555, 300, 45],
+		[360, 555, 165, 45]
 	];
 
 	static function init(program:Program, name:String, texture:Texture) {
@@ -90,6 +102,14 @@ class PauseSprite implements Element {
 			hValue = option[3];
 		}
 
+		if (isStoryMenuPiece) {
+			var option:Array<Int> = hardcoded_story_menu_piece_values[id];
+			xValue = option[0];
+			yValue = option[1];
+			wValue = option[2];
+			hValue = option[3];
+		}
+
 		if ((w != wValue && clipWidth != wValue && clipSizeX != wValue) && (h != hValue && clipHeight != hValue && clipHeight != hValue)) {
 			w = clipWidth = clipSizeX = wValue;
 			h = clipHeight = clipSizeY = hValue;
@@ -102,8 +122,9 @@ class PauseSprite implements Element {
 	}
 }
 
-private enum abstract PauseSpriteType(cpp.UInt8) {
+private enum abstract StoryModeSpriteType(cpp.UInt8) {
 	var NONE;
 	var PAUSE_OPTION;
 	var DIFF_TEXT;
+	var STORY_MENU_PIECE;
 }

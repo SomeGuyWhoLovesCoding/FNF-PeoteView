@@ -16,11 +16,11 @@ import lime.ui.MouseWheelMode;
 @:publicFields
 class PauseScreen {
 	private static var display(default, null):CustomDisplay;
-	static var pauseBuf(default, null):Buffer<PauseSprite>;
+	static var pauseBuf(default, null):Buffer<StoryModeSprite>;
 	static var pauseProg(default, null):Program;
 
-	var pauseOptions(default, null):Array<PauseSprite> = [];
-	var diffText(default, null):PauseSprite;
+	var pauseOptions(default, null):Array<StoryModeSprite> = [];
+	var diffText(default, null):StoryModeSprite;
 
 	var pauseOptionSelected(default, null):Int = 0;
 	var opened(default, null):Bool;
@@ -31,12 +31,12 @@ class PauseScreen {
 		display = disp;
 
 		if (pauseBuf == null) {
-			pauseBuf = new Buffer<PauseSprite>(5);
+			pauseBuf = new Buffer<StoryModeSprite>(5);
 			pauseProg = new Program(pauseBuf);
 			pauseProg.blendEnabled = true;
 
-			var tex = TextureSystem.getTexture("pauseScreenSheet");
-			PauseSprite.init(pauseProg, "pauseScreenSheet", tex);
+			var tex = TextureSystem.getTexture("storyModeSheet");
+			StoryModeSprite.init(pauseProg, "storyModeSheet", tex);
 		}
 	}
 
@@ -47,7 +47,7 @@ class PauseScreen {
 	function new(difficulty:Difficulty) {
 		var currentY = 200;
 		for (i in 0...4) {
-			var option = new PauseSprite();
+			var option = new StoryModeSprite();
 			option.type = PAUSE_OPTION;
 			option.changeID(i);
 			option.x = 45;
@@ -56,7 +56,7 @@ class PauseScreen {
 			pauseOptions.push(option);
 		}
 
-		diffText = new PauseSprite();
+		diffText = new StoryModeSprite();
 		diffText.type = DIFF_TEXT;
 		diffText.changeID(cast difficulty);
 		diffText.x = Main.INITIAL_WIDTH - (diffText.w - 1);

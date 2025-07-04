@@ -199,7 +199,7 @@ class Main extends Application
 		TextureSystem.createTexture("noteTex", "assets/notes/noteSheet.png");
 		TextureSystem.createTexture("uiTex", "assets/ui/uiSheet.png");
 		TextureSystem.createTexture("hbTex", "assets/ui/hbSheet.png");
-		TextureSystem.createTexture("pauseScreenSheet", "assets/ui/pauseScreenSheet.png");
+		TextureSystem.createTexture("storyModeSheet", "assets/ui/storyModeSheet.png");
 		TextureSystem.createTexture("optionsMenuSheet", "assets/ui/optionsMenuSheet.png");
 		TextureSystem.createTexture("alphabetSheet", "assets/alphabetText/sheet.png");
 		trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
