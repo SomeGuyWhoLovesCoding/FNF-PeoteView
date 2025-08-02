@@ -81,7 +81,7 @@ Q1. Funkin' View takes a very long time to boot! What should I do!?
 A1. Just reboot your computer and everything will be fine.
 
 - Explanation: My co-programmer jobf AKA half had experienced the issue half an hour before writing this first FAQ.
-- 
+
 Q2. Funkin' View's codebase is very hard to understand.
 
 A2. I mean, what did you expect? It's written in a very low level programming language and I recommend that you learn it before digging around the repository.
