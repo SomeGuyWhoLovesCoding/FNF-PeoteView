@@ -40,7 +40,7 @@ Then, you want to go to the Windows 10 SDK (10.0.19041) and MSVC v143 - VS 2022 
 
 (Oh yeah and it requires at least 6GB of free storage space on a drive to install btw)
 
-### LINIX (DEBIAN/UBUNTU)
+### LINUX (DEBIAN/UBUNTU)
 
 Just install mingw or cygwin.
 
