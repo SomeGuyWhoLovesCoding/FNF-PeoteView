@@ -22,7 +22,9 @@ Miniaudio - ``haxelib git miniaudio https://github.com/alchemy-haxe/genkit_minia
 
 Input2Action - ``haxelib install input2action`` (will install 2 dependencies)
 
-After that, make sure that you are on this screen:
+After that, make sure that you are on this screen after running ``haxelib lime setup``:
+
+### WINDOWS (10 OR GREATER)
 
 ![img](repo_assets/image-1.png)
 
@@ -37,6 +39,10 @@ Make sure that you're looking at this window:![img](repo_assets/image.png)
 Then, you want to go to the Windows 10 SDK (10.0.19041) and MSVC v143 - VS 2022 C++ x64/x86 build tools (Latest). That's literally it.
 
 (Oh yeah and it requires at least 6GB of free storage space on a drive to install btw)
+
+### LINIX (DEBIAN/UBUNTU)
+
+Just install mingw or cygwin.
 
 And you're all set up! Just run `lime test cpp` and it works!
 
