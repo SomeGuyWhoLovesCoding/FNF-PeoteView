@@ -42,7 +42,7 @@ Then, you want to go to the Windows 10 SDK (10.0.19041) and MSVC v143 - VS 2022 
 
 ### LINUX (DEBIAN/UBUNTU)
 
-2. Run the file named ``setup-linux.bash``.
+Run the file named ``setup-linux.bash``.
 
 And you're all set up! Just run `lime test cpp` and it works!
 
