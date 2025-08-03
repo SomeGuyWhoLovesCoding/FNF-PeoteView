@@ -9,6 +9,9 @@
 
 	<source path="src" />
 
+	<!-- Fuck you linux -->
+	<haxedef name="NO_PRECOMPILED_HEADERS" if="linux">
+
 	<haxelib name="lime" />	
 	<haxelib name="peote-view" />
 	<haxelib name="format" />
