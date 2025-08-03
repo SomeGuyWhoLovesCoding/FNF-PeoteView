@@ -42,7 +42,9 @@ Then, you want to go to the Windows 10 SDK (10.0.19041) and MSVC v143 - VS 2022 
 
 ### LINUX (DEBIAN/UBUNTU)
 
-Just install mingw or cygwin.
+1. Run ``sudo apt install build-essential`` on the terminal.
+
+2. Run the file named ``setup-linux.bash``.
 
 And you're all set up! Just run `lime test cpp` and it works!
 
