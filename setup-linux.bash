@@ -8,3 +8,4 @@ sudo apt install libxi-dev
 sudo apt install libasound2-dev
 sudo apt install git
 sudo apt install g++-multilib libc6-dev-i386
+haxelib run lime setup
