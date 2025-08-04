@@ -47,13 +47,42 @@ class NoteSpawner {
 
 		var i = bottom;
 
+		var scrollSpeed = parent.parent.scrollSpeed;
+		var y = 0.0;
+		var noteSpr:Null<Note> = null;
+
 		var prev:Null<MetaNote> = null;
 		while (i < top) {
 			var n = file.getNote(i);
 			var ghost = prev.position == n.position && prev.index == n.index && prev.lane == n.lane;
-			if (!ghost) parent.drawNote(pos, n);
-			prev = n;
-			++i;
+			var lastY = y;
+			y = (Int64.toInt(n.position - pos) * 0.01) * scrollSpeed;
+			var receptor = parent.strumlines[n.lane].buffer[n.index];
+			var requirementsForNoteOverlapSimulationBS = Math.floor(lastY) == Math.floor(y)
+				&& (prev.index == n.index && prev.lane == n.lane)
+				&& (noteSpr.r == 0 /* 0 is the default angle for the note sprite */)
+				&& (noteSpr.w == receptor.w && noteSpr.h == receptor.h)
+				&& (noteSpr.scale == receptor.scale)
+				&& (prev.duration == n.duration)
+			&& noteSpr.x == receptor.x;
+			if (noteSpr != null) {
+				if (requirementsForNoteOverlapSimulationBS) {
+					// If the note is a ghost and the last Y was greater than the current Y, skip drawing.
+					noteSpr.addedAlpha += parent.notesMissed[n] ? Note.defaultMissAlpha : Note.defaultAlpha;
+					++i;
+				} else {
+					noteSpr.addedAlpha = 0;
+					if (!ghost) {
+						noteSpr = parent.drawNote(pos, n, y);
+					}
+					prev = n;
+					++i;
+				}
+			} else {
+				noteSpr = parent.drawNote(pos, n, y);
+				prev = n;
+				++i;
+			}
 		}
 	}
 

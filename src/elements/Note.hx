@@ -5,6 +5,9 @@ package elements;
 **/
 class Note implements Element
 {
+	static public var defaultAlpha:Float = 1.0;
+	static public var defaultMissAlpha:Float = 0.5;
+
 	// position in pixel (relative to upper left corner of Display)
 	@varying @custom @formula("ox * scale") public var ox:Int;
 	@varying @custom @formula("oy * scale") public var oy:Int;
@@ -22,6 +25,8 @@ class Note implements Element
 	@pivotY @const @formula("h * 0.5") public var py:Int;
 
 	@color public var c:Color = 0xFFFFFFFF;
+
+	public var addedAlpha:Float = 0.0;
 
 	// extra tex attributes for clipping
 	@texX var clipX:Int = 0;

@@ -113,7 +113,7 @@ class NoteSystem {
 	 * @param pos The song's position in note position format.
 	 * @param note The meta note you want to draw the note to.
 	**/
-	function drawNote(pos:Int64, note:MetaNote) {
+	function drawNote(pos:Int64, note:MetaNote, diff:Float):Note {
 		var index = note.index;
 		var lane = note.lane;
 		var duration = note.duration;
@@ -129,7 +129,6 @@ class NoteSystem {
 		var sustainSpr = duration > 5 ? notePool.newSustain(id, note) : null;
 		var sustainExists = sustainSpr != null;
 
-		var diff = (Int64.toInt(position - pos) * 0.01) * parent.scrollSpeed;
 		var leftover = Math.floor(Int64.toInt(pos - position) * 0.01);
 		var isHit = notesHit[note];
 		var isMissed = notesMissed[note];
@@ -160,7 +159,7 @@ class NoteSystem {
 				}
 
 				if (diff < -parent.hitbox && !isMissed) {
-					noteSpr.c.aF = 0.5;
+					noteSpr.c.aF = Note.defaultMissAlpha;
 					isMissed = notesMissed[note] = true;
 
 					parent.onNoteMiss.dispatch(note);
@@ -239,6 +238,7 @@ class NoteSystem {
 		}
 
 		if (!isHit) notesBuf.addElement(noteSpr);
+		return noteSpr;
 	}
 
 	/**
