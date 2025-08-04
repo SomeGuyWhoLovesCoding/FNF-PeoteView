@@ -5,7 +5,7 @@ package elements;
 **/
 class Note implements Element
 {
-	static public var defaultAlpha:Float = 1.0;
+	static public var defaultAlpha:Float = 0.5;
 	static public var defaultMissAlpha:Float = 0.5;
 
 	// position in pixel (relative to upper left corner of Display)
@@ -26,7 +26,8 @@ class Note implements Element
 
 	@color public var c:Color = 0xFFFFFFFF;
 
-	public var addedAlpha:Float = 0.0;
+	@varying @custom public var initialAlpha:Float = 1.0;
+	@varying @custom public var addedAlpha:Float = 0.0;
 
 	// extra tex attributes for clipping
 	@texX var clipX:Int = 0;
@@ -66,6 +67,34 @@ class Note implements Element
 		this.w = w;
 		this.h = h;
 		reset();
+	}
+
+	static public function init(program:Program, name:String, texture:Texture)
+	{
+		// creates a texture-layer named "name"
+		program.setTexture(texture, name, true );
+		program.blendEnabled = true;
+
+		var tW:String = Util.toFloatString(texture.width / texture.tilesX);
+		var tH:String = Util.toFloatString(texture.height / texture.tilesY);
+
+		program.injectIntoFragmentShader(
+		'
+			vec4 why(int textureID, float initialAlpha, float addedAlpha)
+			{
+				vec2 coord = vTexCoord;
+				vec4 tex = getTextureColor( textureID, coord );
+
+				tex.a *= initialAlpha;
+				tex.a += addedAlpha;
+
+				return tex;
+			}
+		');
+
+		// instead of using normal "name" identifier to fetch the texture-color,
+		// the postfix "_ID" gives access to use getTextureColor(textureID, ...) or getTextureResolution(textureID)
+		program.setColorFormula( 'c * why(${name}_ID, initialAlpha, addedAlpha)' );
 	}
 
 	inline public function changeID(id:Int) {

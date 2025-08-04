@@ -22,10 +22,12 @@ class NoteSystem {
 		}
 
 		if (notesProg == null) {
+			var tex = TextureSystem.getTexture("noteTex");
+
 			notesProg = new Program(notesBuf);
 			notesProg.blendEnabled = true;
-	
-			TextureSystem.setTexture(notesProg, "noteTex", "noteTex");
+
+			Note.init(notesProg, "noteTex", tex);
 		}
 
 		if (sustainsBuf == null) {
@@ -159,7 +161,7 @@ class NoteSystem {
 				}
 
 				if (diff < -parent.hitbox && !isMissed) {
-					noteSpr.c.aF = Note.defaultMissAlpha;
+					noteSpr.initialAlpha = Note.defaultMissAlpha;
 					isMissed = notesMissed[note] = true;
 
 					parent.onNoteMiss.dispatch(note);
@@ -234,10 +236,10 @@ class NoteSystem {
 				}
 			}
 
-			sustainsBuf.addElement(sustainSpr);
+			if (@:privateAccess sustainSpr.bytePos == -1) sustainsBuf.addElement(sustainSpr);
 		}
 
-		if (!isHit) notesBuf.addElement(noteSpr);
+		if (!isHit && @:privateAccess noteSpr.bytePos == -1) notesBuf.addElement(noteSpr);
 		return noteSpr;
 	}
 

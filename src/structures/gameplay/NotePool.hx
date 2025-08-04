@@ -49,7 +49,7 @@ class NotePool {
 		if (allocated == null) {
 			var inactiveObject = inactiveNotes.pop();
 			if (inactiveObject == null) inactiveObject = new Note(-9999, -9999, 0, 0);
-			inactiveObject.c.aF = Note.defaultAlpha;
+			inactiveObject.initialAlpha = Note.defaultAlpha;
 			inactiveObject.data = n;
 			allocated = notes[n] = inactiveObject;
 		}
@@ -95,7 +95,7 @@ class NotePool {
 	function putNote(n:MetaNote) {
 		var allocated:Note = notes[n];
 		if (notes.remove(n)) {
-			allocated.c.aF = 1;
+			allocated.initialAlpha = 1;
 			allocated.x = -9999;
 			allocated.y = -9999;
 			inactiveNotes.push(allocated);

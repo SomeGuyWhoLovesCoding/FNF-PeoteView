@@ -61,6 +61,7 @@ class NoteSpawner {
 
 			var requirementsForNoteOverlapSimulationBS = noteSpr != null
 				&& Math.floor(lastDiff) == Math.floor(diff)
+				&& (prev.position != n.position && prev.type == n.type)
 				&& (prev.index == n.index && prev.lane == n.lane)
 				&& (noteSpr.r == 0 /* 0 is the default angle for the note sprite */)
 				&& (noteSpr.w == receptor.w && noteSpr.h == receptor.h)
@@ -73,13 +74,12 @@ class NoteSpawner {
 				prev = n;
 				++i;
 				continue;
-			} else {}
-
-			diff = (Int64.toInt(n.position - pos) * 0.01) * scrollSpeed;
-			if (!ghost) noteSpr = parent.drawNote(pos, n, diff);
-
-			prev = n;
-			++i;
+			} else {
+				diff = (Int64.toInt(n.position - pos) * 0.01) * scrollSpeed;
+				if (!ghost) noteSpr = parent.drawNote(pos, n, diff);
+				prev = n;
+				++i;
+			}
 		}
 	}
 
