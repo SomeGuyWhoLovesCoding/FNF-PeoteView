@@ -69,15 +69,16 @@ class NoteSpawner {
 				if (requirementsForNoteOverlapSimulationBS) {
 					// If the note is a ghost and the last Y was greater than the current Y, skip drawing.
 					noteSpr.addedAlpha += parent.notesMissed[n] ? Note.defaultMissAlpha : Note.defaultAlpha;
-					++i;
-				} else {
-					noteSpr.addedAlpha = 0;
-					if (!ghost) {
-						noteSpr = parent.drawNote(pos, n, y);
-					}
 					prev = n;
 					++i;
+					continue;
 				}
+				noteSpr.addedAlpha = 0;
+				if (!ghost) {
+					noteSpr = parent.drawNote(pos, n, y);
+				}
+				prev = n;
+				++i;
 			} else {
 				noteSpr = parent.drawNote(pos, n, y);
 				prev = n;
