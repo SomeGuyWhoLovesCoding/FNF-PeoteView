@@ -19,7 +19,7 @@ Optimizations that were ingrained into this "wholesome" fnf rewrite is:
 
 And that was all Funkin' View has to offer!
 
-...and the fact that peote-view is literally an opengl wrapper that intructs most of its rendering optimization tricks for you. 
+...and the fact that peote-view is literally an opengl wrapper that intructs most of its rendering optimization tricks for you.
 
 # Setup
 
