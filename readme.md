@@ -4,7 +4,21 @@ Funkin' View (AKA FNF' in Peote-View) is a successor of [Friday Night Funkin' Ze
 
 This is being optimized and organized as frequently as possible for a flexible codebase making it faster to finish. It aims to be the new standard of FNF modding.
 
-Expect this repository to be somewhat active. Because the developer has other stuff to do so don't go "when is funkin view coming out".
+Expect this repository to be somewhat or sometimes active, because the developer has other stuff to do so don't go "when is funkin view coming out".
+
+# Optimizations included
+
+Optimizations that were ingrained into this "wholesome" fnf rewrite is:
+
+- Object Pooling: obvious, but simply reuses a dead object. Used for the freeplay selection text and icon stuff, and notes and sustains
+- Camera Culling: also obvious, simply cuts out rendering for anything out of bounds. Used for the notes and sustains
+- Fake Object Overlap Rendering: If a certain object overlaps one another, cancel that object and make that other object's pixels have doubled its alpha. Used for the notes.
+- Packer Atlas: Never done yet but will be for the characters.
+- Texture Sheet: Simple. Just clip a certain part of the image and have it present a sprite animation. Heavily used in sparrow atlas, and even simple stuff such as the icon grid, the note spritesheets, the pause menu sheet, etc etc. you name it.
+
+And that was all Funkin' View has to offer!
+
+...and the fact that peote-view is literally an opengl wrapper that intructs most of its rendering optimization tricks for you. 
 
 # Setup
 
