@@ -26,7 +26,14 @@ class Note implements Element
 
 	@color public var c:Color = 0xFFFFFFFF;
 
-	@varying @custom public var initialAlpha:Float = 1.0;
+	@varying @custom public var initialAlpha(default, set):Float = 1.0;
+	inline public function set_initialAlpha(value:Float) {
+		initialAlpha = value;
+		if (initialAlpha < 0) initialAlpha = 0;
+		if (initialAlpha > 1) initialAlpha = 1;
+		return value;
+	}
+
 	@varying @custom public var addedAlpha:Float = 0.0;
 
 	// extra tex attributes for clipping
