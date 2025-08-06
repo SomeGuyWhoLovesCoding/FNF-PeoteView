@@ -240,7 +240,6 @@ class Main extends Application
 	}
 
 	var newDeltaTime:Float = 0;
-	var timeStamp:Float = 0;
 
 	override function update(deltaTime:Int) {
 		Tools.profileFrame();
@@ -248,9 +247,7 @@ class Main extends Application
 		if (_started) {
 			fakeWindow.updateCloseButton(deltaTime);
 
-			var ts:Float = stamp();
-
-			newDeltaTime = (ts - timeStamp) * 1000;
+			newDeltaTime = deltaTime * 0.001;
 
 			try {
 				if (mainMenu != null && !mainMenu.disposed) {
@@ -273,15 +270,13 @@ class Main extends Application
 				}
 
 				if (freeplayMenu.active) {
-					freeplayMenu.update(deltaTime);
+					freeplayMenu.update(newDeltaTime);
 				}
 
 				if (storyMenu.active) {
-					storyMenu.update(deltaTime);
+					storyMenu.update(newDeltaTime);
 				}
 			} catch (_) trace(haxe.CallStack.toString(haxe.CallStack.exceptionStack()), _);
-
-			timeStamp = stamp();
 		}
 
 		Tools.profileFrame();
@@ -358,10 +353,6 @@ class Main extends Application
 			display.height = h;
 		}
 		display.scale = scale;
-	}
-
-	inline function stamp() {
-		return Timestamp.get();
 	}
 
 	// ------------------------------------------------------------
