@@ -242,7 +242,6 @@ class Main extends Application
 	var newDeltaTime:Float = 0;
 
 	override function update(deltaTime:Int) {
-		Sys.println(deltaTime);
 		Tools.profileFrame();
 
 		if (_started) {
