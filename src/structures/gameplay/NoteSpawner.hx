@@ -60,7 +60,7 @@ class NoteSpawner {
 			var receptor = parent.strumlines[n.lane].buffer[n.index];
 
 			var requirementsForNoteOverlapSimulationBS = noteSpr != null
-				&& Math.floor(lastDiff) == Math.floor(diff)
+				&& floorByPixels(lastDiff) == floorByPixels(diff)
 				&& (prev.position != n.position && prev.type == n.type)
 				&& (prev.index == n.index && prev.lane == n.lane)
 				&& (noteSpr.r == 0 /* 0 is the default angle for the note sprite */)
@@ -168,6 +168,16 @@ class NoteSpawner {
 		curTopNote = file.getNote(top);
 
 		parent.resetStrumlines();
+	}
+
+	/**
+	 * Floors the given value by pixels.
+	 * @param value The value to floor.
+	 * @return The floored value.
+	 */
+	function floorByPixels(value:Float):Int {
+		var dividend = Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT;
+		return Int64.fromFloat(Math.floor(value * dividend) / dividend);
 	}
 
 	private var zero(default, null):Int64 = 0;
