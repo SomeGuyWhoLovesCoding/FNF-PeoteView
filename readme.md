@@ -25,7 +25,7 @@ And that was all Funkin' View has to offer!
 
 Instll these haxelibs:
 
-Lime - Go to the `lime-setup` folder and run a command file of your corresponding operating system type. 
+Lime - Clone [this lime fork](https://github.com/SomeGuyWhoLovesCoding/lime), do ``haxelib git/dev lime https://github.com/SomeGuyWhoLovesCoding/lime.git``, THEN do ``lime rebuild tools`` and ``lime rebuild <platform>``, and for future rebuilds you just do the same ``lime rebuild <platform>``. (Thanks to lavender for fixing the main loop fuckery)
 
 Peote-view - ``haxelib git peote-view https://github.com/maitag/peote-view.git``
 
