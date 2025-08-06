@@ -239,15 +239,18 @@ class Main extends Application
 		}
 	}
 
+	var newDeltaTimeSeconds:Int = 0;
 	var newDeltaTime:Float = 0;
 
-	override function update(deltaTime:Int) {
+	override function update(deltaTime:haxe.Int64) {
 		Tools.profileFrame();
 
 		if (_started) {
-			fakeWindow.updateCloseButton(deltaTime);
+			fakeWindow.updateCloseButton(newDeltaTime);
 
-			newDeltaTime = deltaTime * 0.000001;
+			// The if check is to prevent the div operation from running every frame even though `newDeltaTimeSeconds` will be 0 most of the time
+			newDeltaTimeSeconds = deltaTime < 1000000000 ? 0 : Int64.div(deltaTime, 1000000000).low;
+			newDeltaTime = newDeltaTimeSeconds + (Int64.mod(deltaTime, 1000000000).low * 0.000001);
 
 			try {
 				if (mainMenu != null && !mainMenu.disposed) {
