@@ -242,12 +242,13 @@ class Main extends Application
 	var newDeltaTime:Float = 0;
 
 	override function update(deltaTime:Int) {
+		Sys.println(deltaTime);
 		Tools.profileFrame();
 
 		if (_started) {
 			fakeWindow.updateCloseButton(deltaTime);
 
-			newDeltaTime = deltaTime * 0.001;
+			newDeltaTime = deltaTime * 0.000001;
 
 			try {
 				if (mainMenu != null && !mainMenu.disposed) {
