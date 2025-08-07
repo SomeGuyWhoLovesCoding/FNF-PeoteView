@@ -37,7 +37,6 @@ class Main extends Application
 		{
 			case WEBGL, OPENGL, OPENGLES:
 				try {
-					songChosen = Sys.args()[0];
 					startSample(window);
 				} catch (_) {
 					trace(CallStack.toString(CallStack.exceptionStack()), _);
