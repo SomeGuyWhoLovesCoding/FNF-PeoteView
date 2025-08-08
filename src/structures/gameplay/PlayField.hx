@@ -297,7 +297,8 @@ class PlayField implements State {
 	}
 
 	function hitNote(note:MetaNote, timing:Int) {
-		Mixer.changeTrackVolume(1+note.lane, 1);
+		var index = 1 + note.lane;
+		if (index > 0 && index <= Mixer.trackCount) Mixer.changeTrackVolume(index, 1);
 
 		if (!inputSystem.strumlinePlayable[note.lane]) {
 			health -= healthLoss[note.lane];
@@ -350,7 +351,8 @@ class PlayField implements State {
 	}
 
 	function missNote(note:MetaNote) {
-		Mixer.changeTrackVolume(1+note.lane, 0);
+		var index = 1 + note.lane;
+		if (index > 0 && index <= Mixer.trackCount) Mixer.changeTrackVolume(index, 1);
 
 		health -= healthLoss[note.lane];
 

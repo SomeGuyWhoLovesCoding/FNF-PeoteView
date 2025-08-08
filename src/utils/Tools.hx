@@ -199,6 +199,17 @@ class Tools {
 		var instDir = input.readLine().split(": ")[1].trim();
 		var voicesDirs = input.readLine().split(": ")[1].trim().split(", ");
 
+		// Remove empty strings from voicesDirs
+		var voicesDirsI = 0;
+		while (voicesDirsI < voicesDirs.length) {
+			var dir = voicesDirs[voicesDirsI];
+			if (dir.trim() == "") {
+				voicesDirs.remove(dir);
+				continue;
+			}
+			++voicesDirsI;
+		}
+
 		var mania = Std.parseInt(input.readLine().split(": ")[1].trim());
 		var difficulty:Difficulty = Std.parseInt(input.readLine().split(": #")[1].trim()) - 1;
 

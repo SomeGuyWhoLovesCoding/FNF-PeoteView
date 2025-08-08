@@ -56,6 +56,7 @@ import utils.Tools;
  */
 @:publicFields
 class Mixer {
+	static var trackCount:Int;
 	static inline var sampleRate:Int = 44100;
 
 	static var time(get, set):Float;
@@ -80,6 +81,7 @@ class Mixer {
 
 	static public function load(files:Array<String>):Void { // Don't rename this to `loadFiles` as it will conflict with the MiniAudio extern class
 		MiniAudio.loadFiles(files);
+		trackCount = files.length;
 		_length = MiniAudio.getDuration();
 	}
 
@@ -107,7 +109,7 @@ class Mixer {
 				var subtract = (_time - rawPlaybackPosition) * multiply;
 				_time -= subtract;
 			}
-			//Sys.println('Time: $time, Drift Adjustment Value: $multiply');
+			Sys.println('Time: $time, Drift Adjustment Value: $multiply');
 		}
 	}
 
