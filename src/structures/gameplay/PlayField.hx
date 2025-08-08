@@ -399,6 +399,8 @@ class PlayField implements State {
 		Sys.println('Song activity is on');
 
 		if (!RenderingMode.enabled) {
+			// v - This is to make sure the time is reset when starting a song again, otherwise it will mix incorrectly with the previous time and will result in incorrect hit timings.
+			Mixer.time = 0;
 			Mixer.startMusic();
 		}
 
