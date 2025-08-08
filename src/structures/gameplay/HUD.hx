@@ -89,7 +89,7 @@ class HUD {
 		} else display.addProgram(watermarkTxt.program);
 
 		if (timeBarTxt == null) {
-			timeBarTxt = new Text("timeBarTxt", 0, 0, display, Tools.formatTime(parent.audioSystem.inst.length - Math.max(parent.songPosition, 0)));
+			timeBarTxt = new Text("timeBarTxt", 0, 0, display, Tools.formatTime(Mixer.length - Math.max(parent.songPosition, 0)));
 			timeBarTxt.x = (Main.INITIAL_WIDTH - timeBarTxt.width) * 0.5;
 			timeBarTxt.y = timeBarBG.y - 2;
 			timeBarTxt.scale = 1.15;
@@ -281,7 +281,7 @@ class HUD {
 
 		if (part == null) return;
 
-		part.w = (timeBarBG.w - (timeBarWS * 2.0)) * (parent.songPosition / parent.audioSystem.inst.length);
+		part.w = (timeBarBG.w - (timeBarWS * 2.0)) * (parent.songPosition / Mixer.length);
 		part.x = timeBarBG.x + timeBarXA;
 		part.y = timeBarBG.y + timeBarYA;
 
@@ -294,7 +294,7 @@ class HUD {
 		Updates the timebar text.
 	**/
 	function updateTimeBarText() {
-		timeBarTxt.text = Tools.formatTime(parent.audioSystem.inst.length - Math.max(parent.songPosition, 0));
+		timeBarTxt.text = Tools.formatTime(Mixer.length - Math.max(parent.songPosition, 0));
 		timeBarTxt.x = (Main.INITIAL_WIDTH - timeBarTxt.width) * 0.5;
 		timeBarTxt.y = timeBarBG.y - 2;
 	}

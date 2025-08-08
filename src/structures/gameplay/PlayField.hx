@@ -84,7 +84,6 @@ class PlayField implements State {
 	var field(default, null):Field;
 	var inputSystem(default, null):InputSystem;
 	var noteSystem(default, null):NoteSystem;
-	var audioSystem(default, null):AudioSystem;
 	var hud(default, null):HUD;
 	var countdownDisp(default, null):CountdownDisplay;
 	var pauseScreen(default, null):PauseScreen;
@@ -109,7 +108,7 @@ class PlayField implements State {
 		if (disposed || !songStarted || songEnded || paused || died) return;
 
 		songPosition = Math.max(value, 0.0);
-		if (audioSystem != null) audioSystem.setTime(songPosition);
+		Mixer.time = songPosition;
 		if (hud != null && SaveData.state.preferences.ratingPopup) hud.hideRatingPopup();
 		if (noteSystem != null) noteSystem.resetNotes(songPosition);
 		if (field != null) field.resetCharacters();
@@ -163,7 +162,7 @@ class PlayField implements State {
 		inputSystem = new InputSystem(mania, this);
 		NoteSystem.init();
 		noteSystem = new NoteSystem(this);
-		audioSystem = new AudioSystem(chart);
+		Mixer.init(chart);
 		HUD.init(display);
 		if (!SaveData.state.preferences.hideHUD) hud = new HUD(display, this);
 		CountdownDisplay.setupSounds();
@@ -214,7 +213,7 @@ class PlayField implements State {
 		if (view.fov != 1) view.fov -= (view.fov - 1) * ratio;
 
 		if (!died) {
-			if (audioSystem != null) audioSystem.update(this, deltaTime);
+			Mixer.update(this, deltaTime);
 			songPosition += latencyCompensation;
 			Main.conductor.time = songPosition;
 
@@ -264,7 +263,7 @@ class PlayField implements State {
 		if (disposed || paused || died) return;
 
 		pauseScreen.open();
-		if (!RenderingMode.enabled && songStarted && audioSystem != null) audioSystem.stop();
+		if (!RenderingMode.enabled && songStarted) Mixer.stopMusic();
 		if (noteSystem != null) noteSystem.resetStrumlines();
 		if (inputSystem != null) inputSystem.removeEvents();
 
@@ -278,7 +277,7 @@ class PlayField implements State {
 		if (disposed || !paused || died) return;
 
 		pauseScreen.close();
-		if (!RenderingMode.enabled && songStarted && !songEnded && audioSystem != null) audioSystem.play();
+		if (!RenderingMode.enabled && songStarted && !songEnded) Mixer.startMusic();
 		if (noteSystem != null) noteSystem.resetStrumlines();
 		if (inputSystem != null) haxe.Timer.delay(inputSystem.addEvents, 1);
 
@@ -298,13 +297,7 @@ class PlayField implements State {
 	}
 
 	function hitNote(note:MetaNote, timing:Int) {
-		if (audioSystem != null) {
-			var voicesTrack = audioSystem.voices[note.lane];
-			if (voicesTrack == null) voicesTrack = audioSystem.voices[0];
-			if (voicesTrack != null) {
-				voicesTrack.volume = 1;
-			}
-		}
+		Mixer.changeTrackVolume(1+note.lane, 1);
 
 		if (!inputSystem.strumlinePlayable[note.lane]) {
 			health -= healthLoss[note.lane];
@@ -357,13 +350,7 @@ class PlayField implements State {
 	}
 
 	function missNote(note:MetaNote) {
-		if (audioSystem != null) {
-			var voicesTrack = audioSystem.voices[note.lane];
-			if (voicesTrack == null) voicesTrack = audioSystem.voices[0];
-			if (voicesTrack != null) {
-				voicesTrack.volume = 0;
-			}
-		}
+		Mixer.changeTrackVolume(1+note.lane, 0);
 
 		health -= healthLoss[note.lane];
 
@@ -410,7 +397,7 @@ class PlayField implements State {
 		Sys.println('Song activity is on');
 
 		if (!RenderingMode.enabled) {
-			audioSystem.play();
+			Mixer.startMusic();
 		}
 
 		songStarted = true;
@@ -421,7 +408,7 @@ class PlayField implements State {
 		Sys.println('Song activity is off');
 
 		if (!RenderingMode.enabled) {
-			audioSystem.stop();
+			Mixer.stopMusic();
 		} else {
 			RenderingMode.stopRender();
 		}
@@ -454,7 +441,7 @@ class PlayField implements State {
 		conductor.onBeat.remove(beatHit);
 		conductor.onMeasure.remove(measureHit);
 
-		if (audioSystem != null) audioSystem.stop();
+		Mixer.stopMusic();
 
 		var char = field.actors[lane + field.numSpectators];
 		if (char == null) char = field.actors[1 + field.numSpectators];

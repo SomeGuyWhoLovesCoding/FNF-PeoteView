@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<project>S
+<project>
 	<meta title="Friday Night Funkin': Peote View" package="peote.view" version="0.1.0" company="Sylvio Sell - maitag" />
 
 	<window width="1282" height="752" fps="60" resizable="false" vsync="false" borderless="true" background="null" color-depth="32" />
@@ -23,9 +23,6 @@
 
 	<!-- for html5 and loading inside onPreloadComplete-event the assets need to be embed=true --> 
 	<assets path="assets" exclude="lime.svg" embed="false" />
-
-	<!-- Allow intergration to miniaudio -->
-	<haxelib name="miniaudio" />
 
 	<!-- Allow intergration to input2action -->
 	<haxelib name="input2action" />

@@ -1,5 +1,7 @@
 package structures.gameplay;
 
+import lime.media.AudioBuffer;
+import lime.media.AudioSource;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 
@@ -124,18 +126,17 @@ class Field {
 
 		if (isInGameOver) {
 			if (gameOverMusic != null) {
-				if (gameOverMusic.playing) {
-					gameOverMusic.update();
-					Main.conductor.time = gameOverMusic.time;
+				if (@:privateAccess gameOverMusic.__backend.playing) {
+					Main.conductor.time = gameOverMusic.currentTime;
 				}
 
-				if (gameOverMusic.finished) {
+				if (gameOverMusic.currentTime == gameOverMusic.length) {
 					endGameOver();
 				}
 			}
 	
 			if (gameOverConfirm != null) {
-				if (gameOverConfirm.finished) {
+				if (gameOverConfirm.currentTime == gameOverConfirm.length) {
 					gameOverConfirm = null;
 					isInGameOver = false;
 					Main.switchState(GAMEPLAY);
@@ -211,10 +212,10 @@ class Field {
 	// GAME OVER IMPL
 
 	var isInGameOver:Bool;
-	static var gameOverSounds:Map<String, Map<String, Sound>> = [];
-	var gameOverSound:Sound;
-	var gameOverMusic:Sound;
-	var gameOverConfirm:Sound;
+	static var gameOverSounds:Map<String, Map<String, AudioSource>> = [];
+	var gameOverSound:AudioSource;
+	var gameOverMusic:AudioSource;
+	var gameOverConfirm:AudioSource;
 	var actorOnGameOver:Actor;
 
 	function gameOver() {
@@ -225,24 +226,21 @@ class Field {
 		var bpm = gameOverMeta.bpm;
 
 		if (!gameOverSounds.exists(theme)) {
-			gameOverSounds[theme] = new Map<String, Sound>();
+			gameOverSounds[theme] = new Map<String, AudioSource>();
 		}
 
 		if (!gameOverSounds[theme].exists("firstDeath")) {
-			var snd = gameOverSounds[theme]["firstDeath"] = new Sound();
-			snd.fromFile('assets/death/fnf_loss_sfx-${theme}.flac');
+			gameOverSounds[theme]["firstDeath"] = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_sfx-${theme}.ogg'));
 		}
 
 		gameOverSound = gameOverSounds[theme]["firstDeath"];
 		gameOverSound.play();
 
 		if (!gameOverSounds[theme].exists("deathMusic")) {
-			var music = gameOverSounds[theme]["deathMusic"] = new Sound();
-			music.fromFile('assets/death/fnf_loss_music-${theme}.flac');
+			gameOverSounds[theme]["deathMusic"] = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_music-${theme}.ogg'));
 		}
 
 		gameOverMusic = gameOverSounds[theme]["deathMusic"];
-		gameOverMusic.time = 0;
 
 		Main.conductor.reset();
 		Main.conductor.changeBpmAt(0, bpm);
@@ -271,8 +269,7 @@ class Field {
 		var theme = gameOverMeta.theme;
 
 		if (!gameOverSounds[theme].exists("confirm")) {
-			var conf = gameOverSounds[theme]["confirm"] = new Sound();
-			conf.fromFile('assets/death/fnf_loss_end-${theme}.flac');
+			gameOverSounds[theme]["confirm"] = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_end-${theme}.ogg'));
 		}
 
 		gameOverConfirm = gameOverSounds[theme]["confirm"];

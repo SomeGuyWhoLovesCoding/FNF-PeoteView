@@ -253,7 +253,6 @@ class FreeplayMenu {
 		window.onMouseWheel.remove(moveCategory_mouse);
 
 		if (mm != null) {
-			trace("FreeplayMenu.close()");
 			MainMenu.selectedAlpha = 1.0;
 			mm.addEvents();
 		}

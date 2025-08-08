@@ -130,7 +130,6 @@ class Main extends Application
 		current = this;
 
 		SaveData.init();
-		Sound.init();
 		Tools.getIconGridMap('assets/ui');
 
 		window.frameRate = SaveData.state.graphics.frameRate;
@@ -227,7 +226,8 @@ class Main extends Application
 	}
 
 	private function controlVolume(keyCode:KeyCode, keyModifier:KeyModifier) {
-		switch (keyCode) {
+		// Temporarily disabled volume control because its music mixer system is currently wip
+		/*switch (keyCode) {
 			case KeyCode.EQUALS:
 				Sound.globalVolume += 0.1;
 				Sys.println('NEW VOLUME: ${Sound.globalVolume}');
@@ -235,7 +235,7 @@ class Main extends Application
 				Sound.globalVolume -= 0.1;
 				Sys.println('NEW VOLUME: ${Sound.globalVolume}');
 			default:
-		}
+		}*/
 	}
 
 	var newDeltaTimeSeconds:Int = 0;

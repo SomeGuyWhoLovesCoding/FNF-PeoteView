@@ -33,8 +33,6 @@ HXCPP - ``haxelib install hxcpp``
 
 Format - ``haxelib install format`` (This one is also used in peote-view for `TextureData.fromFormatPNG`)
 
-Miniaudio - ``haxelib git miniaudio https://github.com/alchemy-haxe/genkit_miniaudio.git``
-
 Input2Action - ``haxelib install input2action`` (will install 2 dependencies)
 
 After that, make sure that you are on this screen after running ``haxelib lime setup``:
@@ -80,14 +78,6 @@ And you're all set up! Just run `lime test cpp` and it works!
 (AKA Semmis, maitag, or simply Sylvio Sell)
 
 : Wrote peote-view, and wrote the `slices` shader sample for the sustain note.
-
-- MKI
-
-: Generated the miniaudio bindings via genkit (listed above)
-
-- 494kd
-
-: First compile of the android build and failed because of genkit_miniaudio error
 
 # Frequently Asked Questions
 
