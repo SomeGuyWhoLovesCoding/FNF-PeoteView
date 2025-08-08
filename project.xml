@@ -42,10 +42,6 @@
 	<haxedef name="HXCPP_TRACY_MEMORY" if="FV_PROFILE" />
 	<!--<haxedef name="FV_DEBUG" />-->
 
-	<!-- Undefine some shit related to lime -->
-	<undefine name="lime-openal" />
-	<undefine name="lime_openal" />
-
 	<haxedef name="HXCPP_STACK_LINE" />
 	<haxedef name="HXCPP_STACK_TRACE" />
 
