@@ -446,6 +446,7 @@ class PlayField implements State {
 		conductor.onMeasure.remove(measureHit);
 
 		Mixer.stopMusic();
+		Mixer.time = 0;
 
 		var char = field.actors[lane + field.numSpectators];
 		if (char == null) char = field.actors[1 + field.numSpectators];

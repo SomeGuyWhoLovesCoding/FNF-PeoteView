@@ -261,6 +261,7 @@ class Field {
 		}
 
 		if (goBack) {
+			isInGameOver = false;
 			Main.switchState(MAIN_MENU);
 			return;
 		}

@@ -163,7 +163,7 @@ class InputSystem {
 			return;
 		}
 
-		if (parent.ready && isInGameOver || code == ui.back) {
+		if (parent.ready && isInGameOver) {
 			// Yoooooo
 			field.endGameOver(code == ui.back);
 			return;
