@@ -266,6 +266,24 @@ class NoteSystem {
 		}
 	}
 
+	/**
+	 * Resets the strumlines of this note system.
+	**/
+	function resetPlayerStrumlines(resetAnims:Bool = true) {
+		for (i in 0...strumlines.length) {
+			var strumline = strumlines[i];
+			if (!strumline.playable) continue;
+			strumline.x = 50 + Math.floor(Main.INITIAL_WIDTH * (i * 0.5));
+			strumline.y = parent.downScroll ? Main.INITIAL_HEIGHT - 150 : 50;
+			if (resetAnims) strumline.resetAnimations();
+			strumline.resetInputs();
+		}
+	}
+
+	/**
+	 * Resets the notes in this note system.
+	 * This is used when downscroll is enabled or when the player wants to reset the notes
+	 */
 	function resetNotes(songPosition:Float) {
 		noteSpawner.resetNotes(songPosition);
 	}

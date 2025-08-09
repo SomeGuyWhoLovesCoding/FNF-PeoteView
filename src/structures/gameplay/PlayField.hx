@@ -75,7 +75,7 @@ class PlayField implements State {
 	function set_botplay(value:Bool) {
 		if (noteSystem != null) {
 			var pos = Tools.betterInt64FromFloat(songPosition * 100);
-			noteSystem.resetStrumlines();
+			noteSystem.resetPlayerStrumlines();
 			noteSystem.update(pos);
 		}
 		return botplay = value;
@@ -264,7 +264,7 @@ class PlayField implements State {
 
 		pauseScreen.open();
 		if (!RenderingMode.enabled && songStarted) Mixer.stopMusic();
-		if (noteSystem != null) noteSystem.resetStrumlines();
+		if (noteSystem != null) noteSystem.resetPlayerStrumlines();
 		if (inputSystem != null) inputSystem.removeEvents();
 
 		paused = true;
@@ -278,7 +278,7 @@ class PlayField implements State {
 
 		pauseScreen.close();
 		if (!RenderingMode.enabled && songStarted && !songEnded) Mixer.startMusic();
-		if (noteSystem != null) noteSystem.resetStrumlines();
+		if (noteSystem != null) noteSystem.resetPlayerStrumlines();
 		if (inputSystem != null) haxe.Timer.delay(inputSystem.addEvents, 1);
 
 		paused = false;
