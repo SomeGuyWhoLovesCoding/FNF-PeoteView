@@ -1,14 +1,13 @@
 package;
 
+import lime.media.AudioManager;
 import haxe.CallStack;
 import lime.app.Application;
 import lime.ui.Window;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 import lime.ui.Gamepad;
-
-// Source: https://github.com/M3llySlayz/Amazing-Engine/blob/main/source/backend/AudioSwitchFix.hx
-import lime.media.AudioManager;
+import lime.media.openal.ALC;
 
 @:publicFields
 class Main extends Application
@@ -245,6 +244,8 @@ class Main extends Application
 	override function update(deltaTime:haxe.Int64) {
 		Tools.profileFrame();
 
+		updateAudioDeviceSwitch();
+
 		if (_started) {
 			fakeWindow.updateCloseButton(newDeltaTime);
 
@@ -361,6 +362,22 @@ class Main extends Application
 	// ------------------------------------------------------------
 	// ---------------------- GAME ENDS HERE ----------------------
 	// ------------------------------------------------------------
+
+	function updateAudioDeviceSwitch() {
+		static var lastOpenALDevice:String;
+
+		var currentDevice = ALC.getString(null, ALC.ALL_DEVICES_SPECIFIER);
+		Sys.println('Current OpenAL device: $currentDevice');
+		if (lastOpenALDevice == "") lastOpenALDevice = currentDevice;
+		if (currentDevice != lastOpenALDevice) {
+			var device = ALC.getContextsDevice(ALC.getCurrentContext());
+			ALC.destroyContext(ALC.getCurrentContext());
+			ALC.closeDevice(device);
+			lastOpenALDevice = currentDevice;
+			// Recreate the context with the new device
+			ALC.makeContextCurrent(ALC.createContext(ALC.openDevice(currentDevice)));
+		}
+	}
 }
 
 private enum abstract StateSelection(Int) {

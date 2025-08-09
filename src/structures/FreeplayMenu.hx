@@ -328,6 +328,7 @@ class FreeplayMenu {
 
 		active = false;
 		Main.current.removeFreeplayMenu();
+		alphaLerp = 0.0;
 	}
 
 	function dispose() {
