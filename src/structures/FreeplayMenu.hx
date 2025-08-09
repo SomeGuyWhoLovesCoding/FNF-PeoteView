@@ -33,6 +33,7 @@ class FreeplayMenu {
 	static var songIconGroup(default, null):Array<HealthBarSprite> = [];
 
 	var curSelected(default, null):Int = 0;
+	var alreadySelected:Bool = false;
 
 	var actions(default, null):ActionMap;
 
@@ -245,17 +246,10 @@ class FreeplayMenu {
 	}
 
 	function close() {
-		var mm = Main.current.mainMenu;
-
 		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
 		window.onMouseDown.remove(mousePress);
 		window.onMouseWheel.remove(moveCategory_mouse);
-
-		if (mm != null) {
-			MainMenu.selectedAlpha = 1.0;
-			mm.addEvents();
-		}
 
 		opened = false;
 	}
@@ -263,6 +257,12 @@ class FreeplayMenu {
 	function back(isDown:Bool, param:Int) {
 		if (!isDown) return;
 		close();
+
+		var mm = Main.current.mainMenu;
+		if (mm != null) {
+			MainMenu.selectedAlpha = 1.0;
+			mm.addEvents();
+		}
 	}
 
 	function down(isDown:Bool, param:Int) {
@@ -282,17 +282,28 @@ class FreeplayMenu {
 	}
 
 	function enter(isDown:Bool, param:Int) {
-		if (!isDown) return;
+		if (!isDown || alreadySelected) return;
 		Main.songChosen = songsAvailable[curSelected].dir;
+		alreadySelected = true;
 		Main.switchState(GAMEPLAY);
 	}
 
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
+		if (alreadySelected) return;
 		var window = Main.current.fakeWindow;
 		var mouseInside = window.isMouseInsideApp();
-		if (button == LEFT && mouseInside) enter(true, 0);
+		if (button == LEFT && mouseInside) {
+			enter(true, 0);
+			alreadySelected = true;
+		}
 		if (button != RIGHT || mouseInside) return;
 		close();
+
+		var mm = Main.current.mainMenu;
+		if (mm != null) {
+			MainMenu.selectedAlpha = 1.0;
+			mm.addEvents();
+		}
 	}
 
 	function moveCategory_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
@@ -316,6 +327,7 @@ class FreeplayMenu {
 		display.removeProgram(songIconsProg);
 
 		active = false;
+		Main.current.removeFreeplayMenu();
 	}
 
 	function dispose() {

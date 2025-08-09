@@ -55,7 +55,6 @@ class Main extends Application
 				case MAIN_MENU:
 					instance.mainMenu.dispose();
 					instance.mainMenu = null;
-				case FREEPLAY:
 				case GAMEPLAY:
 					instance.playField.dispose();
 					instance.playField = null;
@@ -71,7 +70,6 @@ class Main extends Application
 			case MAIN_MENU:
 				instance.mainMenu = new MainMenu();
 				instance.mainMenu.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
-			case FREEPLAY:
 			case GAMEPLAY:
 				instance.playField = new PlayField(songChosen);
 				instance.playField.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
@@ -365,7 +363,6 @@ class Main extends Application
 private enum abstract StateSelection(Int) {
 	var NONE;
 	var MAIN_MENU;
-	var FREEPLAY;
 	var GAMEPLAY;
 	var AWARDS;
 	var CREDITS;

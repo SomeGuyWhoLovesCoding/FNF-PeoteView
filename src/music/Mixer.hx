@@ -53,6 +53,7 @@ import utils.Tools;
 
 	- Acts as a **high-level abstraction** for music playback
 	- Does **not** perform low-level audio processing directly
+	@since Development
  */
 @:publicFields
 class Mixer {
@@ -109,7 +110,7 @@ class Mixer {
 				var subtract = (_time - rawPlaybackPosition) * multiply;
 				_time -= subtract;
 			}
-			Sys.println('Time: $time, Drift Adjustment Value: $multiply');
+			//Sys.println('Time: $time, Drift Adjustment Value: $multiply');
 		}
 	}
 
