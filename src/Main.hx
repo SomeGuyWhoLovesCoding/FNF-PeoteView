@@ -364,19 +364,7 @@ class Main extends Application
 	// ------------------------------------------------------------
 
 	function updateAudioDeviceSwitch() {
-		static var lastOpenALDevice:String;
-
-		var currentDevice = ALC.getString(null, ALC.ALL_DEVICES_SPECIFIER);
-		//Sys.println('Current OpenAL device: $currentDevice');
-		if (lastOpenALDevice == "") lastOpenALDevice = currentDevice;
-		if (currentDevice != lastOpenALDevice) {
-			var device = ALC.getContextsDevice(ALC.getCurrentContext());
-			ALC.destroyContext(ALC.getCurrentContext());
-			ALC.closeDevice(device);
-			lastOpenALDevice = currentDevice;
-			// Recreate the context with the new device
-			ALC.makeContextCurrent(ALC.createContext(ALC.openDevice(currentDevice)));
-		}
+		
 	}
 }
 

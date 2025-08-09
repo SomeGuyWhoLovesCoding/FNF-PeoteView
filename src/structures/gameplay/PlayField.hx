@@ -452,7 +452,6 @@ class PlayField implements State {
 		if (char == null) char = field.actors[1 + field.numSpectators];
 
 		field.actorOnGameOver = char;
-		field.targetCamera.x = lane == 0 ? -50 : 50;
 	}
 
 	/**
