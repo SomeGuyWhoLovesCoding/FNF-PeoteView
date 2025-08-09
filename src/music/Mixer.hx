@@ -102,15 +102,17 @@ class Mixer {
 		if (isPlaying()) {
 			var rawPlaybackPosition = MiniAudio.getPlaybackPosition();
 			_time += deltaTime;
-			var multiply = 0.01; // Default drift adjustment value
-			if (_time > rawPlaybackPosition) {
-				while (_time - rawPlaybackPosition > multiply && /* Make sure not to overload your drift fixer */ multiply < 0.75) {
-					multiply += 0.01; // Double the adjustment value if the drift is too large
-				}
-				var subtract = (_time - rawPlaybackPosition) * multiply;
-				_time -= subtract;
-			}
-			//Sys.println('Time: $time, Drift Adjustment Value: $multiply');
+			var multiply = 0.05; // Default drift adjustment value
+			var diff = _time - rawPlaybackPosition;
+			if (diff > 5) multiply = 0.1;
+			if (diff > 12.5) multiply = 0.333;
+			if (diff > 25) multiply = 1.0;
+			if (diff < -5) multiply = 0.1;
+			if (diff < -12.5) multiply = 0.333;
+			if (diff < -25) multiply = 1.0;
+			var subtract = diff * multiply;
+			_time -= subtract;
+			Sys.println('Time: $time, Drift Adjustment Value: $multiply, Offset: $diff');
 		}
 	}
 
