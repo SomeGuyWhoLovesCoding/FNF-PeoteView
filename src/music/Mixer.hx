@@ -104,12 +104,10 @@ class Mixer {
 			_time += deltaTime;
 			var multiply = 0.05; // Default drift adjustment value
 			var diff = _time - rawPlaybackPosition;
-			if (diff > 5) multiply = 0.1;
-			if (diff > 12.5) multiply = 0.333;
-			if (diff > 25) multiply = 1.0;
-			if (diff < -5) multiply = 0.1;
-			if (diff < -12.5) multiply = 0.333;
-			if (diff < -25) multiply = 1.0;
+			if (diff > 5 || diff < -5) multiply = 0.1;
+			if (diff > 12.5 || diff < -12.5) multiply = 0.325;
+			if (diff > 25 || diff < -25) multiply = 0.975;
+			if (diff > 50 || diff < -50) multiply = 1.0;
 			var subtract = diff * multiply;
 			_time -= subtract;
 			Sys.println('Time: $time, Drift Adjustment Value: $multiply, Offset: $diff');
