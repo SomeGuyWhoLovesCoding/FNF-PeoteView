@@ -7,6 +7,9 @@ import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 import lime.ui.Gamepad;
 
+// Source: https://github.com/M3llySlayz/Amazing-Engine/blob/main/source/backend/AudioSwitchFix.hx
+import lime.media.AudioManager;
+
 @:publicFields
 class Main extends Application
 {
@@ -123,11 +126,6 @@ class Main extends Application
 
 	public function startSample(window:Window)
 	{
-		#if (windows && cpp)
-		// Initialize the audio fix client to handle audio device changes.
-		AudioUtil.initAudioFix();
-		#end
-
 		window.opacity = 0;
 
 		current = this;
@@ -246,10 +244,6 @@ class Main extends Application
 
 	override function update(deltaTime:haxe.Int64) {
 		Tools.profileFrame();
-
-		if (AudioUtil.audioDeviceChanged) {
-        	AudioUtil.restartAudio();
-		}
 
 		if (_started) {
 			fakeWindow.updateCloseButton(newDeltaTime);
