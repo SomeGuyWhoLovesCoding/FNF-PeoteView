@@ -167,6 +167,7 @@ class MainMenu implements State {
 	}
 
 	function accept(isDown:Bool, param:Int) {
+		if (!isDown || disposed) return;
 		doIt();
 	}
 
@@ -188,7 +189,7 @@ class MainMenu implements State {
 	function doIt() {
 		switch (optionSelected) {
 			case 0: // STORY MODE
-				selectedAlpha = 0.0;
+		selectedAlpha = 0.0;
 				Main.current.storyMenu.open();
 				removeEvents();
 			case 1: // FREEPLAY
@@ -229,8 +230,6 @@ class MainMenu implements State {
 	}
 
 	function dispose() {
-		Main.current.freeplayMenu.dispose();
-
 		removeEvents();
 
 		view.removeProgram(watermarkTxt.program);
@@ -240,6 +239,8 @@ class MainMenu implements State {
 
 		view.removeProgram(backgroundProg);
 		view = null;
+
+		Main.current.freeplayMenu.dispose();
 
 		disposed = true;
 	}

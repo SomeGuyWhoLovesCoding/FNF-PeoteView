@@ -367,7 +367,7 @@ class Main extends Application
 		static var lastOpenALDevice:String;
 
 		var currentDevice = ALC.getString(null, ALC.ALL_DEVICES_SPECIFIER);
-		Sys.println('Current OpenAL device: $currentDevice');
+		//Sys.println('Current OpenAL device: $currentDevice');
 		if (lastOpenALDevice == "") lastOpenALDevice = currentDevice;
 		if (currentDevice != lastOpenALDevice) {
 			var device = ALC.getContextsDevice(ALC.getCurrentContext());

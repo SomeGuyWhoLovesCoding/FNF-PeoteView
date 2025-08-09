@@ -105,14 +105,13 @@ class FreeplayMenu {
 	function update(deltaTime:Float) {
 		var ratio = Math.min(deltaTime * 0.015, 1.0);
 
-		alphaLerp = Tools.lerp(alphaLerp, opened ? 1.0 : 0.0, ratio);
-
-		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelected, ratio);
-		xLerp = Tools.lerp(xLerp, 20 - (curSelected * 20), ratio);
-
 		if (!opened && alphaLerp == 0.0) {
 			shutDown();
 			return;
+		} else {
+			alphaLerp = Tools.lerp(alphaLerp, opened ? 1.0 : 0.0, ratio);
+			curSelectedLerp = Tools.lerp(curSelectedLerp, curSelected, ratio);
+			xLerp = Tools.lerp(xLerp, 20 - (curSelected * 20), ratio);
 		}
 
 		var incrementBest = Math.floor(Math.min(Math.max(curSelectedLerp - 3, 0), songsAvailable.length - 7));
@@ -225,7 +224,7 @@ class FreeplayMenu {
 	function open() {
 		Main.current.popupFreeplayMenu();
 
-		active = opened = true;
+		opened = active = true;
 		alphaLerp = 0.0;
 
 		haxe.Timer.delay(() -> {
@@ -243,6 +242,8 @@ class FreeplayMenu {
 		if (!songIconsProg.isIn(display)) {
 			display.addProgram(songIconsProg);
 		}
+
+		Sys.println("Freeplay menu opened");
 	}
 
 	function close() {
@@ -252,6 +253,8 @@ class FreeplayMenu {
 		window.onMouseWheel.remove(moveCategory_mouse);
 
 		opened = false;
+
+		Sys.println("Freeplay menu closed");
 	}
 
 	function back(isDown:Bool, param:Int) {
@@ -327,8 +330,11 @@ class FreeplayMenu {
 		display.removeProgram(songIconsProg);
 
 		active = false;
-		Main.current.removeFreeplayMenu();
+		curSelectedLerp = curSelected;
+		xLerp = 20 - (curSelected * 20);
 		alphaLerp = 0.0;
+		Main.current.removeFreeplayMenu();
+		Sys.println("Freeplay menu shut down");
 	}
 
 	function dispose() {
