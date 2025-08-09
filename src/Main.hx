@@ -7,6 +7,9 @@ import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 import lime.ui.Gamepad;
 
+// Source: https://github.com/M3llySlayz/Amazing-Engine/blob/main/source/backend/AudioSwitchFix.hx
+import lime.media.AudioManager;
+
 @:publicFields
 class Main extends Application
 {
