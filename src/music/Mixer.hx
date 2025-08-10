@@ -110,7 +110,7 @@ class Mixer {
 			if (diff > 50 || diff < -50) multiply = 1.0;
 			var subtract = diff * multiply;
 			_time -= subtract;
-			Sys.println('Time: $time, Drift Adjustment Value: $multiply, Offset: $diff');
+			//Sys.println('Time: $time, Drift Adjustment Value: $multiply, Offset: $diff');
 		}
 	}
 

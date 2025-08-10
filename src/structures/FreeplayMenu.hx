@@ -219,6 +219,7 @@ class FreeplayMenu {
 		}
 
 		xLerpPrev = xLerp;
+		Sys.println('update');
 	}
 
 	function open() {
@@ -332,6 +333,7 @@ class FreeplayMenu {
 		active = false;
 		curSelectedLerp = curSelected;
 		xLerp = 20 - (curSelected * 20);
+		xLerpPrev = xLerp;
 		alphaLerp = 0.0;
 		Main.current.removeFreeplayMenu();
 		Sys.println("Freeplay menu shut down");
