@@ -107,8 +107,7 @@ class PlayField implements State {
 	function setTime(value:Float, playAgain:Bool = false) {
 		if (disposed || !songStarted || songEnded || paused || died) return;
 
-		songPosition = Math.max(value, 0.0);
-		Mixer.time = songPosition;
+		Mixer.setTime(Math.max(value, 0.0), this);
 		if (hud != null && SaveData.state.preferences.ratingPopup) hud.hideRatingPopup();
 		if (noteSystem != null) noteSystem.resetNotes(songPosition);
 		if (field != null) field.resetCharacters();
@@ -399,8 +398,6 @@ class PlayField implements State {
 		Sys.println('Song activity is on');
 
 		if (!RenderingMode.enabled) {
-			// v - This is to make sure the time is reset when starting a song again, otherwise it will mix incorrectly with the previous time and will result in incorrect hit timings.
-			Mixer.time = 0;
 			Mixer.startMusic();
 		}
 
@@ -421,6 +418,9 @@ class PlayField implements State {
 		songStarted = false;
 
 		Main.switchState(MAIN_MENU);
+
+		// v - This is to make sure the time is reset when starting a song again, otherwise it will mix incorrectly with the previous time and will result in incorrect hit timings.
+		Mixer.setTime(0, null);
 	}
 
 	function gameOver(chart:Chart, lane:Int) {
@@ -446,7 +446,8 @@ class PlayField implements State {
 		conductor.onMeasure.remove(measureHit);
 
 		Mixer.stopMusic();
-		Mixer.time = 0;
+		// v - This is to make sure the time is reset when starting a song again, otherwise it will mix incorrectly with the previous time and will result in incorrect hit timings.
+		Mixer.setTime(0, null);
 
 		var char = field.actors[lane + field.numSpectators];
 		if (char == null) char = field.actors[1 + field.numSpectators];

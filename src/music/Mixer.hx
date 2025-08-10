@@ -60,24 +60,17 @@ class Mixer {
 	static var trackCount:Int;
 	static inline var sampleRate:Int = 44100;
 
-	static var time(get, set):Float;
-
-	inline static function get_time() {
-		return _time;
-	}
-
 	static var length(get, never):Float;
 
 	inline static function get_length() {
 		return _length;
 	}
 
-	private static var _time:Float;
 	private static var _length:Float;
 
-	static function set_time(value:Float) {
+	static function setTime(value:Float, playfield:PlayField) {
 		MiniAudio.seekToPCMFrame(Tools.betterInt64FromFloat(value * 0.001) * sampleRate);
-		return _time = MiniAudio.getPlaybackPosition();
+		if (playfield != null) playfield.songPosition = MiniAudio.getPlaybackPosition();
 	}
 
 	static public function load(files:Array<String>):Void { // Don't rename this to `loadFiles` as it will conflict with the MiniAudio extern class
@@ -98,18 +91,18 @@ class Mixer {
 		MiniAudio.destroy();
 	}
 
-	static public function updateSmoothMusicTime(deltaTime:Float):Void {
+	static public function updateSmoothMusicTime(deltaTime:Float, playfield:PlayField):Void {
 		if (isPlaying()) {
 			var rawPlaybackPosition = MiniAudio.getPlaybackPosition();
-			_time += deltaTime;
+			playfield.songPosition += deltaTime;
 			var multiply = 0.05; // Default drift adjustment value
-			var diff = _time - rawPlaybackPosition;
+			var diff = playfield.songPosition - rawPlaybackPosition;
 			if (diff > 5 || diff < -5) multiply = 0.1;
 			if (diff > 12.5 || diff < -12.5) multiply = 0.325;
 			if (diff > 25 || diff < -25) multiply = 0.975;
 			if (diff > 50 || diff < -50) multiply = 1.0;
 			var subtract = diff * multiply;
-			_time -= subtract;
+			playfield.songPosition -= subtract;
 			//Sys.println('Time: $time, Drift Adjustment Value: $multiply, Offset: $diff');
 		}
 	}
@@ -141,8 +134,7 @@ class Mixer {
 		if (!playField.songStarted || playField.songEnded || RenderingMode.enabled) {
 			playField.songPosition += deltaTime;
 		} else {
-			updateSmoothMusicTime(deltaTime);
-			playField.songPosition = time;
+			updateSmoothMusicTime(deltaTime, playField);
 		}
 	}
 }

@@ -1,5 +1,7 @@
 package;
 
+import sys.io.File;
+import sys.io.FileOutput;
 import lime.media.AudioManager;
 import haxe.CallStack;
 import lime.app.Application;
@@ -280,7 +282,9 @@ class Main extends Application
 				if (storyMenu.active) {
 					storyMenu.update(newDeltaTime);
 				}
-			} catch (_) trace(haxe.CallStack.toString(haxe.CallStack.exceptionStack()), _);
+			} catch (_) {
+				File.saveContent('log/error_${Date.now()}.log', haxe.CallStack.toString(haxe.CallStack.exceptionStack()));
+			}
 		}
 
 		Tools.profileFrame();

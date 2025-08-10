@@ -105,14 +105,19 @@ class FreeplayMenu {
 	function update(deltaTime:Float) {
 		var ratio = Math.min(deltaTime * 0.015, 1.0);
 
-		if (!opened && alphaLerp == 0.0) {
+		Sys.println(alphaLerp);
+		if (!opened && alphaLerp < 0.1/256) {
 			shutDown();
+			curSelectedLerp = curSelected;
+			xLerp = 20 - (curSelected * 20);
+			xLerpPrev = xLerp;
+			alphaLerp = 0.0;
 			return;
-		} else {
-			alphaLerp = Tools.lerp(alphaLerp, opened ? 1.0 : 0.0, ratio);
-			curSelectedLerp = Tools.lerp(curSelectedLerp, curSelected, ratio);
-			xLerp = Tools.lerp(xLerp, 20 - (curSelected * 20), ratio);
 		}
+
+		alphaLerp = Tools.lerp(alphaLerp, opened ? 1.0 : 0.0, ratio);
+		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelected, ratio);
+		xLerp = Tools.lerp(xLerp, 20 - (curSelected * 20), ratio);
 
 		var incrementBest = Math.floor(Math.min(Math.max(curSelectedLerp - 3, 0), songsAvailable.length - 7));
 
@@ -176,12 +181,13 @@ class FreeplayMenu {
 					spr.playAnimation('$char bold instance 1', true);
 				}
 
-				if (Math.floor(xLerp) != Math.floor(xLerpPrev)) {
+				if (Math.floor(xLerp) != Math.floor(xLerpPrev) || firstFrameToAnimate) {
 					var ogFrameIndex = spr.frameIndex;
 					var ogFrameTime = spr.frameTimeRemaining;
 					spr.playAnimation('$char bold instance 1', true);
 					spr.frameIndex = ogFrameIndex;
 					spr.frameTimeRemaining = ogFrameTime;
+					firstFrameToAnimate = false;
 				}
 
 				spr.x = (x + 50) + (xLerp + (20 * k));
@@ -219,7 +225,6 @@ class FreeplayMenu {
 		}
 
 		xLerpPrev = xLerp;
-		Sys.println('update');
 	}
 
 	function open() {
@@ -234,7 +239,7 @@ class FreeplayMenu {
 			
 			window.onMouseDown.add(mousePress);
 			window.onMouseWheel.add(moveCategory_mouse);
-		}, 200);
+		}, 1);
 
 		if (!songTextsProg.isIn(display)) {
 			display.addProgram(songTextsProg);
@@ -331,10 +336,7 @@ class FreeplayMenu {
 		display.removeProgram(songIconsProg);
 
 		active = false;
-		curSelectedLerp = curSelected;
-		xLerp = 20 - (curSelected * 20);
-		xLerpPrev = xLerp;
-		alphaLerp = 0.0;
+		firstFrameToAnimate = true;
 		Main.current.removeFreeplayMenu();
 		Sys.println("Freeplay menu shut down");
 	}
@@ -343,4 +345,6 @@ class FreeplayMenu {
 		close();
 		shutDown();
 	}
+
+	var firstFrameToAnimate:Bool = true;
 }

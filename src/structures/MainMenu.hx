@@ -37,7 +37,7 @@ class MainMenu implements State {
 
 	function init(roof:CustomDisplay, display:CustomDisplay, view:CustomDisplay) {
 		selectedAlpha = 1.0;
-
+		for (i in 0...alphaLerps.length) alphaLerps[i] = 1.0;
 		this.display = display;
 		this.view = view;
 		this.roof = roof;
@@ -60,7 +60,11 @@ class MainMenu implements State {
 				var spr = new Actor(view, "mainMenu", 0, 0, 24, "", false);
 				spr.playAnimation(optionAnims[i] + ' basic', true);
 				spr.x = 20;
-				spr.y = 20 + (spr.h * i);
+				if (i == 5) {
+					optionYLerps[i] = spr.y = (Main.INITIAL_HEIGHT - 45) - spr.h;
+				} else {
+					optionYLerps[i] = spr.y = (45 + (125 * i)) - (6 * Math.min(optionSelected, optionAnims.length - 2));
+				}
 				spr.c.aF = 0.0;
 				optionBuf.addElement(spr);
 			}
@@ -107,9 +111,9 @@ class MainMenu implements State {
 		];
 	}
 
-	static var optionYLerps:Vector<Float> = new Vector<Float>(5);
-	static var alphaLerps:Vector<Float> = new Vector<Float>(6);
-	static var selectedAlpha:Float = 0.0;
+	static var optionYLerps:Vector<Float> = new Vector<Float>(5, 1);
+	static var alphaLerps:Vector<Float> = new Vector<Float>(6, 1);
+	static var selectedAlpha:Float = 1.0;
 
 	function update(deltaTime:Float) {
 		for (i in 0...optionBuf.length) {
