@@ -11,6 +11,7 @@ import input2action.util.NestedArray;
 class Controls {
 	var handle:ControlsHandle;
 	var config:ActionConfig;
+	var active:Bool = false;
 
 	function new() {
 		reload();
@@ -71,11 +72,14 @@ class Controls {
 	}
 
 	public function bindTo(actions:ActionMap) {
+		active = true;
 		handle.bindTo(config, actions);
 	}
 
 	public function unBind() {
+		if (!active) return;
 		handle.unBind();
+		active = false;
 	}
 
 	inline function unbinded() {

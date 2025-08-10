@@ -276,6 +276,7 @@ class Main extends Application
 				}
 
 				if (freeplayMenu.active) {
+					trace(freeplayMenu.active);
 					freeplayMenu.update(newDeltaTime);
 				}
 
