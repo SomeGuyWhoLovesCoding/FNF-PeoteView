@@ -351,7 +351,7 @@ class PlayField implements State {
 
 	function missNote(note:MetaNote) {
 		var index = 1 + note.lane;
-		if (index > 0 && index <= Mixer.trackCount) Mixer.changeTrackVolume(index, 1);
+		if (index > 0 && index <= Mixer.trackCount) Mixer.changeTrackVolume(index, 0);
 
 		health -= healthLoss[note.lane];
 
