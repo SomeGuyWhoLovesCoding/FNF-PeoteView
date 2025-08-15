@@ -136,7 +136,6 @@ class PauseScreen {
 	}
 
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
-		if (!Main.current.fakeWindow.isMouseInsideApp()) return;
 		if (button == LEFT) doIt();
 		else back(true, 0);
 	}

@@ -2,7 +2,7 @@
 <project>
 	<meta title="Friday Night Funkin': Peote View" package="peote.view" version="0.1.0" company="Sylvio Sell - maitag" />
 
-	<window width="1282" height="752" fps="60" resizable="false" vsync="false" borderless="true" background="null" color-depth="32" />
+	<window width="1280" height="720" fps="60" resizable="false" vsync="false" background="null" color-depth="32" />
 	<window if="html5||android" width="0" height="0" />
 
 	<app main="Main" path="bin" file="fopv" />

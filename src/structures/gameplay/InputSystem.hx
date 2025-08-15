@@ -225,7 +225,6 @@ class InputSystem {
 	}
 
 	function mousePress(x:Float, y:Float, mouseButton:MouseButton) {
-		if (mouseButton != LEFT || !Main.current.fakeWindow.isMouseInsideApp()) return;
 		parent.pause();
 	}
 
