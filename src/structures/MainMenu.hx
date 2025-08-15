@@ -180,8 +180,6 @@ class MainMenu implements State {
 	}
 
 	function updateMenuOptions_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
-		if (!Main.current.fakeWindow.isMouseInsideApp()) return;
-
 		optionSelected -= Math.floor(y);
 
 		if (optionSelected >= optionBuf.length) {
@@ -218,7 +216,6 @@ class MainMenu implements State {
 	}
 
 	function doIt_mouse(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
-		if (button != LEFT || !Main.current.fakeWindow.isMouseInsideApp()) return;
 		doIt();
 	}
 

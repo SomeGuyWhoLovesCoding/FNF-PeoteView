@@ -2,14 +2,12 @@ package;
 
 import sys.io.File;
 import sys.io.FileOutput;
-import lime.media.AudioManager;
 import haxe.CallStack;
 import lime.app.Application;
 import lime.ui.Window;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 import lime.ui.Gamepad;
-import lime.media.openal.ALC;
 
 @:publicFields
 class Main extends Application
@@ -25,11 +23,11 @@ class Main extends Application
 	static var VARIABLE_HEIGHT(get, never):Int;
 
 	inline static function get_VARIABLE_WIDTH() {
-		return current.peoteView.width - 2;
+		return current.peoteView.width;
 	}
 
 	inline static function get_VARIABLE_HEIGHT() {
-		return current.peoteView.height - 32;
+		return current.peoteView.height;
 	}
 
 	// Internal variable for checking if the game has booted up
@@ -87,8 +85,6 @@ class Main extends Application
 		GC.enable(false);
 
 		var peoteView = Main.current.peoteView;
-
-		Main.current.fakeWindow.reload(peoteView.width, peoteView.height);
 	}
 
 	// ------------------------------------------------------------
@@ -109,7 +105,6 @@ class Main extends Application
 	var optionsScreen:CustomDisplay;
 	var freeplayScreen:CustomDisplay;
 	var storyScreen:CustomDisplay;
-	var fakeWindow:FakeWindow;
 
 	// STATES
 	var currentState:StateSelection;
@@ -158,8 +153,6 @@ class Main extends Application
 
 			StoryMenu.init(storyScreen);
 			storyMenu = new StoryMenu();
-
-			fakeWindow = new FakeWindow(peoteView);
 
 			resize(peoteView.width, peoteView.height);
 
@@ -246,11 +239,7 @@ class Main extends Application
 	override function update(deltaTime:haxe.Int64) {
 		Tools.profileFrame();
 
-		updateAudioDeviceSwitch();
-
 		if (_started) {
-			fakeWindow.updateCloseButton(newDeltaTime);
-
 			// The if check is to prevent the div operation from running every frame even though `newDeltaTimeSeconds` will be 0 most of the time
 			newDeltaTimeSeconds = deltaTime < 1000000000 ? 0 : Int64.div(deltaTime, 1000000000).low;
 			newDeltaTime = newDeltaTimeSeconds + (Int64.mod(deltaTime, 1000000000).low * 0.000001);
@@ -276,7 +265,6 @@ class Main extends Application
 				}
 
 				if (freeplayMenu.active) {
-					trace(freeplayMenu.active);
 					freeplayMenu.update(newDeltaTime);
 				}
 
@@ -295,82 +283,46 @@ class Main extends Application
 		if (!optionsScreen.isIn(peoteView)) {
 			peoteView.addDisplay(optionsScreen);
 		}
-		fakeWindow.reload(peoteView.width, peoteView.height);
 	}
 
 	function removeOptionsMenu() {
 		if (optionsScreen.isIn(peoteView)) {
 			peoteView.removeDisplay(optionsScreen);
 		}
-		fakeWindow.reload(peoteView.width, peoteView.height);
 	}
 
 	function popupFreeplayMenu() {
 		if (!freeplayScreen.isIn(peoteView)) {
 			peoteView.addDisplay(freeplayScreen);
 		}
-		fakeWindow.reload(peoteView.width, peoteView.height);
 	}
 
 	function removeFreeplayMenu() {
 		if (freeplayScreen.isIn(peoteView)) {
 			peoteView.removeDisplay(freeplayScreen);
 		}
-		fakeWindow.reload(peoteView.width, peoteView.height);
 	}
 
 	function popupStoryMenu() {
 		if (!storyScreen.isIn(peoteView)) {
 			peoteView.addDisplay(storyScreen);
-			trace('added storyScreen');
 		}
-		fakeWindow.reload(peoteView.width, peoteView.height);
 	}
 
 	function removeStoryMenu() {
 		if (storyScreen.isIn(peoteView)) {
 			peoteView.removeDisplay(storyScreen);
 		}
-		fakeWindow.reload(peoteView.width, peoteView.height);
 	}
 
 
 	function resize(w:Int, h:Int) {
 		peoteView.resize(w, h);
-		fakeWindow.reload(w, h);
-
-		centerDisplayOnWindow(bottomDisplay, w, h);
-		centerDisplayOnWindow(middleDisplay, w, h);
-		centerDisplayOnWindow(topDisplay, w, h);
-		centerDisplayOnWindow(optionsScreen, w, h);
-		centerDisplayOnWindow(freeplayScreen, w, h);
-		centerDisplayOnWindow(storyScreen, w, h);
-	}
-
-	function centerDisplayOnWindow(display:CustomDisplay, w:Int, h:Int) {
-		var scale = (fakeWindow.visible ? (h - 32) : h) / INITIAL_HEIGHT;
-
-		if (fakeWindow.visible) {
-			display.x = 1;
-			display.width = w - 2;
-			display.y = 31;
-			display.height = h - 32;
-		} else {
-			display.x = 0;
-			display.width = w;
-			display.y = 0;
-			display.height = h;
-		}
-		display.scale = scale;
 	}
 
 	// ------------------------------------------------------------
 	// ---------------------- GAME ENDS HERE ----------------------
 	// ------------------------------------------------------------
-
-	function updateAudioDeviceSwitch() {
-		
-	}
 }
 
 private enum abstract StateSelection(Int) {

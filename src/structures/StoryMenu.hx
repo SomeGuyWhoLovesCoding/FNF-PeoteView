@@ -284,17 +284,12 @@ class StoryMenu {
 	}
 
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
-		var window = Main.current.fakeWindow;
-		var mouseInside = window.isMouseInsideApp();
-		if (button == LEFT && mouseInside) enter(true, 0);
-		if (button != RIGHT || mouseInside) return;
+		if (button == LEFT) enter(true, 0);
+		if (button != RIGHT) return;
 		close();
 	}
 
 	function moveCategory_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
-		var window = Main.current.fakeWindow;
-		if (!window.isMouseInsideApp()) return;
-
 		curSelected -= Math.floor(y);
 
 		if (curSelected >= songsAvailable.length) {
