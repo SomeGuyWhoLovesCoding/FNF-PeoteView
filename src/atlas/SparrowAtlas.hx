@@ -11,7 +11,7 @@ class SparrowAtlas {
 	static function parse(text:String):SparrowAtlas {
 		var xml = Xml.parse(text);
 		var root = xml.firstElement();
-		var subTexs:Array<SubTexture> = [for (i in 0...root.children.length) 0];
+		var subTexs:Array<SubTexture> = [for (i in 0...root.children.length) null];
 		var aMap:Map<String, Array<Int>> = [];
 		var curName:String = "";
 

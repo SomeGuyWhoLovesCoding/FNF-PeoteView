@@ -215,7 +215,7 @@ class InputSystem {
 
 		if (noteSystem != null) {
 			var strumline = noteSystem.strumlines[lane];
-			if (strumline.playerHitsToCheck[index] {
+			if (strumline.playerHitsToCheck[index]) {
 				strumline.playerHitsToCheck[index] = false;
 				strumline.release(index);
 			}
