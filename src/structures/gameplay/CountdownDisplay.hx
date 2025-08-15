@@ -32,7 +32,7 @@ class CountdownDisplay {
 	/**
 		The countdown display's sound cache.
 	**/
-	static var cached:Vector<AudioSource> = new Vector<AudioSource>(4);
+	static var cached:Array<AudioSource> = [for (i in 0...4) null];
 
 	static function setupSounds(suffix:String = "") {
 		CountdownDisplay.suffix = suffix;

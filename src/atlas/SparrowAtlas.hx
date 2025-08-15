@@ -5,17 +5,17 @@ package atlas;
 @:access(Xml)
 class SparrowAtlas {
 	var imagePath:String;
-	var subTextures:Vector<SubTexture>;
-	var animMap:Map<String, Vector<Int>>;
+	var subTextures:Array<SubTexture>;
+	var animMap:Map<String, Array<Int>>;
 
 	static function parse(text:String):SparrowAtlas {
 		var xml = Xml.parse(text);
 		var root = xml.firstElement();
-		var subTexs:Vector<SubTexture> = new Vector<SubTexture>(root.children.length);
-		var aMap:Map<String, Vector<Int>> = [];
+		var subTexs:Array<SubTexture> = [for (i in 0...root.children.length) 0];
+		var aMap:Map<String, Array<Int>> = [];
 		var curName:String = "";
 
-		aMap[curName] = new Vector<Int>(2);
+		aMap[curName] = [for (i in 0...2) 0];
 
 		var index:Int = 0;
 		var started:Bool = false;
@@ -41,7 +41,7 @@ class SparrowAtlas {
 					started = true;
 				}
 				curName = nameStripped;
-				aMap[curName] = new Vector<Int>(2, index);
+				aMap[curName] = [for (i in 0...2) index];
 			}
 
 			subTexs[index] = ({

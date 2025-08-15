@@ -14,8 +14,8 @@ import lime.ui.MouseButton;
 **/
 @:publicFields
 class InputSystem {
-	var map:Map<KeyCode, Vector<Int>>;
-	var receptorIds:Vector<Int>;
+	var map:Map<KeyCode, Array<Int>>;
+	var receptorIds:Array<Int>;
 	var strumline:Array<Float>;
 	var strumlinePlayable:Array<Bool>;
 
@@ -32,74 +32,74 @@ class InputSystem {
 		// It's why it's in its own class
 		switch (mania) {
 			case 1:
-				receptorIds = Vector.fromArrayCopy([0]);
+				receptorIds = [0];
 				strumline = [0, 1.05];
 
 			case 2:
-				receptorIds = Vector.fromArrayCopy([0, 3]);
+				receptorIds = [0, 3];
 				strumline = [111, 1.0];
 
 			case 3:
-				receptorIds = Vector.fromArrayCopy([0, 2, 3]);
+				receptorIds = [0, 2, 3];
 				strumline = [104, 0.95];
 
 			case 5:
-				receptorIds = Vector.fromArrayCopy([1, 2, 3, 3, 4]);
+				receptorIds = [1, 2, 3, 3, 4];
 				strumline = [97, 0.9];
 
 			case 6:
-				receptorIds = Vector.fromArrayCopy([0, 1, 3, 0, 2, 3]);
+				receptorIds = [0, 1, 3, 0, 2, 3];
 				strumline = [83, 0.83];
 
 			case 7:
-				receptorIds = Vector.fromArrayCopy([0, 1, 3, 2, 0, 2, 3]);
+				receptorIds = [0, 1, 3, 2, 0, 2, 3];
 				strumline = [75, 0.77];
 
 			case 8:
-				receptorIds = Vector.fromArrayCopy([0, 1, 2, 3, 0, 1, 2, 3]);
+				receptorIds = [0, 1, 2, 3, 0, 1, 2, 3];
 				strumline = [70, 0.68];
 
 			case 9:
-				receptorIds = Vector.fromArrayCopy([0, 1, 2, 3, 2, 0, 1, 2, 3]);
+				receptorIds = [0, 1, 2, 3, 2, 0, 1, 2, 3];
 				strumline = [56, 0.64];
 
 			case 10:
-				receptorIds = Vector.fromArrayCopy([0, 1, 2, 3, 1, 2, 0, 1, 2, 3]);
+				receptorIds = [0, 1, 2, 3, 1, 2, 0, 1, 2, 3];
 
 				strumline = [53, 0.59];
 
 			case 11:
-				receptorIds = Vector.fromArrayCopy([0, 1, 2, 3, 0, 1, 3, 0, 1, 2, 3]);
+				receptorIds = [0, 1, 2, 3, 0, 1, 3, 0, 1, 2, 3];
 
 				strumline = [50, 0.57];
 
 			case 12:
-				receptorIds = Vector.fromArrayCopy([0, 1, 2, 3, 1, 0, 3, 2, 0, 1, 2, 3]);
+				receptorIds = [0, 1, 2, 3, 1, 0, 3, 2, 0, 1, 2, 3];
 
 				strumline = [47, 0.4777];
 
 			case 13:
-				receptorIds = Vector.fromArrayCopy([0, 1, 2, 3, 1, 0, 2, 3, 2, 0, 1, 2, 3]);
+				receptorIds = [0, 1, 2, 3, 1, 0, 2, 3, 2, 0, 1, 2, 3];
 
 				strumline = [42, 432];
 
 			case 14:
-				receptorIds = Vector.fromArrayCopy([0, 1, 2, 3, 0, 1, 3, 0, 2, 3, 0, 1, 2, 3]);
+				receptorIds = [0, 1, 2, 3, 0, 1, 3, 0, 2, 3, 0, 1, 2, 3];
 
 				strumline = [41, 0.42];
 
 			case 15:
-				receptorIds = Vector.fromArrayCopy([0, 1, 2, 3, 0, 1, 3, 2, 0, 2, 3, 0, 1, 2, 3]);
+				receptorIds = [0, 1, 2, 3, 0, 1, 3, 2, 0, 2, 3, 0, 1, 2, 3];
 
 				strumline = [39, 0.405];
 
 			case 16:
-				receptorIds = Vector.fromArrayCopy([0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3]);
+				receptorIds = [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3];
 
 				strumline = [37, 0.375];
 
 			default:
-				receptorIds = Vector.fromArrayCopy([0, 1, 2, 3]);
+				receptorIds = [0, 1, 2, 3];
 
 				strumline = [112, 1.0];
 
@@ -117,7 +117,7 @@ class InputSystem {
 		for (i in 0...keybinds.length) {
 			var keybind = keybinds[i];
 			for (j in 0...keybind.length)
-				map[keybind[j]] = Vector.fromArrayCopy([i, 1]);
+				map[keybind[j]] = [i, 1];
 		}
 	}
 
@@ -187,7 +187,7 @@ class InputSystem {
 
 		if (noteSystem != null) {
 			var strumline = noteSystem.strumlines[lane];
-			if (!strumline.playerHitsToCheck[index]) {
+			if (!strumline.playerHitsToCheck[index] {
 				strumline.playerHitsToCheck[index] = true;
 				strumline.press(index);
 			}
@@ -215,7 +215,7 @@ class InputSystem {
 
 		if (noteSystem != null) {
 			var strumline = noteSystem.strumlines[lane];
-			if (strumline.playerHitsToCheck[index]) {
+			if (strumline.playerHitsToCheck[index] {
 				strumline.playerHitsToCheck[index] = false;
 				strumline.release(index);
 			}

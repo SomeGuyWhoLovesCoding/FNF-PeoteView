@@ -38,8 +38,8 @@ class PlayField implements State {
 	var shitScore:Int128 = 50;
 	var accuracy(default, null):Accuracy = new Accuracy();
 	var health:Float = 0.5;
-	var healthGain:Vector<Float>;
-	var healthLoss:Vector<Float>;
+	var healthGain:Array<Float>;
+	var healthLoss:Array<Float>;
 	var latencyCompensation:Int;
 
 	var dispShake:Point = {x: 0, y: 0};
@@ -125,8 +125,8 @@ class PlayField implements State {
 	function create(roof:CustomDisplay, display:CustomDisplay, mania:Int = 4) {
 		if (mania > 16) mania = 16;
 
-		healthLoss = new Vector<Float>(64, 0.02);
-		healthGain = new Vector<Float>(64, 0.025);
+		healthLoss = [for (i in 0...64) 0.02];
+		healthGain = [for (i in 0...64) 0.025];
 
 		onStartSong = new Event<Chart->Void>();
 		onPauseSong = new Event<Chart->Void>();
