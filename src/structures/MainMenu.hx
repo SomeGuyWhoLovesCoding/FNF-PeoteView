@@ -14,7 +14,7 @@ import lime.ui.MouseWheelMode;
 **/
 @:publicFields
 class MainMenu implements State {
-	static var optionAnims:Vector<String> = Vector.fromData(['story mode', 'freeplay', 'awards', 'credits', 'options', 'backspace to exit']);
+	static var optionAnims:Array<String> = ['story mode', 'freeplay', 'awards', 'credits', 'options', 'backspace to exit'];
 
 	var display:CustomDisplay;
 	var view:CustomDisplay;
@@ -111,8 +111,8 @@ class MainMenu implements State {
 		];
 	}
 
-	static var optionYLerps:Vector<Float> = new Vector<Float>(5, 1);
-	static var alphaLerps:Vector<Float> = new Vector<Float>(6, 1);
+	static var optionYLerps:Array<Float> = [for (i in 0...5) 1];
+	static var alphaLerps:Array<Float> = [for (i in 0...6) 1];
 	static var selectedAlpha:Float = 1.0;
 
 	function update(deltaTime:Float) {
