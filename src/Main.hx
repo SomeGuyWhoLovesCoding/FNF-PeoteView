@@ -35,6 +35,12 @@ class Main extends Application
 
 	override function onWindowCreate()
 	{
+		Titlebar.setTitlebarColor(50, 20, 80);
+		Titlebar.setTitleFontColor(200, 180, 240);
+		Titlebar.setButtonFontColor(20, 10, 30);
+		Titlebar.setTitleFont("Pixel Arial 11", 'assets/fonts/unispace/unispace bd.ttf', 16);
+		Titlebar.initialize();
+
 		switch (window.context.type)
 		{
 			case WEBGL, OPENGL, OPENGLES:
@@ -122,8 +128,6 @@ class Main extends Application
 
 	public function startSample(window:Window)
 	{
-		window.opacity = 0;
-
 		current = this;
 
 		SaveData.init();
@@ -166,8 +170,6 @@ class Main extends Application
 			#end
 
 			_started = true;
-
-			window.opacity = 1;
 		}, 100);
 	}
 

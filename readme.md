@@ -37,6 +37,8 @@ Format - ``haxelib install format`` (This one is also used in peote-view for `Te
 
 Input2Action - ``haxelib install input2action`` (will install 2 dependencies)
 
+CustomTitleBar - ``haxelib git customtitlebar https://github.com/Blossomical/customtitlebar.git`` (thank you so fuckin much blossomical)
+
 After that, make sure that you are on this screen after running ``haxelib lime setup``:
 
 ### WINDOWS (10 OR GREATER)
@@ -80,6 +82,10 @@ And you're all set up! Just run `lime test cpp` and it works!
 (AKA Semmis, maitag, or simply Sylvio Sell)
 
 : Wrote peote-view, and wrote the `slices` shader sample for the sustain note.
+
+- Blossimical
+
+: Wrote the customtitlebar haxelib tool (for real, seriously, not joking, I've been waiting for this moment for long enough)
 
 # Frequently Asked Questions
 
