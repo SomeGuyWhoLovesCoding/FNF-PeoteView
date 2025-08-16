@@ -2,7 +2,6 @@ package music;
 
 import miniaudio.MiniAudio;
 import miniaudio.StdVectorString;
-import cpp.ConstCharStar;
 import utils.Tools;
 
 /**
@@ -71,6 +70,13 @@ class Mixer {
 	static function setTime(value:Float, playfield:PlayField) {
 		MiniAudio.seekToPCMFrame(Tools.betterInt64FromFloat(value * 0.001) * sampleRate);
 		if (playfield != null) playfield.songPosition = MiniAudio.getPlaybackPosition();
+	}
+
+	static var speed(default, set):Float = 1;
+
+	static function set_speed(value:Float) {
+		MiniAudio.setPlaybackRate(Math.max(value, 0.1));
+		return speed = value;
 	}
 
 	static public function load(files:Array<String>):Void { // Don't rename this to `loadFiles` as it will conflict with the MiniAudio extern class
