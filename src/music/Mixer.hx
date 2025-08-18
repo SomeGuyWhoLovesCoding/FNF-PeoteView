@@ -80,13 +80,6 @@ class Mixer {
 		if (playfield != null) playfield.songPosition = MiniAudio.getPlaybackPosition();
 	}
 
-	static var speed(default, set):Float = 1;
-
-	static function set_speed(value:Float) {
-		MiniAudio.setPlaybackRate(Math.max(value, 0.1));
-		return speed = value;
-	}
-
 	static public function load(files:Array<String>):Void { // Don't rename this to `loadFiles` as it will conflict with the MiniAudio extern class
 		MiniAudio.loadFiles(files);
 		trackCount = files.length;
