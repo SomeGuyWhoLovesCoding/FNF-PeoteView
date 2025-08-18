@@ -59,12 +59,12 @@ class OptionsDisplay {
 				options.push(subCat2);
 				OptionsMenu.optionsBuf.addElement(subCat2);
 			case PREFERENCES:
-				for (i in 0...6) {
+				for (i in 0...8) {
 					var option = new OptionsSprite();
 					option.type = PREFERENCE_OPTION;
 					option.changeID(i);
 					option.x = 400;
-					option.y = 200 + (option.h * i);
+					option.y = 100 + (option.h * i);
 					options.push(option);
 					OptionsMenu.optionsBuf.addElement(option);
 				}
