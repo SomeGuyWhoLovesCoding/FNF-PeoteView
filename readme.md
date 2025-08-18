@@ -6,6 +6,13 @@ This is being optimized and organized as frequently as possible for a flexible c
 
 Expect this repository to be somewhat or sometimes active, because the developer has other stuff to do so don't go "when is funkin view coming out".
 
+# Targets
+
+Funkin' View currently supports the following targets:
+
+- HXCPP
+- HashLink
+
 # Optimizations included
 
 Optimizations that were ingrained into this "wholesome" fnf rewrite is:
@@ -41,7 +48,7 @@ CustomTitleBar - ``haxelib git customtitlebar https://github.com/Blossomical/cus
 
 After that, make sure that you are on this screen after running ``haxelib lime setup``:
 
-### WINDOWS (10 OR GREATER)
+**Windows (10 OR GREATER)**
 
 ![img](repo_assets/image-1.png)
 
@@ -57,11 +64,23 @@ Then, you want to go to the Windows 10 SDK (10.0.19041) and MSVC v143 - VS 2022 
 
 (Oh yeah and it requires at least 6GB of free storage space on a drive to install btw)
 
-### LINUX (DEBIAN/UBUNTU)
+**Linux (DEBIAN/UBUNTU)**
 
 Run the file named ``setup-linux.bash``.
 
-And you're all set up! Just run `lime test cpp` and it works!
+And you're all set up!
+
+HXCPP setup
+---
+
+Just run `lime test cpp` and it works!
+
+Hashlink setup
+---
+
+If you want to compile the hl extern code you just modified, or you just want to set up hashlink compilation, run the build.xml's in "hashlinkBuildXmls" folder. Then, you just `lime test hl` and everything runs good!
+
+(Hashlink support is being progressed so that part doesn't matter for now and you )
 
 # Credits
 
