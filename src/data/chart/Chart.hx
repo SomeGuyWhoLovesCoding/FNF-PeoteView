@@ -18,7 +18,7 @@ class Chart {
 	private static var destroyed(default, null):Bool = false;
 
 	/**
-		Constructs a chart from a ".bin" file.
+		Constructs a chart from a ".cbin" file.
 		@param path The path to the chart folder.
 	**/
 	static function load(path:String) {
