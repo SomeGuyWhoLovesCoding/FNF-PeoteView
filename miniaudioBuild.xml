@@ -1,18 +1,16 @@
 <xml>
 	<pragma once="true" />
-	<set name="PROJECT_DIR" value="${this_dir}/src" />
 
-	<files id="haxe">
-		<compilerflag value="-I${PROJECT_DIR}/miniaudio" />
-	</files>
+	<set name="PROJECT_DIR" value="${this_dir}/src" />
 
 	<files id="miniaudio">
 		<compilerflag value="-I${PROJECT_DIR}/miniaudio" />
 		<compilerflag value="-I${PROJECT_DIR}/miniaudio/include" />
 		<compilerflag value="-I${PROJECT_DIR}/miniaudio/signalsmith-stretch" />
 		<file name="${PROJECT_DIR}/miniaudio/ma_thing.cpp" />
+		<compilerflag value="-I${HASHLINK}/include" />
 	</files>
-
+	
 	<target id="haxe">
 		<files id="miniaudio" />
 	</target>

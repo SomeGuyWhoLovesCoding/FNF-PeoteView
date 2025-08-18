@@ -48,7 +48,7 @@ namespace windows {
 			// Good average
 			//return bandwidth + 14/((bandwidth + 2.5)*(bandwidth + 2.5));
 			// Compromise
-			return bandwidth + 8/((bandwidth + 3)*(bandwidth + 3)) + 0.25*std::max(3 - bandwidth, 0.0);
+			return bandwidth + 8/((bandwidth + 3)*(bandwidth + 3)) + 0.25*std::max<double>(3 - bandwidth, 0.0);
 		}
 	public:
 		/// Set up a Kaiser window with a given shape.  `beta` is `pi*alpha` (since there is ambiguity about shape parameters)
@@ -68,7 +68,7 @@ namespace windows {
 			if (heuristicOptimal) { // Heuristic based on numerical search
 				bandwidth = heuristicBandwidth(bandwidth);
 			}
-			bandwidth = std::max(bandwidth, 2.0);
+			bandwidth = std::max<double>(bandwidth, 2.0);
 			double alpha = std::sqrt(bandwidth*bandwidth*0.25 - 1);
 			return alpha*M_PI;
 		}

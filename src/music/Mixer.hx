@@ -67,6 +67,14 @@ class Mixer {
 
 	private static var _length:Float;
 
+	static var speed(default, set):Float = 1;
+
+	static function set_speed(value:Float) {
+		speed = Math.max(value, 0.1);
+		MiniAudio.setPlaybackRate(speed);
+		return speed;
+	}
+
 	static function setTime(value:Float, playfield:PlayField) {
 		MiniAudio.seekToPCMFrame(Tools.betterInt64FromFloat(value * 0.001) * sampleRate);
 		if (playfield != null) playfield.songPosition = MiniAudio.getPlaybackPosition();

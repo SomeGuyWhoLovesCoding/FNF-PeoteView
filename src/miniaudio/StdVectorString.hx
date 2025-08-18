@@ -1,5 +1,8 @@
 package miniaudio;
 
+// Edited version of this: https://community.haxe.org/t/passing-a-string-array-from-haxe-to-c/1794/4
+
+#if cpp
 import cpp.RawPointer;
 import cpp.ConstCharStar;
 
@@ -27,3 +30,4 @@ extern class StdVectorString
 
     function size() : Int;
 }
+#end
