@@ -65,7 +65,8 @@ class SaveData {
 			ratingPopup: true,
 			scoreTxtBopping: true,
 			cameraZooming: true,
-			iconBopping: true
+			iconBopping: true,
+			cacheChartData: false
 		},
 		graphics: {
 			frameRate: 60,
@@ -163,6 +164,7 @@ class SaveData_Preferences {
 	var scoreTxtBopping:Bool;
 	var cameraZooming:Bool;
 	var iconBopping:Bool;
+	var cacheChartData:Bool;
 }
 
 /**

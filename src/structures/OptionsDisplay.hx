@@ -20,7 +20,8 @@ class OptionsDisplay {
 		"ratingPopup",
 		"scoreTxtBopping",
 		"cameraZooming",
-		"iconBopping"
+		"iconBopping",
+		"cacheChartData"
 	];
 
 	private static var display(get, never):CustomDisplay;

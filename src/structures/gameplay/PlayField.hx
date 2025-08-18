@@ -518,7 +518,9 @@ class PlayField implements State {
 		songEnded = true;
 		GC.run();
 
-		Chart.destroy();
+		if (!SaveData.state.preferences.cacheChartData) {
+			Chart.destroy();
+		}
 
 		Main.current.freeplayMenu.alreadySelected = false;
 		if (display.fov != 1) display.fov = 1;
