@@ -64,7 +64,7 @@ class OptionsDisplay {
 					option.type = PREFERENCE_OPTION;
 					option.changeID(i);
 					option.x = 400;
-					option.y = 100 + (option.h * i);
+					option.y = 125 + (option.h * i);
 					options.push(option);
 					OptionsMenu.optionsBuf.addElement(option);
 				}
