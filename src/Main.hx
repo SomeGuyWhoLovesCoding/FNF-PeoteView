@@ -35,11 +35,13 @@ class Main extends Application
 
 	override function onWindowCreate()
 	{
+		#if FV_CUSTOM_WINDOW_TITLEBAR
 		Titlebar.setTitlebarColor(50, 20, 80);
 		Titlebar.setTitleFontColor(200, 180, 240);
 		Titlebar.setButtonFontColor(20, 10, 30);
 		Titlebar.setTitleFont("Pixel Arial 11", 'assets/fonts/unispace/unispace bd.ttf', 16);
 		Titlebar.initialize();
+		#end
 
 		switch (window.context.type)
 		{

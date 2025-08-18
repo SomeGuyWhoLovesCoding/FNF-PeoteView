@@ -9,9 +9,9 @@ class Tools {
 	static var iconGridMap:Map<String, Array<Int>> = [];
 
 	static function parseNoteskinData(path:String) {
-		cpp.NativeArray.zero(Note.offsetAndSizeFrames);
-		cpp.NativeArray.zero(Sustain.offsets);
-		cpp.NativeArray.zero(Sustain.tailPoints);
+		while (Note.offsetAndSizeFrames.length != 0) Note.offsetAndSizeFrames.pop();
+		while (Sustain.offsets.length != 0) Sustain.offsets.pop();
+		while (Sustain.tailPoints.length != 0) Sustain.tailPoints.pop();
 
 		var contents = File.getContent('$path/noteData.xml');
 		var xml = Xml.parse(contents);

@@ -126,16 +126,16 @@ class Mixer {
 		MiniAudio.amplify_decoder(index, volume);
 	}
 
-	static function init(chart:Chart):Void {
-		var files:Array<String> = chart.header.voicesDirs;
-		files.unshift(chart.header.instDir);
+	static function init(header:Header):Void {
+		var files:Array<String> = header.voicesDirs;
+		files.unshift(header.instDir);
 		load(files);
 	}
 
 	static function update(playField:PlayField, deltaTime:Float):Void {
 		if (playField.songStarted && (isStopped() || (RenderingMode.enabled && playField.songPosition > length)) && !playField.songEnded) {
 			Sys.println('Stopping song playback due to stop condition or rendering mode.');
-			playField.onStopSong.dispatch(playField.chart);
+			playField.onStopSong.dispatch(Chart.header);
 		}
 
 		if (!playField.songStarted || playField.songEnded || RenderingMode.enabled) {

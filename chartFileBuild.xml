@@ -1,0 +1,15 @@
+<xml>
+	<pragma once="true" />
+
+	<set name="PROJECT_DIR" value="${this_dir}/src" />
+
+	<files id="chart_file">
+		<compilerflag value="-I${PROJECT_DIR}/data/chart" />
+		<compilerflag value="-I${PROJECT_DIR}/data/chart/include" />
+		<file name="${PROJECT_DIR}/data/chart/chart_file.cpp" />
+	</files>
+	
+	<target id="haxe">
+		<files id="chart_file" />
+	</target>
+</xml>

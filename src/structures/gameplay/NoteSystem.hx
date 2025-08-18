@@ -71,12 +71,11 @@ class NoteSystem {
 		display.addProgram(notesProg);
 
 		var inputSystem = parent.inputSystem;
-		var chart = parent.chart;
 
 		notePool = new NotePool(this);
-		noteSpawner = new NoteSpawner(chart.file, this);
+		noteSpawner = new NoteSpawner(this);
 
-		var mania = chart.header.mania;
+		var mania = Chart.header.mania;
 
 		strumlines = [];
 
@@ -88,7 +87,7 @@ class NoteSystem {
 			strumlines.push(strumline);
 		}
 
-		setScrollSpeed(chart.header.speed);
+		setScrollSpeed(Chart.header.speed);
 
 		update(0);
 	}

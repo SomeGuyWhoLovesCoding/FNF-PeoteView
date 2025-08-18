@@ -221,7 +221,7 @@ class Field {
 	function gameOver() {
 		removeCallbacks();
 
-		var gameOverMeta = parent.chart.header.gameOver;
+		var gameOverMeta = Chart.header.gameOver;
 		var theme = gameOverMeta.theme;
 		var bpm = gameOverMeta.bpm;
 
@@ -266,7 +266,7 @@ class Field {
 			return;
 		}
 
-		var gameOverMeta = parent.chart.header.gameOver;
+		var gameOverMeta = Chart.header.gameOver;
 		var theme = gameOverMeta.theme;
 
 		if (!gameOverSounds[theme].exists("confirm")) {

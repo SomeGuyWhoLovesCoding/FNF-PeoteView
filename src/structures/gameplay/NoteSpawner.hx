@@ -18,23 +18,20 @@ class NoteSpawner {
 	var curTopNote(default, null):MetaNote;
 	var curBottomNote(default, null):MetaNote;
 
-	var file(default, null):File;
-
 	var parent(default, null):NoteSystem;
 
 	/**
 	 * Creates the note spawner.
-	 * @param file The chart file to import onto the note spawner.
+	 * @param parent The note system to implement this note spawner on.
 	 */
-	function new(file:File, parent:NoteSystem) {
-		this.file = file;
+	function new(parent:NoteSystem) {
 		this.parent = parent;
 
 		bottom = 0;
 		top = 0;
 
-		curTopNote = file.getNote(0);
-		curBottomNote = file.getNote(0);
+		curTopNote = File.getNote(0);
+		curBottomNote = File.getNote(0);
 	}
 
 	/**
@@ -53,7 +50,7 @@ class NoteSpawner {
 
 		var prev:Null<MetaNote> = null;
 		while (i < top) {
-			var n = file.getNote(i);
+			var n = File.getNote(i);
 
 			var ghost = prev.position == n.position && prev.index == n.index && prev.lane == n.lane;
 			var lastDiff = diff;
@@ -88,10 +85,10 @@ class NoteSpawner {
 	 * @param pos The song's position in the note position format.
 	 */
 	function cullTop(pos:Int64) {
-		var len = file.length;
+		var len = File.getLength();
 		while (top != len && (curTopNote.position - pos).low < spawnDist) {
 			++top;
-			curTopNote = file.getNote(top);
+			curTopNote = File.getNote(top);
 		}
 	}
 
@@ -100,7 +97,7 @@ class NoteSpawner {
 	 * @param pos The song's position in the note position format.
 	 */
 	function cullBottom(pos:Int64) {
-		var len = file.length;
+		var len = File.getLength();
 		while (bottom != len &&
 			((pos -
 			(
@@ -117,7 +114,7 @@ class NoteSpawner {
 
 			++bottom;
 
-			curBottomNote = file.getNote(bottom);
+			curBottomNote = File.getNote(bottom);
 		}
 	}
 
@@ -134,8 +131,7 @@ class NoteSpawner {
 		parent.notesMissed.clear();
 		parent.notesHeld.clear();
 
-		var file = pf.chart.file;
-		var len = file.length;
+		var len = File.getLength();
 
 		var incrementAmount = (len / 100) * 25;
 		var decrementAmount = (len / 100) * 12;
@@ -143,29 +139,29 @@ class NoteSpawner {
 		var songPos = Tools.betterInt64FromFloat(songPosition * 100);
 		var songPosTop = songPos + spawnDist;
 
-		if (file.getNote(0).position > songPosTop || file.getNote(0).position > songPos) {
+		if (File.getNote(0).position > songPosTop || File.getNote(0).position > songPos) {
 			top = bottom = 0;
-			curBottomNote = curTopNote = file.getNote(0);
+			curBottomNote = curTopNote = File.getNote(0);
 			parent.resetStrumlines();
 			return;
 		}
 
 		var lenSub1 = len - 1;
 
-		while (file.getNote(top).position < songPosTop) {
+		while (File.getNote(top).position < songPosTop) {
 			if ((top += incrementAmount) > lenSub1) top = lenSub1;
 		}
-		while (file.getNote(top--).position > songPosTop) {}
+		while (File.getNote(top--).position > songPosTop) {}
 
 		bottom = top;
 
-		while (file.getNote(bottom).position > songPos) {
+		while (File.getNote(bottom).position > songPos) {
 			if ((bottom -= decrementAmount) < zero) bottom = zero;
 		}
-		while (file.getNote(bottom++).position < songPos) {}
+		while (File.getNote(bottom++).position < songPos) {}
 
-		curBottomNote = file.getNote(bottom);
-		curTopNote = file.getNote(top);
+		curBottomNote = File.getNote(bottom);
+		curTopNote = File.getNote(top);
 
 		parent.resetStrumlines();
 	}

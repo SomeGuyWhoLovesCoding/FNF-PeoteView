@@ -17,7 +17,7 @@ class PlayField implements State {
 	var view(default, null):CustomDisplay;
 
 	function new(path:String) {
-		chart = new Chart(path);
+		Chart.load(path);
 	}
 
 	function init(roof:CustomDisplay, display:CustomDisplay, view:CustomDisplay) {
@@ -25,8 +25,8 @@ class PlayField implements State {
 		this.display = display;
 		this.view = view;
 
-		create(roof, display, chart.header.mania);
-		if (RenderingMode.enabled) RenderingMode.initRender(this);
+		create(roof, display, Chart.header.mania);
+		if (RenderingMode.enabled) RenderingMode.initRender();
 	}
 
 	var score:Int128 = 0;
@@ -88,11 +88,11 @@ class PlayField implements State {
 	var countdownDisp(default, null):CountdownDisplay;
 	var pauseScreen(default, null):PauseScreen;
 
-	var onStartSong:Event<Chart->Void>;
-	var onPauseSong:Event<Chart->Void>;
-	var onResumeSong:Event<Chart->Void>;
-	var onStopSong:Event<Chart->Void>;
-	var onDeath:Event<Chart->Int->Void>;
+	var onStartSong:Event<Header->Void>;
+	var onPauseSong:Event<Header->Void>;
+	var onResumeSong:Event<Header->Void>;
+	var onStopSong:Event<Header->Void>;
+	var onDeath:Event<Header->Int->Void>;
 	var onNoteHit:Event<MetaNote->Int->Void>;
 	var onNoteMiss:Event<MetaNote->Void>;
 	var onSustainComplete:Event<MetaNote->Void>;
@@ -114,7 +114,6 @@ class PlayField implements State {
 	}
 
 	var songPosition:Float;
-	var chart:Chart;
 
 	/**
 	 * Creates the playfield.
@@ -128,11 +127,11 @@ class PlayField implements State {
 		healthLoss = [for (i in 0...64) 0.02];
 		healthGain = [for (i in 0...64) 0.025];
 
-		onStartSong = new Event<Chart->Void>();
-		onPauseSong = new Event<Chart->Void>();
-		onResumeSong = new Event<Chart->Void>();
-		onStopSong = new Event<Chart->Void>();
-		onDeath = new Event<Chart->Int->Void>();
+		onStartSong = new Event<Header->Void>();
+		onPauseSong = new Event<Header->Void>();
+		onResumeSong = new Event<Header->Void>();
+		onStopSong = new Event<Header->Void>();
+		onDeath = new Event<Header->Int->Void>();
 
 		onNoteHit = new Event<MetaNote->Int->Void>();
 		onNoteMiss = new Event<MetaNote->Void>();
@@ -142,8 +141,8 @@ class PlayField implements State {
 		onKeyRelease = new Event<KeyCode->Void>();
 
 		var conductor = Main.conductor;
-		var timeSig = chart.header.timeSig;
-		conductor.changeBpmAt(0, chart.header.bpm, timeSig[0], timeSig[1]);
+		var timeSig = Chart.header.timeSig;
+		conductor.changeBpmAt(0, Chart.header.bpm, timeSig[0], timeSig[1]);
 		conductor.onBeat.add(beatHit);
 		conductor.onMeasure.add(measureHit);
 
@@ -161,15 +160,15 @@ class PlayField implements State {
 		inputSystem = new InputSystem(mania, this);
 		NoteSystem.init();
 		noteSystem = new NoteSystem(this);
-		Mixer.init(chart);
+		Mixer.init(Chart.header);
 		HUD.init(display);
 		if (!SaveData.state.preferences.hideHUD) hud = new HUD(display, this);
 		CountdownDisplay.setupSounds();
 		countdownDisp = new CountdownDisplay(HUD.uiBuf);
 		PauseScreen.init(roof);
-		pauseScreen = new PauseScreen(chart.header.difficulty);
+		pauseScreen = new PauseScreen(Chart.header.difficulty);
 
-		scrollSpeed = chart.header.speed;
+		scrollSpeed = Chart.header.speed;
 	}
 
 	/**
@@ -284,7 +283,7 @@ class PlayField implements State {
 	}
 
 	inline function beatHit(beat:Float) {
-		if (beat == 0 && !songStarted) onStartSong.dispatch(chart);
+		if (beat == 0 && !songStarted) onStartSong.dispatch(Chart.header);
 		if (beat < 0) countdownDisp.countdownTick(Math.floor(4 + beat));
 	}
 
@@ -361,7 +360,7 @@ class PlayField implements State {
 		accuracy.increment(1.0, true);
 
 		if (health < 0 && !disposed) {
-			onDeath.dispatch(chart, note.lane);
+			onDeath.dispatch(Chart.header, note.lane);
 			return;
 		}
 
@@ -394,7 +393,7 @@ class PlayField implements State {
 		combo = 0;
 	}
 
-	function startSong(chart:Chart) {
+	function startSong(header:Header) {
 		Sys.println('Song activity is on');
 
 		if (!RenderingMode.enabled) {
@@ -405,7 +404,7 @@ class PlayField implements State {
 		songEnded = false;
 	}
 
-	function stopSong(chart:Chart) {
+	function stopSong(header:Header) {
 		Sys.println('Song activity is off');
 
 		if (!RenderingMode.enabled) {
@@ -423,7 +422,7 @@ class PlayField implements State {
 		Mixer.setTime(0, null);
 	}
 
-	function gameOver(chart:Chart, lane:Int) {
+	function gameOver(header:Header, lane:Int) {
 		onDeath.remove(gameOver);
 
 		died = true;

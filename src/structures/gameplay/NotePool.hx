@@ -32,8 +32,8 @@ class NotePool {
 	function new(parent:NoteSystem) {
 		this.parent = parent;
 
-		notes = [];
-		sustains = [];
+		notes = new Map<MetaNote, Note>();
+		sustains = new Map<MetaNote, Sustain>();
 		inactiveNotes = [];
 		inactiveSustains = [];
 	}

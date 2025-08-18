@@ -28,7 +28,7 @@
 	<haxelib name="input2action" />
 
 	<!-- Allow intergration to customtitlebar -->
-	<haxelib name="customtitlebar" />
+	<haxelib name="customtitlebar" if="FV_CUSTOM_WINDOW_TITLEBAR" />
 
 	<!-- Enable full dce (originally to only prevent JIT ERROR 0 on jit.c line 541) -->
 	<haxeflag name="-dce" value="full" />

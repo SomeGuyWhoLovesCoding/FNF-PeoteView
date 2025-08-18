@@ -1,7 +1,6 @@
 package data.chart;
 
 import sys.FileSystem;
-import haxe.io.Bytes;
 
 /**
 	The chart.
@@ -14,18 +13,16 @@ class Chart {
 	/**
 		The chart's header content.
 	**/
-	var header(default, null):Header;
+	static var header(default, null):Header;
+
+	private static var destroyed(default, null):Bool = false;
 
 	/**
-		The chart file where every note is read and parsed to a playable song.
-	**/
-	var file(default, null):File;
-
-	/**
-		Constructs a chart.
+		Constructs a chart from a ".bin" file.
 		@param path The path to the chart folder.
 	**/
-	function new(path:String) {
+	static function load(path:String) {
+		destroyed = false;
 		trace('Parsing chart from folder...');
 
 		if (FileSystem.exists('$path/chart.json')) {
@@ -35,7 +32,21 @@ class Chart {
 		header = Tools.parseHeader(path);
 
 		var stamp = haxe.Timer.stamp();
-		file = new File('$path/chart.cbin');
+		File.loadChart('$path/chart.cbin');
 		trace('Done! Took ${Tools.formatTime((haxe.Timer.stamp() - stamp) * 1000.0, true)} to load.');
+	}
+
+	/**
+		Destroys an already-existing chart. Self-explanatory.
+	**/
+	static function destroy() {
+		trace('Destroying chart...');
+
+		header = null;
+
+		var stamp = haxe.Timer.stamp();
+		File.destroyChart();
+		destroyed = true;
+		trace('Done! Took ${Tools.formatTime((haxe.Timer.stamp() - stamp) * 1000.0, true)} to destroy.');
 	}
 }

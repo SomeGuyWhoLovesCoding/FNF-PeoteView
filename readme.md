@@ -84,7 +84,7 @@ Hashlink setup
 
 If you want to compile the hl extern code you just modified, or you just want to set up hashlink compilation, run the build.xml's in "hashlinkBuildXmls" folder. Then, you just `lime test hl` and everything runs good!
 
-(Hashlink support is being progressed so that part doesn't matter for now and you )
+(Hashlink support is being progressed so that part doesn't matter for now and you can already compile it on c++)
 
 # Credits
 

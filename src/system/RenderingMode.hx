@@ -14,7 +14,7 @@ class RenderingMode {
 
 	static var songName:String;
 
-	static function initRender(playField:PlayField)
+	static function initRender()
 	{
 		var ffmpeg = "ffmpeg";
 		#if windows
@@ -34,7 +34,7 @@ class RenderingMode {
 
 		Sys.println("Rendering Mode System - Initializing...");
 
-		songName = playField.chart.header.title;
+		songName = Chart.header.title;
 
 		process = new Process('ffmpeg', [
 			'-v', 'quiet', '-y', // START
