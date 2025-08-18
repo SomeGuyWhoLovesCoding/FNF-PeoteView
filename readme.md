@@ -10,8 +10,12 @@ Expect this repository to be somewhat or sometimes active, because the developer
 
 Funkin' View currently supports the following targets:
 
-- HXCPP
-- HashLink
+```
+lime test windows
+lime test linux
+lime test android // not supported yet unless compiled
+lime test hl
+```
 
 # Optimizations included
 
