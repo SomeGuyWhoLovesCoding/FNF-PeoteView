@@ -102,7 +102,7 @@ class OptionsSprite implements Element {
 	}
 }
 
-private enum abstract OptionsSpriteType(cpp.UInt8) {
+private enum abstract OptionsSpriteType(Int) {
 	var NONE;
 	var CATEGORY_TEXT;
 	var CONTROLS_SUBCAT;

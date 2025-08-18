@@ -181,7 +181,7 @@ class UISprite implements Element {
     }
 }
 
-private enum abstract UISpriteType(cpp.UInt8) {
+private enum abstract UISpriteType(Int) {
 	var NONE;
 	var RATING_POPUP;
 	var COMBO_NUMBER;

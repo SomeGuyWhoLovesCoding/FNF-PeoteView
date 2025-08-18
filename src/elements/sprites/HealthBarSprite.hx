@@ -168,7 +168,7 @@ class HealthBarSprite implements Element {
     }
 }
 
-private enum abstract HealthBarSpriteType(cpp.UInt8) {
+private enum abstract HealthBarSpriteType(Int) {
 	var NONE;
 	var HEALTH_BAR;
 	var HEALTH_ICON;

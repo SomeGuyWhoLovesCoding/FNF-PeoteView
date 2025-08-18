@@ -122,7 +122,7 @@ class StoryModeSprite implements Element {
 	}
 }
 
-private enum abstract StoryModeSpriteType(cpp.UInt8) {
+private enum abstract StoryModeSpriteType(Int) {
 	var NONE;
 	var PAUSE_OPTION;
 	var DIFF_TEXT;
