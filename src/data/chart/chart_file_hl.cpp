@@ -15,8 +15,17 @@
 #include <unistd.h>
 #endif
 
-int64_t* data = nullptr;      // pointer to mapped memory
-int64_t length = 0;           // number of int64_t elements
+// Debug toggle
+#ifdef DEBUG_CHART
+    #define DBG_PRINTF(...)  printf(__VA_ARGS__)
+    #define DBG_CERR(x)      (std::cerr << x)
+#else
+    #define DBG_PRINTF(...)  ((void)0)
+    #define DBG_CERR(x)      ((void)0)
+#endif
+
+int64_t* data = nullptr;
+int64_t length = 0;
 
 #ifdef _WIN32
 HANDLE hFile = INVALID_HANDLE_VALUE;
@@ -27,53 +36,47 @@ HL_PRIM void HL_NAME(loadChart)(vbyte* inFile) {
 	const char* string = hl_aptr(inFile, const char);
 
 	#ifdef _WIN32
-    hFile = CreateFileA(string, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    hFile = CreateFileA(inFile, GENERIC_READ, FILE_SHARE_READ, NULL,
+                        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE) {
-		// There are two more std::cerr's here just in case because this is the first time we call a function onto this file.
-        std::cerr << "Failed to open file";
-		std::cerr << inFile;
-		std::cerr << "\n";
+        DBG_CERR("Failed to open file named " << inFile << "\n");
         return;
     }
-	printf("Created memmap file for %s\n", string);
+    DBG_PRINTF("Opened file %s\n", inFile);
 
     LARGE_INTEGER fileSize;
     if (!GetFileSizeEx(hFile, &fileSize)) {
-        std::cerr << "Failed to get file size\n";
+        DBG_CERR("Failed to get file size\n");
         CloseHandle(hFile);
         hFile = INVALID_HANDLE_VALUE;
         return;
     }
-	printf("Got file size for %s\n", string);
 
     length = fileSize.QuadPart / sizeof(int64_t);
 
     hMap = CreateFileMapping(hFile, NULL, PAGE_READONLY, 0, 0, NULL);
     if (!hMap) {
-        std::cerr << "Failed to create file mapping\n";
+        DBG_CERR("Failed to create file mapping\n");
         CloseHandle(hFile);
         hFile = INVALID_HANDLE_VALUE;
         return;
     }
-	printf("Created file mapping for %s\n", string);
 
     data = (int64_t*)MapViewOfFile(hMap, FILE_MAP_READ, 0, 0, 0);
     if (!data) {
-        std::cerr << "Failed to map view of file\n";
+        DBG_CERR("Failed to map view of file\n");
         CloseHandle(hMap);
         CloseHandle(hFile);
         hMap = NULL;
         hFile = INVALID_HANDLE_VALUE;
     }
-	printf("Mapped view of file for %s\n", string);
 
-	#else
-    int fd = open(string, O_RDONLY);
+#else
+    int fd = open(inFile, O_RDONLY);
     if (fd == -1) {
         perror("open");
         return;
     }
-	printf("Opened file successfully\n");
 
     struct stat st;
     if (fstat(fd, &st) == -1) {
@@ -81,7 +84,6 @@ HL_PRIM void HL_NAME(loadChart)(vbyte* inFile) {
         close(fd);
         return;
     }
-	printf("ftatted file successfully\n");
 
     length = st.st_size / sizeof(int64_t);
 
@@ -92,10 +94,9 @@ HL_PRIM void HL_NAME(loadChart)(vbyte* inFile) {
         close(fd);
         return;
     }
-	printf("mmap'd view of file successfully\n");
 
     close(fd);
-	#endif
+#endif
 }
 
 HL_PRIM int64_t HL_NAME(getNote)(int64_t atIndex) {
@@ -111,17 +112,15 @@ HL_PRIM int64_t HL_NAME(getLength)(_NO_ARG) {
 HL_PRIM void HL_NAME(destroy)(_NO_ARG) {
     if (!data) return;
 
-	#ifdef _WIN32
+#ifdef _WIN32
     UnmapViewOfFile(data);
-	printf("Unmapped view of file successfully\n"); // newlines after the loadChart ones I had to put for loading the chart.
     data = nullptr;
     if (hMap) { CloseHandle(hMap); hMap = NULL; }
     if (hFile != INVALID_HANDLE_VALUE) { CloseHandle(hFile); hFile = INVALID_HANDLE_VALUE; }
-	#else
+#else
     munmap(data, length * sizeof(int64_t));
-	printf("munmap'd view of file successfully\n");
     data = nullptr;
-	#endif
+#endif
 
     length = 0;
 }

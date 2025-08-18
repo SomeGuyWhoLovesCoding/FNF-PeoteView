@@ -29,16 +29,16 @@ class File {
 		_loadChart(str);
 	}
 
-	@:native("loadChart") public static function _loadChart(inFile:hl.Bytes):Void {}
+	@:hlNative("chart_file", "loadChart") public static function _loadChart(inFile:hl.Bytes):Void {}
 
-	@:native("getNote") public static function getNote(atIndex:hl.I64):MetaNote {
+	@:hlNative("chart_file", "getNote") public static function getNote(atIndex:hl.I64):MetaNote {
 		return 0;
 	}
 
-	@:native("getLength") public static function getLength():hl.I64 {
+	@:hlNative("chart_file", "getLength") public static function getLength():hl.I64 {
 		return 0;
 	}
 
-	@:native("destroyChart") public static function destroyChart():Void {}
+	@:hlNative("chart_file", "destroyChart") public static function destroyChart():Void {}
 }
 #end
