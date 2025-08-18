@@ -19,18 +19,21 @@ lime test hl
 
 # Optimizations included
 
-Optimizations that were ingrained into this "wholesome" fnf rewrite is:
+Optimizations that were ingrained into this "wholesome" fnf rewrite (listed in alphabetical order) is:
 
-- Object Pooling: obvious, but simply reuses a dead object. Used for the freeplay selection text and icon stuff, and notes and sustains
-- Camera Culling: also obvious, simply cuts out rendering for anything out of bounds. Used for the notes and sustains
+- Camera Culling: obvious, simply cuts out rendering for anything out of bounds. Used for the notes and sustains
 - Fake Object Overlap Rendering: If a certain object overlaps one another, cancel that object and make that other object's pixels have doubled its alpha. Used for the notes.
+- Memory Mapping: Stores your file within the os's internal memory map instead of dumping it onto your RAM. Used for the chart file's internal code.
+- Object Pooling: also obvious, but simply reuses a dead object. Used for the freeplay selection text and icon stuff, and notes and sustains.
 - Packer Atlas: Never done yet but will be for the characters.
-- Texture Sheet: Simple. Just clip a certain part of the image and have it present a sprite animation. Heavily used in sparrow atlas, and even simple stuff such as the icon grid, the note spritesheets, the pause menu sheet, etc etc. you name it.
 - Static buffers and programs: Just there for a bit of muddiness in the code's structure but helps improve loading times excellently! Used in every single menu you can think of in Funkin' View.
+- Texture Sheet: Simple. Just clip a certain part of the image and have it present a sprite animation. Heavily used in sparrow atlas, and even simple stuff such as the icon grid, the note spritesheets, the pause menu sheet, etc etc. you name it.
 
 And that was all Funkin' View has to offer!
 
 ...and the fact that peote-view is literally an opengl wrapper that intructs most of its rendering optimization tricks for you.
+
+PS. Windows Developers are geniuses like what logic made them think "oh, we should do this "memory-mapping" idea for performance-critical applications".
 
 # Setup
 

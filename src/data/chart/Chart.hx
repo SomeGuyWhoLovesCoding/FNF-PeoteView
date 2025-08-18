@@ -3,7 +3,8 @@ package data.chart;
 import sys.FileSystem;
 
 /**
-	The chart.
+	The chart class contains a very intruiging and mind-blowing feature called "Memory Mapping", located just deep into `data.chart.File`'s internal code.
+	The new optimization makes it so the chart basically loads instantly instead of waiting a few minutes for eg. a 13.4 gigabyte of a chart to load.
 **/
 #if !debug
 @:noDebug
