@@ -4,7 +4,7 @@
 	<cppflag value="HASHLINK" />
 
 	<set name="PROJECT_DIR" value="${this_dir}/src" />
-	<set name="HASHLINK" value="F:/jerem/Downloads+/hl-1.12" />
+	<set name="HASHLINK" value="hl" />
 	<set name="HL_INCLUDE" value="${HASHLINK}/include" />
 	<set name="HL_BIN" value="${HASHLINK}" />
 
