@@ -28,6 +28,9 @@ int fd = -1;
 #endif
 
 // ---------------- Dynamic chunk size ----------------
+/**
+ * PS. Most modern computers these days are made with more than 1gb of ram but we'll just call it there so
+**/
 size_t getDynamicChunkSize() {
     size_t chunk = 16 * 1024 * 1024; // fallback 16MB
 #ifdef _WIN32
