@@ -46,6 +46,7 @@ class NoteSpawner {
 
 		var scrollSpeed = parent.parent.scrollSpeed;
 		var diff = 0.0;
+		var noteY = 0;
 		var noteSpr:Null<Note> = null;
 
 		var prev:Null<MetaNote> = null;
@@ -55,9 +56,10 @@ class NoteSpawner {
 			var ghost = prev.position == n.position && prev.index == n.index && prev.lane == n.lane;
 			var lastDiff = diff;
 			var receptor = parent.strumlines[n.lane].buffer[n.index];
+			var lastNoteY = noteY;
 
 			var requirementsForNoteOverlapSimulationBS = noteSpr != null
-				&& floorByPixels(lastDiff) == floorByPixels(diff)
+				&& floorByPixels(lastNoteY) == floorByPixels(noteY)
 				&& (prev.position != n.position && prev.type == n.type)
 				&& (prev.index == n.index && prev.lane == n.lane)
 				&& (noteSpr.r == 0 /* 0 is the default angle for the note sprite */)
@@ -74,6 +76,7 @@ class NoteSpawner {
 				continue;
 			} else {
 				diff = (Int64.toInt(n.position - pos) * 0.01) * scrollSpeed;
+				noteY = receptor.y + Math.floor(diff);
 				if (!ghost) noteSpr = parent.drawNote(pos, n, diff);
 				else noteSpr.notesInOne++;
 				prev = n;
