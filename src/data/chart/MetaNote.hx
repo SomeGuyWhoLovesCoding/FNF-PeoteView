@@ -8,7 +8,7 @@ package data.chart;
 @:noDebug
 #end
 @:publicFields
-abstract MetaNote(Int64) from Int64 {
+abstract MetaNote(Int64) from Int64 to Int64 {
 	/**
 		The position's bit mask.
 	**/

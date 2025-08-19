@@ -4,6 +4,7 @@ package data.chart;
 
 #if cpp
 import cpp.ConstCharStar;
+import data.chart.StdVectorInt64;
 
 /**
 	The chart data retrieved from a file.
@@ -21,6 +22,16 @@ extern class File {
 	@:native("getNote") static function getNote(atIndex:Int64):MetaNote;
 	@:native("getLength") static function getLength():Int64;
 	@:native("destroyChart") static function destroyChart():Void;
+
+	// For the chart editor (keep in mind, completely untested so this is implemented early)
+	@:native("insertNote") static function insertNote(atIndex:Int64, value:Int64):Void;
+	@:native("removeNote") static function removeNote(atIndex:Int64):Void;
+	@:runtime inline static function insertNotes(atIndex:Int64, values:Array<MetaNote>):Void {
+		var arr = StdVectorInt64.fromInt64Array(values);
+		_insertNotes(atIndex, arr);
+	}
+	@:native("insertNotes") static function _insertNotes(atIndex:Int64, values:StdVectorInt64):Void;
+	@:native("removeNotes") static function removeNotes(atIndex:Int64, count:Int64):Void;
 }
 #elseif hl
 class File {
@@ -40,5 +51,18 @@ class File {
 	}
 
 	@:hlNative("chart_file", "destroyChart") public static function destroyChart():Void {}
+
+	// For the chart editor (keep in mind, completely untested so this is implemented early)
+	@:hlNative("chart_file", "insertNote") static function insertNote(atIndex:hl.I64, value:hl.I64):Void {}
+	@:hlNative("chart_file", "removeNote") static function removeNote(atIndex:hl.I64):Void {}
+	@:runtime inline static function insertNotes(atIndex:Int64, values:Array<MetaNote>):Void {
+		var nativeArray = new hl.NativeArray(arr.length);
+		for (i in 0...arr.length) {
+			nativeArray[i] = arr[i];
+		}
+		_insertNotes(atIndex, nativeArray);
+	}
+	@:hlNative("chart_file", "insertNotes") static function _insertNotes(atIndex:hl.I64, values:hl.NativeArray<hl.I64>):Void {}
+	@:hlNative("chart_file", "removeNotes") static function removeNotes(atIndex:hl.I64, count:hl.I64):Void {}
 }
 #end
