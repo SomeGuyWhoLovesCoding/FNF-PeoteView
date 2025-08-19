@@ -30,6 +30,4 @@ import haxe.ds.Vector;
 import custom.haxe.*;
 
 // EXTERN SHIT
-#if FV_CUSTOM_WINDOW_TITLEBAR
 import titlebar.*;
-#end
