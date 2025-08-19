@@ -104,6 +104,9 @@ Instrumental: $path/Inst.ogg
 Voices: $path/Voices.ogg
 Mania: $mania
 Difficulty: #8
+Game Over:
+Theme: vanilla
+BPM: 100
 Characters:
 ${song.player2}, enemy
 pos -700 300
