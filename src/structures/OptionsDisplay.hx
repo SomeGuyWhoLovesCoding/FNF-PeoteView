@@ -20,8 +20,7 @@ class OptionsDisplay {
 		"ratingPopup",
 		"scoreTxtBopping",
 		"cameraZooming",
-		"iconBopping",
-		"cacheChartData"
+		"iconBopping"
 	];
 
 	private static var display(get, never):CustomDisplay;
@@ -59,7 +58,7 @@ class OptionsDisplay {
 				options.push(subCat2);
 				OptionsMenu.optionsBuf.addElement(subCat2);
 			case PREFERENCES:
-				for (i in 0...8) {
+				for (i in 0...7) {
 					var option = new OptionsSprite();
 					option.type = PREFERENCE_OPTION;
 					option.changeID(i);
