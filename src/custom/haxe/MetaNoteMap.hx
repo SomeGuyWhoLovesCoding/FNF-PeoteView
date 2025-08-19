@@ -3,14 +3,12 @@ package custom.haxe;
 /**
  * This map implementation was made because you can't initialize a normal `haxe.ds.Map<MetaNote, V>` on the hashlink target.
  */
-@:generic
+@:multiType
 abstract MetaNoteMap<T>(Map<MetaNote, T>) {
 	/**
 		Creates a new MetaNoteMap.
 	**/
-	inline public function new():Void {
-        this = new Map<MetaNote, T>();
-    };
+	public function new():Void;
 
 	/**
 		See `Map.set`
