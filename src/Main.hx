@@ -40,7 +40,7 @@ class Main extends Application
 		Titlebar.setTitlebarColor(titleBarColor.r, titleBarColor.g, titleBarColor.b);
 		Titlebar.setTitleFontColor(0, 0, 0);
 		Titlebar.setButtonFontColor(20, 10, 30);
-		Titlebar.setTitleFont("Unispace Bold", 'assets/fonts/unispace/unispace bd.ttf', 16);
+		Titlebar.setTitleFont("Unispace Bold", sys.FileSystem.absolutePath('assets/fonts/unispace/unispace bd.ttf'), 16);
 		Titlebar.initialize();
 		#end
 
