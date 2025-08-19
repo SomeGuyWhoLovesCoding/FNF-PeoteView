@@ -3,12 +3,12 @@ package custom.haxe;
 /**
  * This map implementation was made with a varying underlying type because you can't initialize a normal `haxe.ds.Map<MetaNote, V>` on the hashlink target.
  */
-abstract MetaNoteMap<T>(#if cpp Map<MetaNote, T> #else hl.types.Int64Map #end) {
+abstract MetaNoteMap<T>(#if cpp Map<MetaNote, T> #elseif hl hl.types.Int64Map #end) {
 	/**
 		Creates a new MetaNoteMap.
 	**/
 	inline public function new():Void {
-		this = new #if cpp Map<MetaNote, T> #else hl.types.Int64Map #end ();
+		this = new #if cpp Map<MetaNote, T> #elseif hl hl.types.Int64Map #end ();
 	};
 
 	/**
@@ -37,13 +37,6 @@ abstract MetaNoteMap<T>(#if cpp Map<MetaNote, T> #else hl.types.Int64Map #end) {
 	**/
 	public function remove(key:MetaNote):Bool {
         return this.remove(key);
-    };
-
-	/**
-		See `Map.toString`
-	**/
-	public function toString():String {
-        return this.toString();
     };
 
 	/**
