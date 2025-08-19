@@ -36,10 +36,11 @@ class Main extends Application
 	override function onWindowCreate()
 	{
 		#if FV_CUSTOM_WINDOW_TITLEBAR
-		Titlebar.setTitlebarColor(50, 20, 80);
-		Titlebar.setTitleFontColor(200, 180, 240);
+		var titleBarColor:Color = SaveData.state.graphics.customTitleBarColor;
+		Titlebar.setTitlebarColor(titleBarColor.r, titleBarColor.g, titleBarColor.b);
+		Titlebar.setTitleFontColor(0, 0, 0);
 		Titlebar.setButtonFontColor(20, 10, 30);
-		Titlebar.setTitleFont("Pixel Arial 11", 'assets/fonts/unispace/unispace bd.ttf', 16);
+		Titlebar.setTitleFont("Unispace Bold", 'assets/fonts/unispace/unispace bd.ttf', 16);
 		Titlebar.initialize();
 		#end
 
@@ -322,6 +323,21 @@ class Main extends Application
 
 	function resize(w:Int, h:Int) {
 		peoteView.resize(w, h);
+
+		centerDisplayOnWindow(bottomDisplay, w, h);
+		centerDisplayOnWindow(middleDisplay, w, h);
+		centerDisplayOnWindow(topDisplay, w, h);
+		centerDisplayOnWindow(optionsScreen, w, h);
+		centerDisplayOnWindow(freeplayScreen, w, h);
+		centerDisplayOnWindow(storyScreen, w, h);
+	}
+
+	function centerDisplayOnWindow(display:CustomDisplay, w:Int, h:Int) {
+		var scale = h / INITIAL_HEIGHT;
+
+		display.width = w;
+		display.height = h;
+		display.scale = scale;
 	}
 
 	// ------------------------------------------------------------

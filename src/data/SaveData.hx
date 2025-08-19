@@ -72,7 +72,7 @@ class SaveData {
 			antialiasing: true,
 			customTitleBarColor: 0xFFAA00FF,
 			customWindowOutlineColor: 0x999999FF,
-			customTitleTextFont: "vcr"
+			customTitleTextFont: "unispace"
 		}
 	};
 
