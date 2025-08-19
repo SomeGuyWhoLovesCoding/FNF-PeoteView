@@ -1,3 +1,7 @@
+#define HL_NAME(n) chart_file_##n
+
+#include <hl.h>
+
 #include <iostream>
 #include <cstdint>
 #include <vector>
@@ -73,27 +77,28 @@ static bool remap(size_t newLength) {
 }
 
 // ---------------- Load / Destroy ----------------
-void loadChart(const char* inFile) {
+HL_PRIM void HL_NAME(loadChart)(vbyte* inFile) {
+    const char* string = hl_aptr(inFile, const char);
 #ifdef _WIN32
-    hFile = CreateFileA(inFile, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL,
+    hFile = CreateFileA(string, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL,
                         OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE) return;
     LARGE_INTEGER fileSize; GetFileSizeEx(hFile, &fileSize);
     length = fileSize.QuadPart / sizeof(int64_t);
     remap(length);
 #else
-    fd = open(inFile, O_RDWR | O_CREAT, 0644);
+    fd = open(string, O_RDWR | O_CREAT, 0644);
     struct stat st; fstat(fd, &st);
     length = st.st_size / sizeof(int64_t);
     remap(length);
 #endif
 }
 
-int64_t getNote(int64_t atIndex) { return data[atIndex]; }
-void setNote(int64_t atIndex, int64_t value) { data[atIndex] = value; }
-int64_t getLength() { return length; }
+HL_PRIM int64_t HL_NAME(getNote)(int64_t atIndex) { return data[atIndex]; }
+HL_PRIM void HL_NAME(setNote)(int64_t atIndex, int64_t value) { data[atIndex] = value; }
+HL_PRIM int64_t HL_NAME(getLength)(_NO_ARG) { return length; }
 
-void destroyChart() {
+HL_PRIM void HL_NAME(destroyChart)(_NO_ARG) {
 #ifdef _WIN32
     if (data) UnmapViewOfFile(data); data = nullptr;
     if (hMap) CloseHandle(hMap); hMap = NULL;
@@ -112,7 +117,7 @@ void destroyChart() {
 **/
 
 // ---------------- Optimized single insert ----------------
-void insertNote(int64_t atIndex, int64_t value) {
+HL_PRIM void HL_NAME(insertNote)(int64_t atIndex, int64_t value) {
     if (atIndex < 0 || atIndex > length) throw std::out_of_range("Index out of range");
 
     size_t oldLen = length;
@@ -134,7 +139,7 @@ void insertNote(int64_t atIndex, int64_t value) {
 }
 
 // ---------------- Optimized single remove ----------------
-void removeNote(int64_t atIndex) {
+HL_PRIM void HL_NAME(removeNote)(int64_t atIndex) {
     if (atIndex < 0 || atIndex >= length) throw std::out_of_range("Index out of range");
 
     size_t chunkSize = getDynamicChunkSize() / sizeof(int64_t);
@@ -153,9 +158,11 @@ void removeNote(int64_t atIndex) {
 }
 
 // ---------------- Chunked batch insert ----------------
-void insertNotes(int64_t atIndex, const std::vector<int64_t>& values) {
+HL_PRIM void HL_NAME(insertNotes)(int64_t atIndex, varray* values) {
+    int64_t* array = hl_aptr(values, int64_t);
+
     if (atIndex < 0 || atIndex > length) throw std::out_of_range("Index out of range");
-    size_t n = values.size();
+    size_t n = values->size;
     if (n == 0) return;
 
     size_t oldLen = length;
@@ -172,7 +179,7 @@ void insertNotes(int64_t atIndex, const std::vector<int64_t>& values) {
         remaining -= chunk;
     }
 
-    memcpy(&data[atIndex], values.data(), n * sizeof(int64_t));
+    memcpy(&data[atIndex], array, n * sizeof(int64_t));
 }
 
 // ---------------- Chunked batch remove ----------------
@@ -196,7 +203,8 @@ HL_PRIM void HL_NAME(removeNotes)(int64_t atIndex, size_t count) {
 
 DEFINE_PRIM(_VOID, loadChart, _BYTES)
 DEFINE_PRIM(_I64, getNote, _I64)
+DEFINE_PRIM(_VOID, setNote, _I64 _I64)
 DEFINE_PRIM(_I64, getLength, _NO_ARG)
-DEFINE_PRIM(_VOID, destroy, _NO_ARG)
+DEFINE_PRIM(_VOID, destroyChart, _NO_ARG)
 DEFINE_PRIM(_VOID, insertNote, _I64 _I64)
 DEFINE_PRIM(_VOID, removeNote, _I64 _I64)

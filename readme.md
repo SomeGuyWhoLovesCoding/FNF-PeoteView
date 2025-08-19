@@ -35,6 +35,10 @@ And that was all Funkin' View has to offer!
 
 PS. Windows Developers are geniuses like what logic made them think "oh, we should do this "memory-mapping" idea for performance-critical applications".
 
+# Preinstalled packages
+
+Hashlink 1.15 (located at hashlinkBuildXmls/hl)
+
 # Setup
 
 You must have haxe 4.3.6 (and newer) installed.
@@ -85,9 +89,15 @@ Just run `lime test cpp` and it works!
 Hashlink setup
 ---
 
-If you want to compile the hl extern code you just modified, or you just want to set up hashlink compilation, run the build.xml's in "hashlinkBuildXmls" folder. Then, you just `lime test hl` and everything runs good!
+If you want to compile the hl extern code you just modified, or you just want to set up hashlink compilation, do these two steps:
 
-(Hashlink support is being progressed so that part doesn't matter for now and you can already compile it on c++)
+- `lime setup hl` and copy your path (with `hashlinkBuildXmls/hl`) to the path before pressing enter.
+
+- Run the build.xml's in "hashlinkBuildXmls" folder at the root source directory.
+
+Then, you just `lime test hl` and everything runs good!
+
+...but except if you want to switch your hl version you have to recompile all the xml's...isn't that required...? Yes. It is required.
 
 # Credits
 
