@@ -56,9 +56,9 @@ class File {
 	@:hlNative("chart_file", "insertNote") static function insertNote(atIndex:hl.I64, value:hl.I64):Void {}
 	@:hlNative("chart_file", "removeNote") static function removeNote(atIndex:hl.I64):Void {}
 	@:runtime inline static function insertNotes(atIndex:Int64, values:Array<MetaNote>):Void {
-		var nativeArray = new hl.NativeArray(values.length);
-		for (i in 0...values.length) {
-			nativeArray[i] = values[i];
+		var nativeArray = new hl.NativeArray(arr.length);
+		for (i in 0...arr.length) {
+			nativeArray[i] = arr[i];
 		}
 		_insertNotes(atIndex, nativeArray);
 	}
