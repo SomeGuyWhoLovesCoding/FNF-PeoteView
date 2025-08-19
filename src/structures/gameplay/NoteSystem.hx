@@ -48,9 +48,9 @@ class NoteSystem {
 	var notePool(default, null):NotePool;
 	var strumlines(default, null):Array<Strumline>;
 
-	var notesHit(default, null):MetaNoteMap<Bool>;
-	var notesMissed(default, null):MetaNoteMap<Bool>;
-	var notesHeld(default, null):MetaNoteMap<Bool>;
+	var notesHit(default, null):Map<MetaNote, Bool>;
+	var notesMissed(default, null):Map<MetaNote, Bool>;
+	var notesHeld(default, null):Map<MetaNote, Bool>;
 
 	var parent(default, null):PlayField;
 
@@ -59,9 +59,9 @@ class NoteSystem {
 	 * @param parent The parent of this class.
 	**/
 	function new(parent:PlayField) {
-		notesHit = new MetaNoteMap<Bool>();
-		notesMissed = new MetaNoteMap<Bool>();
-		notesHeld = new MetaNoteMap<Bool>();
+		notesHit = [];
+		notesMissed = [];
+		notesHeld = [];
 
 		this.parent = parent;
 
@@ -131,9 +131,9 @@ class NoteSystem {
 		var sustainExists = sustainSpr != null;
 
 		var leftover = Math.floor(Int64.toInt(pos - position) * 0.01);
-		var isHit = notesHit.get(note);
-		var isMissed = notesMissed.get(note);
-		var isHeld = notesHeld.get(note);
+		var isHit = notesHit[note];
+		var isMissed = notesMissed[note];
+		var isHeld = notesHeld[note];
 
 		if (parent.downScroll) diff = -diff;
 
@@ -161,13 +161,13 @@ class NoteSystem {
 
 				if (diff < -parent.hitbox && !isMissed) {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
-					notesMissed.set(note, isMissed = true);
+					isMissed = notesMissed[note] = true;
 
 					parent.onNoteMiss.dispatch(note, noteSpr.notesInOne);
 
 					if (sustainExists && !isHeld) {
 						sustainSpr.c.aF = Sustain.defaultMissAlpha;
-						notesHeld.set(note, isHeld = true);
+						isHeld = notesHeld[note] = true;
 						parent.onSustainRelease.dispatch(note);
 					}
 
@@ -188,7 +188,7 @@ class NoteSystem {
 			}
 
 			if (!isHit && diff < 0) {
-				notesHit.set(note, isHit = true);
+				isHit = notesHit[note] = true;
 				strumline.sustainsToHold[index] = note;
 
 				if (!rec.confirmed()) {
@@ -225,7 +225,7 @@ class NoteSystem {
 				}
 
 				if (pos > position + ((sustainSpr.length * 100) - 75) && !isHeld) {
-					notesHeld.set(note, isHeld = true);
+					isHeld = notesHeld[note] = true;
 					strumline.sustainsToHold[index] = null;
 					if (rec.confirmed()) {
 						if (playable) rec.press();

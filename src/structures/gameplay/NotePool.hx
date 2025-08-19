@@ -16,9 +16,9 @@ package structures.gameplay;
 **/
 @:publicFields
 class NotePool {
-	var notes(default, null):MetaNoteMap<Note>;
+	var notes(default, null):Map<MetaNote, Note>;
 	var inactiveNotes(default, null):Array<Note>;
-	var sustains(default, null):MetaNoteMap<Sustain>;
+	var sustains(default, null):Map<MetaNote, Sustain>;
 	var inactiveSustains(default, null):Array<Sustain>;
 
 	var parent(default, null):NoteSystem;
@@ -32,8 +32,8 @@ class NotePool {
 	function new(parent:NoteSystem) {
 		this.parent = parent;
 
-		notes = new MetaNoteMap<Note>();
-		sustains = new MetaNoteMap<Sustain>();
+		notes = new Map();
+		sustains = new Map();
 		inactiveNotes = [];
 		inactiveSustains = [];
 	}
@@ -44,15 +44,14 @@ class NotePool {
 	 * @param n The underlying meta note the note sprite's data should be set to.
 	 */
 	function newNote(id:Int, n:MetaNote) {
-		var allocated = notes.get(n);
+		var allocated = notes[n];
 
 		if (allocated == null) {
 			var inactiveObject = inactiveNotes.pop();
 			if (inactiveObject == null) inactiveObject = new Note(-9999, -9999, 0, 0);
 			inactiveObject.initialAlpha = Note.defaultAlpha;
 			inactiveObject.data = n;
-			allocated = inactiveObject;
-			notes.set(n, inactiveObject);
+			allocated = notes[n] = inactiveObject;
 		}
 
 		allocated.data = n;
@@ -69,7 +68,7 @@ class NotePool {
 	 * @param n The underlying meta note the sustain sprite's data should be set to.
 	 */
 	function newSustain(id:Int, n:MetaNote) {
-		var allocated = sustains.get(n);
+		var allocated = sustains[n];
 
 		if (allocated == null) {
 			var tex = TextureSystem.getTexture("sustainTex");
@@ -82,8 +81,7 @@ class NotePool {
 				);
 				inactiveObject.c.aF = Sustain.defaultAlpha;
 			}
-			allocated = inactiveObject;
-			sustains.set(n, inactiveObject);
+			allocated = sustains[n] = inactiveObject;
 		}
 
 		allocated.changeID(id);
@@ -96,7 +94,7 @@ class NotePool {
 	 * @param n The underlying meta note in which selects the note sprite to be put in the inactive list.
 	 */
 	function putNote(n:MetaNote) {
-		var allocated:Note = notes.get(n);
+		var allocated:Note = notes[n];
 		if (notes.remove(n)) {
 			allocated.initialAlpha = 1;
 			allocated.x = -9999;
@@ -110,7 +108,7 @@ class NotePool {
 	 * @param n The underlying meta note in which selects the sustain sprite to be put in the inactive list.
 	 */
 	function putSustain(n:MetaNote) {
-		var allocated:Sustain = sustains.get(n);
+		var allocated:Sustain = sustains[n];
 		if (sustains.remove(n)) {
 			allocated.c.aF = 1;
 			allocated.x = -9999;

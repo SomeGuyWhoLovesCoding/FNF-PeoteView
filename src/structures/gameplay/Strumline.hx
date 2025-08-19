@@ -101,14 +101,14 @@ class Strumline {
 		var noteToHit = notesToHit[index];
 		var rec = buffer[index];
 
-		if (noteToHit != null && !parent.notesMissed.get(noteToHit) && !parent.notesHit.get(noteToHit)) {
+		if (noteToHit != null && !parent.notesMissed[noteToHit] && !parent.notesHit[noteToHit]) {
 			var pf = parent.parent;
 
 			if (!rec.confirmed()) {
 				rec.confirm();
 			}
 
-			parent.notesHit.set(noteToHit, true);
+			parent.notesHit[noteToHit] = true;
 
 			if (noteToHit.duration > 20) {
 				sustainsToHold[index] = noteToHit;
@@ -129,10 +129,10 @@ class Strumline {
 		var rec = buffer[index];
 
 		if (sustainToRelease != null && sustainToRelease.index == index &&
-			(parent.notesHit.get(sustainToRelease) && !parent.notesHeld.get(sustainToRelease))) {
+			(parent.notesHit[sustainToRelease] && !parent.notesHeld[sustainToRelease])) {
 			var pf = parent.parent;
 
-			parent.notesHeld.set(sustainToRelease, true);
+			parent.notesHeld[sustainToRelease] = true;
 			pf.onSustainRelease.dispatch(sustainToRelease);
 			sustainsToHold[index] = null;
 
