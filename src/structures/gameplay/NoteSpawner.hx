@@ -69,7 +69,7 @@ class NoteSpawner {
 			&& noteSpr.x == receptor.x;
 
 			if (requirementsForNoteOverlapSimulationBS) {
-				noteSpr.addedAlpha += parent.notesMissed[n] ? Note.defaultMissAlpha : Note.defaultAlpha;
+				noteSpr.addedAlpha += parent.notesMissed.get(n) ? Note.defaultMissAlpha : Note.defaultAlpha;
 				noteSpr.notesInOne++;
 				prev = n;
 				++i;
