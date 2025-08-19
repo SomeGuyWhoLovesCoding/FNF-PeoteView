@@ -130,8 +130,12 @@ class Field {
 					Main.conductor.time = gameOverMusic.currentTime;
 				}
 
-				if (gameOverMusic.currentTime == gameOverMusic.length) {
-					endGameOver();
+				try {
+					if (gameOverMusic.currentTime == gameOverMusic.length) {
+						endGameOver();
+					}
+				} catch(e) {
+					trace('No such game over audio files exist by the theme "${Chart.header.gameOver.theme}".');
 				}
 			}
 	
@@ -165,13 +169,13 @@ class Field {
 		char.shake = shake;
 	}
 
-	function hitNote(note:MetaNote, timing:Int) {
+	function hitNote(note:MetaNote, timing:Int, notesInOne:Float) {
 		sing(note.index, (note.lane == 0 ? opponent : player), false, note.duration > 12 && timing < parent.hitbox * 0.5);
 
 		targetCamera.x = note.lane == 0 ? -50 : 50; // Prototype camera logic I have for now
 	}
 
-	function missNote(note:MetaNote) {
+	function missNote(note:MetaNote, notesInOne:Float) {
 		sing(note.index, (note.lane == 0 ? opponent : player), true, false);
 	}
 

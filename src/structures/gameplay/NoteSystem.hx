@@ -163,7 +163,7 @@ class NoteSystem {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
 					isMissed = notesMissed[note] = true;
 
-					parent.onNoteMiss.dispatch(note);
+					parent.onNoteMiss.dispatch(note, noteSpr.notesInOne);
 
 					if (sustainExists && !isHeld) {
 						sustainSpr.c.aF = Sustain.defaultMissAlpha;
@@ -201,7 +201,7 @@ class NoteSystem {
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
 
-				parent.onNoteHit.dispatch(note, 0);
+				parent.onNoteHit.dispatch(note, 0, noteSpr.notesInOne);
 				strumline.botHitsToCheck[index] = !sustainExists;
 			}
 		}

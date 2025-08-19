@@ -68,12 +68,14 @@ class NoteSpawner {
 
 			if (requirementsForNoteOverlapSimulationBS) {
 				noteSpr.addedAlpha += parent.notesMissed[n] ? Note.defaultMissAlpha : Note.defaultAlpha;
+				noteSpr.notesInOne++;
 				prev = n;
 				++i;
 				continue;
 			} else {
 				diff = (Int64.toInt(n.position - pos) * 0.01) * scrollSpeed;
 				if (!ghost) noteSpr = parent.drawNote(pos, n, diff);
+				else noteSpr.notesInOne++;
 				prev = n;
 				++i;
 			}
@@ -172,7 +174,7 @@ class NoteSpawner {
 	 * @return The floored value.
 	 */
 	function floorByPixels(value:Float):Int {
-		var dividend = Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT;
+		var dividend = (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)/* * (parent.parent.scrollSpeed / 0.45)*/;
 		return Math.floor(Math.floor(value * dividend) / dividend);
 	}
 

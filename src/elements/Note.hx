@@ -48,6 +48,8 @@ class Note implements Element
 	@texSizeX var clipSizeX:Int = 100;
 	@texSizeY var clipSizeY:Int = 100;
 
+	public var notesInOne:Float = 0;
+
 	/**
 		The data of this note sprite.
 	**/

@@ -9,6 +9,8 @@ Instrumental: assets/songs/a-random-bambi-fantrack/Inst.flac
 Voices: 
 Mania: 4
 Difficulty: #8
+Game Over:
+Theme: vanilla
 Characters:
 dad, enemy
 pos -700 300

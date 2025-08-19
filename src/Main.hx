@@ -277,7 +277,7 @@ class Main extends Application
 					storyMenu.update(newDeltaTime);
 				}
 			} catch (_) {
-				File.saveContent('log/error_${Date.now()}.log', haxe.CallStack.toString(haxe.CallStack.exceptionStack()));
+				trace(haxe.CallStack.toString(haxe.CallStack.exceptionStack()));
 			}
 		}
 

@@ -57,6 +57,7 @@ class NotePool {
 		allocated.data = n;
 		allocated.changeID(id);
 		allocated.toNote();
+		allocated.notesInOne = 1;
 
 		return allocated;
 	}

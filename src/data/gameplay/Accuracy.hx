@@ -1,7 +1,7 @@
 package data.gameplay;
 
 @:publicFields
-abstract Accuracy(Vector<Float>) {
+abstract Accuracy(Array<Float>) {
 	var left(get, never):Float;
 
 	inline function get_left() {
@@ -14,13 +14,13 @@ abstract Accuracy(Vector<Float>) {
 		return this[1];
 	}
 
-	inline function increment(value:Float = 1.0, missed:Bool = false) {
-		if (!missed) this[0] += value;
-		++this[1];
+	inline function increment(value:Float = 1.0, missed:Bool = false, count:Float) {
+		if (!missed) this[0] += value * count;
+		this[1] += count;
 	}
 
 	inline function new() {
-		this = new Vector<Float>(2);
+		this = [0, 0];
 	}
 
 	inline function toString() {
