@@ -173,9 +173,9 @@ class Tools {
 		var root = xml.firstElement();
 
 		for (element in root.elementsNamed("SubTexture")) {
-			var name = element.get("name");
-			var x = Std.parseInt(element.get("x"));
-			var y = Std.parseInt(element.get("y"));
+			var name:String = element.get("name");
+			var x:Int = Std.parseInt(element.get("x"));
+			var y:Int = Std.parseInt(element.get("y"));
 			iconGridMap.set(name, [x, y]);
 		}
 	}
@@ -203,7 +203,7 @@ class Tools {
 		// Remove empty strings from voicesDirs
 		var voicesDirsI = 0;
 		while (voicesDirsI < voicesDirs.length) {
-			var dir = voicesDirs[voicesDirsI];
+			var dir:String = voicesDirs[voicesDirsI];
 			if (dir.trim() == "") {
 				voicesDirs.remove(dir);
 				continue;
