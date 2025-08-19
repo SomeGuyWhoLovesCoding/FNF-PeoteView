@@ -35,12 +35,7 @@ extern class File {
 }
 #elseif hl
 class File {
-	@:runtime inline public static function loadChart(inFile:String):Void {
-		var str = @:privateAccess inFile.toUtf8();
-		_loadChart(str);
-	}
-
-	@:hlNative("chart_file", "loadChart") public static function _loadChart(inFile:hl.Bytes):Void {}
+	@:hlNative("chart_file", "loadChart") public static function loadChart(inFile:String):Void {}
 
 	@:hlNative("chart_file", "getNote") public static function getNote(atIndex:hl.I64):MetaNote {
 		return 0;

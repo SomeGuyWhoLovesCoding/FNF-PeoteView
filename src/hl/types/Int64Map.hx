@@ -1,4 +1,5 @@
 // https://github.com/HaxeFoundation/haxe/blob/4.3.7/std/hl/types/Int64Map.hx
+// This class isn't included on any stable haxe release as of now so for now here's this
 
 /*
  * Copyright (C)2005-2019 Haxe Foundation
