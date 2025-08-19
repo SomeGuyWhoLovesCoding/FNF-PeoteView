@@ -129,11 +129,12 @@ class Tools {
 
 	static function formatTime(ms:Float, showMS:Bool = false):String
 	{
-		var milliseconds:Int = Math.floor(ms * 0.1) % 100;
-		var seconds:Int = Math.floor(ms * 0.001);
-		var hours:Int = Math.floor(seconds / 3600);
+		Sys.println(ms);
+		var milliseconds:Int = Std.int(ms * 0.1) % 100;
+		var seconds:Int = Std.int(ms * 0.001);
+		var hours:Int = Std.int(seconds / 3600);
 		seconds %= 3600;
-		var minutes:Int = Math.floor(seconds / 60);
+		var minutes:Int = Std.int(seconds / 60);
 		seconds %= 60;
 
 		var t = ':';
