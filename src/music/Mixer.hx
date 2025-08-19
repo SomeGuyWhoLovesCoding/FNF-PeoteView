@@ -59,13 +59,7 @@ class Mixer {
 	static var trackCount:Int;
 	static inline var sampleRate:Int = 44100;
 
-	static var length(get, never):Float;
-
-	inline static function get_length() {
-		return _length;
-	}
-
-	private static var _length:Float;
+	static var length(default, null):Float;
 
 	static var speed(default, set):Float = 1;
 
@@ -83,7 +77,8 @@ class Mixer {
 	static public function load(files:Array<String>):Void { // Don't rename this to `loadFiles` as it will conflict with the MiniAudio extern class
 		MiniAudio.loadFiles(files);
 		trackCount = files.length;
-		_length = MiniAudio.getDuration();
+		length = MiniAudio.getDuration();
+		trace(length);
 	}
 
 	static public function startMusic():Void {

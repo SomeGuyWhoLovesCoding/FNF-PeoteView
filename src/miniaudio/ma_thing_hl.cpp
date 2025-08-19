@@ -199,7 +199,7 @@ HL_PRIM double HL_NAME(get_duration)(_NO_ARG) {
 			ma_mutex_init(&decoderMutex);
 		}
 		ma_mutex_lock(&decoderMutex);
-		ma_decoder_get_cursor_in_pcm_frames(&g_pDecoders[g_pLongestDecoderIndex], &pos);
+		ma_decoder_get_length_in_pcm_frames(&g_pDecoders[g_pLongestDecoderIndex], &pos);
 		ma_mutex_unlock(&decoderMutex);
 	}
 	return (double)pos / (SAMPLE_RATE * 0.001);

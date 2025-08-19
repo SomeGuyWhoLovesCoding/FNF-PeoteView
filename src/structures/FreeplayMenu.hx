@@ -326,7 +326,7 @@ class FreeplayMenu {
 	}
 
 	function shutDown() {
-		if (!songTextsProg.isIn(display) || !songIconsProg.isIn(display)) return;
+		//if (!songTextsProg.isIn(display) || !songIconsProg.isIn(display)) return;
 
 		display.color = 0x00000000;
 		display.removeProgram(songTextsProg);
