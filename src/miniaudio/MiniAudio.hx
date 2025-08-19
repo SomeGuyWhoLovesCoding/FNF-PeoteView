@@ -32,8 +32,8 @@ class MiniAudio {
 	@:hlNative("ma_thing", "start") public static function start():Void {}
 	@:hlNative("ma_thing", "stop") public static function stop():Void {}
 
-	@:hlNative("ma_thing", "stopped") public static function stopped():Int {
-		return 0;
+	@:hlNative("ma_thing", "stopped") public static function stopped():Bool {
+		return false;
 	}
 
 	@:runtime inline public static function loadFiles(arr:Array<String>):Void {

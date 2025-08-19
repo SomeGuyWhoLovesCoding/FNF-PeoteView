@@ -223,13 +223,6 @@ HL_PRIM void HL_NAME(seek_to_pcm_frame)(ma_uint64 pos) {
 	ma_mutex_unlock(&decoderMutex);
 }
 
-/*HL_PRIM void HL_NAME(free_thingies)(_NO_ARG) {
-	free(g_pDecoders);
-	free(g_pDecodersActive);
-	free(g_pDecoderLengths);
-	free(g_pDecodersVolume);
-}*/
-
 HL_PRIM void HL_NAME(deactivate_decoder_hl)(int index) {
 	if (index < g_decoderCount) {
 		g_pDecodersActive[index] = MA_FALSE;
@@ -386,6 +379,6 @@ DEFINE_PRIM(_VOID, amplify_decoder_hl, _I32 _F64)
 DEFINE_PRIM(_VOID, setPlaybackRate, _F32)
 DEFINE_PRIM(_VOID, start, _NO_ARG)
 DEFINE_PRIM(_VOID, stop, _NO_ARG)
-DEFINE_PRIM(_I32, stopped, _NO_ARG)
+DEFINE_PRIM(_BOOL, stopped, _NO_ARG)
 DEFINE_PRIM(_VOID, destroy, _NO_ARG)
 DEFINE_PRIM(_VOID, loadFiles, _ARR)

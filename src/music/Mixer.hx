@@ -78,7 +78,6 @@ class Mixer {
 		MiniAudio.loadFiles(files);
 		trackCount = files.length;
 		length = MiniAudio.getDuration();
-		trace(length);
 	}
 
 	static public function startMusic():Void {
@@ -114,7 +113,7 @@ class Mixer {
 	}
 
 	static function isStopped():Bool {
-		return MiniAudio.stopped() == 1;
+		return MiniAudio.stopped();
 	}
 
 	static function changeTrackVolume(index:Int, volume:Float):Void {
