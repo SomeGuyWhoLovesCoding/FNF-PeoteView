@@ -273,8 +273,8 @@ void stop() {
 	MIXER_STATE = 2;
 }
 
-int stopped() {
-	return MIXER_STATE == 3 ? 1 : 0;
+bool stopped() {
+	return MIXER_STATE == 3;
 }
 
 void destroy() {

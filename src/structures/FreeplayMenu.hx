@@ -229,6 +229,8 @@ class FreeplayMenu {
 	}
 
 	function open() {
+		if (alreadySelected) return;
+
 		Main.current.popupFreeplayMenu();
 
 		opened = active = true;
@@ -254,6 +256,8 @@ class FreeplayMenu {
 	}
 
 	function close() {
+		if (alreadySelected) return;
+
 		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
 		window.onMouseDown.remove(mousePress);
@@ -265,7 +269,7 @@ class FreeplayMenu {
 	}
 
 	function back(isDown:Bool, param:Int) {
-		if (!isDown) return;
+		if (!isDown || alreadySelected) return;
 		close();
 
 		var mm = Main.current.mainMenu;
@@ -276,7 +280,7 @@ class FreeplayMenu {
 	}
 
 	function down(isDown:Bool, param:Int) {
-		if (!isDown) return;
+		if (!isDown || alreadySelected) return;
 		curSelected++;
 		if (curSelected >= songsAvailable.length) {
 			curSelected = 0;
@@ -284,7 +288,7 @@ class FreeplayMenu {
 	}
 
 	function up(isDown:Bool, param:Int) {
-		if (!isDown) return;
+		if (!isDown || alreadySelected) return;
 		curSelected--;
 		if (curSelected < 0) {
 			curSelected = songsAvailable.length - 1;
@@ -294,27 +298,21 @@ class FreeplayMenu {
 	function enter(isDown:Bool, param:Int) {
 		if (!isDown || alreadySelected) return;
 		Main.songChosen = songsAvailable[curSelected].dir;
-		alreadySelected = true;
 		Main.switchState(GAMEPLAY);
+		alreadySelected = true;
 	}
 
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
 		if (alreadySelected) return;
 		if (button == LEFT) {
 			enter(true, 0);
-			alreadySelected = true;
 		}
 		if (button != RIGHT) return;
 		close();
-
-		var mm = Main.current.mainMenu;
-		if (mm != null) {
-			MainMenu.selectedAlpha = 1.0;
-			mm.addEvents();
-		}
 	}
 
 	function moveCategory_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
+		if (alreadySelected) return;
 		curSelected -= Math.floor(y);
 
 		if (curSelected >= songsAvailable.length) {
@@ -326,7 +324,8 @@ class FreeplayMenu {
 	}
 
 	function shutDown() {
-		//if (!songTextsProg.isIn(display) || !songIconsProg.isIn(display)) return;
+		if (alreadySelected) return;
+		if (!songTextsProg.isIn(display) || !songIconsProg.isIn(display)) return;
 
 		display.color = 0x00000000;
 		display.removeProgram(songTextsProg);

@@ -12,6 +12,6 @@ void setPlaybackRate(float value);
 void destroy(void);
 void start(void);
 void stop(void);
-int stopped(void);
+bool stopped(void);
 void loadFiles(std::vector<const char*> argv);
 #endif /* MA_THING_H */

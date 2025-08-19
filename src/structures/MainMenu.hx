@@ -199,9 +199,12 @@ class MainMenu implements State {
 				Main.current.storyMenu.open();
 				removeEvents();
 			case 1: // FREEPLAY
-				selectedAlpha = 0.0;
-				Main.current.freeplayMenu.open();
-				removeEvents();
+				// I decided to wrap this with an if condition because my freeplay code is rather bizarre and I haven't found other ways to fix the freeplay bug where if you click the mouse on playstate the freeplay menu opens again, even enough it fucking shouldn't.
+				//if (!Main.current.freeplayMenu.alreadySelected) {
+					selectedAlpha = 0.0;
+					Main.current.freeplayMenu.open();
+					removeEvents();
+				//}
 			case 2: // AWARDS
 				// TODO
 			case 3: // CREDITS
@@ -235,8 +238,6 @@ class MainMenu implements State {
 	}
 
 	function dispose() {
-		removeEvents();
-
 		view.removeProgram(watermarkTxt.program);
 
 		display.removeProgram(optionProg);
@@ -246,6 +247,8 @@ class MainMenu implements State {
 		view = null;
 
 		Main.current.freeplayMenu.dispose();
+
+		removeEvents();
 
 		disposed = true;
 	}

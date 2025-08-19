@@ -8,7 +8,7 @@ extern class MiniAudio {
 	@:native("destroy") static function destroy():Void;
 	@:native("start") static function start():Void;
 	@:native("stop") static function stop():Void;
-	@:native("stopped") static function stopped():Int;
+	@:native("stopped") static function stopped():Bool;
 
 	@:runtime inline static function loadFiles(arr:Array<String>):Void {
 		var vec = StdVectorString.fromStringArray(arr);
