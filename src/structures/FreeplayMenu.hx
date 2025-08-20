@@ -6,7 +6,6 @@ import lime.ui.MouseButton;
 import lime.ui.MouseWheelMode;
 import elements.actor.sparrow.Actor;
 import data.chart.Header;
-import data.gameplay.ChapterData.ChapterSong;
 
 /**
 	The freeplay submenu.
@@ -22,15 +21,7 @@ class FreeplayMenu {
 	var active(default, null):Bool;
 	var opened(default, null):Bool;
 
-	static var songTextsBuf(default, null):Buffer<Actor>;
-	static var songTextsProg(default, null):Program;
-
-	static var songIconsBuf(default, null):Buffer<HealthBarSprite>;
-	static var songIconsProg(default, null):Program;
-
-	var songsAvailable(default, null):Array<ChapterSong> = [];
-	static var songTextCharGroup(default, null):Array<Array<Actor>> = [];
-	static var songIconGroup(default, null):Array<HealthBarSprite> = [];
+	var freeplayScreen(default, null):FreeplayScreen;
 
 	var curSelected(default, null):Int = 0;
 	var alreadySelected:Bool = false;
@@ -38,13 +29,7 @@ class FreeplayMenu {
 	var actions(default, null):ActionMap;
 
 	function new() {
-		var chapterData:ChapterData = haxe.Json.parse(sys.io.File.getContent("assets/data/chapters/chapter1/data.json"));
-		var songs:Array<ChapterSong> = chapterData.songs;
-
-		for (i in 0...songs.length) {
-			var song = songs[i];
-			songsAvailable.push(song);
-		}
+		freeplayScreen = new FreeplayScreen(this, 'chapter1');
 
 		actions = [
 			Controls.Action.UI_UP => { action: up },
@@ -55,186 +40,12 @@ class FreeplayMenu {
 	}
 
 	static function init(disp:CustomDisplay):Void {
-		Sys.println('Fuck you');
+		//Sys.println('Fuck you');
 		display = disp;
-
-		if (songTextsBuf == null) {
-			songTextsBuf = new Buffer<Actor>(32, 32, false);
-			songTextsProg = new Program(songTextsBuf);
-			songTextsProg.blendEnabled = true;
-
-			var tex = TextureSystem.getTexture("alphabetSheet");
-			TextureSystem.setTexture(songTextsProg, "alphabetSheet", "alphabetSheet");
-		}
-
-		if (songIconsBuf == null) {
-			songIconsBuf = new Buffer<HealthBarSprite>(32, 32, false);
-			songIconsProg = new Program(songIconsBuf);
-			songIconsProg.blendEnabled = true;
-
-			var tex = TextureSystem.getTexture("hbTex");
-			HealthBarSprite.init(songIconsProg, "hbTex", tex);
-		}
-
-		songTextCharGroup = [
-			for (i in 0...7) [
-				for (i in 0...20) {
-					var spr = new Actor(display, "alphabetText", 0, 0, 24, "", false);
-					spr.c.aF = 0.0;
-					songTextsBuf.addElement(spr);
-					spr;
-				}
-			]
-		];
-
-		songIconGroup = [
-			for (i in 0...7) {
-				var icon = new HealthBarSprite();
-				icon.type = HEALTH_ICON;
-				icon.c.aF = 0.0;
-				songIconsBuf.addElement(icon);
-				icon;
-			}
-		];
 	}
 
-	var alphaLerp:Float = 0.0;
-	var curSelectedLerp:Float = 0.0;
-	var xLerp:Float = 0.0;
-	var xLerpPrev:Float = 0.0;
-
 	function update(deltaTime:Float) {
-		if (alreadySelected) {
-			alphaLerp = 0.0;
-			curSelectedLerp = curSelected;
-			xLerp = 20 - (curSelected * 20);
-			Sys.println('WHYYY $active');
-			return;
-		}
-
-		var ratio = Math.min(deltaTime * 0.015, 1);
-		if (ratio == 1) ratio = (1/lime.app.Application.current.window.frameRate) * 0.015; // When loading the freeplay menu the first time it gets stuck at 1.0 for a single frame
-
-		//Sys.println('$ratio, $alphaLerp');
-		if (!opened && alphaLerp < 0.1/256) {
-			shutDown();
-			curSelectedLerp = curSelected;
-			xLerp = 20 - (curSelected * 20);
-			xLerpPrev = xLerp;
-			alphaLerp = 0.0;
-			return;
-		}
-
-		alphaLerp = Tools.lerp(alphaLerp, opened ? 1.0 : 0.0, ratio);
-		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelected, ratio);
-		xLerp = Tools.lerp(xLerp, 20 - (curSelected * 20), ratio);
-
-		var incrementBest = Math.floor(Math.min(Math.max(curSelectedLerp - 3, 0), songsAvailable.length - 7));
-
-		for (i in 0...7) {
-			if (songsAvailable.length <= 7 && i <= songsAvailable.length) continue;
-
-			var k = i + incrementBest;
-			var l = curSelected - incrementBest;
-			var kClamped = Math.floor(Math.min(Math.max(k, 0), songsAvailable.length - 1));
-			var song = songsAvailable[kClamped];
-			var title = song.title;
-			var grp = songTextCharGroup[i];
-
-			var x:Float = 20;
-			var iconX:Float = 0.0;
-
-			for (j in 0...20) {
-				var char = title.charAt(j).toLowerCase();
-
-				var isInvalidCharacter = j >= title.length || char == ' ';
-
-				switch (char)
-				{
-					case '?':
-						char = 'question';
-					case '&':
-						char = 'ampersand';
-					case '<':
-						char = 'less';
-					case '"':
-						char = 'quote';
-					case "'":
-						char = 'apostrophe';
-					case '•':
-						char = 'bullet';
-					case ',':
-						char = 'comma';
-					case '!':
-						char = 'exclamation';
-					case '/':
-						char = 'forward slash';
-					case '\\':
-						char = 'back slash';
-					case '¿':
-						char = 'inverted question';
-					case '¡':
-						char = 'inverted exclamation';
-					case '.':
-						char = 'period';
-					case "“":
-						char = 'start quote';
-					case ' ':
-						char = '_'; // NOTE: This is space for a reason, and it's hidden. If the sprite wasn't even created for it, the pooling won't even run correctly.
-				}
-
-				if (j >= 17) char = '.';
-
-				var spr = grp[j];
-
-				if (spr.frameIndex == 0) {
-					spr.playAnimation('$char bold instance 1', true);
-				}
-
-				if (Math.floor(xLerp) != Math.floor(xLerpPrev) || firstFrameToAnimate) {
-					var ogFrameIndex = spr.frameIndex;
-					var ogFrameTime = spr.frameTimeRemaining;
-					spr.playAnimation('$char bold instance 1', true);
-					spr.frameIndex = ogFrameIndex;
-					spr.frameTimeRemaining = ogFrameTime;
-					firstFrameToAnimate = false;
-				}
-
-				spr.x = (x + 50) + (xLerp + (20 * k));
-				spr.y = (-curSelectedLerp * 156) + (156 * k) + 320;
-
-				switch (char)
-				{
-					case '-':
-						spr.y += spr.h;
-					case 'comma':
-						spr.y += 47;
-					case '_':
-						spr.y += 46;
-					case '+':
-						spr.y += spr.h * .25;
-				}
-
-				spr.c.aF = isInvalidCharacter ? 0.0 : (i == l ? 1.0 : 0.5) * alphaLerp;
-				songTextsBuf.updateElement(spr);
-				spr.update(deltaTime);
-
-				if (j == title.length - 1) {
-					iconX = spr.x;
-				}
-
-				x += spr.firstFrameWidth + 2;
-			}
-
-			var icon = songIconGroup[i];
-			icon.changeID(Tools.fromIconGridXMLCharacter(song.icon)[0]);
-			icon.c.aF = (i == l ? 1.0 : 0.5) * alphaLerp;
-			icon.x = iconX + ((icon.w * 0.35) + 12);
-			icon.y = ((-curSelectedLerp * 156) + (156 * k) + 320) - 30; // https://github.com/ShadowMario/FNF-PsychEngine/blob/main/source/objects/HealthIcon.hx#L22
-			songIconsBuf.updateElement(icon);
-		}
-
-		xLerpPrev = xLerp;
+		freeplayScreen.update(deltaTime);
 	}
 
 	function open() {
@@ -249,7 +60,6 @@ class FreeplayMenu {
 		//trace("Events removed");
 
 		opened = active = true;
-		alphaLerp = 0.0;
 
 		haxe.Timer.delay(() -> {
 			var window = lime.app.Application.current.window;
@@ -259,13 +69,7 @@ class FreeplayMenu {
 			window.onMouseWheel.add(moveCategory_mouse);
 		}, 1);
 
-		if (!songTextsProg.isIn(display)) {
-			display.addProgram(songTextsProg);
-		}
-
-		if (!songIconsProg.isIn(display)) {
-			display.addProgram(songIconsProg);
-		}
+		freeplayScreen.addPrograms();
 
 		/*try {
 			throw("Freeplay menu opened");
@@ -303,7 +107,7 @@ class FreeplayMenu {
 	function down(isDown:Bool, param:Int) {
 		if (!isDown || alreadySelected) return;
 		curSelected++;
-		if (curSelected >= songsAvailable.length) {
+		if (curSelected >= freeplayScreen.songsAvailable.length) {
 			curSelected = 0;
 		}
 	}
@@ -312,14 +116,14 @@ class FreeplayMenu {
 		if (!isDown || alreadySelected) return;
 		curSelected--;
 		if (curSelected < 0) {
-			curSelected = songsAvailable.length - 1;
+			curSelected = freeplayScreen.songsAvailable.length - 1;
 		}
 	}
 
 	function enter(isDown:Bool, param:Int) {
 		if (!isDown || alreadySelected) return;
 		alreadySelected = true;
-		Main.songChosen = songsAvailable[curSelected].dir;
+		Main.songChosen = freeplayScreen.songsAvailable[curSelected].dir;
 		Main.switchState(GAMEPLAY);
 	}
 
@@ -328,7 +132,7 @@ class FreeplayMenu {
 		if (alreadySelected) return;
 		if (button == LEFT) {
 			alreadySelected = true;
-			Main.songChosen = songsAvailable[curSelected].dir;
+			Main.songChosen = freeplayScreen.songsAvailable[curSelected].dir;
 			// Warning guard!!!
 			close();
 			shutDown();
@@ -343,24 +147,19 @@ class FreeplayMenu {
 		if (alreadySelected) return;
 		curSelected -= Math.floor(y);
 
-		if (curSelected >= songsAvailable.length) {
+		if (curSelected >= freeplayScreen.songsAvailable.length) {
 			curSelected = 0;
 		}
 		if (curSelected < 0) {
-			curSelected = songsAvailable.length - 1;
+			curSelected = freeplayScreen.songsAvailable.length - 1;
 		}
 	}
 
 	function shutDown() {
 		if (alreadySelected) return;
-		if (!songTextsProg.isIn(display) || !songIconsProg.isIn(display)) return;
-
-		display.color = 0x00000000;
-		display.removeProgram(songTextsProg);
-		display.removeProgram(songIconsProg);
+		freeplayScreen.shutDown();
 
 		active = false;
-		firstFrameToAnimate = true;
 		Main.current.removeFreeplayMenu();
 		Sys.println("Freeplay menu shut down");
 	}
@@ -369,6 +168,4 @@ class FreeplayMenu {
 		close();
 		shutDown();
 	}
-
-	var firstFrameToAnimate:Bool = true;
 }
