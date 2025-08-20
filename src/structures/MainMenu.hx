@@ -201,9 +201,8 @@ class MainMenu implements State {
 			case 1: // FREEPLAY
 				// I decided to wrap this with an if condition because my freeplay code is rather bizarre and I haven't found other ways to fix the freeplay bug where if you click the mouse on playstate the freeplay menu opens again, even enough it fucking shouldn't.
 				//if (!Main.current.freeplayMenu.alreadySelected) {
-					selectedAlpha = 0.0;
-					Main.current.freeplayMenu.open();
-					removeEvents();
+				selectedAlpha = 0.0;
+				Main.current.freeplayMenu.open();
 				//}
 			case 2: // AWARDS
 				// TODO
@@ -219,10 +218,18 @@ class MainMenu implements State {
 	}
 
 	function doIt_mouse(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
+		var window = lime.app.Application.current.window;
+		if (window.onMouseDown.has(doIt_mouse)) {
+			Sys.println("This doesn't fix the freeplay bug");
+			window.onMouseDown.remove(doIt_mouse);
+		}
+		Sys.println("Fuck you game 2");
+		if (button != MouseButton.LEFT) return;
 		doIt();
 	}
 
 	function addEvents() {
+		//trace("Bitch yore dead now!");
 		var window = lime.app.Application.current.window;
 
 		Main.current.controls.bindTo(actions);
@@ -231,6 +238,7 @@ class MainMenu implements State {
 	}
 
 	function removeEvents() {
+		//trace("Fuck you all events");
 		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
 		window.onMouseWheel.remove(updateMenuOptions_mouse);
@@ -238,6 +246,8 @@ class MainMenu implements State {
 	}
 
 	function dispose() {
+		removeEvents();
+
 		view.removeProgram(watermarkTxt.program);
 
 		display.removeProgram(optionProg);
@@ -247,8 +257,6 @@ class MainMenu implements State {
 		view = null;
 
 		Main.current.freeplayMenu.dispose();
-
-		removeEvents();
 
 		disposed = true;
 	}

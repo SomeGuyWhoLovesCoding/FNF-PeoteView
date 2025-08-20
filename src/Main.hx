@@ -39,7 +39,7 @@ class Main extends Application
 		Titlebar.setTitlebarColor(titleBarColor.r, titleBarColor.g, titleBarColor.b);
 		Titlebar.setTitleFontColor(0, 0, 0);
 		Titlebar.setButtonFontColor(20, 10, 30);
-		Titlebar.setTitleFont("Unispace Bold", sys.FileSystem.absolutePath('assets/fonts/unispace/unispace bd.ttf'), 16);
+		Titlebar.setTitleFont("Unispace-Bold", sys.FileSystem.absolutePath('assets/fonts/unispace/unispace bd.ttf'), 16);
 		Titlebar.initialize();
 
 		switch (window.context.type)
@@ -75,18 +75,21 @@ class Main extends Application
 
 		instance.currentState = newState;
 
-		switch (newState) {
-			case MAIN_MENU:
-				instance.mainMenu = new MainMenu();
-				instance.mainMenu.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
-			case GAMEPLAY:
-				instance.playField = new PlayField(songChosen);
-				instance.playField.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
-				instance.playField.downScroll = SaveData.state.preferences.downScroll;
-			case AWARDS:
-			case CREDITS:
-			case NONE:
-		}
+		try {
+			switch (newState) {
+				case MAIN_MENU:
+					trace('That\'s it I\'m crashing out');
+					instance.mainMenu = new MainMenu();
+					instance.mainMenu.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
+				case GAMEPLAY:
+					instance.playField = new PlayField(songChosen);
+					instance.playField.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
+					instance.playField.downScroll = SaveData.state.preferences.downScroll;
+				case AWARDS:
+				case CREDITS:
+				case NONE:
+			}
+		} catch (_) trace(haxe.CallStack.toString(haxe.CallStack.exceptionStack()), _);
 
 		GC.run(10);
 		GC.enable(false);
@@ -267,6 +270,7 @@ class Main extends Application
 					optionsMenu.update(newDeltaTime);
 				}
 
+				//Sys.println('Freeplay Already Selected ${freeplayMenu.alreadySelected}');
 				if (freeplayMenu.active) {
 					freeplayMenu.update(newDeltaTime);
 				}

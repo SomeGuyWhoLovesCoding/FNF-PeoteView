@@ -55,6 +55,7 @@ class FreeplayMenu {
 	}
 
 	static function init(disp:CustomDisplay):Void {
+		Sys.println('Fuck you');
 		display = disp;
 
 		if (songTextsBuf == null) {
@@ -107,7 +108,7 @@ class FreeplayMenu {
 			alphaLerp = 0.0;
 			curSelectedLerp = curSelected;
 			xLerp = 20 - (curSelected * 20);
-			Sys.println('WHYYY');
+			Sys.println('WHYYY $active');
 			return;
 		}
 
@@ -241,13 +242,19 @@ class FreeplayMenu {
 
 		Main.current.popupFreeplayMenu();
 
+		var mm = Main.current.mainMenu;
+		if (mm != null) {
+			mm.removeEvents();
+		}
+		//trace("Events removed");
+
 		opened = active = true;
 		alphaLerp = 0.0;
 
 		haxe.Timer.delay(() -> {
 			var window = lime.app.Application.current.window;
 			Main.current.controls.bindTo(actions);
-			
+
 			window.onMouseDown.add(mousePress);
 			window.onMouseWheel.add(moveCategory_mouse);
 		}, 1);
@@ -260,7 +267,12 @@ class FreeplayMenu {
 			display.addProgram(songIconsProg);
 		}
 
-		Sys.println("Freeplay menu opened");
+		/*try {
+			throw("Freeplay menu opened");
+		} catch (e) {
+			trace(haxe.CallStack.toString(haxe.CallStack.exceptionStack()));
+		}*/
+		trace("Freeplay menu opened");
 	}
 
 	function close() {
@@ -273,7 +285,7 @@ class FreeplayMenu {
 
 		opened = false;
 
-		Sys.println("Freeplay menu closed");
+		trace("Freeplay menu closed");
 	}
 
 	function back(isDown:Bool, param:Int) {
@@ -284,6 +296,7 @@ class FreeplayMenu {
 		if (mm != null) {
 			MainMenu.selectedAlpha = 1.0;
 			mm.addEvents();
+			//trace("Events added");
 		}
 	}
 
@@ -305,17 +318,24 @@ class FreeplayMenu {
 
 	function enter(isDown:Bool, param:Int) {
 		if (!isDown || alreadySelected) return;
+		alreadySelected = true;
 		Main.songChosen = songsAvailable[curSelected].dir;
 		Main.switchState(GAMEPLAY);
-		alreadySelected = true;
 	}
 
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
+		//Sys.println("Fuck you game");
 		if (alreadySelected) return;
 		if (button == LEFT) {
-			enter(true, 0);
+			alreadySelected = true;
+			Main.songChosen = songsAvailable[curSelected].dir;
+			// Warning guard!!!
+			close();
+			shutDown();
+			// 
+			Main.switchState(GAMEPLAY);
+			return;
 		}
-		if (button != RIGHT) return;
 		close();
 	}
 
