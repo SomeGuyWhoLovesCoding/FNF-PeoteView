@@ -205,7 +205,11 @@ class FreeplayScreen {
 					iconX = spr.x;
 				}
 
-				x += spr.firstFrameWidth + 2;
+				if (isInvalidCharacter) {
+					x += 32;
+				} else {
+					x += spr.firstFrameWidth + 2;
+				}
 			}
 
 			var icon = songIconGroup[i];
