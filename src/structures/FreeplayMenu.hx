@@ -59,8 +59,15 @@ class FreeplayMenu {
 			window.onMouseWheel.add(moveCategory_mouse);
 		}, 1);
 
-		if (freeplayScreen.disposed) freeplayScreen.reload(freeplayScreen.chapter);
+		if (freeplayScreen.disposed) {
+			freeplayScreen.reload(freeplayScreen.chapter);
+		}
 		freeplayScreen.addPrograms();
+	}
+
+	function reload(newChapter:String) {
+		curSelected = 0;
+		freeplayScreen.reload(newChapter);
 	}
 
 	function close() {

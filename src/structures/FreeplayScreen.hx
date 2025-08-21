@@ -33,7 +33,6 @@ class FreeplayScreen {
 
 	function new(parent:FreeplayMenu, chapterName:String) {
 		this.parent = parent;
-		reload(chapterName);
 	}
 
 	function reload(chapterName:String) {
