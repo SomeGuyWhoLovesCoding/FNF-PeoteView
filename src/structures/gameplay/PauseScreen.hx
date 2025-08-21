@@ -177,14 +177,14 @@ class PauseScreen {
 	function addEvents() {
 		var window = lime.app.Application.current.window;
 		Main.current.controls.bindTo(actions);
-		window.onMouseDown.add(mousePress);
+		Main.current.mouseDown = mousePress;
 		window.onMouseWheel.add(moveOption_mouse);
 	}
 
 	function removeEvents() {
 		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
-		window.onMouseDown.remove(mousePress);
+		Main.current.mouseDown = (x:Float, y:Float, button:MouseButton) -> {};
 		window.onMouseWheel.remove(moveOption_mouse);
 	}
 

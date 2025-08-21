@@ -219,11 +219,6 @@ class MainMenu implements State {
 	}
 
 	function doIt_mouse(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
-		var window = lime.app.Application.current.window;
-		if (window.onMouseDown.has(doIt_mouse)) {
-			Sys.println("This doesn't fix the freeplay bug");
-			window.onMouseDown.remove(doIt_mouse);
-		}
 		Sys.println("Fuck you game 2");
 		if (button != MouseButton.LEFT) return;
 		doIt();
@@ -235,7 +230,7 @@ class MainMenu implements State {
 
 		Main.current.controls.bindTo(actions);
 		window.onMouseWheel.add(updateMenuOptions_mouse);
-		window.onMouseDown.add(doIt_mouse);
+		Main.current.mouseDown = doIt_mouse;
 	}
 
 	function removeEvents() {
@@ -243,7 +238,6 @@ class MainMenu implements State {
 		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
 		window.onMouseWheel.remove(updateMenuOptions_mouse);
-		window.onMouseDown.remove(doIt_mouse);
 	}
 
 	function dispose() {

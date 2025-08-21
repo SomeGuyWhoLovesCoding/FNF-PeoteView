@@ -1,5 +1,6 @@
 package;
 
+import lime.ui.MouseButton;
 import sys.io.File;
 import sys.io.FileOutput;
 import haxe.CallStack;
@@ -130,6 +131,8 @@ class Main extends Application
 	var controls(default, null):Controls;
 	var gamepad(default, null):Gamepad;
 
+	var mouseDown:(Float, Float, MouseButton)->Void = function(x:Float, y:Float, button:MouseButton) {};
+
 	public function startSample(window:Window)
 	{
 		current = this;
@@ -172,6 +175,10 @@ class Main extends Application
 			#if FV_DEBUG
 			DeveloperStuff.init(window, this);
 			#end
+
+			window.onMouseDown.add((x, y, button) -> {
+				mouseDown(x, y, button);
+			});
 
 			_started = true;
 		}, 100);
@@ -246,6 +253,7 @@ class Main extends Application
 		Tools.profileFrame();
 
 		if (_started) {
+			//if (window.onMouseDown.__listeners[1] != null) trace(window.onMouseDown.__listeners[1]);
 			// The if check is to prevent the div operation from running every frame even though `newDeltaTimeSeconds` will be 0 most of the time
 			newDeltaTimeSeconds = deltaTime < 1000000000 ? 0 : Int64.div(deltaTime, 1000000000).low;
 			newDeltaTime = newDeltaTimeSeconds + (Int64.mod(deltaTime, 1000000000).low * 0.000001);
