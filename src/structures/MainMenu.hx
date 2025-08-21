@@ -203,6 +203,7 @@ class MainMenu implements State {
 				//if (!Main.current.freeplayMenu.alreadySelected) {
 				selectedAlpha = 0.0;
 				Main.current.freeplayMenu.open();
+				removeEvents();
 				//}
 			case 2: // AWARDS
 				// TODO

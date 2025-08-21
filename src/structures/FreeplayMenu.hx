@@ -52,11 +52,6 @@ class FreeplayMenu {
 		if (alreadySelected) return;
 
 		Main.current.popupFreeplayMenu();
-
-		var mm = Main.current.mainMenu;
-		if (mm != null) {
-			mm.removeEvents();
-		}
 		//trace("Events removed");
 
 		opened = active = true;
@@ -123,6 +118,7 @@ class FreeplayMenu {
 	function enter(isDown:Bool, param:Int) {
 		if (!isDown || alreadySelected) return;
 		alreadySelected = true;
+		Sys.println('Song is loading now!');
 		Main.songChosen = freeplayScreen.songsAvailable[curSelected].dir;
 		Main.switchState(GAMEPLAY);
 	}
@@ -131,13 +127,7 @@ class FreeplayMenu {
 		//Sys.println("Fuck you game");
 		if (alreadySelected) return;
 		if (button == LEFT) {
-			alreadySelected = true;
-			Main.songChosen = freeplayScreen.songsAvailable[curSelected].dir;
-			// Warning guard!!!
-			close();
-			shutDown();
-			// 
-			Main.switchState(GAMEPLAY);
+			enter(true, 0);
 			return;
 		}
 		close();
