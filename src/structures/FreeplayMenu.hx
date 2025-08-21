@@ -78,18 +78,20 @@ class FreeplayMenu {
 
 		opened = false;
 
+		haxe.Timer.delay(function() {
+			var mm = Main.current.mainMenu;
+			if (mm != null) {
+				MainMenu.selectedAlpha = 1.0;
+				mm.addEvents();
+			}
+		}, 1);
+
 		trace("Freeplay menu closed");
 	}
 
 	function back(isDown:Bool, param:Int) {
 		if (!isDown) return;
 		close();
-
-		var mm = Main.current.mainMenu;
-		if (mm != null) {
-			MainMenu.selectedAlpha = 1.0;
-			mm.addEvents();
-		}
 	}
 
 	function down(isDown:Bool, param:Int) {
@@ -122,12 +124,6 @@ class FreeplayMenu {
 			return;
 		}
 		close();
-
-		var mm = Main.current.mainMenu;
-		if (mm != null) {
-			MainMenu.selectedAlpha = 1.0;
-			mm.addEvents();
-		}
 	}
 
 	function moveCategory_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
