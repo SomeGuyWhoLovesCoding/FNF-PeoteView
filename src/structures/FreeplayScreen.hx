@@ -61,6 +61,8 @@ class FreeplayScreen {
 			HealthBarSprite.init(songIconsProg, "hbTex", tex);
 		}
 
+        while (songTextCharGroup.length != 0) songTextCharGroup.pop();
+
 		songTextCharGroup = [
 			for (i in 0...7) [
 				for (i in 0...20) {
@@ -71,6 +73,8 @@ class FreeplayScreen {
 				}
 			]
 		];
+
+        while (songIconGroup.length != 0) songIconGroup.pop();
 
 		songIconGroup = [
 			for (i in 0...7) {
@@ -162,7 +166,7 @@ class FreeplayScreen {
 						char = '_'; // NOTE: This is space for a reason, and it's hidden. If the sprite wasn't even created for it, the pooling won't even run correctly.
 				}
 
-				if (j >= 17) char = '.';
+				if (j >= 17) char = 'dot';
 
 				var spr = grp[j];
 
@@ -198,7 +202,7 @@ class FreeplayScreen {
 				songTextsBuf.updateElement(spr);
 				spr.update(deltaTime);
 
-				if (j == title.length - 1) {
+				if (j == Math.min(title.length - 1, 17)) {
 					iconX = spr.x;
 				}
 
