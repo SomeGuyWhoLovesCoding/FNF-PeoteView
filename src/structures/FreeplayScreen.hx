@@ -134,7 +134,7 @@ class FreeplayScreen {
 
 				if (j >= 17) char = '.';
 
-				// Took this from  and tweaked it 
+				// Took this from https://github.com/CCobaltDev/FNF-Horizon-Engine/blob/rewrite/source/horizon/objects/Alphabet.hx#L83 and extended it to work with the vanilla alphabet 
 				switch (char)
 				{
 					case '?':
@@ -187,6 +187,7 @@ class FreeplayScreen {
 				spr.x = (x + 50) + (xLerp + (20 * k));
 				spr.y = (-curSelectedLerp * 156) + (156 * k) + 320;
 
+				// From https://github.com/CCobaltDev/FNF-Horizon-Engine/blob/rewrite/source/horizon/objects/Alphabet.hx#L123 too
 				switch (char)
 				{
 					case '-':
@@ -206,7 +207,7 @@ class FreeplayScreen {
 				}
 
 				if (isInvalidCharacter) {
-					x += 32;
+					x += 28; // From https://github.com/ShadowMario/FNF-PsychEngine/blob/main/source/objects/Alphabet.hx#L211
 				} else {
 					x += spr.firstFrameWidth + 2;
 				}
