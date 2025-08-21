@@ -38,7 +38,6 @@ class FreeplayMenu {
 	}
 
 	static function init(disp:CustomDisplay):Void {
-		//Sys.println('Fuck you');
 		display = disp;
 	}
 
@@ -104,13 +103,11 @@ class FreeplayMenu {
 
 	function enter(isDown:Bool, param:Int) {
 		if (!isDown) return;
-		Sys.println('Song is loading now!');
 		Main.songChosen = freeplayScreen.songsAvailable[curSelected].dir;
 		Main.switchState(GAMEPLAY);
 	}
 
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
-		//Sys.println("Fuck you game");
 		if (button == LEFT) {
 			enter(true, 0);
 			return;
@@ -134,7 +131,6 @@ class FreeplayMenu {
 
 		active = false;
 		Main.current.removeFreeplayMenu();
-		Sys.println("Freeplay menu shut down");
 	}
 
 	function dispose() {
@@ -143,6 +139,5 @@ class FreeplayMenu {
 
 		active = false;
 		Main.current.removeFreeplayMenu();
-		Sys.println("Freeplay menu disposed");
 	}
 }

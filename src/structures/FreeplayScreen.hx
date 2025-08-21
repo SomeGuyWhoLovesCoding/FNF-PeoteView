@@ -104,7 +104,6 @@ class FreeplayScreen {
 		}
 		while (songIconGroup.length != 0) songIconGroup.pop();
 		disposed = true;
-		Sys.println('Freeplay menu unloaded');
 	}
 
 	var alphaLerp:Float = 0.0;
@@ -118,7 +117,6 @@ class FreeplayScreen {
 		var ratio = Math.min(deltaTime * 0.015, 1);
 		if (ratio == 1) ratio = (1/lime.app.Application.current.window.frameRate) * 0.015; // When loading the freeplay menu the first time it gets stuck at 1.0 for a single frame
 
-		//Sys.println('$ratio, $alphaLerp');
 		if (!parent.opened && alphaLerp < 0.1/256) {
 			parent.shutDown();
 			curSelectedLerp = parent.curSelected;
