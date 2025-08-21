@@ -81,7 +81,7 @@ class Main extends Application
 		try {
 			switch (newState) {
 				case MAIN_MENU:
-					trace('That\'s it I\'m crashing out');
+					//trace('That\'s it I\'m crashing out');
 					instance.mainMenu = new MainMenu();
 					instance.mainMenu.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
 				case GAMEPLAY:

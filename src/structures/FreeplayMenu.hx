@@ -60,14 +60,8 @@ class FreeplayMenu {
 			window.onMouseWheel.add(moveCategory_mouse);
 		}, 1);
 
+		if (freeplayScreen.disposed) freeplayScreen.reload(freeplayScreen.chapter);
 		freeplayScreen.addPrograms();
-
-		/*try {
-			throw("Freeplay menu opened");
-		} catch (e) {
-			trace(haxe.CallStack.toString(haxe.CallStack.exceptionStack()));
-		}*/
-		trace("Freeplay menu opened");
 	}
 
 	function close() {
@@ -85,8 +79,6 @@ class FreeplayMenu {
 				mm.addEvents();
 			}
 		}, 1);
-
-		trace("Freeplay menu closed");
 	}
 
 	function back(isDown:Bool, param:Int) {
@@ -147,6 +139,10 @@ class FreeplayMenu {
 
 	function dispose() {
 		close();
-		shutDown();
+		freeplayScreen.unload();
+
+		active = false;
+		Main.current.removeFreeplayMenu();
+		Sys.println("Freeplay menu disposed");
 	}
 }

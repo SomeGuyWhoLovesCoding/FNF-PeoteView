@@ -219,7 +219,7 @@ class MainMenu implements State {
 	}
 
 	function doIt_mouse(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
-		Sys.println("Fuck you game 2");
+		//Sys.println("Fuck you game 2");
 		if (button != MouseButton.LEFT) return;
 		doIt();
 	}

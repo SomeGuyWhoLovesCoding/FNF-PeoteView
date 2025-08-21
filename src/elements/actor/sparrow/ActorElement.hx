@@ -2,6 +2,7 @@ package elements.actor.sparrow;
 
 /**
 	Basic sparrow actor element.
+	@since Development
 **/
 @:publicFields
 class ActorElement implements Element {

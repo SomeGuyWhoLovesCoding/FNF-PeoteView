@@ -7,6 +7,7 @@ using StringTools;
 /**
 	Sparrow atlas actor element object.
 	Originally meant to be in the field of the gameplay state.
+	@since Development
 **/
 @:publicFields
 class Actor extends ActorElement
@@ -125,7 +126,7 @@ class Actor extends ActorElement
 	var frameTimeRemaining:Float;
 	var loop:Bool;
 	var indicesMode:Bool;
-	var indices:Vector<Int>;
+	var indices:Array<Int>;
 	var firstFrameWidth(default, null):Float;
 
 	var shake:Bool;
@@ -264,9 +265,11 @@ class Actor extends ActorElement
 	}
 
 	function dispose() {
-		display.removeProgram(programs[displayName]);
-		display = null;
+		if (programs[displayName] != null) {
+			display.removeProgram(programs[displayName]);
+			display = null;
+		}
 
-		buffers[displayName].clear();
+		if (buffers[displayName] != null) buffers[displayName].clear();
 	}
 }

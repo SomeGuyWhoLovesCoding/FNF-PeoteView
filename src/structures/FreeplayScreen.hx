@@ -25,25 +25,19 @@ class FreeplayScreen {
 	static var songTextCharGroup(default, null):Array<Array<Actor>> = [];
 	static var songIconGroup(default, null):Array<HealthBarSprite> = [];
 
-    var parent(default, null):FreeplayMenu;
+	var parent(default, null):FreeplayMenu;
 
-    function new(parent:FreeplayMenu, chapterName:String) {
-        this.parent = parent;
-        reload(chapterName);
-    }
+	var disposed(default, null):Bool = true;
 
-    function reload(chapterName:String) {
-        var chapterData:ChapterData = haxe.Json.parse(sys.io.File.getContent("assets/data/chapters/chapter1/data.json"));
-		var songs:Array<ChapterSong> = chapterData.songs;
+	var chapter(default, null):String;
 
-        while (songsAvailable.length != 0) songsAvailable.pop();
+	function new(parent:FreeplayMenu, chapterName:String) {
+		this.parent = parent;
+		reload(chapterName);
+	}
 
-		for (i in 0...songs.length) {
-			var song = songs[i];
-			songsAvailable.push(song);
-		}
-    
-        if (songTextsBuf == null) {
+	function reload(chapterName:String) {
+		if (songTextsBuf == null) {
 			songTextsBuf = new Buffer<Actor>(32, 32, false);
 			songTextsProg = new Program(songTextsBuf);
 			songTextsProg.blendEnabled = true;
@@ -61,7 +55,15 @@ class FreeplayScreen {
 			HealthBarSprite.init(songIconsProg, "hbTex", tex);
 		}
 
-        while (songTextCharGroup.length != 0) songTextCharGroup.pop();
+		if (!disposed) unload();
+
+		var chapterData:ChapterData = haxe.Json.parse(sys.io.File.getContent("assets/data/chapters/chapter1/data.json"));
+		var songs:Array<ChapterSong> = chapterData.songs;
+
+		for (i in 0...songs.length) {
+			var song = songs[i];
+			songsAvailable.push(song);
+		}
 
 		songTextCharGroup = [
 			for (i in 0...7) [
@@ -74,8 +76,6 @@ class FreeplayScreen {
 			]
 		];
 
-        while (songIconGroup.length != 0) songIconGroup.pop();
-
 		songIconGroup = [
 			for (i in 0...7) {
 				var icon = new HealthBarSprite();
@@ -85,7 +85,27 @@ class FreeplayScreen {
 				icon;
 			}
 		];
-    }
+
+		chapter = chapterName;
+	}
+
+	function unload() {
+		songTextsBuf.clear();
+		songIconsBuf.clear();
+		while (songsAvailable.length != 0) songsAvailable.pop();
+		while (songTextCharGroup.length != 0) {
+			var elements = songTextCharGroup.pop();
+			for (elem in elements) {
+				if (elem != null) {
+					elem.dispose();
+					elem = null;
+				}
+			}
+		}
+		while (songIconGroup.length != 0) songIconGroup.pop();
+		disposed = true;
+		Sys.println('Freeplay menu unloaded');
+	}
 
 	var alphaLerp:Float = 0.0;
 	var curSelectedLerp:Float = 0.0;
@@ -224,21 +244,25 @@ class FreeplayScreen {
 		xLerpPrev = xLerp;
 	}
 
-    function addPrograms() {
-        if (!songTextsProg.isIn(display)) {
+	function addPrograms() {
+		if (!songTextsProg.isIn(display)) {
 			display.addProgram(songTextsProg);
 		}
 
 		if (!songIconsProg.isIn(display)) {
 			display.addProgram(songIconsProg);
 		}
-    }
+	}
 
-    function shutDown() {
-		if (!songTextsProg.isIn(display) || !songIconsProg.isIn(display)) return;
+	function shutDown() {
+		if (songTextsProg.isIn(display)) {
+			display.removeProgram(songTextsProg);
+		}
 
-		display.removeProgram(songTextsProg);
-		display.removeProgram(songIconsProg);
+		if (songIconsProg.isIn(display)) {
+			display.removeProgram(songIconsProg);
+		}
+
 		firstFrameToAnimate = true;
-    }
+	}
 }

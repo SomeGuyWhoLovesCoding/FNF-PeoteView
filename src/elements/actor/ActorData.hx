@@ -4,13 +4,13 @@ package elements.actor;
 @:publicFields
 class ActorData {
 	var flip:Bool;
-	var colors:Vector<Color>;
+	var colors:Array<Color>;
 	var scale:Float;
 
 	var healthIcon:String;
 
-	var adjPos:Vector<Float>;
-	var camPos:Vector<Float>;
+	var adjPos:Array<Float>;
+	var camPos:Array<Float>;
 
 	var data:Map<String, ActorAnimationData>;
 
@@ -24,7 +24,7 @@ class ActorData {
 
 		var _data:Map<String, ActorAnimationData> = [];
 
-		var animations:Vector<Dynamic> = Vector.fromData(json.animations);
+		var animations:Array<Dynamic> = json.animations;
 
 		for (i in 0...animations.length) {
 			var animData = animations[i];
@@ -38,15 +38,15 @@ class ActorData {
 			});
 		}
 
-		var c:Vector<Color> = Vector.fromData(json.healthbar_colors);
+		var c:Array<Color> = json.healthbar_colors;
 		var colors:Color = Color.RGB(c[0], c[1], c[2]);
 		var result:ActorData = {
 			flip: json.flip_x,
-			colors: new Vector<Color>(6, colors),
+			colors: [for (i in 0...6) colors],
 			scale: json.scale,
 			healthIcon: json.healthicon,
-			adjPos: Vector.fromData(json.position),
-			camPos: Vector.fromData(json.camera_position),
+			adjPos: json.position,
+			camPos: json.camera_position,
 			data: _data
 		}
 
