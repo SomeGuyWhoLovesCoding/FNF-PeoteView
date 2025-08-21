@@ -134,6 +134,7 @@ class FreeplayScreen {
 
 				if (j >= 17) char = '.';
 
+				// Took this from  and tweaked it 
 				switch (char)
 				{
 					case '?':
@@ -190,10 +191,8 @@ class FreeplayScreen {
 				{
 					case '-':
 						spr.y += spr.h;
-					case 'comma':
+					case 'comma' | '_' | 'period':
 						spr.y += 47;
-					case '_':
-						spr.y += 46;
 					case '+':
 						spr.y += spr.h * .25;
 				}
