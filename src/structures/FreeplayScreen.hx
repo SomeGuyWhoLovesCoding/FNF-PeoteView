@@ -91,20 +91,12 @@ class FreeplayScreen {
 	var firstFrameToAnimate:Bool = true;
 
 	function update(deltaTime:Float) {
-		if (parent.alreadySelected) {
-			alphaLerp = 0.0;
-			curSelectedLerp = parent.curSelected;
-			xLerp = 20 - (parent.curSelected * 20);
-			Sys.println('WHYYY ${parent.active}');
-			return;
-		}
-
 		var ratio = Math.min(deltaTime * 0.015, 1);
 		if (ratio == 1) ratio = (1/lime.app.Application.current.window.frameRate) * 0.015; // When loading the freeplay menu the first time it gets stuck at 1.0 for a single frame
 
 		//Sys.println('$ratio, $alphaLerp');
 		if (!parent.opened && alphaLerp < 0.1/256) {
-			shutDown();
+			parent.shutDown();
 			curSelectedLerp = parent.curSelected;
 			xLerp = 20 - (parent.curSelected * 20);
 			xLerpPrev = xLerp;
@@ -237,7 +229,6 @@ class FreeplayScreen {
     function shutDown() {
 		if (!songTextsProg.isIn(display) || !songIconsProg.isIn(display)) return;
 
-		display.color = 0x00000000;
 		display.removeProgram(songTextsProg);
 		display.removeProgram(songIconsProg);
 		firstFrameToAnimate = true;

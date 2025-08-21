@@ -5,7 +5,6 @@ import lime.ui.KeyCode;
 import lime.ui.MouseButton;
 import lime.ui.MouseWheelMode;
 import elements.actor.sparrow.Actor;
-import data.chart.Header;
 
 /**
 	The freeplay submenu.
@@ -24,7 +23,6 @@ class FreeplayMenu {
 	var freeplayScreen(default, null):FreeplayScreen;
 
 	var curSelected(default, null):Int = 0;
-	var alreadySelected:Bool = false;
 
 	var actions(default, null):ActionMap;
 
@@ -49,8 +47,6 @@ class FreeplayMenu {
 	}
 
 	function open() {
-		if (alreadySelected) return;
-
 		Main.current.popupFreeplayMenu();
 		//trace("Events removed");
 
@@ -75,8 +71,6 @@ class FreeplayMenu {
 	}
 
 	function close() {
-		if (alreadySelected) return;
-
 		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
 		window.onMouseDown.remove(mousePress);
@@ -88,19 +82,18 @@ class FreeplayMenu {
 	}
 
 	function back(isDown:Bool, param:Int) {
-		if (!isDown || alreadySelected) return;
+		if (!isDown) return;
 		close();
 
 		var mm = Main.current.mainMenu;
 		if (mm != null) {
 			MainMenu.selectedAlpha = 1.0;
 			mm.addEvents();
-			//trace("Events added");
 		}
 	}
 
 	function down(isDown:Bool, param:Int) {
-		if (!isDown || alreadySelected) return;
+		if (!isDown) return;
 		curSelected++;
 		if (curSelected >= freeplayScreen.songsAvailable.length) {
 			curSelected = 0;
@@ -108,7 +101,7 @@ class FreeplayMenu {
 	}
 
 	function up(isDown:Bool, param:Int) {
-		if (!isDown || alreadySelected) return;
+		if (!isDown) return;
 		curSelected--;
 		if (curSelected < 0) {
 			curSelected = freeplayScreen.songsAvailable.length - 1;
@@ -116,8 +109,7 @@ class FreeplayMenu {
 	}
 
 	function enter(isDown:Bool, param:Int) {
-		if (!isDown || alreadySelected) return;
-		alreadySelected = true;
+		if (!isDown) return;
 		Sys.println('Song is loading now!');
 		Main.songChosen = freeplayScreen.songsAvailable[curSelected].dir;
 		Main.switchState(GAMEPLAY);
@@ -125,16 +117,20 @@ class FreeplayMenu {
 
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
 		//Sys.println("Fuck you game");
-		if (alreadySelected) return;
 		if (button == LEFT) {
 			enter(true, 0);
 			return;
 		}
 		close();
+
+		var mm = Main.current.mainMenu;
+		if (mm != null) {
+			MainMenu.selectedAlpha = 1.0;
+			mm.addEvents();
+		}
 	}
 
 	function moveCategory_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
-		if (alreadySelected) return;
 		curSelected -= Math.floor(y);
 
 		if (curSelected >= freeplayScreen.songsAvailable.length) {
@@ -146,7 +142,6 @@ class FreeplayMenu {
 	}
 
 	function shutDown() {
-		if (alreadySelected) return;
 		freeplayScreen.shutDown();
 
 		active = false;

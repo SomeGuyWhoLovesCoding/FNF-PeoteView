@@ -521,7 +521,6 @@ class PlayField implements State {
 
 		Chart.destroy();
 
-		Main.current.freeplayMenu.alreadySelected = false;
 		if (display.fov != 1) display.fov = 1;
 		if (view.fov != 1) view.fov = 1;
 	}
