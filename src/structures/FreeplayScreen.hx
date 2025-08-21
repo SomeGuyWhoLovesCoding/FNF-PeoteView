@@ -132,6 +132,8 @@ class FreeplayScreen {
 
 				var isInvalidCharacter = j >= title.length || char == ' ';
 
+				if (j >= 17) char = '.';
+
 				switch (char)
 				{
 					case '?':
@@ -165,8 +167,6 @@ class FreeplayScreen {
 					case ' ':
 						char = '_'; // NOTE: This is space for a reason, and it's hidden. If the sprite wasn't even created for it, the pooling won't even run correctly.
 				}
-
-				if (j >= 17) char = 'dot';
 
 				var spr = grp[j];
 
