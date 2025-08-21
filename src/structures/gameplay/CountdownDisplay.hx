@@ -16,7 +16,17 @@ class CountdownDisplay {
 	/**
 		The countdown display's underlying buffer.
 	**/
-	var buffer:Buffer<UISprite>;
+	static var buffer:Buffer<UISprite>;
+
+	/**
+		The countdown display's underlying program.
+	**/
+	static var program:Program;
+
+	/**
+		The countdown display's underlying display reference.
+	**/
+	static var display:Display;
 
 	/**
 		The countdown display's sprite.
@@ -41,13 +51,23 @@ class CountdownDisplay {
 		}
 	}
 
+	static function init(atDisplay:Display) {
+		if (buffer == null) {
+			buffer = new Buffer<UISprite>(1);
+			program = new Program(buffer);
+			program.blendEnabled = true;
+
+			var tex = TextureSystem.getTexture("uiTex");
+			UISprite.init(program, "uiTex", tex);
+		}
+		display = atDisplay;
+		display.addProgram(program);
+	}
+
 	/**
 		Constructs a countdown display from chart.
-		@param buffer The buffer you want to add your countdown display at.
 	**/
-	function new(buffer:Buffer<UISprite>) {
-		this.buffer = buffer;
-
+	function new() {
 		sprite = new UISprite();
 		sprite.type = COUNTDOWN_POPUP;
 		sprite.changeID(0);
@@ -106,7 +126,8 @@ class CountdownDisplay {
 		Disposes the countdown display.
 	**/
 	function dispose() {
-		buffer.removeElement(sprite);
+		buffer.clear();
+		display.removeProgram(program);
 		sprite = null;
 		GC.run();
 	}

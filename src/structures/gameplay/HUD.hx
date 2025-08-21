@@ -120,7 +120,7 @@ class HUD {
 	/**
 		Initializes the HUD with a static buffer and program.
 	**/
-	static function init(display:CustomDisplay) {
+	static function init() {
 		if (uiBuf == null) {
 			uiBuf = new Buffer<UISprite>(4, 4, true);
 			uiProg = new Program(uiBuf);

@@ -111,85 +111,19 @@ void destroyChart() {
  * Unless you want to experiment. Just be careful.
 **/
 
-// ---------------- Optimized single insert ----------------
-void insertNote(int64_t atIndex, int64_t value) {
-	if (atIndex < 0 || atIndex > length) throw std::out_of_range("Index out of range");
-
-	size_t oldLen = length;
-	if (!remap(oldLen + 1)) throw std::runtime_error("Failed to grow file");
-
-	size_t chunkSize = getDynamicChunkSize() / sizeof(int64_t);
-	int64_t remaining = oldLen - atIndex;
-
-	// Shift data in chunks
-	while (remaining > 0) {
-		size_t chunk = (remaining > chunkSize) ? chunkSize : remaining;
-		memmove(&data[atIndex + 1 + remaining - chunk],
-				&data[atIndex + remaining - chunk],
-				chunk * sizeof(int64_t));
-		remaining -= chunk;
-	}
-
-	data[atIndex] = value;
+void insertNote(int64_t index, int64_t value) {
+    if (index < 0 || index > length) throw std::out_of_range("index out of range");
+    if (!remap(length + 1)) throw std::runtime_error("failed to resize file");
+    if (index < length) {
+        memmove(&data[index + 1], &data[index], (length - index) * sizeof(int64_t));
+    }
+    data[index] = value;
 }
 
-// ---------------- Optimized single remove ----------------
-void removeNote(int64_t atIndex) {
-	if (atIndex < 0 || atIndex >= length) throw std::out_of_range("Index out of range");
-
-	size_t chunkSize = getDynamicChunkSize() / sizeof(int64_t);
-	int64_t remaining = length - atIndex - 1;
-
-	// Shift data in chunks
-	while (remaining > 0) {
-		size_t chunk = (remaining > chunkSize) ? chunkSize : remaining;
-		memmove(&data[atIndex + remaining - chunk],
-				&data[atIndex + 1 + remaining - chunk],
-				chunk * sizeof(int64_t));
-		remaining -= chunk;
-	}
-
-	if (!remap(length - 1)) throw std::runtime_error("Failed to shrink file");
-}
-
-// ---------------- Chunked batch insert ----------------
-void insertNotes(int64_t atIndex, const std::vector<int64_t>& values) {
-	if (atIndex < 0 || atIndex > length) throw std::out_of_range("Index out of range");
-	size_t n = values.size();
-	if (n == 0) return;
-
-	size_t oldLen = length;
-	if (!remap(oldLen + n)) throw std::runtime_error("Failed to grow file");
-
-	size_t chunkSize = getDynamicChunkSize() / sizeof(int64_t);
-	int64_t remaining = oldLen - atIndex;
-
-	while (remaining > 0) {
-		size_t chunk = (remaining > chunkSize) ? chunkSize : remaining;
-		memmove(&data[atIndex + n + remaining - chunk],
-				&data[atIndex + remaining - chunk],
-				chunk * sizeof(int64_t));
-		remaining -= chunk;
-	}
-
-	memcpy(&data[atIndex], values.data(), n * sizeof(int64_t));
-}
-
-// ---------------- Chunked batch remove ----------------
-void removeNotes(int64_t atIndex, size_t count) {
-	if (atIndex < 0 || atIndex + (int64_t)count > length) throw std::out_of_range("Index out of range");
-	if (count == 0) return;
-
-	size_t chunkSize = getDynamicChunkSize() / sizeof(int64_t);
-	int64_t remaining = length - atIndex - count;
-
-	while (remaining > 0) {
-		size_t chunk = (remaining > chunkSize) ? chunkSize : remaining;
-		memmove(&data[atIndex + remaining - chunk],
-				&data[atIndex + count + remaining - chunk],
-				chunk * sizeof(int64_t));
-		remaining -= chunk;
-	}
-
-	if (!remap(length - count)) throw std::runtime_error("Failed to shrink file");
+void removeNote(int64_t index) {
+    if (index < 0 || index >= length) throw std::out_of_range("index out of range");
+    if (index < length - 1) {
+        memmove(&data[index], &data[index + 1], (length - index - 1) * sizeof(int64_t));
+    }
+    if (!remap(length - 1)) throw std::runtime_error("failed to shrink file");
 }
