@@ -45,6 +45,9 @@
 	<haxedef name="HXCPP_TRACY_MEMORY" if="FV_PROFILE" />
 	<!--<haxedef name="FV_DEBUG" />-->
 
+	<!-- set hashlink version so that Int64Map is included from Std -->
+	<haxedef name="hl_ver" value="1.13.0" />
+
 	<haxedef name="HXCPP_STACK_LINE" />
 	<haxedef name="HXCPP_STACK_TRACE" />
 

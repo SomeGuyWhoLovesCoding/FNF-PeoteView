@@ -279,7 +279,6 @@ class Main extends Application
 					optionsMenu.update(newDeltaTime);
 				}
 
-				Sys.println('Freeplay Active ${freeplayMenu.active}');
 				if (freeplayMenu.active) {
 					freeplayMenu.update(newDeltaTime);
 				}
