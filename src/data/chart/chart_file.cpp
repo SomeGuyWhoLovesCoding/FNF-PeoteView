@@ -23,28 +23,6 @@ HANDLE hMap  = NULL;
 int fd = -1;
 #endif
 
-// ---------------- Dynamic chunk size ----------------
-size_t getDynamicChunkSize() {
-	size_t chunk = 16 * 1024 * 1024; // fallback 16MB
-#ifdef _WIN32
-	MEMORYSTATUSEX memStatus = {};
-	memStatus.dwLength = sizeof(memStatus);
-	if (GlobalMemoryStatusEx(&memStatus)) {
-		size_t avail = memStatus.ullAvailPhys;
-		chunk = avail / 4; // use 25% of available memory
-	}
-#else
-	long pages = sysconf(_SC_AVPHYS_PAGES);
-	long pageSize = sysconf(_SC_PAGESIZE);
-	if (pages > 0 && pageSize > 0) {
-		size_t avail = pages * pageSize;
-		chunk = avail / 4; // 25% of available memory
-	}
-#endif
-	if (chunk < 1024 * sizeof(int64_t)) chunk = 1024 * sizeof(int64_t); // minimum 1024 elements
-	return chunk;
-}
-
 // ---------------- Memory-mapping helpers ----------------
 static bool remap(size_t newLength) {
 #ifdef _WIN32
