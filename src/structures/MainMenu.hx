@@ -238,6 +238,7 @@ class MainMenu implements State {
 		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
 		window.onMouseWheel.remove(updateMenuOptions_mouse);
+		Main.current.mouseDown = (x:Float, y:Float, button:MouseButton) -> {};
 	}
 
 	function dispose() {

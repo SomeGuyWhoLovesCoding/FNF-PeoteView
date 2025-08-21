@@ -73,6 +73,7 @@ class FreeplayMenu {
 	function close() {
 		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
+		Main.current.mouseDown = (x:Float, y:Float, button:MouseButton) -> {};
 		window.onMouseWheel.remove(moveCategory_mouse);
 
 		opened = false;
