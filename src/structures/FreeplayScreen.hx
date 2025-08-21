@@ -86,6 +86,8 @@ class FreeplayScreen {
 		];
 
 		chapter = chapterName;
+
+		disposed = false;
 	}
 
 	function unload() {
@@ -94,7 +96,8 @@ class FreeplayScreen {
 		while (songsAvailable.length != 0) songsAvailable.pop();
 		while (songTextCharGroup.length != 0) {
 			var elements = songTextCharGroup.pop();
-			for (elem in elements) {
+			while (elements.length != 0) {
+				var elem = elements.pop();
 				if (elem != null) {
 					elem.dispose();
 					elem = null;
