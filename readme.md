@@ -113,17 +113,17 @@ Then, you just `lime test hl` and everything runs good!
 
 (AKA jobf)
 
-: Helped me learn how peote-view works, wrote the sprite clipping sample for peote-view, and more.
+: Tester (Helped me learn how peote-view works, wrote the sprite clipping sample for peote-view, and more.)
 
 - Semmi
 
 (AKA Semmis, maitag, or simply Sylvio Sell)
 
-: Wrote peote-view, and wrote the `slices` shader sample for the sustain note.
+: Peote-view (Wrote peote-view, and wrote the `slices` shader sample for the sustain note.)
 
 - Blossimical
 
-: Wrote the customtitlebar haxelib tool (for real, seriously, not joking, I've been waiting for this moment for long enough)
+: Helper (Wrote the customtitlebar haxelib tool. For real, seriously, not joking, I've been waiting for this moment for long enough.)
 
 # Frequently Asked Questions
 
