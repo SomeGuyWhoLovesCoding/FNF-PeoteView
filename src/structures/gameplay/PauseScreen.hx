@@ -41,7 +41,7 @@ class PauseScreen {
 	}
 
 	inline static function active() {
-		return pauseProg.isIn(display);
+		return display.isVisible;
 	}
 
 	function new(difficulty:Difficulty) {
@@ -91,11 +91,17 @@ class PauseScreen {
 			if (i == pauseOptionSelected) pauseOption.c = Color.YELLOW;
 			else pauseOption.c = Color.WHITE;
 			pauseOption.c.aF = alphaLerp;
-			if (originalC != pauseOption.c) pauseBuf.updateElement(pauseOption);
+			if (originalC != pauseOption.c) {
+				if (@:privateAccess pauseOption.bytePos != -1) {
+					pauseBuf.updateElement(pauseOption);
+				}
+			}
 		}
 
 		diffText.c.aF = alphaLerp;
-		pauseBuf.updateElement(diffText);
+		if (@:privateAccess diffText.bytePos != -1) {
+			pauseBuf.updateElement(diffText);
+		}
 	}
 
 	function down(isDown:Bool, param:Int) {

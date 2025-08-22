@@ -233,6 +233,9 @@ class Main extends Application
 		peoteView.addDisplay(bottomDisplay);
 		peoteView.addDisplay(middleDisplay);
 		peoteView.addDisplay(topDisplay);
+		peoteView.addDisplay(optionsScreen);
+		peoteView.addDisplay(freeplayScreen);
+		peoteView.addDisplay(storyScreen);
 		trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 	}
 
@@ -297,39 +300,27 @@ class Main extends Application
 	}
 
 	function popupOptionsMenu() {
-		if (!optionsScreen.isIn(peoteView)) {
-			peoteView.addDisplay(optionsScreen);
-		}
+		if (!optionsScreen.isVisible) optionsScreen.show();
 	}
 
 	function removeOptionsMenu() {
-		if (optionsScreen.isIn(peoteView)) {
-			peoteView.removeDisplay(optionsScreen);
-		}
+		if (optionsScreen.isVisible) optionsScreen.hide();
 	}
 
 	function popupFreeplayMenu() {
-		if (!freeplayScreen.isIn(peoteView)) {
-			peoteView.addDisplay(freeplayScreen);
-		}
+		if (!freeplayScreen.isVisible) freeplayScreen.show();
 	}
 
 	function removeFreeplayMenu() {
-		if (freeplayScreen.isIn(peoteView)) {
-			peoteView.removeDisplay(freeplayScreen);
-		}
+		if (freeplayScreen.isVisible) freeplayScreen.hide();
 	}
 
 	function popupStoryMenu() {
-		if (!storyScreen.isIn(peoteView)) {
-			peoteView.addDisplay(storyScreen);
-		}
+		if (!storyScreen.isVisible) storyScreen.show();
 	}
 
 	function removeStoryMenu() {
-		if (storyScreen.isIn(peoteView)) {
-			peoteView.removeDisplay(storyScreen);
-		}
+		if (storyScreen.isVisible) storyScreen.hide();
 	}
 
 
