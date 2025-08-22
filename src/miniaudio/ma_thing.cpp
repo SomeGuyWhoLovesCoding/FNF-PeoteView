@@ -60,6 +60,14 @@ ma_uint32 iDecoder;
 * When I decoded an mp3 and a flac at the same time and seeked the app crashes so running with mutexes fixes this.
 */
 ma_mutex decoderMutex;
+ma_bool32 decoderMutexInitialized = MA_FALSE;
+
+static inline void ensure_mutex() {
+	if (!decoderMutexInitialized) {
+		ma_mutex_init(&decoderMutex);
+		decoderMutexInitialized = MA_TRUE;
+	}
+}
 
 int getMixerState() {
 	return MIXER_STATE;
@@ -68,9 +76,7 @@ int getMixerState() {
 double getPlaybackPosition() {
 	ma_uint64 pos = 0;
 	if (g_pDecodersActive[g_pLongestDecoderIndex] == MA_TRUE) {
-		if (decoderMutex == nullptr) {
-			ma_mutex_init(&decoderMutex);
-		}
+		ensure_mutex();
 		ma_mutex_lock(&decoderMutex);
 		ma_decoder_get_cursor_in_pcm_frames(&g_pDecoders[g_pLongestDecoderIndex], &pos);
 		ma_mutex_unlock(&decoderMutex);
@@ -89,9 +95,7 @@ double getDuration() {
 void seekToPCMFrame(int64_t pos) {
 	if (exists == 0) return;
 
-	if (decoderMutex == nullptr) {
-		ma_mutex_init(&decoderMutex);
-	}
+	ensure_mutex();
 	ma_mutex_lock(&decoderMutex);
 	for (iDecoder = 0; iDecoder < g_decoderCount; ++iDecoder) {
 		ma_decoder_seek_to_pcm_frame(&g_pDecoders[iDecoder], pos > 0 ? pos : 0);
@@ -152,9 +156,7 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
 		for (ma_uint32 i = 0; i < g_decoderCount; ++i) {
 			if (!g_pDecodersActive[i]) continue;
 
-			if (decoderMutex == nullptr) {
-				ma_mutex_init(&decoderMutex);
-			}
+			ensure_mutex();
 			ma_mutex_lock(&decoderMutex);
 			ma_uint32 framesRead = read_pcm_frames_f32(i, pOutputF32, frameCount);
 			ma_mutex_unlock(&decoderMutex);
@@ -170,12 +172,13 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
 		ma_uint32 maxFramesToRead = (ma_uint32)(frameCount * playbackRate); // pre-stretch input size
 		if (maxFramesToRead > 4096) maxFramesToRead = 4096;
 
+		// reset mix buffer each callback
+		memset(inputMix, 0, sizeof(inputMix));
+
 		for (ma_uint32 i = 0; i < g_decoderCount; ++i) {
 			if (!g_pDecodersActive[i]) continue;
 
-			if (decoderMutex == nullptr) {
-				ma_mutex_init(&decoderMutex);
-			}
+			ensure_mutex();
 			ma_mutex_lock(&decoderMutex);
 			ma_uint32 framesRead = read_pcm_frames_f32(i, inputMix, maxFramesToRead);
 			ma_mutex_unlock(&decoderMutex);
@@ -203,7 +206,7 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
 	}
 
 	if (!g_pDecodersActive[g_pLongestDecoderIndex]) {
-		// If you're reached this point, that means the song has been finished.
+		// If you've reached this point, that means the song has finished.
 		MIXER_STATE = 3;
 	}
 
@@ -230,9 +233,7 @@ void setPlaybackRate(float value) {
 
 	ma_uint64 cursor2 = 0;
 	if (g_pDecodersActive[g_pLongestDecoderIndex] == MA_TRUE) {
-		if (decoderMutex == nullptr) {
-			ma_mutex_init(&decoderMutex);
-		}
+		ensure_mutex();
 		ma_mutex_lock(&decoderMutex);
 		ma_decoder_get_cursor_in_pcm_frames(&decoder, &cursor2);
 		ma_mutex_unlock(&decoderMutex);
@@ -246,16 +247,13 @@ void setPlaybackRate(float value) {
 	int latencyFrames = stretch->inputLatency();
 	std::vector<float> latencyData(latencyFrames * CHANNEL_COUNT);
 
-	if (decoderMutex == nullptr) {
-		ma_mutex_init(&decoderMutex);
-	}
+	ensure_mutex();
 	ma_mutex_lock(&decoderMutex);
 	ma_decoder_read_pcm_frames(&decoder, latencyData.data(), latencyFrames, NULL);
 	ma_decoder_seek_to_pcm_frame(&decoder, cursor2);
 	ma_mutex_unlock(&decoderMutex);
 
 	// only need to seek from one decoder
-
 	stretch->seek(latencyData.data(), latencyFrames, playbackRate);
 }
 
@@ -287,11 +285,21 @@ void destroy() {
 		ma_decoder_uninit(&g_pDecoders[iDecoder]);
 	}
 	freeThingies();
+
+	if (stretch) {
+		delete stretch;
+		stretch = nullptr;
+	}
+
+	if (decoderMutexInitialized) {
+		ma_mutex_uninit(&decoderMutex);
+		decoderMutexInitialized = MA_FALSE;
+	}
 }
 
 void loadFiles(std::vector<const char*> argv)
 {
-	if (argv.size() == 0) {
+	if (argv.empty()) {
 		printf("No input files.\n");
 		return;
 	}
@@ -300,9 +308,7 @@ void loadFiles(std::vector<const char*> argv)
 	g_pDecoders      = (ma_decoder*)malloc(sizeof(*g_pDecoders)      * g_decoderCount);
 	g_pDecodersActive = (ma_bool32*)malloc(sizeof(ma_bool32) * g_decoderCount);
 	g_pDecoderLengths = (ma_uint64*)malloc(sizeof(ma_uint64) * g_decoderCount);
-	//g_pDecoderConfigs      = (ma_decoder_config*)malloc(sizeof(*g_pDecoderConfigs)      * g_decoderCount);
-	g_pDecodersVolume      = (float*)malloc(sizeof(*g_pDecodersVolume)      * g_decoderCount);
-	//g_pDecodersPan      = (float*)malloc(sizeof(*g_pDecodersPan)      * g_decoderCount);
+	g_pDecodersVolume = (float*)malloc(sizeof(*g_pDecodersVolume)      * g_decoderCount);
 
 	ma_uint64 absoluteLengthOfSong = 0;
 	decoderConfig = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
