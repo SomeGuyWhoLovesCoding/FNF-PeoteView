@@ -68,7 +68,7 @@ int getMixerState() {
 double getPlaybackPosition() {
 	ma_uint64 pos = 0;
 	if (g_pDecodersActive[g_pLongestDecoderIndex] == MA_TRUE) {
-		if (decoderMutex == NULL) {
+		if (decoderMutex == nullptr) {
 			ma_mutex_init(&decoderMutex);
 		}
 		ma_mutex_lock(&decoderMutex);
@@ -89,7 +89,7 @@ double getDuration() {
 void seekToPCMFrame(int64_t pos) {
 	if (exists == 0) return;
 
-	if (decoderMutex == NULL) {
+	if (decoderMutex == nullptr) {
 		ma_mutex_init(&decoderMutex);
 	}
 	ma_mutex_lock(&decoderMutex);
@@ -152,7 +152,7 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
 		for (ma_uint32 i = 0; i < g_decoderCount; ++i) {
 			if (!g_pDecodersActive[i]) continue;
 
-			if (decoderMutex == NULL) {
+			if (decoderMutex == nullptr) {
 				ma_mutex_init(&decoderMutex);
 			}
 			ma_mutex_lock(&decoderMutex);
@@ -173,7 +173,7 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
 		for (ma_uint32 i = 0; i < g_decoderCount; ++i) {
 			if (!g_pDecodersActive[i]) continue;
 
-			if (decoderMutex == NULL) {
+			if (decoderMutex == nullptr) {
 				ma_mutex_init(&decoderMutex);
 			}
 			ma_mutex_lock(&decoderMutex);
@@ -230,7 +230,7 @@ void setPlaybackRate(float value) {
 
 	ma_uint64 cursor2 = 0;
 	if (g_pDecodersActive[g_pLongestDecoderIndex] == MA_TRUE) {
-		if (decoderMutex == NULL) {
+		if (decoderMutex == nullptr) {
 			ma_mutex_init(&decoderMutex);
 		}
 		ma_mutex_lock(&decoderMutex);
@@ -246,7 +246,7 @@ void setPlaybackRate(float value) {
 	int latencyFrames = stretch->inputLatency();
 	std::vector<float> latencyData(latencyFrames * CHANNEL_COUNT);
 
-	if (decoderMutex == NULL) {
+	if (decoderMutex == nullptr) {
 		ma_mutex_init(&decoderMutex);
 	}
 	ma_mutex_lock(&decoderMutex);

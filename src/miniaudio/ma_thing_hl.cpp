@@ -118,7 +118,7 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
 		for (ma_uint32 i = 0; i < g_decoderCount; ++i) {
 			if (!g_pDecodersActive[i]) continue;
 
-			if (decoderMutex == NULL) {
+			if (decoderMutex == nullptr) {
 				ma_mutex_init(&decoderMutex);
 			}
 			ma_mutex_lock(&decoderMutex);
@@ -139,7 +139,7 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
 		for (ma_uint32 i = 0; i < g_decoderCount; ++i) {
 			if (!g_pDecodersActive[i]) continue;
 
-			if (decoderMutex == NULL) {
+			if (decoderMutex == nullptr) {
 				ma_mutex_init(&decoderMutex);
 			}
 			ma_mutex_lock(&decoderMutex);
@@ -183,7 +183,7 @@ HL_PRIM int HL_NAME(get_mixer_state)(_NO_ARG) {
 HL_PRIM double HL_NAME(get_playback_position)(_NO_ARG) {
 	ma_uint64 pos = 0;
 	if (g_pDecodersActive[g_pLongestDecoderIndex] == MA_TRUE) {
-		if (decoderMutex == NULL) {
+		if (decoderMutex == nullptr) {
 			ma_mutex_init(&decoderMutex);
 		}
 		ma_mutex_lock(&decoderMutex);
@@ -196,7 +196,7 @@ HL_PRIM double HL_NAME(get_playback_position)(_NO_ARG) {
 HL_PRIM double HL_NAME(get_duration)(_NO_ARG) {
 	ma_uint64 pos = 0;
 	if (g_pDecodersActive[g_pLongestDecoderIndex] == MA_TRUE) {
-		if (decoderMutex == NULL) {
+		if (decoderMutex == nullptr) {
 			ma_mutex_init(&decoderMutex);
 		}
 		ma_mutex_lock(&decoderMutex);
@@ -209,7 +209,7 @@ HL_PRIM double HL_NAME(get_duration)(_NO_ARG) {
 HL_PRIM void HL_NAME(seek_to_pcm_frame)(ma_uint64 pos) {
 	if (exists == 0) return;
 
-	if (decoderMutex == NULL) {
+	if (decoderMutex == nullptr) {
 		ma_mutex_init(&decoderMutex);
 	}
 	ma_mutex_lock(&decoderMutex);
@@ -246,7 +246,7 @@ HL_PRIM void HL_NAME(setPlaybackRate)(float value) {
 
 	ma_uint64 cursor2 = 0;
 	if (g_pDecodersActive[g_pLongestDecoderIndex] == MA_TRUE) {
-		if (decoderMutex == NULL) {
+		if (decoderMutex == nullptr) {
 			ma_mutex_init(&decoderMutex);
 		}
 		ma_mutex_lock(&decoderMutex);
@@ -262,11 +262,11 @@ HL_PRIM void HL_NAME(setPlaybackRate)(float value) {
 	int latencyFrames = stretch->inputLatency();
 	std::vector<float> latencyData(latencyFrames * CHANNEL_COUNT);
 
-	if (decoderMutex == NULL) {
+	if (decoderMutex == nullptr) {
 		ma_mutex_init(&decoderMutex);
 	}
 	ma_mutex_lock(&decoderMutex);
-	ma_decoder_read_pcm_frames(&decoder, latencyData.data(), latencyFrames, NULL);
+	ma_decoder_read_pcm_frames(&decoder, latencyData.data(), latencyFrames, nullptr);
 	ma_decoder_seek_to_pcm_frame(&decoder, cursor2);
 	ma_mutex_unlock(&decoderMutex);
 
@@ -358,9 +358,9 @@ HL_PRIM void HL_NAME(loadFiles)(varray* argv)
 	deviceConfig.playback.channels = CHANNEL_COUNT;
 	deviceConfig.sampleRate        = SAMPLE_RATE;
 	deviceConfig.dataCallback      = data_callback;
-	deviceConfig.pUserData         = NULL;
+	deviceConfig.pUserData         = nullptr;
 
-	if (ma_device_init(NULL, &deviceConfig, &device) != MA_SUCCESS) {
+	if (ma_device_init(nullptr, &deviceConfig, &device) != MA_SUCCESS) {
 		for (iDecoder = 0; iDecoder < g_decoderCount; ++iDecoder) {
 			ma_decoder_uninit(&g_pDecoders[iDecoder]);
 		}
