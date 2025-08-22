@@ -160,6 +160,10 @@ class PauseScreen {
 	function open() {
 		opened = true;
 
+		if (!display.isVisible) {
+			display.show();
+		}
+
 		try {
 			for (i in 0...pauseOptions.length) {
 				var pauseOption = pauseOptions[i];
@@ -174,10 +178,6 @@ class PauseScreen {
 		} catch (e) {}
 
 		haxe.Timer.delay(addEvents, 1);
-
-		if (!display.isVisible) {
-			display.show();
-		}
 	}
 
 	function addEvents() {
@@ -207,13 +207,15 @@ class PauseScreen {
 	function shutDown() {
 		if (!display.isVisible) return;
 
-		for (i in 0...pauseOptions.length) {
-			var pauseOption = pauseOptions[i];
-			pauseOption.c.aF = 0.0;
-			pauseBuf.removeElement(pauseOption);
-		}
+		try {
+			for (i in 0...pauseOptions.length) {
+				var pauseOption = pauseOptions[i];
+				pauseOption.c.aF = 0.0;
+				pauseBuf.removeElement(pauseOption);
+			}
 
-		pauseBuf.removeElement(diffText);
+			pauseBuf.removeElement(diffText);
+		} catch (e) {}
 
 		display.hide();
 	}
@@ -223,13 +225,15 @@ class PauseScreen {
 		shutDown();
 
 		if (opened) {
-			while (pauseOptions.length != 0) {
-				var pauseOption = pauseOptions.pop();
-				pauseBuf.removeElement(pauseOption);
-				pauseOption = null;
-			}
-			pauseBuf.removeElement(diffText);
-			diffText = null;
+			try {
+				while (pauseOptions.length != 0) {
+					var pauseOption = pauseOptions.pop();
+					pauseBuf.removeElement(pauseOption);
+					pauseOption = null;
+				}
+				pauseBuf.removeElement(diffText);
+				diffText = null;
+			} catch (e) {}
 		}
 	}
 }
