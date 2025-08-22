@@ -175,8 +175,8 @@ class PauseScreen {
 
 		haxe.Timer.delay(addEvents, 1);
 
-		if (!pauseProg.isIn(display)) {
-			display.addProgram(pauseProg);
+		if (!display.isVisible) {
+			display.show();
 		}
 	}
 
@@ -205,7 +205,7 @@ class PauseScreen {
 	}
 
 	function shutDown() {
-		if (!pauseProg.isIn(display)) return;
+		if (!display.isVisible) return;
 
 		for (i in 0...pauseOptions.length) {
 			var pauseOption = pauseOptions[i];
@@ -215,8 +215,7 @@ class PauseScreen {
 
 		pauseBuf.removeElement(diffText);
 
-		display.color = 0x00000000;
-		display.removeProgram(pauseProg);
+		display.hide();
 	}
 
 	function dispose() {

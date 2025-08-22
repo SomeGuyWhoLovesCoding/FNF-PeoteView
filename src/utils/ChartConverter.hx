@@ -24,6 +24,7 @@ class ChartConverter
 		var header:FileOutput = File.write('$path/header.txt');
 		var events:FileOutput = File.write('$path/events.txt');
 		var chart: FileOutput = File.write('$path/chart.cbin');
+		var metaNotes:Array<MetaNote> = [];
 
 		trace("Welcome to the Funkin' View chart converter!");
 		trace("Converting base-game chart to CBIN...");
@@ -52,7 +53,7 @@ class ChartConverter
 			gfVersion = "gf";
 		}
 
-		trace("Sorting and adding notes...");
+		trace("Adding base notes before sorting new ones...");
 
 		try {
 			var notes:Array<Dynamic> = song.notes;
@@ -70,7 +71,6 @@ class ChartConverter
 			}
 
 			for (section in notes) {
-				section.sectionNotes.sort((a, b) -> a[0] - b[0]);
 				var sectionNotes:Array<Dynamic> = section.sectionNotes;
 				var mustHitSection:Bool = section.mustHitSection;
 				for (i in 0...sectionNotes.length) {
@@ -86,10 +86,7 @@ class ChartConverter
 						lane
 					);
 
-					var num = newNote.toNumber();
-					chart.writeInt32(num.low);
-					chart.writeInt32(num.high);
-					//trace('Position: ${newNote.position}, Duration: ${newNote.duration}, Id: ${newNote.index}, Type: ${newNote.type}, Lane: ${newNote.lane}');
+					metaNotes.push(newNote);
 				}
 			}
 
@@ -100,8 +97,8 @@ Speed: ${song.speed * 0.45}
 BPM: ${song.bpm}
 Time Signature: 4/4
 Stage: $stage
-Instrumental: $path/Inst.ogg
-Voices: $path/Voices.ogg
+Instrumental: $path/Inst.flac
+Voices: $path/Voices.flac
 Mania: $mania
 Difficulty: #8
 Game Over:
@@ -120,6 +117,17 @@ cam 0 45');
 		} catch (e) {
 			trace(haxe.CallStack.toString(haxe.CallStack.exceptionStack()), e);
 			trace("This may be an invalid base game chart format or there\'s an error in the file.");
+		}
+
+		trace("The real fun.");
+
+		// Now for the REAL fun.
+		metaNotes.sort((a, b) -> (a.position - b.position).low);
+
+		for (metaNote in metaNotes) {
+			var num = metaNote.toNumber();
+			chart.writeInt32(num.low);
+			chart.writeInt32(num.high);
 		}
 
 		chart.close();
