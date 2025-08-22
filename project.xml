@@ -51,5 +51,9 @@
 	<haxedef name="HXCPP_STACK_LINE" />
 	<haxedef name="HXCPP_STACK_TRACE" />
 
+	<haxedef name="HXCPP_CHECK_POINTER" value="0" if="debug" />
+	<haxelib name="hxcpp-debug-server" if="debug" />
+	<haxedef name="keep_inline_positions" if="debug" />
+
 	<icon path="assets/lime.svg" />
 </project>

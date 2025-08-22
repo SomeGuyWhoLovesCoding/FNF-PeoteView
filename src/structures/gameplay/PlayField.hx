@@ -106,6 +106,7 @@ class PlayField implements State {
 
 	function setTime(value:Float, playAgain:Bool = false) {
 		if (disposed || !songStarted || songEnded || paused || died) return;
+		if (value > Mixer.length - 1000) value = Mixer.length - 1000;
 
 		Mixer.setTime(Math.max(value, 0.0), this);
 		if (hud != null && SaveData.state.preferences.ratingPopup) hud.hideRatingPopup();

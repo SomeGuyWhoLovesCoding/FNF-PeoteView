@@ -1,6 +1,7 @@
 #ifndef MA_THING_H
 #define MA_THING_H
 #include <vector>
+#include <stdint.h>
 
 int getMixerState(void);
 double getPlaybackPosition(void);

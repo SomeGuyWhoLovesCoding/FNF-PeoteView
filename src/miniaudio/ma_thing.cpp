@@ -16,6 +16,7 @@
 
 #include <stdio.h>
 #include <vector>
+#include <stdint.h>
 
 /*
 For simplicity, this example requires the device to use floating point samples.
