@@ -6,3 +6,7 @@ obj/
 
 # Application Export
 bin/
+
+# Visual Studio (and code)
+.vs/
+.vscode/
