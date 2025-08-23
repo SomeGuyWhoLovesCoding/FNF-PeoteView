@@ -221,7 +221,6 @@ class PauseScreen {
 			pauseBuf.removeElement(diffText);
 		} catch (e) {}
 
-		display.color = 0x00000000;
 		display.removeProgram(pauseProg);
 	}
 
