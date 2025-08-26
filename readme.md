@@ -95,7 +95,7 @@ Hashlink setup
 
 If you want to compile the hl extern code you just modified, or you just want to set up hashlink compilation, do these two steps:
 
-- `lime setup hl` and copy your path (with `hashlinkBuildXmls/hl`) to the path before pressing enter.
+- (not required) `lime setup hl` and copy your path (with `hashlinkBuildXmls/hl`) to the path before pressing enter.
 
 - Run the build.xml's in "hashlinkBuildXmls" folder at the root source directory.
 
