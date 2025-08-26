@@ -43,7 +43,7 @@ Hashlink 1.15 (located at hashlinkBuildXmls/hl)
 
 You must have haxe 4.3.6 (and newer) installed.
 
-Also, PLEASE. RESTARD THE CMD AFTER SETTING EVERYTHING UP IF YOU GET THIS ERROR.
+Also, PLEASE. RESTARD THE CMD OR YOUR COMPUTER AFTER SETTING EVERYTHING UP IF YOU GET THIS ERROR:
 
 Instll these haxelibs:
 
