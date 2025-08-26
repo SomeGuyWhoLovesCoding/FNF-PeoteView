@@ -47,7 +47,7 @@ class ActorElement implements Element {
 	var mirror(default, set):Bool;
 
 	inline function set_mirror(value:Bool):Bool {
-		_mirror = value ? 1 : 0;
+		_mirror = value ? 1.0 : 0.0;
 		return mirror = value;
 	}
 

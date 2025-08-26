@@ -33,7 +33,7 @@ class Actor extends ActorElement
 	function new(display:CustomDisplay, name:String, x:Int = 0, y:Int = 0, fps:Int = 24, folder:String = "characters/", addBufferAndProgram:Bool = true) {
 		this.display = display;
 
-		super(x, y);
+		super(Math.ffloor(x), Math.ffloor(y));
 
 		this.folder = folder;
 
