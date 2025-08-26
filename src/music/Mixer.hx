@@ -127,6 +127,7 @@ class Mixer {
 	}
 
 	static function update(playField:PlayField, deltaTime:Float):Void {
+		if (playField != null)
 		if (playField.songStarted && (isStopped() || (RenderingMode.enabled && playField.songPosition > length)) && !playField.songEnded) {
 			Sys.println('Stopping song playback due to stop condition or rendering mode.');
 			playField.onStopSong.dispatch(Chart.header);

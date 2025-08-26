@@ -36,8 +36,8 @@
 	<!-- Compile-time feature functionality dedicated to Funkin' View -->
 	<haxedef name="HXCPP_TRACY" if="FV_PROFILE" />
 	<haxedef name="HXCPP_TELEMETRY" if="FV_PROFILE" />
-	<haxedef name="HXCPP_STACK_TRACE" if="FV_PROFILE" />
-	<haxedef name="HXCPP_STACK_LINE" if="FV_PROFILE" />
+	<haxedef name="HXCPP_STACK_TRACE" if="debug" />
+	<haxedef name="HXCPP_STACK_LINE" if="debug" />
 	<haxedef name="HXCPP_TRACY_ON_DEMAND" if="FV_PROFILE" />
 	<haxedef name="HXCPP_TRACY_MEMORY" if="FV_PROFILE" />
 	<!--<haxedef name="FV_DEBUG" />-->

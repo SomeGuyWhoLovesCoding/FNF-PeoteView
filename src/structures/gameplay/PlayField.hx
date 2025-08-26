@@ -419,10 +419,12 @@ class PlayField implements State {
 		songEnded = true;
 		songStarted = false;
 
-		Main.switchState(MAIN_MENU);
+		Mixer.stopMusic();
 
-		// v - This is to make sure the time is reset when starting a song again, otherwise it will mix incorrectly with the previous time and will result in incorrect hit timings.
+		trace('Fuck me');
 		Mixer.setTime(0, null);
+
+		Main.switchState(MAIN_MENU);
 	}
 
 	function gameOver(header:Header, lane:Int) {
@@ -448,7 +450,8 @@ class PlayField implements State {
 		conductor.onMeasure.remove(measureHit);
 
 		Mixer.stopMusic();
-		// v - This is to make sure the time is reset when starting a song again, otherwise it will mix incorrectly with the previous time and will result in incorrect hit timings.
+
+		trace('Fuck me');
 		Mixer.setTime(0, null);
 
 		var char = field.actors[lane + field.numSpectators];

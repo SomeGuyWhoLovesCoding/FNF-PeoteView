@@ -69,7 +69,7 @@ class ActorElement implements Element {
 
 	@color var c:Color = 0xFFFFFFFF;
 
-	function new(x:Float = 0, y:Float = 0) {
+	function new(x:Float = 0.0, y:Float = 0.0) {
 		this.x = x;
 		this.y = y;
 	}
