@@ -13,7 +13,6 @@ using StringTools;
 class Actor extends ActorElement
 {
 	// Stuff for initialization and shit
-
 	static var buffers:Map<String, Buffer<ActorElement>> = [];
 	static var programs:Map<String, Program> = [];
 	static var copiesOfCharacters:Map<String, Int> = [];
@@ -73,13 +72,13 @@ class Actor extends ActorElement
 			if (!programs.exists(displayName)) {
 				var program = programs[displayName] = new Program(buffers[displayName]);
 				program.blendEnabled = true;
+
+				display.addProgram(programs[displayName]);
+
+				var texName = name + "Char";
+				TextureSystem.createTexture(texName, spritesheetDataPath.replace("data.xml", atlas.imagePath));
+				TextureSystem.setTexture(programs[displayName], texName, texName);
 			}
-
-			display.addProgram(programs[displayName]);
-
-			var texName = name + "Char";
-			TextureSystem.createTexture(texName, spritesheetDataPath.replace("data.xml", atlas.imagePath));
-			TextureSystem.setTexture(programs[displayName], texName, texName);
 		}
 
 		setFps(fps);
@@ -89,7 +88,8 @@ class Actor extends ActorElement
 	}
 
 	inline function addToBuffer() {
-		buffers[displayName].addElement(this);
+		if (buffers.exists(displayName))
+			buffers[displayName].addElement(this);
 	}
 
 	static function path(name:String, folder:String, type:CharacterPathType) {
@@ -265,10 +265,7 @@ class Actor extends ActorElement
 	}
 
 	function dispose() {
-		if (programs[displayName] != null) {
-			display.removeProgram(programs[displayName]);
-			display = null;
-		}
+		display = null;
 
 		if (buffers[displayName] != null) buffers[displayName].clear();
 	}
