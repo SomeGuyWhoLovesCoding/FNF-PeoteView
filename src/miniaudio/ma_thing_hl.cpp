@@ -86,6 +86,13 @@ static inline void freeThingies() {
 	free(g_pDecodersVolume);
 }
 
+static inline bool any_active() {
+	for (ma_uint32 i = 0; i < g_decoderCount; ++i) {
+		if (g_pDecodersActive[i]) return true;
+	}
+	return false;
+}
+
 static ma_uint32 read_pcm_frames_f32(ma_uint32 index, float* pBuffer, ma_uint32 frameCount)
 {
 	ma_decoder* pDecoder = &g_pDecoders[index];
@@ -122,6 +129,14 @@ static void data_callback(ma_device* pDevice, void* pOutput, const void* pInput,
 
 	MA_ASSERT(pDevice->playback.format == SAMPLE_FORMAT);
 
+	// Early out if nothing is active
+	if (!any_active()) {
+		memset(pOutputF32, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
+		MIXER_STATE = 3;
+		(void)pInput;
+		return;
+	}
+
 	if (playbackRate == 1.0f) {
 		memset(pOutputF32, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
 
@@ -139,7 +154,7 @@ static void data_callback(ma_device* pDevice, void* pOutput, const void* pInput,
 		}
 	} else {
 		// Temp buffers
-		float inputMix[4096 * CHANNEL_COUNT]     = {0};
+		float inputMix[4096 * CHANNEL_COUNT]        = {0};
 		float stretchedOutput[4096 * CHANNEL_COUNT] = {0};
 
 		ma_uint32 maxFramesToRead = (ma_uint32)(frameCount * playbackRate); // pre-stretch input size
@@ -161,7 +176,7 @@ static void data_callback(ma_device* pDevice, void* pOutput, const void* pInput,
 			}
 		}
 
-		if (g_pDecodersActive[g_pLongestDecoderIndex]) {
+		if (any_active()) {
 			if (stretch == nullptr) {
 				stretch = new signalsmith::stretch::SignalsmithStretch();
 				stretch->presetCheaper(CHANNEL_COUNT, SAMPLE_RATE);
@@ -179,7 +194,7 @@ static void data_callback(ma_device* pDevice, void* pOutput, const void* pInput,
 		}
 	}
 
-	if (!g_pDecodersActive[g_pLongestDecoderIndex]) {
+	if (!any_active()) {
 		// Song finished.
 		MIXER_STATE = 3;
 	}
@@ -193,21 +208,23 @@ HL_PRIM int HL_NAME(get_mixer_state)(_NO_ARG) {
 
 HL_PRIM double HL_NAME(get_playback_position)(_NO_ARG) {
 	ma_uint64 pos = 0;
+	ensure_mutex();
+	ma_mutex_lock(&decoderMutex);
+
 	if (g_pDecodersActive[g_pLongestDecoderIndex] == MA_TRUE) {
-		ensure_mutex();
-		ma_mutex_lock(&decoderMutex);
 		ma_decoder_get_cursor_in_pcm_frames(&g_pDecoders[g_pLongestDecoderIndex], &pos);
-		ma_mutex_unlock(&decoderMutex);
+	} else {
+		pos = g_pDecoderLengths[g_pLongestDecoderIndex]; // report EOF when inactive
 	}
+
+	ma_mutex_unlock(&decoderMutex);
 	return (double)pos / (SAMPLE_RATE * 0.001);
 }
 
 HL_PRIM double HL_NAME(get_duration)(_NO_ARG) {
 	ma_uint64 len = 0;
-	if (g_pDecodersActive[g_pLongestDecoderIndex] == MA_TRUE) {
-		// No lock needed for reading cached length array, but it's harmless.
-		len = g_pDecoderLengths[g_pLongestDecoderIndex];
-	}
+	// cached read, lock optional but harmless
+	len = g_pDecoderLengths[g_pLongestDecoderIndex];
 	return (double)len / (SAMPLE_RATE * 0.001);
 }
 
@@ -216,15 +233,35 @@ HL_PRIM void HL_NAME(seek_to_pcm_frame)(ma_uint64 pos) {
 
 	ensure_mutex();
 	ma_mutex_lock(&decoderMutex);
-	for (iDecoder = 0; iDecoder < g_decoderCount; ++iDecoder) {
-		ma_decoder_seek_to_pcm_frame(&g_pDecoders[iDecoder], pos > 0 ? (ma_int64)pos : 0);
 
-		// If we seek before EOF, reactivate
-		if (pos < g_pDecoderLengths[iDecoder]) {
+	bool anyActive = false;
+
+	for (iDecoder = 0; iDecoder < g_decoderCount; ++iDecoder) {
+		ma_uint64 len = g_pDecoderLengths[iDecoder];
+		ma_uint64 target = 0;
+
+		if (pos == 0) {
+			target = 0;
+		} else if (pos >= len) {
+			target = len; // snap to EOF
+		} else {
+			target = pos;
+		}
+
+		ma_decoder_seek_to_pcm_frame(&g_pDecoders[iDecoder], target);
+
+		// Active only if strictly before EOF
+		if (target < len) {
 			g_pDecodersActive[iDecoder] = MA_TRUE;
+			anyActive = true;
+		} else {
+			g_pDecodersActive[iDecoder] = MA_FALSE;
 		}
 	}
+
 	ma_mutex_unlock(&decoderMutex);
+
+	MIXER_STATE = anyActive ? 1 : 3;
 }
 
 HL_PRIM void HL_NAME(deactivate_decoder_hl)(int index) {
@@ -245,13 +282,13 @@ HL_PRIM void HL_NAME(setPlaybackRate)(float value) {
 
 	playbackRate = value;
 
-	ma_decoder decoder = g_pDecoders[g_pLongestDecoderIndex];
+	ma_decoder* pDecoder = &g_pDecoders[g_pLongestDecoderIndex];
 
 	ma_uint64 cursor2 = 0;
 	if (g_pDecodersActive[g_pLongestDecoderIndex] == MA_TRUE) {
 		ensure_mutex();
 		ma_mutex_lock(&decoderMutex);
-		ma_decoder_get_cursor_in_pcm_frames(&decoder, &cursor2);
+		ma_decoder_get_cursor_in_pcm_frames(pDecoder, &cursor2);
 		ma_mutex_unlock(&decoderMutex);
 	}
 
@@ -261,12 +298,15 @@ HL_PRIM void HL_NAME(setPlaybackRate)(float value) {
 		stretch->presetCheaper(CHANNEL_COUNT, SAMPLE_RATE);
 	}
 	int latencyFrames = stretch->inputLatency();
-	std::vector<float> latencyData(latencyFrames * CHANNEL_COUNT);
+	if (latencyFrames < 0) latencyFrames = 0;
+	std::vector<float> latencyData((size_t)latencyFrames * CHANNEL_COUNT, 0.0f);
 
 	ensure_mutex();
 	ma_mutex_lock(&decoderMutex);
-	ma_decoder_read_pcm_frames(&decoder, latencyData.data(), latencyFrames, nullptr);
-	ma_decoder_seek_to_pcm_frame(&decoder, cursor2);
+	if (latencyFrames > 0) {
+		ma_decoder_read_pcm_frames(pDecoder, latencyData.data(), (ma_uint64)latencyFrames, nullptr);
+		ma_decoder_seek_to_pcm_frame(pDecoder, cursor2);
+	}
 	ma_mutex_unlock(&decoderMutex);
 
 	// Only need to seek from one decoder
@@ -276,7 +316,7 @@ HL_PRIM void HL_NAME(setPlaybackRate)(float value) {
 HL_PRIM void HL_NAME(start)(_NO_ARG) {
 	if (exists == 0) return;
 	if (MIXER_STATE == 3) {
-		// optional: rewind when starting after finished
+		// rewind when starting after finished
 		HL_NAME(seek_to_pcm_frame)(0);
 	}
 	ma_device_start(&device);

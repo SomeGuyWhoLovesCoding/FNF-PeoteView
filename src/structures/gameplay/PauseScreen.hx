@@ -160,10 +160,6 @@ class PauseScreen {
 	function open() {
 		opened = true;
 
-		if (!display.isVisible) {
-			display.show();
-		}
-
 		try {
 			for (i in 0...pauseOptions.length) {
 				var pauseOption = pauseOptions[i];
@@ -221,6 +217,7 @@ class PauseScreen {
 			pauseBuf.removeElement(diffText);
 		} catch (e) {}
 
+		display.color = 0x00000000;
 		display.removeProgram(pauseProg);
 	}
 

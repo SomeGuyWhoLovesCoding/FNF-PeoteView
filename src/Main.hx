@@ -94,7 +94,7 @@ class Main extends Application
 			}
 		} catch (_) trace(haxe.CallStack.toString(haxe.CallStack.exceptionStack()), _);
 
-		GC.run(10);
+		//GC.run(10);
 		GC.enable(false);
 
 		var peoteView = Main.current.peoteView;

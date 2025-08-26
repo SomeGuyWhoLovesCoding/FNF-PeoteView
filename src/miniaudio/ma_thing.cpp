@@ -17,6 +17,7 @@
 #include <stdio.h>
 #include <vector>
 #include <stdint.h>
+#include <string.h>
 
 /*
 For simplicity, this example requires the device to use floating point samples.
@@ -75,20 +76,21 @@ int getMixerState() {
 
 double getPlaybackPosition() {
 	ma_uint64 pos = 0;
+	ensure_mutex();
+	ma_mutex_lock(&decoderMutex);
+
 	if (g_pDecodersActive[g_pLongestDecoderIndex] == MA_TRUE) {
-		ensure_mutex();
-		ma_mutex_lock(&decoderMutex);
 		ma_decoder_get_cursor_in_pcm_frames(&g_pDecoders[g_pLongestDecoderIndex], &pos);
-		ma_mutex_unlock(&decoderMutex);
+	} else {
+		pos = g_pDecoderLengths[g_pLongestDecoderIndex]; // report EOF
 	}
+
+	ma_mutex_unlock(&decoderMutex);
 	return (double)pos / (SAMPLE_RATE * 0.001);
 }
 
 double getDuration() {
-	ma_uint64 length = 0;
-	if (g_pDecodersActive[g_pLongestDecoderIndex] == MA_TRUE) {
-		length = g_pDecoderLengths[g_pLongestDecoderIndex];
-	}
+	ma_uint64 length = g_pDecoderLengths[g_pLongestDecoderIndex];
 	return (double)length / (SAMPLE_RATE * 0.001);
 }
 
@@ -97,15 +99,34 @@ void seekToPCMFrame(int64_t pos) {
 
 	ensure_mutex();
 	ma_mutex_lock(&decoderMutex);
-	for (iDecoder = 0; iDecoder < g_decoderCount; ++iDecoder) {
-		ma_decoder_seek_to_pcm_frame(&g_pDecoders[iDecoder], pos > 0 ? pos : 0);
 
-		// If we seek to before EOF, reactivate
-		if (pos < g_pDecoderLengths[iDecoder]) {
+	bool anyActive = false;
+
+	for (iDecoder = 0; iDecoder < g_decoderCount; ++iDecoder) {
+		ma_uint64 len = g_pDecoderLengths[iDecoder];
+		ma_uint64 target = 0;
+
+		if (pos <= 0) {
+			target = 0;
+		} else if ((ma_uint64)pos >= len) {
+			target = len; // snap to EOF
+		} else {
+			target = (ma_uint64)pos;
+		}
+
+		ma_decoder_seek_to_pcm_frame(&g_pDecoders[iDecoder], target);
+
+		if (target < len) {
 			g_pDecodersActive[iDecoder] = MA_TRUE;
+			anyActive = true;
+		} else {
+			g_pDecodersActive[iDecoder] = MA_FALSE;
 		}
 	}
+
 	ma_mutex_unlock(&decoderMutex);
+
+	MIXER_STATE = anyActive ? 1 : 3;
 }
 
 void freeThingies() {
@@ -144,11 +165,24 @@ ma_uint32 read_pcm_frames_f32(ma_uint32 index, float* pBuffer, ma_uint32 frameCo
 	return totalFramesRead;
 }
 
+static inline bool any_active() {
+	for (ma_uint32 i = 0; i < g_decoderCount; ++i) {
+		if (g_pDecodersActive[i]) return true;
+	}
+	return false;
+}
+
 void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
 {
 	float* pOutputF32 = (float*)pOutput;
-
 	MA_ASSERT(pDevice->playback.format == SAMPLE_FORMAT);
+
+	if (!any_active()) {
+		memset(pOutputF32, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
+		MIXER_STATE = 3;
+		(void)pInput;
+		return;
+	}
 
 	if (playbackRate == 1.0f) {
 		memset(pOutputF32, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
@@ -160,19 +194,18 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
 			ma_mutex_lock(&decoderMutex);
 			ma_uint32 framesRead = read_pcm_frames_f32(i, pOutputF32, frameCount);
 			ma_mutex_unlock(&decoderMutex);
+
 			if (framesRead == 0) {
 				g_pDecodersActive[i] = MA_FALSE;
 			}
 		}
 	} else {
-		// Temp buffers
 		float inputMix[4096 * CHANNEL_COUNT] = {0};
 		float stretchedOutput[4096 * CHANNEL_COUNT] = {0};
 
-		ma_uint32 maxFramesToRead = (ma_uint32)(frameCount * playbackRate); // pre-stretch input size
+		ma_uint32 maxFramesToRead = (ma_uint32)(frameCount * playbackRate);
 		if (maxFramesToRead > 4096) maxFramesToRead = 4096;
 
-		// reset mix buffer each callback
 		memset(inputMix, 0, sizeof(inputMix));
 
 		for (ma_uint32 i = 0; i < g_decoderCount; ++i) {
@@ -182,31 +215,25 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
 			ma_mutex_lock(&decoderMutex);
 			ma_uint32 framesRead = read_pcm_frames_f32(i, inputMix, maxFramesToRead);
 			ma_mutex_unlock(&decoderMutex);
+
 			if (framesRead == 0) {
 				g_pDecodersActive[i] = MA_FALSE;
 			}
 		}
 
-		if (g_pDecodersActive[g_pLongestDecoderIndex]) {
+		if (any_active()) {
 			if (stretch == nullptr) {
 				stretch = new signalsmith::stretch::SignalsmithStretch();
 				stretch->presetCheaper(CHANNEL_COUNT, SAMPLE_RATE);
 			}
-			stretch->process(
-				inputMix,
-				maxFramesToRead,
-				stretchedOutput,
-				frameCount
-			);
-
+			stretch->process(inputMix, maxFramesToRead, stretchedOutput, frameCount);
 			memcpy(pOutputF32, stretchedOutput, sizeof(float) * frameCount * CHANNEL_COUNT);
 		} else {
 			memset(pOutputF32, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
 		}
 	}
 
-	if (!g_pDecodersActive[g_pLongestDecoderIndex]) {
-		// If you've reached this point, that means the song has finished.
+	if (!any_active()) {
 		MIXER_STATE = 3;
 	}
 
@@ -225,35 +252,36 @@ void amplify_decoder(int index, double volume) {
 
 void setPlaybackRate(float value) {
 	if (exists == 0) return;
-	if (value == playbackRate) return; // No change
+	if (value == playbackRate) return;
 
 	playbackRate = value;
 
-	ma_decoder decoder = g_pDecoders[g_pLongestDecoderIndex];
+	ma_decoder* pDecoder = &g_pDecoders[g_pLongestDecoderIndex];
 
 	ma_uint64 cursor2 = 0;
 	if (g_pDecodersActive[g_pLongestDecoderIndex] == MA_TRUE) {
 		ensure_mutex();
 		ma_mutex_lock(&decoderMutex);
-		ma_decoder_get_cursor_in_pcm_frames(&decoder, &cursor2);
+		ma_decoder_get_cursor_in_pcm_frames(pDecoder, &cursor2);
 		ma_mutex_unlock(&decoderMutex);
 	}
 
-	// Reset stretch state with new rate
 	if (stretch == nullptr) {
 		stretch = new signalsmith::stretch::SignalsmithStretch();
 		stretch->presetCheaper(CHANNEL_COUNT, SAMPLE_RATE);
 	}
 	int latencyFrames = stretch->inputLatency();
-	std::vector<float> latencyData(latencyFrames * CHANNEL_COUNT);
+	if (latencyFrames < 0) latencyFrames = 0;
+	std::vector<float> latencyData((size_t)latencyFrames * CHANNEL_COUNT, 0.0f);
 
 	ensure_mutex();
 	ma_mutex_lock(&decoderMutex);
-	ma_decoder_read_pcm_frames(&decoder, latencyData.data(), latencyFrames, NULL);
-	ma_decoder_seek_to_pcm_frame(&decoder, cursor2);
+	if (latencyFrames > 0) {
+		ma_decoder_read_pcm_frames(pDecoder, latencyData.data(), (ma_uint64)latencyFrames, NULL);
+		ma_decoder_seek_to_pcm_frame(pDecoder, cursor2);
+	}
 	ma_mutex_unlock(&decoderMutex);
 
-	// only need to seek from one decoder
 	stretch->seek(latencyData.data(), latencyFrames, playbackRate);
 }
 
@@ -345,7 +373,6 @@ void loadFiles(std::vector<const char*> argv)
 		exists = 1;
 	}
 
-	/* Create only a single device. The decoders will be mixed together in the callback. In this example the data format needs to be the same as the decoders. */
 	deviceConfig = ma_device_config_init(ma_device_type_playback);
 	deviceConfig.playback.format   = SAMPLE_FORMAT;
 	deviceConfig.playback.channels = CHANNEL_COUNT;
