@@ -2,7 +2,6 @@ package elements.actor.sparrow;
 
 import atlas.SparrowAtlas.SubTexture;
 import elements.actor.*;
-using StringTools;
 
 /**
 	Sparrow atlas actor element object.
@@ -76,7 +75,7 @@ class Actor extends ActorElement
 				display.addProgram(programs[displayName]);
 
 				var texName = name + "Char";
-				TextureSystem.createTexture(texName, spritesheetDataPath.replace("data.xml", atlas.imagePath));
+				TextureSystem.createTexture(texName, StringTools.replace(spritesheetDataPath, "data.xml", atlas.imagePath));
 				TextureSystem.setTexture(programs[displayName], texName, texName);
 			}
 		}

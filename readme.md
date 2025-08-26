@@ -43,6 +43,8 @@ Hashlink 1.15 (located at hashlinkBuildXmls/hl)
 
 You must have haxe 4.3.6 (and newer) installed.
 
+Also, PLEASE. RESTARD THE CMD AFTER SETTING EVERYTHING UP IF YOU GET THIS ERROR.
+
 Instll these haxelibs:
 
 Lime - Clone [this lime fork](https://github.com/SomeGuyWhoLovesCoding/lime), do ``haxelib dev lime [path you cloned the fork at]``, THEN do ``lime rebuild tools`` and ``lime rebuild <platform>``, and for future rebuilds you just do the same ``lime rebuild <platform>``. (Thanks to lavender for fixing the main loop fuckery)
