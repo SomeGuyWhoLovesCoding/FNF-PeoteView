@@ -43,7 +43,9 @@ Hashlink 1.15 (located at hashlinkBuildXmls/hl)
 
 You must have haxe 4.3.6 (and newer) installed.
 
-Also, PLEASE. RESTARD THE CMD OR YOUR COMPUTER AFTER SETTING EVERYTHING UP IF YOU GET THIS ERROR:
+Also, PLEASE. RESTARD THE CMD OR YOUR COMPUTER AFTER SETTING EVERYTHING UP IF YOU GET THIS ERROR: <img width="1547" height="631" alt="image" src="https://github.com/user-attachments/assets/54aed85b-34b8-4245-9aaa-8be73152f97b" />
+
+(image source: funkin-view at Loturzeltümpel)
 
 Instll these haxelibs:
 
