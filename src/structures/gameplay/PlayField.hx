@@ -519,7 +519,6 @@ class PlayField implements State {
 		onKeyRelease = null;
 
 		songEnded = true;
-		GC.run();
 
 		Chart.destroy();
 
