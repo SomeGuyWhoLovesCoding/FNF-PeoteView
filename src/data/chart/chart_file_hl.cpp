@@ -40,10 +40,6 @@ int fd = -1;
 std::vector<std::vector<int64_t>> blocks;
 std::vector<int64_t> blockOffsets;
 
-// Last-accessed block cache
-static size_t lastBlockIndex = 0;
-static std::vector<int64_t>* lastBlockPtr = nullptr;
-
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
@@ -82,10 +78,6 @@ static void rebuildBlockOffsets() {
         sum += b.size();
     }
     length = sum;
-
-    // Reset cache on rebuild
-    lastBlockIndex = 0;
-    lastBlockPtr = blocks.empty() ? nullptr : &blocks[0];
 }
 
 static int64_t findBlock(int64_t index, int64_t& offsetInBlock) {
@@ -152,28 +144,12 @@ HL_PRIM void HL_NAME(destroyChart)(_NO_ARG) {
     blockOffsets.clear();
     mapped_bytes = 0;
     length = 0;
-    lastBlockPtr = nullptr;
-    lastBlockIndex = 0;
 }
 
 HL_PRIM int64_t HL_NAME(getNote)(int64_t index) {
-    if (index < 0 || index >= length) throw std::out_of_range("index out of range");
-
-    size_t offsetInBlock;
-    std::vector<int64_t>* blk;
-
-    // Fast path: use last accessed block
-    if (lastBlockPtr && index >= blockOffsets[lastBlockIndex] &&
-        index < blockOffsets[lastBlockIndex] + lastBlockPtr->size()) {
-        blk = lastBlockPtr;
-        offsetInBlock = index - blockOffsets[lastBlockIndex];
-    } else {
-        lastBlockIndex = findBlock(index, (int64_t&)offsetInBlock);
-        blk = &blocks[lastBlockIndex];
-        lastBlockPtr = blk;
-    }
-
-    return (*blk)[offsetInBlock];
+    int64_t offset;
+    int64_t blk = findBlock(index, offset);
+    return blocks[blk][offset];
 }
 
 HL_PRIM void HL_NAME(setNote)(int64_t index, int64_t value) {
@@ -185,7 +161,7 @@ HL_PRIM void HL_NAME(setNote)(int64_t index, int64_t value) {
 HL_PRIM int64_t HL_NAME(getLength)(_NO_ARG) { return length; }
 
 // -----------------------------------------------------------------------------
-// Insert / Remove / Append / Shrink
+// Insert / Remove
 // -----------------------------------------------------------------------------
 HL_PRIM void HL_NAME(insertNote)(int64_t index, int64_t value) {
     if (index < 0 || index > length) throw std::out_of_range("index out of range");
@@ -228,6 +204,9 @@ HL_PRIM void HL_NAME(removeNote)(int64_t index) {
     rebuildBlockOffsets();
 }
 
+// -----------------------------------------------------------------------------
+// Append
+// -----------------------------------------------------------------------------
 HL_PRIM void HL_NAME(appendNote)(int64_t value) {
     if (blocks.empty() || blocks.back().size() >= NOTES_PER_BLOCK)
         blocks.emplace_back();
@@ -235,6 +214,9 @@ HL_PRIM void HL_NAME(appendNote)(int64_t value) {
     rebuildBlockOffsets();
 }
 
+// -----------------------------------------------------------------------------
+// Shrink File
+// -----------------------------------------------------------------------------
 HL_PRIM void HL_NAME(shrinkFileIfNeeded)(_NO_ARG) {
     while (!blocks.empty() && blocks.back().empty())
         blocks.pop_back();
