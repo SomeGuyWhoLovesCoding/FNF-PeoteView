@@ -129,7 +129,6 @@ class NoteSpawner {
 	 */
 	function resetNotes(songPosition:Float) {
 		var pf = parent.parent;
-
 		if (pf.disposed || pf.died) return;
 
 		parent.notesHit.clear();
@@ -137,33 +136,63 @@ class NoteSpawner {
 		parent.notesHeld.clear();
 
 		var len = File.getLength();
-
-		var incrementAmount = (len / 100) * 25;
-		var decrementAmount = (len / 100) * 12;
+		if (len <= 0) return; // no notes, nothing to do
 
 		var songPos = Tools.betterInt64FromFloat(songPosition * 100);
 		var songPosTop = songPos + spawnDist;
 
-		if (File.getNote(0).position > songPosTop || File.getNote(0).position > songPos) {
+		// --- Fast check: before first note ---
+		var firstNote = File.getNote(0);
+		if (firstNote.position > songPosTop || firstNote.position > songPos) {
 			top = bottom = 0;
-			curBottomNote = curTopNote = File.getNote(0);
+			curBottomNote = curTopNote = firstNote;
 			parent.resetStrumlines();
 			return;
 		}
 
-		var lenSub1 = len - 1;
-
-		while (File.getNote(top).position < songPosTop) {
-			if ((top += incrementAmount) > lenSub1) top = lenSub1;
+		// --- Fast check: after last note ---
+		var lastNote = File.getNote(len - 1);
+		if (lastNote.position < songPos) {
+			// clamp to last note so we don't freeze
+			top = bottom = len - 1;
+			curBottomNote = curTopNote = lastNote;
+			parent.resetStrumlines();
+			return;
 		}
-		while (File.getNote(top--).position > songPosTop) {}
 
-		bottom = top;
-
-		while (File.getNote(bottom).position > songPos) {
-			if ((bottom -= decrementAmount) < zero) bottom = zero;
+		// --- Binary search helpers ---
+		inline function lowerBound(target:Int64):Int64 {
+			var lo:Int64 = 0;
+			var hi:Int64 = len;
+			while (lo < hi) {
+				var mid = (lo + hi) >> 1;
+				if (File.getNote(mid).position < target)
+					lo = mid + 1;
+				else
+					hi = mid;
+			}
+			return lo;
 		}
-		while (File.getNote(bottom++).position < songPos) {}
+		inline function upperBound(target:Int64):Int64 {
+			var lo:Int64 = 0;
+			var hi:Int64 = len;
+			while (lo < hi) {
+				var mid = (lo + hi) >> 1;
+				if (File.getNote(mid).position <= target)
+					lo = mid + 1;
+				else
+					hi = mid;
+			}
+			return lo;
+		}
+
+		// --- Find bottom (first note >= songPos) ---
+		bottom = lowerBound(songPos);
+		if (bottom >= len) bottom = len - 1;
+
+		// --- Find top (last note <= songPosTop) ---
+		top = upperBound(songPosTop) - 1;
+		if (top < 0) top = 0;
 
 		curBottomNote = File.getNote(bottom);
 		curTopNote = File.getNote(top);
