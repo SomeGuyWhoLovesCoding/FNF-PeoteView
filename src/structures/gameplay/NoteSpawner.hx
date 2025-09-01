@@ -173,6 +173,7 @@ class NoteSpawner {
 			}
 			return lo;
 		}
+
 		inline function upperBound(target:Int64):Int64 {
 			var lo:Int64 = 0;
 			var hi:Int64 = len;

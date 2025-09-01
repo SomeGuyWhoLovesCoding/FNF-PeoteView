@@ -419,8 +419,6 @@ class PlayField implements State {
 		songEnded = true;
 		songStarted = false;
 
-		Mixer.stopMusic();
-
 		trace('Fuck me');
 		Mixer.setTime(0, null);
 

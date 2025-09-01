@@ -71,7 +71,9 @@ class Mixer {
 
 	static function setTime(value:Float, playfield:PlayField) {
 		MiniAudio.seekToPCMFrame(Tools.betterInt64FromFloat(value * 0.001) * sampleRate);
-		if (playfield != null) playfield.songPosition = MiniAudio.getPlaybackPosition();
+		if (playfield != null) {
+			if (playfield.songEnded) playfield.songPosition = MiniAudio.getPlaybackPosition();
+		}
 	}
 
 	static public function load(files:Array<String>):Void { // Don't rename this to `loadFiles` as it will conflict with the MiniAudio extern class
@@ -127,16 +129,17 @@ class Mixer {
 	}
 
 	static function update(playField:PlayField, deltaTime:Float):Void {
-		if (playField != null)
-		if (playField.songStarted && (isStopped() || (RenderingMode.enabled && playField.songPosition > length)) && !playField.songEnded) {
-			Sys.println('Stopping song playback due to stop condition or rendering mode.');
-			playField.onStopSong.dispatch(Chart.header);
-		}
+		if (playField != null) {
+			if (playField.songStarted && (isStopped() || (RenderingMode.enabled && playField.songPosition > length)) && !playField.songEnded) {
+				Sys.println('Stopping song playback due to stop condition or rendering mode.');
+				playField.onStopSong.dispatch(Chart.header);
+			}
 
-		if (!playField.songStarted || playField.songEnded || RenderingMode.enabled) {
-			playField.songPosition += deltaTime;
-		} else {
-			updateSmoothMusicTime(deltaTime, playField);
+			if (!playField.songStarted || playField.songEnded || RenderingMode.enabled) {
+				playField.songPosition += deltaTime;
+			} else {
+				updateSmoothMusicTime(deltaTime, playField);
+			}
 		}
 	}
 }

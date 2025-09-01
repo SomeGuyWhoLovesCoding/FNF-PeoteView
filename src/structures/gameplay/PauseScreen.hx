@@ -40,10 +40,6 @@ class PauseScreen {
 		}
 	}
 
-	inline static function active() {
-		return display.isVisible;
-	}
-
 	function new(difficulty:Difficulty) {
 		var currentY = 200;
 		for (i in 0...4) {

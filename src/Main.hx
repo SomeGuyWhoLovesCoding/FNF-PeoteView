@@ -94,9 +94,6 @@ class Main extends Application
 			}
 		} catch (_) trace(haxe.CallStack.toString(haxe.CallStack.exceptionStack()), _);
 
-		//GC.run(10);
-		GC.enable(false);
-
 		var peoteView = Main.current.peoteView;
 	}
 
@@ -183,6 +180,9 @@ class Main extends Application
 				mouseDown(x, y, button);
 			});
 
+			GC.run(10);
+			GC.enable(false);
+
 			_started = true;
 		}, 100);
 	}
@@ -263,8 +263,9 @@ class Main extends Application
 			// The if check is to prevent the div operation from running every frame even though `newDeltaTimeSeconds` will be 0 most of the time
 			newDeltaTimeSeconds = deltaTime < 1000000000 ? 0 : Int64.div(deltaTime, 1000000000).low;
 			newDeltaTime = newDeltaTimeSeconds + (Int64.mod(deltaTime, 1000000000).low * 0.000001);
+			//Sys.println(newDeltaTime);
 
-			try {
+			//try {
 				if (mainMenu != null && !mainMenu.disposed) {
 					mainMenu.update(newDeltaTime);
 				}
@@ -272,11 +273,8 @@ class Main extends Application
 				if (playField != null && !playField.disposed) {
 					if (!playField.paused) {
 						playField.update(newDeltaTime);
-					}
-
-					if (PauseScreen.active()) {
-						var pauseScreen = playField.pauseScreen;
-						pauseScreen.update(newDeltaTime);
+					} else {
+						playField.pauseScreen.update(newDeltaTime);
 					}
 				}
 
@@ -291,9 +289,9 @@ class Main extends Application
 				if (storyMenu.active) {
 					storyMenu.update(newDeltaTime);
 				}
-			} catch (_) {
-				trace(haxe.CallStack.toString(haxe.CallStack.exceptionStack()));
-			}
+			//} catch (_) {
+			//	trace(haxe.CallStack.toString(haxe.CallStack.exceptionStack()));
+			//}
 		}
 
 		Tools.profileFrame();
