@@ -29,6 +29,13 @@ HANDLE hMap  = NULL;
 int fd = -1;
 #endif
 
+// ---------------- Ultra-fast strategy: Three-element deferred operations ----------------
+// Raw int64_t array structure: [1048576][3]
+// Element 0: index, Element 1: value, Element 2: operation type (1=insert, 0=remove)
+static int64_t deferredOps[1048576][3];
+static int64_t opCount = 0;
+static bool isDirty = false;
+
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
@@ -61,6 +68,95 @@ static bool remap(size_t newLength) {
     return true;
 }
 
+static void flushDeferred() {
+    if (!isDirty || opCount == 0) return;
+    
+    // Calculate final size using raw array elements
+    int64_t netChange = 0;
+    for (int64_t i = 0; i < opCount; ++i) {
+        netChange += deferredOps[i][2] ? 1 : -1; // Element 2 contains operation type
+    }
+    
+    int64_t finalLength = length + netChange;
+    if (finalLength < 0) finalLength = 0;
+    
+    // Single remap to final size
+    if (!remap(finalLength)) {
+        throw std::runtime_error("failed to resize for deferred operations");
+    }
+    
+    // Sort by index (descending) for optimal processing
+    for (int64_t i = 0; i < opCount - 1; ++i) {
+        for (int64_t j = i + 1; j < opCount; ++j) {
+            if (deferredOps[i][0] < deferredOps[j][0]) { // Element 0 contains index
+                // Swap all three elements
+                for (int k = 0; k < 3; ++k) {
+                    int64_t temp = deferredOps[i][k];
+                    deferredOps[i][k] = deferredOps[j][k];
+                    deferredOps[j][k] = temp;
+                }
+            }
+        }
+    }
+    
+    // Apply operations from highest index to lowest
+    for (int64_t i = 0; i < opCount; ++i) {
+        int64_t index = deferredOps[i][0];  // Element 0: index
+        int64_t value = deferredOps[i][1];  // Element 1: value
+        bool isInsert = deferredOps[i][2];  // Element 2: operation type
+        
+        if (isInsert) {
+            if (index < length - 1) {
+                // Use fast 8-byte aligned copy
+                int64_t* src = &data[index];
+                int64_t* dst = &data[index + 1];
+                int64_t moveCount = length - index - 1;
+                
+                // Ultra-fast: copy 8 elements at a time using manual unrolling
+                while (moveCount >= 8) {
+                    dst[moveCount-1] = src[moveCount-1];
+                    dst[moveCount-2] = src[moveCount-2]; 
+                    dst[moveCount-3] = src[moveCount-3];
+                    dst[moveCount-4] = src[moveCount-4];
+                    dst[moveCount-5] = src[moveCount-5];
+                    dst[moveCount-6] = src[moveCount-6];
+                    dst[moveCount-7] = src[moveCount-7];
+                    dst[moveCount-8] = src[moveCount-8];
+                    moveCount -= 8;
+                }
+                // Handle remainder
+                while (moveCount > 0) {
+                    dst[moveCount-1] = src[moveCount-1];
+                    moveCount--;
+                }
+            }
+            data[index] = value;
+        } else { // Remove
+            if (index < length - 1) {
+                // Fast removal with unrolled copy
+                int64_t* dst = &data[index];
+                int64_t* src = &data[index + 1];
+                int64_t moveCount = length - index - 1;
+                
+                // Copy 8 elements at a time
+                while (moveCount >= 8) {
+                    dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2]; dst[3] = src[3];
+                    dst[4] = src[4]; dst[5] = src[5]; dst[6] = src[6]; dst[7] = src[7];
+                    dst += 8; src += 8; moveCount -= 8;
+                }
+                // Handle remainder
+                while (moveCount > 0) {
+                    *dst++ = *src++;
+                    moveCount--;
+                }
+            }
+        }
+    }
+    
+    opCount = 0;
+    isDirty = false;
+}
+
 // -----------------------------------------------------------------------------
 // API
 // -----------------------------------------------------------------------------
@@ -85,19 +181,34 @@ HL_PRIM void HL_NAME(loadChart)(vstring *inFile) {
 #endif
 
     if (!remap(length)) throw std::runtime_error("failed to map file");
+    
+    // Clear the three-element array structure
+    memset(deferredOps, 0, sizeof(deferredOps));
+    opCount = 0;
+    isDirty = false;
 }
 
 HL_PRIM int64_t HL_NAME(getNote)(int64_t index) {
+    flushDeferred(); // Ensure we're reading current state
     if (index < 0 || index >= length) throw std::out_of_range("index out of range");
     return data[index];
 }
 
 HL_PRIM void HL_NAME(setNote)(int64_t index, int64_t value) {
+    flushDeferred(); // Ensure consistent state
     if (index < 0 || index >= length) throw std::out_of_range("index out of range");
     data[index] = value;
 }
 
-HL_PRIM int64_t HL_NAME(getLength)(_NO_ARG) { return length; }
+HL_PRIM int64_t HL_NAME(getLength)(_NO_ARG) { 
+    if (!isDirty) return length;
+    
+    int64_t change = 0;
+    for (int64_t i = 0; i < opCount; ++i) {
+        change += deferredOps[i][2] ? 1 : -1; // Element 2 contains operation type
+    }
+    return length + change;
+}
 
 HL_PRIM void HL_NAME(destroyChart)(_NO_ARG) {
 #ifdef _WIN32
@@ -113,26 +224,56 @@ HL_PRIM void HL_NAME(destroyChart)(_NO_ARG) {
     data = nullptr; fd = -1;
 #endif
     length = 0;
+    memset(deferredOps, 0, sizeof(deferredOps));
+    opCount = 0;
+    isDirty = false;
 }
 
-// -----------------------------------------------------------------------------
-// Insert / Remove
-// -----------------------------------------------------------------------------
-HL_PRIM void HL_NAME(insertNote)(int64_t index, int64_t value) {
-    if (index < 0 || index > length) throw std::out_of_range("index out of range");
-    if (!remap(length + 1)) throw std::runtime_error("failed to resize file");
-    if (index < length) {
-        memmove(&data[index + 1], &data[index], (length - index) * sizeof(int64_t));
+// ---------------- FASTEST insert/remove functions ----------------
+HL_PRIM void HL_NAME(insertNote)(int64_t index, int64_t value, bool autoflush) {
+    if (index < 0 || index > getLength()) {
+        throw std::out_of_range("index out of range");
     }
-    data[index] = value;
+    
+    // Use raw int64_t array: [0]=index, [1]=value, [2]=operation type
+    if (opCount < 1048576 && !autoflush) {
+        deferredOps[opCount][0] = index;
+        deferredOps[opCount][1] = value;
+        deferredOps[opCount][2] = 1; // 1 = insert
+        opCount++;
+        isDirty = true;
+    } else {
+        // Array full or autoflush requested - flush and add
+        flushDeferred();
+        deferredOps[0][0] = index;
+        deferredOps[0][1] = value;
+        deferredOps[0][2] = 1; // 1 = insert
+        opCount = 1;
+        isDirty = true;
+    }
 }
 
-HL_PRIM void HL_NAME(removeNote)(int64_t index) {
-    if (index < 0 || index >= length) throw std::out_of_range("index out of range");
-    if (index < length - 1) {
-        memmove(&data[index], &data[index + 1], (length - index - 1) * sizeof(int64_t));
+HL_PRIM void HL_NAME(removeNote)(int64_t index, bool autoflush) {
+    if (index < 0 || index >= getLength()) {
+        throw std::out_of_range("index out of range");
     }
-    if (!remap(length - 1)) throw std::runtime_error("failed to shrink file");
+    
+    // Use raw int64_t array: [0]=index, [1]=value, [2]=operation type
+    if (opCount < 1048576 && !autoflush) {
+        deferredOps[opCount][0] = index;
+        deferredOps[opCount][1] = 0; // value unused for remove
+        deferredOps[opCount][2] = 0; // 0 = remove
+        opCount++;
+        isDirty = true;
+    } else {
+        // Array full or autoflush requested - flush and add
+        flushDeferred();
+        deferredOps[0][0] = index;
+        deferredOps[0][1] = 0; // value unused for remove
+        deferredOps[0][2] = 0; // 0 = remove
+        opCount = 1;
+        isDirty = true;
+    }
 }
 
 // -----------------------------------------------------------------------------
@@ -143,5 +284,5 @@ DEFINE_PRIM(_I64, getNote, _I64)
 DEFINE_PRIM(_VOID, setNote, _I64 _I64)
 DEFINE_PRIM(_I64, getLength, _NO_ARG)
 DEFINE_PRIM(_VOID, destroyChart, _NO_ARG)
-DEFINE_PRIM(_VOID, insertNote, _I64 _I64)
-DEFINE_PRIM(_VOID, removeNote, _I64 _I64)
+DEFINE_PRIM(_VOID, insertNote, _I64 _I64 _BOOL)
+DEFINE_PRIM(_VOID, removeNote, _I64 _BOOL)

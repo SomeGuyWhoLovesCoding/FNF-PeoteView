@@ -419,7 +419,6 @@ class PlayField implements State {
 		songEnded = true;
 		songStarted = false;
 
-		trace('Fuck me');
 		Mixer.setTime(0, null);
 
 		Main.switchState(MAIN_MENU);
@@ -449,7 +448,6 @@ class PlayField implements State {
 
 		Mixer.stopMusic();
 
-		trace('Fuck me');
 		Mixer.setTime(0, null);
 
 		var char = field.actors[lane + field.numSpectators];
