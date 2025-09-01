@@ -15,6 +15,7 @@ import lime.ui.MouseWheelMode;
 **/
 @:publicFields
 class PauseScreen {
+	var disposed(default, null):Bool = false;
 	private static var display(default, null):CustomDisplay;
 	static var pauseBuf(default, null):Buffer<StoryModeSprite>;
 	static var pauseProg(default, null):Program;
@@ -232,5 +233,7 @@ class PauseScreen {
 				diffText = null;
 			} catch (e) {}
 		}
+
+		disposed = true;
 	}
 }

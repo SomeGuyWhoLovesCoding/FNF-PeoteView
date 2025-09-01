@@ -48,11 +48,7 @@ class Main extends Application
 		switch (window.context.type)
 		{
 			case WEBGL, OPENGL, OPENGLES:
-				try {
-					startSample(window);
-				} catch (_) {
-					trace(CallStack.toString(CallStack.exceptionStack()), _);
-				}
+				startSample(window);
 			default: throw("Sorry, only works with OpenGL.");
 		}
 	}
@@ -62,37 +58,33 @@ class Main extends Application
 	static public function switchState(newState:StateSelection) {
 		var instance = Main.current;
 
-		try {
-			switch (instance.currentState) {
-				case MAIN_MENU:
-					instance.mainMenu.dispose();
-					instance.mainMenu = null;
-				case GAMEPLAY:
-					instance.playField.dispose();
-					instance.playField = null;
-				case AWARDS:
-				case CREDITS:
-				case NONE:
-			}
-		} catch (_) trace(haxe.CallStack.toString(haxe.CallStack.exceptionStack()), _);
+		switch (instance.currentState) {
+			case MAIN_MENU:
+				instance.mainMenu.dispose();
+				instance.mainMenu = null;
+			case GAMEPLAY:
+				instance.playField.dispose();
+				instance.playField = null;
+			case AWARDS:
+			case CREDITS:
+			case NONE:
+		}
 
 		instance.currentState = newState;
 
-		try {
-			switch (newState) {
-				case MAIN_MENU:
-					//trace('That\'s it I\'m crashing out');
-					instance.mainMenu = new MainMenu();
-					instance.mainMenu.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
-				case GAMEPLAY:
-					instance.playField = new PlayField(songChosen);
-					instance.playField.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
-					instance.playField.downScroll = SaveData.state.preferences.downScroll;
-				case AWARDS:
-				case CREDITS:
-				case NONE:
-			}
-		} catch (_) trace(haxe.CallStack.toString(haxe.CallStack.exceptionStack()), _);
+		switch (newState) {
+			case MAIN_MENU:
+				//trace('That\'s it I\'m crashing out');
+				instance.mainMenu = new MainMenu();
+				instance.mainMenu.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
+			case GAMEPLAY:
+				instance.playField = new PlayField(songChosen);
+				instance.playField.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
+				instance.playField.downScroll = SaveData.state.preferences.downScroll;
+			case AWARDS:
+			case CREDITS:
+			case NONE:
+		}
 
 		var peoteView = Main.current.peoteView;
 	}
@@ -271,10 +263,13 @@ class Main extends Application
 				}
 
 				if (playField != null && !playField.disposed) {
+					if (playField.pauseScreen != null) {
+						var pauseScreen = playField.pauseScreen;
+						if (!pauseScreen.disposed) pauseScreen.update(newDeltaTime);
+					}
+
 					if (!playField.paused) {
 						playField.update(newDeltaTime);
-					} else {
-						playField.pauseScreen.update(newDeltaTime);
 					}
 				}
 
