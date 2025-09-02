@@ -51,6 +51,22 @@ class Main extends Application
 				startSample(window);
 			default: throw("Sorry, only works with OpenGL.");
 		}
+
+		#if chart_test
+		// START CHART SAMPLE
+		var stamp = haxe.Timer.stamp();
+		trace("Insert 1,000,000 notes");
+		Chart.load("assets/songs/god-eater");
+		for (i in 0...1000000) {
+			File.insertNote(new MetaNote(Tools.betterInt64FromFloat((1000 + (200 * i)) * 100),
+				Math.floor(100 * 0.2), // Equal to `note.duration / 5`.
+				i % 4,
+				0,
+			1));
+			//Sys.println(i);
+		}
+		trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
+		#end
 	}
 
 	static var songChosen:String = "";
