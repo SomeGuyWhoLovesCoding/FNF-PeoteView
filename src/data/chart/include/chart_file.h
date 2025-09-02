@@ -5,10 +5,13 @@
 #include <cstdio>
 #include <cstdint>
 
+bool remap(int64_t newLength);
 void loadChart(const char* inFile);
 int64_t getNote(int64_t atIndex);
 int64_t getLength(void);
 void destroyChart();
 void insertNote(int64_t index, int64_t value);
 void removeNote(int64_t index);
+void insertNotes(std::vector<int64_t> index);
+void removeNotes(std::vector<int64_t> index);
 #endif /* CHART_FILE_H */

@@ -13,6 +13,8 @@ import cpp.ConstCharStar;
 @:unreflective @:keep
 @:include("./include/chart_file.h")
 extern class File {
+	@:native("remap") static function remap(newLength:Int64):Bool;
+
 	@:runtime inline static function loadChart(inFile:String):Void {
 		var str = ConstCharStar.fromString(inFile);
 		_loadChart(str);
@@ -22,7 +24,6 @@ extern class File {
 	@:native("getLength") static function getLength():Int64;
 	@:native("destroyChart") static function destroyChart():Void;
 
-	// For the chart editor (keep in mind, completely untested so this is implemented early)
 	@:runtime inline public static function insertNote(value:MetaNote):Void {
 		var atIndex = findClosestNoteIndexByTime(value.position);
 		//Sys.println(atIndex);
@@ -30,6 +31,30 @@ extern class File {
 	}
 	@:native("insertNote") static function _insertNote(atIndex:Int64, value:Int64):Void;
 	@:native("removeNote") static function removeNote(atIndex:Int64):Void;
+
+	@:runtime inline public static function insertNotes(arr:Array<MetaNote>):Void {
+		//remap(getLength() + arr.length);
+		/*for (value in arr) {
+			var atIndex = findClosestNoteIndexByTime(value.position);
+			//Sys.println(atIndex);
+			_insertNote(atIndex, value);
+		}*/
+		var values = StdVectorInt64.fromInt64Array(arr);
+		_insertNotes(values);
+	}
+	@:native("insertNotes") static function _insertNotes(values:StdVectorInt64):Void;
+
+	@:runtime inline public static function removeNotes(arr:Array<MetaNote>):Void {
+		//remap(getLength() + arr.length);
+		/*for (value in arr) {
+			var atIndex = findClosestNoteIndexByTime(value.position);
+			//Sys.println(atIndex);
+			_insertNote(atIndex, value);
+		}*/
+		var values = StdVectorInt64.fromInt64Array(arr);
+		_removeNotes(values);
+	}
+	@:native("removeNotes") static function _removeNotes(values:StdVectorInt64):Void;
 
 	/**
 		Find the index of a note by its time using binary search.
@@ -101,6 +126,10 @@ extern class File {
 }
 #elseif hl
 class File {
+	@:hlNative("chart_file", "remap") public static function remap(newLength:Int64):Bool {
+		return false;
+	}
+
 	@:hlNative("chart_file", "loadChart") public static function loadChart(inFile:String):Void {}
 
 	@:hlNative("chart_file", "getNote") public static function getNote(atIndex:hl.I64):MetaNote {
@@ -121,6 +150,36 @@ class File {
 	}
 	@:hlNative("chart_file", "insertNote") static function _insertNote(atIndex:hl.I64, value:hl.I64):Void {}
 	@:hlNative("chart_file", "removeNote") static function removeNote(atIndex:hl.I64):Void {}
+
+	inline public static function insertNotes(arr:Array<MetaNote>):Void {
+		//remap(getLength() + arr.length);
+		/*for (value in arr) {
+			var atIndex = findClosestNoteIndexByTime(value.position);
+			//Sys.println(atIndex);
+			_insertNote(atIndex, value);
+		}*/
+		var nativeArray = new hl.NativeArray(arr.length);
+		for (i in 0...arr.length) {
+			nativeArray[i] = arr[i];
+		}
+		_insertNotes(nativeArray);
+	}
+	@:hlNative("chart_file", "insertNotes") static function _insertNotes(values:hl.NativeArray<hl.I64>):Void {}
+
+	inline public static function removeNotes(arr:Array<MetaNote>):Void {
+		//remap(getLength() + arr.length);
+		/*for (value in arr) {
+			var atIndex = findClosestNoteIndexByTime(value.position);
+			//Sys.println(atIndex);
+			_insertNote(atIndex, value);
+		}*/
+		var nativeArray = new hl.NativeArray(arr.length);
+		for (i in 0...arr.length) {
+			nativeArray[i] = arr[i];
+		}
+		_removeNotes(nativeArray);
+	}
+	@:hlNative("chart_file", "removeNotes") static function _removeNotes(values:hl.NativeArray<hl.I64>):Void {}
 
 	/**
 		Find the index of a note by its time using binary search.

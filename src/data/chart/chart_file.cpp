@@ -3,6 +3,7 @@
 #include <vector>
 #include <stdexcept>
 #include <cstring>
+#include <algorithm>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -181,24 +182,98 @@ void removeNote(int64_t index) {
 }
 
 // ---------------- Alternative: Batch operations ----------------
-void insertNotes(int64_t startIndex, const std::vector<int64_t>& values) {
-    if (startIndex < 0 || startIndex > length) {
-        throw std::out_of_range("index out of range");
+inline int64_t extractTime(int64_t note) {
+    return (note >> 23) & 0x1FFFFFFFFFFLL; // 2199023255551
+}
+
+int64_t findNoteIndexByTime(int64_t time) {
+    int64_t left = 0;
+    int64_t right = length - 1;
+    int64_t result = 0;
+    bool found = false;
+
+    while (left <= right) {
+        int64_t mid = left + ((right - left) >> 1);
+        int64_t noteTime = extractTime(data[mid]);
+
+        if (noteTime == time) {
+            result = mid;
+            found = true;
+            break;
+        } else if (noteTime < time) {
+            left = mid + 1;
+        } else {
+            right = mid - 1;
+        }
     }
-    
-    int64_t old_length = length;
+
+    if (!found) result = left;
+    return result; // insertion point
+}
+
+void insertNotes(std::vector<int64_t> values) {
+    if (values.empty()) return;
+
+    // Ensure incoming batch is sorted by note time
+    std::sort(values.begin(), values.end(),
+              [](int64_t a, int64_t b) {
+                  return extractTime(a) < extractTime(b);
+              });
+
+    // Find insertion point based on first note
+    int64_t insert_time = extractTime(values.front());
+    int64_t insertIndex = findNoteIndexByTime(insert_time);
+
     int64_t insert_count = values.size();
-    
+    int64_t old_length = length;
+
     if (!remap(length + insert_count)) {
         throw std::runtime_error("failed to resize file");
     }
-    
-    // Move existing data
-    if (startIndex < old_length) {
-        memmove(&data[startIndex + insert_count], &data[startIndex], 
-                (old_length - startIndex) * sizeof(int64_t));
+
+    // Shift existing data to make room
+    std::memmove(
+        data + insertIndex + insert_count, // dest
+        data + insertIndex,                // src
+        (old_length - insertIndex) * sizeof(int64_t)
+    );
+
+    // Copy new notes in place
+    std::memcpy(data + insertIndex, values.data(),
+                insert_count * sizeof(int64_t));
+
+    length += insert_count;
+}
+
+void removeNotes(std::vector<int64_t> values) {
+    if (values.empty() || length == 0) return;
+
+    // Ensure incoming batch is sorted by note time
+    std::vector<int64_t> sorted = values;
+    std::sort(sorted.begin(), sorted.end(),
+              [](int64_t a, int64_t b) {
+                  return extractTime(a) < extractTime(b);
+              });
+
+    int64_t remove_count = 0;
+
+    for (auto note : sorted) {
+        int64_t idx = findNoteIndexByTime(extractTime(note));
+        if (idx >= 0 && idx < length && data[idx] == note) {
+            // Shift everything left to fill the gap
+            std::memmove(
+                data + idx,                // dest
+                data + idx + 1,            // src
+                (length - idx - 1) * sizeof(int64_t)
+            );
+            length--;
+            remove_count++;
+        }
     }
-    
-    // Copy new values
-    memcpy(&data[startIndex], values.data(), insert_count * sizeof(int64_t));
+
+    if (remove_count > 0) {
+        if (!remap(length)) {
+            throw std::runtime_error("failed to resize file after remove");
+        }
+    }
 }

@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <stdexcept>
 #include <cstring>
+#include <algorithm>
+#include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -33,6 +35,37 @@ static int fd = -1;
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
+static inline int64_t extractTime(int64_t note) {
+    return (note >> 23) & 0x1FFFFFFFFFFLL; // 2199023255551
+}
+
+static int64_t findNoteIndexByTime(int64_t time) {
+    if (length == 0) return 0;
+
+    int64_t left = 0;
+    int64_t right = length - 1;
+    int64_t result = 0;
+    bool found = false;
+
+    while (left <= right) {
+        int64_t mid = left + ((right - left) >> 1);
+        int64_t noteTime = extractTime(data[mid]);
+
+        if (noteTime == time) {
+            result = mid;
+            found = true;
+            break;
+        } else if (noteTime < time) {
+            left = mid + 1;
+        } else {
+            right = mid - 1;
+        }
+    }
+
+    if (!found) result = left;
+    return result; // insertion point
+}
+
 static bool remap(size_t newLength) {
 #ifdef _WIN32
     if (data) { UnmapViewOfFile(data); data = nullptr; }
@@ -159,7 +192,7 @@ HL_PRIM void HL_NAME(destroyChart)(_NO_ARG) {
 }
 
 // -----------------------------------------------------------------------------
-// Insert / Remove
+// Insert / Remove (single)
 // -----------------------------------------------------------------------------
 HL_PRIM void HL_NAME(insertNote)(int64_t index, int64_t value) {
     if (index < 0 || index > length) throw std::out_of_range("index out of range");
@@ -186,6 +219,7 @@ HL_PRIM void HL_NAME(removeNote)(int64_t index) {
 
 // -----------------------------------------------------------------------------
 // Batch insert: Array<Int64> from Haxe / HashLink
+// NOTE: this HL binding takes a startIndex + Array<Int64> (same as template provided)
 // -----------------------------------------------------------------------------
 HL_PRIM void HL_NAME(insertNotes)(int64_t startIndex, varray* values) {
     if (startIndex < 0 || startIndex > length) throw std::out_of_range("index out of range");
@@ -207,6 +241,44 @@ HL_PRIM void HL_NAME(insertNotes)(int64_t startIndex, varray* values) {
 }
 
 // -----------------------------------------------------------------------------
+// Batch remove: Array<Int64> from Haxe / HashLink
+// Mirrors the C++ removeNotes(vector<int64_t>) behaviour: sorts incoming notes
+// by time, finds exact matches and removes them one-by-one, then shrinks file.
+// -----------------------------------------------------------------------------
+HL_PRIM void HL_NAME(removeNotes)(varray* values) {
+    if (!values || values->size == 0 || length == 0) return;
+
+    int64_t vcount = (int64_t)values->size;
+    int64_t* arr = hl_aptr(values, int64_t);
+
+    // Copy to vector and sort by time
+    std::vector<int64_t> sorted(arr, arr + vcount);
+    std::sort(sorted.begin(), sorted.end(), [](int64_t a, int64_t b) {
+        return extractTime(a) < extractTime(b);
+    });
+
+    int64_t remove_count = 0;
+
+    for (auto note : sorted) {
+        if (length == 0) break;
+        int64_t idx = findNoteIndexByTime(extractTime(note));
+
+        if (idx >= 0 && idx < length && data[idx] == note) {
+            // Shift everything left to fill the gap
+            if (idx < length - 1) {
+                memmove(&data[idx], &data[idx + 1], (size_t)(length - idx - 1) * sizeof(int64_t));
+            }
+            length--;
+            remove_count++;
+        }
+    }
+
+    if (remove_count > 0) {
+        if (!remap((size_t)length)) throw std::runtime_error("failed to resize file after remove");
+    }
+}
+
+// -----------------------------------------------------------------------------
 // Haxe bindings
 // -----------------------------------------------------------------------------
 DEFINE_PRIM(_VOID, loadChart, _STRING)
@@ -217,3 +289,4 @@ DEFINE_PRIM(_VOID, destroyChart, _NO_ARG)
 DEFINE_PRIM(_VOID, insertNote, _I64 _I64)
 DEFINE_PRIM(_VOID, removeNote, _I64)
 DEFINE_PRIM(_VOID, insertNotes, _I64 _ARR)
+DEFINE_PRIM(_VOID, removeNotes, _ARR)
