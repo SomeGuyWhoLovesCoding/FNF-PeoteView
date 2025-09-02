@@ -27,13 +27,13 @@ int fd = -1;
 
 // ---------------- Ultra-fast strategy: Three-element deferred operations ----------------
 // Use std::array for MSVC compatibility
-static std::array<int64_t, 3> deferredOps[1048576];
-static int64_t opCount = 0;
-static bool isDirty = false;
-static int64_t netChange = 0; // Running net change
+std::array<int64_t, 3> deferredOps[1048576];
+int64_t opCount = 0;
+bool isDirty = false;
+int64_t netChange = 0; // Running net change
 
 // ---------------- Memory-mapping helpers ----------------
-static bool remap(size_t newLength) {
+bool remap(size_t newLength) {
 #ifdef _WIN32
 	if (data) { UnmapViewOfFile(data); data = nullptr; }
 	if (hMap) { CloseHandle(hMap); hMap = NULL; }
@@ -60,7 +60,7 @@ static bool remap(size_t newLength) {
 }
 
 // ---------------- Optimized flushDeferred ----------------
-static void flushDeferred() {
+void flushDeferred() {
 	if (!isDirty || opCount == 0) return;
 
 	// Update netChange
