@@ -28,15 +28,15 @@ int fd = -1;
 #endif
 
 // ---------------- Ultra-fast deferred operations ----------------
-static int64_t deferredOps[1048576][3];
-static int64_t opCount = 0;
-static bool isDirty = false;
-static int64_t netChange = 0;
+int64_t deferredOps[1048576][3];
+int64_t opCount = 0;
+bool isDirty = false;
+int64_t netChange = 0;
 
 // -----------------------------------------------------------------------------
 // Memory-mapping helpers
 // -----------------------------------------------------------------------------
-static bool remap(size_t newLength) {
+bool remap(size_t newLength) {
 #ifdef _WIN32
     if (data) { UnmapViewOfFile(data); data = nullptr; }
     if (hMap) { CloseHandle(hMap); hMap = NULL; }
@@ -68,7 +68,7 @@ static bool remap(size_t newLength) {
 // -----------------------------------------------------------------------------
 // Optimized deferred flush
 // -----------------------------------------------------------------------------
-static void flushDeferred() {
+void flushDeferred() {
     if (!isDirty || opCount == 0) return;
 
     netChange = 0;
