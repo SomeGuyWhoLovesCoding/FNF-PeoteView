@@ -3,6 +3,8 @@
 #include <vector>
 #include <stdexcept>
 #include <cstring>
+#include <algorithm>
+#include <array>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -24,11 +26,11 @@ int fd = -1;
 #endif
 
 // ---------------- Ultra-fast strategy: Three-element deferred operations ----------------
-// Raw int64_t array structure: [1048576][3]
-// Element 0: index, Element 1: value, Element 2: operation type (1=insert, 0=remove)
-static int64_t deferredOps[1048576][3];
+// Use std::array for MSVC compatibility
+static std::array<int64_t, 3> deferredOps[1048576];
 static int64_t opCount = 0;
 static bool isDirty = false;
+static int64_t netChange = 0; // Running net change
 
 // ---------------- Memory-mapping helpers ----------------
 static bool remap(size_t newLength) {
@@ -57,91 +59,50 @@ static bool remap(size_t newLength) {
 	return true;
 }
 
+// ---------------- Optimized flushDeferred ----------------
 static void flushDeferred() {
 	if (!isDirty || opCount == 0) return;
 
-	// Calculate final size using raw array elements
-	int64_t netChange = 0;
-	for (int64_t i = 0; i < opCount; ++i) {
-		netChange += deferredOps[i][2] ? 1 : -1; // Element 2 contains operation type
-	}
+	// Update netChange
+	netChange = 0;
+	for (int64_t i = 0; i < opCount; ++i)
+		netChange += deferredOps[i][2] ? 1 : -1;
 
 	int64_t finalLength = length + netChange;
 	if (finalLength < 0) finalLength = 0;
 
 	// Single remap to final size
-	if (!remap(finalLength)) {
+	if (!remap(finalLength))
 		throw std::runtime_error("failed to resize for deferred operations");
-	}
 
-	// Sort by index (descending) for optimal processing
-	for (int64_t i = 0; i < opCount - 1; ++i) {
-		for (int64_t j = i + 1; j < opCount; ++j) {
-			if (deferredOps[i][0] < deferredOps[j][0]) { // Element 0 contains index
-				// Swap all three elements
-				for (int k = 0; k < 3; ++k) {
-					int64_t temp = deferredOps[i][k];
-					deferredOps[i][k] = deferredOps[j][k];
-					deferredOps[j][k] = temp;
-				}
-			}
-		}
-	}
+	// Sort by index descending
+	std::sort(deferredOps, deferredOps + opCount,
+	          [](const std::array<int64_t,3>& a, const std::array<int64_t,3>& b) {
+	              return a[0] > b[0];
+	          });
 
-	// Apply operations from highest index to lowest
+	// Apply operations
 	for (int64_t i = 0; i < opCount; ++i) {
-		int64_t index = deferredOps[i][0];  // Element 0: index
-		int64_t value = deferredOps[i][1];  // Element 1: value
-		bool isInsert = deferredOps[i][2];  // Element 2: operation type
+		int64_t index = deferredOps[i][0];
+		int64_t value = deferredOps[i][1];
+		bool isInsert = deferredOps[i][2];
 
 		if (isInsert) {
-			if (index < length - 1) {
-				// Use fast 8-byte aligned copy
-				int64_t* src = &data[index];
-				int64_t* dst = &data[index + 1];
-				int64_t moveCount = length - index - 1;
-
-				// Ultra-fast: copy 8 elements at a time using manual unrolling
-				while (moveCount >= 8) {
-					dst[moveCount-1] = src[moveCount-1];
-					dst[moveCount-2] = src[moveCount-2];
-					dst[moveCount-3] = src[moveCount-3];
-					dst[moveCount-4] = src[moveCount-4];
-					dst[moveCount-5] = src[moveCount-5];
-					dst[moveCount-6] = src[moveCount-6];
-					dst[moveCount-7] = src[moveCount-7];
-					dst[moveCount-8] = src[moveCount-8];
-					moveCount -= 8;
-				}
-				// Handle remainder
-				while (moveCount > 0) {
-					dst[moveCount-1] = src[moveCount-1];
-					moveCount--;
-				}
+			if (index < length) {
+				int64_t moveCount = length - index;
+				memmove(&data[index + 1], &data[index], moveCount * sizeof(int64_t));
 			}
 			data[index] = value;
-		} else { // Remove
+		} else { // remove
 			if (index < length - 1) {
-				// Fast removal with unrolled copy
-				int64_t* dst = &data[index];
-				int64_t* src = &data[index + 1];
 				int64_t moveCount = length - index - 1;
-
-				// Copy 8 elements at a time
-				while (moveCount >= 8) {
-					dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2]; dst[3] = src[3];
-					dst[4] = src[4]; dst[5] = src[5]; dst[6] = src[6]; dst[7] = src[7];
-					dst += 8; src += 8; moveCount -= 8;
-				}
-				// Handle remainder
-				while (moveCount > 0) {
-					*dst++ = *src++;
-					moveCount--;
-				}
+				memmove(&data[index], &data[index + 1], moveCount * sizeof(int64_t));
 			}
+			data[length - 1] = 0; // optional zero out last element
 		}
 	}
 
+	length = finalLength;
 	opCount = 0;
 	isDirty = false;
 }
@@ -162,30 +123,28 @@ void loadChart(const char* inFile) {
 	remap(length);
 #endif
 
-	// Clear the three-element array structure
-	memset(deferredOps, 0, sizeof(deferredOps));
+	for(auto& arr : deferredOps) arr.fill(0);
 	opCount = 0;
 	isDirty = false;
+	netChange = 0;
 }
 
 int64_t getNote(int64_t atIndex) {
-	flushDeferred(); // Ensure we're reading current state
-	return data[atIndex];
+    // Do NOT flush here
+    if (atIndex < 0 || atIndex >= length)
+        throw std::out_of_range("index out of range");
+    return data[atIndex];
 }
 
 void setNote(int64_t atIndex, int64_t value) {
-	flushDeferred(); // Ensure consistent state
-	data[atIndex] = value;
+    // Do NOT flush here
+    if (atIndex < 0 || atIndex >= length)
+        throw std::out_of_range("index out of range");
+    data[atIndex] = value;
 }
 
 int64_t getLength() {
-	if (!isDirty) return length;
-
-	int64_t change = 0;
-	for (int64_t i = 0; i < opCount; ++i) {
-		change += deferredOps[i][2] ? 1 : -1; // Element 2 contains operation type
-	}
-	return length + change;
+	return length + (isDirty ? netChange : 0);
 }
 
 void destroyChart() {
@@ -198,96 +157,49 @@ void destroyChart() {
 	if (fd != -1) close(fd); fd = -1;
 #endif
 	length = 0;
-	memset(deferredOps, 0, sizeof(deferredOps));
+	for(auto& arr : deferredOps) arr.fill(0);
 	opCount = 0;
 	isDirty = false;
+	netChange = 0;
 }
 
 // ---------------- FASTEST insert/remove functions ----------------
 void insertNote(int64_t index, int64_t value, bool autoflush = false) {
-	if (index < 0 || index > getLength()) {
+	if (index < 0 || index > getLength())
 		throw std::out_of_range("index out of range");
-	}
 
-	// Use raw int64_t array: [0]=index, [1]=value, [2]=operation type
 	if (opCount < 1048576 && !autoflush) {
 		deferredOps[opCount][0] = index;
 		deferredOps[opCount][1] = value;
-		deferredOps[opCount][2] = 1; // 1 = insert
+		deferredOps[opCount][2] = 1;
 		opCount++;
 		isDirty = true;
 	} else {
-		// Array full or autoflush requested - flush and add
 		flushDeferred();
 		deferredOps[0][0] = index;
 		deferredOps[0][1] = value;
-		deferredOps[0][2] = 1; // 1 = insert
+		deferredOps[0][2] = 1;
 		opCount = 1;
 		isDirty = true;
 	}
 }
 
 void removeNote(int64_t index, bool autoflush = false) {
-	if (index < 0 || index >= getLength()) {
+	if (index < 0 || index >= getLength())
 		throw std::out_of_range("index out of range");
-	}
 
-	// Use raw int64_t array: [0]=index, [1]=value, [2]=operation type
 	if (opCount < 1048576 && !autoflush) {
 		deferredOps[opCount][0] = index;
-		deferredOps[opCount][1] = 0; // value unused for remove
-		deferredOps[opCount][2] = 0; // 0 = remove
+		deferredOps[opCount][1] = 0;
+		deferredOps[opCount][2] = 0;
 		opCount++;
 		isDirty = true;
 	} else {
-		// Array full or autoflush requested - flush and add
 		flushDeferred();
 		deferredOps[0][0] = index;
-		deferredOps[0][1] = 0; // value unused for remove
-		deferredOps[0][2] = 0; // 0 = remove
+		deferredOps[0][1] = 0;
+		deferredOps[0][2] = 0;
 		opCount = 1;
 		isDirty = true;
 	}
-}
-
-// ---------------- Force immediate application ----------------
-void sync() {
-	flushDeferred();
-}
-
-// ---------------- Ultra-fast bulk operations ----------------
-void insertNotesInstant(const std::vector<std::pair<int64_t, int64_t>>& indexValuePairs, bool autoflush = false) {
-	for (const auto& pair : indexValuePairs) {
-		if (opCount < 1048576 && !autoflush) {
-			deferredOps[opCount][0] = pair.first;
-			deferredOps[opCount][1] = pair.second;
-			deferredOps[opCount][2] = 1; // 1 = insert
-			opCount++;
-		} else {
-			flushDeferred();
-			deferredOps[0][0] = pair.first;
-			deferredOps[0][1] = pair.second;
-			deferredOps[0][2] = 1; // 1 = insert
-			opCount = 1;
-		}
-	}
-	isDirty = true;
-}
-
-void removeNotesInstant(const std::vector<int64_t>& indices, bool autoflush = false) {
-	for (int64_t index : indices) {
-		if (opCount < 1048576 && !autoflush) {
-			deferredOps[opCount][0] = index;
-			deferredOps[opCount][1] = 0; // value unused for remove
-			deferredOps[opCount][2] = 0; // 0 = remove
-			opCount++;
-		} else {
-			flushDeferred();
-			deferredOps[0][0] = index;
-			deferredOps[0][1] = 0; // value unused for remove
-			deferredOps[0][2] = 0; // 0 = remove
-			opCount = 1;
-		}
-	}
-	isDirty = true;
 }

@@ -1,8 +1,6 @@
 #define HL_NAME(n) chart_file_##n
 
 #include <hl.h>
-
-#include <iostream>
 #include <cstdint>
 #include <stdexcept>
 #include <cstring>
@@ -29,255 +27,198 @@ HANDLE hMap  = NULL;
 int fd = -1;
 #endif
 
-// ---------------- Ultra-fast strategy: Three-element deferred operations ----------------
-// Raw int64_t array structure: [1048576][3]
-// Element 0: index, Element 1: value, Element 2: operation type (1=insert, 0=remove)
+// ---------------- Ultra-fast deferred operations ----------------
 static int64_t deferredOps[1048576][3];
 static int64_t opCount = 0;
 static bool isDirty = false;
+static int64_t netChange = 0;
 
 // -----------------------------------------------------------------------------
-// Helpers
+// Memory-mapping helpers
 // -----------------------------------------------------------------------------
 static bool remap(size_t newLength) {
 #ifdef _WIN32
-	if (data) { UnmapViewOfFile(data); data = nullptr; }
-	if (hMap) { CloseHandle(hMap); hMap = NULL; }
+    if (data) { UnmapViewOfFile(data); data = nullptr; }
+    if (hMap) { CloseHandle(hMap); hMap = NULL; }
 
-	LARGE_INTEGER newSize;
-	newSize.QuadPart = newLength * sizeof(int64_t);
-	if (!SetFilePointerEx(hFile, newSize, NULL, FILE_BEGIN) || !SetEndOfFile(hFile))
-		return false;
+    LARGE_INTEGER newSize;
+    newSize.QuadPart = newLength * sizeof(int64_t);
+    if (!SetFilePointerEx(hFile, newSize, NULL, FILE_BEGIN) || !SetEndOfFile(hFile))
+        return false;
 
-	hMap = CreateFileMapping(hFile, NULL, PAGE_READWRITE, 0, 0, NULL);
-	if (!hMap) return false;
+    hMap = CreateFileMapping(hFile, NULL, PAGE_READWRITE, 0, 0, NULL);
+    if (!hMap) return false;
 
-	data = static_cast<int64_t*>(MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, 0));
-	if (!data) { CloseHandle(hMap); hMap = NULL; return false; }
+    data = static_cast<int64_t*>(MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, 0));
+    if (!data) { CloseHandle(hMap); hMap = NULL; return false; }
 
 #else
-	if (data) { munmap(data, length * sizeof(int64_t)); data = nullptr; }
-	if (ftruncate(fd, newLength * sizeof(int64_t)) == -1) return false;
+    if (data) { munmap(data, length * sizeof(int64_t)); data = nullptr; }
+    if (ftruncate(fd, newLength * sizeof(int64_t)) == -1) return false;
 
-	data = static_cast<int64_t*>(
-		mmap(nullptr, newLength * sizeof(int64_t), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0)
-	);
-	if (data == MAP_FAILED) { data = nullptr; return false; }
+    data = static_cast<int64_t*>(
+        mmap(nullptr, newLength * sizeof(int64_t), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0)
+    );
+    if (data == MAP_FAILED) { data = nullptr; return false; }
 #endif
-	length = newLength;
-	return true;
+    length = newLength;
+    return true;
 }
 
+// -----------------------------------------------------------------------------
+// Optimized deferred flush
+// -----------------------------------------------------------------------------
 static void flushDeferred() {
-	if (!isDirty || opCount == 0) return;
+    if (!isDirty || opCount == 0) return;
 
-	// Calculate final size using raw array elements
-	int64_t netChange = 0;
-	for (int64_t i = 0; i < opCount; ++i) {
-		netChange += deferredOps[i][2] ? 1 : -1; // Element 2 contains operation type
-	}
+    netChange = 0;
+    for (int64_t i = 0; i < opCount; ++i)
+        netChange += deferredOps[i][2] ? 1 : -1;
 
-	int64_t finalLength = length + netChange;
-	if (finalLength < 0) finalLength = 0;
+    int64_t finalLength = length + netChange;
+    if (finalLength < 0) finalLength = 0;
 
-	// Single remap to final size
-	if (!remap(finalLength)) {
-		throw std::runtime_error("failed to resize for deferred operations");
-	}
+    if (!remap(finalLength))
+        throw std::runtime_error("failed to resize for deferred operations");
 
-	// Sort by index (descending) for optimal processing
-	for (int64_t i = 0; i < opCount - 1; ++i) {
-		for (int64_t j = i + 1; j < opCount; ++j) {
-			if (deferredOps[i][0] < deferredOps[j][0]) { // Element 0 contains index
-				// Swap all three elements
-				for (int k = 0; k < 3; ++k) {
-					int64_t temp = deferredOps[i][k];
-					deferredOps[i][k] = deferredOps[j][k];
-					deferredOps[j][k] = temp;
-				}
-			}
-		}
-	}
+    // Sort descending by index
+    for (int64_t i = 0; i < opCount - 1; ++i) {
+        for (int64_t j = i + 1; j < opCount; ++j) {
+            if (deferredOps[i][0] < deferredOps[j][0]) {
+                for (int k = 0; k < 3; ++k) {
+                    int64_t tmp = deferredOps[i][k];
+                    deferredOps[i][k] = deferredOps[j][k];
+                    deferredOps[j][k] = tmp;
+                }
+            }
+        }
+    }
 
-	// Apply operations from highest index to lowest
-	for (int64_t i = 0; i < opCount; ++i) {
-		int64_t index = deferredOps[i][0];  // Element 0: index
-		int64_t value = deferredOps[i][1];  // Element 1: value
-		bool isInsert = deferredOps[i][2];  // Element 2: operation type
+    for (int64_t i = 0; i < opCount; ++i) {
+        int64_t idx = deferredOps[i][0];
+        int64_t val = deferredOps[i][1];
+        bool isInsert = deferredOps[i][2];
 
-		if (isInsert) {
-			if (index < length - 1) {
-				// Use fast 8-byte aligned copy
-				int64_t* src = &data[index];
-				int64_t* dst = &data[index + 1];
-				int64_t moveCount = length - index - 1;
+        if (isInsert) {
+            if (idx < length) {
+                int64_t moveCount = length - idx;
+                memmove(&data[idx + 1], &data[idx], moveCount * sizeof(int64_t));
+            }
+            data[idx] = val;
+        } else { // remove
+            if (idx < length - 1) {
+                int64_t moveCount = length - idx - 1;
+                memmove(&data[idx], &data[idx + 1], moveCount * sizeof(int64_t));
+            }
+            data[length - 1] = 0;
+        }
+    }
 
-				// Ultra-fast: copy 8 elements at a time using manual unrolling
-				while (moveCount >= 8) {
-					dst[moveCount-1] = src[moveCount-1];
-					dst[moveCount-2] = src[moveCount-2];
-					dst[moveCount-3] = src[moveCount-3];
-					dst[moveCount-4] = src[moveCount-4];
-					dst[moveCount-5] = src[moveCount-5];
-					dst[moveCount-6] = src[moveCount-6];
-					dst[moveCount-7] = src[moveCount-7];
-					dst[moveCount-8] = src[moveCount-8];
-					moveCount -= 8;
-				}
-				// Handle remainder
-				while (moveCount > 0) {
-					dst[moveCount-1] = src[moveCount-1];
-					moveCount--;
-				}
-			}
-			data[index] = value;
-		} else { // Remove
-			if (index < length - 1) {
-				// Fast removal with unrolled copy
-				int64_t* dst = &data[index];
-				int64_t* src = &data[index + 1];
-				int64_t moveCount = length - index - 1;
-
-				// Copy 8 elements at a time
-				while (moveCount >= 8) {
-					dst[0] = src[0]; dst[1] = src[1]; dst[2] = src[2]; dst[3] = src[3];
-					dst[4] = src[4]; dst[5] = src[5]; dst[6] = src[6]; dst[7] = src[7];
-					dst += 8; src += 8; moveCount -= 8;
-				}
-				// Handle remainder
-				while (moveCount > 0) {
-					*dst++ = *src++;
-					moveCount--;
-				}
-			}
-		}
-	}
-
-	opCount = 0;
-	isDirty = false;
+    length = finalLength;
+    opCount = 0;
+    isDirty = false;
 }
 
 // -----------------------------------------------------------------------------
 // API
 // -----------------------------------------------------------------------------
 HL_PRIM void HL_NAME(loadChart)(vstring *inFile) {
-	const char* path = hl_to_utf8(inFile->bytes);
+    const char* path = hl_to_utf8(inFile->bytes);
 
 #ifdef _WIN32
-	hFile = CreateFileA(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL,
-						OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-	if (hFile == INVALID_HANDLE_VALUE) return;
+    hFile = CreateFileA(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL,
+                        OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) return;
 
-	LARGE_INTEGER fileSize; GetFileSizeEx(hFile, &fileSize);
-	length = fileSize.QuadPart / sizeof(int64_t);
+    LARGE_INTEGER fileSize; GetFileSizeEx(hFile, &fileSize);
+    length = fileSize.QuadPart / sizeof(int64_t);
 
 #else
-	fd = open(path, O_RDWR | O_CREAT, 0644);
-	if (fd == -1) throw std::runtime_error("failed to open file");
+    fd = open(path, O_RDWR | O_CREAT, 0644);
+    if (fd == -1) throw std::runtime_error("failed to open file");
 
-	struct stat st;
-	if (fstat(fd, &st) == -1) throw std::runtime_error("failed to stat file");
-	length = st.st_size / sizeof(int64_t);
+    struct stat st;
+    if (fstat(fd, &st) == -1) throw std::runtime_error("failed to stat file");
+    length = st.st_size / sizeof(int64_t);
 #endif
 
-	if (!remap(length)) throw std::runtime_error("failed to map file");
+    if (!remap(length)) throw std::runtime_error("failed to map file");
 
-	// Clear the three-element array structure
-	memset(deferredOps, 0, sizeof(deferredOps));
-	opCount = 0;
-	isDirty = false;
+    memset(deferredOps, 0, sizeof(deferredOps));
+    opCount = 0;
+    isDirty = false;
+    netChange = 0;
 }
 
-HL_PRIM int64_t HL_NAME(getNote)(int64_t index) {
-	flushDeferred(); // Ensure we're reading current state
-	if (index < 0 || index >= length) throw std::out_of_range("index out of range");
-	return data[index];
+HL_PRIM int64_t HL_NAME(getNote)(int64_t idx) {
+    if (idx < 0 || idx >= length) throw std::out_of_range("index out of range");
+    return data[idx];
 }
 
-HL_PRIM void HL_NAME(setNote)(int64_t index, int64_t value) {
-	flushDeferred(); // Ensure consistent state
-	if (index < 0 || index >= length) throw std::out_of_range("index out of range");
-	data[index] = value;
+HL_PRIM void HL_NAME(setNote)(int64_t idx, int64_t val) {
+    if (idx < 0 || idx >= length) throw std::out_of_range("index out of range");
+    data[idx] = val;
 }
 
 HL_PRIM int64_t HL_NAME(getLength)(_NO_ARG) {
-	if (!isDirty) return length;
-
-	int64_t change = 0;
-	for (int64_t i = 0; i < opCount; ++i) {
-		change += deferredOps[i][2] ? 1 : -1; // Element 2 contains operation type
-	}
-	return length + change;
+    return length + (isDirty ? netChange : 0);
 }
 
 HL_PRIM void HL_NAME(destroyChart)(_NO_ARG) {
 #ifdef _WIN32
-	if (data) UnmapViewOfFile(data);
-	if (hMap) CloseHandle(hMap);
-	if (hFile != INVALID_HANDLE_VALUE) CloseHandle(hFile);
-
-	data = nullptr; hMap = NULL; hFile = INVALID_HANDLE_VALUE;
+    if (data) UnmapViewOfFile(data);
+    if (hMap) CloseHandle(hMap);
+    if (hFile != INVALID_HANDLE_VALUE) CloseHandle(hFile);
+    data = nullptr; hMap = NULL; hFile = INVALID_HANDLE_VALUE;
 #else
-	if (data) munmap(data, length * sizeof(int64_t));
-	if (fd != -1) close(fd);
-
-	data = nullptr; fd = -1;
+    if (data) munmap(data, length * sizeof(int64_t));
+    if (fd != -1) close(fd);
+    data = nullptr; fd = -1;
 #endif
-	length = 0;
-	memset(deferredOps, 0, sizeof(deferredOps));
-	opCount = 0;
-	isDirty = false;
+    length = 0;
+    memset(deferredOps, 0, sizeof(deferredOps));
+    opCount = 0;
+    isDirty = false;
+    netChange = 0;
 }
 
-// ---------------- FASTEST insert/remove functions ----------------
-HL_PRIM void HL_NAME(insertNote)(int64_t index, int64_t value, bool autoflush) {
-	if (index < 0 || index > getLength()) {
-		throw std::out_of_range("index out of range");
-	}
+// ---------------- FASTEST insert/remove ----------------
+HL_PRIM void HL_NAME(insertNote)(int64_t idx, int64_t val, bool autoflush) {
+    if (idx < 0 || idx > HL_NAME(getLength)(_NO_ARG)) throw std::out_of_range("index out of range");
 
-	// Use raw int64_t array: [0]=index, [1]=value, [2]=operation type
-	if (opCount < 1048576 && !autoflush) {
-		deferredOps[opCount][0] = index;
-		deferredOps[opCount][1] = value;
-		deferredOps[opCount][2] = 1; // 1 = insert
-		opCount++;
-		isDirty = true;
-	} else {
-		// Array full or autoflush requested - flush and add
-		flushDeferred();
-		deferredOps[0][0] = index;
-		deferredOps[0][1] = value;
-		deferredOps[0][2] = 1; // 1 = insert
-		opCount = 1;
-		isDirty = true;
-	}
+    if (opCount < 1048576 && !autoflush) {
+        deferredOps[opCount][0] = idx;
+        deferredOps[opCount][1] = val;
+        deferredOps[opCount][2] = 1;
+        opCount++; isDirty = true;
+    } else {
+        flushDeferred();
+        deferredOps[0][0] = idx;
+        deferredOps[0][1] = val;
+        deferredOps[0][2] = 1;
+        opCount = 1; isDirty = true;
+    }
 }
 
-HL_PRIM void HL_NAME(removeNote)(int64_t index, bool autoflush) {
-	if (index < 0 || index >= getLength()) {
-		throw std::out_of_range("index out of range");
-	}
+HL_PRIM void HL_NAME(removeNote)(int64_t idx, bool autoflush) {
+    if (idx < 0 || idx >= HL_NAME(getLength)(_NO_ARG)) throw std::out_of_range("index out of range");
 
-	// Use raw int64_t array: [0]=index, [1]=value, [2]=operation type
-	if (opCount < 1048576 && !autoflush) {
-		deferredOps[opCount][0] = index;
-		deferredOps[opCount][1] = 0; // value unused for remove
-		deferredOps[opCount][2] = 0; // 0 = remove
-		opCount++;
-		isDirty = true;
-	} else {
-		// Array full or autoflush requested - flush and add
-		flushDeferred();
-		deferredOps[0][0] = index;
-		deferredOps[0][1] = 0; // value unused for remove
-		deferredOps[0][2] = 0; // 0 = remove
-		opCount = 1;
-		isDirty = true;
-	}
+    if (opCount < 1048576 && !autoflush) {
+        deferredOps[opCount][0] = idx;
+        deferredOps[opCount][1] = 0;
+        deferredOps[opCount][2] = 0;
+        opCount++; isDirty = true;
+    } else {
+        flushDeferred();
+        deferredOps[0][0] = idx;
+        deferredOps[0][1] = 0;
+        deferredOps[0][2] = 0;
+        opCount = 1; isDirty = true;
+    }
 }
 
 // -----------------------------------------------------------------------------
-// Haxe bindings
+// Haxe Bindings
 // -----------------------------------------------------------------------------
 DEFINE_PRIM(_VOID, loadChart, _STRING)
 DEFINE_PRIM(_I64, getNote, _I64)
