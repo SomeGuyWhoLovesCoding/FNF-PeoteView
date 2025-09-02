@@ -79,8 +79,9 @@ class PauseScreen {
 		alphaLerp = Tools.lerp(alphaLerp, (opened && !atOptionsMenu) ? 1.0 : 0.0, Math.min(deltaTime * 0.015, 1.0));
 		bgAlphaLerp = Tools.lerp(bgAlphaLerp, opened ? 1.0 : 0.0, Math.min(deltaTime * 0.015, 1.0));
 
-		display.color.aF = bgAlphaLerp * 0.5;
-		display.color = display.color; // Set it by itself so it actually sets the alpha of the display's background
+		var c = display.color;
+		c.aF = bgAlphaLerp * 0.5;
+		display.color = c;
 
 		for (i in 0...pauseOptions.length) {
 			var pauseOption = pauseOptions[i];
