@@ -21,14 +21,14 @@
 // -----------------------------------------------------------------------------
 // Globals
 // -----------------------------------------------------------------------------
-static int64_t* data = nullptr;
-static int64_t length = 0;
+int64_t* data = nullptr;
+int64_t length = 0;
 
 #ifdef _WIN32
-static HANDLE hFile = INVALID_HANDLE_VALUE;
-static HANDLE hMap  = NULL;
+HANDLE hFile = INVALID_HANDLE_VALUE;
+HANDLE hMap  = NULL;
 #else
-static int fd = -1;
+int fd = -1;
 #endif
 
 // -----------------------------------------------------------------------------
