@@ -1,7 +1,7 @@
 #include <iostream>
 #include <cstdint>
+#include <vector>
 #include <stdexcept>
-#include <algorithm>
 #include <cstring>
 
 #ifdef _WIN32
@@ -11,135 +11,119 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <errno.h>
 #endif
 
 int64_t* data = nullptr;
-int64_t length = 0;
+int64_t length = 0;           // Number of notes currently used
+int64_t reservedLength = 0;   // Total reserved capacity in notes
 
 #ifdef _WIN32
 HANDLE hFile = INVALID_HANDLE_VALUE;
 HANDLE hMap  = NULL;
+LPVOID reservedBase = nullptr;
 #else
 int fd = -1;
+size_t mappedSize = 0;
 #endif
-
-// ---------------- Deferred operation struct ----------------
-struct alignas(16) DeferredOp {
-    uint64_t index : 63; // 63-bit index
-    uint64_t isInsert : 1; // 1-bit insert/remove flag
-    int64_t value; // full 64-bit value
-};
-
-// ---------------- Globals ----------------
-DeferredOp deferredOps[1048576];
-int64_t opCount = 0;
-bool isDirty = false;
-int64_t netChange = 0;
 
 // ---------------- Memory-mapping helpers ----------------
-bool remap(size_t newLength) {
 #ifdef _WIN32
-    if (data) { UnmapViewOfFile(data); data = nullptr; }
-    if (hMap) { CloseHandle(hMap); hMap = NULL; }
-
-    LARGE_INTEGER newSize; newSize.QuadPart = newLength * sizeof(int64_t);
-    if (!SetFilePointerEx(hFile, newSize, NULL, FILE_BEGIN) || !SetEndOfFile(hFile)) return false;
-
-    hMap = CreateFileMapping(hFile, NULL, PAGE_READWRITE, 0, 0, NULL);
-    if (!hMap) return false;
-
-    data = (int64_t*)MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, 0);
-    if (!data) { CloseHandle(hMap); hMap = NULL; return false; }
-
-#else
-    if (data) { munmap(data, length * sizeof(int64_t)); data = nullptr; }
-    if (ftruncate(fd, newLength * sizeof(int64_t)) == -1) return false;
-
-    data = (int64_t*)mmap(nullptr, newLength * sizeof(int64_t),
-                          PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (data == MAP_FAILED) { data = nullptr; return false; }
-#endif
-    length = newLength;
+static bool reserveSpace(size_t reserveSize) {
+    reservedBase = VirtualAlloc(
+        nullptr,
+        reserveSize * sizeof(int64_t),
+        MEM_RESERVE,
+        PAGE_READWRITE
+    );
+    if (!reservedBase) return false;
+    reservedLength = reserveSize;
     return true;
 }
 
-// ---------------- Flush deferred operations ----------------
-void flushDeferred() {
-    if (!isDirty || opCount == 0) return;
+static bool remap(size_t newLength) {
+    if (newLength > reservedLength) {
+        // Auto-grow reserved space by doubling
+        size_t newReserve = std::max(newLength, reservedLength * 2);
+        LPVOID newBase = VirtualAlloc(nullptr, newReserve * sizeof(int64_t), MEM_RESERVE, PAGE_READWRITE);
+        if (!newBase) return false;
 
-    int64_t finalLength = length + netChange;
-    if (finalLength < 0) finalLength = 0;
-
-    // Resize once
-    if (!remap(finalLength))
-        throw std::runtime_error("failed to resize for deferred operations");
-
-    // Sort by index descending
-    std::sort(deferredOps, deferredOps + opCount,
-              [](const DeferredOp &a, const DeferredOp &b) { return a.index > b.index; });
-
-    // Apply operations
-    for (int64_t i = 0; i < opCount; ++i) {
-        int64_t idx = deferredOps[i].index;
-        int64_t val = deferredOps[i].value;
-        bool insert = deferredOps[i].isInsert;
-
-        if (insert) {
-            if (idx < length) {
-                int64_t moveCount = length - idx;
-                memmove(&data[idx + 1], &data[idx], moveCount * sizeof(int64_t));
-            }
-            data[idx] = val;
-        } else { // remove
-            if (idx < length - 1) {
-                int64_t moveCount = length - idx - 1;
-                memmove(&data[idx], &data[idx + 1], moveCount * sizeof(int64_t));
-            }
-            data[length - 1] = 0; // optional zero out
+        // Remap old data to new base
+        if (data) {
+            memcpy(newBase, data, length * sizeof(int64_t));
+            UnmapViewOfFile(data);
         }
+
+        if (hMap) CloseHandle(hMap);
+        reservedBase = newBase;
+        reservedLength = newReserve;
+        hMap = CreateFileMapping(hFile, NULL, PAGE_READWRITE, 0, 0, NULL);
+        if (!hMap) return false;
     }
 
-    length = finalLength;
-    opCount = 0;
-    isDirty = false;
-    netChange = 0;
+    // Extend file on disk
+    LARGE_INTEGER newSize;
+    newSize.QuadPart = newLength * sizeof(int64_t);
+    if (!SetFilePointerEx(hFile, newSize, NULL, FILE_BEGIN) || !SetEndOfFile(hFile)) return false;
+
+    if (!data) {
+        hMap = CreateFileMapping(hFile, NULL, PAGE_READWRITE, 0, 0, NULL);
+        if (!hMap) return false;
+
+        data = (int64_t*)MapViewOfFileEx(
+            hMap,
+            FILE_MAP_ALL_ACCESS,
+            0, 0,
+            newLength * sizeof(int64_t),
+            reservedBase
+        );
+        if (!data) { CloseHandle(hMap); hMap = NULL; return false; }
+    }
+
+    length = newLength;
+    return true;
 }
+#else
+// Linux / Unix version
+static bool remap(size_t newLength) {
+    if (data) {
+        if (ftruncate(fd, newLength * sizeof(int64_t)) == -1) return false;
+        void* newData = mremap(data, mappedSize * sizeof(int64_t), newLength * sizeof(int64_t), MREMAP_MAYMOVE);
+        if (newData == MAP_FAILED) return false;
+        data = (int64_t*)newData;
+    } else {
+        if (ftruncate(fd, newLength * sizeof(int64_t)) == -1) return false;
+        data = (int64_t*)mmap(nullptr, newLength * sizeof(int64_t),
+                              PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+        if (data == MAP_FAILED) { data = nullptr; return false; }
+    }
+    length = newLength;
+    mappedSize = newLength;
+    return true;
+}
+#endif
 
 // ---------------- Load / Destroy ----------------
-void loadChart(const char* inFile) {
+void loadChart(const char* inFile, size_t prealloc = 1024*1024) {
 #ifdef _WIN32
     hFile = CreateFileA(inFile, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL,
                         OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE) return;
+
+    reserveSpace(prealloc);
+
     LARGE_INTEGER fileSize; GetFileSizeEx(hFile, &fileSize);
     length = fileSize.QuadPart / sizeof(int64_t);
     remap(length);
 #else
     fd = open(inFile, O_RDWR | O_CREAT, 0644);
+    if (fd == -1) return;
+
     struct stat st; fstat(fd, &st);
     length = st.st_size / sizeof(int64_t);
-    remap(length);
+    mappedSize = length;
+    remap(length > 0 ? length : prealloc);
 #endif
-
-    opCount = 0;
-    isDirty = false;
-    netChange = 0;
-}
-
-int64_t getNote(int64_t atIndex) {
-    if (atIndex < 0 || atIndex >= length)
-        throw std::out_of_range("index out of range");
-    return data[atIndex];
-}
-
-void setNote(int64_t atIndex, int64_t value) {
-    if (atIndex < 0 || atIndex >= length)
-        throw std::out_of_range("index out of range");
-    data[atIndex] = value;
-}
-
-int64_t getLength() {
-    return length + (isDirty ? netChange : 0);
 }
 
 void destroyChart() {
@@ -147,63 +131,52 @@ void destroyChart() {
     if (data) UnmapViewOfFile(data); data = nullptr;
     if (hMap) CloseHandle(hMap); hMap = NULL;
     if (hFile != INVALID_HANDLE_VALUE) CloseHandle(hFile); hFile = INVALID_HANDLE_VALUE;
+    if (reservedBase) VirtualFree(reservedBase, 0, MEM_RELEASE); reservedBase = nullptr;
+    reservedLength = 0;
 #else
-    if (data) munmap(data, length * sizeof(int64_t)); data = nullptr;
+    if (data) munmap(data, mappedSize * sizeof(int64_t)); data = nullptr;
     if (fd != -1) close(fd); fd = -1;
+    mappedSize = 0;
 #endif
     length = 0;
-    opCount = 0;
-    isDirty = false;
-    netChange = 0;
 }
 
-// ---------------- FAST insert/remove ----------------
-void insertNote(int64_t index, int64_t value, bool autoflush = false) {
-    if (index < 0 || index > getLength())
-        throw std::out_of_range("index out of range");
+// ---------------- Batched insert/remove ----------------
+void insertNotes(int64_t index, const std::vector<int64_t>& values) {
+    if (index < 0 || index > length) throw std::out_of_range("index out of range");
+    size_t batchSize = values.size();
+    if (batchSize == 0) return;
 
-    if (opCount < 1048576 && !autoflush) {
-        deferredOps[opCount] = {uint64_t(index), 1, value};
-        netChange++;
-        opCount++;
-        isDirty = true;
-    } else {
-        if (autoflush) {
-            deferredOps[opCount] = {uint64_t(index), 1, value};
-            netChange++;
-            isDirty = true;
-        }
-        flushDeferred();
-        if (!autoflush) {
-            deferredOps[0] = {uint64_t(index), 1, value};
-            opCount = 1;
-            netChange = 1;
-            isDirty = true;
-        }
+    remap(length + batchSize);
+
+    if (index < length - batchSize) {
+        memmove(&data[index + batchSize], &data[index], (length - batchSize - index) * sizeof(int64_t));
     }
+    memcpy(&data[index], values.data(), batchSize * sizeof(int64_t));
 }
 
-void removeNote(int64_t index, bool autoflush = false) {
-    if (index < 0 || index >= getLength())
-        throw std::out_of_range("index out of range");
+void removeNotes(int64_t index, size_t count) {
+    if (index < 0 || index >= length) throw std::out_of_range("index out of range");
+    if (count == 0) return;
+    if (index + count > length) count = length - index;
 
-    if (opCount < 1048576 && !autoflush) {
-        deferredOps[opCount] = {uint64_t(index), 0, 0};
-        netChange--;
-        opCount++;
-        isDirty = true;
-    } else {
-        if (autoflush) {
-            deferredOps[opCount] = {uint64_t(index), 0, 0};
-            netChange--;
-            isDirty = true;
-        }
-        flushDeferred();
-        if (!autoflush) {
-            deferredOps[0] = {uint64_t(index), 0, 0};
-            opCount = 1;
-            netChange = -1;
-            isDirty = true;
-        }
+    if (index + count < length) {
+        memmove(&data[index], &data[index + count], (length - index - count) * sizeof(int64_t));
     }
+
+    remap(length - count);
 }
+
+// ---------------- Single-note helpers ----------------
+void insertNote(int64_t index, int64_t value) {
+    insertNotes(index, std::vector<int64_t>{value});
+}
+
+void removeNote(int64_t index) {
+    removeNotes(index, 1);
+}
+
+// ---------------- Access helpers ----------------
+int64_t getNote(int64_t atIndex) { return data[atIndex]; }
+void setNote(int64_t atIndex, int64_t value) { data[atIndex] = value; }
+int64_t getLength() { return length; }
