@@ -179,12 +179,14 @@ void insertNote(int64_t index, int64_t value, bool autoflush = false) {
 			isDirty = true;
 		}
 		flushDeferred();
-		deferredOps[0][0] = index;
-		deferredOps[0][1] = value;
-		deferredOps[0][2] = 1;
-		opCount = 1;
-		netChange = 1;
-		isDirty = true;
+		if (!autoflush) {
+			deferredOps[0][0] = index;
+			deferredOps[0][1] = value;
+			deferredOps[0][2] = 1;
+			opCount = 1;
+			netChange = 1;
+			isDirty = true;
+		}
 	}
 }
 
@@ -208,11 +210,13 @@ void removeNote(int64_t index, bool autoflush = false) {
 			isDirty = true;
 		}
 		flushDeferred();
-		deferredOps[0][0] = index;
-		deferredOps[0][1] = 0;
-		deferredOps[0][2] = 0;
-		netChange = 0
-		opCount = 1;
-		isDirty = true;
+		if (!autoflush) {
+			deferredOps[0][0] = index;
+			deferredOps[0][1] = 0;
+			deferredOps[0][2] = 0;
+			netChange = 0
+			opCount = 1;
+			isDirty = true;
+		}
 	}
 }
