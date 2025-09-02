@@ -44,7 +44,9 @@ static bool reserveSpace(size_t reserveSize) {
 static bool remap(size_t newLength) {
     if (newLength > reservedLength) {
         // Auto-grow reserved space by doubling
-        size_t newReserve = std::max(newLength, reservedLength * 2);
+        size_t newReserve = newLength;
+        size_t maxReserve = reservedLength * 2;
+        if (newReserve > maxReserve) newReserve = maxReserve;
         LPVOID newBase = VirtualAlloc(nullptr, newReserve * sizeof(int64_t), MEM_RESERVE, PAGE_READWRITE);
         if (!newBase) return false;
 
@@ -104,13 +106,13 @@ static bool remap(size_t newLength) {
 #endif
 
 // ---------------- Load / Destroy ----------------
-void loadChart(const char* inFile, size_t prealloc = 1024*1024) {
+void loadChart(const char* inFile) {
 #ifdef _WIN32
     hFile = CreateFileA(inFile, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL,
                         OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (hFile == INVALID_HANDLE_VALUE) return;
 
-    reserveSpace(prealloc);
+    reserveSpace(1048576);
 
     LARGE_INTEGER fileSize; GetFileSizeEx(hFile, &fileSize);
     length = fileSize.QuadPart / sizeof(int64_t);
@@ -122,7 +124,7 @@ void loadChart(const char* inFile, size_t prealloc = 1024*1024) {
     struct stat st; fstat(fd, &st);
     length = st.st_size / sizeof(int64_t);
     mappedSize = length;
-    remap(length > 0 ? length : prealloc);
+    remap(length > 0 ? length : 1048576);
 #endif
 }
 
