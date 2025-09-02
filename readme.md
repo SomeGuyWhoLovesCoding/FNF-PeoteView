@@ -44,15 +44,11 @@ Hashlink 1.15 (located at hashlinkBuildXmls/hl)
 
 You must have haxe 4.3.6 (and newer) installed.
 
-Also, PLEASE. PLEASE DOWNGRADE PEOTE-VIEW TO 1.0.4 IF YOU GET THIS ERROR: <img width="1547" height="631" alt="image" src="https://github.com/user-attachments/assets/54aed85b-34b8-4245-9aaa-8be73152f97b" />
-
-(image source: funkin-view at Loturzeltümpel)
-
 Instll these haxelibs:
 
 Lime - Clone [this lime fork](https://github.com/SomeGuyWhoLovesCoding/lime), do ``haxelib dev lime [path you cloned the fork at]``, THEN do ``lime rebuild tools`` and ``lime rebuild <platform>``, and for future rebuilds you just do the same ``lime rebuild <platform>``. (Thanks to lavender for fixing the main loop fuckery)
 
-Peote-view - ``haxelib install peote-view 1.0.4``
+Peote-view - ``haxelib install peote-view``
 
 HXCPP - ``haxelib install hxcpp``
 
