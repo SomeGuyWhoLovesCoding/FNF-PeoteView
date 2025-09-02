@@ -34,15 +34,15 @@ static int fd = -1;
 // -----------------------------------------------------------------------------
 // Ultra-fast deferred operations
 // -----------------------------------------------------------------------------
-static std::array<int64_t, 3> deferredOps[1048576];
-static int64_t opCount   = 0;
-static bool    isDirty   = false;
-static int64_t netChange = 0;
+alignas(64) std::array<int64_t, 3> deferredOps[1048576];
+int64_t opCount   = 0;
+bool    isDirty   = false;
+int64_t netChange = 0;
 
 // -----------------------------------------------------------------------------
 // Memory-mapping helpers
 // -----------------------------------------------------------------------------
-static bool remap(size_t newLength) {
+bool remap(size_t newLength) {
 #ifdef _WIN32
 	if (data) { UnmapViewOfFile(data); data = nullptr; }
 	if (hMap) { CloseHandle(hMap); hMap = NULL; }
@@ -72,13 +72,8 @@ static bool remap(size_t newLength) {
 // -----------------------------------------------------------------------------
 // Flush deferred ops
 // -----------------------------------------------------------------------------
-static void flushDeferred() {
+void flushDeferred() {
 	if (!isDirty || opCount == 0) return;
-
-	// Update netChange
-	netChange = 0;
-	for (int64_t i = 0; i < opCount; ++i)
-		netChange += deferredOps[i][2] ? 1 : -1;
 
 	int64_t finalLength = length + netChange;
 	if (finalLength < 0) finalLength = 0;
@@ -183,20 +178,25 @@ HL_PRIM void HL_NAME(insertNote)(int64_t index, int64_t value, bool autoflush) {
 		deferredOps[opCount][1] = value;
 		deferredOps[opCount][2] = 1;
 		opCount++;
+		netChange++;
 		isDirty = true;
 	} else {
 		if (autoflush) {
 			deferredOps[opCount][0] = index;
 			deferredOps[opCount][1] = value;
 			deferredOps[opCount][2] = 1;
+			netChange++;
 			isDirty = true;
 		}
 		flushDeferred();
-		deferredOps[0][0] = index;
-		deferredOps[0][1] = value;
-		deferredOps[0][2] = 1;
-		opCount = 1;
-		isDirty = true;
+		if (!autoflush) {
+			deferredOps[0][0] = index;
+			deferredOps[0][1] = value;
+			deferredOps[0][2] = 1;
+			opCount = 1;
+			netChange = 1;
+			isDirty = true;
+		}
 	}
 }
 
@@ -209,20 +209,25 @@ HL_PRIM void HL_NAME(removeNote)(int64_t index, bool autoflush) {
 		deferredOps[opCount][1] = 0;
 		deferredOps[opCount][2] = 0;
 		opCount++;
+		--netChange;
 		isDirty = true;
 	} else {
 		if (autoflush) {
 			deferredOps[opCount][0] = index;
 			deferredOps[opCount][1] = 0;
 			deferredOps[opCount][2] = 0;
+			--netChange;
 			isDirty = true;
 		}
 		flushDeferred();
-		deferredOps[0][0] = index;
-		deferredOps[0][1] = 0;
-		deferredOps[0][2] = 0;
-		opCount = 1;
-		isDirty = true;
+		if (!autoflush) {
+			deferredOps[0][0] = index;
+			deferredOps[0][1] = 0;
+			deferredOps[0][2] = 0;
+			opCount = 1;
+			netChange = 1;
+			isDirty = true;
+		}
 	}
 }
 
