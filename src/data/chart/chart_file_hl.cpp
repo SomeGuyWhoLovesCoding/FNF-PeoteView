@@ -185,6 +185,12 @@ HL_PRIM void HL_NAME(insertNote)(int64_t index, int64_t value, bool autoflush) {
 		opCount++;
 		isDirty = true;
 	} else {
+		if (autoflush) {
+			deferredOps[opCount][0] = index;
+			deferredOps[opCount][1] = value;
+			deferredOps[opCount][2] = 1;
+			isDirty = true;
+		}
 		flushDeferred();
 		deferredOps[0][0] = index;
 		deferredOps[0][1] = value;
@@ -205,6 +211,12 @@ HL_PRIM void HL_NAME(removeNote)(int64_t index, bool autoflush) {
 		opCount++;
 		isDirty = true;
 	} else {
+		if (autoflush) {
+			deferredOps[opCount][0] = index;
+			deferredOps[opCount][1] = 0;
+			deferredOps[opCount][2] = 0;
+			isDirty = true;
+		}
 		flushDeferred();
 		deferredOps[0][0] = index;
 		deferredOps[0][1] = 0;
