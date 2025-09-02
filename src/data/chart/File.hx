@@ -23,8 +23,8 @@ extern class File {
 	@:native("destroyChart") static function destroyChart():Void;
 
 	// For the chart editor (keep in mind, completely untested so this is implemented early)
-	@:native("insertNote") static function insertNote(atIndex:Int64, value:Int64, autoflush:Bool):Void;
-	@:native("removeNote") static function removeNote(atIndex:Int64, autoflush:Bool):Void;
+	@:native("insertNote") static function insertNote(atIndex:Int64, value:Int64):Void;
+	@:native("removeNote") static function removeNote(atIndex:Int64):Void;
 }
 #elseif hl
 class File {
@@ -41,7 +41,7 @@ class File {
 	@:hlNative("chart_file", "destroyChart") public static function destroyChart():Void {}
 
 	// For the chart editor (keep in mind, completely untested so this is implemented early)
-	@:hlNative("chart_file", "insertNote") static function insertNote(atIndex:hl.I64, value:hl.I64, autoflush:Bool):Void {}
-	@:hlNative("chart_file", "removeNote") static function removeNote(atIndex:hl.I64, autoflush:Bool):Void {}
+	@:hlNative("chart_file", "insertNote") static function insertNote(atIndex:hl.I64, value:hl.I64):Void {}
+	@:hlNative("chart_file", "removeNote") static function removeNote(atIndex:hl.I64):Void {}
 }
 #end
