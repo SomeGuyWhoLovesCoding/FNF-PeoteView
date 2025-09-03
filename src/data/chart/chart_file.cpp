@@ -26,7 +26,7 @@ int fd = -1;
 #endif
 
 // ---------------- Memory-mapping helpers ----------------
-static bool remap(size_t newLength) {
+bool remap(size_t newLength) {
     // Clean up existing mapping with CORRECT size
 #ifdef _WIN32
     if (data) { 
