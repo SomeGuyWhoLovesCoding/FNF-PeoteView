@@ -21,25 +21,25 @@
 // -----------------------------------------------------------------------------
 // Globals
 // -----------------------------------------------------------------------------
-static int64_t* data = nullptr;
-static int64_t  length = 0;          // logical element count
-static int64_t  mapped_length = 0;   // actual mapped element count (for munmap)
+int64_t* data = nullptr;
+int64_t  length = 0;          // logical element count
+int64_t  mapped_length = 0;   // actual mapped element count (for munmap)
 
 #ifdef _WIN32
-static HANDLE hFile = INVALID_HANDLE_VALUE;
-static HANDLE hMap  = NULL;
+HANDLE hFile = INVALID_HANDLE_VALUE;
+HANDLE hMap  = NULL;
 #else
-static int fd = -1;
+int fd = -1;
 #endif
 
 // -----------------------------------------------------------------------------
 // Helpers
 // -----------------------------------------------------------------------------
-static inline int64_t extractTime(int64_t note) {
+inline int64_t extractTime(int64_t note) {
     return (note >> 23) & 0x1FFFFFFFFFFLL; // 2199023255551
 }
 
-static int64_t findNoteIndexByTime(int64_t time) {
+int64_t findNoteIndexByTime(int64_t time) {
     if (length == 0) return 0;
 
     int64_t left = 0;
@@ -66,7 +66,7 @@ static int64_t findNoteIndexByTime(int64_t time) {
     return result; // insertion point
 }
 
-static bool remap(size_t newLength) {
+bool remap(size_t newLength) {
 #ifdef _WIN32
     if (data) { UnmapViewOfFile(data); data = nullptr; }
     if (hMap)  { CloseHandle(hMap);    hMap  = NULL;    }
