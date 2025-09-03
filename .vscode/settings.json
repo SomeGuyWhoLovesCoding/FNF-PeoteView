@@ -70,6 +70,11 @@
         "xtr1common": "cpp",
         "xutility": "cpp",
         "fstream": "cpp",
-        "xtree": "cpp"
+        "xtree": "cpp",
+        "map": "cpp",
+        "deque": "cpp",
+        "execution": "cpp",
+        "numeric": "cpp",
+        "queue": "cpp"
     }
 }

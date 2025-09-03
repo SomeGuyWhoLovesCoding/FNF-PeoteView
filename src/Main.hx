@@ -52,27 +52,33 @@ class Main extends Application
 			default: throw("Sorry, only works with OpenGL.");
 		}
 
-		/*#if chart_test
-		// START CHART SAMPLE
-		var stamp = haxe.Timer.stamp();
-		trace("Insert 1,000,000 notes");
-		Chart.load("assets/songs/god-eater");
-		var arr = new Array<MetaNote>();
-		for (i in 0...1000000) {
-			arr.push(new MetaNote(Tools.betterInt64FromFloat((1000 + (200 * i)) * 100),
-				Math.floor(100 * 0.2), // Equal to `note.duration / 5`.
-				i % 9,
-				0,
-			1));
-			//Sys.println(i);
-		}
-		trace("Insert 1,000,000 notes (function)");
-		var stamp2 = haxe.Timer.stamp();
-		File.insertNotes(arr);
-		trace('Done! Took ${(haxe.Timer.stamp() - stamp2) * 1000}ms');
-		trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
-		Chart.destroy();
-		#end*/
+		#if chart_test
+		haxe.Timer.delay(function() {
+			// START CHART SAMPLE
+			var stamp = haxe.Timer.stamp();
+			trace("Insert 1,000,000 notes (array)");
+			Chart.load("assets/songs/god-eater");
+			var arr = new Array<MetaNote>();
+			for (i in 0...1000000) {
+				arr.push(new MetaNote(Tools.betterInt64FromFloat((1000.0 + (200.0 * i)) * 100),
+					Math.floor(/*100*/0 * 0.2), // Equal to `note.duration / 5`.
+					i % 9,
+					0,
+				1));
+				//Sys.println(i);
+			}
+			Sys.println("Insert 1,000,000 notes (function)");
+			var stamp2 = haxe.Timer.stamp();
+			File.insertNotes(arr);
+			Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp2) * 1000}ms');
+			var stamp3 = haxe.Timer.stamp();
+			Sys.println("Remove 1,000,000 notes (function)");
+			File.removeNotes(arr);
+			Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp3) * 1000}ms');
+			Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
+			Chart.destroy();
+		}, 8000);
+		#end
 	}
 
 	static var songChosen:String = "";
@@ -271,6 +277,7 @@ class Main extends Application
 
 	override function update(deltaTime:haxe.Int64) {
 		Tools.profileFrame();
+		Sys.println(deltaTime);
 
 		if (_started) {
 			//if (window.onMouseDown.__listeners[1] != null) trace(window.onMouseDown.__listeners[1]);

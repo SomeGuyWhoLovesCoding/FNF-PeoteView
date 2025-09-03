@@ -4,6 +4,7 @@
 #include <stdexcept>
 #include <cstring>
 #include <algorithm>
+#include <unordered_set>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -15,10 +16,7 @@
 #endif
 
 int64_t* data = nullptr;
-int64_t length = 0;          // number of valid notes
-int64_t mapped_length = 0;   // actual mapped size
-int64_t gap_start = 0;       // gap start index
-int64_t gap_end = 0;         // gap end index
+int64_t length = 0;
 
 #ifdef _WIN32
 HANDLE hFile = INVALID_HANDLE_VALUE;
@@ -30,189 +28,196 @@ int fd = -1;
 // ---------------- Memory-mapping helpers ----------------
 bool remap(size_t newLength) {
 #ifdef _WIN32
-    if (data) { UnmapViewOfFile(data); data = nullptr; }
-    if (hMap) { CloseHandle(hMap); hMap = NULL; }
+	if (data) { UnmapViewOfFile(data); data = nullptr; }
+	if (hMap) { CloseHandle(hMap); hMap = NULL; }
 
-    LARGE_INTEGER newSize; newSize.QuadPart = newLength * sizeof(int64_t);
-    if (!SetFilePointerEx(hFile, newSize, NULL, FILE_BEGIN) || !SetEndOfFile(hFile))
-        return false;
+	LARGE_INTEGER newSize; newSize.QuadPart = newLength * sizeof(int64_t);
+	if (!SetFilePointerEx(hFile, newSize, NULL, FILE_BEGIN) || !SetEndOfFile(hFile)) return false;
 
-    hMap = CreateFileMapping(hFile, NULL, PAGE_READWRITE, 0, 0, NULL);
-    if (!hMap) return false;
-    data = (int64_t*)MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, 0);
-    if (!data) { CloseHandle(hMap); hMap = NULL; return false; }
+	hMap = CreateFileMapping(hFile, NULL, PAGE_READWRITE, 0, 0, NULL);
+	if (!hMap) return false;
+
+	data = (int64_t*)MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+	if (!data) { CloseHandle(hMap); hMap = NULL; return false; }
+
 #else
-    if (data && mapped_length > 0) { munmap(data, mapped_length * sizeof(int64_t)); data = nullptr; }
-    if (ftruncate(fd, newLength * sizeof(int64_t)) == -1) return false;
-    data = (int64_t*)mmap(nullptr, newLength * sizeof(int64_t),
-                          PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (data == MAP_FAILED) { data = nullptr; return false; }
+	if (data) { munmap(data, length * sizeof(int64_t)); data = nullptr; }
+	if (ftruncate(fd, newLength * sizeof(int64_t)) == -1) return false;
+
+	data = (int64_t*)mmap(nullptr, newLength * sizeof(int64_t),
+						  PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	if (data == MAP_FAILED) { data = nullptr; return false; }
 #endif
-    mapped_length = newLength;
-    return true;
+	length = newLength;
+	return true;
 }
 
 // ---------------- Load / Destroy ----------------
 void loadChart(const char* inFile) {
 #ifdef _WIN32
-    hFile = CreateFileA(inFile, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL,
-                        OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hFile == INVALID_HANDLE_VALUE) return;
-    LARGE_INTEGER fileSize; GetFileSizeEx(hFile, &fileSize);
-    length = fileSize.QuadPart / sizeof(int64_t);
-    mapped_length = length;
-    remap(length);
+	hFile = CreateFileA(inFile, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, NULL,
+						OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+	if (hFile == INVALID_HANDLE_VALUE) return;
+	LARGE_INTEGER fileSize; GetFileSizeEx(hFile, &fileSize);
+	length = fileSize.QuadPart / sizeof(int64_t);
+	remap(length);
 #else
-    fd = open(inFile, O_RDWR | O_CREAT, 0644);
-    if (fd == -1) return;
-    struct stat st; fstat(fd, &st);
-    length = st.st_size / sizeof(int64_t);
-    mapped_length = length;
-    remap(length);
+	fd = open(inFile, O_RDWR | O_CREAT, 0644);
+	struct stat st; fstat(fd, &st);
+	length = st.st_size / sizeof(int64_t);
+	remap(length);
 #endif
-    gap_start = length;
-    gap_end = length;
-}
-
-void destroyChart() {
-#ifdef _WIN32
-    if (data) UnmapViewOfFile(data);
-    if (hMap) CloseHandle(hMap);
-    if (hFile != INVALID_HANDLE_VALUE) CloseHandle(hFile);
-#else
-    if (data && mapped_length > 0) munmap(data, mapped_length * sizeof(int64_t));
-    if (fd != -1) close(fd);
-#endif
-    data = nullptr; length = 0; mapped_length = 0;
-    gap_start = gap_end = 0;
-}
-
-// ---------------- Extract / gap-aware binary search ----------------
-inline int64_t extractTime(int64_t note) {
-    return (note >> 23) & 0x1FFFFFFFFFFLL; // 2199023255551
-}
-
-int64_t findInsertIndex(int64_t note) {
-    int64_t lo = 0, hi = length;
-    while (lo < hi) {
-        int64_t mid = lo + (hi - lo)/2;
-        int64_t midNote = mid >= gap_start ? data[mid + (gap_end - gap_start)] : data[mid];
-        if (extractTime(midNote) < extractTime(note)) lo = mid + 1;
-        else hi = mid;
-    }
-    return lo;
-}
-
-// ---------------- Gap buffer helpers ----------------
-void moveGap(int64_t index) {
-    if (index < 0 || index > length) throw std::out_of_range("index out of range");
-    if (index < gap_start) {
-        int64_t move_size = gap_start - index;
-        std::memmove(data + gap_end - move_size, data + index, move_size * sizeof(int64_t));
-        gap_start = index;
-        gap_end -= move_size;
-    } else if (index > gap_start) {
-        int64_t move_size = index - gap_start;
-        std::memmove(data + gap_start, data + gap_end, move_size * sizeof(int64_t));
-        gap_start += move_size;
-        gap_end += move_size;
-    }
-}
-
-void expandGap(int64_t min_extra) {
-    int64_t newMapped = mapped_length + min_extra + (mapped_length/2);
-    if (!remap(newMapped)) throw std::runtime_error("failed to expand gap buffer");
-    gap_end += newMapped - mapped_length;
 }
 
 int64_t getNote(int64_t atIndex) { return data[atIndex]; }
 void setNote(int64_t atIndex, int64_t value) { data[atIndex] = value; }
 int64_t getLength() { return length; }
 
-// ---------------- Single-note operations using gap buffer ----------------
-void insertNote(int64_t note) {
-    int64_t idx = findInsertIndex(note);
-    if (idx != gap_start) moveGap(idx);
-    if (gap_end - gap_start < 1) expandGap(16);
-    data[gap_start++] = note;
-    length++;
+void destroyChart() {
+#ifdef _WIN32
+	if (data) UnmapViewOfFile(data); data = nullptr;
+	if (hMap) CloseHandle(hMap); hMap = NULL;
+	if (hFile != INVALID_HANDLE_VALUE) CloseHandle(hFile); hFile = INVALID_HANDLE_VALUE;
+#else
+	if (data) munmap(data, length * sizeof(int64_t)); data = nullptr;
+	if (fd != -1) close(fd); fd = -1;
+#endif
+	length = 0;
 }
 
-void removeNote(int64_t note) {
-    int64_t idx = findInsertIndex(note);
-    int64_t real_idx = idx >= gap_start ? idx + (gap_end - gap_start) : idx;
-    if (real_idx >= length || data[real_idx] != note) return; // not found
+/**
+ * All of this is simply for when the chart editor arrives.
+ * But, for now, this is completely untested and I highly recommend that you don't use it.
+ * Unless you want to experiment. Just be careful.
+**/
 
-    moveGap(idx);
-    gap_start++; // remove the note
-    length--;
-
-    int64_t growSize = 16;
-    gap_end = gap_start + growSize;
-    if (!remap(gap_end)) throw std::runtime_error("failed to expand gap after removal");
+void insertNote(int64_t index, int64_t value) {
+    if (index < 0 || index > length) throw std::out_of_range("index out of range");
+    if (!remap(length + 1)) throw std::runtime_error("failed to resize file");
+    if (index < length) {
+        memmove(&data[index + 1], &data[index], (length - index) * sizeof(int64_t));
+    }
+    data[index] = value;
 }
 
-// ---------------- Batch operations using gap buffer ----------------
-void insertNotes(std::vector<int64_t> values) {
-    if (values.empty()) return;
-    std::sort(values.begin(), values.end(),
-              [](int64_t a, int64_t b){ return extractTime(a) < extractTime(b); });
-
-    for (auto note : values) {
-        int64_t idx = findInsertIndex(note);
-        if (idx != gap_start) moveGap(idx);
-        if (gap_end - gap_start < 1) expandGap(16);
-        data[gap_start++] = note;
-        length++;
+void removeNote(int64_t index) {
+    if (index < 0 || index >= length) throw std::out_of_range("index out of range");
+    if (index < length - 1) {
+        memmove(&data[index], &data[index + 1], (length - index - 1) * sizeof(int64_t));
     }
+    if (!remap(length - 1)) throw std::runtime_error("failed to shrink file");
 }
 
-void removeNotes(std::vector<int64_t> values) {
-    if (values.empty() || length == 0) return;
-    std::sort(values.begin(), values.end(),
-              [](int64_t a, int64_t b){ return extractTime(a) < extractTime(b); });
+inline int64_t extractTime(int64_t note) {
+    return (note >> 23) & 0x1FFFFFFFFFFLL; // 2199023255551
+}
 
-    int64_t in = 0, out = 0, j = 0;
-    int64_t first_removed_index = -1;
+// -------------------- Safe 32-bit radix sort --------------------
+// This is what makes anything work for `insertNotes`'s efficiency really
 
-    while (in < length && j < (int64_t)values.size()) {
-        int64_t note = in >= gap_start ? data[in + (gap_end - gap_start)] : data[in];
-        int64_t t = extractTime(note);
-        int64_t t_rem = extractTime(values[j]);
+/**
+ * ---- BATCH INSERT NOTES ----
+**/
+void insertNotes(std::vector<int64_t> newNotes) {
+    if (newNotes.empty()) return;
 
-        if (t < t_rem) {
-            if (out != in) {
-                if (in >= gap_start) data[out + (gap_end - gap_start)] = note;
-                else data[out] = note;
-            }
-            in++; out++;
-        } else if (t > t_rem) j++;
-        else {
-            if (first_removed_index < 0) first_removed_index = out;
-            if (note == values[j]) in++;
-            else { 
-                if (out != in) {
-                    if (in >= gap_start) data[out + (gap_end - gap_start)] = note;
-                    else data[out] = note;
-                } 
-                in++; out++; 
-            }
-            j++;
-        }
+    int64_t oldLen = length;
+    int64_t insertCount = newNotes.size();
+    int64_t newLen = oldLen + insertCount;
+
+    if (!remap(newLen)) throw std::runtime_error("failed to resize file");
+
+    std::memcpy(data + oldLen, newNotes.data(), insertCount * sizeof(int64_t));
+
+    // Use temp buffer for the smaller array
+    std::vector<int64_t> temp((oldLen < insertCount) ? insertCount : oldLen);
+    int64_t* src;
+    int64_t srcSize;
+    int64_t* dest;
+    int64_t destSize;
+
+    if (oldLen < insertCount) {
+        src = data;
+        srcSize = oldLen;
+        dest = data + oldLen;
+        destSize = insertCount;
+    } else {
+        src = data + oldLen;
+        srcSize = insertCount;
+        dest = data;
+        destSize = oldLen;
     }
 
-    while (in < length) {
-        int64_t note = in >= gap_start ? data[in + (gap_end - gap_start)] : data[in];
-        if (out != in) {
-            if (in >= gap_start) data[out + (gap_end - gap_start)] = note;
-            else data[out] = note;
-        }
-        in++; out++;
+    std::memcpy(temp.data(), src, srcSize * sizeof(int64_t));
+
+    int64_t i = 0, j = 0, k = 0;
+    while (i < srcSize && j < destSize) {
+        // Branchless merge: select which element to take
+        int64_t tTime = extractTime(temp[i]);
+        int64_t dTime = extractTime(dest[j]);
+        bool takeTemp = tTime <= dTime;
+
+        // Conditional move without branch
+        data[k++] = takeTemp ? temp[i++] : dest[j++];
     }
 
-    length = out;
-    gap_start = first_removed_index >= 0 ? first_removed_index : length;
-    int64_t growSize = std::max((int64_t)16, (int64_t)(values.size() * 1.5));
-    gap_end = gap_start + growSize;
-    if (!remap(gap_end)) throw std::runtime_error("failed to expand gap after removal");
+    // Copy remaining elements
+    while (i < srcSize) data[k++] = temp[i++];
+    while (j < destSize) data[k++] = dest[j++];
+
+    length = newLen;
+}
+
+void removeNotes(std::vector<int64_t> notesToRemove) {
+    if (notesToRemove.empty()) return;
+
+    // Copy and sort notesToRemove by time
+    std::vector<int64_t> toRemove(notesToRemove);
+    std::sort(toRemove.begin(), toRemove.end(), [](int64_t a, int64_t b) {
+        return extractTime(a) < extractTime(b);
+    });
+
+    int64_t oldLen = length;
+    int64_t removeLen = toRemove.size();
+
+    // Use temp buffer for the smaller array
+    std::vector<int64_t> temp((oldLen < removeLen) ? oldLen : removeLen);
+
+    int64_t* src;
+    int64_t srcSize;
+    int64_t* dest;
+    int64_t destSize;
+
+    if (oldLen < removeLen) {
+        src = data;
+        srcSize = oldLen;
+        dest = toRemove.data();
+        destSize = removeLen;
+    } else {
+        src = toRemove.data();
+        srcSize = removeLen;
+        dest = data;
+        destSize = oldLen;
+    }
+
+    std::memcpy(temp.data(), src, srcSize * sizeof(int64_t));
+
+    int64_t i = 0, j = 0, k = 0;
+
+    while (i < srcSize && j < destSize) {
+        int64_t tTime = extractTime(temp[i]);
+        int64_t dTime = extractTime(dest[j]);
+
+        // Branchless comparison: if equal, skip the note
+        bool keep = !(tTime == dTime);
+        data[k] = dest[j];
+        k += keep;
+        j += 1;
+        i += (tTime <= dTime);
+    }
+
+    // Copy remaining elements from dest
+    while (j < destSize) data[k++] = dest[j++];
+
+    length = k;
 }

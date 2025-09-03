@@ -4,6 +4,7 @@ package data.chart;
 
 #if cpp
 import cpp.RawPointer;
+import cpp.Pointer;
 
 @:keep
 @:unreflective
@@ -16,11 +17,7 @@ extern class StdVectorInt64
     static function create() : StdVectorInt64;
 
     @:runtime inline static function fromInt64Array(arr:Array<Int64>):StdVectorInt64 {
-        var vec = StdVectorInt64.create();
-        for (i in arr) {
-            vec.push_back(i);
-        }
-        return vec;
+        return untyped __cpp__('std::vector<int64_t>({0}, {0} + {1})', Pointer.ofArray(arr).raw, arr.length);
     }
 
     function push_back(i:Int64) : Void;
