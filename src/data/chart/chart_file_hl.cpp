@@ -218,32 +218,43 @@ HL_PRIM void HL_NAME(removeNote)(int64_t index) {
 }
 
 // -----------------------------------------------------------------------------
-// Batch insert: Array<Int64> from Haxe / HashLink
-// NOTE: this HL binding takes a startIndex + Array<Int64> (same as template provided)
+// Insert notes: Array<Int64> from Haxe / HashLink
 // -----------------------------------------------------------------------------
-HL_PRIM void HL_NAME(insertNotes)(int64_t startIndex, varray* values) {
-    if (startIndex < 0 || startIndex > length) throw std::out_of_range("index out of range");
-    if (!values) return;
+HL_PRIM void HL_NAME(insertNotes)(varray* values) {
+    if (!values || values->size == 0) return;
 
     int64_t insert_count = (int64_t)values->size;
-    if (insert_count <= 0) return;
+    int64_t* arr = hl_aptr(values, int64_t);
 
-    int64_t* src = hl_aptr(values, int64_t); // pointer to Array<Int64> storage
+    // Sort incoming batch by time (in-place on the varray)
+    std::sort(arr, arr + insert_count, [](int64_t a, int64_t b) {
+        return extractTime(a) < extractTime(b);
+    });
+
+    // Find insertion point based on first note
+    int64_t insert_time = extractTime(arr[0]);
+    int64_t insertIndex = findNoteIndexByTime(insert_time);
 
     int64_t old_length = length;
-    if (!remap((size_t)(length + insert_count))) throw std::runtime_error("failed to resize file");
-
-    if (startIndex < old_length) {
-        memmove(&data[startIndex + insert_count], &data[startIndex],
-                (size_t)(old_length - startIndex) * sizeof(int64_t));
+    if (!remap((size_t)(length + insert_count))) {
+        throw std::runtime_error("failed to resize file");
     }
-    memcpy(&data[startIndex], src, (size_t)insert_count * sizeof(int64_t));
+
+    // Shift existing data to make room
+    std::memmove(
+        data + insertIndex + insert_count, // dest
+        data + insertIndex,                // src
+        (old_length - insertIndex) * sizeof(int64_t)
+    );
+
+    // Copy new notes in place
+    std::memcpy(data + insertIndex, arr, insert_count * sizeof(int64_t));
+
+    length += insert_count;
 }
 
 // -----------------------------------------------------------------------------
-// Batch remove: Array<Int64> from Haxe / HashLink
-// Mirrors the C++ removeNotes(vector<int64_t>) behaviour: sorts incoming notes
-// by time, finds exact matches and removes them one-by-one, then shrinks file.
+// Remove notes: Array<Int64> from Haxe / HashLink
 // -----------------------------------------------------------------------------
 HL_PRIM void HL_NAME(removeNotes)(varray* values) {
     if (!values || values->size == 0 || length == 0) return;
@@ -251,30 +262,33 @@ HL_PRIM void HL_NAME(removeNotes)(varray* values) {
     int64_t vcount = (int64_t)values->size;
     int64_t* arr = hl_aptr(values, int64_t);
 
-    // Copy to vector and sort by time
-    std::vector<int64_t> sorted(arr, arr + vcount);
-    std::sort(sorted.begin(), sorted.end(), [](int64_t a, int64_t b) {
+    // Sort incoming batch by time (in-place on the varray)
+    std::sort(arr, arr + vcount, [](int64_t a, int64_t b) {
         return extractTime(a) < extractTime(b);
     });
 
     int64_t remove_count = 0;
 
-    for (auto note : sorted) {
-        if (length == 0) break;
+    for (int64_t i = 0; i < vcount; i++) {
+        int64_t note = arr[i];
         int64_t idx = findNoteIndexByTime(extractTime(note));
 
         if (idx >= 0 && idx < length && data[idx] == note) {
             // Shift everything left to fill the gap
-            if (idx < length - 1) {
-                memmove(&data[idx], &data[idx + 1], (size_t)(length - idx - 1) * sizeof(int64_t));
-            }
+            std::memmove(
+                data + idx,                // dest
+                data + idx + 1,            // src
+                (length - idx - 1) * sizeof(int64_t)
+            );
             length--;
             remove_count++;
         }
     }
 
     if (remove_count > 0) {
-        if (!remap((size_t)length)) throw std::runtime_error("failed to resize file after remove");
+        if (!remap((size_t)length)) {
+            throw std::runtime_error("failed to resize file after remove");
+        }
     }
 }
 
