@@ -125,6 +125,10 @@ void expandGap(int64_t min_extra) {
     gap_end += newMapped - mapped_length;
 }
 
+int64_t getNote(int64_t atIndex) { return data[atIndex]; }
+void setNote(int64_t atIndex, int64_t value) { data[atIndex] = value; }
+int64_t getLength() { return length; }
+
 // ---------------- Single-note operations using gap buffer ----------------
 void insertNote(int64_t note) {
     int64_t idx = findInsertIndex(note);
