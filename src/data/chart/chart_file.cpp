@@ -112,11 +112,6 @@ void removeNote(int64_t note) {
     if (!remap(gap_end)) throw std::runtime_error("failed to expand gap after removal");
 }
 
-// ---------------- Alternative: Batch operations ----------------
-inline int64_t extractTime(int64_t note) {
-    return (note >> 23) & 0x1FFFFFFFFFFLL; // 2199023255551
-}
-
 // ---------------- Extract / gap-aware binary search ----------------
 inline int64_t extractTime(int64_t note) {
     return (note >> 23) & 0x1FFFFFFFFFFLL; // example 2199023255551 mask
