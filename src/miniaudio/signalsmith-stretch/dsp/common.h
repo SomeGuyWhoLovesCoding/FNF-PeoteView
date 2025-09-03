@@ -2,7 +2,7 @@
 #define SIGNALSMITH_DSP_COMMON_H
 
 #if defined(__FAST_MATH__) && (__apple_build_version__ >= 16000000) && (__apple_build_version__ <= 16000099)
-#	error Apple Clang 16.0.0 is broken, and generates completely incorrect code for some SIMD operations. -ffast-math makes it worse, so if you HAVE to use this version of Clang, you can't enable -ffast-math.
+#	error "Apple Clang 16.0.0 is broken, and generates completely incorrect code for some SIMD operations. -ffast-math makes it worse, so if you HAVE to use this version of Clang, you can't enable -ffast-math."
 #endif
 
 #ifndef M_PI
