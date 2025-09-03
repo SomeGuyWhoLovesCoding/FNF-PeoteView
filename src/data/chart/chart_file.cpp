@@ -87,34 +87,9 @@ void destroyChart() {
     gap_start = gap_end = 0;
 }
 
-// ---------------- Single-note operations using gap buffer ----------------
-void insertNote(int64_t note) {
-    int64_t idx = findInsertIndex(note);
-    if (idx < gap_start || idx > gap_start) moveGap(idx);
-    if (gap_end - gap_start < 1) expandGap(16);
-    data[gap_start++] = note;
-    length++;
-}
-
-void removeNote(int64_t note) {
-    int64_t idx = findInsertIndex(note);
-    int64_t real_idx = idx >= gap_start ? idx + (gap_end - gap_start) : idx;
-    if (real_idx >= length || data[real_idx] != note) return; // not found
-
-    // Move gap to removal point
-    moveGap(idx);
-    gap_start++;   // remove the note by advancing gap start
-    length--;
-
-    // Optionally grow the gap a bit after removal
-    int64_t growSize = 16;
-    gap_end = gap_start + growSize;
-    if (!remap(gap_end)) throw std::runtime_error("failed to expand gap after removal");
-}
-
 // ---------------- Extract / gap-aware binary search ----------------
 inline int64_t extractTime(int64_t note) {
-    return (note >> 23) & 0x1FFFFFFFFFFLL; // example 2199023255551 mask
+    return (note >> 23) & 0x1FFFFFFFFFFLL; // 2199023255551
 }
 
 int64_t findInsertIndex(int64_t note) {
@@ -150,7 +125,30 @@ void expandGap(int64_t min_extra) {
     gap_end += newMapped - mapped_length;
 }
 
-// ---------------- Insert / Remove ----------------
+// ---------------- Single-note operations using gap buffer ----------------
+void insertNote(int64_t note) {
+    int64_t idx = findInsertIndex(note);
+    if (idx != gap_start) moveGap(idx);
+    if (gap_end - gap_start < 1) expandGap(16);
+    data[gap_start++] = note;
+    length++;
+}
+
+void removeNote(int64_t note) {
+    int64_t idx = findInsertIndex(note);
+    int64_t real_idx = idx >= gap_start ? idx + (gap_end - gap_start) : idx;
+    if (real_idx >= length || data[real_idx] != note) return; // not found
+
+    moveGap(idx);
+    gap_start++; // remove the note
+    length--;
+
+    int64_t growSize = 16;
+    gap_end = gap_start + growSize;
+    if (!remap(gap_end)) throw std::runtime_error("failed to expand gap after removal");
+}
+
+// ---------------- Batch operations using gap buffer ----------------
 void insertNotes(std::vector<int64_t> values) {
     if (values.empty()) return;
     std::sort(values.begin(), values.end(),
@@ -158,7 +156,7 @@ void insertNotes(std::vector<int64_t> values) {
 
     for (auto note : values) {
         int64_t idx = findInsertIndex(note);
-        if (idx < gap_start || idx > gap_start) moveGap(idx);
+        if (idx != gap_start) moveGap(idx);
         if (gap_end - gap_start < 1) expandGap(16);
         data[gap_start++] = note;
         length++;
@@ -188,10 +186,13 @@ void removeNotes(std::vector<int64_t> values) {
         else {
             if (first_removed_index < 0) first_removed_index = out;
             if (note == values[j]) in++;
-            else { if (out != in) {
-                if (in >= gap_start) data[out + (gap_end - gap_start)] = note;
-                else data[out] = note;
-            } in++; out++; }
+            else { 
+                if (out != in) {
+                    if (in >= gap_start) data[out + (gap_end - gap_start)] = note;
+                    else data[out] = note;
+                } 
+                in++; out++; 
+            }
             j++;
         }
     }
@@ -207,7 +208,6 @@ void removeNotes(std::vector<int64_t> values) {
 
     length = out;
     gap_start = first_removed_index >= 0 ? first_removed_index : length;
-
     int64_t growSize = std::max((int64_t)16, (int64_t)(values.size() * 1.5));
     gap_end = gap_start + growSize;
     if (!remap(gap_end)) throw std::runtime_error("failed to expand gap after removal");
