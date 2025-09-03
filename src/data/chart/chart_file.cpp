@@ -87,39 +87,29 @@ void destroyChart() {
     gap_start = gap_end = 0;
 }
 
-void insertNote(int64_t index, int64_t value) {
-    if (index < 0 || index > length) {
-        throw std::out_of_range("index out of range");
-    }
-    
-    // Store old data temporarily if we need to preserve it
-    int64_t old_length = length;
-    
-    if (!remap(length + 1)) {
-        throw std::runtime_error("failed to resize file");
-    }
-    
-    // Move existing data to make room
-    if (index < old_length) {
-        memmove(&data[index + 1], &data[index], (old_length - index) * sizeof(int64_t));
-    }
-    
-    data[index] = value;
+// ---------------- Single-note operations using gap buffer ----------------
+void insertNote(int64_t note) {
+    int64_t idx = findInsertIndex(note);
+    if (idx < gap_start || idx > gap_start) moveGap(idx);
+    if (gap_end - gap_start < 1) expandGap(16);
+    data[gap_start++] = note;
+    length++;
 }
 
-void removeNote(int64_t index) {
-    if (index < 0 || index >= length) {
-        throw std::out_of_range("index out of range");
-    }
-    
-    // Move data to fill the gap
-    if (index < length - 1) {
-        memmove(&data[index], &data[index + 1], (length - index - 1) * sizeof(int64_t));
-    }
-    
-    if (!remap(length - 1)) {
-        throw std::runtime_error("failed to shrink file");
-    }
+void removeNote(int64_t note) {
+    int64_t idx = findInsertIndex(note);
+    int64_t real_idx = idx >= gap_start ? idx + (gap_end - gap_start) : idx;
+    if (real_idx >= length || data[real_idx] != note) return; // not found
+
+    // Move gap to removal point
+    moveGap(idx);
+    gap_start++;   // remove the note by advancing gap start
+    length--;
+
+    // Optionally grow the gap a bit after removal
+    int64_t growSize = 16;
+    gap_end = gap_start + growSize;
+    if (!remap(gap_end)) throw std::runtime_error("failed to expand gap after removal");
 }
 
 // ---------------- Alternative: Batch operations ----------------
