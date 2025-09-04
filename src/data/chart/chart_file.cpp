@@ -107,6 +107,7 @@ void ensureScratch(size_t needed) {
         scratchBuf = nullptr;
         scratchCap = 0;
     }
+
     scratchBuf = numaAlloc(needed);
     scratchCap = needed;
 }
@@ -226,7 +227,7 @@ inline int64_t extractDuration(int64_t note) {
 }
 
 // ============================================================================
-// Batch insert/remove with branchless merge
+// Batch insert: forward merge, persistent scratch buffer
 // ============================================================================
 void insertNotes(std::vector<int64_t> newNotes) {
     if (newNotes.empty()) return;
@@ -237,51 +238,32 @@ void insertNotes(std::vector<int64_t> newNotes) {
 
     if (!remap(newLen)) throw std::runtime_error("failed to resize file");
 
-    // Pick the smaller side for scratch
-    bool newSmaller = (insertCount < oldLen);
-    size_t smaller = newSmaller ? insertCount : oldLen;
-    ensureScratch(smaller);
+    // Allocate scratch buffer (persistent, never shrink)
+    ensureScratch(insertCount); // scratchBuf >= insertCount
 
-    int64_t* left;
-    int64_t leftSize;
-    int64_t* right;
-    int64_t rightSize;
+    // Copy new notes to scratch
+    std::memcpy(scratchBuf, newNotes.data(), insertCount * sizeof(int64_t));
 
-    if (newSmaller) {
-        // Copy new notes into scratch
-        std::memcpy(scratchBuf, newNotes.data(), insertCount * sizeof(int64_t));
-        left      = scratchBuf;
-        leftSize  = insertCount;
-        right     = data;
-        rightSize = oldLen;
-    } else {
-        // Copy old notes into scratch
-        std::memcpy(scratchBuf, data, oldLen * sizeof(int64_t));
-        left      = scratchBuf;
-        leftSize  = oldLen;
-        right     = newNotes.data();
-        rightSize = insertCount;
-    }
+    // Simple forward merge
+    int64_t* left = scratchBuf;     // new notes
+    int64_t leftSize = insertCount;
+    int64_t* right = data;          // existing data
+    int64_t rightSize = oldLen;
 
     int64_t i = 0, j = 0, k = 0;
     while (i < leftSize && j < rightSize) {
         int64_t lt = extractTime(left[i]);
         int64_t rt = extractTime(right[j]);
 
-        // branchless choice
-        uint64_t takeLeft = (uint64_t)(lt <= rt);     // 1 if left, 0 if right
+        uint64_t takeLeft = (uint64_t)(lt <= rt);
         uint64_t takeRight = 1 ^ takeLeft;
 
-        // store selected
         data[k] = left[i] * takeLeft + right[j] * takeRight;
-
-        // advance indices (branchless increment)
         i += takeLeft;
         j += takeRight;
         ++k;
     }
 
-    // Copy any leftovers
     while (i < leftSize) data[k++] = left[i++];
     while (j < rightSize) data[k++] = right[j++];
 
@@ -289,9 +271,39 @@ void insertNotes(std::vector<int64_t> newNotes) {
 }
 
 // ============================================================================
-// Branchless, scratch-buffer merge for removeNotes
+// Batch remove: forward merge, unsorted removeNotes, persistent scratch
 // ============================================================================
-void removeNotes(std::vector<int64_t> removeNotesVec) {
-    if (removeNotesVec.empty() || length == 0) return;
-    // ditto
+void removeNotes(std::vector<int64_t> notesToRemove) {
+    if (notesToRemove.empty() || length == 0) return;
+
+    // Allocate scratch buffer (persistent, never shrink)
+    ensureScratch(notesToRemove.size());
+
+    int64_t* dst = data;
+    int64_t* src = data;
+
+    for (int64_t i = 0; i < length; ++i) {
+        int64_t note = src[i];
+        bool keep = true;
+
+        // Compare against all notes in notesToRemove
+        for (size_t j = 0; j < notesToRemove.size(); ++j) {
+            int64_t target = notesToRemove[j];
+            if (extractTime(note)     == extractTime(target) &&
+                extractLane(note)     == extractLane(target) &&
+                extractType(note)     == extractType(target) &&
+                extractIndex(note)    == extractIndex(target) &&
+                extractDuration(note) == extractDuration(target)) {
+                keep = false;
+                break;
+            }
+        }
+
+        if (keep) *dst++ = note;
+    }
+
+    int64_t newLen = dst - data;
+    if (!remap(newLen)) throw std::runtime_error("failed to shrink file");
+
+    length = newLen;
 }
