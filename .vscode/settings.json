@@ -75,6 +75,7 @@
         "deque": "cpp",
         "execution": "cpp",
         "numeric": "cpp",
-        "queue": "cpp"
+        "queue": "cpp",
+        "unordered_set": "cpp"
     }
 }

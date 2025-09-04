@@ -158,26 +158,12 @@ class File {
 			//Sys.println(atIndex);
 			_insertNote(atIndex, value);
 		}*/
-		var nativeArray = new hl.NativeArray(arr.length);
-		for (i in 0...arr.length) {
-			nativeArray[i] = arr[i];
-		}
-		_insertNotes(nativeArray);
+		_insertNotes(@:privateAccess arr.bytes);
 	}
 	@:hlNative("chart_file", "insertNotes") static function _insertNotes(values:hl.NativeArray<hl.I64>):Void {}
 
 	inline public static function removeNotes(arr:Array<MetaNote>):Void {
-		//remap(getLength() + arr.length);
-		/*for (value in arr) {
-			var atIndex = findClosestNoteIndexByTime(value.position);
-			//Sys.println(atIndex);
-			_insertNote(atIndex, value);
-		}*/
-		var nativeArray = new hl.NativeArray(arr.length);
-		for (i in 0...arr.length) {
-			nativeArray[i] = arr[i];
-		}
-		_removeNotes(nativeArray);
+		_removeNotes(@:privateAccess arr.bytes);
 	}
 	@:hlNative("chart_file", "removeNotes") static function _removeNotes(values:hl.NativeArray<hl.I64>):Void {}
 
