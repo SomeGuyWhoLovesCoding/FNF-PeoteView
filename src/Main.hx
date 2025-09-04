@@ -279,7 +279,7 @@ class Main extends Application
 
 	override function update(deltaTime:haxe.Int64) {
 		Tools.profileFrame();
-		Sys.println(deltaTime);
+		//Sys.println(deltaTime);
 
 		if (_started) {
 			//if (window.onMouseDown.__listeners[1] != null) trace(window.onMouseDown.__listeners[1]);
