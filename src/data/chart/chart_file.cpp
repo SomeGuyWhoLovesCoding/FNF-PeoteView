@@ -236,42 +236,54 @@ void insertNotes(std::vector<int64_t> newNotes) {
     int64_t newLen = oldLen + insertCount;
 
     if (!remap(newLen)) throw std::runtime_error("failed to resize file");
-    std::memcpy(data + oldLen, newNotes.data(), insertCount * sizeof(int64_t));
 
-    size_t smaller = (oldLen < insertCount) ? oldLen : insertCount;
+    // Pick the smaller side for scratch
+    bool newSmaller = (insertCount < oldLen);
+    size_t smaller = newSmaller ? insertCount : oldLen;
     ensureScratch(smaller);
 
-    int64_t* temp = scratchBuf;
+    int64_t* left;
+    int64_t leftSize;
+    int64_t* right;
+    int64_t rightSize;
 
-    int64_t* src;
-    int64_t srcSize;
-    int64_t* dest;
-    int64_t destSize;
-
-    if (oldLen < insertCount) {
-        src = data;
-        srcSize = oldLen;
-        dest = data + oldLen;
-        destSize = insertCount;
+    if (newSmaller) {
+        // Copy new notes into scratch
+        std::memcpy(scratchBuf, newNotes.data(), insertCount * sizeof(int64_t));
+        left      = scratchBuf;
+        leftSize  = insertCount;
+        right     = data;
+        rightSize = oldLen;
     } else {
-        src = data + oldLen;
-        srcSize = insertCount;
-        dest = data;
-        destSize = oldLen;
+        // Copy old notes into scratch
+        std::memcpy(scratchBuf, data, oldLen * sizeof(int64_t));
+        left      = scratchBuf;
+        leftSize  = oldLen;
+        right     = newNotes.data();
+        rightSize = insertCount;
     }
-
-    std::memcpy(temp, src, srcSize * sizeof(int64_t));
 
     int64_t i = 0, j = 0, k = 0;
-    while (i < srcSize && j < destSize) {
-        int64_t tTime = extractTime(temp[i]);
-        int64_t dTime = extractTime(dest[j]);
-        bool takeTemp = tTime <= dTime;
-        data[k++] = takeTemp ? temp[i++] : dest[j++];
+    while (i < leftSize && j < rightSize) {
+        int64_t lt = extractTime(left[i]);
+        int64_t rt = extractTime(right[j]);
+
+        // branchless choice
+        uint64_t takeLeft = (uint64_t)(lt <= rt);     // 1 if left, 0 if right
+        uint64_t takeRight = 1 ^ takeLeft;
+
+        // store selected
+        data[k] = left[i] * takeLeft + right[j] * takeRight;
+
+        // advance indices (branchless increment)
+        i += takeLeft;
+        j += takeRight;
+        ++k;
     }
 
-    while (i < srcSize) data[k++] = temp[i++];
-    while (j < destSize) data[k++] = dest[j++];
+    // Copy any leftovers
+    while (i < leftSize) data[k++] = left[i++];
+    while (j < rightSize) data[k++] = right[j++];
 
     length = newLen;
 }
