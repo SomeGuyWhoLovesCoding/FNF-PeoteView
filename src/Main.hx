@@ -60,7 +60,7 @@ class Main extends Application
 			Chart.load("assets/songs/god-eater");
 			var arr = new Array<MetaNote>();
 			for (i in 0...1000000) {
-				arr.push(new MetaNote(Tools.betterInt64FromFloat((1000.0 + (200.0 * i)) * 100),
+				arr.push(new MetaNote(Tools.betterInt64FromFloat((50.0 + (50.0 * i)) * 100),
 					Math.floor(/*100*/0 * 0.2), // Equal to `note.duration / 5`.
 					i % 9,
 					0,

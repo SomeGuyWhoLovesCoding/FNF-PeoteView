@@ -152,20 +152,14 @@ class File {
 	@:hlNative("chart_file", "removeNote") static function removeNote(atIndex:hl.I64):Void {}
 
 	inline public static function insertNotes(arr:Array<MetaNote>):Void {
-		//remap(getLength() + arr.length);
-		/*for (value in arr) {
-			var atIndex = findClosestNoteIndexByTime(value.position);
-			//Sys.println(atIndex);
-			_insertNote(atIndex, value);
-		}*/
-		_insertNotes(@:privateAccess arr.bytes);
+		_insertNotes(arr);
 	}
-	@:hlNative("chart_file", "insertNotes") static function _insertNotes(values:hl.NativeArray<hl.I64>):Void {}
+	@:hlNative("chart_file", "insertNotes") static function _insertNotes(values:Array<hl.I64>):Void {}
 
 	inline public static function removeNotes(arr:Array<MetaNote>):Void {
-		_removeNotes(@:privateAccess arr.bytes);
+		_removeNotes(arr);
 	}
-	@:hlNative("chart_file", "removeNotes") static function _removeNotes(values:hl.NativeArray<hl.I64>):Void {}
+	@:hlNative("chart_file", "removeNotes") static function _removeNotes(values:Array<hl.I64>):Void {}
 
 	/**
 		Find the index of a note by its time using binary search.
