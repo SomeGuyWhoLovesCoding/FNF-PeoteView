@@ -176,8 +176,8 @@ inline int64_t extractTime(int64_t note)     { return (note >> 23) & 0x1FFFFFFFF
 // ============================================================================
 // Batch insert/remove
 // ============================================================================
-HL_PRIM void HL_NAME(insertNotes)(varray* arr) {
-    int64_t* ptr = hl_aptr(arr, int64_t);
+HL_PRIM void HL_NAME(insertNotes)(vbyte* arr) {
+    int64_t* ptr = arr;
     std::vector<int64_t> newNotes(ptr, ptr + arr->size);
     if (newNotes.empty()) return;
 
@@ -205,8 +205,8 @@ HL_PRIM void HL_NAME(insertNotes)(varray* arr) {
     length = newLen;
 }
 
-HL_PRIM void HL_NAME(removeNotes)(varray* arr) {
-    int64_t* ptr = hl_aptr(arr, int64_t);
+HL_PRIM void HL_NAME(removeNotes)(vbyte* arr) {
+    int64_t* ptr = arr;
     std::vector<int64_t> toRemove(ptr, ptr + arr->size);
     if (toRemove.empty() || length == 0) return;
 
@@ -234,5 +234,5 @@ DEFINE_PRIM(_I64,  getLength, _NO_ARG)
 DEFINE_PRIM(_VOID, destroyChart, _NO_ARG)
 DEFINE_PRIM(_VOID, insertNote, _I64 _I64)
 DEFINE_PRIM(_VOID, removeNote, _I64)
-DEFINE_PRIM(_VOID, insertNotes, _ARR)
-DEFINE_PRIM(_VOID, removeNotes, _ARR)
+DEFINE_PRIM(_VOID, insertNotes, _BYTES)
+DEFINE_PRIM(_VOID, removeNotes, _BYTES)
