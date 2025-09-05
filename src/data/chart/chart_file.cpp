@@ -238,7 +238,7 @@ int64_t detectCacheWindows(int level) {
 #include <fstream>
 #include <string>
 int64_t detectCacheLinux(int level) {
-    std::string path = "/sys/devices/system/cpu/cpu0/cache/index" + std::to_string(level-1) + "/size";
+    std::string path = "/sys/devices/system/cpu/cpu0/cache/index" + std::to_string(level) + "/size";
     std::ifstream f(path);
     if (!f.is_open()) return (level == 1 ? 32*1024 : level == 2 ? 256*1024 : 8*1024*1024);
     std::string val;
