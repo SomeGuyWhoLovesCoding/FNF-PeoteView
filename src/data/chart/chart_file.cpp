@@ -203,27 +203,9 @@ void removeNote(int64_t index) {
 }
 
 // ============================================================================
-// Stuff taken from `data.chart.MetaNote`'s main properties' formula.
+// Thingy taken from `data.chart.MetaNote`'s main properties' formula.
 // ============================================================================
-inline int64_t extractTime(int64_t note) {
-    return (note >> 23) & 0x1FFFFFFFFFFLL;
-}
-
-inline int64_t extractLane(int64_t note) {
-    return note & 0x3;
-}
-
-inline int64_t extractType(int64_t note) {
-    return (note >> 2) & 0xF;
-}
-
-inline int64_t extractIndex(int64_t note) {
-    return (note >> 6) & 0xF;
-}
-
-inline int64_t extractDuration(int64_t note) {
-    return (note >> 10) & 0x1FFF;
-}
+inline int64_t extractTime(int64_t note) { return (note >> 23) & 0x1FFFFFFFFFFLL; }
 
 // ============================================================================
 // Batch insert/remove with branchless merge

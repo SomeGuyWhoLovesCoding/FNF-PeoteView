@@ -52,7 +52,7 @@ class Main extends Application
 			default: throw("Sorry, only works with OpenGL.");
 		}
 
-		#if chart_test
+		#if (chart_test || hl)
 		haxe.Timer.delay(function() {
 			// START CHART SAMPLE
 			var stamp = haxe.Timer.stamp();
