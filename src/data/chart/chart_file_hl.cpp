@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <cstring>
 #include <algorithm>
+#include <string>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -73,18 +74,6 @@ void numaFree(int64_t* ptr, size_t) {
     if (ptr) free(ptr);
 }
 #endif
-
-// ============================================================================
-// Persistent scratch buffer
-// ============================================================================
-int64_t* scratchBuf = nullptr;
-size_t scratchCap = 0;
-void ensureScratch(size_t needed) {
-    if (needed <= scratchCap) return;
-    if (scratchBuf) { numaFree(scratchBuf, scratchCap); scratchBuf = nullptr; scratchCap = 0; }
-    scratchBuf = numaAlloc(needed);
-    scratchCap = needed;
-}
 
 // ============================================================================
 // Memory-mapped file handling
@@ -173,54 +162,155 @@ HL_PRIM void HL_NAME(removeNote)(int64_t idx) {
 // ============================================================================
 inline int64_t extractTime(int64_t note)     { return (note >> 23) & 0x1FFFFFFFFFFLL; }
 
+// -----------------------------------------------------------------------------
+// Windows cache detection
+// -----------------------------------------------------------------------------
+#ifdef _WIN32
+int64_t detectCacheWindows(int level) {
+    DWORD bufferSize = 0;
+    GetLogicalProcessorInformation(nullptr, &bufferSize); // get buffer size
+    std::vector<SYSTEM_LOGICAL_PROCESSOR_INFORMATION> buffer(bufferSize / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION));
+    if (!GetLogicalProcessorInformation(buffer.data(), &bufferSize))
+        return (level == 1 ? 32*1024 : level == 2 ? 256*1024 : 8*1024*1024);
+
+    for (auto& info : buffer) {
+        if (info.Relationship == RelationCache) {
+            CACHE_DESCRIPTOR& c = info.Cache;
+            if (c.Level == level)
+                return c.Size;
+        }
+    }
+    return (level == 1 ? 32*1024 : level == 2 ? 256*1024 : 8*1024*1024);
+}
+#else
+// -----------------------------------------------------------------------------
+// Linux cache detection
+// -----------------------------------------------------------------------------
+#include <fstream>
+#include <string>
+int64_t detectCacheLinux(int level) {
+    std::string path = "/sys/devices/system/cpu/cpu0/cache/index" + std::to_string(level) + "/size";
+    std::ifstream f(path);
+    if (!f.is_open()) return (level == 1 ? 32*1024 : level == 2 ? 256*1024 : 8*1024*1024);
+    std::string val;
+    f >> val;
+    f.close();
+    int64_t size = 0;
+    if (val.back() == 'K' || val.back() == 'k') {
+        val.pop_back();
+        size = std::stoll(val) * 1024;
+    } else if (val.back() == 'M' || val.back() == 'm') {
+        val.pop_back();
+        size = std::stoll(val) * 1024 * 1024;
+    } else {
+        size = std::stoll(val);
+    }
+    return size;
+}
+#endif
+
+// -----------------------------------------------------------------------------
+// Detect cache size by level (1,2,3)
+// -----------------------------------------------------------------------------
+int64_t detectCache(int level) {
+#ifdef _WIN32
+    return detectCacheWindows(level);
+#else
+    return detectCacheLinux(level);
+#endif
+}
+
+// -----------------------------------------------------------------------------
+// Adaptive block size selection
+// -----------------------------------------------------------------------------
+int64_t chooseBlockSize(int64_t arrayLen) {
+    int64_t l1 = detectCache(1) / sizeof(int64_t);
+    int64_t l2 = detectCache(2) / sizeof(int64_t);
+    int64_t l3 = detectCache(3) / sizeof(int64_t);
+
+    if (arrayLen <= l1) return l1 / 2;
+    if (arrayLen <= l2) return l2 / 2;
+    return l3 / 4;
+}
+
 // ============================================================================
 // Batch insert/remove
 // ============================================================================
-HL_PRIM void HL_NAME(insertNotes)(vbyte* arr) {
+// Why the fuck are these two functions slower than their hxcpp version GRAAAAAAAAAAH this is why hxcpp is superior in performance
+// Edit: I had to calculate the correct length by putting a separate int64_t argument in place. I can't believe hashlink's `vbyte*` was actually a pointer of an `unsigned char`.
+HL_PRIM void HL_NAME(insertNotes)(vbyte* arr, int64_t len) {
     unsigned long long* ptr = (unsigned long long*)arr;
-    std::vector<int64_t> newNotes(ptr, ptr + (sizeof(arr) / sizeof(int64_t)));
+    //int64_t len = sizeof(ptr) / sizeof(int64_t);
+    //printf("%s\n", std::to_string(len).c_str());
+    std::vector<int64_t> newNotes(ptr, ptr + len);
     if (newNotes.empty()) return;
 
     int64_t oldLen = length;
-    int64_t insCount = newNotes.size();
-    int64_t newLen = oldLen + insCount;
+    int64_t insertCount = newNotes.size();
+    int64_t newLen = oldLen + insertCount;
 
-    if (!remap(newLen)) throw std::runtime_error("resize failed");
+    if (!remap(newLen)) throw std::runtime_error("failed to resize file");
 
-    ensureScratch(oldLen + insCount);
-    int64_t* oldCopy = scratchBuf;
-    memcpy(oldCopy, data, oldLen * sizeof(int64_t));
-    int64_t* newCopy = scratchBuf + oldLen;
-    memcpy(newCopy, newNotes.data(), insCount * sizeof(int64_t));
+    int64_t blockSize = chooseBlockSize(oldLen + insertCount);
+    std::vector<int64_t> tempBlock(blockSize); // L1/L2/L3-friendly scratch
 
     int64_t i = 0, j = 0, k = 0;
-    while (i < oldLen && j < insCount) {
-        int64_t tTime = extractTime(oldCopy[i]);
-        int64_t dTime = extractTime(newCopy[j]);
-        data[k++] = (tTime <= dTime) ? oldCopy[i++] : newCopy[j++];
+
+    while (i < oldLen || j < insertCount) {
+        int64_t curOldBlock = ((oldLen - i) < blockSize) ? (oldLen - i) : blockSize;
+        int64_t curNewBlock = ((insertCount - j) < blockSize) ? (insertCount - j) : blockSize;
+
+        // Copy current old block into scratch
+        if (curOldBlock > 0) std::memcpy(tempBlock.data(), data + i, curOldBlock * sizeof(int64_t));
+
+        int64_t ii = 0, jj = j;
+
+        while (ii < curOldBlock && jj < j + curNewBlock) {
+            int64_t tTime = extractTime(tempBlock[ii]);
+            int64_t dTime = extractTime(newNotes[jj]);
+            data[k++] = (tTime <= dTime) ? tempBlock[ii++] : newNotes[jj++];
+        }
+
+        while (ii < curOldBlock) data[k++] = tempBlock[ii++];
+        while (jj < j + curNewBlock) data[k++] = newNotes[jj++];
+
+        i += curOldBlock;
+        j += curNewBlock;
     }
-    while (i < oldLen) data[k++] = oldCopy[i++];
-    while (j < insCount) data[k++] = newCopy[j++];
 
     length = newLen;
 }
 
-HL_PRIM void HL_NAME(removeNotes)(vbyte* arr) {
+HL_PRIM void HL_NAME(removeNotes)(vbyte* arr, int64_t len) {
     unsigned long long* ptr = (unsigned long long*)arr;
-    std::vector<int64_t> toRemove(ptr, ptr + (sizeof(arr) / sizeof(int64_t)));
+    //int64_t len = sizeof(ptr) / sizeof(int64_t);
+    //printf("%s\n", std::to_string(len).c_str());
+    std::vector<int64_t> toRemove(ptr, ptr + len);
     if (toRemove.empty() || length == 0) return;
 
-    int64_t write = 0, j = 0;
-    for (int64_t i = 0; i < length; ++i) {
-        if (j < (int64_t)toRemove.size() && data[i] == toRemove[j]) {
-            ++j; // skip
-        } else {
-            if (write != i) data[write] = data[i];
-            ++write;
+    int64_t write = 0;
+    int64_t j = 0;
+
+    int64_t blockSize = chooseBlockSize(length);
+    const int64_t n = length;
+    const int64_t m = toRemove.size();
+
+    for (int64_t blockStart = 0; blockStart < n; blockStart += blockSize) {
+        int64_t blockEnd = ((blockStart + blockSize) < n) ? (blockStart + blockSize) : n;
+
+        for (int64_t i = blockStart; i < blockEnd; ++i) {
+            if (j < m && data[i] == toRemove[j]) {
+                ++j; // skip
+            } else {
+                if (write != i) data[write] = data[i];
+                ++write;
+            }
         }
     }
+
     if (write != length) {
-        if (!remap(write)) throw std::runtime_error("shrink failed in removeNotes");
+        if (!remap(write)) throw std::runtime_error("failed to shrink file after removeNotes");
+        length = write;
     }
 }
 
@@ -234,5 +324,5 @@ DEFINE_PRIM(_I64,  getLength, _NO_ARG)
 DEFINE_PRIM(_VOID, destroyChart, _NO_ARG)
 DEFINE_PRIM(_VOID, insertNote, _I64 _I64)
 DEFINE_PRIM(_VOID, removeNote, _I64)
-DEFINE_PRIM(_VOID, insertNotes, _BYTES)
-DEFINE_PRIM(_VOID, removeNotes, _BYTES)
+DEFINE_PRIM(_VOID, insertNotes, _BYTES _I64)
+DEFINE_PRIM(_VOID, removeNotes, _BYTES _I64)

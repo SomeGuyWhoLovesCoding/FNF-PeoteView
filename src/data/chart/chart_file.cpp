@@ -96,24 +96,6 @@ void numaFree(int64_t* ptr, size_t /*count*/) {
 #endif
 
 // ============================================================================
-// Persistent scratch buffer
-// ============================================================================
-int64_t* scratchBuf = nullptr;
-size_t scratchCap   = 0;
-
-void ensureScratch(size_t needed) {
-    if (needed <= scratchCap) return;
-
-    if (scratchBuf) {
-        numaFree(scratchBuf, scratchCap);
-        scratchBuf = nullptr;
-        scratchCap = 0;
-    }
-    scratchBuf = numaAlloc(needed);
-    scratchCap = needed;
-}
-
-// ============================================================================
 // Memory-mapped file handling
 // ============================================================================
 int64_t* data = nullptr;
@@ -223,9 +205,7 @@ int64_t detectCacheWindows(int level) {
     for (auto& info : buffer) {
         if (info.Relationship == RelationCache) {
             CACHE_DESCRIPTOR& c = info.Cache;
-            if ((level == 1 && c.Level == 1) ||
-                (level == 2 && c.Level == 2) ||
-                (level == 3 && c.Level == 3))
+            if (c.Level == level)
                 return c.Size;
         }
     }

@@ -152,15 +152,21 @@ class File {
 	@:hlNative("chart_file", "removeNote") public static function removeNote(atIndex:hl.I64):Void {}
 
 	inline public static function insertNotes(arr:Array<MetaNote>):Void {
+		// Turns out it wasn't from here and inside `removeNotes`. It's from the array inserts being slow. WOW am I smoking.
+		//var stamp = haxe.Timer.stamp();
 		var bytes:hl.Bytes = hl.Bytes.getArray(arr);
-		_insertNotes(bytes);
+		//Sys.println('Fuck you. Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
+		_insertNotes(bytes, arr.length);
 	}
-	@:hlNative("chart_file", "insertNotes") public static function _insertNotes(values:hl.Bytes):Void {}
+	@:hlNative("chart_file", "insertNotes") public static function _insertNotes(values:hl.Bytes, length:hl.I64):Void {}
+
 	inline public static function removeNotes(arr:Array<MetaNote>):Void {
+		//var stamp = haxe.Timer.stamp();
 		var bytes:hl.Bytes = hl.Bytes.getArray(arr);
-		_removeNotes(bytes);
+		//Sys.println('Fuck you. Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
+		_removeNotes(bytes, arr.length);
 	}
-	@:hlNative("chart_file", "removeNotes") public static function _removeNotes(values:hl.Bytes):Void {}
+	@:hlNative("chart_file", "removeNotes") public static function _removeNotes(values:hl.Bytes, length:hl.I64):Void {}
 
 	/**
 		Find the index of a note by its time using binary search.
