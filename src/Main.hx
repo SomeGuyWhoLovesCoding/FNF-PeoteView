@@ -283,8 +283,12 @@ class Main extends Application
 		//Sys.println(deltaTime);
 
 		if (_started) {
-			newDeltaTimeUs = Int64.toInt(deltaTime % 1000);
-			newDeltaTime = Int64.toInt(deltaTime / 1000) + (newDeltaTimeUs * 0.001);
+			if (deltaTime < 1000000) { // Microoptimization but whatever, saves like cycles for every frame you update
+				newDeltaTime = Int64.toInt(deltaTime) * 0.001;
+			} else {
+				newDeltaTimeUs = Int64.toInt(deltaTime % 1000);
+				newDeltaTime = Int64.toInt(deltaTime / 1000) + (newDeltaTimeUs * 0.001);
+			}
 
 			//try {
 				if (mainMenu != null && !mainMenu.disposed) {
