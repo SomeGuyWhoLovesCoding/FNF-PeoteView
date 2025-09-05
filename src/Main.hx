@@ -52,7 +52,7 @@ class Main extends Application
 			default: throw("Sorry, only works with OpenGL.");
 		}
 
-		#if (chart_test || hl)
+		/*#if (chart_test || hl)
 		haxe.Timer.delay(function() {
 			// START CHART SAMPLE
 			var stamp = haxe.Timer.stamp();
@@ -81,7 +81,7 @@ class Main extends Application
 			Sys.println('Inserting 10,000,000 notes fully done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 			Chart.destroy();
 		}, 8000);
-		#end
+		#end*/
 	}
 
 	static var songChosen:String = "";
