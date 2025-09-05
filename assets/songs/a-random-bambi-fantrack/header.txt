@@ -11,6 +11,7 @@ Mania: 4
 Difficulty: #8
 Game Over:
 Theme: vanilla
+BPM: 100
 Characters:
 dad, enemy
 pos -700 300

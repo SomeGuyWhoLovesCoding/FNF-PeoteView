@@ -194,6 +194,7 @@ class Main extends Application
 
 			window.onResize.add(resize);
 			window.onKeyDown.add(controlVolume);
+			window.onClose.add(Chart.destroy);
 
 			#if FV_DEBUG
 			DeveloperStuff.init(window, this);
