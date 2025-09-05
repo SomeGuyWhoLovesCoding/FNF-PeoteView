@@ -207,7 +207,7 @@ class NoteSpawner {
 	 * @return The floored value.
 	 */
 	function floorByPixels(value:Float):Int {
-		var dividend = (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT) * parent.parent.display.zoom;
+		var dividend = (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT);
 		return Math.floor(Math.floor(value * dividend) / dividend);
 	}
 

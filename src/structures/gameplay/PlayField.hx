@@ -208,9 +208,9 @@ class PlayField implements State {
 		display.update();
 		view.update();
 
-		var ratio = (deltaTime * 0.01);
-		if (display.fov != 1) display.fov -= (display.fov - 1) * ratio;
-		if (view.fov != 1) view.fov -= (view.fov - 1) * ratio;
+		var ratio = Math.max(Math.min((deltaTime * 0.01), 1), 0);
+		if (display.fov != 1) display.fov = Tools.lerp(display.fov, 1, ratio);
+		if (view.fov != 1) view.fov = Tools.lerp(view.fov, 1, ratio);
 
 		if (!died) {
 			Mixer.update(this, deltaTime);

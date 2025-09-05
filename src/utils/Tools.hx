@@ -163,7 +163,7 @@ class Tools {
 	}
 
 	inline static function lerp(a:Float, b:Float, ratio:Float):Float {
-		return a + ratio * (b - a);
+		return (1 - ratio) * a + ratio * b;
 	}
 
 	static function getIconGridMap(path:String) {

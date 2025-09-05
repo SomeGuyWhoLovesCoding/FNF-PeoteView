@@ -37,7 +37,7 @@ class UISprite implements Element {
 	}
 
 	inline function set_alpha(value:Float) {
-		return alphaColor.aF = value;
+		return alphaColor.aF = value < 1/255 ? 0 : value;
 	}
 
 	static var timeBarProperties:Array<Float> = [];

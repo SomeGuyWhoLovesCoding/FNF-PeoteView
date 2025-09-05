@@ -107,19 +107,11 @@ class CountdownDisplay {
 		@param deltaTime The time since the last frame.
 	**/
 	function update(deltaTime:Float) {
-		if (sprite.alpha != 0) {
-			var a = sprite.alpha;
-			var multVal = (a * 0.5) * (deltaTime * 0.0145);
-			var alphaBoundCheck = a - multVal;
-
-			if (alphaBoundCheck < 0) {
-				sprite.alpha = 0;
-			} else {
-				sprite.alpha -= multVal;
-			}
-
-			buffer.updateElement(sprite);
-		}
+		var a = sprite.alpha;
+		var ratio = Math.min((deltaTime * 0.00725), 1);
+		if (sprite.alpha < 5/255) sprite.alpha -= 0.003; // Prevent alpha freezing
+		else sprite.alpha = Tools.lerp(sprite.alpha, 0, ratio);
+		buffer.updateElement(sprite);
 	}
 
 	/**

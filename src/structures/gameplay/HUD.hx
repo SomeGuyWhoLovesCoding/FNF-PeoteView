@@ -147,7 +147,7 @@ class HUD {
 		updateScoreText(deltaTime);
 
 		if (parent.songStarted && alphaLerp != 1.0) {
-			alphaLerp = Tools.lerp(alphaLerp, 1.0, Math.max(Math.min(deltaTime * 0.015, 1.0), 0.0));
+			alphaLerp = Tools.lerp(alphaLerp, 1.0, Math.min(deltaTime * 0.015, 1.0));
 			setHUDAlpha(alphaLerp);
 		}
 	}
@@ -189,14 +189,11 @@ class HUD {
 
 		if (ratingPopup == null) return;
 
-		if (ratingPopup.alpha != 0) {
-			ratingPopup.alpha -= ratingPopup.alpha * Math.min((deltaTime * 0.005), 1.0);
-		}
+		if (ratingPopup.alpha < 0.02) ratingPopup.alpha -= 0.003; // Prevent alpha freezing
+		else ratingPopup.alpha = Tools.lerp(ratingPopup.alpha, 0.0, Math.min(deltaTime * 0.005, 1.0));
+		ratingPopup.y = Tools.lerp(ratingPopup.y, 320, Math.min(deltaTime * 0.0125, 1.0));
 
-		if (ratingPopup.y != 320) {
-			ratingPopup.y -= (ratingPopup.y - 320) * Math.min((deltaTime * 0.0125), 1.0);
-			uiBuf.updateElement(ratingPopup);
-		}
+		uiBuf.updateElement(ratingPopup);
 	}
 
 	/**

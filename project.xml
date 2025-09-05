@@ -33,6 +33,9 @@
 	<!-- Allow working memory greater than 1 gigabyte -->
 	<haxedef name="HXCPP_GC_BIG_BLOCKS" />
 
+	<!-- Generational gc -->
+	<haxedef name="HXCPP_GC_GENERATIONAL" />
+
 	<!-- Compile-time feature functionality dedicated to Funkin' View -->
 	<haxedef name="HXCPP_TRACY" if="FV_PROFILE" />
 	<haxedef name="HXCPP_TELEMETRY" if="FV_PROFILE" />

@@ -105,7 +105,7 @@ class NoteSystem {
 			noteSpawner.update(pos);
 		}
 	}
-
+ 
 	/**
 	 * Again, do not fuck with this.
 	 * I put lots of effort into this abomination of a function.
@@ -247,7 +247,7 @@ class NoteSystem {
 	**/
 	function setScrollSpeed(value:Float) {
 		noteSpawner.spawnDist = Math.floor(160000 / value);
-		noteSpawner.despawnDist = Math.floor(40000 / Math.min(value, 1.0));
+		noteSpawner.despawnDist = Math.floor(40000 / Math.min(Math.max(value, 0.0001), 1.0));
 		parent.hitbox = 200 * value;
 		return value;
 	}
