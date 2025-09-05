@@ -107,12 +107,12 @@ class Field {
 		var view = parent.view;
 
 		var sc = view.scroll;
-		var ratio = deltaTime * 0.01;
+		var ratio = Math.min(deltaTime * 0.01, 1.0);
 
 		var shake = parent.viewShake;
 
-		view.scroll.x = sc.x + ratio * (targetCamera.x - sc.x);
-		view.scroll.y = sc.y + ratio * (targetCamera.y - sc.y);
+		view.scroll.x = Tools.lerp(sc.x, targetCamera.x, ratio);
+		view.scroll.y = Tools.lerp(sc.y, targetCamera.y, ratio);
 		view.shake(shake.x, shake.y);
 
 		for (actor in actors) {

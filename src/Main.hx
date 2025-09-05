@@ -275,6 +275,7 @@ class Main extends Application
 		}*/
 	}
 
+	var newDeltaTimeUs:Int = 0;
 	var newDeltaTime:Float = 0;
 
 	override function update(deltaTime:haxe.Int64) {
@@ -282,7 +283,8 @@ class Main extends Application
 		//Sys.println(deltaTime);
 
 		if (_started) {
-			newDeltaTime = Int64.toInt(deltaTime) * 0.001;
+			newDeltaTimeUs = Int64.toInt(deltaTime % 1000);
+			newDeltaTime = Int64.toInt(deltaTime / 1000) + (newDeltaTimeUs * 0.001);
 
 			//try {
 				if (mainMenu != null && !mainMenu.disposed) {
