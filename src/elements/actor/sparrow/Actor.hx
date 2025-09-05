@@ -69,14 +69,15 @@ class Actor extends ActorElement
 			}
 
 			if (!programs.exists(displayName)) {
-				var program = programs[displayName] = new Program(buffers[displayName]);
+				var program = new Program(buffers[displayName]);
 				program.blendEnabled = true;
 
-				display.addProgram(programs[displayName]);
+				display.addProgram(program);
 
 				var texName = name + "Char";
 				TextureSystem.createTexture(texName, StringTools.replace(spritesheetDataPath, "data.xml", atlas.imagePath));
-				TextureSystem.setTexture(programs[displayName], texName, texName);
+				TextureSystem.setTexture(program, texName, texName);
+				programs[displayName] = program;
 			}
 		}
 
