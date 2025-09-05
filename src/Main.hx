@@ -274,7 +274,6 @@ class Main extends Application
 		}*/
 	}
 
-	var newDeltaTimeSeconds:Int = 0;
 	var newDeltaTime:Float = 0;
 
 	override function update(deltaTime:haxe.Int64) {
@@ -284,8 +283,7 @@ class Main extends Application
 		if (_started) {
 			//if (window.onMouseDown.__listeners[1] != null) trace(window.onMouseDown.__listeners[1]);
 			// The if check is to prevent the div operation from running every frame even though `newDeltaTimeSeconds` will be 0 most of the time
-			newDeltaTimeSeconds = deltaTime < 1000000000 ? 0 : Int64.div(deltaTime, 1000000000).low;
-			newDeltaTime = newDeltaTimeSeconds + (Int64.mod(deltaTime, 1000000000).low * 0.000001);
+			newDeltaTime = deltaTime.toInt() / 1000000.0;
 			//Sys.println(newDeltaTime);
 
 			//try {
