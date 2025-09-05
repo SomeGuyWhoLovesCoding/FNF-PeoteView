@@ -151,8 +151,16 @@ class File {
 	@:hlNative("chart_file", "insertNote") static function _insertNote(atIndex:hl.I64, value:hl.I64):Void {}
 	@:hlNative("chart_file", "removeNote") public static function removeNote(atIndex:hl.I64):Void {}
 
-	@:hlNative("chart_file", "insertNotes") public static function insertNotes(values:hl.types.ArrayObj<hl.I64>):Void {}
-	@:hlNative("chart_file", "removeNotes") public static function removeNotes(values:hl.types.ArrayObj<hl.I64>):Void {}
+	inline public static function insertNotes(arr:Array<MetaNote>):Void {
+		var bytes:hl.Bytes = hl.Bytes.getArray(arr);
+		_insertNotes(bytes);
+	}
+	@:hlNative("chart_file", "insertNotes") public static function _insertNotes(values:hl.Bytes):Void {}
+	inline public static function removeNotes(arr:Array<MetaNote>):Void {
+		var bytes:hl.Bytes = hl.Bytes.getArray(arr);
+		_removeNotes(bytes);
+	}
+	@:hlNative("chart_file", "removeNotes") public static function _removeNotes(values:hl.Bytes):Void {}
 
 	/**
 		Find the index of a note by its time using binary search.
