@@ -177,8 +177,8 @@ inline int64_t extractTime(int64_t note)     { return (note >> 23) & 0x1FFFFFFFF
 // Batch insert/remove
 // ============================================================================
 HL_PRIM void HL_NAME(insertNotes)(vbyte* arr) {
-    int64_t* ptr = arr;
-    std::vector<int64_t> newNotes(ptr, ptr + arr->size);
+    unsigned long long* ptr = (unsigned long long*)arr;
+    std::vector<int64_t> newNotes(ptr, ptr + (sizeof(arr) / sizeof(int64_t)));
     if (newNotes.empty()) return;
 
     int64_t oldLen = length;
@@ -206,8 +206,8 @@ HL_PRIM void HL_NAME(insertNotes)(vbyte* arr) {
 }
 
 HL_PRIM void HL_NAME(removeNotes)(vbyte* arr) {
-    int64_t* ptr = arr;
-    std::vector<int64_t> toRemove(ptr, ptr + arr->size);
+    unsigned long long* ptr = (unsigned long long*)arr;
+    std::vector<int64_t> toRemove(ptr, ptr + (sizeof(arr) / sizeof(int64_t)));
     if (toRemove.empty() || length == 0) return;
 
     int64_t write = 0, j = 0;

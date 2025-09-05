@@ -52,7 +52,7 @@ class Main extends Application
 			default: throw("Sorry, only works with OpenGL.");
 		}
 
-		#if (chart_test || hl)
+		/*#if (chart_test || hl)
 		haxe.Timer.delay(function() {
 			// START CHART SAMPLE
 			var stamp = haxe.Timer.stamp();
@@ -61,7 +61,8 @@ class Main extends Application
 			var arr = new Array<MetaNote>();
 			for (i in 0...1000000) {
 				arr.push(new MetaNote(Tools.betterInt64FromFloat((50.0 + (50.0 * i)) * 100),
-					Math.floor(/*100*/0 * 0.2), // Equal to `note.duration / 5`.
+					Math.floor(/*100
+						0 * 0.2), // Equal to `note.duration / 5`.
 					i % 4,
 					0,
 				1));
@@ -80,7 +81,7 @@ class Main extends Application
 			Sys.println('Inserting 1,000,000 notes fully done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 			Chart.destroy();
 		}, 8000);
-		#end
+		#end*/
 	}
 
 	static var songChosen:String = "";
@@ -281,10 +282,7 @@ class Main extends Application
 		//Sys.println(deltaTime);
 
 		if (_started) {
-			//if (window.onMouseDown.__listeners[1] != null) trace(window.onMouseDown.__listeners[1]);
-			// The if check is to prevent the div operation from running every frame even though `newDeltaTimeSeconds` will be 0 most of the time
-			newDeltaTime = deltaTime.toInt() / 1000000.0;
-			//Sys.println(newDeltaTime);
+			newDeltaTime = Int64.toInt(deltaTime) * 0.001;
 
 			//try {
 				if (mainMenu != null && !mainMenu.disposed) {
