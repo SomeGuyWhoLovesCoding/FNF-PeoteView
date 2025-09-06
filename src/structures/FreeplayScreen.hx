@@ -114,6 +114,9 @@ class FreeplayScreen {
 	var xLerpPrev:Float = 0.0;
 
 	var firstFrameToAnimate:Bool = true;
+	var framesElapsed:Int64 = 0;
+	var durationRemaining:Float = 0;
+	var canAdvanceFrame:Bool = false;
 
 	function update(deltaTime:Float) {
 		var ratio = Math.min(deltaTime * 0.015, 1);
@@ -122,15 +125,21 @@ class FreeplayScreen {
 		if (!parent.opened && alphaLerp < 0.1/256) {
 			parent.shutDown();
 			curSelectedLerp = parent.curSelected;
+			alphaLerp = 0.0;
 			xLerp = 20 - (parent.curSelected * 20);
 			xLerpPrev = xLerp;
-			alphaLerp = 0.0;
 			return;
+		}
+
+		durationRemaining -= deltaTime;
+		if (durationRemaining < 0) {
+			canAdvanceFrame = true;
 		}
 
 		alphaLerp = Tools.lerp(alphaLerp, parent.opened ? 1.0 : 0.0, ratio);
 		curSelectedLerp = Tools.lerp(curSelectedLerp, parent.curSelected, ratio);
 		xLerp = Tools.lerp(xLerp, 20 - (parent.curSelected * 20), ratio);
+		//Sys.println(curSelectedLerp);
 
 		var incrementBest = Math.floor(Math.min(Math.max(curSelectedLerp - 3, 0), songsAvailable.length - 7));
 
@@ -191,18 +200,15 @@ class FreeplayScreen {
 
 				var spr = grp[j];
 
-				if (spr.frameIndex == 0) {
-					spr.playAnimation('$char bold instance 1', true);
+				if (canAdvanceFrame) {
+					framesElapsed++;
+					canAdvanceFrame = false;
+					durationRemaining = spr.frameDurationMs;
 				}
 
-				if (Math.floor(xLerp) != Math.floor(xLerpPrev) || firstFrameToAnimate) {
-					var ogFrameIndex = spr.frameIndex;
-					var ogFrameTime = spr.frameTimeRemaining;
-					spr.playAnimation('$char bold instance 1', true);
-					spr.frameIndex = ogFrameIndex;
-					spr.frameTimeRemaining = ogFrameTime;
-					firstFrameToAnimate = false;
-				}
+				spr.playAnimation('$char bold instance 1', false);
+				spr.frameIndex = Int64.toInt(framesElapsed % Std.int(Math.max(spr.endingFrameIndex - spr.startingFrameIndex, 1)));
+				spr.changeFrame();
 
 				spr.x = (x + 50) + (xLerp + (20 * k));
 				spr.y = (-curSelectedLerp * 156) + (156 * k) + 320;
@@ -220,7 +226,7 @@ class FreeplayScreen {
 
 				spr.c.aF = isInvalidCharacter ? 0.0 : (i == l ? 1.0 : 0.5) * alphaLerp;
 				songTextsBuf.updateElement(spr);
-				spr.update(deltaTime);
+				spr.updateBuffer();
 
 				if (j == Math.min(title.length - 1, 17)) {
 					iconX = spr.x;
@@ -262,7 +268,5 @@ class FreeplayScreen {
 		if (songIconsProg.isIn(display)) {
 			display.removeProgram(songIconsProg);
 		}
-
-		firstFrameToAnimate = true;
 	}
 }

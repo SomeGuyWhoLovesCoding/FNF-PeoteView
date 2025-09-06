@@ -225,6 +225,11 @@ class Actor extends ActorElement
 		}
 	}
 
+	function updateBuffer() {
+		var buffer = buffers[displayName];
+		if (buffer != null) buffer.updateElement(this);
+	}
+
 	public function configure(config:SubTexture) {
 		var width = config.width;
 		var height = config.height;
