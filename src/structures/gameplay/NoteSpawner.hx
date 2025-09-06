@@ -42,73 +42,45 @@ class NoteSpawner {
 		cullTop(pos);
 		cullBottom(pos);
 
+		var i = bottom;
+
 		var scrollSpeed = parent.parent.scrollSpeed;
+		var diff = 0.0;
 		var noteY = 0;
 		var noteSpr:Null<Note> = null;
-		var prev:Null<MetaNote> = null;
 
-		var i = bottom;
-		while (i <= top) {
+		var prev:Null<MetaNote> = null;
+		while (i < top) {
 			var n = File.getNote(i);
 
-			// Compute screen Y
-			var diff = (Int64.toInt(n.position - pos) * 0.01) * scrollSpeed;
+			var ghost = prev.position == n.position && prev.index == n.index && prev.lane == n.lane;
+			var lastDiff = diff;
 			var receptor = parent.strumlines[n.lane].buffer[n.index];
-			var currentY = receptor.y + Math.floor(diff);
+			var lastNoteY = noteY;
 
-			// Check if this note is a duplicate or overlapping
-			var ghost = prev != null && prev.position == n.position && prev.index == n.index && prev.lane == n.lane;
-			var overlap = noteSpr != null 
-				&& floorByPixels(currentY) == floorByPixels(noteY)
-				&& prev != null
+			var requirementsForNoteOverlapSimulationBS = noteSpr != null
+				&& floorByPixels(lastNoteY) == floorByPixels(noteY)
 				&& (prev.position != n.position && prev.type == n.type)
 				&& (prev.index == n.index && prev.lane == n.lane)
-				&& (noteSpr.r == 0)
+				&& (noteSpr.r == 0 /* 0 is the default angle for the note sprite */)
 				&& (noteSpr.w == receptor.w && noteSpr.h == receptor.h)
 				&& (noteSpr.scale == receptor.scale)
 				&& (prev.duration == n.duration)
-				&& noteSpr.x == receptor.x;
+			&& noteSpr.x == receptor.x;
 
-			if (ghost || overlap) {
-				// Merge the note into existing sprite
+			if (requirementsForNoteOverlapSimulationBS) {
 				noteSpr.addedAlpha += parent.notesMissed.get(n) ? Note.defaultMissAlpha : Note.defaultAlpha;
 				noteSpr.notesInOne++;
-				var overlappedNoteCount = i;
-
-				// --- Binary search skip for subsequent duplicates ---
-				var lo = i + 1;
-				var hi = top + 1;
-				while (lo < hi) {
-					var mid = (lo + hi) >> 1;
-					var m = File.getNote(mid);
-
-					var diffMid = (Int64.toInt(m.position - pos) * 0.01) * scrollSpeed;
-					var yMid = receptor.y + Math.floor(diffMid);
-
-					var ghostMid = n.position == m.position && n.index == m.index && n.lane == m.lane;
-					var overlapMid = noteSpr != null
-						&& floorByPixels(yMid) == floorByPixels(noteY)
-						&& n.type == m.type
-						&& n.index == m.index && n.lane == m.lane
-						&& noteSpr.r == 0
-						&& noteSpr.w == receptor.w && noteSpr.h == receptor.h
-						&& noteSpr.scale == receptor.scale
-						&& n.duration == m.duration
-						&& noteSpr.x == receptor.x;
-
-					if (ghostMid || overlapMid) lo = mid + 1;
-					else hi = mid;
-				}
-				i = lo; // skip all duplicates/overlaps after the first note
 				prev = n;
-				noteSpr.notesInOne = i - overlappedNoteCount;
+				++i;
 				continue;
 			} else {
-				// Draw a new note
-				noteSpr = parent.drawNote(pos, n, diff);
+				diff = (Int64.toInt(n.position - pos) * 0.01) * scrollSpeed;
+				noteY = receptor.y + Math.floor(diff);
+				if (!ghost) noteSpr = parent.drawNote(pos, n, diff);
+				else noteSpr.notesInOne++;
 				prev = n;
-				noteY = currentY;
-				i++;
+				++i;
 			}
 		}
 	}
@@ -164,7 +136,7 @@ class NoteSpawner {
 		parent.notesHeld.clear();
 
 		var len = File.getLength();
-		if (len <= 0) return; // no notes
+		if (len <= 0) return; // no notes, nothing to do
 
 		var songPos = Tools.betterInt64FromFloat(songPosition * 100);
 		var songPosTop = songPos + spawnDist;
@@ -181,6 +153,7 @@ class NoteSpawner {
 		// --- Fast check: after last note ---
 		var lastNote = File.getNote(len - 1);
 		if (lastNote.position < songPos) {
+			// clamp to last note so we don't freeze
 			top = bottom = len - 1;
 			curBottomNote = curTopNote = lastNote;
 			parent.resetStrumlines();
@@ -200,7 +173,6 @@ class NoteSpawner {
 			}
 			return lo;
 		}
-
 		inline function upperBound(target:Int64):Int64 {
 			var lo:Int64 = 0;
 			var hi:Int64 = len;
@@ -214,61 +186,13 @@ class NoteSpawner {
 			return lo;
 		}
 
-		// --- Window delta cache check ---
-		if (bottom >= 0 && top >= 0 && bottom < len && top < len) {
-			var bottomPos = File.getNote(bottom).position;
-			var topPos = File.getNote(top).position;
+		// --- Find bottom (first note >= songPos) ---
+		bottom = lowerBound(songPos);
+		if (bottom >= len) bottom = len - 1;
 
-			// If songPos is still inside [bottomPos, topPos], no update needed
-			if (songPos >= bottomPos && songPosTop <= topPos) {
-				curBottomNote = File.getNote(bottom);
-				curTopNote = File.getNote(top);
-				parent.resetStrumlines();
-				return;
-			}
-		}
-
-		// --- Hybrid direction-aware update ---
-		var useBinary = false;
-
-		if (bottom < 0 || bottom >= len || top < 0 || top >= len) {
-			useBinary = true;
-		} else {
-			var bottomPos = File.getNote(bottom).position;
-			var delta = songPos - bottomPos;
-
-			// Threshold: if jump > 200ms (20000 in 100ns units) → binary
-			if (delta > 2000 || delta < -2000)
-				useBinary = true;
-		}
-
-		if (useBinary) {
-			// Binary search path
-			bottom = lowerBound(songPos);
-			if (bottom >= len) bottom = len - 1;
-
-			top = upperBound(songPosTop) - 1;
-			if (top < 0) top = 0;
-		} else {
-			// Incremental path (direction-aware)
-			if (songPos >= File.getNote(bottom).position) {
-				while (bottom < len && File.getNote(bottom).position < songPos)
-					bottom++;
-			} else {
-				while (bottom > 0 && File.getNote(bottom - 1).position >= songPos)
-					bottom--;
-			}
-			if (bottom >= len) bottom = len - 1;
-
-			if (songPosTop >= File.getNote(top).position) {
-				while (top + 1 < len && File.getNote(top + 1).position <= songPosTop)
-					top++;
-			} else {
-				while (top > bottom && File.getNote(top).position > songPosTop)
-					top--;
-			}
-			if (top < bottom) top = bottom;
-		}
+		// --- Find top (last note <= songPosTop) ---
+		top = upperBound(songPosTop) - 1;
+		if (top < 0) top = 0;
 
 		curBottomNote = File.getNote(bottom);
 		curTopNote = File.getNote(top);
@@ -283,7 +207,7 @@ class NoteSpawner {
 	 */
 	function floorByPixels(value:Float):Int {
 		var dividend = (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT);
-		return Math.floor(Math.floor(value * dividend) / dividend);
+		return Math.floor(Math.floor(value / dividend) * dividend);
 	}
 
 	private var zero(default, null):Int64 = 0;

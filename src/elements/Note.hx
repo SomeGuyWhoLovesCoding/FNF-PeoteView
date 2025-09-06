@@ -81,8 +81,12 @@ class Note implements Element
 	static public function init(program:Program, name:String, texture:Texture)
 	{
 		// creates a texture-layer named "name"
-		program.setTexture(texture, name, true );
+		program.setTexture(texture, name, true);
 		program.blendEnabled = true;
+		/*program.blendSrc = BlendFactor.ONE_MINUS_SRC_ALPHA;
+		program.blendSrcAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
+		program.blendDst = BlendFactor.ONE_MINUS_SRC_ALPHA;
+		program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;*/
 
 		var tW:String = Util.toFloatString(texture.width / texture.tilesX);
 		var tH:String = Util.toFloatString(texture.height / texture.tilesY);
@@ -94,8 +98,10 @@ class Note implements Element
 				vec2 coord = vTexCoord;
 				vec4 tex = getTextureColor( textureID, coord );
 
-				tex.a *= initialAlpha;
-				tex.a += addedAlpha;
+				if (tex.a > 0) {
+					tex.a *= initialAlpha;
+					tex.a += addedAlpha;
+				}
 
 				return tex;
 			}
