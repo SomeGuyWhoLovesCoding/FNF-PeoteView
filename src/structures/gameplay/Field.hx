@@ -212,6 +212,13 @@ class Field {
 		parent.view.fov = 1.0;
 
 		Main.conductor.onBeat.remove(beatHit);
+
+		gameOverSound.dispose();
+		gameOverSound = null;
+		gameOverMusic.dispose();
+		gameOverMusic = null;
+		gameOverConfirm.dispose();
+		gameOverConfirm = null;
 	}
 
 	// GAME OVER IMPL
@@ -230,22 +237,10 @@ class Field {
 		var theme = gameOverMeta.theme;
 		var bpm = gameOverMeta.bpm;
 
-		if (!gameOverSounds.exists(theme)) {
-			gameOverSounds[theme] = new Map<String, AudioSource>();
-		}
-
-		if (!gameOverSounds[theme].exists("firstDeath")) {
-			gameOverSounds[theme]["firstDeath"] = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_sfx-${theme}.ogg'));
-		}
-
-		gameOverSound = gameOverSounds[theme]["firstDeath"];
+		gameOverSound = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_sfx-${theme}.ogg'));
 		gameOverSound.play();
 
-		if (!gameOverSounds[theme].exists("deathMusic")) {
-			gameOverSounds[theme]["deathMusic"] = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_music-${theme}.ogg'));
-		}
-
-		gameOverMusic = gameOverSounds[theme]["deathMusic"];
+		gameOverMusic = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_music-${theme}.ogg'));
 
 		Main.conductor.reset();
 		Main.conductor.changeBpmAt(0, bpm);
@@ -261,8 +256,7 @@ class Field {
 
 	function endGameOver(goBack:Bool = false) {
 		if (gameOverMusic != null) {
-			gameOverMusic.stop();
-			gameOverMusic.currentTime = 0;
+			gameOverMusic.dispose();
 			gameOverMusic = null;
 		}
 
@@ -275,11 +269,7 @@ class Field {
 		var gameOverMeta = Chart.header.gameOver;
 		var theme = gameOverMeta.theme;
 
-		if (!gameOverSounds[theme].exists("confirm")) {
-			gameOverSounds[theme]["confirm"] = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_end-${theme}.ogg'));
-		}
-
-		gameOverConfirm = gameOverSounds[theme]["confirm"];
+		gameOverConfirm = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_end-${theme}.ogg'));
 		gameOverConfirm.play();
 
 		actorOnGameOver.finishAnim = "";
