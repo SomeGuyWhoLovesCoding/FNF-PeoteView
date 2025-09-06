@@ -76,8 +76,11 @@ class PauseScreen {
 			return;
 		}
 
-		alphaLerp = Tools.lerp(alphaLerp, (opened && !atOptionsMenu) ? 1.0 : 0.0, Math.min(deltaTime * 0.015, 1.0));
-		bgAlphaLerp = Tools.lerp(bgAlphaLerp, opened ? 1.0 : 0.0, Math.min(deltaTime * 0.015, 1.0));
+		var ratio = Math.min(deltaTime * 0.015, 1.0);
+		if (ratio == 1) ratio = (1/lime.app.Application.current.window.frameRate) * 0.015; // When loading the pause screen the first time it gets stuck at 1.0 for a single frame
+
+		alphaLerp = Tools.lerp(alphaLerp, (opened && !atOptionsMenu) ? 1.0 : 0.0, ratio);
+		bgAlphaLerp = Tools.lerp(bgAlphaLerp, opened ? 1.0 : 0.0, ratio);
 
 		var c = display.color;
 		c.aF = bgAlphaLerp * 0.5;

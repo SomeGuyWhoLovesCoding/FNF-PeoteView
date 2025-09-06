@@ -75,7 +75,10 @@ class OptionsMenu {
 			return;
 		}
 
-		alphaLerp = Tools.lerp(alphaLerp, opened ? 1.0 : 0.0, Math.min(deltaTime * 0.015, 1.0));
+		var ratio = Math.min(deltaTime * 0.015, 1.0);
+		if (ratio == 1) ratio = (1/lime.app.Application.current.window.frameRate) * 0.015; // When loading the options menu the first time it gets stuck at 1.0 for a single frame
+
+		alphaLerp = Tools.lerp(alphaLerp, opened ? 1.0 : 0.0, ratio);
 
 		for (i in 0...categorySprites.length) {
 			var categorySprite = categorySprites[i];
