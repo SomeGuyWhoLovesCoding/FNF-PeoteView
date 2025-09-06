@@ -22,12 +22,11 @@ lime test hl
 Optimizations that were ingrained into this "wholesome" fnf rewrite (listed in alphabetical order) is:
 
 - Camera Culling: Obvious, simply cuts out rendering for anything out of bounds. Used for the notes and sustains
-- Deferred Operations: Delays an expensive operation or two for a faster and even cheaper assembler built into it (basically like saving money for an expensive thing instead of buying parts of it). Used for the chart file's internal code.
 - Fake Object Overlap Rendering: If a certain object overlaps one another, cancel that object and make that other object's pixels have doubled its alpha. Used for the notes.
 - Memory Mapping: Stores your file within the os's internal memory map instead of dumping it all onto your RAM. Used for the chart file's internal code.
 - Object Pooling: Also obvious, but simply reuses a dead object. Used for the freeplay selection text and icon stuff, and notes and sustains.
 - Packer Atlas: Never done yet but will be for the characters.
-- Static buffers and programs: Just there for a bit of muddiness in the code's structure but helps improve loading times excellently! Used in every single menu you can think of in Funkin' View.
+- Static buffer and program cache: Just there for a bit of muddiness in the code's structure but helps improve loading times excellently! Used in every single menu you can think of in Funkin' View.
 - Texture Sheet: Simple. Just clip a certain part of the image and have it present a sprite animation. Heavily used in sparrow atlas, and even simple stuff such as the icon grid, the note spritesheets, the pause menu sheet, etc etc. you name it.
 
 And that was all Funkin' View has to offer!
