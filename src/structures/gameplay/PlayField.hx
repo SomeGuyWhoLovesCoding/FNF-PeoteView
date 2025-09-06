@@ -93,8 +93,8 @@ class PlayField implements State {
 	var onResumeSong:Event<Header->Void>;
 	var onStopSong:Event<Header->Void>;
 	var onDeath:Event<Header->Int->Void>;
-	var onNoteHit:Event<MetaNote->Int->Float->Void>;
-	var onNoteMiss:Event<MetaNote->Float->Void>;
+	var onNoteHit:Event<MetaNote->Int->Int64->Void>;
+	var onNoteMiss:Event<MetaNote->Int64->Void>;
 	var onSustainComplete:Event<MetaNote->Void>;
 	var onSustainRelease:Event<MetaNote->Void>;
 	var onKeyPress:Event<KeyCode->Void>;
@@ -134,8 +134,8 @@ class PlayField implements State {
 		onStopSong = new Event<Header->Void>();
 		onDeath = new Event<Header->Int->Void>();
 
-		onNoteHit = new Event<MetaNote->Int->Float->Void>();
-		onNoteMiss = new Event<MetaNote->Float->Void>();
+		onNoteHit = new Event<MetaNote->Int->Int64->Void>();
+		onNoteMiss = new Event<MetaNote->Int64->Void>();
 		onSustainComplete = new Event<MetaNote->Void>();
 		onSustainRelease = new Event<MetaNote->Void>();
 		onKeyPress = new Event<KeyCode->Void>();
@@ -296,7 +296,7 @@ class PlayField implements State {
 		}
 	}
 
-	function hitNote(note:MetaNote, timing:Int, notesInOne:Float) {
+	function hitNote(note:MetaNote, timing:Int, notesInOne:Int64) {
 		var index = 1 + note.lane;
 		if (index > 0 && index <= Mixer.trackCount) Mixer.changeTrackVolume(index, 1);
 
@@ -308,7 +308,7 @@ class PlayField implements State {
 			return;
 		}
 
-		combo += Tools.betterInt64FromFloat(notesInOne);
+		combo += notesInOne;
 
 		health += healthGain[note.lane];
 		if (health > 1) {
@@ -323,44 +323,43 @@ class PlayField implements State {
 		}
 
 		var absTiming = Math.abs(timing);
-		var notesInOneI64 = Tools.betterInt64FromFloat(notesInOne);
 
 		if (absTiming > 60) {
 			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(3);
-			accuracy.increment(0.5, false, notesInOne);
-			score += shitScore * notesInOneI64;
+			accuracy.increment(5000, false, notesInOne);
+			score += shitScore * notesInOne;
 			return;
 		}
 
 		if (absTiming > 45) {
 			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(2);
-			accuracy.increment(0.75, false, notesInOne);
-			score += badScore * notesInOneI64;
+			accuracy.increment(7500, false, notesInOne);
+			score += badScore * notesInOne;
 			return;
 		}
 
 		if (absTiming > 30) {
 			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(1);
-			accuracy.increment(0.8, false, notesInOne);
-			score += goodScore * notesInOneI64;
+			accuracy.increment(8000, false, notesInOne);
+			score += goodScore * notesInOne;
 			return;
 		}
 
 		if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(0);
-		accuracy.increment(1, false, notesInOne);
-		score += sickScore * notesInOneI64;
+		accuracy.increment(10000, false, notesInOne);
+		score += sickScore * notesInOne;
 	}
 
-	function missNote(note:MetaNote, notesInOne:Float) {
+	function missNote(note:MetaNote, notesInOne:Int64) {
 		var index = 1 + note.lane;
 		if (index > 0 && index <= Mixer.trackCount) Mixer.changeTrackVolume(index, 0);
 
 		health -= healthLoss[note.lane];
 
 		combo = 0;
-		score -= 50 * Tools.betterInt64FromFloat(notesInOne);
-		misses += Tools.betterInt64FromFloat(notesInOne);
-		accuracy.increment(1.0, true, notesInOne);
+		score -= 50 * notesInOne;
+		misses += notesInOne;
+		accuracy.increment(10000, true, notesInOne);
 
 		if (health < 0 && !disposed) {
 			onDeath.dispatch(Chart.header, note.lane);

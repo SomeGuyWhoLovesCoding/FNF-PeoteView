@@ -118,7 +118,7 @@ class Field {
 		for (actor in actors) {
 			if (isInGameOver) {
 				if (actor != actorOnGameOver) {
-					if (actor.c.aF < 0.015) actor.c.aF -= ratio * 0.0125;
+					if (actor.c.aF < 0.015) actor.c.aF = Math.max(actor.c.aF - (ratio * 0.00125), 0);
 					actor.c.aF = Tools.lerp(actor.c.aF, 0, ratio * 0.75);
 				}
 			}
@@ -170,13 +170,13 @@ class Field {
 		char.shake = shake;
 	}
 
-	function hitNote(note:MetaNote, timing:Int, notesInOne:Float) {
+	function hitNote(note:MetaNote, timing:Int, notesInOne:Int64) {
 		sing(note.index, (note.lane == 0 ? opponent : player), false, note.duration > 12 && timing < parent.hitbox * 0.5);
 
 		targetCamera.x = note.lane == 0 ? -50 : 50; // Prototype camera logic I have for now
 	}
 
-	function missNote(note:MetaNote, notesInOne:Float) {
+	function missNote(note:MetaNote, notesInOne:Int64) {
 		sing(note.index, (note.lane == 0 ? opponent : player), true, false);
 	}
 
