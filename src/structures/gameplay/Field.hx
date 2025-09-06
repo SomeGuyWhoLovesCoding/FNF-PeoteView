@@ -232,7 +232,6 @@ class Field {
 	// GAME OVER IMPL
 
 	var isInGameOver:Bool;
-	static var gameOverSounds:Map<String, Map<String, AudioSource>> = [];
 	var gameOverSound:AudioSource;
 	var gameOverMusic:AudioSource;
 	var gameOverConfirm:AudioSource;
