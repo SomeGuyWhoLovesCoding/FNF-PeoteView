@@ -249,8 +249,6 @@ class Field {
 		gameOverSound = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_sfx-${theme}.ogg'));
 		gameOverSound.play();
 
-		gameOverMusic = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_music-${theme}.ogg'));
-
 		Main.conductor.reset();
 		Main.conductor.changeBpmAt(0, bpm);
 
@@ -258,7 +256,10 @@ class Field {
 		actorOnGameOver.shake = false;
 		actorOnGameOver.playAnimation("firstDeath");
 
-		actorOnGameOver.finishCallback = gameOverMusic.play;
+		actorOnGameOver.finishCallback = () -> {
+			gameOverMusic = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_music-${theme}.ogg'));
+			gameOverMusic.play();
+		}
 
 		isInGameOver = true;
 	}
