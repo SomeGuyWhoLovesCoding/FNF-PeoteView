@@ -14,7 +14,6 @@ class Actor extends ActorElement
 	// Stuff for initialization and shit
 	static var buffers:Map<String, Buffer<ActorElement>> = [];
 	static var programs:Map<String, Program> = [];
-	static var copiesOfCharacters:Map<String, Int> = [];
 	static var cachedActorDatas:Map<String, ActorData> = [];
 	static var cachedAtlases:Map<String, SparrowAtlas> = [];
 
@@ -40,30 +39,24 @@ class Actor extends ActorElement
 		this.name = displayName = name;
 
 		var spritesheetDataPath = "";
+		var atlasKey = '$name/$folder';
 
-		if (cachedAtlases['$name/$folder'] == null && pathExists(name, folder, XML)) {
+		if (cachedAtlases[atlasKey] == null && pathExists(name, folder, XML)) {
 			spritesheetDataPath = path(name, folder, XML);
-			cachedAtlases['$name/$folder'] = atlas = SparrowAtlas.parse(sys.io.File.getContent(spritesheetDataPath));
-		} else if (cachedAtlases['$name/$folder'] != null) {
-			atlas = cachedAtlases['$name/$folder'];
+			cachedAtlases[atlasKey] = atlas = SparrowAtlas.parse(sys.io.File.getContent(spritesheetDataPath));
+		} else if (cachedAtlases[atlasKey] != null) {
+			atlas = cachedAtlases[atlasKey];
 		} else {
 			throw "Atlas data doesn't exist: " + path(name, folder, NONE);
 		}
 
-		if (cachedActorDatas['$name/$folder'] == null && pathExists(name, folder, DATA)) {
-			cachedActorDatas['$name/$folder'] = data = ActorData.parse(path(name, folder, DATA));
-		} else if (cachedActorDatas['$name/$folder'] != null) {
-			data = cachedActorDatas['$name/$folder'];
+		if (cachedActorDatas[atlasKey] == null && pathExists(name, folder, DATA)) {
+			cachedActorDatas[atlasKey] = data = ActorData.parse(path(name, folder, DATA));
+		} else if (cachedActorDatas[atlasKey] != null) {
+			data = cachedActorDatas[atlasKey];
 		}
 
 		if (atlas.imagePath != "" && addBufferAndProgram) {
-			if (buffers.exists(displayName)) {
-				if (!copiesOfCharacters.exists(name)) {
-					copiesOfCharacters[name] = 0;
-				}
-				displayName += Std.string(copiesOfCharacters[name]++);
-			}
-
 			if (!buffers.exists(displayName)) {
 				buffers[displayName] = new Buffer<ActorElement>(1);
 			}

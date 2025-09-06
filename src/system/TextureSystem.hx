@@ -1,5 +1,6 @@
 package system;
 
+import lime.graphics.Image;
 import sys.io.File;
 
 /**
@@ -68,8 +69,8 @@ class TextureSystem {
 		var currentSaveState = SaveData.state.graphics;
 		var antialiasing = currentSaveState.antialiasing && !disableAntialiasing;
 
-		var textureBytes = File.getBytes(path);
-		var textureData = TextureData.fromFormatPNG(textureBytes);
+		var image = Image.fromFile(path);
+		var textureData = TextureData.fromLimeImage(image);
 
 		var texture = new Texture(textureData.width, textureData.height, null, {
 			format: textureData.format,

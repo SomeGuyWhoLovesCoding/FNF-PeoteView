@@ -37,7 +37,8 @@ class Main extends Application
 	override function onWindowCreate()
 	{
 		var titleBarColor:Color = SaveData.state.graphics.customTitleBarColor;
-		#if windows
+
+		#if (windows && customtitlebar)
 		Titlebar.setTitlebarColor(titleBarColor.r, titleBarColor.g, titleBarColor.b);
 		Titlebar.setTitleFontColor(0, 0, 0);
 		Titlebar.setButtonFontColor(20, 10, 30);

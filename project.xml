@@ -25,16 +25,13 @@
 	<haxelib name="input2action" />
 
 	<!-- Allow intergration to customtitlebar -->
-	<haxelib name="customtitlebar" />
+	<!--<haxelib name="customtitlebar" />-->
 
 	<!-- Enable full dce (originally to only prevent JIT ERROR 0 on jit.c line 541) -->
 	<haxeflag name="-dce" value="full" />
 
 	<!-- Allow working memory greater than 1 gigabyte -->
 	<haxedef name="HXCPP_GC_BIG_BLOCKS" />
-
-	<!-- Generational gc -->
-	<haxedef name="HXCPP_GC_GENERATIONAL" />
 
 	<!-- Compile-time feature functionality dedicated to Funkin' View -->
 	<haxedef name="HXCPP_TRACY" if="FV_PROFILE" />
@@ -53,7 +50,6 @@
 
 	<undefine name="HXCPP_CHECK_POINTER" if="debug" />
 	<!--<haxelib name="hxcpp-debug-server" if="debug" />-->
-	<haxedef name="keep_inline_positions" if="debug" />
 
 	<icon path="assets/lime.svg" />
 </project>

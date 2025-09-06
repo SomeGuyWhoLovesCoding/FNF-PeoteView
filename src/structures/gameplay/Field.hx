@@ -118,6 +118,7 @@ class Field {
 		for (actor in actors) {
 			if (isInGameOver) {
 				if (actor != actorOnGameOver) {
+					if (actor.c.aF < 0.015) actor.c.aF = 0;
 					actor.c.aF = Tools.lerp(actor.c.aF, 0, ratio * 0.75);
 				}
 			}
@@ -261,6 +262,7 @@ class Field {
 	function endGameOver(goBack:Bool = false) {
 		if (gameOverMusic != null) {
 			gameOverMusic.stop();
+			gameOverMusic.currentTime = 0;
 			gameOverMusic = null;
 		}
 

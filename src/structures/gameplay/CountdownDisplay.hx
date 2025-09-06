@@ -42,12 +42,12 @@ class CountdownDisplay {
 	/**
 		The countdown display's sound cache.
 	**/
-	static var cached:Array<AudioSource> = [for (i in 0...4) null];
+	var sounds:Array<AudioSource> = [];
 
-	static function setupSounds(suffix:String = "") {
+	function setupSounds(suffix:String = "") {
 		CountdownDisplay.suffix = suffix;
-		for (i in 0...cached.length) {
-			cached[i] = new AudioSource(AudioBuffer.fromFile('assets/countdown/${3 - i}${suffix != "" ? '-$suffix' : ''}.ogg'));
+		for (i in 0...4) {
+			sounds.push(new AudioSource(AudioBuffer.fromFile('assets/countdown/${3 - i}${suffix != "" ? '-$suffix' : ''}.ogg')));
 		}
 	}
 
@@ -85,7 +85,7 @@ class CountdownDisplay {
 	**/
 	function countdownTick(id:Int) {
 		if (id != -1) {
-			var snd = cached[id];
+			var snd = sounds[id];
 			if (snd != null) {
 				snd.play();
 			}
@@ -121,7 +121,7 @@ class CountdownDisplay {
 		buffer.clear();
 		display.removeProgram(program);
 		sprite = null;
-		GC.run();
+		while (sounds.length != 0) sounds.pop().dispose();
 	}
 
 	/**
