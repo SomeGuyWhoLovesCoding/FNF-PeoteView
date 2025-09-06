@@ -102,6 +102,7 @@ class Field {
 	}
 
 	var targetCamera:Point = {x: 0, y: 0};
+	var targetAlphaOnGameOver:Float = 1;
 
 	function update(deltaTime:Float) {
 		var view = parent.view;
@@ -118,8 +119,7 @@ class Field {
 		for (actor in actors) {
 			if (isInGameOver) {
 				if (actor != actorOnGameOver) {
-					if (actor.c.aF < 0.015) actor.c.aF = Math.max(actor.c.aF - (ratio * 0.00125), 0);
-					actor.c.aF = Tools.lerp(actor.c.aF, 0, ratio * 0.75);
+					actor.c.aF = Math.max(actor.c.aF - (deltaTime * 0.001), 0);
 				}
 			}
 			actor.update(deltaTime);
