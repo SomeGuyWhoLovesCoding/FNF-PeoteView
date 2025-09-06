@@ -71,6 +71,7 @@ class TextureSystem {
 
 		var image = Image.fromFile(path);
 		var textureData = TextureData.fromLimeImage(image);
+		trace('Hihi');
 
 		var texture = new Texture(textureData.width, textureData.height, null, {
 			format: textureData.format,

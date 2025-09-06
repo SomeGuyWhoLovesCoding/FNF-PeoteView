@@ -244,6 +244,8 @@ class Field {
 		var theme = gameOverMeta.theme;
 		var bpm = gameOverMeta.bpm;
 
+		trace(theme);
+
 		gameOverSound = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_sfx-${theme}.ogg'));
 		gameOverSound.play();
 

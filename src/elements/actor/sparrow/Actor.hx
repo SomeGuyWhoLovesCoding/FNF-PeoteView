@@ -12,6 +12,7 @@ import elements.actor.*;
 class Actor extends ActorElement
 {
 	// Stuff for initialization and shit
+	static var copiesOfCharacters:Map<String, Int> = [];
 	static var buffers:Map<String, Buffer<ActorElement>> = [];
 	static var programs:Map<String, Program> = [];
 	static var cachedActorDatas:Map<String, ActorData> = [];
@@ -57,6 +58,13 @@ class Actor extends ActorElement
 		}
 
 		if (atlas.imagePath != "" && addBufferAndProgram) {
+			if (buffers.exists(displayName)) {
+				if (!copiesOfCharacters.exists(name)) {
+					copiesOfCharacters[name] = 0;
+				}
+				displayName += Std.string(copiesOfCharacters[name]++);
+			}
+
 			if (!buffers.exists(displayName)) {
 				buffers[displayName] = new Buffer<ActorElement>(1);
 			}
