@@ -213,12 +213,20 @@ class Field {
 
 		Main.conductor.onBeat.remove(beatHit);
 
-		gameOverSound.dispose();
-		gameOverSound = null;
-		gameOverMusic.dispose();
-		gameOverMusic = null;
-		gameOverConfirm.dispose();
-		gameOverConfirm = null;
+		if (gameOverSound != null) {
+			gameOverSound.dispose();
+			gameOverSound = null;
+		}
+
+		if (gameOverMusic != null) {
+			gameOverMusic.dispose();
+			gameOverMusic = null;
+		}
+
+		if (gameOverConfirm != null) {
+			gameOverConfirm.dispose();
+			gameOverConfirm = null;
+		}
 	}
 
 	// GAME OVER IMPL
