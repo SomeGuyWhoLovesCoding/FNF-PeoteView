@@ -118,7 +118,7 @@ class Field {
 		for (actor in actors) {
 			if (isInGameOver) {
 				if (actor != actorOnGameOver) {
-					if (actor.c.aF < 0.015) actor.c.aF = 0;
+					if (actor.c.aF < 0.015) actor.c.aF -= ratio * 0.0125;
 					actor.c.aF = Tools.lerp(actor.c.aF, 0, ratio * 0.75);
 				}
 			}
