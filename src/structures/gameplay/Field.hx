@@ -102,7 +102,6 @@ class Field {
 	}
 
 	var targetCamera:Point = {x: 0, y: 0};
-	var targetAlphaOnGameOver:Float = 1;
 
 	function update(deltaTime:Float) {
 		var view = parent.view;
