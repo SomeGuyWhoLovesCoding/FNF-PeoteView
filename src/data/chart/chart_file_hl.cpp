@@ -19,63 +19,6 @@
 #endif
 
 // ============================================================================
-// NUMA-aware allocator (same as vanilla)
-// ============================================================================
-#ifdef _WIN32
-static bool windows_try_virtualallocn = true;
-int64_t* numaAlloc(size_t count) {
-    SIZE_T bytes = count * sizeof(int64_t);
-    if (windows_try_virtualallocn) {
-        typedef LPVOID (WINAPI *VirtualAllocExNuma_t)(HANDLE, LPVOID, SIZE_T, DWORD, DWORD, DWORD);
-        typedef BOOL (WINAPI *GetNumaProcessorNodeEx_t)(const PROCESSOR_NUMBER*, PUSHORT);
-        HMODULE hKernel = GetModuleHandleW(L"kernel32.dll");
-        if (hKernel) {
-            auto fnVAEN = (VirtualAllocExNuma_t)GetProcAddress(hKernel, "VirtualAllocExNuma");
-            auto fnGetNode = (GetNumaProcessorNodeEx_t)GetProcAddress(hKernel, "GetNumaProcessorNodeEx");
-            if (fnVAEN && fnGetNode) {
-                PROCESSOR_NUMBER procNum = {0};
-                GetCurrentProcessorNumberEx(&procNum);
-                USHORT node = 0;
-                if (!fnGetNode(&procNum, &node)) node = 0;
-                LPVOID mem = fnVAEN(GetCurrentProcess(), nullptr, bytes,
-                                    MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE, (DWORD)node);
-                if (mem) return static_cast<int64_t*>(mem);
-            }
-        }
-        windows_try_virtualallocn = false;
-    }
-    LPVOID mem = VirtualAlloc(nullptr, bytes, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-    if (!mem) throw std::bad_alloc();
-    return static_cast<int64_t*>(mem);
-}
-void numaFree(int64_t* ptr, size_t) {
-    if (ptr) VirtualFree(ptr, 0, MEM_RELEASE);
-}
-#else
-#include <errno.h>
-#include <stdlib.h>
-#if defined(__linux__)
-#include <numa.h>
-#endif
-int64_t* numaAlloc(size_t count) {
-    size_t bytes = count * sizeof(int64_t);
-#if defined(__linux__)
-    if (numa_available() != -1) {
-        int preferred = numa_preferred();
-        void* mem = numa_alloc_onnode(bytes, preferred);
-        if (mem) return static_cast<int64_t*>(mem);
-    }
-#endif
-    void* mem = nullptr;
-    if (posix_memalign(&mem, 64, bytes) != 0 || !mem) throw std::bad_alloc();
-    return static_cast<int64_t*>(mem);
-}
-void numaFree(int64_t* ptr, size_t) {
-    if (ptr) free(ptr);
-}
-#endif
-
-// ============================================================================
 // Memory-mapped file handling
 // ============================================================================
 int64_t* data = nullptr;
