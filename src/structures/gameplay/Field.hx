@@ -118,7 +118,9 @@ class Field {
 		for (actor in actors) {
 			if (isInGameOver) {
 				if (actor != actorOnGameOver) {
-					actor.c.aF = Math.max(actor.c.aF - (deltaTime * 0.001), 0);
+					var ratio = (deltaTime * 0.001);
+					actor.c.aF = Math.max(actor.c.aF - ratio, 0);
+					actor.c.luminanceF = Math.max(actor.c.luminanceF - ratio, 0);
 				}
 			}
 			actor.update(deltaTime);
