@@ -228,14 +228,14 @@ class Main extends Application
 	private function createTextures() {
 		var stamp = haxe.Timer.stamp();
 		trace("Preloading textures...");
-		TextureSystem.createTexture("mainMenuBGTex", "assets/mainMenu/menuBG.png");
-		TextureSystem.createTexture("mainMenuSheet", "assets/mainMenu/sheet.png");
+		TextureSystem.createTexture("mainMenuBGTex", "assets/mainMenu/menuBG.png", false, true);
+		TextureSystem.createTexture("mainMenuSheet", "assets/mainMenu/sheet.png", false, true);
 		TextureSystem.createTexture("noteTex", "assets/notes/noteSheet.png", false, true);
-		TextureSystem.createTexture("uiTex", "assets/ui/uiSheet.png");
-		TextureSystem.createTexture("hbTex", "assets/ui/hbSheet.png");
-		TextureSystem.createTexture("storyModeSheet", "assets/ui/storyModeSheet.png");
-		TextureSystem.createTexture("optionsMenuSheet", "assets/ui/optionsMenuSheet.png");
-		TextureSystem.createTexture("alphabetSheet", "assets/alphabetText/sheet.png");
+		TextureSystem.createTexture("uiTex", "assets/ui/uiSheet.png", false, true);
+		TextureSystem.createTexture("hbTex", "assets/ui/hbSheet.png", false, true);
+		TextureSystem.createTexture("storyModeSheet", "assets/ui/storyModeSheet.png", false, true);
+		TextureSystem.createTexture("optionsMenuSheet", "assets/ui/optionsMenuSheet.png", false, true);
+		TextureSystem.createTexture("alphabetSheet", "assets/alphabetText/sheet.png", false, true);
 		trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 	}
 

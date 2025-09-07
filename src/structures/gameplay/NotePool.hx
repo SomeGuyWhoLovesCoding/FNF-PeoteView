@@ -81,6 +81,7 @@ class NotePool {
 			        Math.floor(tex.height / tex.tilesY)
 				);
 				inactiveObject.c.aF = Sustain.defaultAlpha;
+				inactiveObject.c.luminanceF = Sustain.defaultAlpha;
 			}
 			allocated = inactiveObject;
 			sustains.set(n, inactiveObject);
@@ -112,10 +113,10 @@ class NotePool {
 	function putSustain(n:MetaNote) {
 		var allocated:Sustain = sustains.get(n);
 		if (sustains.remove(n)) {
-			allocated.c.aF = 1;
 			allocated.x = -9999;
 			allocated.y = -9999;
 			allocated.c.aF = Sustain.defaultAlpha;
+			allocated.c.luminanceF = Sustain.defaultAlpha;
 			inactiveSustains.push(allocated);
 		}
 	}

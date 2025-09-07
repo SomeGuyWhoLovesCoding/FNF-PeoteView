@@ -248,6 +248,8 @@ class Text {
 		if (programs[key] == null) {
 			var program = new Program(buffer);
 			program.blendEnabled = true;
+			program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
+			program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 			program.setFragmentFloatPrecision('medium', true);
 			program.setColorFormula('getTextureColor(font_ID, vTexCoord) * (c * alphaColor)');
 			programs[key] = program;

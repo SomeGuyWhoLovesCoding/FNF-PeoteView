@@ -108,7 +108,7 @@ class Tools {
 	static function parseFont(name:String):Array<elements.text.TextCharData> {
 		var path = 'assets/fonts/$name/data.json';
 		var data = haxe.Json.parse(sys.io.File.getContent(path));
-		TextureSystem.createTexture(name + "Font", path.replace('data.json', data.atlas.imagePath));
+		TextureSystem.createTexture(name + "Font", path.replace('data.json', data.atlas.imagePath), false, true);
 		return data.sprites;
 	}
 
@@ -238,4 +238,30 @@ class Tools {
 
 		return result;
 	}
+
+	// Temporary, will comment out
+	/*static function createProgramPremultiplied(texName:String):{prog:Program, formula:String} {
+		var program = new Program(buffers[displayName]);
+		program.blendEnabled = true;
+		program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
+		program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
+		program.injectIntoFragmentShader(
+		'
+			vec4 ssss(int textureID, float f) //supportAlphaOnPremultiplied
+			{
+				vec2 coord = vTexCoord;
+				vec4 tex = getTextureColor(textureID, coord);
+
+				// Apply your alpha adjustments
+				tex.rgb *= f;  // scale RGB
+				tex.a   *= f;  // scale alpha
+
+				return c * f;
+			}
+		');
+
+		var formulaStr = 'ssss(c, f)';
+		program.setColorFormula( formulaStr );
+		return {prog: program, formula: formulaStr};
+	}*/
 }

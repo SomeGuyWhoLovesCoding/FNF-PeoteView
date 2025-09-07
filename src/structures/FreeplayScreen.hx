@@ -40,6 +40,8 @@ class FreeplayScreen {
 			songTextsBuf = new Buffer<Actor>(32, 32, false);
 			songTextsProg = new Program(songTextsBuf);
 			songTextsProg.blendEnabled = true;
+			songTextsProg.blendSrc = songTextsProg.blendSrcAlpha = BlendFactor.ONE;
+			songTextsProg.blendDst = songTextsProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
 			var tex = TextureSystem.getTexture("alphabetSheet");
 			TextureSystem.setTexture(songTextsProg, "alphabetSheet", "alphabetSheet");
@@ -49,6 +51,8 @@ class FreeplayScreen {
 			songIconsBuf = new Buffer<HealthBarSprite>(32, 32, false);
 			songIconsProg = new Program(songIconsBuf);
 			songIconsProg.blendEnabled = true;
+			songIconsProg.blendSrc = songIconsProg.blendSrcAlpha = BlendFactor.ONE;
+			songIconsProg.blendDst = songIconsProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
 			var tex = TextureSystem.getTexture("hbTex");
 			HealthBarSprite.init(songIconsProg, "hbTex", tex);
@@ -69,6 +73,7 @@ class FreeplayScreen {
 				for (i in 0...20) {
 					var spr = new Actor(display, "alphabetText", 0, 0, 24, "", false);
 					spr.c.aF = 0.0;
+					spr.c.luminanceF = 0.0;
 					songTextsBuf.addElement(spr);
 					spr;
 				}
@@ -80,6 +85,7 @@ class FreeplayScreen {
 				var icon = new HealthBarSprite();
 				icon.type = HEALTH_ICON;
 				icon.c.aF = 0.0;
+				icon.c.luminanceF = 0.0;
 				songIconsBuf.addElement(icon);
 				icon;
 			}
@@ -224,7 +230,9 @@ class FreeplayScreen {
 						spr.y += spr.h * .25;
 				}
 
-				spr.c.aF = isInvalidCharacter ? 0.0 : (i == l ? 1.0 : 0.5) * alphaLerp;
+				var alpha = isInvalidCharacter ? 0.0 : (i == l ? 1.0 : 0.5) * alphaLerp;
+				spr.c.aF = alpha;
+				spr.c.luminanceF = alpha;
 				songTextsBuf.updateElement(spr);
 				spr.updateBuffer();
 
@@ -241,7 +249,9 @@ class FreeplayScreen {
 
 			var icon = songIconGroup[i];
 			icon.changeID(Tools.fromIconGridXMLCharacter(song.icon)[0]);
-			icon.c.aF = (i == l ? 1.0 : 0.5) * alphaLerp;
+			var alpha = (i == l ? 1.0 : 0.5) * alphaLerp;
+			icon.c.aF = alpha;
+			icon.c.luminanceF = alpha;
 			icon.x = iconX + ((icon.w * 0.35) + 12);
 			icon.y = ((-curSelectedLerp * 156) + (156 * k) + 320) - 30; // https://github.com/ShadowMario/FNF-PsychEngine/blob/main/source/objects/HealthIcon.hx#L22
 			songIconsBuf.updateElement(icon);

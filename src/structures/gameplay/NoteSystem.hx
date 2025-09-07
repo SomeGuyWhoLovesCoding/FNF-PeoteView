@@ -168,6 +168,7 @@ class NoteSystem {
 
 					if (sustainExists && !isHeld) {
 						sustainSpr.c.aF = Sustain.defaultMissAlpha;
+						sustainSpr.c.luminanceF = Sustain.defaultMissAlpha;
 						notesHeld.set(note, isHeld = true);
 						parent.onSustainRelease.dispatch(note);
 					}

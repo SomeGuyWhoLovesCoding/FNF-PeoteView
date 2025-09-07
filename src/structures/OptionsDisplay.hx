@@ -97,13 +97,28 @@ class OptionsDisplay {
 	function update(deltaTime:Float) {
 		for (i in 0...options.length) {
 			var option = options[i];
+			option.c.aF = parent.alphaLerp;
+			option.c.luminanceF = parent.alphaLerp;
 			switch ((parent.categorySelected:OptionsCategorySelection)) {
 				case PREFERENCES:
 					var optionChecked = Reflect.getProperty(SaveData.state.preferences, prefsStr[i]);
-					option.c = i == parent.optionSelected ? (optionChecked ? 0x00FF00FF : 0xFF0000FF) : 0xFFFFFFFF;
+					if (i == parent.optionSelected) {
+						option.c.rF = !optionChecked ? parent.alphaLerp : 0.0;
+						option.c.gF = optionChecked ? parent.alphaLerp : 0.0;
+						option.c.bF = 0.0;
+					} else {
+						option.c.luminanceF = parent.alphaLerp;
+					}
 				default:
+					/*var optionChecked = false;
+					if (i == parent.optionSelected) {
+						option.c.rF = !optionChecked ? parent.alphaLerp : 0.0;
+						option.c.gF = optionChecked ? parent.alphaLerp : 0.0;
+						option.c.bF = 0.0;
+					} else {
+						option.c.luminanceF = parent.alphaLerp;
+					}*/
 			}
-			option.c.aF = parent.alphaLerp;
 			OptionsMenu.optionsBuf.updateElement(option);
 		}
 	}

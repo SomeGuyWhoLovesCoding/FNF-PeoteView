@@ -35,6 +35,8 @@ class PauseScreen {
 			pauseBuf = new Buffer<StoryModeSprite>(5);
 			pauseProg = new Program(pauseBuf);
 			pauseProg.blendEnabled = true;
+			pauseProg.blendSrc = pauseProg.blendSrcAlpha = BlendFactor.ONE;
+			pauseProg.blendDst = pauseProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
 			var tex = TextureSystem.getTexture("storyModeSheet");
 			StoryModeSprite.init(pauseProg, "storyModeSheet", tex);
@@ -89,9 +91,14 @@ class PauseScreen {
 		for (i in 0...pauseOptions.length) {
 			var pauseOption = pauseOptions[i];
 			var originalC = pauseOption.c;
-			if (i == pauseOptionSelected) pauseOption.c = Color.YELLOW;
-			else pauseOption.c = Color.WHITE;
 			pauseOption.c.aF = alphaLerp;
+			if (i == pauseOptionSelected) {
+				pauseOption.c.rF = alphaLerp;
+				pauseOption.c.gF = alphaLerp;
+				pauseOption.c.bF = 0.0;
+			} else {
+				pauseOption.c.luminanceF = alphaLerp;
+			}
 			if (originalC != pauseOption.c) {
 				if (@:privateAccess pauseOption.bytePos != -1) {
 					pauseBuf.updateElement(pauseOption);
@@ -100,6 +107,7 @@ class PauseScreen {
 		}
 
 		diffText.c.aF = alphaLerp;
+		diffText.c.luminanceF = alphaLerp;
 		if (@:privateAccess diffText.bytePos != -1) {
 			pauseBuf.updateElement(diffText);
 		}
@@ -167,10 +175,13 @@ class PauseScreen {
 				if (i == pauseOptionSelected) pauseOption.c = Color.YELLOW;
 				else pauseOption.c = Color.WHITE;
 				pauseOption.c.aF = 0.0;
+				pauseOption.c.luminanceF = 0.0;
 				pauseBuf.addElement(pauseOptions[i]);
 			}
 
-			alphaLerp = diffText.c.aF = 0.0;
+			alphaLerp = 0.0;
+			diffText.c.aF = 0.0;
+			diffText.c.luminanceF = 0.0;
 			pauseBuf.addElement(diffText);
 		} catch (e) {}
 
@@ -212,6 +223,7 @@ class PauseScreen {
 			for (i in 0...pauseOptions.length) {
 				var pauseOption = pauseOptions[i];
 				pauseOption.c.aF = 0.0;
+				pauseOption.c.luminanceF = 0.0;
 				pauseBuf.removeElement(pauseOption);
 			}
 

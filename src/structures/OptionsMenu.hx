@@ -37,6 +37,8 @@ class OptionsMenu {
 			optionsBuf = new Buffer<OptionsSprite>(15);
 			optionsProg = new Program(optionsBuf);
 			optionsProg.blendEnabled = true;
+			optionsProg.blendSrc = optionsProg.blendSrcAlpha = BlendFactor.ONE;
+			optionsProg.blendDst = optionsProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
 			var tex = TextureSystem.getTexture("optionsMenuSheet");
 			OptionsSprite.init(optionsProg, "optionsMenuSheet", tex);
@@ -82,11 +84,10 @@ class OptionsMenu {
 
 		for (i in 0...categorySprites.length) {
 			var categorySprite = categorySprites[i];
-			var originalC = categorySprite.c;
-			if (i == categorySelected) categorySprite.c = Color.WHITE;
-			else categorySprite.c = Color.GREY2;
+			var originalLuminance = categorySprite.c.luminanceF;
+			categorySprite.c.luminanceF = alphaLerp * (i != categorySelected ? 0.5 : 1);
 			categorySprite.c.aF = alphaLerp;
-			if (originalC != categorySprite.c) optionsBuf.updateElement(categorySprite);
+			if (originalLuminance != categorySprite.c.luminanceF) optionsBuf.updateElement(categorySprite);
 		}
 
 		optionsDisplay.update(deltaTime);
@@ -99,9 +100,8 @@ class OptionsMenu {
 		try {
 			for (i in 0...categorySprites.length) {
 				var categorySprite = categorySprites[i];
-				if (i == categorySelected) categorySprite.c = Color.WHITE;
-				else categorySprite.c = Color.GREY2;
-				categorySprite.c.aF = 0.0;
+				categorySprite.c.luminanceF = alphaLerp * (i != categorySelected ? 0.5 : 1);
+				categorySprite.c.aF = alphaLerp;
 				optionsBuf.addElement(categorySprite);
 			}
 

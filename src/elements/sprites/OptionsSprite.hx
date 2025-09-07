@@ -61,6 +61,8 @@ class OptionsSprite implements Element {
 		// creates a texture-layer named "name"
 		program.setTexture(texture, name, true);
 		program.blendEnabled = true;
+		program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
+		program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 	}
 
 	function new() {}

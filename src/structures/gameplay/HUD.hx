@@ -125,6 +125,8 @@ class HUD {
 			uiBuf = new Buffer<UISprite>(4, 4, true);
 			uiProg = new Program(uiBuf);
 			uiProg.blendEnabled = true;
+			uiProg.blendSrc = uiProg.blendSrcAlpha = BlendFactor.ONE;
+			uiProg.blendDst = uiProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
 			var tex = TextureSystem.getTexture("uiTex");
 			UISprite.init(uiProg, "uiTex", tex);

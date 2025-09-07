@@ -53,6 +53,8 @@ class MainMenu implements State {
 		if (optionProg == null) {
 			optionProg = new Program(optionBuf);
 			optionProg.blendEnabled = true;
+			optionProg.blendSrc = optionProg.blendSrcAlpha = BlendFactor.ONE;
+			optionProg.blendDst = optionProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
 			TextureSystem.setTexture(optionProg, "mainMenuSheet", "mainMenuSheet");
 
@@ -76,6 +78,8 @@ class MainMenu implements State {
 			if (backgroundProg == null) {
 				backgroundProg = new Program(backgroundBuf);
 				backgroundProg.blendEnabled = true;
+				backgroundProg.blendSrc = backgroundProg.blendSrcAlpha = BlendFactor.ONE;
+				backgroundProg.blendDst = backgroundProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
 				TextureSystem.setTexture(backgroundProg, "mainMenuBGTex", "mainMenuBGTex");
 
@@ -128,8 +132,9 @@ class MainMenu implements State {
 				option.x = (Main.INITIAL_WIDTH - option.w) * 0.5;
 			}
 
-			alphaLerps[i] = Tools.lerp(alphaLerps[i], selectedAlpha, t);
-			option.c.aF = alphaLerps[i];
+			var alpha = alphaLerps[i] = Tools.lerp(alphaLerps[i], selectedAlpha, t);
+			option.c.aF = alpha;
+			option.c.luminanceF = alpha;
 			optionBuf.updateElement(option);
 		}
 	}

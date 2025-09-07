@@ -37,7 +37,9 @@ class UISprite implements Element {
 	}
 
 	inline function set_alpha(value:Float) {
-		return alphaColor.aF = value < 1/255 ? 0 : value;
+		value = Math.max(value, 0);
+		alphaColor.luminanceF = value;
+		return alphaColor.aF = value;
 	}
 
 	static var timeBarProperties:Array<Float> = [];
@@ -109,6 +111,8 @@ class UISprite implements Element {
 		// creates a texture-layer named "name"
 		program.setTexture(texture, name, true);
 		program.blendEnabled = true;
+		program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
+		program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
 		program.injectIntoFragmentShader('
 			vec4 getTexColor( int textureID )

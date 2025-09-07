@@ -41,6 +41,8 @@ class HealthBar {
 			hbBuf = new Buffer<HealthBarSprite>(4, 4, true);
 			hbProg = new Program(hbBuf);
 			hbProg.blendEnabled = true;
+			hbProg.blendSrc = hbProg.blendSrcAlpha = BlendFactor.ONE;
+			hbProg.blendDst = hbProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 	
 			var tex = TextureSystem.getTexture("hbTex");
 			HealthBarSprite.init(hbProg, "hbTex", tex);
