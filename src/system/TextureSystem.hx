@@ -70,10 +70,14 @@ class TextureSystem {
 		var antialiasing = currentSaveState.antialiasing && !disableAntialiasing;
 
 		var image = Image.fromFile(path);
-		var textureData = new TextureData(image.width, image.height);
+
+		// I'm proud of this fix, but it couldn't be better be this:
+		var textureData = !premultiply ? TextureData.fromLimeImage(image) : new TextureData(image.width, image.height, TextureFormat.RGBA);
 		if (premultiply) {
+			textureData.bytes = haxe.io.Bytes.alloc(image.width * image.height * 4);
+			var bytes = image.data.toBytes();
 			for (i in 0...textureData.bytes.length >> 2) {
-				var fullARGB = textureData.bytes.getInt32(i << 2);
+				var fullARGB = bytes.getInt32(i << 2);
 
 				var a = (fullARGB >>> 24) & 0xFF;
 				var r = (fullARGB >>> 16) & 0xFF;
