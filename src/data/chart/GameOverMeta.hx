@@ -21,7 +21,7 @@ class GameOverMeta {
 	var bpm:Float;
 
 	/**
-		Returns a string representation of the character.
+		Returns a string representation of the game over meta.
 	**/
 	function toString() {
 		return '{ theme => $theme, bpm => $bpm }';

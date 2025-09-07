@@ -12,7 +12,7 @@ The chart format is an entire folder of everything you need for your custom fnf 
 
 ### The song's chart file
 
-The biggest thing in the chart format. It's a binary file containing 8 bytes per note in a sorted list. It's also designed to be as efficient as possible which is why I rewrote it to not use the HxBigIO haxelib and experiment with the standard c libraries (stdio and iostream) for the first time. One of them were already in haxe's cpp package but 80% of the necessary functions were written. So, I decided to make my own version with all the functions needed for stdio, and create iostream (located in the custom.cpp package).
+The biggest thing in the chart format. It's a binary file containing 8 bytes per note in a sorted list. It's also designed to be as efficient as possible which is why I rewrote it to not use the HxBigIO haxelib and basically turn it into an hxcpp/hl extern to accelerate the speed further (which is where memory-mapped io comes in).
 
 Here's how the chart note works:
 
@@ -56,6 +56,9 @@ Instrumental: InstPath.flac
 Voices: VoicesPath.flac
 Mania: 4
 Difficulty: #1
+Game Over:
+Theme: theme
+BPM: 100
 Characters:
 dad, enemy
 pos -700 300
@@ -66,7 +69,12 @@ cam 0 45
 bf, player
 pos 200 300
 cam 0 45
+bf, player, true
+pos 200 300
+cam 0 45
 ```
+
+The third argument of the character "bf" is infact whenever you want to copy it or not. (Only really works if you have an existing character to copy, otherwise it's just meaningless)
 
 The difficulty map:
 
@@ -186,5 +194,13 @@ The tween duration can be changed via the last option. The "duration" property.
 The shake axis can be changed via the "axis" property. Anything other than 1 or 2 will default to 0. Horizontal shake is "axis 1" and vertical shake is "axis 2".
 
 ___________________________ ___________________________ ___________________________
+
+The event system has not been implemented onto the gameplay state yet. However, that's not my priority right now.
+
+### How to port json
+
+Drag and drop a chart.json onto their song and let it convert to a .cbin. Note, if you already have a `.cbin` file, remove it first so the json can convert.
+
+You can remove the json if you want but I don't care.
 
 So, that's all.

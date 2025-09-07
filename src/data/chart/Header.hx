@@ -77,9 +77,14 @@ class Header {
 	var gameOver:GameOverMeta;
 
 	/**
+		The song's actor meta.
+	**/
+	var actors:Array<ActorMeta>;
+
+	/**
 		Returns a string representation of the chart header.
 	**/
 	function toString() {
-		return '{ title => $title, artist => $artist, genres => $genres, speed => $speed, bpm => $bpm, timeSig => $timeSig, stage => $stage, instDir => $instDir, voicesDirs => $voicesDirs, mania => $mania, difficulty => $difficulty, gameOver => ${gameOver.toString()} }';
+		return '{ title => $title, artist => $artist, genres => $genres, speed => $speed, bpm => $bpm, timeSig => $timeSig, stage => $stage, instDir => $instDir, voicesDirs => $voicesDirs, mania => $mania, difficulty => $difficulty, gameOver => ${gameOver.toString()}, actors => ${[for (actor in actors) actor.toString()/* + ", "*/]} }';
 	}
 }

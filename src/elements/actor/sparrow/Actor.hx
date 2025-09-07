@@ -30,7 +30,7 @@ class Actor extends ActorElement
 
 	var display(default, null):CustomDisplay;
 
-	function new(display:CustomDisplay, name:String, x:Int = 0, y:Int = 0, fps:Int = 24, folder:String = "characters/", addBufferAndProgram:Bool = true) {
+	function new(display:CustomDisplay, name:String, x:Int = 0, y:Int = 0, fps:Int = 24, folder:String = "characters/", addBufferAndProgram:Bool = true, dontCopy:Bool = false) {
 		this.display = display;
 
 		super(Math.ffloor(x), Math.ffloor(y));
@@ -58,7 +58,7 @@ class Actor extends ActorElement
 		}
 
 		if (atlas.imagePath != "" && addBufferAndProgram) {
-			if (buffers.exists(displayName)) {
+			if (buffers.exists(displayName) && !dontCopy) {
 				if (!copiesOfCharacters.exists(name)) {
 					copiesOfCharacters[name] = 0;
 				}
@@ -94,6 +94,10 @@ class Actor extends ActorElement
 		if (buffers.exists(displayName))
 			buffers[displayName].addElement(this);
 	}
+
+	/*inline static function removeAllCopiesOfCharacters() {
+
+	}*/
 
 	static function path(name:String, folder:String, type:CharacterPathType) {
 		var result = 'assets/$folder$name';

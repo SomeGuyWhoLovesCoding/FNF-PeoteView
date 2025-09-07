@@ -24,9 +24,9 @@ class Chart {
 	**/
 	static function load(path:String) {
 		destroyed = false;
-		trace('Parsing chart from folder...');
+		Sys.println('Chart.hx: Parsing chart from folder...');
 
-		if (FileSystem.exists('$path/chart.json')) {
+		if (FileSystem.exists('$path/chart.json') && !FileSystem.exists('$path/chart.cbin')) {
 			ChartConverter.baseGame(path);
 		}
 
@@ -34,20 +34,20 @@ class Chart {
 
 		var stamp = haxe.Timer.stamp();
 		File.loadChart('$path/chart.cbin');
-		trace('Done! Took ${Tools.formatTime((haxe.Timer.stamp() - stamp) * 1000.0, true)} to load.');
+		Sys.println('Chart.hx: Done! Took ${Tools.formatTime((haxe.Timer.stamp() - stamp) * 1000.0, true)} to load.');
 	}
 
 	/**
 		Destroys an already-existing chart. Self-explanatory.
 	**/
 	static function destroy() {
-		trace('Destroying chart...');
+		Sys.println('Chart.hx: Destroying chart...');
 
 		header = null;
 
 		var stamp = haxe.Timer.stamp();
 		File.destroyChart();
 		destroyed = true;
-		trace('Done! Took ${Tools.formatTime((haxe.Timer.stamp() - stamp) * 1000.0, true)} to destroy.');
+		Sys.println('Chart.hx: Done! Took ${Tools.formatTime((haxe.Timer.stamp() - stamp) * 1000.0, true)} to destroy.');
 	}
 }

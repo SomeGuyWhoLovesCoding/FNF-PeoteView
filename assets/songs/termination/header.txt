@@ -12,3 +12,13 @@ Difficulty: #4
 Game Over:
 Theme: vanilla
 BPM: 100
+Characters:
+dad, enemy
+pos -700 300
+cam 0 45
+gf, other
+pos -100 300
+cam 0 45
+bf, player
+pos 200 300
+cam 0 45

@@ -218,6 +218,24 @@ class Tools {
 		var gameOverTheme:String = input.readLine().split(": ")[1].trim();
 		var gameOverBPM:Float = Std.parseFloat(input.readLine().split(": ")[1].trim());
 
+		input.readLine();
+
+		var actors:Array<ActorMeta> = [];
+
+		while (!input.eof()) {
+			var actorInfo:Array<String> = input.readLine().split(", ");
+			var actorPos:Array<String> = input.readLine().split("pos ")[1].split(" ");
+			var actorCam:Array<String> = input.readLine().split("cam ")[1].split(" ");
+			var meta:ActorMeta = {
+				name: actorInfo[0].trim(),
+				player: actorInfo[1].trim() == 'player',
+				copy: actorInfo[2]?.trim() == 'true',
+				position: [for (axis in actorPos) Std.parseInt(axis)],
+				camOffset: [for (axis in actorCam) Std.parseInt(axis)]
+			};
+			actors.push(meta);
+		}
+
 		input.close();
 
 		var result:Header = {
@@ -233,8 +251,11 @@ class Tools {
 			voicesDirs: voicesDirs,
 			mania: mania,
 			difficulty: difficulty,
-			gameOver: {theme: gameOverTheme, bpm: gameOverBPM}
+			gameOver: {theme: gameOverTheme, bpm: gameOverBPM},
+			actors: actors
 		};
+
+		trace('Parsed header: $result');
 
 		return result;
 	}
