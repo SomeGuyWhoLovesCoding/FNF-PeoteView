@@ -96,7 +96,7 @@ class MainMenu implements State {
 			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height;
 		} else view.addProgram(watermarkTxt.program);
 
-		haxe.Timer.delay(addEvents, 1);
+		haxe.Timer.delay(addEvents, 100);
 
 		updateMenuOptions();
 

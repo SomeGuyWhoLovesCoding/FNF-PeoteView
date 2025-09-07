@@ -44,7 +44,7 @@ class Sustain implements Element
 	static public function init(program:Program, name:String, texture:Texture)
 	{
 		// creates a texture-layer named "name"
-		program.setTexture(texture, name, true );
+		program.setTexture(texture, name);
 		program.blendEnabled = true;
 
 		var tW:String = Util.toFloatString(texture.width / texture.tilesX);

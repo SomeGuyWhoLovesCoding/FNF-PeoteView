@@ -230,7 +230,7 @@ class Main extends Application
 		trace("Preloading textures...");
 		TextureSystem.createTexture("mainMenuBGTex", "assets/mainMenu/menuBG.png");
 		TextureSystem.createTexture("mainMenuSheet", "assets/mainMenu/sheet.png");
-		TextureSystem.createTexture("noteTex", "assets/notes/noteSheet.png");
+		TextureSystem.createTexture("noteTex", "assets/notes/noteSheet.png", false, true);
 		TextureSystem.createTexture("uiTex", "assets/ui/uiSheet.png");
 		TextureSystem.createTexture("hbTex", "assets/ui/hbSheet.png");
 		TextureSystem.createTexture("storyModeSheet", "assets/ui/storyModeSheet.png");

@@ -81,27 +81,21 @@ class Note implements Element
 	static public function init(program:Program, name:String, texture:Texture)
 	{
 		// creates a texture-layer named "name"
-		program.setTexture(texture, name, true);
+		program.setTexture(texture, name);
 		program.blendEnabled = true;
-		/*program.blendSrc = BlendFactor.ONE_MINUS_SRC_ALPHA;
-		program.blendSrcAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
-		program.blendDst = BlendFactor.ONE_MINUS_SRC_ALPHA;
-		program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;*/
-
-		var tW:String = Util.toFloatString(texture.width / texture.tilesX);
-		var tH:String = Util.toFloatString(texture.height / texture.tilesY);
+		program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
+		program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
 		program.injectIntoFragmentShader(
 		'
 			vec4 why(int textureID, float initialAlpha, float addedAlpha)
 			{
 				vec2 coord = vTexCoord;
-				vec4 tex = getTextureColor( textureID, coord );
+				vec4 tex = getTextureColor(textureID, coord);
 
-				if (tex.a > 0) {
-					tex.a *= initialAlpha;
-					tex.a += addedAlpha;
-				}
+				// Apply your alpha adjustments
+				tex.a *= initialAlpha;
+				tex.a += addedAlpha;
 
 				return tex;
 			}
