@@ -100,87 +100,8 @@ HL_PRIM void HL_NAME(removeNote)(int64_t idx) {
     if (!remap(length - 1)) throw std::runtime_error("shrink failed");
 }
 
-// ============================================================================
-// Thingy taken from `data.chart.MetaNote`'s main property formula.
-// ============================================================================
 inline int64_t extractTime(int64_t note)     { return (note >> 23) & 0x1FFFFFFFFFFLL; }
 
-// -----------------------------------------------------------------------------
-// Windows cache detection
-// -----------------------------------------------------------------------------
-#ifdef _WIN32
-int64_t detectCacheWindows(int level) {
-    DWORD bufferSize = 0;
-    GetLogicalProcessorInformation(nullptr, &bufferSize); // get buffer size
-    std::vector<SYSTEM_LOGICAL_PROCESSOR_INFORMATION> buffer(bufferSize / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION));
-    if (!GetLogicalProcessorInformation(buffer.data(), &bufferSize))
-        return (level == 1 ? 32*1024 : level == 2 ? 256*1024 : 8*1024*1024);
-
-    for (auto& info : buffer) {
-        if (info.Relationship == RelationCache) {
-            CACHE_DESCRIPTOR& c = info.Cache;
-            if (c.Level == level)
-                return c.Size;
-        }
-    }
-    return (level == 1 ? 32*1024 : level == 2 ? 256*1024 : 8*1024*1024);
-}
-#else
-// -----------------------------------------------------------------------------
-// Linux cache detection
-// -----------------------------------------------------------------------------
-#include <fstream>
-#include <string>
-int64_t detectCacheLinux(int level) {
-    std::string path = "/sys/devices/system/cpu/cpu0/cache/index" + std::to_string(level) + "/size";
-    std::ifstream f(path);
-    if (!f.is_open()) return (level == 1 ? 32*1024 : level == 2 ? 256*1024 : 8*1024*1024);
-    std::string val;
-    f >> val;
-    f.close();
-    int64_t size = 0;
-    if (val.back() == 'K' || val.back() == 'k') {
-        val.pop_back();
-        size = std::stoll(val) * 1024;
-    } else if (val.back() == 'M' || val.back() == 'm') {
-        val.pop_back();
-        size = std::stoll(val) * 1024 * 1024;
-    } else {
-        size = std::stoll(val);
-    }
-    return size;
-}
-#endif
-
-// -----------------------------------------------------------------------------
-// Detect cache size by level (1,2,3)
-// -----------------------------------------------------------------------------
-int64_t detectCache(int level) {
-#ifdef _WIN32
-    return detectCacheWindows(level);
-#else
-    return detectCacheLinux(level);
-#endif
-}
-
-// -----------------------------------------------------------------------------
-// Adaptive block size selection
-// -----------------------------------------------------------------------------
-int64_t chooseBlockSize(int64_t arrayLen) {
-    int64_t l1 = detectCache(1) / sizeof(int64_t);
-    int64_t l2 = detectCache(2) / sizeof(int64_t);
-    int64_t l3 = detectCache(3) / sizeof(int64_t);
-
-    if (arrayLen <= l1) return l1 / 2;
-    if (arrayLen <= l2) return l2 / 2;
-    return l3 / 4;
-}
-
-// ============================================================================
-// Batch insert/remove
-// ============================================================================
-// Why the fuck are these two functions slower than their hxcpp version GRAAAAAAAAAAH this is why hxcpp is superior in performance
-// Edit: I had to calculate the correct length by putting a separate int64_t argument in place. I can't believe hashlink's `vbyte*` was actually a pointer of an `unsigned char`.
 HL_PRIM void HL_NAME(insertNotes)(vbyte* arr, int64_t len) {
     unsigned long long* ptr = (unsigned long long*)arr;
     //int64_t len = sizeof(ptr) / sizeof(int64_t);
@@ -190,31 +111,27 @@ HL_PRIM void HL_NAME(insertNotes)(vbyte* arr, int64_t len) {
 
     if (newNotes.empty()) return;
 
-    int64_t oldLen = length;
-    int64_t k = newNotes.size();
-    int64_t newLen = oldLen + k;
-
-    if (!remap(newLen)) throw std::runtime_error("failed to resize file");
-
-    int64_t write = newLen - 1;
-    int64_t i = oldLen - 1;
-    int64_t j = k - 1;
+    int64_t* writePtr = data + newLen - 1;
+    int64_t* dataPtr  = data + oldLen - 1;
+    int64_t* newPtr   = newNotes.data() + k - 1;
 
     // Backwards merge by extractTime
-    while (i >= 0 && j >= 0) {
-        int64_t timeData = extractTime(data[i]);
-        int64_t timeNew  = extractTime(newNotes[j]);
+    while (dataPtr >= data && newPtr >= newNotes.data()) {
+        int64_t timeData = extractTime(*dataPtr);
+        int64_t timeNew  = extractTime(*newPtr);
 
         if (timeData > timeNew) {
-            if (write != i) data[write] = data[i]; // skip write if already in place
-            --i; --write;
+            if (writePtr != dataPtr) *writePtr = *dataPtr; // skip if already in place
+            --dataPtr;
         } else {
-            data[write--] = newNotes[j--];
+            *writePtr = *newPtr;
+            --newPtr;
         }
+        --writePtr;
     }
 
     // Copy any remaining newNotes
-    while (j >= 0) data[write--] = newNotes[j--];
+    while (newPtr >= newNotes.data()) *writePtr-- = *newPtr--;
 
     length = newLen;
 }
@@ -223,28 +140,30 @@ HL_PRIM void HL_NAME(removeNotes)(vbyte* arr, int64_t len) {
     unsigned long long* ptr = (unsigned long long*)arr;
     //int64_t len = sizeof(ptr) / sizeof(int64_t);
     //printf("%s\n", std::to_string(len).c_str());
-    std::vector<int64_t> toRemove(ptr, ptr + len);
+    std::vector<int64_t> notesToRemove(ptr, ptr + len);
     if (toRemove.empty() || length == 0) return;
 
-    int64_t write = 0;
-    int64_t j = 0;
-    int64_t n = length;
-    int64_t m = toRemove.size();
+    int64_t* readPtr  = data;
+    int64_t* writePtr = data;
+    int64_t* endPtr   = data + length;
+    int64_t* removePtr = notesToRemove.data();
+    int64_t* removeEnd = notesToRemove.data() + notesToRemove.size();
 
-    // Two-pointer scan: overwrite kept elements
-    for (int64_t i = 0; i < n; ++i) {
-        if (j < m && data[i] == toRemove[j]) {
-            ++j; // skip removed note
+    while (readPtr < endPtr) {
+        if (removePtr < removeEnd && *readPtr == *removePtr) {
+            ++removePtr; // skip this note
         } else {
-            if (write != i) data[write] = data[i];
-            ++write;
+            if (writePtr != readPtr) *writePtr = *readPtr;
+            ++writePtr;
         }
+        ++readPtr;
     }
 
     // Shrink file if needed
-    if (write != length) {
-        if (!remap(write)) throw std::runtime_error("failed to shrink file after removeNotes");
-        length = write;
+    int64_t newLength = writePtr - data;
+    if (newLength != length) {
+        if (!remap(newLength)) throw std::runtime_error("failed to shrink file after removeNotes");
+        length = newLength;
     }
 }
 
