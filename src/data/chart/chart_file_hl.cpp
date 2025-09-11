@@ -188,38 +188,33 @@ HL_PRIM void HL_NAME(insertNotes)(vbyte* arr, int64_t len) {
     std::vector<int64_t> newNotes(ptr, ptr + len);
     if (newNotes.empty()) return;
 
+    if (newNotes.empty()) return;
+
     int64_t oldLen = length;
-    int64_t insertCount = newNotes.size();
-    int64_t newLen = oldLen + insertCount;
+    int64_t k = newNotes.size();
+    int64_t newLen = oldLen + k;
 
     if (!remap(newLen)) throw std::runtime_error("failed to resize file");
 
-    int64_t blockSize = chooseBlockSize(oldLen + insertCount);
-    std::vector<int64_t> tempBlock(blockSize); // L1/L2/L3-friendly scratch
+    int64_t write = newLen - 1;
+    int64_t i = oldLen - 1;
+    int64_t j = k - 1;
 
-    int64_t i = 0, j = 0, k = 0;
+    // Backwards merge by extractTime
+    while (i >= 0 && j >= 0) {
+        int64_t timeData = extractTime(data[i]);
+        int64_t timeNew  = extractTime(newNotes[j]);
 
-    while (i < oldLen || j < insertCount) {
-        int64_t curOldBlock = ((oldLen - i) < blockSize) ? (oldLen - i) : blockSize;
-        int64_t curNewBlock = ((insertCount - j) < blockSize) ? (insertCount - j) : blockSize;
-
-        // Copy current old block into scratch
-        if (curOldBlock > 0) std::memcpy(tempBlock.data(), data + i, curOldBlock * sizeof(int64_t));
-
-        int64_t ii = 0, jj = j;
-
-        while (ii < curOldBlock && jj < j + curNewBlock) {
-            int64_t tTime = extractTime(tempBlock[ii]);
-            int64_t dTime = extractTime(newNotes[jj]);
-            data[k++] = (tTime <= dTime) ? tempBlock[ii++] : newNotes[jj++];
+        if (timeData > timeNew) {
+            if (write != i) data[write] = data[i]; // skip write if already in place
+            --i; --write;
+        } else {
+            data[write--] = newNotes[j--];
         }
-
-        while (ii < curOldBlock) data[k++] = tempBlock[ii++];
-        while (jj < j + curNewBlock) data[k++] = newNotes[jj++];
-
-        i += curOldBlock;
-        j += curNewBlock;
     }
+
+    // Copy any remaining newNotes
+    while (j >= 0) data[write--] = newNotes[j--];
 
     length = newLen;
 }
@@ -233,24 +228,20 @@ HL_PRIM void HL_NAME(removeNotes)(vbyte* arr, int64_t len) {
 
     int64_t write = 0;
     int64_t j = 0;
+    int64_t n = length;
+    int64_t m = toRemove.size();
 
-    int64_t blockSize = chooseBlockSize(length);
-    const int64_t n = length;
-    const int64_t m = toRemove.size();
-
-    for (int64_t blockStart = 0; blockStart < n; blockStart += blockSize) {
-        int64_t blockEnd = ((blockStart + blockSize) < n) ? (blockStart + blockSize) : n;
-
-        for (int64_t i = blockStart; i < blockEnd; ++i) {
-            if (j < m && data[i] == toRemove[j]) {
-                ++j; // skip
-            } else {
-                if (write != i) data[write] = data[i];
-                ++write;
-            }
+    // Two-pointer scan: overwrite kept elements
+    for (int64_t i = 0; i < n; ++i) {
+        if (j < m && data[i] == toRemove[j]) {
+            ++j; // skip removed note
+        } else {
+            if (write != i) data[write] = data[i];
+            ++write;
         }
     }
 
+    // Shrink file if needed
     if (write != length) {
         if (!remap(write)) throw std::runtime_error("failed to shrink file after removeNotes");
         length = write;

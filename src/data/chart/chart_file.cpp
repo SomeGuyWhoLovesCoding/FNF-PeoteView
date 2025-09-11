@@ -3,10 +3,7 @@
 #include <vector>
 #include <stdexcept>
 #include <cstring>
-
-#include <thread>
-#include <future>
-#include <atomic>
+#include <immintrin.h>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -109,149 +106,61 @@ void removeNote(int64_t index) {
 }
 
 // ============================================================================
-// Thingy taken from `data.chart.MetaNote`'s main properties' formula.
+// ExtractTime helpers
 // ============================================================================
 inline int64_t extractTime(int64_t note) { return (note >> 23) & 0x1FFFFFFFFFFLL; }
 
-// -----------------------------------------------------------------------------
-// Windows cache detection
-// -----------------------------------------------------------------------------
-#ifdef _WIN32
-int64_t detectCacheWindows(int level) {
-    DWORD bufferSize = 0;
-    GetLogicalProcessorInformation(nullptr, &bufferSize); // get buffer size
-    std::vector<SYSTEM_LOGICAL_PROCESSOR_INFORMATION> buffer(bufferSize / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION));
-    if (!GetLogicalProcessorInformation(buffer.data(), &bufferSize))
-        return (level == 1 ? 32*1024 : level == 2 ? 256*1024 : 8*1024*1024);
-
-    for (auto& info : buffer) {
-        if (info.Relationship == RelationCache) {
-            CACHE_DESCRIPTOR& c = info.Cache;
-            if (c.Level == level)
-                return c.Size;
-        }
-    }
-    return (level == 1 ? 32*1024 : level == 2 ? 256*1024 : 8*1024*1024);
-}
-#else
-// -----------------------------------------------------------------------------
-// Linux cache detection
-// -----------------------------------------------------------------------------
-#include <fstream>
-#include <string>
-int64_t detectCacheLinux(int level) {
-    std::string path = "/sys/devices/system/cpu/cpu0/cache/index" + std::to_string(level) + "/size";
-    std::ifstream f(path);
-    if (!f.is_open()) return (level == 1 ? 32*1024 : level == 2 ? 256*1024 : 8*1024*1024);
-    std::string val;
-    f >> val;
-    f.close();
-    int64_t size = 0;
-    if (val.back() == 'K' || val.back() == 'k') {
-        val.pop_back();
-        size = std::stoll(val) * 1024;
-    } else if (val.back() == 'M' || val.back() == 'm') {
-        val.pop_back();
-        size = std::stoll(val) * 1024 * 1024;
-    } else {
-        size = std::stoll(val);
-    }
-    return size;
-}
-#endif
-
-// -----------------------------------------------------------------------------
-// Detect cache size by level (1,2,3)
-// -----------------------------------------------------------------------------
-int64_t detectCache(int level) {
-#ifdef _WIN32
-    return detectCacheWindows(level);
-#else
-    return detectCacheLinux(level);
-#endif
-}
-
-// -----------------------------------------------------------------------------
-// Adaptive block size selection
-// -----------------------------------------------------------------------------
-int64_t chooseBlockSize(int64_t arrayLen) {
-    int64_t l1 = detectCache(1) / sizeof(int64_t);
-    int64_t l2 = detectCache(2) / sizeof(int64_t);
-    int64_t l3 = detectCache(3) / sizeof(int64_t);
-
-    if (arrayLen <= l1) return l1 / 2;
-    if (arrayLen <= l2) return l2 / 2;
-    return l3 / 4;
-}
-
-// ============================================================================
-// Adaptive insertNotes
-// ============================================================================
 void insertNotes(std::vector<int64_t> newNotes) {
     if (newNotes.empty()) return;
 
     int64_t oldLen = length;
-    int64_t insertCount = newNotes.size();
-    int64_t newLen = oldLen + insertCount;
+    int64_t k = newNotes.size();
+    int64_t newLen = oldLen + k;
 
     if (!remap(newLen)) throw std::runtime_error("failed to resize file");
 
-    int64_t blockSize = chooseBlockSize(oldLen + insertCount);
-    std::vector<int64_t> tempBlock(blockSize); // L1/L2/L3-friendly scratch
+    int64_t write = newLen - 1;
+    int64_t i = oldLen - 1;
+    int64_t j = k - 1;
 
-    int64_t i = 0, j = 0, k = 0;
+    // Backwards merge by extractTime
+    while (i >= 0 && j >= 0) {
+        int64_t timeData = extractTime(data[i]);
+        int64_t timeNew  = extractTime(newNotes[j]);
 
-    while (i < oldLen || j < insertCount) {
-        int64_t curOldBlock = ((oldLen - i) < blockSize) ? (oldLen - i) : blockSize;
-        int64_t curNewBlock = ((insertCount - j) < blockSize) ? (insertCount - j) : blockSize;
-
-        // Copy current old block into scratch
-        if (curOldBlock > 0) std::memcpy(tempBlock.data(), data + i, curOldBlock * sizeof(int64_t));
-
-        int64_t ii = 0, jj = j;
-
-        while (ii < curOldBlock && jj < j + curNewBlock) {
-            int64_t tTime = extractTime(tempBlock[ii]);
-            int64_t dTime = extractTime(newNotes[jj]);
-            data[k++] = (tTime <= dTime) ? tempBlock[ii++] : newNotes[jj++];
+        if (timeData > timeNew) {
+            if (write != i) data[write] = data[i]; // skip write if already in place
+            --i; --write;
+        } else {
+            data[write--] = newNotes[j--];
         }
-
-        while (ii < curOldBlock) data[k++] = tempBlock[ii++];
-        while (jj < j + curNewBlock) data[k++] = newNotes[jj++];
-
-        i += curOldBlock;
-        j += curNewBlock;
     }
+
+    // Copy any remaining newNotes
+    while (j >= 0) data[write--] = newNotes[j--];
 
     length = newLen;
 }
 
-// ============================================================================
-// Adaptive removeNotes
-// ============================================================================
 void removeNotes(std::vector<int64_t> notesToRemove) {
-    if (notesToRemove.empty() || length == 0) return;
+    if (notesToRemove.empty()) return;
 
     int64_t write = 0;
     int64_t j = 0;
+    int64_t n = length;
+    int64_t m = notesToRemove.size();
 
-    int64_t blockSize = chooseBlockSize(length);
-    const int64_t n = length;
-    const int64_t m = notesToRemove.size();
-
-    for (int64_t blockStart = 0; blockStart < n; blockStart += blockSize) {
-        int64_t blockEnd = ((blockStart + blockSize) < n) ? (blockStart + blockSize) : n;
-
-        for (int64_t i = blockStart; i < blockEnd; ++i) {
-            if (j < m && data[i] == notesToRemove[j]) {
-                ++j; // skip
-            } else {
-                if (write != i) data[write] = data[i];
-                ++write;
-            }
+    // Two-pointer scan: overwrite kept elements
+    for (int64_t i = 0; i < n; ++i) {
+        if (j < m && data[i] == notesToRemove[j]) {
+            ++j; // skip removed note
+        } else {
+            if (write != i) data[write] = data[i];
+            ++write;
         }
     }
 
+    // Shrink file if needed
     if (write != length) {
         if (!remap(write)) throw std::runtime_error("failed to shrink file after removeNotes");
         length = write;
