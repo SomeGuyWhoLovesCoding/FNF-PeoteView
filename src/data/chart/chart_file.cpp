@@ -17,7 +17,7 @@
 // ============================================================================
 // Memory-mapped file handling
 // ============================================================================
-int64_t* data = nullptr;
+int64_t* __restrict data = nullptr;
 int64_t length = 0;
 
 #ifdef _WIN32
@@ -106,7 +106,15 @@ void removeNote(int64_t index) {
 }
 
 inline int64_t extractTime(int64_t note) { return (note >> 23) & 0x1FFFFFFFFFFLL; }
-
+// TODO: REWORK THESE TWO FUNCTIONS FOR DEFERRED ONES
+// MY INITIAL IDEA IS TO:
+/**
+ * do deferred inserts and removals on a separate memory mapped file
+ * do a deferred-operation-aware `getNote` indexing
+ * compact upon insert after removal and destroy
+ basically rendering the original code of `insertNotes` and `removeNotes` totally useless
+ since you're just basically wasting cpu cycles on constant merging when that could be delayed for later or certain conditions
+*/
 void insertNotes(std::vector<int64_t> newNotes) {
     if (newNotes.empty()) return;
 
@@ -116,9 +124,9 @@ void insertNotes(std::vector<int64_t> newNotes) {
 
     if (!remap(newLen)) throw std::runtime_error("failed to resize file");
 
-    int64_t* restrict writePtr = data + newLen - 1;
-    int64_t* restrict dataPtr  = data + oldLen - 1;
-    int64_t* restrict newPtr   = newNotes.data() + k - 1;
+    int64_t* __restrict writePtr = data + newLen - 1;
+    int64_t* __restrict dataPtr  = data + oldLen - 1;
+    int64_t* __restrict newPtr   = newNotes.data() + k - 1;
 
     // Backwards merge by extractTime
     while (dataPtr >= data && newPtr >= newNotes.data()) {
@@ -144,11 +152,11 @@ void insertNotes(std::vector<int64_t> newNotes) {
 void removeNotes(std::vector<int64_t> notesToRemove) {
     if (notesToRemove.empty()) return;
 
-    int64_t* restrict readPtr  = data;
-    int64_t* restrict writePtr = data;
-    int64_t* restrict endPtr   = data + length;
-    int64_t* restrict removePtr = notesToRemove.data();
-    int64_t* restrict removeEnd = notesToRemove.data() + notesToRemove.size();
+    int64_t* __restrict readPtr  = data;
+    int64_t* __restrict writePtr = data;
+    int64_t* __restrict endPtr   = data + length;
+    int64_t* __restrict removePtr = notesToRemove.data();
+    int64_t* __restrict removeEnd = notesToRemove.data() + notesToRemove.size();
 
     while (readPtr < endPtr) {
         if (removePtr < removeEnd && *readPtr == *removePtr) {

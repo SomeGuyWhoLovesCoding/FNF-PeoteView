@@ -21,7 +21,7 @@
 // ============================================================================
 // Memory-mapped file handling
 // ============================================================================
-int64_t* data = nullptr;
+int64_t* __restrict data = nullptr;
 int64_t length = 0;
 #ifdef _WIN32
 HANDLE hFile = INVALID_HANDLE_VALUE;
@@ -84,6 +84,16 @@ HL_PRIM void HL_NAME(destroyChart)(_NO_ARG) {
 #endif
     length = 0;
 }
+
+// TODO: REWORK THESE TWO FUNCTIONS FOR DEFERRED ONES
+// MY INITIAL IDEA IS TO:
+/**
+ * do deferred inserts and removals on a separate memory mapped file
+ * do a deferred-operation-aware `getNote` indexing
+ * compact upon insert after removal and destroy
+ basically rendering the original code of `insertNotes` and `removeNotes` totally useless
+ since you're just basically wasting cpu cycles on constant merging when that could be delayed for later or certain conditions
+*/
 HL_PRIM void HL_NAME(insertNote)(int64_t idx, int64_t val) {
     if (idx < 0 || idx > length) throw std::out_of_range("index out of range");
     if (!remap(length + 1)) throw std::runtime_error("resize failed");
@@ -103,17 +113,21 @@ HL_PRIM void HL_NAME(removeNote)(int64_t idx) {
 inline int64_t extractTime(int64_t note)     { return (note >> 23) & 0x1FFFFFFFFFFLL; }
 
 HL_PRIM void HL_NAME(insertNotes)(vbyte* arr, int64_t len) {
-    unsigned long long* ptr = (unsigned long long*)arr;
+    unsigned long long* __restrict ptr = (unsigned long long*)arr;
     //int64_t len = sizeof(ptr) / sizeof(int64_t);
     //printf("%s\n", std::to_string(len).c_str());
     std::vector<int64_t> newNotes(ptr, ptr + len);
     if (newNotes.empty()) return;
 
-    if (newNotes.empty()) return;
+    int64_t oldLen = length;
+    int64_t k = newNotes.size();
+    int64_t newLen = oldLen + k;
 
-    int64_t* restrict writePtr = data + newLen - 1;
-    int64_t* restrict dataPtr  = data + oldLen - 1;
-    int64_t* restrict newPtr   = newNotes.data() + k - 1;
+    if (!remap(newLen)) throw std::runtime_error("failed to resize file");
+
+    int64_t* __restrict writePtr = data + newLen - 1;
+    int64_t* __restrict dataPtr  = data + oldLen - 1;
+    int64_t* __restrict newPtr   = newNotes.data() + k - 1;
 
     // Backwards merge by extractTime
     while (dataPtr >= data && newPtr >= newNotes.data()) {
@@ -137,17 +151,17 @@ HL_PRIM void HL_NAME(insertNotes)(vbyte* arr, int64_t len) {
 }
 
 HL_PRIM void HL_NAME(removeNotes)(vbyte* arr, int64_t len) {
-    unsigned long long* ptr = (unsigned long long*)arr;
+    unsigned long long* __restrict ptr = (unsigned long long*)arr;
     //int64_t len = sizeof(ptr) / sizeof(int64_t);
     //printf("%s\n", std::to_string(len).c_str());
     std::vector<int64_t> notesToRemove(ptr, ptr + len);
-    if (toRemove.empty() || length == 0) return;
+    if (notesToRemove.empty() || length == 0) return;
 
-    int64_t* restrict readPtr  = data;
-    int64_t* restrict writePtr = data;
-    int64_t* restrict endPtr   = data + length;
-    int64_t* restrict removePtr = notesToRemove.data();
-    int64_t* restrict removeEnd = notesToRemove.data() + notesToRemove.size();
+    int64_t* __restrict readPtr  = data;
+    int64_t* __restrict writePtr = data;
+    int64_t* __restrict endPtr   = data + length;
+    int64_t* __restrict removePtr = notesToRemove.data();
+    int64_t* __restrict removeEnd = notesToRemove.data() + notesToRemove.size();
 
     while (readPtr < endPtr) {
         if (removePtr < removeEnd && *readPtr == *removePtr) {
