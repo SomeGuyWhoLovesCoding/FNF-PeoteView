@@ -111,9 +111,9 @@ HL_PRIM void HL_NAME(insertNotes)(vbyte* arr, int64_t len) {
 
     if (newNotes.empty()) return;
 
-    int64_t* writePtr = data + newLen - 1;
-    int64_t* dataPtr  = data + oldLen - 1;
-    int64_t* newPtr   = newNotes.data() + k - 1;
+    int64_t* restrict writePtr = data + newLen - 1;
+    int64_t* restrict dataPtr  = data + oldLen - 1;
+    int64_t* restrict newPtr   = newNotes.data() + k - 1;
 
     // Backwards merge by extractTime
     while (dataPtr >= data && newPtr >= newNotes.data()) {
@@ -143,11 +143,11 @@ HL_PRIM void HL_NAME(removeNotes)(vbyte* arr, int64_t len) {
     std::vector<int64_t> notesToRemove(ptr, ptr + len);
     if (toRemove.empty() || length == 0) return;
 
-    int64_t* readPtr  = data;
-    int64_t* writePtr = data;
-    int64_t* endPtr   = data + length;
-    int64_t* removePtr = notesToRemove.data();
-    int64_t* removeEnd = notesToRemove.data() + notesToRemove.size();
+    int64_t* restrict readPtr  = data;
+    int64_t* restrict writePtr = data;
+    int64_t* restrict endPtr   = data + length;
+    int64_t* restrict removePtr = notesToRemove.data();
+    int64_t* restrict removeEnd = notesToRemove.data() + notesToRemove.size();
 
     while (readPtr < endPtr) {
         if (removePtr < removeEnd && *readPtr == *removePtr) {
