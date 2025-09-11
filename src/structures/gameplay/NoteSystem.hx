@@ -318,5 +318,9 @@ class NoteSystem {
 
 		display.removeProgram(sustainProg);
 		display.removeProgram(notesProg);
+
+		notesHit.clear();
+		notesMissed.clear();
+		notesHeld.clear();
 	}
 }

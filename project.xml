@@ -51,5 +51,7 @@
 	<undefine name="HXCPP_CHECK_POINTER" if="debug" />
 	<!--<haxelib name="hxcpp-debug-server" if="debug" />-->
 
+	<haxedef name="HXCPP_CPP20" />
+
 	<icon path="assets/lime.svg" />
 </project>
