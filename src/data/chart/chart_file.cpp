@@ -105,9 +105,6 @@ void removeNote(int64_t index) {
     if (!remap(length - 1)) throw std::runtime_error("failed to shrink file");
 }
 
-// ============================================================================
-// ExtractTime helpers
-// ============================================================================
 inline int64_t extractTime(int64_t note) { return (note >> 23) & 0x1FFFFFFFFFFLL; }
 
 void insertNotes(std::vector<int64_t> newNotes) {
@@ -119,25 +116,27 @@ void insertNotes(std::vector<int64_t> newNotes) {
 
     if (!remap(newLen)) throw std::runtime_error("failed to resize file");
 
-    int64_t write = newLen - 1;
-    int64_t i = oldLen - 1;
-    int64_t j = k - 1;
+    int64_t* writePtr = data + newLen - 1;
+    int64_t* dataPtr  = data + oldLen - 1;
+    int64_t* newPtr   = newNotes.data() + k - 1;
 
     // Backwards merge by extractTime
-    while (i >= 0 && j >= 0) {
-        int64_t timeData = extractTime(data[i]);
-        int64_t timeNew  = extractTime(newNotes[j]);
+    while (dataPtr >= data && newPtr >= newNotes.data()) {
+        int64_t timeData = extractTime(*dataPtr);
+        int64_t timeNew  = extractTime(*newPtr);
 
         if (timeData > timeNew) {
-            if (write != i) data[write] = data[i]; // skip write if already in place
-            --i; --write;
+            if (writePtr != dataPtr) *writePtr = *dataPtr; // skip if already in place
+            --dataPtr;
         } else {
-            data[write--] = newNotes[j--];
+            *writePtr = *newPtr;
+            --newPtr;
         }
+        --writePtr;
     }
 
     // Copy any remaining newNotes
-    while (j >= 0) data[write--] = newNotes[j--];
+    while (newPtr >= newNotes.data()) *writePtr-- = *newPtr--;
 
     length = newLen;
 }
@@ -145,24 +144,26 @@ void insertNotes(std::vector<int64_t> newNotes) {
 void removeNotes(std::vector<int64_t> notesToRemove) {
     if (notesToRemove.empty()) return;
 
-    int64_t write = 0;
-    int64_t j = 0;
-    int64_t n = length;
-    int64_t m = notesToRemove.size();
+    int64_t* readPtr  = data;
+    int64_t* writePtr = data;
+    int64_t* endPtr   = data + length;
+    int64_t* removePtr = notesToRemove.data();
+    int64_t* removeEnd = notesToRemove.data() + notesToRemove.size();
 
-    // Two-pointer scan: overwrite kept elements
-    for (int64_t i = 0; i < n; ++i) {
-        if (j < m && data[i] == notesToRemove[j]) {
-            ++j; // skip removed note
+    while (readPtr < endPtr) {
+        if (removePtr < removeEnd && *readPtr == *removePtr) {
+            ++removePtr; // skip this note
         } else {
-            if (write != i) data[write] = data[i];
-            ++write;
+            if (writePtr != readPtr) *writePtr = *readPtr;
+            ++writePtr;
         }
+        ++readPtr;
     }
 
     // Shrink file if needed
-    if (write != length) {
-        if (!remap(write)) throw std::runtime_error("failed to shrink file after removeNotes");
-        length = write;
+    int64_t newLength = writePtr - data;
+    if (newLength != length) {
+        if (!remap(newLength)) throw std::runtime_error("failed to shrink file after removeNotes");
+        length = newLength;
     }
 }
