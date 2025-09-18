@@ -34,7 +34,7 @@ class Sustain implements Element
     // ------------------------------------------------------------------------
     // Tail slicing
     // ------------------------------------------------------------------------
-    @varying @custom public var tailPoint(default, set):Int = 43;
+    @varying @custom public var tailPoint(default, set):Int = 43; // Slice position relative to the horizontal position of the texture, starting backwards
 
     inline function set_tailPoint(value:Int) {
         updateSlicePosX(value, w, h);
@@ -56,11 +56,11 @@ class Sustain implements Element
     // ------------------------------------------------------------------------
     @color public var c:Color = 0xFFFFFFFF;
 
-    @varying @custom public var speed:Float = 1.0;
-    @varying @custom public var scale:Float = 1.0;
+    @varying @custom public var speed:Float = 1.0; // Sustain height multiplicator relative to song's scroll speed
+    @varying @custom public var scale:Float = 1.0; 
 
-    static public var defaultAlpha:Float = 0.6;
-    static public var defaultMissAlpha:Float = 0.3;
+    static public var defaultAlpha:Float = 0.6; // Default alpha for idle state
+    static public var defaultMissAlpha:Float = 0.3; // Default alpha for missed state
 
     // ------------------------------------------------------------------------
     // Metadata
@@ -73,8 +73,8 @@ class Sustain implements Element
     **/
     public var parent:Note;
 
-    static public var offsets:Array<Array<Int>> = []; // offsets[note.id] = [x, y]
-    static public var tailPoints:Array<Int> = [];
+    static public var offsets:Array<Array<Int>> = []; // offsets[sustainSpr.id] = [x, y]
+    static public var tailPoints:Array<Int> = []; // tailPoints[sustainSpr.tile] = tailPoint
 
     static public var uniforms(default, null):Array<UniformFloat>; // Shared uniforms for shader
 
