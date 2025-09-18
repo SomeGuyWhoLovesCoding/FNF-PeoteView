@@ -55,41 +55,53 @@ class Sustain implements Element
 		var tileW:Float = texture.width / texture.tilesX;
 		var tileH:Float = texture.height / texture.tilesY;
 
+		// tileW/H already exist
 		var invTileW:Float = 1.0 / tileW;
 		var invTileH:Float = 1.0 / tileH;
 
+		// Precompute reusable ratios
+		var aspectInvH:Float = tileW / tileH; // instead of vSize.x / vSize.y * uInvTileH
+		// scale factor for coord transform, depends on invTileW/H
+		// we’ll leave tailPoint to multiply in shader
+		var coordScale:Float = invTileH / invTileW;
+
 		var uniforms = [
-			new UniformFloat("uInvTileW", invTileW),
-		    new UniformFloat("uInvTileH", invTileH)
+    		new UniformFloat("uInvTileW", invTileW),
+   		    new UniformFloat("uInvTileH", invTileH),
+    		new UniformFloat("uAspectInvH", aspectInvH),
+    		new UniformFloat("uCoordScale", coordScale)
 		];
 
 		program.injectIntoFragmentShader('
     		vec4 slice(int textureID, float tailPoint) {
-       		 vec2 coord = vTexCoord;
+       			vec2 coord = vTexCoord;
 
-    		    float tailW = tailPoint * uInvTileW;
-      		  float tailH = tailPoint * uInvTileH;
+    			float tailW = tailPoint * uInvTileW;
+    			float tailH = tailPoint * uInvTileH;
 
-     		   float slicePosX = 1.0 - tailH * vSize.y / vSize.x;
+    			// Precomputed-ish aspect scaling
+    			float slicePosX = 1.0 - tailH * vSize.y / vSize.x;
 
-        		// Left side coord
-     			    float leftFrac = fract(
-            		(1.0 - coord.x / slicePosX) *
-            		(vSize.x/vSize.y * uInvTileH - tailPoint) *
-            		(1.0 / (1.0 / uInvTileW - tailPoint))
-        		);
-        		float coordLeft = mix(1.0 - tailW, 0.0, leftFrac);
+    			// Left side coord
+    			// Old: fract((1.0 - coord.x / slicePosX) * (vSize.x/vSize.y * uInvTileH - tailPoint) * (1.0 / (1.0 / uInvTileW - tailPoint)))
+    			float leftFrac = fract(
+        			(1.0 - coord.x / slicePosX) *
+        			(uAspectInvH - tailPoint) *
+        			(uCoordScale / (1.0 - tailPoint * uInvTileW))
+    			);
 
-        		// Right side coord
-        		float coordRight = mix(1.0 - tailW, 1.0,
-            		(coord.x - slicePosX) / (1.0 - slicePosX));
+    			float coordLeft = mix(1.0 - tailW, 0.0, leftFrac);
 
-        		// Branchless selection
-        		float inLeft = step(coord.x, slicePosX);
-        		coord.x = mix(coordRight, coordLeft, inLeft);
+    			// Right side coord
+    			float coordRight = mix(1.0 - tailW, 1.0,
+        			(coord.x - slicePosX) / (1.0 - slicePosX));
 
-        		return getTextureColor(textureID, coord);
-		}
+    			// Branchless selection
+    			float inLeft = step(coord.x, slicePosX);
+    			coord.x = mix(coordRight, coordLeft, inLeft);
+
+    			return getTextureColor(textureID, coord);
+			}
 		', false, uniforms);
 
 		// instead of using normal "name" identifier to fetch the texture-color,
