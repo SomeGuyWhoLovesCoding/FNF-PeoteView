@@ -73,34 +73,34 @@ class Sustain implements Element
 		];
 
 		program.injectIntoFragmentShader('
-    		vec4 slice(int textureID, float tailPoint) {
-       			vec2 coord = vTexCoord;
+			vec4 slice(int textureID, float tailPoint) {
+				vec2 coord = vTexCoord;
 
-    			float tailW = tailPoint * uInvTileW;
-    			float tailH = tailPoint * uInvTileH;
+				float tailW = tailPoint * uInvTileW;
+				float tailH = tailPoint * uInvTileH;
 
-    			// Precomputed-ish aspect scaling
-    			float slicePosX = 1.0 - tailH * vSize.y / vSize.x;
+				// Precomputed-ish aspect scaling
+				float slicePosX = 1.0 - tailH * vSize.y / vSize.x;
 
-    			// Left side coord
-    			// Old: fract((1.0 - coord.x / slicePosX) * (vSize.x/vSize.y * uInvTileH - tailPoint) * (1.0 / (1.0 / uInvTileW - tailPoint)))
-    			float leftFrac = fract(
-        			(1.0 - coord.x / slicePosX) *
-        			(uAspectInvH - tailPoint) *
-        			(uCoordScale / (1.0 - tailPoint * uInvTileW))
-    			);
+				// Left side coord
+				// Old: fract((1.0 - coord.x / slicePosX) * (vSize.x/vSize.y * uInvTileH - tailPoint) * (1.0 / (1.0 / uInvTileW - tailPoint)))
+				float leftFrac = fract(
+					(1.0 - coord.x / slicePosX) *
+					(uAspectInvH - tailPoint) *
+					(uCoordScale / (1.0 - tailPoint * uInvTileW))
+				);
 
-    			float coordLeft = mix(1.0 - tailW, 0.0, leftFrac);
-
-    			// Right side coord
-    			float coordRight = mix(1.0 - tailW, 1.0,
-        			(coord.x - slicePosX) / (1.0 - slicePosX));
-
-    			// Branchless selection
-    			float inLeft = step(coord.x, slicePosX);
-    			coord.x = mix(coordRight, coordLeft, inLeft);
-
-    			return getTextureColor(textureID, coord);
+				float coordLeft = mix(1.0 - tailW, 0.0, leftFrac);
+				
+				// Right side coord
+				float coordRight = mix(1.0 - tailW, 1.0,
+					(coord.x - slicePosX) / (1.0 - slicePosX));
+				
+				// Branchless selection
+				float inLeft = step(coord.x, slicePosX);
+				coord.x = mix(coordRight, coordLeft, inLeft);
+				
+				return getTextureColor(textureID, coord);
 			}
 		', false, uniforms);
 
