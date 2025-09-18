@@ -82,6 +82,7 @@ class HealthBar {
 			part.y = bg.y + healthBarYA;
 			part.gradientMode = 1.0;
 
+			//part.setAllColors(healthIconColors[i]);
 			part.setAllColors(actors[i].data.colors);
 
 			hbBuf.addElement(part);

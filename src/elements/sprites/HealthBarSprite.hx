@@ -103,6 +103,9 @@ class HealthBarSprite implements Element {
 		program.injectIntoFragmentShader('
 			vec4 gradientOf6(int textureID, float gradientMode, vec4 c, vec4 c1, vec4 c2, vec4 c3, vec4 c4, vec4 c5, vec4 c6) {
 				float y = clamp(vTexCoord.y, 0.0, 1.0); // ensure in [0,1]
+				if (gradientMode == 0.0) {
+					return getTextureColor(textureID, vTexCoord);
+				}
 
 			    // Scale y to 0..5 range for 6 segments
 			    float fy = y * 5.0;
@@ -122,7 +125,7 @@ class HealthBarSprite implements Element {
 			}
 		');
 
-		program.setColorFormula('(gradientMode != 0.0 ? gradientOf6(${name}_ID, gradientMode, c, c1, c2, c3, c4, c5, c6) : getTexColor(${name}_ID)) * (c * alphaColor)');
+		program.setColorFormula('gradientOf6(${name}_ID, gradientMode, c, c1, c2, c3, c4, c5, c6) * (c * alphaColor)');
 	}
 
 	function new() {}
