@@ -19,7 +19,7 @@ class Sustain implements Element
 	@varying @sizeY @formula("h * scale") public var h(default, set):Int;
 	inline function set_h(value:Int) {
 	    var tailH:Float = tailPoint * invTileH;
-	    slicePosX = 1.0 - tailH * value / h;
+	    slicePosX = 1.0 - tailH * value / w;
 		return value;
 	}
 
