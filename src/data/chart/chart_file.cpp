@@ -14,6 +14,8 @@
 #include <unistd.h>
 #endif
 
+#include "DiskMultiMap.h"
+
 // ============================================================================
 // MappedFile class - encapsulates mmap / CreateFileMapping
 // ============================================================================
@@ -113,14 +115,12 @@ MappedFile gFile;
 // ============================================================================
 // Deferred Inserts and Removals optimization technique (unfinished)
 // ============================================================================
-MappedFile inserts;
-MappedFile removals;
+DiskMultiMap inserts;
+DiskMultiMap removals;
 
 void insertDeferred(int64_t note) {
-    int64_t size = inserts.size();
-    inserts.resize(size + 1);
-    inserts.raw()[size << 1] = note;
-    inserts.raw()[(size + 1) << 1] = note;
+    int64_t index = 0;
+    inserts.insert(index,note); // key, value, context (additional info)
 }
 
 void removeDeferred(int64_t index) {
@@ -132,6 +132,11 @@ void removeDeferred(int64_t index) {
 
 int64_t* __restrict data = nullptr;
 int64_t length = 0;
+int64_t indexOffsetPos = 0; // For sequential `getNote(atIndex)`. Resets when updating the 
+
+void resetGetNoteLookup() {
+    indexOffsetPos = 0;
+}
 
 bool remap(size_t newLength) {
     bool ok = gFile.resize(newLength);
@@ -145,19 +150,10 @@ void loadChart(const char* inFile) {
         throw std::runtime_error("Failed to open chart file");
 
     std::string insertsPath = std::string(inFile) + "_deferredInserts.bin";
-    if (!inserts.open(insertsPath.c_str())) {
-        // File probably doesn't exist or is empty: create 1-element file
-        inserts.open(insertsPath.c_str());
-        inserts.resize(1024 * 16);
-    }
-    inserts.resize(1024 * 16);
+    inserts.createNew(insertsPath, 10000); // 10000 is the number of buckets
 
     std::string removalsPath = std::string(inFile) + "_deferredRemoves.bin";
-    if (!removals.open(removalsPath.c_str())) {
-        removals.open(removalsPath.c_str());
-        removals.resize(1024 * 16);
-    }
-    removals.resize(1024 * 16);
+    inserts.createNew(removalsPath, 10000); // 10000 is the number of buckets
 
     // safe: data can be nullptr if file is empty
     data = gFile.raw();
