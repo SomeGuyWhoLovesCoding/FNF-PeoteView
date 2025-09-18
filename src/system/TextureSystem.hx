@@ -111,7 +111,7 @@ class TextureSystem {
 		@param key The texture's key.
 		@param path The texture path.
 	**/
-	static function createTiledTexture(key:String, path:String, tX:Int = 1, tY:Int = 1, disableAntialiasing:Bool = false) {
+	static function createTiledTexture(key:String, path:String, tX:Int = 1, tY:Int = 1, disableAntialiasing:Bool = false, premultiply:Bool = false) {
 		if (pool.exists(key)) {
 			return;
 		}
@@ -119,8 +119,30 @@ class TextureSystem {
 		var currentSaveState = SaveData.state.graphics;
 		var antialiasing = currentSaveState.antialiasing && !disableAntialiasing;
 
-		var textureBytes = File.getBytes(path);
-		var textureData = TextureData.fromFormatPNG(textureBytes);
+		var image = Image.fromFile(path);
+
+		// I'm proud of this fix, but it couldn't be better be this:
+		var textureData = !premultiply ? TextureData.fromLimeImage(image) : new TextureData(image.width, image.height, TextureFormat.RGBA);
+		if (premultiply) {
+			textureData.bytes = haxe.io.Bytes.alloc(image.width * image.height * 4);
+			var bytes = image.data.toBytes();
+			for (i in 0...textureData.bytes.length >> 2) {
+				var fullARGB = bytes.getInt32(i << 2);
+
+				var a = (fullARGB >>> 24) & 0xFF;
+				var r = (fullARGB >>> 16) & 0xFF;
+				var g = (fullARGB >>> 8)  & 0xFF;
+				var b = (fullARGB)        & 0xFF;
+
+				// Scale RGB by alpha
+				r = (r * a) >> 8; // divide by 255
+				g = (g * a) >> 8;
+				b = (b * a) >> 8;
+
+				var premul = (a << 24) | (r << 16) | (g << 8) | b;
+				textureData.bytes.setInt32(i << 2, premul);
+			}
+		}
 
 		var texture = new Texture(textureData.width, textureData.height, null, {
 			tilesX: tX,

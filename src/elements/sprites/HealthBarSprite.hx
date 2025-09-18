@@ -102,26 +102,20 @@ class HealthBarSprite implements Element {
 
 		program.injectIntoFragmentShader('
 			vec4 gradientOf6(int textureID, float gradientMode, vec4 c, vec4 c1, vec4 c2, vec4 c3, vec4 c4, vec4 c5, vec4 c6) {
-				float y = clamp(vTexCoord.y, 0.0, 1.0); // ensure in [0,1]
+				float y = clamp(vTexCoord.y, 0.0, 1.0);
 				if (gradientMode == 0.0) {
 					return getTextureColor(textureID, vTexCoord);
 				}
 
-			    // Scale y to 0..5 range for 6 segments
-			    float fy = y * 5.0;
+				// Scale to [0..5]
+				float fy = y * 5.0;
+				int segment = int(floor(fy));       // 0..4
+				float t = fract(fy);                // fractional part
 
-			    // Compute weights for each color
-			    float w1 = clamp(1.0 - fy, 0.0, 1.0);
-			    float w2 = clamp(fy, 0.0, 1.0) - clamp(fy - 1.0, 0.0, 1.0);
-			    float w3 = clamp(fy - 1.0, 0.0, 1.0) - clamp(fy - 2.0, 0.0, 1.0);
-			    float w4 = clamp(fy - 2.0, 0.0, 1.0) - clamp(fy - 3.0, 0.0, 1.0);
-			    float w5 = clamp(fy - 3.0, 0.0, 1.0) - clamp(fy - 4.0, 0.0, 1.0);
-			    float w6 = clamp(fy - 4.0, 0.0, 1.0);
+				vec4 colors[6] = vec4[6](c1, c2, c3, c4, c5, c6);
 
-			    // Blend colors
-			    vec4 color = c1 * w1 + c2 * w2 + c3 * w3 + c4 * w4 + c5 * w5 + c6 * w6;
-
-			    return color;
+				// Lerp between current and next color
+				return mix(colors[segment], colors[segment + 1], t);
 			}
 		');
 

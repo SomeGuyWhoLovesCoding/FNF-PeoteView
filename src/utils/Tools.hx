@@ -37,7 +37,7 @@ class Tools {
 		var data = File.read('$path/sustainProperties.txt');
 
 		TextureSystem.disposeTexture("sustainTex");
-		TextureSystem.createTiledTexture("sustainTex", '$path/sustainSheet.png', 1, Std.parseInt(data.readLine()));
+		TextureSystem.createTiledTexture("sustainTex", '$path/sustainSheet.png', 1, Std.parseInt(data.readLine()), false, true);
 
 		var w = TextureSystem.getTexture("sustainTex").width;
 

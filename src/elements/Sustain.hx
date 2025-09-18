@@ -49,37 +49,33 @@ class Sustain implements Element
 		program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
 		program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
-		var tW:String = Util.toFloatString(texture.width / texture.tilesX);
-		var tH:String = Util.toFloatString(texture.height / texture.tilesY);
+		var tileW = Util.toFloatString(texture.width / texture.tilesX);
+        var tileH = Util.toFloatString(texture.height / texture.tilesY);
+        var invTileW = Util.toFloatString(1.0 / (texture.width / texture.tilesX));
+        var invTileH = Util.toFloatString(1.0 / (texture.height / texture.tilesY));
 
-		program.injectIntoFragmentShader(
-		'
-			vec4 slice( int textureID, float tailPoint )
-			{
-				vec2 coord = vTexCoord;
+        program.injectIntoFragmentShader('
+            vec4 slice(int textureID, float tailPoint) {
+                vec2 coord = vTexCoord;
 
-				float slicePositionX = 1.0 - (tailPoint/$tH * vSize.y) / vSize.x;
+                float slicePosX = 1.0 - (tailPoint * $invTileH * vSize.y) / vSize.x;
 
-				if (coord.x < slicePositionX)
-				{
-					coord.x = mix(
-					1.0 - tailPoint/$tW,
-					0.0,
-					mod(
-						(1.0-coord.x/slicePositionX) *
-						(vSize.x/vSize.y * $tH - tailPoint) /
-						($tW - tailPoint), 1.0
-					)
-					);
-				}
-				else
-				{
-					coord.x = mix(1.0 - tailPoint/$tW, 1.0, (coord.x - slicePositionX) / (1.0 - slicePositionX) );
-				}
+                // Left branch
+                float leftNorm   = 1.0 - coord.x / slicePosX;
+                float leftMix    = mod(leftNorm * ((vSize.x / vSize.y) * $tileH - tailPoint) / ($tileW - tailPoint), 1.0);
+                float leftCoordX = mix(1.0 - tailPoint * $invTileW, 0.0, leftMix);
 
-				return getTextureColor( textureID, coord );
-			}
-		');
+                // Right branch
+                float rightMix    = (coord.x - slicePosX) / (1.0 - slicePosX);
+                float rightCoordX = mix(1.0 - tailPoint * $invTileW, 1.0, rightMix);
+
+                // Branchless select between left and right
+                float useRight = step(slicePosX, coord.x);
+                coord.x = mix(leftCoordX, rightCoordX, useRight);
+
+                return getTextureColor(textureID, coord);
+            }
+        ');
 
 		// instead of using normal "name" identifier to fetch the texture-color,
 		// the postfix "_ID" gives access to use getTextureColor(textureID, ...) or getTextureResolution(textureID)
