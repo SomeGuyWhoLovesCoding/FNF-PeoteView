@@ -41,72 +41,61 @@ class Sustain implements Element
 	static public var offsets:Array<Array<Int>> = [];
 	static public var tailPoints:Array<Int> = [];
 
+	// Precomputed variables
+	static var invTileW:Float;
+	static var invTileH:Float;
+	static var aspectInvH:Float;
+	static var coordScale:Float;
+
 	static public function init(program:Program, name:String, texture:Texture)
 	{
-		// creates a texture-layer named "name"
-		program.setTexture(texture, name);
-		program.blendEnabled = true;
-		program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
-		program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
-
-		var tW:String = Util.toFloatString(texture.width / texture.tilesX);
-		var tH:String = Util.toFloatString(texture.height / texture.tilesY);
-
-		var tileW:Float = texture.width / texture.tilesX;
-		var tileH:Float = texture.height / texture.tilesY;
-
-		// tileW/H already exist
-		var invTileW:Float = 1.0 / tileW;
-		var invTileH:Float = 1.0 / tileH;
-
-		// Precompute reusable ratios
-		var aspectInvH:Float = tileW / tileH; // instead of vSize.x / vSize.y * uInvTileH
-		// scale factor for coord transform, depends on invTileW/H
-		// we’ll leave tailPoint to multiply in shader
-		var coordScale:Float = invTileH / invTileW;
-
-		var uniforms = [
-			new UniformFloat("uInvTileW", invTileW),
-			new UniformFloat("uInvTileH", invTileH),
-			new UniformFloat("uAspectInvH", aspectInvH),
-			new UniformFloat("uCoordScale", coordScale)
-		];
-
-		program.injectIntoFragmentShader('
-			vec4 slice(int textureID, float tailPoint) {
-				vec2 coord = vTexCoord;
-
-				float tailW = tailPoint * uInvTileW;
-				float tailH = tailPoint * uInvTileH;
-
-				// Precomputed-ish aspect scaling
-				float slicePosX = 1.0 - tailH * vSize.y / vSize.x;
-
-				// Left side coord
-				// Old: fract((1.0 - coord.x / slicePosX) * (vSize.x/vSize.y * uInvTileH - tailPoint) * (1.0 / (1.0 / uInvTileW - tailPoint)))
-				float leftFrac = fract(
-					(1.0 - coord.x / slicePosX) *
-					(uAspectInvH - tailPoint) *
-					(uCoordScale / (1.0 - tailPoint * uInvTileW))
-				);
-
-				float coordLeft = mix(1.0 - tailW, 0.0, leftFrac);
-				
-				// Right side coord
-				float coordRight = mix(1.0 - tailW, 1.0,
-					(coord.x - slicePosX) / (1.0 - slicePosX));
-				
-				// Branchless selection
-				float inLeft = step(coord.x, slicePosX);
-				coord.x = mix(coordRight, coordLeft, inLeft);
-				
-				return getTextureColor(textureID, coord);
-			}
-		', false, uniforms);
-
-		// instead of using normal "name" identifier to fetch the texture-color,
-		// the postfix "_ID" gives access to use getTextureColor(textureID, ...) or getTextureResolution(textureID)
-		program.setColorFormula( 'c * slice(${name}_ID, tailPoint)' );
+	    program.setTexture(texture, name);
+	    program.blendEnabled = true;
+	    program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
+	    program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
+	
+	    var tileW:Float = texture.width / texture.tilesX;
+	    var tileH:Float = texture.height / texture.tilesY;
+	
+	    // precompute uniforms
+	    invTileW = 1.0 / tileW;
+	    invTileH = 1.0 / tileH;
+	    aspectInvH = tileW / tileH;
+	    coordScale = invTileH / invTileW;
+	
+	    // slice-related uniforms
+	    // Note: tailPoint varies per note, we still need it as a varying
+	    var uniforms = [
+	        new UniformFloat("uInvTileW", invTileW),
+	        new UniformFloat("uInvTileH", invTileH),
+	        new UniformFloat("uAspectInvH", aspectInvH),
+	        new UniformFloat("uCoordScale", coordScale)
+	    ];
+	
+	    program.injectIntoFragmentShader('
+	        vec4 slice(int textureID, float tailPoint, float slicePosX, float invOneMinusSlice, float uAspectTail) {
+	            vec2 coord = vTexCoord;
+	
+	            float tailW = tailPoint * uInvTileW;
+	
+	            // Left side coordinate
+	            float leftFrac = fract(
+	                (1.0 - coord.x / slicePosX) * uAspectTail * uCoordScale / (1.0 - tailPoint * uInvTileW)
+	            );
+	            float coordLeft = mix(1.0 - tailW, 0.0, leftFrac);
+	
+	            // Right side coordinate
+	            float coordRight = mix(1.0 - tailW, 1.0,
+	                                   (coord.x - slicePosX) * invOneMinusSlice);
+	
+	            // Branchless selection
+	            coord.x = mix(coordRight, coordLeft, step(coord.x, slicePosX));
+	
+	            return getTextureColor(textureID, coord);
+	        }
+	    ', false, uniforms);
+	
+	    program.setColorFormula('c * slice(${name}_ID, tailPoint, slicePosX, invOneMinusSlice, uAspectTail)');
 	}
 
 	inline public function new(x:Int, y:Int, w:Int, h:Int, id:Int = 0) {
