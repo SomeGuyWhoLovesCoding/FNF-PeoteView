@@ -52,34 +52,45 @@ class Sustain implements Element
 		var tW:String = Util.toFloatString(texture.width / texture.tilesX);
 		var tH:String = Util.toFloatString(texture.height / texture.tilesY);
 
-		program.injectIntoFragmentShader(
-		'
-			vec4 slice( int textureID, float tailPoint )
-			{
-				vec2 coord = vTexCoord;
+		var tileW:Float = texture.width / texture.tilesX;
+		var tileH:Float = texture.height / texture.tilesY;
 
-				float slicePositionX = 1.0 - (tailPoint/$tH * vSize.y) / vSize.x;
+		var invTileW:Float = 1.0 / tileW;
+		var invTileH:Float = 1.0 / tileH;
 
-				if (coord.x < slicePositionX)
-				{
-					coord.x = mix(
-					1.0 - tailPoint/$tW,
-					0.0,
-					mod(
-						(1.0-coord.x/slicePositionX) *
-						(vSize.x/vSize.y * $tH - tailPoint) /
-						($tW - tailPoint), 1.0
-					)
-					);
-				}
-				else
-				{
-					coord.x = mix(1.0 - tailPoint/$tW, 1.0, (coord.x - slicePositionX) / (1.0 - slicePositionX) );
-				}
+		var uniforms = [
+			new UniformFloat("uInvTileW", invTileW),
+		    new UniformFloat("uInvTileH", invTileH)
+		];
 
-				return getTextureColor( textureID, coord );
-			}
-		');
+		program.injectIntoFragmentShader('
+    		vec4 slice(int textureID, float tailPoint) {
+       		 vec2 coord = vTexCoord;
+
+    		    float tailW = tailPoint * uInvTileW;
+      		  float tailH = tailPoint * uInvTileH;
+
+     		   float slicePosX = 1.0 - tailH * vSize.y / vSize.x;
+
+        		// Left side coord
+     			    float leftFrac = fract(
+            		(1.0 - coord.x / slicePosX) *
+            		(vSize.x/vSize.y * uInvTileH - tailPoint) *
+            		(1.0 / (1.0 / uInvTileW - tailPoint))
+        		);
+        		float coordLeft = mix(1.0 - tailW, 0.0, leftFrac);
+
+        		// Right side coord
+        		float coordRight = mix(1.0 - tailW, 1.0,
+            		(coord.x - slicePosX) / (1.0 - slicePosX));
+
+        		// Branchless selection
+        		float inLeft = step(coord.x, slicePosX);
+        		coord.x = mix(coordRight, coordLeft, inLeft);
+
+        		return getTextureColor(textureID, coord);
+		}
+		', false, uniforms);
 
 		// instead of using normal "name" identifier to fetch the texture-color,
 		// the postfix "_ID" gives access to use getTextureColor(textureID, ...) or getTextureResolution(textureID)
