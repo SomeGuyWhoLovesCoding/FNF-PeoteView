@@ -31,7 +31,7 @@ Optimizations that were ingrained into this "wholesome" fnf rewrite (listed in a
 
 And that was all Funkin' View has to offer!
 
-...and the fact that peote-view is literally an opengl wrapper that intructs most of its rendering optimization tricks for you.
+...and the fact that peote-view is literally an opengl wrapper that hasd most of its rendering optimization tricks built-in for you.
 
 PS. Windows Developers are geniuses like what logic made them think "oh, we should do this "memory-mapping" idea for performance-critical applications".
 
