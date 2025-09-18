@@ -66,10 +66,10 @@ class Sustain implements Element
 		var coordScale:Float = invTileH / invTileW;
 
 		var uniforms = [
-    		new UniformFloat("uInvTileW", invTileW),
-   		    new UniformFloat("uInvTileH", invTileH),
-    		new UniformFloat("uAspectInvH", aspectInvH),
-    		new UniformFloat("uCoordScale", coordScale)
+			new UniformFloat("uInvTileW", invTileW),
+			new UniformFloat("uInvTileH", invTileH),
+			new UniformFloat("uAspectInvH", aspectInvH),
+			new UniformFloat("uCoordScale", coordScale)
 		];
 
 		program.injectIntoFragmentShader('
