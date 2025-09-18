@@ -102,7 +102,7 @@ class HealthBarSprite implements Element {
 
 		program.injectIntoFragmentShader('
 			vec4 gradientOf6(int textureID, float gradientMode, vec4 c, vec4 c1, vec4 c2, vec4 c3, vec4 c4, vec4 c5, vec4 c6) {
-			    float y = clamp(vTexCoord.y, 0.0, 1.0); // ensure in [0,1]
+			    float y = clamp(vTexCoord.y, 0.0, gradientMode); // ensure in [0,1]
 
 			    // Scale y to 0..5 range for 6 segments
 			    float fy = y * 5.0;
