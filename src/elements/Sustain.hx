@@ -10,11 +10,28 @@ class Sustain implements Element
 	@posY @formula("y + py") public var y:Int;
 
 	// size in pixel
-	@varying @sizeX @formula("w * speed") public var w:Int;
-	@varying @sizeY @formula("h * scale") public var h:Int;
+	@varying @sizeX @formula("w * speed") public var w(default, set):Int;
+	inline function set_w(value:Int) {
+	    var tailH:Float = tailPoint * invTileH;
+	    slicePosX = 1.0 - tailH * h / value;
+		return value;
+	}
+	@varying @sizeY @formula("h * scale") public var h(default, set):Int;
+	inline function set_h(value:Int) {
+	    var tailH:Float = tailPoint * invTileH;
+	    slicePosX = 1.0 - tailH * value / h;
+		return value;
+	}
 
 	// at what x position it have to slice (width of the tail in texturedata pixels) (WARNING: COUNT X POSITION FROM PNG BACKWARDS)
-	@varying @custom public var tailPoint:Int = 43;
+	@varying @custom public var tailPoint(default, set):Int = 43;
+
+	inline function set_tailPoint(value:Int) {
+    	var tailH:Float = tailPoint * invTileH;
+    	slicePosX = 1.0 - tailH * h / w;
+		uAspectTail = aspectInvH - tailPoint;
+		return value;
+	}
 
 	@rotation public var r:Float;
 
@@ -41,11 +58,16 @@ class Sustain implements Element
 	static public var offsets:Array<Array<Int>> = [];
 	static public var tailPoints:Array<Int> = [];
 
-	// Precomputed variables
-	static var invTileW:Float;
-	static var invTileH:Float;
-	static var aspectInvH:Float;
-	static var coordScale:Float;
+	static public var uniforms:Array<UniformFloat>;
+
+	// Varying
+	@varying @custom public var slicePosX(default, set):Float;       // left/right threshold
+	inline function set_slicePosX(value:Float) {
+    	invOneMinusSlice = 1.0 / (1.0 - value);
+		return value;
+	}
+	@varying @custom public var invOneMinusSlice:Float;
+	@varying @custom public var uAspectTail:Float;
 
 	static public function init(program:Program, name:String, texture:Texture)
 	{
@@ -57,42 +79,36 @@ class Sustain implements Element
 	    var tileW:Float = texture.width / texture.tilesX;
 	    var tileH:Float = texture.height / texture.tilesY;
 	
-	    // precompute uniforms
-	    invTileW = 1.0 / tileW;
-	    invTileH = 1.0 / tileH;
-	    aspectInvH = tileW / tileH;
-	    coordScale = invTileH / invTileW;
-	
 	    // slice-related uniforms
 	    // Note: tailPoint varies per note, we still need it as a varying
-	    var uniforms = [
-	        new UniformFloat("uInvTileW", invTileW),
-	        new UniformFloat("uInvTileH", invTileH),
-	        new UniformFloat("uAspectInvH", aspectInvH),
-	        new UniformFloat("uCoordScale", coordScale)
+	    uniforms = [
+	        new UniformFloat("uInvTileW", 1.0 / tileW),
+	        new UniformFloat("uInvTileH", 1.0 / tileH),
+	        new UniformFloat("uAspectInvH", tileW / tileH),
+	        new UniformFloat("uCoordScale", invTileH / invTileW)
 	    ];
 	
 	    program.injectIntoFragmentShader('
 	        vec4 slice(int textureID, float tailPoint, float slicePosX, float invOneMinusSlice, float uAspectTail) {
-	            vec2 coord = vTexCoord;
-	
-	            float tailW = tailPoint * uInvTileW;
-	
-	            // Left side coordinate
-	            float leftFrac = fract(
-	                (1.0 - coord.x / slicePosX) * uAspectTail * uCoordScale / (1.0 - tailPoint * uInvTileW)
-	            );
-	            float coordLeft = mix(1.0 - tailW, 0.0, leftFrac);
-	
-	            // Right side coordinate
-	            float coordRight = mix(1.0 - tailW, 1.0,
-	                                   (coord.x - slicePosX) * invOneMinusSlice);
-	
-	            // Branchless selection
-	            coord.x = mix(coordRight, coordLeft, step(coord.x, slicePosX));
-	
-	            return getTextureColor(textureID, coord);
-	        }
+			    vec2 coord = vTexCoord;
+			
+			    float tailW = tailPoint * uInvTileW;
+			
+			    // Left side coordinate
+			    float leftFrac = fract(
+			        (1.0 - coord.x / slicePosX) * uAspectTail * uCoordScale / (1.0 - tailPoint * uInvTileW)
+			    );
+			    float coordLeft = mix(1.0 - tailW, 0.0, leftFrac);
+			
+			    // Right side coordinate
+			    float coordRight = mix(1.0 - tailW, 1.0,
+			                           (coord.x - slicePosX) * invOneMinusSlice);
+			
+			    // Branchless selection
+			    coord.x = mix(coordRight, coordLeft, step(coord.x, slicePosX));
+			
+			    return getTextureColor(textureID, coord);
+			}
 	    ', false, uniforms);
 	
 	    program.setColorFormula('c * slice(${name}_ID, tailPoint, slicePosX, invOneMinusSlice, uAspectTail)');
