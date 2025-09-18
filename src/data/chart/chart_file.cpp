@@ -111,7 +111,7 @@ private:
 MappedFile gFile;
 
 // ============================================================================
-// Deferred Inserts and Removals optimization technique
+// Deferred Inserts and Removals optimization technique (unfinished)
 // ============================================================================
 MappedFile inserts;
 MappedFile removals;
@@ -126,8 +126,8 @@ void insertDeferred(int64_t note) {
 void removeDeferred(int64_t index) {
     int64_t size = inserts.size();
     inserts.resize(size + 1);
-    inserts.raw()[size << 1] = note;
-    inserts.raw()[(size + 1) << 1] = note;
+    inserts.raw()[size << 1] = index;
+    inserts.raw()[(size + 1) << 1] = 0;
 }
 
 int64_t* __restrict data = nullptr;
@@ -143,12 +143,31 @@ bool remap(size_t newLength) {
 void loadChart(const char* inFile) {
     if (!gFile.open(inFile))
         throw std::runtime_error("Failed to open chart file");
+
+    std::string insertsPath = std::string(inFile) + "_deferredInserts.bin";
+    if (!inserts.open(insertsPath.c_str())) {
+        // File probably doesn't exist or is empty: create 1-element file
+        inserts.open(insertsPath.c_str());
+        inserts.resize(1024 * 16);
+    }
+    inserts.resize(1024 * 16);
+
+    std::string removalsPath = std::string(inFile) + "_deferredRemoves.bin";
+    if (!removals.open(removalsPath.c_str())) {
+        removals.open(removalsPath.c_str());
+        removals.resize(1024 * 16);
+    }
+    removals.resize(1024 * 16);
+
+    // safe: data can be nullptr if file is empty
     data = gFile.raw();
     length = gFile.size();
 }
 
 void destroyChart() {
     gFile.close();
+    inserts.close();
+    removals.close();
     data = nullptr;
     length = 0;
 }
