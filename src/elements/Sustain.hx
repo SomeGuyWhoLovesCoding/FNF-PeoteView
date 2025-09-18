@@ -50,32 +50,40 @@ class Sustain implements Element
 		program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
 		var tileW = Util.toFloatString(texture.width / texture.tilesX);
-        var tileH = Util.toFloatString(texture.height / texture.tilesY);
-        var invTileW = Util.toFloatString(1.0 / (texture.width / texture.tilesX));
-        var invTileH = Util.toFloatString(1.0 / (texture.height / texture.tilesY));
+		var tileH = Util.toFloatString(texture.height / texture.tilesY);
+		var invTileW = Util.toFloatString(1.0 / (texture.width / texture.tilesX));
+		var invTileH = Util.toFloatString(1.0 / (texture.height / texture.tilesY));
 
-        program.injectIntoFragmentShader('
-            vec4 slice(int textureID, float tailPoint) {
-                vec2 coord = vTexCoord;
+		program.injectIntoFragmentShader('
+			vec4 slice(int textureID, float tailPoint) {
+				vec2 coord = vTexCoord;
 
-                float slicePosX = 1.0 - (tailPoint * $invTileH * vSize.y) / vSize.x;
+				// Slice position
+				float slicePosX = 1.0 - (tailPoint * $invTileH * vSize.y) / vSize.x;
+				float tailInvTileW = 1.0 - tailPoint * $invTileW;
 
-                // Left branch
-                float leftNorm   = 1.0 - coord.x / slicePosX;
-                float leftMix    = mod(leftNorm * ((vSize.x / vSize.y) * $tileH - tailPoint) / ($tileW - tailPoint), 1.0);
-                float leftCoordX = mix(1.0 - tailPoint * $invTileW, 0.0, leftMix);
+				// Left branch: fold all arithmetic directly into fract()
+				float leftCoordX = mix(
+					tailInvTileW,
+					0.0,
+					fract(
+						(1.0 - coord.x / slicePosX) * (vSize.x * $tileH / vSize.y - tailPoint) / ($tileW - tailPoint)
+					)
+				);
 
-                // Right branch
-                float rightMix    = (coord.x - slicePosX) / (1.0 - slicePosX);
-                float rightCoordX = mix(1.0 - tailPoint * $invTileW, 1.0, rightMix);
+				// Right branch: inline oneMinusSlice
+				float rightCoordX = mix(
+					tailInvTileW,
+					1.0,
+					(coord.x - slicePosX) / (1.0 - slicePosX)
+				);
 
-                // Branchless select between left and right
-                float useRight = step(slicePosX, coord.x);
-                coord.x = mix(leftCoordX, rightCoordX, useRight);
+				// Branchless select
+				coord.x = mix(leftCoordX, rightCoordX, step(slicePosX, coord.x));
 
-                return getTextureColor(textureID, coord);
-            }
-        ');
+				return ;
+			}
+		');
 
 		// instead of using normal "name" identifier to fetch the texture-color,
 		// the postfix "_ID" gives access to use getTextureColor(textureID, ...) or getTextureResolution(textureID)
