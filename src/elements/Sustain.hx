@@ -81,7 +81,7 @@ class Sustain implements Element
 				// Branchless select
 				coord.x = mix(leftCoordX, rightCoordX, step(slicePosX, coord.x));
 
-				return ;
+				return getTextureColor(textureID, coord);
 			}
 		');
 

@@ -106,9 +106,29 @@ private:
 };
 
 // ============================================================================
-// Global state + API (same as your original)
+// Global state + API
 // ============================================================================
-static MappedFile gFile;
+MappedFile gFile;
+
+// ============================================================================
+// Deferred Inserts and Removals optimization technique
+// ============================================================================
+MappedFile inserts;
+MappedFile removals;
+
+void insertDeferred(int64_t note) {
+    int64_t size = inserts.size();
+    inserts.resize(size + 1);
+    inserts.raw()[size << 1] = note;
+    inserts.raw()[(size + 1) << 1] = note;
+}
+
+void removeDeferred(int64_t index) {
+    int64_t size = inserts.size();
+    inserts.resize(size + 1);
+    inserts.raw()[size << 1] = note;
+    inserts.raw()[(size + 1) << 1] = note;
+}
 
 int64_t* __restrict data = nullptr;
 int64_t length = 0;
