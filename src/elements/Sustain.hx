@@ -12,14 +12,14 @@ class Sustain implements Element
 	// size in pixel
 	@varying @sizeX @formula("w * speed") public var w(default, set):Int;
 	inline function set_w(value:Int) {
-	    var tailH:Float = tailPoint * invTileH;
-	    slicePosX = 1.0 - tailH * h / value;
+		var tailH:Float = tailPoint * invTileH;
+		slicePosX = 1.0 - tailH * h / value;
 		return value;
 	}
 	@varying @sizeY @formula("h * scale") public var h(default, set):Int;
 	inline function set_h(value:Int) {
-	    var tailH:Float = tailPoint * invTileH;
-	    slicePosX = 1.0 - tailH * value / w;
+		var tailH:Float = tailPoint * invTileH;
+		slicePosX = 1.0 - tailH * value / w;
 		return value;
 	}
 
@@ -27,8 +27,8 @@ class Sustain implements Element
 	@varying @custom public var tailPoint(default, set):Int = 43;
 
 	inline function set_tailPoint(value:Int) {
-    	var tailH:Float = tailPoint * invTileH;
-    	slicePosX = 1.0 - tailH * h / w;
+		var tailH:Float = tailPoint * invTileH;
+		slicePosX = 1.0 - tailH * h / w;
 		uAspectTail = aspectInvH - tailPoint;
 		return value;
 	}
