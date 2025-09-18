@@ -58,7 +58,7 @@ class Sustain implements Element
 	static public var offsets:Array<Array<Int>> = [];
 	static public var tailPoints:Array<Int> = [];
 
-	static public var uniforms:Array<UniformFloat>;
+	static public var uniforms(default, null):Array<UniformFloat>; // Not varying. Uniforms can hold values that store directly in the shader instead of repeatedly computing. - sgwl
 
 	// Varying
 	@varying @custom public var slicePosX(default, set):Float;       // left/right threshold
