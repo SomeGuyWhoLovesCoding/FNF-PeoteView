@@ -1,134 +1,150 @@
 package elements;
 
 /**
-	The sustain note of the note sprite.
+    The sustain note of the note sprite.
 **/
 class Sustain implements Element
 {
-	// position in pixel (relative to upper left corner of Display)
-	@posX @formula("x") public var x:Int;
-	@posY @formula("y + py") public var y:Int;
+    // ------------------------------------------------------------------------
+    // Position (relative to upper-left corner of Display)
+    // ------------------------------------------------------------------------
+    @posX @formula("x") public var x:Int;
+    @posY @formula("y + py") public var y:Int;
 
-	// size in pixel
-	@varying @sizeX @formula("w * speed") public var w(default, set):Int;
-	inline function set_w(value:Int) {
-		var tailH:Float = tailPoint * invTileH;
-		slicePosX = 1.0 - tailH * h / value;
-		return value;
-	}
-	@varying @sizeY @formula("h * scale") public var h(default, set):Int;
-	inline function set_h(value:Int) {
-		var tailH:Float = tailPoint * invTileH;
-		slicePosX = 1.0 - tailH * value / w;
-		return value;
-	}
+    @rotation public var r:Float;
 
-	// at what x position it have to slice (width of the tail in texturedata pixels) (WARNING: COUNT X POSITION FROM PNG BACKWARDS)
-	@varying @custom public var tailPoint(default, set):Int = 43;
+    @pivotY @const @formula("h * 0.5") public var py:Int;
 
-	inline function set_tailPoint(value:Int) {
-		var tailH:Float = tailPoint * invTileH;
-		slicePosX = 1.0 - tailH * h / w;
-		uAspectTail = aspectInvH - tailPoint;
-		return value;
-	}
+    // ------------------------------------------------------------------------
+    // Size
+    // ------------------------------------------------------------------------
+    @varying @sizeX @formula("w * speed") public var w(default, set):Int;
+    @varying @sizeY @formula("h * scale") public var h(default, set):Int;
 
-	@rotation public var r:Float;
+    inline function set_w(value:Int) {
+        updateSlicePosX(tailPoint, value, h);
+        return value;
+    }
 
-	@pivotY @const @formula("h * 0.5") public var py:Int;
+    inline function set_h(value:Int) {
+        updateSlicePosX(tailPoint, w, value);
+        return value;
+    }
 
-	@color public var c:Color = 0xFFFFFFFF;
+    // ------------------------------------------------------------------------
+    // Tail slicing
+    // ------------------------------------------------------------------------
+    @varying @custom public var tailPoint(default, set):Int = 43;
 
-	@varying @custom public var speed:Float = 1.0;
+    inline function set_tailPoint(value:Int) {
+        updateSlicePosX(value, w, h);
+        return value;
+    }
 
-	@varying @custom public var scale:Float = 1.0;
+    @varying @custom public var slicePosX(default, set):Float;       // Left/right threshold
+    @varying @custom public var invOneMinusSlice:Float;
+    @varying @custom public var uAspectTail:Float;
 
-	static public var defaultAlpha:Float = 0.6;
-	static public var defaultMissAlpha:Float = 0.3;
+    private inline function updateSlicePosX(tail:Int, width:Int, height:Int):Void {
+        slicePosX = 1.0 - tail * invTileH * height / width;
+        invOneMinusSlice = 1.0 / (1.0 - slicePosX);
+        uAspectTail = aspectInvH - tail;
+    }
 
-	public var length:Int;
+    // ------------------------------------------------------------------------
+    // Appearance
+    // ------------------------------------------------------------------------
+    @color public var c:Color = 0xFFFFFFFF;
 
-	@texTile var tile:Int = 0;
+    @varying @custom public var speed:Float = 1.0;
+    @varying @custom public var scale:Float = 1.0;
 
-	/**
-		The parent of this note sprite.
-	**/
-	public var parent:Note;
+    static public var defaultAlpha:Float = 0.6;
+    static public var defaultMissAlpha:Float = 0.3;
 
-	static public var offsets:Array<Array<Int>> = [];
-	static public var tailPoints:Array<Int> = [];
+    // ------------------------------------------------------------------------
+    // Metadata
+    // ------------------------------------------------------------------------
+    public var length:Int;
+    @texTile var tile:Int = 0;
 
-	static public var uniforms(default, null):Array<UniformFloat>; // Not varying. Uniforms can hold values that store directly in the shader instead of repeatedly computing. - sgwl
+    /**
+        The parent of this note sprite.
+    **/
+    public var parent:Note;
 
-	// Varying
-	@varying @custom public var slicePosX(default, set):Float;       // left/right threshold
-	inline function set_slicePosX(value:Float) {
-    	invOneMinusSlice = 1.0 / (1.0 - value);
-		return value;
-	}
-	@varying @custom public var invOneMinusSlice:Float;
-	@varying @custom public var uAspectTail:Float;
+    static public var offsets:Array<Array<Int>> = []; // offsets[note.id] = [x, y]
+    static public var tailPoints:Array<Int> = [];
 
-	static public function init(program:Program, name:String, texture:Texture)
-	{
-	    program.setTexture(texture, name);
-	    program.blendEnabled = true;
-	    program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
-	    program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
-	
-	    var tileW:Float = texture.width / texture.tilesX;
-	    var tileH:Float = texture.height / texture.tilesY;
-	
-	    // slice-related uniforms
-	    // Note: tailPoint varies per note, we still need it as a varying
-	    uniforms = [
-	        new UniformFloat("uInvTileW", 1.0 / tileW),
-	        new UniformFloat("uInvTileH", 1.0 / tileH),
-	        new UniformFloat("uAspectInvH", tileW / tileH),
-	        new UniformFloat("uCoordScale", invTileH / invTileW)
-	    ];
-	
-	    program.injectIntoFragmentShader('
-	        vec4 slice(int textureID, float tailPoint, float slicePosX, float invOneMinusSlice, float uAspectTail) {
-			    vec2 coord = vTexCoord;
-			
-			    float tailW = tailPoint * uInvTileW;
-			
-			    // Left side coordinate
-			    float leftFrac = fract(
-			        (1.0 - coord.x / slicePosX) * uAspectTail * uCoordScale / (1.0 - tailPoint * uInvTileW)
-			    );
-			    float coordLeft = mix(1.0 - tailW, 0.0, leftFrac);
-			
-			    // Right side coordinate
-			    float coordRight = mix(1.0 - tailW, 1.0,
-			                           (coord.x - slicePosX) * invOneMinusSlice);
-			
-			    // Branchless selection
-			    coord.x = mix(coordRight, coordLeft, step(coord.x, slicePosX));
-			
-			    return getTextureColor(textureID, coord);
-			}
-	    ', false, uniforms);
-	
-	    program.setColorFormula('c * slice(${name}_ID, tailPoint, slicePosX, invOneMinusSlice, uAspectTail)');
-	}
+    static public var uniforms(default, null):Array<UniformFloat>; // Shared uniforms for shader
 
-	inline public function new(x:Int, y:Int, w:Int, h:Int, id:Int = 0) {
-		this.x = x;
-		this.y = y;
-		this.w = w;
-		this.h = h;
-	}
+    // ------------------------------------------------------------------------
+    // Initialization
+    // ------------------------------------------------------------------------
+    static public function init(program:Program, name:String, texture:Texture):Void {
+        program.setTexture(texture, name);
 
-	inline public function changeID(id:Int) {
-		tile = id;
-		tailPoint = tailPoints[id];
-	}
+        // Blend setup
+        program.blendEnabled = true;
+        program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
+        program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
-	inline public function followNote(note:Note) {
-		var offset = offsets[note.id];
-		x = note.x + (Math.floor(offset[0] * scale) >> 1);
-		y = note.y + (Math.floor(offset[1] * scale) >> 1);
-	}
+        var tileW:Float = texture.width / texture.tilesX;
+        var tileH:Float = texture.height / texture.tilesY;
+
+        // Slice-related uniforms
+        uniforms = [
+            new UniformFloat("uInvTileW", 1.0 / tileW),
+            new UniformFloat("uInvTileH", 1.0 / tileH),
+            new UniformFloat("uAspectInvH", tileW / tileH),
+            new UniformFloat("uCoordScale", invTileH / invTileW)
+        ];
+
+        // Inject slicing logic into fragment shader
+        program.injectIntoFragmentShader('
+            vec4 slice(int textureID, float tailPoint, float slicePosX, float invOneMinusSlice, float uAspectTail) {
+                vec2 coord = vTexCoord;
+
+                float tailW = tailPoint * uInvTileW;
+
+                // Left side coordinate
+                float leftFrac = fract(
+                    (1.0 - coord.x / slicePosX) * uAspectTail * uCoordScale / (1.0 - tailPoint * uInvTileW)
+                );
+                float coordLeft = mix(1.0 - tailW, 0.0, leftFrac);
+
+                // Right side coordinate
+                float coordRight = mix(1.0 - tailW, 1.0,
+                                       (coord.x - slicePosX) * invOneMinusSlice);
+
+                // Branchless selection
+                coord.x = mix(coordRight, coordLeft, step(coord.x, slicePosX));
+
+                return getTextureColor(textureID, coord);
+            }
+        ', false, uniforms);
+
+        program.setColorFormula('c * slice(${name}_ID, tailPoint, slicePosX, invOneMinusSlice, uAspectTail)');
+    }
+
+    // ------------------------------------------------------------------------
+    // Constructors & methods
+    // ------------------------------------------------------------------------
+    inline public function new(x:Int, y:Int, w:Int, h:Int, id:Int = 0) {
+        this.x = x;
+        this.y = y;
+        this.w = w;
+        this.h = h;
+    }
+
+    inline public function changeID(id:Int):Void {
+        tile = id;
+        tailPoint = tailPoints[id];
+    }
+
+    inline public function followNote(note:Note):Void {
+        var offset = offsets[note.id];
+        x = note.x + (Math.floor(offset[0] * scale) >> 1);
+        y = note.y + (Math.floor(offset[1] * scale) >> 1);
+    }
 }
