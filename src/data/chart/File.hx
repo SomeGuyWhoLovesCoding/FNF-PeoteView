@@ -123,6 +123,8 @@ extern class File {
 
 		return result;
 	}
+
+	@:native("resetGetNoteLookup") static function resetGetNoteLookup():Void;
 }
 #elseif hl
 class File {
@@ -230,5 +232,7 @@ class File {
 
 		return result;
 	}
+
+	@:hlNative("chart_file", "resetGetNoteLookup") static function resetGetNoteLookup():Void {}
 }
 #end

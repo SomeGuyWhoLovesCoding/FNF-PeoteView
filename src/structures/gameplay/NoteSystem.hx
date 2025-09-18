@@ -26,8 +26,6 @@ class NoteSystem {
 			var tex = TextureSystem.getTexture("noteTex");
 
 			notesProg = new Program(notesBuf);
-			notesProg.blendEnabled = true;
-
 			Note.init(notesProg, "noteTex", tex);
 		}
 
@@ -39,8 +37,6 @@ class NoteSystem {
 			var tex2 = TextureSystem.getTexture("sustainTex");
 
 			sustainProg = new Program(sustainsBuf);
-			sustainProg.blendEnabled = true;
-
 			Sustain.init(sustainProg, "sustainTex", tex2);
 		}
 	}

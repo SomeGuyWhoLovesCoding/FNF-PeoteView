@@ -14,4 +14,5 @@ void insertNote(int64_t index, int64_t value);
 void removeNote(int64_t index);
 void insertNotes(std::vector<int64_t> index);
 void removeNotes(std::vector<int64_t> index);
+void resetGetNoteLookup(void);
 #endif /* CHART_FILE_H */

@@ -4,6 +4,10 @@
 #include <stdexcept>
 #include <cstring>
 #include <string>
+#include <unordered_map>
+#include <memory>
+#include <cstddef>
+#include <new>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -113,25 +117,92 @@ MappedFile gFile;
 // ============================================================================
 // Deferred Inserts and Removals optimization technique (unfinished)
 // ============================================================================
-MappedFile inserts;
-MappedFile removals;
+
+// ------------------------------
+// FileMappedAllocator
+// ------------------------------
+template <typename T>
+class FileMappedAllocator {
+public:
+    using value_type = T;
+
+    FileMappedAllocator(MappedFile& file) noexcept : file(file) {
+        offset = 0;
+        base = file.raw();
+        capacity = file.size();
+        if (!base) throw std::runtime_error("MappedFile not initialized");
+    }
+
+    template <typename U>
+    FileMappedAllocator(const FileMappedAllocator<U>& other) noexcept
+        : file(other.file), offset(other.offset), base(other.base), capacity(other.capacity) {}
+
+    T* allocate(std::size_t n) {
+        std::size_t bytes = n * sizeof(T);
+        if (offset + bytes > capacity * sizeof(int64_t)) {
+            // Resize underlying mapped file
+            std::size_t newElems = (offset + bytes) / sizeof(int64_t) + 1;
+            if (!file.resize(newElems))
+                throw std::bad_alloc();
+
+            base = file.raw();
+            capacity = file.size();
+        }
+
+        T* ptr = reinterpret_cast<T*>(reinterpret_cast<char*>(base) + offset);
+        offset += bytes;
+        return ptr;
+    }
+
+    void deallocate(T* ptr, std::size_t n) noexcept {
+        // No-op: memory reclaimed on file close
+    }
+
+    template <typename U>
+    struct rebind { using other = FileMappedAllocator<U>; };
+
+    bool operator==(const FileMappedAllocator& other) const noexcept { return &file == &other.file; }
+    bool operator!=(const FileMappedAllocator& other) const noexcept { return &file != &other.file; }
+
+private:
+    MappedFile& file;
+    int64_t* base;
+    std::size_t capacity; // in int64_t
+    std::size_t offset;   // in bytes
+
+    template <typename U> friend class FileMappedAllocator;
+};
+
+// ------------------------------
+// Type alias for deferred notes
+// ------------------------------
+using DeferredMap = std::unordered_map<int64_t, int64_t, std::hash<int64_t>, std::equal_to<int64_t>,
+                                       FileMappedAllocator<std::pair<const int64_t, int64_t>>>;
+
+// Global mapped files
+MappedFile insertsFile;
+MappedFile removalsFile;
+DeferredMap inserts;
+DeferredMap removals;
 
 void insertDeferred(int64_t note) {
-    int64_t size = inserts.size();
-    inserts.resize(size + 1);
-    inserts.raw()[size << 1] = note;
-    inserts.raw()[(size + 1) << 1] = note;
+    int64_t index = 0; // placeholder
+    //(*inserts)[index] = note;
 }
 
 void removeDeferred(int64_t index) {
-    int64_t size = inserts.size();
-    inserts.resize(size + 1);
-    inserts.raw()[size << 1] = index;
-    inserts.raw()[(size + 1) << 1] = 0;
+    //(*removals)[index] = true;
 }
 
 int64_t* __restrict data = nullptr;
 int64_t length = 0;
+int64_t indexOffsetPos = 0; // For sequential `getNote(atIndex)`.
+// Resets when starting a note update again, for an obvious reason.
+// It's because insertions and removals need to be very fast on the chart editor so this is basically a sorta "hack" to solve impossible problems I would've once faced.
+
+void resetGetNoteLookup() {
+    indexOffsetPos = 0;
+}
 
 bool remap(size_t newLength) {
     bool ok = gFile.resize(newLength);
@@ -145,34 +216,47 @@ void loadChart(const char* inFile) {
         throw std::runtime_error("Failed to open chart file");
 
     std::string insertsPath = std::string(inFile) + "_deferredInserts.bin";
-    if (!inserts.open(insertsPath.c_str())) {
-        // File probably doesn't exist or is empty: create 1-element file
-        inserts.open(insertsPath.c_str());
-        inserts.resize(1024 * 16);
+    if (!insertsFile.open(insertsPath.c_str())) {
+        insertsFile.open(insertsPath.c_str());
+        insertsFile.resize(1024 * 16);
+    } else {
+        insertsFile.resize(1024 * 16);
     }
-    inserts.resize(1024 * 16);
 
     std::string removalsPath = std::string(inFile) + "_deferredRemoves.bin";
-    if (!removals.open(removalsPath.c_str())) {
-        removals.open(removalsPath.c_str());
-        removals.resize(1024 * 16);
+    if (!removalsFile.open(removalsPath.c_str())) {
+        removalsFile.open(removalsPath.c_str());
+        removalsFile.resize(1024 * 16);
+    } else {
+        removalsFile.resize(1024 * 16);
     }
-    removals.resize(1024 * 16);
+    
+    FileMappedAllocator<std::pair<const int64_t, int64_t>> allocI(insertsFile);
+    FileMappedAllocator<std::pair<const int64_t, bool>> allocR(removalsFile);
+    DeferredMap insertsM(10, std::hash<int64_t>(), std::equal_to<int64_t>(), allocI);
+    DeferredMap removalsM(10, std::hash<int64_t>(), std::equal_to<int64_t>(), allocR);
 
-    // safe: data can be nullptr if file is empty
+    inserts = insertsM;
+    removals = removalsM;
+
     data = gFile.raw();
     length = gFile.size();
 }
 
 void destroyChart() {
     gFile.close();
-    inserts.close();
-    removals.close();
+    insertsFile.close();
+    removalsFile.close();
     data = nullptr;
     length = 0;
 }
 
-int64_t getNote(int64_t atIndex) { return data[atIndex]; }
+int64_t getNote(int64_t atIndex) {
+    auto it = inserts.find(atIndex);
+    if (it != inserts.end()) return it->second;
+    // fallback to main chart
+    return data[atIndex - indexOffsetPos];
+}
 void setNote(int64_t atIndex, int64_t value) { data[atIndex] = value; }
 int64_t getLength() { return length; }
 
