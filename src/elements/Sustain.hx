@@ -130,19 +130,19 @@ class Sustain implements Element
     // ------------------------------------------------------------------------
     // Constructors & methods
     // ------------------------------------------------------------------------
-    inline public function new(x:Int, y:Int, w:Int, h:Int, id:Int = 0) {
+    public function new(x:Int, y:Int, w:Int, h:Int, id:Int = 0) {
         this.x = x;
         this.y = y;
         this.w = w;
         this.h = h;
     }
 
-    inline public function changeID(id:Int):Void {
+    public function changeID(id:Int):Void {
         tile = id;
         tailPoint = tailPoints[id];
     }
 
-    inline public function followNote(note:Note):Void {
+    public function followNote(note:Note):Void {
         var offset = offsets[note.id];
         x = note.x + (Math.floor(offset[0] * scale) >> 1);
         y = note.y + (Math.floor(offset[1] * scale) >> 1);
