@@ -101,35 +101,24 @@ class HealthBarSprite implements Element {
 		program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
 		program.injectIntoFragmentShader('
-			vec4 gradientOf6( int textureID, float gradientMode, vec4 c, vec4 c1, vec4 c2, vec4 c3, vec4 c4, vec4 c5, vec4 c6 )
-			{
-				vec2 coord = vTexCoord;
+			vec4 gradientOf6(int textureID, float gradientMode, vec4 c, vec4 c1, vec4 c2, vec4 c3, vec4 c4, vec4 c5, vec4 c6) {
+			    float y = clamp(vTexCoord.y, 0.0, 1.0); // ensure in [0,1]
 
-				// Source: https://www.shadertoy.com/view/dsy3RV (Old code)
+			    // Scale y to 0..5 range for 6 segments
+			    float fy = y * 5.0;
 
-				float y = coord.y;
+			    // Compute weights for each color
+			    float w1 = clamp(1.0 - fy, 0.0, 1.0);
+			    float w2 = clamp(fy, 0.0, 1.0) - clamp(fy - 1.0, 0.0, 1.0);
+			    float w3 = clamp(fy - 1.0, 0.0, 1.0) - clamp(fy - 2.0, 0.0, 1.0);
+			    float w4 = clamp(fy - 2.0, 0.0, 1.0) - clamp(fy - 3.0, 0.0, 1.0);
+			    float w5 = clamp(fy - 3.0, 0.0, 1.0) - clamp(fy - 4.0, 0.0, 1.0);
+			    float w6 = clamp(fy - 4.0, 0.0, 1.0);
 
-				float step1 = 0.0;
-				float step2 = 0.19666666666666666666666;
-				float step3 = 0.36333333333333333333333;
-				float step4 = 0.59;
-				float step5 = 0.8133333333333333333333;
-				float step6 = 1.0;
+			    // Blend colors
+			    vec4 color = c1 * w1 + c2 * w2 + c3 * w3 + c4 * w4 + c5 * w5 + c6 * w6;
 
-				vec4 color = c1;
-
-				color = mix(color, c2, smoothstep(step1, step2, y));
-				color = mix(color, c3, smoothstep(step2, step3, y));
-				color = mix(color, c4, smoothstep(step3, step4, y));
-				color = mix(color, c5, smoothstep(step4, step5, y));
-				color = mix(color, c6, smoothstep(step5, step6, y));
-
-				return color;
-			}
-
-			vec4 getTexColor( int textureID )
-			{
-				return getTextureColor(textureID, vTexCoord);
+			    return color;
 			}
 		');
 
