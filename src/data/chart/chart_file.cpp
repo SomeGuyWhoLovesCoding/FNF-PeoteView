@@ -114,91 +114,25 @@ private:
 // ============================================================================
 MappedFile gFile;
 
+int64_t* __restrict gData = nullptr;
+int64_t length = 0;
+int64_t indexOffsetPos = 0; // For sequential `getNote(atIndex)`. Resets when updating the NoteSpawner again.
+
 // ============================================================================
 // Deferred Inserts and Removals optimization technique (unfinished)
 // ============================================================================
+std::unordered_map<int64_t, int64_t> inserts;
+std::unordered_map<int64_t, bool> removals;
 
-// ------------------------------
-// FileMappedAllocator
-// ------------------------------
-template <typename T>
-class FileMappedAllocator {
-public:
-    using value_type = T;
+inline int64_t extractTime(int64_t note) { return (note >> 23) & 0x1FFFFFFFFFFLL; }
 
-    FileMappedAllocator(MappedFile& file) noexcept : file(file) {
-        offset = 0;
-        base = file.raw();
-        capacity = file.size();
-        if (!base) throw std::runtime_error("MappedFile not initialized");
-    }
-
-    template <typename U>
-    FileMappedAllocator(const FileMappedAllocator<U>& other) noexcept
-        : file(other.file), offset(other.offset), base(other.base), capacity(other.capacity) {}
-
-    T* allocate(std::size_t n) {
-        std::size_t bytes = n * sizeof(T);
-        if (offset + bytes > capacity * sizeof(int64_t)) {
-            // Resize underlying mapped file
-            std::size_t newElems = (offset + bytes) / sizeof(int64_t) + 1;
-            if (!file.resize(newElems))
-                throw std::bad_alloc();
-
-            base = file.raw();
-            capacity = file.size();
-        }
-
-        T* ptr = reinterpret_cast<T*>(reinterpret_cast<char*>(base) + offset);
-        offset += bytes;
-        return ptr;
-    }
-
-    void deallocate(T* ptr, std::size_t n) noexcept {
-        // No-op: memory reclaimed on file close
-    }
-
-    template <typename U>
-    struct rebind { using other = FileMappedAllocator<U>; };
-
-    bool operator==(const FileMappedAllocator& other) const noexcept { return &file == &other.file; }
-    bool operator!=(const FileMappedAllocator& other) const noexcept { return &file != &other.file; }
-
-private:
-    MappedFile& file;
-    int64_t* base;
-    std::size_t capacity; // in int64_t
-    std::size_t offset;   // in bytes
-
-    template <typename U> friend class FileMappedAllocator;
-};
-
-// ------------------------------
-// Type alias for deferred notes
-// ------------------------------
-using DeferredMap = std::unordered_map<int64_t, int64_t, std::hash<int64_t>, std::equal_to<int64_t>,
-                                       FileMappedAllocator<std::pair<const int64_t, int64_t>>>;
-
-// Global mapped files
-MappedFile insertsFile;
-MappedFile removalsFile;
-DeferredMap inserts;
-DeferredMap removals;
-
-void insertDeferred(int64_t note) {
-    int64_t index = 0; // placeholder
-    //(*inserts)[index] = note;
+void insertNote(int64_t index, int64_t note) {
+    inserts.insert({index, note});
 }
 
-void removeDeferred(int64_t index) {
-    //(*removals)[index] = true;
+void removeNote(int64_t index) {
+    removals.insert({index, true});
 }
-
-int64_t* __restrict data = nullptr;
-int64_t length = 0;
-int64_t indexOffsetPos = 0; // For sequential `getNote(atIndex)`.
-// Resets when starting a note update again, for an obvious reason.
-// It's because insertions and removals need to be very fast on the chart editor so this is basically a sorta "hack" to solve impossible problems I would've once faced.
 
 void resetGetNoteLookup() {
     indexOffsetPos = 0;
@@ -206,7 +140,7 @@ void resetGetNoteLookup() {
 
 bool remap(size_t newLength) {
     bool ok = gFile.resize(newLength);
-    data = gFile.raw();
+    gData = gFile.raw();
     length = gFile.size();
     return ok;
 }
@@ -215,124 +149,115 @@ void loadChart(const char* inFile) {
     if (!gFile.open(inFile))
         throw std::runtime_error("Failed to open chart file");
 
-    std::string insertsPath = std::string(inFile) + "_deferredInserts.bin";
-    if (!insertsFile.open(insertsPath.c_str())) {
-        insertsFile.open(insertsPath.c_str());
-        insertsFile.resize(1024 * 16);
-    } else {
-        insertsFile.resize(1024 * 16);
-    }
+    /*std::string insertsPath = std::string(inFile) + "_deferredInserts.bin";
+    inserts.createNew(insertsPath, 10000); // 10000 is the number of buckets*/
 
-    std::string removalsPath = std::string(inFile) + "_deferredRemoves.bin";
-    if (!removalsFile.open(removalsPath.c_str())) {
-        removalsFile.open(removalsPath.c_str());
-        removalsFile.resize(1024 * 16);
-    } else {
-        removalsFile.resize(1024 * 16);
-    }
-    
-    FileMappedAllocator<std::pair<const int64_t, int64_t>> allocI(insertsFile);
-    FileMappedAllocator<std::pair<const int64_t, bool>> allocR(removalsFile);
-    DeferredMap insertsM(10, std::hash<int64_t>(), std::equal_to<int64_t>(), allocI);
-    DeferredMap removalsM(10, std::hash<int64_t>(), std::equal_to<int64_t>(), allocR);
+    /*std::string removalsPath = std::string(inFile) + "_deferredRemoves.bin";
+    inserts.createNew(removalsPath, 10000); // 10000 is the number of buckets*/
 
-    inserts = insertsM;
-    removals = removalsM;
-
-    data = gFile.raw();
+    gData = gFile.raw();
     length = gFile.size();
 }
 
 void destroyChart() {
     gFile.close();
-    insertsFile.close();
-    removalsFile.close();
-    data = nullptr;
+    gData = nullptr;
     length = 0;
+
+    inserts.clear();
+    removals.clear();
 }
 
 int64_t getNote(int64_t atIndex) {
-    auto it = inserts.find(atIndex);
-    if (it != inserts.end()) return it->second;
-    // fallback to main chart
-    return data[atIndex - indexOffsetPos];
-}
-void setNote(int64_t atIndex, int64_t value) { data[atIndex] = value; }
-int64_t getLength() { return length; }
-
-void insertNote(int64_t index, int64_t value) {
-    if (index < 0 || index > length) throw std::out_of_range("index out of range");
-    if (!remap(length + 1)) throw std::runtime_error("failed to resize file");
-    if (index < length) {
-        memmove(&data[index + 1], &data[index], (length - index) * sizeof(int64_t));
+    if (inserts.at(atIndex) != 0) {
+        indexOffsetPos++;
+        return inserts.at(atIndex);
     }
-    data[index] = value;
-}
 
-void removeNote(int64_t index) {
-    if (index < 0 || index >= length) throw std::out_of_range("index out of range");
-    if (index < length - 1) {
-        memmove(&data[index], &data[index + 1], (length - index - 1) * sizeof(int64_t));
-    }
-    if (!remap(length - 1)) throw std::runtime_error("failed to shrink file");
+    return gData[atIndex - indexOffsetPos];
 }
-
-inline int64_t extractTime(int64_t note) { return (note >> 23) & 0x1FFFFFFFFFFLL; }
+void setNote(int64_t atIndex, int64_t value) { gData[atIndex] = value; }
+int64_t getLength() { return length + inserts.size() - removals.size(); }
 
 void insertNotes(std::vector<int64_t> newNotes) {
     if (newNotes.empty()) return;
 
-    int64_t oldLen = length;
-    int64_t k = newNotes.size();
-    int64_t newLen = oldLen + k;
-
-    if (!remap(newLen)) throw std::runtime_error("failed to resize file");
-
-    int64_t* __restrict writePtr = data + newLen - 1;
-    int64_t* __restrict dataPtr  = data + oldLen - 1;
-    int64_t* __restrict newPtr   = newNotes.data() + k - 1;
-
-    while (dataPtr >= data && newPtr >= newNotes.data()) {
-        int64_t timeData = extractTime(*dataPtr);
-        int64_t timeNew  = extractTime(*newPtr);
-
-        if (timeData > timeNew) {
-            if (writePtr != dataPtr) *writePtr = *dataPtr;
-            --dataPtr;
-        } else {
-            *writePtr = *newPtr;
-            --newPtr;
+    int64_t left = 0;
+    int64_t right = length - 1;
+    int64_t index = -1;
+    for (int64_t newNote : newNotes) {
+        int64_t noteTime = extractTime(newNote);
+        while (left <= right) {
+            int64_t mid = left + (right - left) / 2;
+            int64_t midTime = extractTime(gData[mid]);
+            if (midTime == noteTime) {
+                index = mid;
+                break;
+            } else if (midTime < noteTime) {
+                left = mid + 1;
+            } else {
+                right = mid - 1;
+            }
         }
-        --writePtr;
+        if (index == -1) {
+            // If not found, index can be set to left (insertion point)
+            index = left;
+        }
+        insertNote(index, newNote);
     }
-
-    while (newPtr >= newNotes.data()) *writePtr-- = *newPtr--;
-    length = newLen;
 }
 
-void removeNotes(std::vector<int64_t> notesToRemove) {
+void removeNotes(const std::vector<int64_t>& notesToRemove) {
     if (notesToRemove.empty()) return;
 
-    int64_t* __restrict readPtr   = data;
-    int64_t* __restrict writePtr  = data;
-    int64_t* __restrict endPtr    = data + length;
-    int64_t* __restrict removePtr = notesToRemove.data();
-    int64_t* __restrict removeEnd = notesToRemove.data() + notesToRemove.size();
+    for (int64_t note : notesToRemove) {
+        int64_t targetTime = extractTime(note);
 
-    while (readPtr < endPtr) {
-        if (removePtr < removeEnd && *readPtr == *removePtr) {
-            ++removePtr;
-        } else {
-            if (writePtr != readPtr) *writePtr = *readPtr;
-            ++writePtr;
+        int64_t left = 0;
+        int64_t right = length - 1;
+        int64_t foundIdx = -1;
+
+        // Binary search by extractTime
+        while (left <= right) {
+            int64_t mid = left + (right - left) / 2;
+            int64_t midTime = extractTime(gData[mid]);
+
+            if (midTime == targetTime) {
+                if (gData[mid] == note) {
+                    foundIdx = mid;
+                    break;  // exact match
+                }
+                // Time matches but value differs: scan nearby
+                int64_t l = mid - 1, r = mid + 1;
+                while (l >= left && extractTime(gData[l]) == targetTime) {
+                    if (gData[l] == note) { foundIdx = l; break; }
+                    --l;
+                }
+                while (foundIdx == -1 && r <= right && extractTime(gData[r]) == targetTime) {
+                    if (gData[r] == note) { foundIdx = r; break; }
+                    ++r;
+                }
+                break;
+            } else if (midTime < targetTime) {
+                left = mid + 1;
+            } else {
+                right = mid - 1;
+            }
         }
-        ++readPtr;
-    }
 
-    int64_t newLength = writePtr - data;
-    if (newLength != length) {
-        if (!remap(newLength))
-            throw std::runtime_error("failed to shrink file after removeNotes");
-        length = newLength;
+        // Defer removal if found in mapped file
+        if (foundIdx != -1) {
+            removeNote(foundIdx);
+        }
+
+        // Also check deferred inserts (in case the note hasn’t been flushed yet)
+        for (auto it = inserts.begin(); it != inserts.end(); ) {
+            if (it->second == note) {
+                it = inserts.erase(it);
+                break;  // remove only the first match
+            } else {
+                ++it;
+            }
+        }
     }
 }
