@@ -4,10 +4,6 @@
 #include <stdexcept>
 #include <cstring>
 #include <string>
-#include <unordered_map>
-#include <memory>
-#include <cstddef>
-#include <new>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -110,37 +106,16 @@ private:
 };
 
 // ============================================================================
-// Global state + API
+// Global state + API (same as your original)
 // ============================================================================
-MappedFile gFile;
+static MappedFile gFile;
 
-int64_t* __restrict gData = nullptr;
+int64_t* __restrict data = nullptr;
 int64_t length = 0;
-int64_t indexOffsetPos = 0; // For sequential `getNote(atIndex)`. Resets when updating the NoteSpawner again.
-
-// ============================================================================
-// Deferred Inserts and Removals optimization technique (unfinished)
-// ============================================================================
-std::unordered_map<int64_t, int64_t> inserts;
-std::unordered_map<int64_t, bool> removals;
-
-inline int64_t extractTime(int64_t note) { return (note >> 23) & 0x1FFFFFFFFFFLL; }
-
-void insertNote(int64_t index, int64_t note) {
-    inserts.insert({index, note});
-}
-
-void removeNote(int64_t index) {
-    removals.insert({index, true});
-}
-
-void resetGetNoteLookup() {
-    indexOffsetPos = 0;
-}
 
 bool remap(size_t newLength) {
     bool ok = gFile.resize(newLength);
-    gData = gFile.raw();
+    data = gFile.raw();
     length = gFile.size();
     return ok;
 }
@@ -148,116 +123,93 @@ bool remap(size_t newLength) {
 void loadChart(const char* inFile) {
     if (!gFile.open(inFile))
         throw std::runtime_error("Failed to open chart file");
-
-    /*std::string insertsPath = std::string(inFile) + "_deferredInserts.bin";
-    inserts.createNew(insertsPath, 10000); // 10000 is the number of buckets*/
-
-    /*std::string removalsPath = std::string(inFile) + "_deferredRemoves.bin";
-    inserts.createNew(removalsPath, 10000); // 10000 is the number of buckets*/
-
-    gData = gFile.raw();
+    data = gFile.raw();
     length = gFile.size();
 }
 
 void destroyChart() {
     gFile.close();
-    gData = nullptr;
+    data = nullptr;
     length = 0;
-
-    inserts.clear();
-    removals.clear();
 }
 
-int64_t getNote(int64_t atIndex) {
-    if (inserts.at(atIndex) != 0) {
-        indexOffsetPos++;
-        return inserts.at(atIndex);
+int64_t getNote(int64_t atIndex) { return data[atIndex]; }
+void setNote(int64_t atIndex, int64_t value) { data[atIndex] = value; }
+int64_t getLength() { return length; }
+
+void insertNote(int64_t index, int64_t value) {
+    if (index < 0 || index > length) throw std::out_of_range("index out of range");
+    if (!remap(length + 1)) throw std::runtime_error("failed to resize file");
+    if (index < length) {
+        memmove(&data[index + 1], &data[index], (length - index) * sizeof(int64_t));
     }
-
-    return gData[atIndex - indexOffsetPos];
+    data[index] = value;
 }
-void setNote(int64_t atIndex, int64_t value) { gData[atIndex] = value; }
-int64_t getLength() { return length + inserts.size() - removals.size(); }
+
+void removeNote(int64_t index) {
+    if (index < 0 || index >= length) throw std::out_of_range("index out of range");
+    if (index < length - 1) {
+        memmove(&data[index], &data[index + 1], (length - index - 1) * sizeof(int64_t));
+    }
+    if (!remap(length - 1)) throw std::runtime_error("failed to shrink file");
+}
+
+inline int64_t extractTime(int64_t note) { return (note >> 23) & 0x1FFFFFFFFFFLL; }
 
 void insertNotes(std::vector<int64_t> newNotes) {
     if (newNotes.empty()) return;
 
-    int64_t left = 0;
-    int64_t right = length - 1;
-    int64_t index = -1;
-    for (int64_t newNote : newNotes) {
-        int64_t noteTime = extractTime(newNote);
-        while (left <= right) {
-            int64_t mid = left + (right - left) / 2;
-            int64_t midTime = extractTime(gData[mid]);
-            if (midTime == noteTime) {
-                index = mid;
-                break;
-            } else if (midTime < noteTime) {
-                left = mid + 1;
-            } else {
-                right = mid - 1;
-            }
+    int64_t oldLen = length;
+    int64_t k = newNotes.size();
+    int64_t newLen = oldLen + k;
+
+    if (!remap(newLen)) throw std::runtime_error("failed to resize file");
+
+    int64_t* __restrict writePtr = data + newLen - 1;
+    int64_t* __restrict dataPtr  = data + oldLen - 1;
+    int64_t* __restrict newPtr   = newNotes.data() + k - 1;
+
+    while (dataPtr >= data && newPtr >= newNotes.data()) {
+        int64_t timeData = extractTime(*dataPtr);
+        int64_t timeNew  = extractTime(*newPtr);
+
+        if (timeData > timeNew) {
+            if (writePtr != dataPtr) *writePtr = *dataPtr;
+            --dataPtr;
+        } else {
+            *writePtr = *newPtr;
+            --newPtr;
         }
-        if (index == -1) {
-            // If not found, index can be set to left (insertion point)
-            index = left;
-        }
-        insertNote(index, newNote);
+        --writePtr;
     }
+
+    while (newPtr >= newNotes.data()) *writePtr-- = *newPtr--;
+    length = newLen;
 }
 
-void removeNotes(const std::vector<int64_t>& notesToRemove) {
+void removeNotes(std::vector<int64_t> notesToRemove) {
     if (notesToRemove.empty()) return;
 
-    for (int64_t note : notesToRemove) {
-        int64_t targetTime = extractTime(note);
+    int64_t* __restrict readPtr   = data;
+    int64_t* __restrict writePtr  = data;
+    int64_t* __restrict endPtr    = data + length;
+    int64_t* __restrict removePtr = notesToRemove.data();
+    int64_t* __restrict removeEnd = notesToRemove.data() + notesToRemove.size();
 
-        int64_t left = 0;
-        int64_t right = length - 1;
-        int64_t foundIdx = -1;
-
-        // Binary search by extractTime
-        while (left <= right) {
-            int64_t mid = left + (right - left) / 2;
-            int64_t midTime = extractTime(gData[mid]);
-
-            if (midTime == targetTime) {
-                if (gData[mid] == note) {
-                    foundIdx = mid;
-                    break;  // exact match
-                }
-                // Time matches but value differs: scan nearby
-                int64_t l = mid - 1, r = mid + 1;
-                while (l >= left && extractTime(gData[l]) == targetTime) {
-                    if (gData[l] == note) { foundIdx = l; break; }
-                    --l;
-                }
-                while (foundIdx == -1 && r <= right && extractTime(gData[r]) == targetTime) {
-                    if (gData[r] == note) { foundIdx = r; break; }
-                    ++r;
-                }
-                break;
-            } else if (midTime < targetTime) {
-                left = mid + 1;
-            } else {
-                right = mid - 1;
-            }
+    while (readPtr < endPtr) {
+        if (removePtr < removeEnd && *readPtr == *removePtr) {
+            ++removePtr;
+        } else {
+            if (writePtr != readPtr) *writePtr = *readPtr;
+            ++writePtr;
         }
+        ++readPtr;
+    }
 
-        // Defer removal if found in mapped file
-        if (foundIdx != -1) {
-            removeNote(foundIdx);
-        }
-
-        // Also check deferred inserts (in case the note hasn’t been flushed yet)
-        for (auto it = inserts.begin(); it != inserts.end(); ) {
-            if (it->second == note) {
-                it = inserts.erase(it);
-                break;  // remove only the first match
-            } else {
-                ++it;
-            }
-        }
+    int64_t newLength = writePtr - data;
+    if (newLength != length) {
+        if (!remap(newLength))
+            throw std::runtime_error("failed to shrink file after removeNotes");
+        length = newLength;
     }
 }

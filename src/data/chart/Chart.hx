@@ -38,13 +38,6 @@ class Chart {
 	}
 
 	/**
-		Reset the note lookup position for the chart editor.
-	**/
-	inline static function resetLookupPosition() {
-		File.resetGetNoteLookup();
-	}
-
-	/**
 		Destroys an already-existing chart. Self-explanatory.
 	**/
 	static function destroy() {

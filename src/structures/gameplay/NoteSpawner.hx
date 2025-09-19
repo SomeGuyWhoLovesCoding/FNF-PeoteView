@@ -39,7 +39,6 @@ class NoteSpawner {
 	 * @param pos The song's position in the note position format.
 	 */
 	function update(pos:Int64) {
-		Chart.resetLookupPosition();
 		cullTop(pos);
 		cullBottom(pos);
 
