@@ -74,11 +74,11 @@ class Main extends Application
 			File.insertNotes(arr);
 			Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp2) * 1000}ms');
 			// Remove notes
-			/*var stamp3 = haxe.Timer.stamp();
+			var stamp3 = haxe.Timer.stamp();
 			Sys.println("Remove 1,000,000 notes (function)");
 			Sys.println(arr.length);
 			File.removeNotes(arr);
-			Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp3) * 1000}ms');*/
+			Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp3) * 1000}ms');
 			Sys.println('Inserting 1,000,000 notes fully done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 			Chart.destroy();
 		}, 8000);
