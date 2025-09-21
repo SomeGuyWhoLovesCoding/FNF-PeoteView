@@ -179,48 +179,10 @@ static MappedFile gFile;
 int64_t* __restrict data = nullptr;
 int64_t length = 0;
 
-bool remap(size_t newLength) {
-    bool ok = gFile.resize(newLength);
-    data = gFile.raw();
-    length = gFile.size();
-    return ok;
-}
+// ------------------------ L1 Cache Detection + Prefetch ------------------------
+static size_t gL1CacheSize = 32 * 1024; // fallback default
+static size_t gPrefetchDist = 16;       // precomputed prefetch distance
 
-void loadChart(const char* inFile) {
-    if (!gFile.open(inFile))
-        throw std::runtime_error("Failed to open chart file");
-    data = gFile.raw();
-    length = gFile.size();
-}
-
-void destroyChart() {
-    gFile.close();
-    data = nullptr;
-    length = 0;
-}
-
-int64_t getNote(int64_t atIndex) { return data[atIndex]; }
-void setNote(int64_t atIndex, int64_t value) { data[atIndex] = value; }
-int64_t getLength() { return length; }
-
-void insertNote(int64_t index, int64_t value) {
-    if (index < 0 || index > length) throw std::out_of_range("index out of range");
-    if (!remap(length + 1)) throw std::runtime_error("failed to resize file");
-    if (index < length) {
-        memmove(&data[index + 1], &data[index], (length - index) * sizeof(int64_t));
-    }
-    data[index] = value;
-}
-
-void removeNote(int64_t index) {
-    if (index < 0 || index >= length) throw std::out_of_range("index out of range");
-    if (index < length - 1) {
-        memmove(&data[index], &data[index + 1], (length - index - 1) * sizeof(int64_t));
-    }
-    if (!remap(length - 1)) throw std::runtime_error("failed to shrink file");
-}
-
-// ------------------------ L1 Cache Detection ------------------------
 size_t getL1CacheSize() {
 #if defined(_WIN32)
     DWORD bufferSize = 0;
@@ -256,9 +218,56 @@ size_t getL1CacheSize() {
 #endif
 }
 
+bool remap(size_t newLength) {
+    bool ok = gFile.resize(newLength);
+    data = gFile.raw();
+    length = gFile.size();
+    return ok;
+}
+
 // ------------------------ Extract Time ------------------------
 inline int64_t extractTime(int64_t note) {
     return (note >> 23) & 0x1FFFFFFFFFFLL;
+}
+
+// ------------------------ Chart API ------------------------
+void loadChart(const char* inFile) {
+    if (!gFile.open(inFile))
+        throw std::runtime_error("Failed to open chart file");
+
+    data = gFile.raw();
+    length = gFile.size();
+
+    // Detect L1 cache once and precompute prefetch distance
+    gL1CacheSize = getL1CacheSize();
+    gPrefetchDist = gL1CacheSize / sizeof(int64_t) / 4;
+}
+
+void destroyChart() {
+    gFile.close();
+    data = nullptr;
+    length = 0;
+}
+
+int64_t getNote(int64_t atIndex) { return data[atIndex]; }
+void setNote(int64_t atIndex, int64_t value) { data[atIndex] = value; }
+int64_t getLength() { return length; }
+
+void insertNote(int64_t index, int64_t value) {
+    if (index < 0 || index > length) throw std::out_of_range("index out of range");
+    if (!remap(length + 1)) throw std::runtime_error("failed to resize file");
+    if (index < length) {
+        memmove(&data[index + 1], &data[index], (length - index) * sizeof(int64_t));
+    }
+    data[index] = value;
+}
+
+void removeNote(int64_t index) {
+    if (index < 0 || index >= length) throw std::out_of_range("index out of range");
+    if (index < length - 1) {
+        memmove(&data[index], &data[index + 1], (length - index - 1) * sizeof(int64_t));
+    }
+    if (!remap(length - 1)) throw std::runtime_error("failed to shrink file");
 }
 
 // ------------------------ Insert Notes with Prefetch ------------------------
@@ -271,21 +280,15 @@ void insertNotes(std::vector<int64_t> newNotes) {
 
     if (!remap(newLen)) throw std::runtime_error("failed to resize file");
 
-    // Determine prefetch distance dynamically from L1 cache
-    static const size_t l1Bytes = getL1CacheSize();
-    constexpr size_t cacheLine = 64;
-    size_t l1Elements = l1Bytes / sizeof(int64_t);
-    size_t prefetchDist = l1Elements / 4; // safe fraction of L1
-
     int64_t* __restrict writePtr = data + newLen - 1;
     int64_t* __restrict dataPtr  = data + oldLen - 1;
     int64_t* __restrict newPtr   = newNotes.data() + k - 1;
 
     while (dataPtr >= data && newPtr >= newNotes.data()) {
-        if ((dataPtr - data) > prefetchDist)
-            __builtin_prefetch(dataPtr - prefetchDist, 0, 1);
-        if ((newPtr - newNotes.data()) > prefetchDist)
-            __builtin_prefetch(newPtr - prefetchDist, 0, 1);
+        if ((dataPtr - data) > gPrefetchDist)
+            __builtin_prefetch(dataPtr - gPrefetchDist, 0, 1);
+        if ((newPtr - newNotes.data()) > gPrefetchDist)
+            __builtin_prefetch(newPtr - gPrefetchDist, 0, 1);
 
         int64_t timeData = extractTime(*dataPtr);
         int64_t timeNew  = extractTime(*newPtr);
@@ -301,8 +304,8 @@ void insertNotes(std::vector<int64_t> newNotes) {
     }
 
     while (newPtr >= newNotes.data()) {
-        if ((newPtr - newNotes.data()) > prefetchDist)
-            __builtin_prefetch(newPtr - prefetchDist, 0, 1);
+        if ((newPtr - newNotes.data()) > gPrefetchDist)
+            __builtin_prefetch(newPtr - gPrefetchDist, 0, 1);
         *writePtr-- = *newPtr--;
     }
     length = newLen;
@@ -312,10 +315,6 @@ void insertNotes(std::vector<int64_t> newNotes) {
 void removeNotes(std::vector<int64_t> notesToRemove) {
     if (notesToRemove.empty()) return;
 
-    static const size_t l1Bytes = getL1CacheSize();
-    size_t l1Elements = l1Bytes / sizeof(int64_t);
-    size_t prefetchDist = l1Elements / 4;
-
     int64_t* __restrict readPtr   = data;
     int64_t* __restrict writePtr  = data;
     int64_t* __restrict endPtr    = data + length;
@@ -323,10 +322,10 @@ void removeNotes(std::vector<int64_t> notesToRemove) {
     int64_t* __restrict removeEnd = notesToRemove.data() + notesToRemove.size();
 
     while (readPtr < endPtr) {
-        if ((readPtr - data) + prefetchDist < length)
-            __builtin_prefetch(readPtr + prefetchDist, 0, 1);
-        if ((removePtr - notesToRemove.data()) + prefetchDist < notesToRemove.size())
-            __builtin_prefetch(removePtr + prefetchDist, 0, 1);
+        if ((readPtr - data) + gPrefetchDist < length)
+            __builtin_prefetch(readPtr + gPrefetchDist, 0, 1);
+        if ((removePtr - notesToRemove.data()) + gPrefetchDist < notesToRemove.size())
+            __builtin_prefetch(removePtr + gPrefetchDist, 0, 1);
 
         if (removePtr < removeEnd && *readPtr == *removePtr) {
             ++removePtr;
