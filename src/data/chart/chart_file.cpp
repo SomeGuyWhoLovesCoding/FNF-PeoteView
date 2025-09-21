@@ -8,6 +8,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #else
+#include <fstream>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -219,8 +220,48 @@ void removeNote(int64_t index) {
     if (!remap(length - 1)) throw std::runtime_error("failed to shrink file");
 }
 
-inline int64_t extractTime(int64_t note) { return (note >> 23) & 0x1FFFFFFFFFFLL; }
+// ------------------------ L1 Cache Detection ------------------------
+size_t getL1CacheSize() {
+#if defined(_WIN32)
+    DWORD bufferSize = 0;
+    GetLogicalProcessorInformation(nullptr, &bufferSize);
+    std::vector<uint8_t> buffer(bufferSize);
+    PSYSTEM_LOGICAL_PROCESSOR_INFORMATION info = reinterpret_cast<PSYSTEM_LOGICAL_PROCESSOR_INFORMATION>(buffer.data());
+    if (!GetLogicalProcessorInformation(info, &bufferSize)) return 32 * 1024;
 
+    size_t l1Size = 32 * 1024; // default
+    DWORD count = bufferSize / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION);
+    for (DWORD i = 0; i < count; ++i) {
+        if (info[i].Relationship == RelationCache &&
+            info[i].Cache.Level == 1 &&
+            info[i].Cache.Type == CacheData) {
+            l1Size = info[i].Cache.Size;
+            break;
+        }
+    }
+    return l1Size;
+#else
+    std::ifstream file("/sys/devices/system/cpu/cpu0/cache/index0/size");
+    std::string line;
+    if (file.is_open() && std::getline(file, line)) {
+        size_t size = 0;
+        char unit = line.back();
+        size_t value = std::stoul(line);
+        if (unit == 'K' || unit == 'k') size = value * 1024;
+        else if (unit == 'M' || unit == 'm') size = value * 1024 * 1024;
+        else size = value;
+        return size;
+    }
+    return 32 * 1024; // fallback
+#endif
+}
+
+// ------------------------ Extract Time ------------------------
+inline int64_t extractTime(int64_t note) {
+    return (note >> 23) & 0x1FFFFFFFFFFLL;
+}
+
+// ------------------------ Insert Notes with Prefetch ------------------------
 void insertNotes(std::vector<int64_t> newNotes) {
     if (newNotes.empty()) return;
 
@@ -230,11 +271,22 @@ void insertNotes(std::vector<int64_t> newNotes) {
 
     if (!remap(newLen)) throw std::runtime_error("failed to resize file");
 
+    // Determine prefetch distance dynamically from L1 cache
+    static const size_t l1Bytes = getL1CacheSize();
+    constexpr size_t cacheLine = 64;
+    size_t l1Elements = l1Bytes / sizeof(int64_t);
+    size_t prefetchDist = l1Elements / 4; // safe fraction of L1
+
     int64_t* __restrict writePtr = data + newLen - 1;
     int64_t* __restrict dataPtr  = data + oldLen - 1;
     int64_t* __restrict newPtr   = newNotes.data() + k - 1;
 
     while (dataPtr >= data && newPtr >= newNotes.data()) {
+        if ((dataPtr - data) > prefetchDist)
+            __builtin_prefetch(dataPtr - prefetchDist, 0, 1);
+        if ((newPtr - newNotes.data()) > prefetchDist)
+            __builtin_prefetch(newPtr - prefetchDist, 0, 1);
+
         int64_t timeData = extractTime(*dataPtr);
         int64_t timeNew  = extractTime(*newPtr);
 
@@ -248,12 +300,21 @@ void insertNotes(std::vector<int64_t> newNotes) {
         --writePtr;
     }
 
-    while (newPtr >= newNotes.data()) *writePtr-- = *newPtr--;
+    while (newPtr >= newNotes.data()) {
+        if ((newPtr - newNotes.data()) > prefetchDist)
+            __builtin_prefetch(newPtr - prefetchDist, 0, 1);
+        *writePtr-- = *newPtr--;
+    }
     length = newLen;
 }
 
+// ------------------------ Remove Notes with Prefetch ------------------------
 void removeNotes(std::vector<int64_t> notesToRemove) {
     if (notesToRemove.empty()) return;
+
+    static const size_t l1Bytes = getL1CacheSize();
+    size_t l1Elements = l1Bytes / sizeof(int64_t);
+    size_t prefetchDist = l1Elements / 4;
 
     int64_t* __restrict readPtr   = data;
     int64_t* __restrict writePtr  = data;
@@ -262,6 +323,11 @@ void removeNotes(std::vector<int64_t> notesToRemove) {
     int64_t* __restrict removeEnd = notesToRemove.data() + notesToRemove.size();
 
     while (readPtr < endPtr) {
+        if ((readPtr - data) + prefetchDist < length)
+            __builtin_prefetch(readPtr + prefetchDist, 0, 1);
+        if ((removePtr - notesToRemove.data()) + prefetchDist < notesToRemove.size())
+            __builtin_prefetch(removePtr + prefetchDist, 0, 1);
+
         if (removePtr < removeEnd && *readPtr == *removePtr) {
             ++removePtr;
         } else {
