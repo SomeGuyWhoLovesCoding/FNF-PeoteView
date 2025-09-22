@@ -55,10 +55,12 @@ class Main extends Application
 
 		#if (chart_test || hl)
 		haxe.Timer.delay(function() {
-			// START CHART SAMPLE
-			var stamp = haxe.Timer.stamp();
-			trace("Insert 1,000,000 notes (array)");
+			// START CHART POFILE
 			Chart.load("assets/songs/termination");
+			// Start initializing total time variables
+			var insertTime:Float = 0;
+			var removalTime:Float = 0;
+
 			var arr = new Array<MetaNote>();
 			for (i in 0...1000000) {
 				arr.push(new MetaNote(Tools.betterInt64FromFloat((50.0 + (50.0 * i)) * 100),
@@ -69,17 +71,28 @@ class Main extends Application
 				1));
 				//Sys.println(i);
 			}
-			Sys.println("Insert 1,000,000 notes (function)");
-			var stamp2 = haxe.Timer.stamp();
-			File.insertNotes(arr);
-			Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp2) * 1000}ms');
-			// Remove notes
-			var stamp3 = haxe.Timer.stamp();
-			Sys.println("Remove 1,000,000 notes (function)");
-			Sys.println(arr.length);
-			File.removeNotes(arr);
-			Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp3) * 1000}ms');
-			Sys.println('Inserting 1,000,000 notes fully done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
+
+			for (i in 0...250) {
+				var stamp = haxe.Timer.stamp();
+				//trace("Insert 1,000,000 notes (array)");
+				//Sys.println("Insert 1,000,000 notes (function)");
+				var stamp2 = haxe.Timer.stamp();
+				File.insertNotes(arr);
+				insertTime += haxe.Timer.stamp() - stamp2;
+				//Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp2) * 1000}ms');
+				// Remove notes
+				var stamp3 = haxe.Timer.stamp();
+				//Sys.println("Remove 1,000,000 notes (function)");
+				//Sys.println(arr.length);
+				File.removeNotes(arr);
+				removalTime += haxe.Timer.stamp() - stamp3;
+				//Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp3) * 1000}ms');
+				//Sys.println('Inserting 1,000,000 notes fully done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
+				Sys.println('Iteration $i done');
+			}
+			// Average it out
+			Sys.println('Total insert time: ' + ((insertTime * 1000) / 250) + 'ms');
+			Sys.println('Total removal time: ' + ((removalTime * 1000) / 250) + 'ms');
 			Chart.destroy();
 		}, 8000);
 		#end
