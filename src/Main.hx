@@ -216,7 +216,7 @@ class Main extends Application
 			#end
 
 			window.onMouseDown.add((x, y, button) -> {
-				trace('$mouseDown $currentState');
+				//trace('$mouseDown $currentState');
 				if (mouseDown != null) mouseDown(x, y, button);
 			});
 
