@@ -291,20 +291,14 @@ class Main extends Application
 		}*/
 	}
 
-	var newDeltaTimeUs:Int = 0;
 	var newDeltaTime:Float = 0;
 
-	override function update(deltaTime:haxe.Int64) {
+	override function update(deltaTime:Int) {
 		Tools.profileFrame();
 		//Sys.println(deltaTime);
 
 		if (_started) {
-			if (deltaTime < 1000000) { // Microoptimization but whatever, saves like cycles for every frame you update
-				newDeltaTime = Int64.toInt(deltaTime) * 0.001;
-			} else {
-				newDeltaTimeUs = Int64.toInt(deltaTime % 1000);
-				newDeltaTime = Int64.toInt(deltaTime / 1000) + (newDeltaTimeUs * 0.001);
-			}
+			newDeltaTime = deltaTime * 0.001;
 
 			//try {
 				if (mainMenu != null && !mainMenu.disposed) {
