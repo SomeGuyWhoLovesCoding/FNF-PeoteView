@@ -168,7 +168,7 @@ class Main extends Application
 	var controls(default, null):Controls;
 	var gamepad(default, null):Gamepad;
 
-	// This is a replacement for Application.current.window.onMouseDown as it's a rouge piece a shit I've noticed was especially targetable on hashlink where the freeplay mouse click bug arose
+	// This is a replacement for Application.current.window.onMouseDown as it's a rogue piece a shit I've noticed was especially targetable on hashlink where the freeplay mouse click bug arose
 	var mouseDown:(Float, Float, MouseButton)->Void = function(x:Float, y:Float, button:MouseButton) {};
 
 	public function startSample(window:Window)
@@ -216,7 +216,8 @@ class Main extends Application
 			#end
 
 			window.onMouseDown.add((x, y, button) -> {
-				mouseDown(x, y, button);
+				trace('$mouseDown $currentState');
+				if (mouseDown != null) mouseDown(x, y, button);
 			});
 
 			GC.run(10);

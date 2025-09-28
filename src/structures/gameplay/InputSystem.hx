@@ -132,7 +132,7 @@ class InputSystem {
 		var window = lime.app.Application.current.window;
 		window.onKeyDown.remove(press);
 		window.onKeyUp.remove(release);
-		Main.current.mouseDown = (x:Float, y:Float, button:MouseButton) -> {};
+		Main.current.mouseDown = null;
 	}
 
 	inline function exists(keyCode:KeyCode) {

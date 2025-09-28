@@ -4,6 +4,7 @@ import lime.media.AudioBuffer;
 import lime.media.AudioSource;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
+import lime.ui.MouseButton;
 
 /**
 	The field of the gameplay state.
@@ -245,8 +246,6 @@ class Field {
 		var theme = gameOverMeta.theme;
 		var bpm = gameOverMeta.bpm;
 
-		trace(theme);
-
 		gameOverSound = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_sfx-${theme}.ogg'));
 		gameOverSound.play();
 
@@ -263,6 +262,10 @@ class Field {
 		}
 
 		isInGameOver = true;
+
+		Main.current.mouseDown = (x:Float, y:Float, button:MouseButton) -> {
+			endGameOver(false);
+		}
 	}
 
 	function endGameOver(goBack:Bool = false) {
