@@ -1,5 +1,6 @@
 package;
 
+import lime.graphics.RenderContext;
 import lime.ui.MouseButton;
 import sys.io.File;
 import sys.io.FileOutput;
@@ -167,7 +168,7 @@ class Main extends Application
 	var controls(default, null):Controls;
 	var gamepad(default, null):Gamepad;
 
-	// This is a replacement for Application.current.window.onMouseDown as it's a rouge piece a shit I've noticed was especially targetable on hashlink where the freeplay mouse click bug arose 
+	// This is a replacement for Application.current.window.onMouseDown as it's a rouge piece a shit I've noticed was especially targetable on hashlink where the freeplay mouse click bug arose
 	var mouseDown:(Float, Float, MouseButton)->Void = function(x:Float, y:Float, button:MouseButton) {};
 
 	public function startSample(window:Window)
@@ -338,6 +339,11 @@ class Main extends Application
 		}
 
 		Tools.profileFrame();
+	}
+
+	override function render(context:RenderContext) {
+		super.render(context);
+		//Sys.println("render is decoupled?");
 	}
 
 	function popupOptionsMenu() {
