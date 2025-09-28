@@ -295,7 +295,7 @@ class Main extends Application
 
 	override function update(deltaTime:Int) {
 		Tools.profileFrame();
-		//Sys.println(deltaTime);
+		//Sys.println(1000000 / deltaTime);
 
 		if (_started) {
 			newDeltaTime = deltaTime * 0.001;
