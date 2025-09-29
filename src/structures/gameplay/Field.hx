@@ -152,6 +152,11 @@ class Field {
 			}
 		} else if (parent.died) {
 			gameOver();
+
+			var call = (x:Float, y:Float, button:MouseButton) -> {
+				endGameOver(false);
+			};
+			if (Main.current.mouseDown != call) Main.current.mouseDown = call;
 		}
 	}
 
@@ -262,10 +267,6 @@ class Field {
 		}
 
 		isInGameOver = true;
-
-		Main.current.mouseDown = (x:Float, y:Float, button:MouseButton) -> {
-			endGameOver(false);
-		}
 	}
 
 	function endGameOver(goBack:Bool = false) {
