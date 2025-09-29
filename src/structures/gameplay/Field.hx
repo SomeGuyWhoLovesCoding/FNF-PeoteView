@@ -128,10 +128,7 @@ class Field {
 		}
 
 		if (isInGameOver) {
-				var call = (x:Float, y:Float, button:MouseButton) -> {
-					endGameOver(false);
-				};
-				if (Main.current.mouseDown != call) Main.current.mouseDown = call;
+			Main.current.mouseDown = (gameOverConfirm != null && gameOverConfirm.currentTime != gameOverConfirm.length) ? null : _gameover_end_call;
 
 			if (gameOverMusic != null) {
 				if (@:privateAccess gameOverMusic.__backend.playing) {
@@ -246,6 +243,9 @@ class Field {
 
 	function gameOver() {
 		removeCallbacks();
+		_gameover_end_call = (x:Float, y:Float, button:MouseButton) -> {
+			endGameOver(false);
+		};
 
 		var gameOverMeta = Chart.header.gameOver;
 		var theme = gameOverMeta.theme;
@@ -292,5 +292,9 @@ class Field {
 
 		Main.current.controls.unBind();
 		parent.inputSystem.removeEvents();
+		Main.current.mouseDown = null;
 	}
+
+	// to fix the stupid shit that can't be fixed anywhere else
+	var _gameover_end_call:(Float, Float, MouseButton)->Void;
 }
