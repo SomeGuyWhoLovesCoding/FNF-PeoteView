@@ -128,8 +128,7 @@ class Field {
 		}
 
 		if (isInGameOver) {
-			// TODO!
-			Main.current.mouseDown = _gameover_end_call;
+			Main.current.mouseDown = gameOverConfirmed ? null : gameover_end_call;
 
 			if (gameOverMusic != null) {
 				if (@:privateAccess gameOverMusic.__backend.playing) {
@@ -148,7 +147,7 @@ class Field {
 			if (gameOverConfirm != null) {
 				if (gameOverConfirm.currentTime == gameOverConfirm.length) {
 					gameOverConfirm = null;
-					isInGameOver = false;
+					isInGameOver = gameOverConfirmed = false;
 					Main.switchState(GAMEPLAY);
 					parent.display.show();
 				}
@@ -241,6 +240,8 @@ class Field {
 	var gameOverMusic:AudioSource;
 	var gameOverConfirm:AudioSource;
 	var actorOnGameOver:Actor;
+    var gameOverConfirmed:Bool;
+
 
 	function gameOver() {
 		removeCallbacks();
@@ -293,7 +294,7 @@ class Field {
 
 		Main.current.controls.unBind();
 		parent.inputSystem.removeEvents();
-		Main.current.mouseDown = null;
+		gameOverConfirmed = true;
 	}
 
 	// to fix the stupid shit that can't be fixed anywhere else
