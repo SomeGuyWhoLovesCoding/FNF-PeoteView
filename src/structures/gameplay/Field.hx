@@ -128,7 +128,8 @@ class Field {
 		}
 
 		if (isInGameOver) {
-			Main.current.mouseDown = (gameOverConfirm != null && gameOverConfirm.currentTime != gameOverConfirm.length) ? null : _gameover_end_call;
+			// TODO!
+			Main.current.mouseDown = _gameover_end_call;
 
 			if (gameOverMusic != null) {
 				if (@:privateAccess gameOverMusic.__backend.playing) {
