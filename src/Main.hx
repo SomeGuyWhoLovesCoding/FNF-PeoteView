@@ -54,7 +54,7 @@ class Main extends Application
 			default: throw("Sorry, only works with OpenGL.");
 		}
 
-		#if (chart_test || hl)
+		/*#if (chart_test || hl)
 		haxe.Timer.delay(function() {
 			// START CHART POFILE
 			Chart.load("assets/songs/termination");
@@ -96,7 +96,7 @@ class Main extends Application
 			Sys.println('Total removal time: ' + ((removalTime * 1000) / 250) + 'ms');
 			Chart.destroy();
 		}, 8000);
-		#end
+		#end*/
 	}
 
 	static var songChosen:String = "";
