@@ -128,6 +128,11 @@ class Field {
 		}
 
 		if (isInGameOver) {
+				var call = (x:Float, y:Float, button:MouseButton) -> {
+					endGameOver(false);
+				};
+				if (Main.current.mouseDown != call) Main.current.mouseDown = call;
+
 			if (gameOverMusic != null) {
 				if (@:privateAccess gameOverMusic.__backend.playing) {
 					Main.conductor.time = gameOverMusic.currentTime;
@@ -152,11 +157,6 @@ class Field {
 			}
 		} else if (parent.died) {
 			gameOver();
-
-			var call = (x:Float, y:Float, button:MouseButton) -> {
-				endGameOver(false);
-			};
-			if (Main.current.mouseDown != call) Main.current.mouseDown = call;
 		}
 	}
 
