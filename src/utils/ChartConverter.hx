@@ -136,7 +136,11 @@ cam 0 45');
 		metaNotes.sort((a, b) -> a.position < b.position ? -1 : (a.position > b.position ? 1 : 0));
 
 		for (metaNote in metaNotes) {
-			Sys.println(metaNote.position);
+			var position = metaNote.position;
+			var duration = metaNote.duration;
+			var index = metaNote.index;
+			var type = metaNote.type;
+			trace('MetaNote Position: $position, Duration: $duration, Index: $index, Type: $type');
 			var num = metaNote.toNumber();
 			chart.writeInt32(num.low);
 			chart.writeInt32(num.high);

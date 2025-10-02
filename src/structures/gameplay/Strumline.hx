@@ -120,8 +120,8 @@ class Strumline {
 				sustainsToHold[index] = noteToHit;
 			}
 
-			var posWithLatency = Tools.betterInt64FromFloat((pf.songPosition + pf.latencyCompensation) * 100);
-			pf.onNoteHit.dispatch(noteToHit, Int64.toInt(Int64.div(noteToHit.position - posWithLatency, 100)), 1);
+			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + pf.latencyCompensation);
+			pf.onNoteHit.dispatch(noteToHit, noteToHit.position - posWithLatency, 1);
 			notesToHit[index] = null;
 		} else {
 			if (!rec.pressed()) {

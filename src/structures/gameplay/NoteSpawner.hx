@@ -48,6 +48,7 @@ class NoteSpawner {
 	 * @param pos The song's position in the note position format.
 	 */
 	function update(pos:Int64) {
+		//Sys.println('Why');
 		//var pos = MetaNote.floatToMetaNotePosition(songPosition);
 		//Sys.println('Song Position ${parent.parent.songPosition}, MetaNote Song Position ${MetaNote.metaNotePositionToSongTime(pos)}');
 
@@ -66,10 +67,15 @@ class NoteSpawner {
 		var prev:Null<MetaNote> = null;
 		while (i < top) {
 			var n = File.getNote(i);
+			var position = n.position;
+			var duration = n.duration;
+			var index = n.index;
+			var type = n.type;
+			//trace('Position: $position, Duration: $duration, Index: $index, Type: $type');
 
 			var ghost = prev.position == n.position && prev.index == n.index && prev.type == n.type;
 			var lastDiff = diff;
-			var lane = parent.noteTypeFunctionality.exists(n.type) ? 1 : n.type;
+			var lane = parent.noteTypeFunctionality.exists(n.type) ? 1 : (n.type % parent.strumlines.length);
 			var receptor = parent.strumlines[lane].buffer[n.index];
 			var lastNoteY = noteY;
 
@@ -111,11 +117,7 @@ class NoteSpawner {
 		//Sys.println('TOP: ' + (curTopNote.position - pos));
 		//Sys.println('Top ${curTopNote.position - pos}');
 		//Sys.println('Pos: $pos');
-		while (top != len && pos + spawnDist > curTopNote.position) {
-			if (top >= len) {
-				top = len;
-				break;
-			}
+		while (top != len && curTopNote.position - pos < spawnDist) {
 			++top;
 			curTopNote = File.getNote(top);
 		}
@@ -131,12 +133,7 @@ class NoteSpawner {
 		//Sys.println('Bottom song position $pos');
 		//Sys.println('Bottom note position ${curBottomNote.position}');
 		//Sys.println('Bottom ${curBottomNote.position - pos}');
-		while (pos > curBottomNote.position + despawnDist) {
-			if (bottom >= len) {
-				bottom = len;
-				break;
-			}
-
+		while ((pos - MetaNote.intToMetaNoteDuration(curBottomNote.duration)) - curBottomNote.position > despawnDist) {
 			parent.notesHit.remove(curBottomNote);
 			parent.notesMissed.remove(curBottomNote);
 			parent.notesHeld.remove(curBottomNote);
@@ -146,9 +143,8 @@ class NoteSpawner {
 			notePool.putSustain(curBottomNote);
 
 			++bottom;
-			if (bottom != len) {
-				curBottomNote = File.getNote(bottom);
-			}
+
+			curBottomNote = File.getNote(bottom);
 		}
 	}
 

@@ -93,7 +93,7 @@ class PlayField implements State {
 	var onResumeSong:Event<Header->Void>;
 	var onStopSong:Event<Header->Void>;
 	var onDeath:Event<Header->Int->Void>;
-	var onNoteHit:Event<MetaNote->Int->Int64->Void>;
+	var onNoteHit:Event<MetaNote->Int64->Int64->Void>;
 	var onNoteMiss:Event<MetaNote->Int64->Void>;
 	var onSustainComplete:Event<MetaNote->Void>;
 	var onSustainRelease:Event<MetaNote->Void>;
@@ -134,7 +134,7 @@ class PlayField implements State {
 		onStopSong = new Event<Header->Void>();
 		onDeath = new Event<Header->Int->Void>();
 
-		onNoteHit = new Event<MetaNote->Int->Int64->Void>();
+		onNoteHit = new Event<MetaNote->Int64->Int64->Void>();
 		onNoteMiss = new Event<MetaNote->Int64->Void>();
 		onSustainComplete = new Event<MetaNote->Void>();
 		onSustainRelease = new Event<MetaNote->Void>();
@@ -301,7 +301,7 @@ class PlayField implements State {
 		}
 	}
 
-	function hitNote(note:MetaNote, timing:Int, notesInOne:Int64) {
+	function hitNote(note:MetaNote, timing:Int64, notesInOne:Int64) {
 		var lane = note.type;
 		if (noteSystem.noteSpawner.parent.noteTypeFunctionality.exists(note.type)) lane = 1;
 
@@ -330,7 +330,7 @@ class PlayField implements State {
 			scoreTxt.scale = 1.1;
 		}
 
-		var absTiming = Math.abs(timing);
+		var absTiming = timing < 0 ? -timing : timing;
 
 		if (absTiming > 60) {
 			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(3);

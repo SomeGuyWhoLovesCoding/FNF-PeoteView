@@ -89,7 +89,7 @@ class NoteSystem {
 
 		setScrollSpeed(Chart.header.speed);
 
-		update(0);
+		update(MetaNote.floatToMetaNotePosition(parent.songPosition));
 	}
 
 	function update(pos:Int64) {
@@ -121,7 +121,7 @@ class NoteSystem {
 		var position = note.position;
 
 		if (!noteTypeFunctionality.exists(note.type))
-			lane = note.type;
+			lane = note.type % strumlines.length;
 		else
 			lane = 1;
 
