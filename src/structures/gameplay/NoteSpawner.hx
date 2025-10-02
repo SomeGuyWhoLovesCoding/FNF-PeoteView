@@ -12,8 +12,8 @@ class NoteSpawner {
 	var bottom:Int64;
 	var top:Int64;
 
-	var spawnDist:Int = 160000;
-	var despawnDist:Int = 30000;
+	var spawnDist:Int64 = MetaNote.floatToMetaNotePosition(1600);
+	var despawnDist:Int64 = MetaNote.floatToMetaNotePosition(300);
 
 	var curTopNote(default, null):MetaNote;
 	var curBottomNote(default, null):MetaNote;
@@ -32,6 +32,15 @@ class NoteSpawner {
 
 		curTopNote = File.getNote(0);
 		curBottomNote = File.getNote(0);
+
+		/*or (i in 0...File.getLength().low) {
+			var note = File.getNote(i);
+			var position = note.position;
+			var duration = note.duration;
+			var index = note.index;
+			var type = note.type;
+			trace('Position: $position, Duration: $duration, Index: $index, Type: $type');
+		}*/
 	}
 
 	/**
@@ -39,8 +48,13 @@ class NoteSpawner {
 	 * @param pos The song's position in the note position format.
 	 */
 	function update(pos:Int64) {
+		//var pos = MetaNote.floatToMetaNotePosition(songPosition);
+		//Sys.println('Song Position ${parent.parent.songPosition}, MetaNote Song Position ${MetaNote.metaNotePositionToSongTime(pos)}');
+
 		cullTop(pos);
 		cullBottom(pos);
+
+		Sys.println('Top $top bottom $bottom');
 
 		var i = bottom;
 
@@ -53,15 +67,16 @@ class NoteSpawner {
 		while (i < top) {
 			var n = File.getNote(i);
 
-			var ghost = prev.position == n.position && prev.index == n.index && prev.lane == n.lane;
+			var ghost = prev.position == n.position && prev.index == n.index && prev.type == n.type;
 			var lastDiff = diff;
-			var receptor = parent.strumlines[n.lane].buffer[n.index];
+			var lane = parent.noteTypeFunctionality.exists(n.type) ? 1 : n.type;
+			var receptor = parent.strumlines[lane].buffer[n.index];
 			var lastNoteY = noteY;
 
 			var requirementsForNoteOverlapSimulationBS = noteSpr != null
 				&& floorByPixels(lastNoteY) == floorByPixels(noteY)
 				&& (prev.position != n.position && prev.type == n.type)
-				&& (prev.index == n.index && prev.lane == n.lane)
+				&& (prev.index == n.index && prev.type == n.type)
 				&& (noteSpr.r == 0 /* 0 is the default angle for the note sprite */)
 				&& (noteSpr.w == receptor.w && noteSpr.h == receptor.h)
 				&& (noteSpr.scale == receptor.scale)
@@ -75,7 +90,7 @@ class NoteSpawner {
 				++i;
 				continue;
 			} else {
-				diff = (Int64.toInt(n.position - pos) * 0.01) * scrollSpeed;
+				diff = MetaNote.metaNotePositionToSongTime((n.position - pos)) * scrollSpeed;
 				noteY = receptor.y + Math.floor(diff);
 				if (!ghost) noteSpr = parent.drawNote(pos, n, diff);
 				else noteSpr.notesInOne++;
@@ -91,7 +106,16 @@ class NoteSpawner {
 	 */
 	function cullTop(pos:Int64) {
 		var len = File.getLength();
-		while (top != len && (curTopNote.position - pos).low < spawnDist) {
+		//Sys.println('Top song position ${MetaNote.metaNotePositionToSongTime(pos)}, Song position: $songPosition');
+		//Sys.println('Top note position ${curTopNote.position}');
+		//Sys.println('TOP: ' + (curTopNote.position - pos));
+		//Sys.println('Top ${curTopNote.position - pos}');
+		//Sys.println('Pos: $pos');
+		while (top != len && pos + spawnDist > curTopNote.position) {
+			if (top >= len) {
+				top = len;
+				break;
+			}
 			++top;
 			curTopNote = File.getNote(top);
 		}
@@ -103,12 +127,16 @@ class NoteSpawner {
 	 */
 	function cullBottom(pos:Int64) {
 		var len = File.getLength();
-		while (bottom != len &&
-			((pos -
-			(
-				((curBottomNote.duration << 2) + curBottomNote.duration) * 100
-			)) -
-			curBottomNote.position).low > despawnDist) {
+		//Sys.println('BOTTOM: ' + ((pos - MetaNote.intToMetaNoteDuration(curBottomNote.duration)) - curBottomNote.position));
+		//Sys.println('Bottom song position $pos');
+		//Sys.println('Bottom note position ${curBottomNote.position}');
+		//Sys.println('Bottom ${curBottomNote.position - pos}');
+		while (pos > curBottomNote.position + despawnDist) {
+			if (bottom >= len) {
+				bottom = len;
+				break;
+			}
+
 			parent.notesHit.remove(curBottomNote);
 			parent.notesMissed.remove(curBottomNote);
 			parent.notesHeld.remove(curBottomNote);
@@ -118,8 +146,9 @@ class NoteSpawner {
 			notePool.putSustain(curBottomNote);
 
 			++bottom;
-
-			curBottomNote = File.getNote(bottom);
+			if (bottom != len) {
+				curBottomNote = File.getNote(bottom);
+			}
 		}
 	}
 
@@ -138,7 +167,7 @@ class NoteSpawner {
 		var len = File.getLength();
 		if (len <= 0) return; // no notes, nothing to do
 
-		var songPos = Tools.betterInt64FromFloat(songPosition * 100);
+		var songPos = MetaNote.floatToMetaNotePosition(songPosition);
 		var songPosTop = songPos + spawnDist;
 
 		// --- Fast check: before first note ---

@@ -49,6 +49,8 @@ class NoteSystem {
 	var notesMissed(default, null):MetaNoteMap<Bool>;
 	var notesHeld(default, null):MetaNoteMap<Bool>;
 
+	var noteTypeFunctionality(default, null):Map<Int, Int->Int->Bool->Void>;
+
 	var parent(default, null):PlayField;
 
 	/**
@@ -59,6 +61,7 @@ class NoteSystem {
 		notesHit = new MetaNoteMap<Bool>();
 		notesMissed = new MetaNoteMap<Bool>();
 		notesHeld = new MetaNoteMap<Bool>();
+		noteTypeFunctionality = new Map<Int, Int->Int->Bool->Void>();
 
 		this.parent = parent;
 
@@ -113,9 +116,14 @@ class NoteSystem {
 	**/
 	function drawNote(pos:Int64, note:MetaNote, diff:Float):Note {
 		var index = note.index;
-		var lane = note.lane;
+		var lane = 0;
 		var duration = note.duration;
 		var position = note.position;
+
+		if (!noteTypeFunctionality.exists(note.type))
+			lane = note.type;
+		else
+			lane = 1;
 
 		var strumline = strumlines[lane];
 		var rec = strumline.buffer[index];
@@ -124,10 +132,10 @@ class NoteSystem {
 
 		var noteSpr = notePool.newNote(id, note);
 
-		var sustainSpr = duration > 5 ? notePool.newSustain(id, note) : null;
+		var sustainSpr = duration > 4 ? notePool.newSustain(id, note) : null;
 		var sustainExists = sustainSpr != null;
 
-		var leftover = Math.floor(Int64.toInt(pos - position) * 0.01);
+		var leftover = Math.floor(MetaNote.metaNotePositionToSongTime(pos - position));
 		var isHit = notesHit.get(note);
 		var isMissed = notesMissed.get(note);
 		var isHeld = notesHeld.get(note);
@@ -159,6 +167,12 @@ class NoteSystem {
 				if (diff < -parent.hitbox && !isMissed) {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
 					notesMissed.set(note, isMissed = true);
+
+					var type = note.type;
+
+					if (noteTypeFunctionality.exists(type)) {
+						noteTypeFunctionality[type](index, type, true);
+					}
 
 					parent.onNoteMiss.dispatch(note, noteSpr.notesInOne);
 
@@ -210,7 +224,7 @@ class NoteSystem {
 			sustainSpr.r = parent.downScroll ? -90 : 90;
 			sustainSpr.speed = parent.scrollSpeed;
 			sustainSpr.scale = rec.scale;
-			sustainSpr.length = ((duration << 2) + duration) - 25;
+			sustainSpr.length = MetaNote.intToMetaNoteDuration(duration).low - 25;
 
 			if (!isHit) {
 				sustainSpr.w = sustainSpr.length;
@@ -222,7 +236,7 @@ class NoteSystem {
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
 
-				if (pos > position + ((sustainSpr.length * 100) - 75) && !isHeld) {
+				if (pos > position + ((MetaNote.floatToMetaNotePosition(sustainSpr.length)) - 75) && !isHeld) {
 					notesHeld.set(note, isHeld = true);
 					strumline.sustainsToHold[index] = null;
 					if (rec.confirmed()) {
@@ -244,8 +258,8 @@ class NoteSystem {
 	 * Change the scroll speed of this note system.
 	**/
 	function setScrollSpeed(value:Float) {
-		noteSpawner.spawnDist = Math.floor(160000 / value);
-		noteSpawner.despawnDist = Math.floor(40000 / Math.min(Math.max(value, 0.0001), 1.0));
+		noteSpawner.spawnDist = MetaNote.floatToMetaNotePosition(1600 / value);
+		noteSpawner.despawnDist = MetaNote.floatToMetaNotePosition(300 / Math.min(Math.max(value, 0.0001), 1.0));
 		parent.hitbox = 200 * value;
 		return value;
 	}

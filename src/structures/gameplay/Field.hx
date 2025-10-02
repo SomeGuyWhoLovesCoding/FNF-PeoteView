@@ -175,21 +175,21 @@ class Field {
 	}
 
 	function hitNote(note:MetaNote, timing:Int, notesInOne:Int64) {
-		sing(note.index, (note.lane == 0 ? opponent : player), false, note.duration > 12 && timing < parent.hitbox * 0.5);
+		sing(note.index, (note.type == 0 ? opponent : player), false, note.duration > 12 && timing < parent.hitbox * 0.5);
 
-		targetCamera.x = note.lane == 0 ? -50 : 50; // Prototype camera logic I have for now
+		targetCamera.x = note.type == 0 ? -50 : 50; // Prototype camera logic I have for now
 	}
 
 	function missNote(note:MetaNote, notesInOne:Int64) {
-		sing(note.index, (note.lane == 0 ? opponent : player), true, false);
+		sing(note.index, (note.type == 0 ? opponent : player), true, false);
 	}
 
 	function completeSustain(note:MetaNote) {
-		sing(note.index, (note.lane == 0 ? opponent : player), false, false, true);
+		sing(note.index, (note.type == 0 ? opponent : player), false, false, true);
 	}
 
 	function releaseSustain(note:MetaNote) {
-		sing(note.index, (note.lane == 0 ? opponent : player), true, false);
+		sing(note.index, (note.type == 0 ? opponent : player), true, false);
 	}
 
 	function addCallbacks() {

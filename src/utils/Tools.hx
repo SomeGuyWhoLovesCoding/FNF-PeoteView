@@ -121,6 +121,13 @@ class Tools {
 		return Int64.make(high, low);
 	}
 
+	/**
+		Converts an Int64 to a float, since there's absolutely no `Int64.toFloat` function.
+	**/
+    inline static function int64ToFloat(value:Int64):Float {
+        return (value.high * 4294967296.0) + value.low;
+    }
+
 	inline static function profileFrame() {
 		#if FV_PROFILE
 		cpp.vm.tracy.TracyProfiler.frameMark();
@@ -259,30 +266,4 @@ class Tools {
 
 		return result;
 	}
-
-	// Temporary, will comment out
-	/*static function createProgramPremultiplied(texName:String):{prog:Program, formula:String} {
-		var program = new Program(buffers[displayName]);
-		program.blendEnabled = true;
-		program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
-		program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
-		program.injectIntoFragmentShader(
-		'
-			vec4 ssss(int textureID, float f) //supportAlphaOnPremultiplied
-			{
-				vec2 coord = vTexCoord;
-				vec4 tex = getTextureColor(textureID, coord);
-
-				// Apply your alpha adjustments
-				tex.rgb *= f;  // scale RGB
-				tex.a   *= f;  // scale alpha
-
-				return c * f;
-			}
-		');
-
-		var formulaStr = 'ssss(c, f)';
-		program.setColorFormula( formulaStr );
-		return {prog: program, formula: formulaStr};
-	}*/
 }

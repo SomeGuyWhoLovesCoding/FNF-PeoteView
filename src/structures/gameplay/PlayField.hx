@@ -54,7 +54,7 @@ class PlayField implements State {
 	function set_downScroll(value:Bool) {
 		downScroll = value;
 		if (noteSystem != null) {
-			var pos = Tools.betterInt64FromFloat(songPosition * 100);
+			var pos = MetaNote.floatToMetaNotePosition(songPosition);
 			noteSystem.resetStrumlines(false);
 			noteSystem.update(pos);
 		}
@@ -74,7 +74,7 @@ class PlayField implements State {
 	var botplay(default, set):Bool;
 	function set_botplay(value:Bool) {
 		if (noteSystem != null) {
-			var pos = Tools.betterInt64FromFloat(songPosition * 100);
+			var pos = MetaNote.floatToMetaNotePosition(songPosition);
 			noteSystem.resetPlayerStrumlines();
 			noteSystem.update(pos);
 		}
@@ -157,6 +157,9 @@ class PlayField implements State {
 
 		songPosition = -conductor.crochet * 4.5;
 
+		var pos = MetaNote.floatToMetaNotePosition(songPosition);
+		Sys.print('Song Position (main): $songPosition, MetaNote Song Position: $pos');
+
 		field = new Field(this);
 		inputSystem = new InputSystem(mania, this);
 		NoteSystem.init();
@@ -217,7 +220,9 @@ class PlayField implements State {
 			songPosition += latencyCompensation;
 			Main.conductor.time = songPosition;
 
-			var pos = Tools.betterInt64FromFloat(songPosition * 100);
+			var pos = MetaNote.floatToMetaNotePosition(songPosition);
+
+			//Sys.println('Song Position $songPosition, MetaNote Song Position ${MetaNote.metaNotePositionToSongTime(pos)}');
 
 			if (hud != null) hud.update(deltaTime);
 			if (noteSystem != null) noteSystem.update(pos);
@@ -297,11 +302,14 @@ class PlayField implements State {
 	}
 
 	function hitNote(note:MetaNote, timing:Int, notesInOne:Int64) {
-		var index = 1 + note.lane;
+		var lane = note.type;
+		if (noteSystem.noteSpawner.parent.noteTypeFunctionality.exists(note.type)) lane = 1;
+
+		var index = 1 + lane;
 		if (index > 0 && index <= Mixer.trackCount) Mixer.changeTrackVolume(index, 1);
 
-		if (!inputSystem.strumlinePlayable[note.lane]) {
-			health -= healthLoss[note.lane];
+		if (!inputSystem.strumlinePlayable[lane]) {
+			health -= healthLoss[lane];
 			if (health < 0.05) {
 				health = 0.05;
 			}
@@ -310,7 +318,7 @@ class PlayField implements State {
 
 		combo += notesInOne;
 
-		health += healthGain[note.lane];
+		health += healthGain[lane];
 		if (health > 1) {
 			health = 1;
 		}
@@ -351,10 +359,13 @@ class PlayField implements State {
 	}
 
 	function missNote(note:MetaNote, notesInOne:Int64) {
-		var index = 1 + note.lane;
+		var lane = note.type;
+		if (noteSystem.noteSpawner.parent.noteTypeFunctionality.exists(note.type)) lane = 1;
+
+		var index = 1 + lane;
 		if (index > 0 && index <= Mixer.trackCount) Mixer.changeTrackVolume(index, 0);
 
-		health -= healthLoss[note.lane];
+		health -= healthLoss[lane];
 
 		combo = 0;
 		score -= 50 * notesInOne;
@@ -362,7 +373,7 @@ class PlayField implements State {
 		accuracy.increment(10000, true, notesInOne);
 
 		if (health < 0 && !disposed) {
-			onDeath.dispatch(Chart.header, note.lane);
+			onDeath.dispatch(Chart.header, lane);
 			return;
 		}
 
@@ -372,10 +383,13 @@ class PlayField implements State {
 	}
 
 	function completeSustain(note:MetaNote) {
-		if (noteSystem != null && noteSystem.strumlines[note.lane].confirmed(note.index)) return;
+		var lane = note.type;
+		if (noteSystem.noteSpawner.parent.noteTypeFunctionality.exists(note.type)) lane = 1;
 
-		if (!inputSystem.strumlinePlayable[note.lane]) {
-			health -= healthLoss[note.lane];
+		if (noteSystem != null && noteSystem.strumlines[lane].confirmed(note.index)) return;
+
+		if (!inputSystem.strumlinePlayable[lane]) {
+			health -= healthLoss[lane];
 
 			if (health < 0.05) {
 				health = 0.05;
@@ -384,7 +398,7 @@ class PlayField implements State {
 			return;
 		}
 
-		health += healthGain[note.lane];
+		health += healthGain[lane];
 
 		if (health > 1) {
 			health = 1;

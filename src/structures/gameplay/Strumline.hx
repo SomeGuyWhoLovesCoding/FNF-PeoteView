@@ -103,6 +103,12 @@ class Strumline {
 
 		if (noteToHit != null && !parent.notesMissed.get(noteToHit) && !parent.notesHit.get(noteToHit)) {
 			var pf = parent.parent;
+			//var spwn = parent.noteSpawner;
+			var type = noteToHit.type;
+
+			if (parent.noteTypeFunctionality.exists(type)) {
+				parent.noteTypeFunctionality[type](index, type, false);
+			}
 
 			if (!rec.confirmed()) {
 				rec.confirm();

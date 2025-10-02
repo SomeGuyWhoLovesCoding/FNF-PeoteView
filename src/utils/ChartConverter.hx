@@ -70,6 +70,8 @@ class ChartConverter
 					mania = 4;
 			}
 
+			var registeredSexOffender = false;
+			var count = 0;
 			for (section in notes) {
 				var sectionNotes:Array<Dynamic> = section.sectionNotes;
 				var mustHitSection:Bool = section.mustHitSection;
@@ -79,12 +81,21 @@ class ChartConverter
 					var lane = 1 - Math.floor((mustHitSection ? note.index : ((note.index >= mania) ? note.index - mania : note.index + mania)) / mania);
 
 					var newNote:MetaNote = new MetaNote(
-						Tools.betterInt64FromFloat(note.position * 100),
-						Math.floor(note.duration * 0.2), // Equal to `note.duration / 5`.
+						MetaNote.floatToMetaNotePosition(note.position),
+						Std.int(note.duration * 0.25), // Equal to `note.duration / 4`.
 						note.index % mania,
-						0,
 						lane
 					);
+
+					/*if (!registeredSexOffender) {
+						trace('Raw position: ${note.position}, Duration: ${note.duration}, Index: ${note.index}');
+						var position = newNote.position;
+						var duration = newNote.duration;
+						var index = newNote.index;
+						var type = newNote.type;
+						trace('MetaNote Position: $position, Duration: $duration, Index: $index, Type: $type');
+						registeredSexOffender = count++ >= 100;
+					}*/
 
 					metaNotes.push(newNote);
 				}
@@ -122,9 +133,10 @@ cam 0 45');
 		trace("The real fun.");
 
 		// Now for the REAL fun.
-		metaNotes.sort((a, b) -> (a.position - b.position).low);
+		metaNotes.sort((a, b) -> a.position < b.position ? -1 : (a.position > b.position ? 1 : 0));
 
 		for (metaNote in metaNotes) {
+			Sys.println(metaNote.position);
 			var num = metaNote.toNumber();
 			chart.writeInt32(num.low);
 			chart.writeInt32(num.high);
