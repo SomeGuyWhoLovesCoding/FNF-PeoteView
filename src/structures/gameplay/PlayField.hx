@@ -330,7 +330,8 @@ class PlayField implements State {
 			scoreTxt.scale = 1.1;
 		}
 
-		var absTiming = timing < 0 ? -timing : timing;
+		var absTimingRaw = timing < 0 ? -timing : timing;
+		var absTiming = MetaNote.metaNotePositionToSongTime(absTimingRaw); // Just to make sure it's easy yk!
 
 		if (absTiming > 60) {
 			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(3);

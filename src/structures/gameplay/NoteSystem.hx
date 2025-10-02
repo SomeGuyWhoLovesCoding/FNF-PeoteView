@@ -224,7 +224,7 @@ class NoteSystem {
 			sustainSpr.r = parent.downScroll ? -90 : 90;
 			sustainSpr.speed = parent.scrollSpeed;
 			sustainSpr.scale = rec.scale;
-			sustainSpr.length = (duration * 5) - 25;
+			sustainSpr.length = (duration * 4) - 10;
 
 			if (!isHit) {
 				sustainSpr.w = sustainSpr.length;
@@ -236,7 +236,7 @@ class NoteSystem {
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
 
-				if (pos > position + ((MetaNote.floatToMetaNotePosition(sustainSpr.length)) - 75) && !isHeld) {
+				if (pos > position + ((MetaNote.floatToMetaNotePosition(sustainSpr.length)) - 70) && !isHeld) {
 					notesHeld.set(note, isHeld = true);
 					strumline.sustainsToHold[index] = null;
 					if (rec.confirmed()) {
