@@ -224,7 +224,7 @@ class NoteSystem {
 			sustainSpr.r = parent.downScroll ? -90 : 90;
 			sustainSpr.speed = parent.scrollSpeed;
 			sustainSpr.scale = rec.scale;
-			sustainSpr.length = MetaNote.intToMetaNoteDuration(duration).low - 25;
+			sustainSpr.length = (duration * 5) - 25;
 
 			if (!isHit) {
 				sustainSpr.w = sustainSpr.length;

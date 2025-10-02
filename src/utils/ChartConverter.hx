@@ -87,15 +87,11 @@ class ChartConverter
 						lane
 					);
 
-					/*if (!registeredSexOffender) {
-						trace('Raw position: ${note.position}, Duration: ${note.duration}, Index: ${note.index}');
-						var position = newNote.position;
-						var duration = newNote.duration;
-						var index = newNote.index;
-						var type = newNote.type;
-						trace('MetaNote Position: $position, Duration: $duration, Index: $index, Type: $type');
-						registeredSexOffender = count++ >= 100;
-					}*/
+					/*var position = newNote.position;
+					var duration = newNote.duration;
+					var index = newNote.index;
+					var type = newNote.type;
+					Sys.println('Raw position: ${note.position}, Duration: ${note.duration}, Index: ${note.index}, MetaNote Position: $position, Duration: $duration, Index: $index, Type: $type');*/
 
 					metaNotes.push(newNote);
 				}
@@ -136,11 +132,11 @@ cam 0 45');
 		metaNotes.sort((a, b) -> a.position < b.position ? -1 : (a.position > b.position ? 1 : 0));
 
 		for (metaNote in metaNotes) {
-			var position = metaNote.position;
+			/*var position = metaNote.position;
 			var duration = metaNote.duration;
 			var index = metaNote.index;
 			var type = metaNote.type;
-			trace('MetaNote Position: $position, Duration: $duration, Index: $index, Type: $type');
+			trace('MetaNote Position: $position, Duration: $duration, Index: $index, Type: $type');*/
 			var num = metaNote.toNumber();
 			chart.writeInt32(num.low);
 			chart.writeInt32(num.high);

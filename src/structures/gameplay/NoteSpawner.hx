@@ -55,7 +55,7 @@ class NoteSpawner {
 		cullTop(pos);
 		cullBottom(pos);
 
-		Sys.println('Top $top bottom $bottom');
+		//Sys.println('Top $top bottom $bottom');
 
 		var i = bottom;
 
@@ -117,6 +117,7 @@ class NoteSpawner {
 		//Sys.println('TOP: ' + (curTopNote.position - pos));
 		//Sys.println('Top ${curTopNote.position - pos}');
 		//Sys.println('Pos: $pos');
+		//Sys.println(top != len && curTopNote.position - pos < spawnDist);
 		while (top != len && curTopNote.position - pos < spawnDist) {
 			++top;
 			curTopNote = File.getNote(top);

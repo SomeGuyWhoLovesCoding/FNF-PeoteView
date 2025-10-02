@@ -14,7 +14,7 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 	static var SHIFT_MISSED   = 1;
 	static var SHIFT_HELD     = 0;
 
-	static var POSITION_MASK = Int64.fromFloat(1099511627775);
+	static var POSITION_MASK = Int64.shl(1, 40) - 1;
 	static var DURATION_MASK = 0xFFF; // 12 bits
 	static var INDEX_MASK    = 0xF;   // 4 bits
 	static var TYPE_MASK     = 0x1F;  // 5 bits
@@ -70,22 +70,22 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 
 	//// NUMBER CONVERSION FUNCTIONS
 	inline static function floatToMetaNotePosition(f:Float):Int64 {
-		return Tools.betterInt64FromFloat(f * 20000000);
+		return Tools.betterInt64FromFloat(f * 20000);
 	}
 
 	inline static function metaNotePositionToSongTime(pos:Int64):Float {
 		var isNegative = pos < 0;
 		var absPos = isNegative ? -pos : pos;
 
-		var scaled:Int64 = absPos / 20000000;
-		var remainder:Int64 = absPos % 20000000;
+		var scaled:Int64 = absPos / 20000;
+		var remainder:Int64 = absPos % 20000;
 
-		var result = Tools.int64ToFloat(scaled) + Tools.int64ToFloat(remainder) / 20000000;
+		var result = Tools.int64ToFloat(scaled) + Tools.int64ToFloat(remainder) / 20000;
 		return isNegative ? -result : result;
 	}
 
 	inline static function intToMetaNoteDuration(i:Int):Int64 {
-		return floatToMetaNotePosition(i * 4);
+		return Tools.betterInt64FromFloat(i * 80);
 	}
 
 	// Underlying value
