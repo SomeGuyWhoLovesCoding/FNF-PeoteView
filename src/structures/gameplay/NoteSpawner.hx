@@ -79,18 +79,31 @@ class NoteSpawner {
 			var receptor = parent.strumlines[lane].buffer[n.index];
 			var lastNoteY = noteY;
 
+			//if (noteSpr != null) Sys.println(noteSpr.scale == receptor.scale);
 			var requirementsForNoteOverlapSimulationBS = noteSpr != null
 				&& floorByPixels(lastNoteY) == floorByPixels(noteY)
-				&& (prev.position != n.position && prev.type == n.type)
 				&& (prev.index == n.index && prev.type == n.type)
 				&& (noteSpr.r == 0 /* 0 is the default angle for the note sprite */)
-				&& (noteSpr.w == receptor.w && noteSpr.h == receptor.h)
+				//&& (noteSpr.w == receptor.w && noteSpr.h == receptor.h)
 				&& (noteSpr.scale == receptor.scale)
 				&& (prev.duration == n.duration)
 			&& noteSpr.x == receptor.x;
+			/*Sys.println('overlap check: '
+				+ 'noteSpr!=null:' + (noteSpr != null) + ', '
+				+ 'floorY:' + (floorByPixels(lastNoteY) == floorByPixels(noteY)) + ', '
+				+ 'sameIndexType:' + (prev.index == n.index && prev.type == n.type) + ', '
+				+ 'angle:' + (noteSpr != null && noteSpr.r == 0) + ', '
+				+ 'size:' + (noteSpr != null && noteSpr.w == receptor.w && noteSpr.h == receptor.h) + ', '
+				+ 'scale:' + (noteSpr != null && noteSpr.scale == receptor.scale) + ', '
+				+ 'duration:' + (prev.duration == n.duration) + ', '
+			+ 'x:' + (noteSpr != null && noteSpr.x == receptor.x));*/
+			/*if (noteSpr != null) Sys.println('size check: noteSpr.w=${noteSpr.w}, receptor.w=${receptor.w}, '
+				+ 'noteSpr.h=${noteSpr.h}, receptor.h=${receptor.h}');*/
+
+			//Sys.println(requirementsForNoteOverlapSimulationBS);
 
 			if (requirementsForNoteOverlapSimulationBS) {
-				noteSpr.addedAlpha += parent.notesMissed.get(n) ? Note.defaultMissAlpha : Note.defaultAlpha;
+				noteSpr.addedAlpha = parent.notesMissed.get(n) ? Note.defaultMissAlpha : Note.defaultAlpha;
 				noteSpr.notesInOne++;
 				prev = n;
 				++i;

@@ -41,6 +41,8 @@ class HealthBarSprite implements Element {
 	}
 
 	inline function set_alpha(value:Float) {
+		value = Math.max(value, 0);
+		alphaColor.luminanceF = value;
 		return alphaColor.aF = value;
 	}
 

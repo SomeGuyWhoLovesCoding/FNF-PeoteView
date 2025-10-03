@@ -94,8 +94,10 @@ class Note implements Element
 				vec4 tex = getTextureColor(textureID, coord);
 
 				// Apply your alpha adjustments
-				tex.rgb *= initialAlpha;
-				tex.a += addedAlpha;
+				if (tex.a != 0.0) {
+					tex.rgb *= initialAlpha;
+					tex.a += addedAlpha;
+				}
 
 				return tex;
 			}

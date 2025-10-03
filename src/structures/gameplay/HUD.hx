@@ -263,7 +263,9 @@ class HUD {
 		scoreTxt.x = Math.floor(healthBar.bg.x) + ((healthBar.bg.w - scoreTxt.width) * 0.5);
 		scoreTxt.y = Math.floor(healthBar.bg.y) + (healthBar.bg.h + 6);
 		scoreTxt.color.aF = 1.0;
+		scoreTxt.color.luminanceF = 1.0;
 		scoreTxt.outlineColor.aF = 1.0;
+		scoreTxt.outlineColor.luminanceF = 1.0;
 		/*scoreTxt.color = 0xFFDC8CFF;
 		scoreTxt.setMarkerPair('Score: ', Color.WHITE);
 		scoreTxt.setMarkerPair(', Misses: ', Color.WHITE);
