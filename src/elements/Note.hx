@@ -96,7 +96,15 @@ class Note implements Element
 				// Apply your alpha adjustments
 				if (tex.a != 0.0) {
 					tex.rgb *= initialAlpha;
-					tex.a += addedAlpha;
+					float oldA = tex.a;
+					float newA = clamp(oldA + addedAlpha, 0.0, 1.0);
+
+					// Adjust premultiplied color to match the new alpha
+					if (oldA > 0.0) {
+						tex.rgb *= newA / oldA;
+					}
+
+					tex.a = newA;
 				}
 
 				return tex;

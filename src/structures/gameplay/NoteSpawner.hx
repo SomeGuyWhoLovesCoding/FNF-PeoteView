@@ -33,14 +33,14 @@ class NoteSpawner {
 		curTopNote = File.getNote(0);
 		curBottomNote = File.getNote(0);
 
-		for (i in 0.../*File.getLength().low*/200) {
+		/*for (i in 0...File.getLength().low) {
 			var note = File.getNote(i);
 			var position = note.position;
 			var duration = note.duration;
 			var index = note.index;
 			var type = note.type;
 			trace('Position: $position, Duration: $duration, Index: $index, Type: $type');
-		}
+		}*/
 	}
 
 	/**
@@ -108,7 +108,7 @@ class NoteSpawner {
 
 		if (requirementsForNoteOverlapSimulationBS) {
 			// treat as overlap: merge into existing sprite
-			noteSpr.addedAlpha += parent.notesMissed.get(n) ? Note.defaultMissAlpha : Note.defaultAlpha;
+			noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + (parent.notesMissed.get(n) ? Note.defaultMissAlpha : Note.defaultAlpha), 254);
 			noteSpr.notesInOne++;
 			prev = n;
 			++i;
