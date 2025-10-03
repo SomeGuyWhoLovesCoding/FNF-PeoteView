@@ -247,10 +247,10 @@ class NoteSystem {
 				}
 			}
 
-			if (@:privateAccess sustainSpr.bytePos == -1) sustainsBuf.addElement(sustainSpr);
+			sustainsBuf.addElement(sustainSpr);
 		}
 
-		if (!isHit && @:privateAccess noteSpr.bytePos == -1) notesBuf.addElement(noteSpr);
+		if (!isHit) notesBuf.addElement(noteSpr);
 		return noteSpr;
 	}
 

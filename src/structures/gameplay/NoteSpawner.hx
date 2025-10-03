@@ -5,6 +5,7 @@ package structures.gameplay;
 	This class is responsible for spawning and despawning notes based on the song's position.
 	It handles the culling of notes that are too far away from the current position, and it draws the notes that are within the spawn distance.
 	It also handles the resetting of notes when the song position changes significantly.
+	The Note Overlap Simulation Optimization is also broken here because of the new MetaNote implementation.
 	@since Development
 **/
 @:publicFields
@@ -147,7 +148,7 @@ class NoteSpawner {
 		//Sys.println('Bottom song position $pos');
 		//Sys.println('Bottom note position ${curBottomNote.position}');
 		//Sys.println('Bottom ${curBottomNote.position - pos}');
-		while ((pos - MetaNote.intToMetaNoteDuration(curBottomNote.duration)) - curBottomNote.position > despawnDist) {
+		while (bottom != len && (pos - MetaNote.intToMetaNoteDuration(curBottomNote.duration)) - curBottomNote.position > despawnDist) {
 			parent.notesHit.remove(curBottomNote);
 			parent.notesMissed.remove(curBottomNote);
 			parent.notesHeld.remove(curBottomNote);

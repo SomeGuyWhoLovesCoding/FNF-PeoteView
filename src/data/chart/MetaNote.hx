@@ -14,7 +14,7 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 	static var SHIFT_MISSED   = 1;
 	static var SHIFT_HELD     = 0;
 
-	static var POSITION_MASK = Int64.shl(1, 40) - 1;
+	static var POSITION_MASK = (Int64.shl(Int64.ofInt(1), 40) - Int64.ofInt(1));
 	static var DURATION_MASK = 0xFFF; // 12 bits
 	static var INDEX_MASK    = 0xF;   // 4 bits
 	static var TYPE_MASK     = 0x1F;  // 5 bits
@@ -44,12 +44,27 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 
 	// Getters
 	inline function get_position():Int64 return (this >> SHIFT_POSITION) & POSITION_MASK;
-	inline function get_duration():Int return ((this.low:Int) >> SHIFT_DURATION) & DURATION_MASK;
-	inline function get_index():Int return ((this.low:Int) >> SHIFT_INDEX) & INDEX_MASK;
-	inline function get_type():Int return ((this.low:Int) >> SHIFT_TYPE) & TYPE_MASK;
-	inline function get_flag():Bool return (((this.low:Int) >> SHIFT_FLAG) & 1) != 0;
-	inline function get_missed():Bool return (((this.low:Int) >> SHIFT_MISSED) & 1) != 0;
-	inline function get_held():Bool return ((this.low:Int) & 1) != 0;
+	inline function get_duration():Int {
+		var v:Int64 = (this >> SHIFT_DURATION) & Int64.ofInt(DURATION_MASK);
+		return v.low;
+	}
+	inline function get_index():Int {
+		var v:Int64 = (this >> SHIFT_INDEX) & Int64.ofInt(INDEX_MASK);
+		return v.low;
+	}
+	inline function get_type():Int {
+		var v:Int64 = (this >> SHIFT_TYPE) & Int64.ofInt(TYPE_MASK);
+		return v.low;
+	}
+	inline function get_flag():Bool {
+		return (((this >> SHIFT_FLAG) & Int64.ofInt(1)).low != 0);
+	}
+	inline function get_missed():Bool {
+		return (((this >> SHIFT_MISSED) & Int64.ofInt(1)).low != 0);
+	}
+	inline function get_held():Bool {
+		return ((this & Int64.ofInt(1)).low != 0);
+	}
 
 	// Setters
 	inline function set_flag(value:Bool):Bool {
@@ -85,7 +100,7 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 	}
 
 	inline static function intToMetaNoteDuration(i:Int):Int64 {
-		return Tools.betterInt64FromFloat(i * 80);
+		return floatToMetaNotePosition(i * 4);
 	}
 
 	// Underlying value
