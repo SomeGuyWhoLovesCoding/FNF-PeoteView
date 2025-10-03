@@ -6,7 +6,6 @@ package structures.gameplay;
 	It is responsible for spawning, drawing, and updating the notes and sustains.
 	It also handles the note hit registration and sustain inputs.
 	This class is used in the PlayField class to handle the notes and sustains.
-	I also want to rewrite this eventually cuz it still has a bug I CAN'T ever catch no debug builds.
 	@since Development
 **/
 @:publicFields
