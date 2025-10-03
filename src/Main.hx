@@ -341,7 +341,7 @@ class Main extends Application
 	override function render(context:RenderContext) {
 		super.render(context);
 
-		if (RenderingMode.enabled && (playField != null && !playField.songEnded)) {
+		if (RenderingMode.enabled && (playField != null && !playField.songEnded && !playField.paused)) {
 			playField.update(1000 / 60);
 			RenderingMode.pipeFrame();
 		}

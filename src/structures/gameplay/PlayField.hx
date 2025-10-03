@@ -266,10 +266,10 @@ class PlayField implements State {
 		Pauses the playfield.
 	**/
 	function pause() {
-		if (disposed || paused || died) return;
+		if (disposed || paused || died || RenderingMode.enabled) return;
 
 		pauseScreen.open();
-		if (!RenderingMode.enabled && songStarted) Mixer.stopMusic();
+		if (songStarted) Mixer.stopMusic();
 		if (noteSystem != null) noteSystem.resetPlayerStrumlines();
 		if (inputSystem != null) inputSystem.removeEvents();
 
