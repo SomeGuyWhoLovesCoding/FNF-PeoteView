@@ -314,7 +314,7 @@ class Main extends Application
 						if (!pauseScreen.disposed) pauseScreen.update(newDeltaTime);
 					}
 
-					if (!playField.paused) {
+					if (!playField.paused && !RenderingMode.enabled) {
 						playField.update(newDeltaTime);
 					}
 				}
@@ -342,6 +342,7 @@ class Main extends Application
 		super.render(context);
 
 		if (RenderingMode.enabled && (playField != null && !playField.songEnded)) {
+			playField.update(1000 / 60);
 			RenderingMode.pipeFrame();
 		}
 		//Sys.println("render is decoupled?");

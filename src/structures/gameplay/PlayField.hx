@@ -19,6 +19,12 @@ class PlayField implements State {
 	function new(path:String) {
 		//if (RenderingMode.enabled) renderTime = haxe.Timer.stamp();
 		Chart.load(path);
+
+		if (RenderingMode.enabled) {
+			//renderTime = haxe.Timer.stamp();
+			RenderingMode.initRender();
+			//lime.app.Application.current.window.onClose.add(RenderingMode.stopRender);
+		}
 	}
 
 	function init(roof:CustomDisplay, display:CustomDisplay, view:CustomDisplay) {
@@ -27,12 +33,6 @@ class PlayField implements State {
 		this.view = view;
 
 		create(roof, display, Chart.header.mania);
-
-		if (RenderingMode.enabled) {
-			//renderTime = haxe.Timer.stamp();
-			RenderingMode.initRender();
-			//lime.app.Application.current.window.onClose.add(RenderingMode.stopRender);
-		}
 	}
 
 	var score:Int128 = 0;
@@ -164,7 +164,6 @@ class PlayField implements State {
 		songPosition = -conductor.crochet * 4.5;
 
 		var pos = MetaNote.floatToMetaNotePosition(songPosition);
-		Sys.print('Song Position (main): $songPosition, MetaNote Song Position: $pos');
 
 		field = new Field(this);
 		inputSystem = new InputSystem(mania, this);
