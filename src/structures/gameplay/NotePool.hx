@@ -50,6 +50,8 @@ class NotePool {
 			var inactiveObject = inactiveNotes.pop();
 			if (inactiveObject == null) inactiveObject = new Note(-9999, -9999, 0, 0);
 			inactiveObject.initialAlpha = Note.defaultAlpha;
+			inactiveObject.addedAlpha = 0;
+			inactiveObject.notesInOne = 1;
 			inactiveObject.data = n;
 			allocated = inactiveObject;
 			notes.set(n, inactiveObject);
@@ -58,7 +60,6 @@ class NotePool {
 		allocated.data = n;
 		allocated.changeID(id);
 		allocated.toNote();
-		allocated.notesInOne = 1;
 
 		return allocated;
 	}
@@ -100,6 +101,7 @@ class NotePool {
 		var allocated:Note = notes.get(n);
 		if (notes.remove(n)) {
 			allocated.initialAlpha = 1;
+			allocated.addedAlpha = 0;
 			allocated.x = -9999;
 			allocated.y = -9999;
 			inactiveNotes.push(allocated);

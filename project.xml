@@ -45,7 +45,7 @@
 	<!-- set hashlink version so that Int64Map is included from Std -->
 	<haxedef name="hl_ver" value="1.13.0" />
 
-	<haxedef name="HXCPP_CHECK_POINTER" if="release" />
+	<!--<haxedef name="HXCPP_CHECK_POINTER" if="release" />-->
 	<haxedef name="HXCPP_STACK_LINE" if="release" />
 	<haxedef name="HXCPP_STACK_TRACE" if="release" />
 	<!--<haxelib name="hxcpp-debug-server" if="debug" />-->

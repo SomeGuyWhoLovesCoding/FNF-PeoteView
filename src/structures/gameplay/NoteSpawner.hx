@@ -56,7 +56,7 @@ class NoteSpawner {
 		cullTop(pos);
 		cullBottom(pos);
 
-		Sys.println('Top $top bottom $bottom');
+		//Sys.println('Top $top bottom $bottom');
 
 		var i = bottom;
 
@@ -68,11 +68,6 @@ class NoteSpawner {
 		var prev:Null<MetaNote> = null;
 		while (i < top) {
 			var n = File.getNote(i);
-			var position = n.position;
-			var duration = n.duration;
-			var index = n.index;
-			var type = n.type;
-			//trace('Position: $position, Duration: $duration, Index: $index, Type: $type');
 
 			var ghost = prev.position == n.position && prev.index == n.index && prev.type == n.type;
 			var lastDiff = diff;
@@ -83,6 +78,7 @@ class NoteSpawner {
 			//if (noteSpr != null) Sys.println(noteSpr.scale == receptor.scale);
 			var requirementsForNoteOverlapSimulationBS = noteSpr != null
 				&& floorByPixels(lastNoteY) == floorByPixels(noteY) // Well that's new
+				//&& (prev.position == n.position)
 				&& (prev.index == n.index && prev.type == n.type)
 				&& (noteSpr.r == 0 /* 0 is the default angle for the note sprite */)
 				//&& (noteSpr.w == receptor.w && noteSpr.h == receptor.h)
@@ -104,7 +100,7 @@ class NoteSpawner {
 			//Sys.println(requirementsForNoteOverlapSimulationBS);
 
 			if (requirementsForNoteOverlapSimulationBS) {
-				noteSpr.addedAlpha = parent.notesMissed.get(n) ? Note.defaultMissAlpha : Note.defaultAlpha;
+				noteSpr.addedAlpha += parent.notesMissed.get(n) ? Note.defaultMissAlpha : Note.defaultAlpha;
 				noteSpr.notesInOne++;
 				prev = n;
 				++i;
