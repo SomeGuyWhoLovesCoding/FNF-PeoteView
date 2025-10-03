@@ -55,7 +55,7 @@ class RenderingMode {
 			'assets/videos/rendered/' + songName + '.mp4' // END (FILEPATH)
 		]);
 
-		lime.app.Application.current.window.renderFrameRate = 0;
+		lime.app.Application.current.window.frameRate = 0;
 		renderTime = haxe.Timer.stamp();
 		started = true;
 		Sys.println("Rendering Mode System - Started!");
@@ -82,7 +82,7 @@ class RenderingMode {
 
 		started = false;
 
-		lime.app.Application.current.window.renderFrameRate = 60;
+		lime.app.Application.current.window.frameRate = SaveData.state.graphics.frameRate;
 		if (process != null) {
 			if (process.stdin != null)
 				process.stdin.close();
