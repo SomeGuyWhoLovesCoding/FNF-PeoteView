@@ -55,7 +55,7 @@ class NoteSpawner {
 		cullTop(pos);
 		cullBottom(pos);
 
-		//Sys.println('Top $top bottom $bottom');
+		Sys.println('Top $top bottom $bottom');
 
 		var i = bottom;
 
@@ -81,7 +81,7 @@ class NoteSpawner {
 
 			//if (noteSpr != null) Sys.println(noteSpr.scale == receptor.scale);
 			var requirementsForNoteOverlapSimulationBS = noteSpr != null
-				&& floorByPixels(lastNoteY) == floorByPixels(noteY)
+				&& floorByPixels(lastNoteY) == floorByPixels(noteY) // Well that's new
 				&& (prev.index == n.index && prev.type == n.type)
 				&& (noteSpr.r == 0 /* 0 is the default angle for the note sprite */)
 				//&& (noteSpr.w == receptor.w && noteSpr.h == receptor.h)
