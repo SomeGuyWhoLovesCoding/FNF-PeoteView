@@ -15,6 +15,7 @@ class Strumline {
 	var botHitsToCheck(default, null):Array<Bool>;
 	var playerHitsToCheck(default, null):Array<Bool>;
 	var buffer(default, null):Array<Note>;
+	var fakeOverlapStorage(default, null):Array<Float>; // This is for fake note overlapping!!! So it renders faster instead of just checking one by one without relying on an index based approach like this. Thanks - sgwl
 
 	var x(default, set):Int;
 	var y(default, set):Int;
@@ -81,6 +82,7 @@ class Strumline {
 		botHitsToCheck = [];
 		playerHitsToCheck = [];
 		buffer = [];
+		fakeOverlapStorage = [];
 
 		this.parent = parent;
 

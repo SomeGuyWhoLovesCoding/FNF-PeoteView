@@ -318,7 +318,7 @@ class PlayField implements State {
 
 		combo += notesInOne;
 
-		health += healthGain[lane];
+		health += healthGain[lane] * Tools.int64ToFloat(notesInOne);
 		if (health > 1) {
 			health = 1;
 		}
@@ -366,7 +366,7 @@ class PlayField implements State {
 		var index = 1 + lane;
 		if (index > 0 && index <= Mixer.trackCount) Mixer.changeTrackVolume(index, 0);
 
-		health -= healthLoss[lane];
+		health -= healthLoss[lane] * Tools.int64ToFloat(notesInOne);
 
 		combo = 0;
 		score -= 50 * notesInOne;

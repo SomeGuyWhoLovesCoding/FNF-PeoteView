@@ -34,14 +34,14 @@ class NoteSpawner {
 		curTopNote = File.getNote(0);
 		curBottomNote = File.getNote(0);
 
-		/*or (i in 0...File.getLength().low) {
+		for (i in 0.../*File.getLength().low*/200) {
 			var note = File.getNote(i);
 			var position = note.position;
 			var duration = note.duration;
 			var index = note.index;
 			var type = note.type;
 			trace('Position: $position, Duration: $duration, Index: $index, Type: $type');
-		}*/
+		}
 	}
 
 	/**
@@ -73,31 +73,23 @@ class NoteSpawner {
 			var lastDiff = diff;
 			var lane = parent.noteTypeFunctionality.exists(n.type) ? 1 : (n.type % parent.strumlines.length);
 			var receptor = parent.strumlines[lane].buffer[n.index];
-			var lastNoteY = noteY;
+			var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
 
 			//if (noteSpr != null) Sys.println(noteSpr.scale == receptor.scale);
 			var requirementsForNoteOverlapSimulationBS = noteSpr != null
-				&& floorByPixels(lastNoteY) == floorByPixels(noteY) // Well that's new
+				&& floorByPixels(fakeOverlapStorage[prev.index]) == floorByPixels(fakeOverlapStorage[n.index]) // Well that's new
 				//&& (prev.position == n.position)
-				&& (prev.index == n.index && prev.type == n.type)
+				&& (prev.type == n.type)
 				&& (noteSpr.r == 0 /* 0 is the default angle for the note sprite */)
 				//&& (noteSpr.w == receptor.w && noteSpr.h == receptor.h)
 				&& (noteSpr.scale == receptor.scale)
 				&& (prev.duration == n.duration)
 			&& noteSpr.x == receptor.x;
-			/*Sys.println('overlap check: '
-				+ 'noteSpr!=null:' + (noteSpr != null) + ', '
-				+ 'floorY:' + (floorByPixels(lastNoteY) == floorByPixels(noteY)) + ', '
-				+ 'sameIndexType:' + (prev.index == n.index && prev.type == n.type) + ', '
-				+ 'angle:' + (noteSpr != null && noteSpr.r == 0) + ', '
-				+ 'size:' + (noteSpr != null && noteSpr.w == receptor.w && noteSpr.h == receptor.h) + ', '
-				+ 'scale:' + (noteSpr != null && noteSpr.scale == receptor.scale) + ', '
-				+ 'duration:' + (prev.duration == n.duration) + ', '
-			+ 'x:' + (noteSpr != null && noteSpr.x == receptor.x));*/
-			/*if (noteSpr != null) Sys.println('size check: noteSpr.w=${noteSpr.w}, receptor.w=${receptor.w}, '
-				+ 'noteSpr.h=${noteSpr.h}, receptor.h=${receptor.h}');*/
 
 			//Sys.println(requirementsForNoteOverlapSimulationBS);
+
+			diff = MetaNote.metaNotePositionToSongTime((n.position - pos)) * scrollSpeed;
+			fakeOverlapStorage[n.index] = receptor.y + Math.floor(diff);
 
 			if (requirementsForNoteOverlapSimulationBS) {
 				noteSpr.addedAlpha += parent.notesMissed.get(n) ? Note.defaultMissAlpha : Note.defaultAlpha;
@@ -106,8 +98,6 @@ class NoteSpawner {
 				++i;
 				continue;
 			} else {
-				diff = MetaNote.metaNotePositionToSongTime((n.position - pos)) * scrollSpeed;
-				noteY = receptor.y + Math.floor(diff);
 				if (!ghost) noteSpr = parent.drawNote(pos, n, diff);
 				else noteSpr.notesInOne++;
 				prev = n;
