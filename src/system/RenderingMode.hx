@@ -10,9 +10,11 @@ class RenderingMode {
 	private static var ffmpegExists(default, null):Bool;
 
 	static var process:Process;
-	static var enabled:Bool = false;
+	static var enabled:Bool = true;
 
 	static var songName:String;
+
+	static var renderTime(default, null):Float;
 
 	static function initRender()
 	{
@@ -52,7 +54,9 @@ class RenderingMode {
 			'assets/videos/rendered/' + songName + '.mp4' // END (FILEPATH)
 		]);
 
-		Sys.println("Rendering Mode System - Done!");
+		lime.app.Application.current.window.frameRate = 1000;
+		renderTime = haxe.Timer.stamp();
+		Sys.println("Rendering Mode System - Started!");
 	}
 
 	static var bytes:haxe.io.UInt8Array;
@@ -74,6 +78,7 @@ class RenderingMode {
 		if (!enabled)
 			return;
 
+		lime.app.Application.current.window.frameRate = SaveData.state.graphics.frameRate;
 		if (process != null) {
 			if (process.stdin != null)
 				process.stdin.close();
@@ -81,7 +86,8 @@ class RenderingMode {
 			process.close();
 			process.kill();
 
-			Sys.println("Rendering Mode System - Finished!");
+			renderTime = haxe.Timer.stamp() - renderTime;
+			Sys.println('Rendering Mode System - Finished Rendering in just ${Tools.formatTime(renderTime)}.');
 		}
 	}
 }

@@ -17,6 +17,7 @@ class PlayField implements State {
 	var view(default, null):CustomDisplay;
 
 	function new(path:String) {
+		//if (RenderingMode.enabled) renderTime = haxe.Timer.stamp();
 		Chart.load(path);
 	}
 
@@ -26,7 +27,12 @@ class PlayField implements State {
 		this.view = view;
 
 		create(roof, display, Chart.header.mania);
-		if (RenderingMode.enabled) RenderingMode.initRender();
+
+		if (RenderingMode.enabled) {
+			//renderTime = haxe.Timer.stamp();
+			RenderingMode.initRender();
+			//lime.app.Application.current.window.onClose.add(RenderingMode.stopRender);
+		}
 	}
 
 	var score:Int128 = 0;
@@ -255,10 +261,6 @@ class PlayField implements State {
 		view.shake(viewShake.x, viewShake.y);
 
 		songPosition -= latencyCompensation;
-
-		if (RenderingMode.enabled && !songEnded) {
-			RenderingMode.pipeFrame();
-		}
 	}
 
 	/**
@@ -448,6 +450,7 @@ class PlayField implements State {
 		Sys.println("Game Over");
 
 		if (RenderingMode.enabled) {
+			//lime.app.Application.current.window.onClose.remove(RenderingMode.stopRender);
 			RenderingMode.stopRender();
 		}
 

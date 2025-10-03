@@ -130,13 +130,22 @@ class Mixer {
 
 	static function update(playField:PlayField, deltaTime:Float):Void {
 		if (playField != null) {
-			if (playField.songStarted && (isStopped() || (RenderingMode.enabled && playField.songPosition > length)) && !playField.songEnded) {
-				Sys.println('Stopping song playback due to stop condition or rendering mode.');
-				playField.onStopSong.dispatch(Chart.header);
+			if (!playField.songEnded) {
+				if (RenderingMode.enabled && playField.songPosition > length) {
+					Sys.println('Stopping song playback due to rendering mode.');
+					playField.onStopSong.dispatch(Chart.header);
+				} else if (playField.songStarted && isStopped() && !playField.songEnded) {
+					Sys.println('Stopping song playback due to stop condition.');
+					playField.onStopSong.dispatch(Chart.header);
+				}
 			}
 
 			if (!playField.songStarted || playField.songEnded || RenderingMode.enabled) {
 				playField.songPosition += deltaTime;
+
+				if (RenderingMode.enabled && !playField.songEnded) {
+					RenderingMode.pipeFrame();
+				}
 			} else {
 				updateSmoothMusicTime(deltaTime, playField);
 			}
