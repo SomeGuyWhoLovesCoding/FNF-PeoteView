@@ -77,7 +77,7 @@ class NoteSpawner {
 
 			//if (noteSpr != null) Sys.println(noteSpr.scale == receptor.scale);
 			var requirementsForNoteOverlapSimulationBS = noteSpr != null
-				&& floorByPixels(fakeOverlapStorage[prev.index]) == floorByPixels(fakeOverlapStorage[n.index]) // Well that's new
+				&& floorByPixels(fakeOverlapStorage[n.index]) == floorByPixels(fakeOverlapStorage[prev.index]) // Well that's new
 				//&& (prev.position == n.position)
 				&& (prev.type == n.type)
 				&& (noteSpr.r == 0 /* 0 is the default angle for the note sprite */)
