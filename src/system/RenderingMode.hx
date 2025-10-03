@@ -11,6 +11,7 @@ class RenderingMode {
 
 	static var process:Process;
 	static var enabled:Bool = true;
+	static var started:Bool = false;
 
 	static var songName:String;
 
@@ -54,15 +55,16 @@ class RenderingMode {
 			'assets/videos/rendered/' + songName + '.mp4' // END (FILEPATH)
 		]);
 
-		lime.app.Application.current.window.frameRate = 1000;
+		lime.app.Application.current.window.frameRate = 60;
 		renderTime = haxe.Timer.stamp();
+		started = true;
 		Sys.println("Rendering Mode System - Started!");
 	}
 
 	static var bytes:haxe.io.UInt8Array;
 	static function pipeFrame()
 	{
-		if (!enabled || !ffmpegExists || process == null)
+		if (!enabled || !started || !ffmpegExists || process == null)
 			return;
 
 		if (bytes == null) {
@@ -75,8 +77,10 @@ class RenderingMode {
 
 	static function stopRender()
 	{
-		if (!enabled)
+		if (!enabled && !started)
 			return;
+
+		started = false;
 
 		lime.app.Application.current.window.frameRate = SaveData.state.graphics.frameRate;
 		if (process != null) {

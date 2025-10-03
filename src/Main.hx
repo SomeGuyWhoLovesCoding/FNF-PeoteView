@@ -340,6 +340,10 @@ class Main extends Application
 
 	override function render(context:RenderContext) {
 		super.render(context);
+
+		if (RenderingMode.enabled && (playField != null && !playField.songEnded)) {
+			RenderingMode.pipeFrame();
+		}
 		//Sys.println("render is decoupled?");
 	}
 
