@@ -158,7 +158,7 @@ class InputSystem {
 
 		if (parent.ready && !parent.botplay
 			&& !isInGameOver && !parent.songEnded
-			&& !parent.paused && code == game.reset) {
+			&& !parent.paused && code == game.reset && !RenderingMode.enabled) {
 			parent.gameOver(Chart.header, 1);
 			return;
 		}
