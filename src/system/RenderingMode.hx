@@ -89,9 +89,9 @@ class RenderingMode {
 
 			process.close();
 			process.kill();
-
-			renderTime = haxe.Timer.stamp() - renderTime;
-			Sys.println('Rendering Mode System - Finished Rendering in just ${Tools.formatTime(renderTime)}.');
 		}
+
+		renderTime = haxe.Timer.stamp() - renderTime;
+		Sys.println('Rendering Mode System - Finished Rendering in just ${Tools.formatTime(renderTime * 1000)}.');
 	}
 }

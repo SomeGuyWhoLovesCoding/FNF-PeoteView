@@ -1,0 +1,24 @@
+Title: Traumatism
+Arist: N/A
+Genre: N/A
+Speed: 22.05
+BPM: 498
+Time Signature: 4/4
+Stage: ntw
+Instrumental: assets/songs/traumatism/Inst.flac
+Voices:
+Mania: 4
+Difficulty: #8
+Game Over:
+Theme: vanilla
+BPM: 100
+Characters:
+invalid, enemy
+pos -700 300
+cam 0 45
+gf, other
+pos -100 300
+cam 0 45
+bf, player
+pos 200 300
+cam 0 45
