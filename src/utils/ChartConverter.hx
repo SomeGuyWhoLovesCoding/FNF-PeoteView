@@ -2,6 +2,7 @@ package utils;
 
 import sys.io.File;
 import haxe.Json;
+import sys.FileSystem;
 
 import sys.io.FileOutput;
 import sys.io.FileInput;
@@ -15,27 +16,63 @@ import sys.io.FileInput;
 @:publicFields
 class ChartConverter
 {
+	private static var multichartMode(default, null):Bool = false;
+	private static var alreadywroteheader(default, null):Bool = false;
+	private static var canClose(default, null):Bool = true;
+	private static var chart(default, null):FileOutput;
+	private static var events(default, null):FileOutput;
+	private static var header(default, null):FileOutput;
+	private static var fileContents(default, null):String = "";
+	private static var multichartPath(default, null):String = "";
+	private static var multichartCBINPath(default, null):String = "";
+	private static var metaNotes(default, null):Array<MetaNote> = [];
+
 	/**
 		Converts a base-game chart file to Funkin' View's chart format.
 		I don't recommend even using this as it's old and potentially unstable.
 		@param path The specified path you want to convert your chart to.
 	**/
 	static function baseGame(path:String) {
-		var header:FileOutput = File.write('$path/header.txt');
-		var events:FileOutput = File.write('$path/events.txt');
-		var chart: FileOutput = File.write('$path/chart.cbin');
-		var metaNotes:Array<MetaNote> = [];
+		if (!multichartMode) {
+			Sys.println("Welcome to the Funkin' View chart converter!");
+			Sys.println("Converting base-game chart to CBIN...");
+			Sys.println("No events from the chart will be converted since the Funkin' View chart format has its own dedicated event format.");
+			Sys.println("Parsing json(s)...");
+		}
 
-		trace("Welcome to the Funkin' View chart converter!");
-		trace("Converting base-game chart to CBIN...");
-		trace("No events from the chart will be converted since the Funkin' View chart format has its own dedicated event format.");
-		trace("Parsing json...");
+		// Loop recursively
+		if (FileSystem.isDirectory('$path/charts')) {
+			multichartMode = true;
+			multichartPath = path;
+			multichartCBINPath = '$path/chart.cbin';
+			var directoryList = FileSystem.readDirectory('$path/charts');
+			for (i in 0...directoryList.length) {
+				var subPath = '$path/charts/${i+1}.json';
+				Sys.println(subPath);
+				if (!FileSystem.exists(subPath)) continue;
+				fileContents = File.getContent(subPath);
+				Sys.println('$subPath contents success!');
+				canClose = i != directoryList.length - 1;
+				baseGame(subPath);
+				alreadywroteheader = true;
+				Sys.println('$subPath Done! (${i+1}/${directoryList.length})');
+			}
+			multichartPath = "";
+			canClose = true;
+			return;
+		}
 
-		var fileContents = "";
-		try {
-			fileContents = File.getContent('$path/chart.json');
-		} catch (e) {
-			throw "There must be a chart.json.";
+		if (header == null && !alreadywroteheader) header = File.write('${multichartMode ? multichartPath : path}/header.txt');
+
+		chart = File.write(multichartMode ? multichartCBINPath : '$path/chart.cbin');
+
+		if (!multichartMode) {
+			metaNotes.resize(0);
+			try {
+				fileContents = File.getContent('$path/chart.json');
+			} catch (e) {
+				throw "There must be a single chart.json.";
+			}
 		}
 
 		var json = Json.parse(fileContents);
@@ -53,7 +90,7 @@ class ChartConverter
 			gfVersion = "gf";
 		}
 
-		trace("Adding base notes before sorting new ones...");
+		Sys.println("Adding base notes before sorting new ones...");
 
 		try {
 			var notes:Array<Dynamic> = song.notes;
@@ -70,7 +107,8 @@ class ChartConverter
 					mania = 4;
 			}
 
-			var registeredSexOffender = false;
+			if (!alreadywroteheader) writeHeaderString(multichartMode ? multichartPath : path, song, stage, gfVersion, mania);
+
 			var count = 0;
 			for (section in notes) {
 				var sectionNotes:Array<Dynamic> = section.sectionNotes;
@@ -96,8 +134,47 @@ class ChartConverter
 					metaNotes.push(newNote);
 				}
 			}
+		} catch (e) {
+			trace(haxe.CallStack.toString(haxe.CallStack.exceptionStack()), e);
+			Sys.println("This may be an invalid base game chart format or there\'s an error in the file.");
+		}
 
-			header.writeString('Title: ${song.song}
+		if (!canClose) {
+			Sys.println("The real fun.");
+
+			// Now for the REAL fun.
+			metaNotes.sort((a, b) -> a.position < b.position ? -1 : (a.position > b.position ? 1 : 0));
+
+			for (metaNote in metaNotes) {
+				/*var position = metaNote.position;
+				var duration = metaNote.duration;
+				var index = metaNote.index;
+				var type = metaNote.type;
+				trace('MetaNote Position: $position, Duration: $duration, Index: $index, Type: $type');*/
+				var num = metaNote.toNumber();
+				chart.writeInt32(num.low);
+				chart.writeInt32(num.high);
+			}
+		}
+
+		if (!multichartMode) {
+			header.close();
+			header = null;
+		}
+
+		if (canClose) {
+			chart.close();
+			chart = null;
+		}
+	}
+
+	// just a lil helper function to write a header file
+	private static function writeHeaderString(path:String, song:Dynamic, stage:String, gfVersion:String, mania:Int) {
+		var instPath:String = '$path/Inst.flac';
+		if (!FileSystem.exists(instPath)) throw 'No inst path! $instPath not found.';
+		var voicesPath:String = '$path/Voices.flac';
+		if (!FileSystem.exists(voicesPath)) voicesPath = '';
+		header.writeString('Title: ${song.song}
 Arist: N/A
 Genre: N/A
 Speed: ${song.speed * 0.45}
@@ -121,30 +198,6 @@ cam 0 45
 ${song.player1}, player
 pos 200 300
 cam 0 45');
-		} catch (e) {
-			trace(haxe.CallStack.toString(haxe.CallStack.exceptionStack()), e);
-			trace("This may be an invalid base game chart format or there\'s an error in the file.");
-		}
-
-		trace("The real fun.");
-
-		// Now for the REAL fun.
-		metaNotes.sort((a, b) -> a.position < b.position ? -1 : (a.position > b.position ? 1 : 0));
-
-		for (metaNote in metaNotes) {
-			/*var position = metaNote.position;
-			var duration = metaNote.duration;
-			var index = metaNote.index;
-			var type = metaNote.type;
-			trace('MetaNote Position: $position, Duration: $duration, Index: $index, Type: $type');*/
-			var num = metaNote.toNumber();
-			chart.writeInt32(num.low);
-			chart.writeInt32(num.high);
-		}
-
-		chart.close();
-
-		header.close();
 	}
 }
 

@@ -24,9 +24,9 @@ class Chart {
 	**/
 	static function load(path:String) {
 		destroyed = false;
-		Sys.println('Chart.hx: Parsing chart from folder...');
+		Sys.println('Chart.hx: Parsing chart(s) from folder...');
 
-		if (FileSystem.exists('$path/chart.json') && !FileSystem.exists('$path/chart.cbin')) {
+		if (FileSystem.exists('$path/chart.json') && (!FileSystem.exists('$path/chart.cbin')) || FileSystem.exists('$path/charts')) {
 			ChartConverter.baseGame(path);
 		}
 
