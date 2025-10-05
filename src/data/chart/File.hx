@@ -56,6 +56,8 @@ extern class File {
 	}
 	@:native("removeNotes") static function _removeNotes(values:StdVectorInt64):Void;
 
+	@:native("setNote") static function setNote(atIndex:Int64, value:Int64):Void; // For the flags
+
 	/**
 		Find the index of a note by its time using binary search.
 		Returns the exact index if found, or the index where the note should be inserted if not found.
@@ -150,6 +152,8 @@ class File {
 	}
 	@:hlNative("chart_file", "insertNote") static function _insertNote(atIndex:hl.I64, value:hl.I64):Void {}
 	@:hlNative("chart_file", "removeNote") public static function removeNote(atIndex:hl.I64):Void {}
+
+	@:hlNative("chart_file", "setNote") static function setNote(atIndex:hl.I64, value:hl.I64):Void {}; // For the flags
 
 	inline public static function insertNotes(arr:Array<MetaNote>):Void {
 		// Turns out it wasn't from here and inside `removeNotes`. It's from the array inserts being slow. WOW am I smoking.

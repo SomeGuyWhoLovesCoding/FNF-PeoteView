@@ -68,18 +68,20 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 
 	// Setters
 	inline function set_flag(value:Bool):Bool {
-		var mask = 1 << SHIFT_FLAG;
-		this = (this & ~mask) | ((value ? 1 : 0) << SHIFT_FLAG);
+		var mask:Int64 = Int64.ofInt(1) << SHIFT_FLAG;
+		this = (this & ~mask) | (Int64.ofInt(value ? 1 : 0) << SHIFT_FLAG);
 		return value;
 	}
+
 	inline function set_missed(value:Bool):Bool {
-		var mask = 1 << SHIFT_MISSED;
-		this = (this & ~mask) | ((value ? 1 : 0) << SHIFT_MISSED);
+		var mask:Int64 = Int64.ofInt(1) << SHIFT_MISSED;
+		this = (this & ~mask) | (Int64.ofInt(value ? 1 : 0) << SHIFT_MISSED);
 		return value;
 	}
+
 	inline function set_held(value:Bool):Bool {
-		var mask = 1 << SHIFT_HELD;
-		this = (this & ~mask) | ((value ? 1 : 0) << SHIFT_HELD);
+		var mask:Int64 = Int64.ofInt(1) << SHIFT_HELD;
+		this = (this & ~mask) | (Int64.ofInt(value ? 1 : 0) << SHIFT_HELD);
 		return value;
 	}
 
