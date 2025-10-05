@@ -48,10 +48,6 @@ class NoteSystem {
 	var notePool(default, null):NotePool;
 	var strumlines(default, null):Array<Strumline>;
 
-	var notesHit(default, null):MetaNoteMap<Bool>;
-	var notesMissed(default, null):MetaNoteMap<Bool>;
-	var notesHeld(default, null):MetaNoteMap<Bool>;
-
 	var noteTypeFunctionality(default, null):Map<Int, Int->Int->Bool->Void>;
 
 	var parent(default, null):PlayField;
@@ -61,9 +57,6 @@ class NoteSystem {
 	 * @param parent The parent of this class.
 	**/
 	function new(parent:PlayField) {
-		notesHit = new MetaNoteMap<Bool>();
-		notesMissed = new MetaNoteMap<Bool>();
-		notesHeld = new MetaNoteMap<Bool>();
 		noteTypeFunctionality = new Map<Int, Int->Int->Bool->Void>();
 
 		this.parent = parent;
@@ -92,7 +85,7 @@ class NoteSystem {
 
 		setScrollSpeed(Chart.header.speed);
 
-		update(MetaNote.floatToMetaNotePosition(parent.songPosition));
+		update(_lastPos = MetaNote.floatToMetaNotePosition(parent.songPosition));
 	}
 
 	private var _lastPos(default, null):Int64; // for adaptive bot timer
@@ -131,8 +124,9 @@ class NoteSystem {
 	 * Note hitreg and sustain inputs are handled here.
 	 * @param pos The song's position in note position format.
 	 * @param note The meta note you want to draw the note to.
+	 * @param id The index the note belongs to.
 	**/
-	function drawNote(pos:Int64, note:MetaNote, diff:Float):Note {
+	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64):Note {
 		var index = note.index;
 		var lane = 0;
 		var duration = note.duration;
@@ -149,14 +143,14 @@ class NoteSystem {
 		var rec = strumline.buffer[index];
 		var id = parent.inputSystem.receptorIds[index];
 
-		var noteSpr = notePool.newNote(id, note);
+		var noteSpr = notePool.newNote(id, note, _id);
 		var sustainSpr = duration != 0 ? notePool.newSustain(id, note) : null;
 		var sustainExists = duration != 0;
 
 		var leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
-		var isHit:Bool = notesHit.exists(note) ? notesHit.get(note) : false;
-		var isMissed:Bool = notesMissed.exists(note) ? notesMissed.get(note) : false;
-		var isHeld:Bool = notesHeld.exists(note) ? notesHeld.get(note) : false;
+		var isHit:Bool = note.flag;
+		var isMissed:Bool = note.missed;
+		var isHeld:Bool = note.held;
 
 		if (parent.downScroll) diff = -diff;
 
@@ -181,11 +175,14 @@ class NoteSystem {
 				if ((!isMissed && diff < parent.hitbox && !noteToHitExists) ||
 					(noteToHitExists && pos - hitPos > (position - hitPos) >> 1)) {
 					strumline.notesToHit[index] = note;
+					strumline.notesToHit_indexes[index] = _id;
 				}
 
 				if (diff < -parent.hitbox && !isMissed) {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
-					notesMissed.set(note, isMissed = true);
+					var n = note;
+					n.missed = isMissed = true;
+					File.setNote(_id, n);
 
 					var type = note.type;
 					if (noteTypeFunctionality.exists(type)) {
@@ -197,11 +194,14 @@ class NoteSystem {
 					if (sustainExists && !isHeld) {
 						sustainSpr.c.aF = Sustain.defaultMissAlpha;
 						sustainSpr.c.luminanceF = Sustain.defaultMissAlpha;
-						notesHeld.set(note, isHeld = true);
+						var n = note;
+						n.held = isHeld = true;
+						File.setNote(_id, n);
 						parent.onSustainRelease.dispatch(note);
 					}
 
 					strumline.notesToHit[index] = null;
+					strumline.notesToHit_indexes[index] = 0;
 
 					var hud = parent.hud;
 					if (SaveData.state.preferences.ratingPopup && hud != null) {
@@ -215,7 +215,10 @@ class NoteSystem {
 		else {
 			// Handle opponent note hit (non-sustain)
 			if (!isHit && diff < 0) {
-				notesHit.set(note, isHit = true);
+				var n = note;
+				n.flag = isHit = true;
+				File.setNote(_id, n);
+				//Sys.println('$id ' + File.getNote(_id).flag);
 
 				// Confirm the receptor
 				if (!rec.confirmed()) rec.confirm();
@@ -255,8 +258,11 @@ class NoteSystem {
 				}
 
 				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainSpr.length) - 70) && !isHeld) {
-					notesHeld.set(note, isHeld = true);
+					var n = note;
+					n.held = isHeld = true;
+					File.setNote(_id, n);
 					strumline.sustainsToHold[index] = null;
+					strumline.sustainsToHold_indexes[index] = 0;
     				strumline.botHitsToCheck[index] = false; // only for short notes
 
 					if (rec.confirmed()) {
@@ -353,9 +359,5 @@ class NoteSystem {
 
 		display.removeProgram(sustainProg);
 		display.removeProgram(notesProg);
-
-		notesHit.clear();
-		notesMissed.clear();
-		notesHeld.clear();
 	}
 }

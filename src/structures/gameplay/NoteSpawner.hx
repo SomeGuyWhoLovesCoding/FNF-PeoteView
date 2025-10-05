@@ -108,14 +108,14 @@ class NoteSpawner {
 
 			if (requirementsForNoteOverlapSimulationBS) {
 				// treat as overlap: merge into existing sprite
-				noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + (parent.notesMissed.get(n) ? Note.defaultMissAlpha : Note.defaultAlpha), 254);
+				noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + (n.missed ? Note.defaultMissAlpha : Note.defaultAlpha), 254);
 				noteSpr.notesInOne++;
 				prev = n;
 				++i;
 				continue;
 			} else {
 				if (!ghost) {
-					noteSpr = parent.drawNote(pos, n, diff);
+					noteSpr = parent.drawNote(pos, n, diff, i);
 				} else {
 					// ghost -> same exact meta-note (position, index, type) so just increment
 					noteSpr.notesInOne++;
@@ -155,12 +155,8 @@ class NoteSpawner {
 		//Sys.println('Bottom note position ${curBottomNote.position}');
 		//Sys.println('Bottom ${curBottomNote.position - pos}');
 		while (bottom != len && (pos - MetaNote.intToMetaNoteDuration(curBottomNote.duration)) - curBottomNote.position > despawnDist) {
-			parent.notesHit.remove(curBottomNote);
-			parent.notesMissed.remove(curBottomNote);
-			parent.notesHeld.remove(curBottomNote);
-
 			var notePool = parent.notePool;
-			notePool.putNote(curBottomNote);
+			notePool.putNote(curBottomNote, bottom);
 			notePool.putSustain(curBottomNote);
 
 			++bottom;
@@ -177,9 +173,15 @@ class NoteSpawner {
 		var pf = parent.parent;
 		if (pf.disposed || pf.died) return;
 
-		parent.notesHit.clear();
-		parent.notesMissed.clear();
-		parent.notesHeld.clear();
+		var i = bottom;
+		while (i < top) {
+			var note = File.getNote(i);
+			note.flag = false;
+			note.missed = false;
+			note.held = false;
+			File.setNote(i, note);
+			i++;
+		}
 
 		var len = File.getLength();
 		if (len <= 0) return; // no notes, nothing to do

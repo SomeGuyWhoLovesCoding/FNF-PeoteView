@@ -11,7 +11,9 @@ package structures.gameplay;
 @:publicFields
 class Strumline {
 	var notesToHit(default, null):Array<Null<MetaNote>>;
+	var notesToHit_indexes(default, null):Array<Int64>;
 	var sustainsToHold(default, null):Array<Null<MetaNote>>;
+	var sustainsToHold_indexes(default, null):Array<Int64>;
 	var botHitsToCheck(default, null):Array<Bool>;
 	var playerHitsToCheck(default, null):Array<Bool>;
 	var buffer(default, null):Array<Note>;
@@ -54,7 +56,9 @@ class Strumline {
 
 	function set_length(value:Int) {
 		notesToHit.resize(value);
+		notesToHit_indexes.resize(value);
 		sustainsToHold.resize(value);
+		sustainsToHold_indexes.resize(value);
 		botHitsToCheck.resize(value);
 		playerHitsToCheck.resize(value);
 		buffer.resize(value);
@@ -79,7 +83,9 @@ class Strumline {
 
 	function new(x:Int, y:Int, gap:Int, scale:Float, length:Int, parent:NoteSystem) {
 		notesToHit = [];
+		notesToHit_indexes = [];
 		sustainsToHold = [];
+		sustainsToHold_indexes = [];
 		botHitsToCheck = [];
 		playerHitsToCheck = [];
 		buffer = [];
@@ -105,7 +111,7 @@ class Strumline {
 		var noteToHit = notesToHit[index];
 		var rec = buffer[index];
 
-		if (noteToHit != null && !parent.notesMissed.get(noteToHit) && !parent.notesHit.get(noteToHit)) {
+		if (noteToHit != null && !noteToHit.missed && !noteToHit.flag) {
 			var pf = parent.parent;
 			//var spwn = parent.noteSpawner;
 			var type = noteToHit.type;
@@ -118,15 +124,18 @@ class Strumline {
 				rec.confirm();
 			}
 
-			parent.notesHit.set(noteToHit, true);
+			noteToHit.flag = true;
+			File.setNote(notesToHit_indexes[index], noteToHit);
 
 			if (noteToHit.duration > 20) {
 				sustainsToHold[index] = noteToHit;
+				sustainsToHold[index] = notesToHit_indexes[index];
 			}
 
 			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + pf.latencyCompensation);
 			pf.onNoteHit.dispatch(noteToHit, noteToHit.position - posWithLatency, 1);
 			notesToHit[index] = null;
+			notesToHit_indexes[index] = 0;
 		} else {
 			if (!rec.pressed()) {
 				rec.press();
@@ -139,12 +148,14 @@ class Strumline {
 		var rec = buffer[index];
 
 		if (sustainToRelease != null && sustainToRelease.index == index &&
-			(parent.notesHit.get(sustainToRelease) && !parent.notesHeld.get(sustainToRelease))) {
+			(sustainToRelease.flag && !sustainToRelease.held)) {
 			var pf = parent.parent;
 
-			parent.notesHeld.set(sustainToRelease, true);
+			sustainToRelease.held = true;
+			File.setNote(sustainsToHold_indexes[index], sustainToRelease);
 			pf.onSustainRelease.dispatch(sustainToRelease);
 			sustainsToHold[index] = null;
+			sustainsToHold_indexes[index] = 0;
 
 			var hud = pf.hud;
 			if (SaveData.state.preferences.ratingPopup && hud != null) {
@@ -163,11 +174,15 @@ class Strumline {
 
 	function resetInputs() {
 		notesToHit.resize(0);
+		notesToHit_indexes.resize(0);
 		sustainsToHold.resize(0);
+		sustainsToHold_indexes.resize(0);
 		botHitsToCheck.resize(0);
 		playerHitsToCheck.resize(0);
 		notesToHit.resize(length);
+		notesToHit_indexes.resize(length);
 		sustainsToHold.resize(length);
+		sustainsToHold_indexes.resize(length);
 		botHitsToCheck.resize(length);
 		playerHitsToCheck.resize(length);
 	}
@@ -185,11 +200,15 @@ class Strumline {
 	function dispose() {
 		if (notesToHit != null) {
 			while (notesToHit.pop() != null) {}
+			while (notesToHit_indexes.pop() != null) {}
 			notesToHit = null;
+			notesToHit_indexes = null;
 		}
 		if (sustainsToHold != null) {
 			while (sustainsToHold.pop() != null) {}
+			while (sustainsToHold_indexes.pop() != null) {}
 			sustainsToHold = null;
+			sustainsToHold_indexes = null;
 		}
 	}
 }
