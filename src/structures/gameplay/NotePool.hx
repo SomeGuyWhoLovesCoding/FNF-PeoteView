@@ -42,15 +42,9 @@ class NotePool {
 	 * Creates a new note and determines when to add it to note pool or not.
 	 * @param id The index the note sprite (existing or not) should change to.
 	 * @param n The underlying meta note the note sprite's data should be set to.
-     * @param index The index the note belongs to.
 	 */
-	function newNote(id:Int, n:MetaNote, index:Int64) {
+	function newNote(id:Int, n:MetaNote) {
 		var allocated = notes.get(n);
-
-		n.flag = false;
-		n.missed = false;
-		n.held = false;
-		File.setNote(index, n);
 
 		if (allocated == null) {
 			var inactiveObject = inactiveNotes.pop();
@@ -103,14 +97,8 @@ class NotePool {
 	 * Puts a note in its inactive list.
 	 * @param n The underlying meta note in which selects the note sprite to be put in the inactive list.
 	 */
-	function putNote(n:MetaNote, index:Int64) {
+	function putNote(n:MetaNote) {
 		var allocated:Note = notes.get(n);
-
-		n.flag = false;
-		n.missed = false;
-		n.held = false;
-		File.setNote(index, n);
-
 		if (notes.remove(n)) {
 			allocated.initialAlpha = 1;
 			allocated.addedAlpha = 0;
