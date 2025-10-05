@@ -218,7 +218,7 @@ class NoteSystem {
 				var n = note;
 				n.flag = isHit = true;
 				File.setNote(_id, n);
-				//Sys.println('$id ' + File.getNote(_id).flag);
+				//Sys.println('$_id ' + File.getNote(_id).flag);
 
 				// Confirm the receptor
 				if (!rec.confirmed()) rec.confirm();
