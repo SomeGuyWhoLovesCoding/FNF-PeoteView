@@ -266,4 +266,8 @@ class Tools {
 
 		return result;
 	}
+
+	/*static function radixSortInt64(array:Array<Int64>, len:Int64) {
+		
+	}*/
 }
