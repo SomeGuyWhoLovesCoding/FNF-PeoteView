@@ -65,65 +65,65 @@ class NoteSpawner {
 		var noteSpr:Null<Note> = null;
 
 		var prev:Null<MetaNote> = null;
-	while (i < top) {
-		var n = File.getNote(i);
+		while (i < top) {
+			var n = File.getNote(i);
 
-		// lane/receptor/fake storage lookups
-		var lane = parent.noteTypeFunctionality.exists(n.type) ? 1 : (n.type % parent.strumlines.length);
-		var receptor = parent.strumlines[lane].buffer[n.index];
-		var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
+			// lane/receptor/fake storage lookups
+			var lane = parent.noteTypeFunctionality.exists(n.type) ? 1 : (n.type % parent.strumlines.length);
+			var receptor = parent.strumlines[lane].buffer[n.index];
+			var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
 
-		// compute diff/newY for this note FIRST (important!)
-		diff = MetaNote.metaNotePositionToSongTime((n.position - pos)) * scrollSpeed;
-		var newY = receptor.y + Math.floor(diff);
+			// compute diff/newY for this note FIRST (important!)
+			diff = MetaNote.metaNotePositionToSongTime((n.position - pos)) * scrollSpeed;
+			var newY = receptor.y + Math.floor(diff);
 
-		// update fake storage for this index now that we have the current computed Y
-		// (we'll still use prev's stored value to decide overlap)
-		// but delay writing it until after overlap decision? Either way, compare against prev value below.
-		// We'll not overwrite it yet so prev comparison can use the prior prev value:
-		// fakeOverlapStorage[n.index] = newY; // only write after deciding not to merge
+			// update fake storage for this index now that we have the current computed Y
+			// (we'll still use prev's stored value to decide overlap)
+			// but delay writing it until after overlap decision? Either way, compare against prev value below.
+			// We'll not overwrite it yet so prev comparison can use the prior prev value:
+			// fakeOverlapStorage[n.index] = newY; // only write after deciding not to merge
 
-		// safe ghost check (ensure prev exists)
-		var ghost = (prev != null) && prev.position == n.position && prev.index == n.index && prev.type == n.type;
+			// safe ghost check (ensure prev exists)
+			var ghost = (prev != null) && prev.position == n.position && prev.index == n.index && prev.type == n.type;
 
-		// small pixel threshold: how many pixels difference still counts as overlapping
-		// tune this to taste; 0 requires exact same floored pixel, 1 allows a 1-pixel gap, etc.
-		var OVERLAP_PIXEL_THRESHOLD = 0;
+			// small pixel threshold: how many pixels difference still counts as overlapping
+			// tune this to taste; 0 requires exact same floored pixel, 1 allows a 1-pixel gap, etc.
+			var OVERLAP_PIXEL_THRESHOLD = 0;
 
-		// compute prevY only if prev exists
-		var prevY = (prev != null) ? fakeOverlapStorage[prev.index] : -99999;
+			// compute prevY only if prev exists
+			var prevY = (prev != null) ? fakeOverlapStorage[prev.index] : -99999;
 
-		// requirements: only consider fake-overlap if we actually have a note sprite and a prev to compare with
-		var requirementsForNoteOverlapSimulationBS = noteSpr != null
-			&& prev != null
-			&& (Math.abs(Math.floor(newY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)) - Math.floor(prevY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT))) <= OVERLAP_PIXEL_THRESHOLD)
-			&& (prev.type == n.type)
-			&& (noteSpr.r == 0 /* default angle */)
-			&& (noteSpr.scale == receptor.scale)
-			&& (prev.duration == n.duration)
-			&& (noteSpr.x == receptor.x);
+			// requirements: only consider fake-overlap if we actually have a note sprite and a prev to compare with
+			var requirementsForNoteOverlapSimulationBS = noteSpr != null
+				&& prev != null
+				&& (Math.abs(Math.floor(newY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)) - Math.floor(prevY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT))) <= OVERLAP_PIXEL_THRESHOLD)
+				&& (prev.type == n.type)
+				&& (noteSpr.r == 0 /* default angle */)
+				&& (noteSpr.scale == receptor.scale)
+				&& (prev.duration == n.duration)
+				&& (noteSpr.x == receptor.x);
 
-		// now write the computed Y into fake overlap storage (so next notes compare to this)
-		fakeOverlapStorage[n.index] = newY;
+			// now write the computed Y into fake overlap storage (so next notes compare to this)
+			fakeOverlapStorage[n.index] = newY;
 
-		if (requirementsForNoteOverlapSimulationBS) {
-			// treat as overlap: merge into existing sprite
-			noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + (parent.notesMissed.get(n) ? Note.defaultMissAlpha : Note.defaultAlpha), 254);
-			noteSpr.notesInOne++;
-			prev = n;
-			++i;
-			continue;
-		} else {
-			if (!ghost) {
-				noteSpr = parent.drawNote(pos, n, diff);
-			} else {
-				// ghost -> same exact meta-note (position, index, type) so just increment
+			if (requirementsForNoteOverlapSimulationBS) {
+				// treat as overlap: merge into existing sprite
+				noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + (parent.notesMissed.get(n) ? Note.defaultMissAlpha : Note.defaultAlpha), 254);
 				noteSpr.notesInOne++;
+				prev = n;
+				++i;
+				continue;
+			} else {
+				if (!ghost) {
+					noteSpr = parent.drawNote(pos, n, diff);
+				} else {
+					// ghost -> same exact meta-note (position, index, type) so just increment
+					noteSpr.notesInOne++;
+				}
+				prev = n;
+				++i;
 			}
-			prev = n;
-			++i;
 		}
-	}
 	}
 
 	/**

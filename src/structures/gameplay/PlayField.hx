@@ -314,6 +314,8 @@ class PlayField implements State {
 			if (health < 0.05) {
 				health = 0.05;
 			}
+			
+			//rec.confirm();
 			return;
 		}
 
