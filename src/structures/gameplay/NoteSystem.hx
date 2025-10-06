@@ -281,7 +281,7 @@ class NoteSystem {
 				sustainsBuf.addElement(sustainSpr);
 		}
 
-		if (_id == 1) Sys.println('MetaNoet ID 1: ${note.flag}');
+		//if (_id == 1) Sys.println('MetaNoet ID 1: ${note.flag}');
 
 		// --- Buffer note ---
 		if (!isHit && @:privateAccess noteSpr.bytePos == -1)
