@@ -10,6 +10,7 @@
 #include <string>
 
 #ifdef _WIN32
+#pragma comment(lib, "Advapi32.lib")
 #include <windows.h>
 #else
 #include <sys/mman.h>
@@ -69,29 +70,79 @@ public:
     int64_t size() const { return length; }
 
 private:
+    #ifdef _WIN32
+    // Enable SeLockMemoryPrivilege for large pages
+    bool enableLargePagePrivilege() {
+        HANDLE hToken;
+        if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken))
+            return false;
+
+        TOKEN_PRIVILEGES tp{};
+        LUID luid{};
+        if (!LookupPrivilegeValue(NULL, SE_LOCK_MEMORY_NAME, &luid)) {
+            CloseHandle(hToken);
+            return false;
+        }
+
+        tp.PrivilegeCount = 1;
+        tp.Privileges[0].Luid = luid;
+        tp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+        if (!AdjustTokenPrivileges(hToken, FALSE, &tp, sizeof(tp), NULL, NULL)) {
+            CloseHandle(hToken);
+            return false;
+        }
+
+        CloseHandle(hToken);
+        return GetLastError() == ERROR_SUCCESS;
+    }
+    #endif
+
     bool remap(size_t newLength) {
-#ifdef _WIN32
+    #ifdef _WIN32
         if (data) { UnmapViewOfFile(data); data = nullptr; }
         if (hMap) { CloseHandle(hMap); hMap = NULL; }
 
         LARGE_INTEGER newSize;
-        newSize.QuadPart = newLength * sizeof(int64_t);
+        newSize.QuadPart = static_cast<LONGLONG>(newLength) * sizeof(int64_t);
+
         if (!SetFilePointerEx(hFile, newSize, NULL, FILE_BEGIN) || !SetEndOfFile(hFile))
             return false;
 
-        hMap = CreateFileMapping(hFile, NULL, PAGE_READWRITE, 0, 0, NULL);
-        if (!hMap) return false;
+        SIZE_T largePageSize = GetLargePageMinimum();
+        bool useLargePages = false;
 
-        data = (int64_t*)MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+        if (largePageSize > 0) {
+            // Try enabling privilege
+            if (enableLargePagePrivilege()) {
+                useLargePages = true;
+                // Align mapping size
+                SIZE_T mapSize = ((newLength * sizeof(int64_t) + largePageSize - 1) / largePageSize) * largePageSize;
+
+                hMap = CreateFileMapping(hFile, NULL, PAGE_READWRITE | SEC_LARGE_PAGES,
+                                        (DWORD)(mapSize >> 32), (DWORD)(mapSize & 0xFFFFFFFF), NULL);
+
+                if (!hMap) useLargePages = false; // fallback if failed
+            }
+        }
+
+        if (!useLargePages) {
+            // Normal page mapping fallback
+            hMap = CreateFileMapping(hFile, NULL, PAGE_READWRITE, 0, 0, NULL);
+            if (!hMap) return false;
+        }
+
+        data = static_cast<int64_t*>(MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, 0));
         if (!data) { CloseHandle(hMap); hMap = NULL; return false; }
-#else
+
+    #else
         if (data) { munmap(data, length * sizeof(int64_t)); data = nullptr; }
         if (ftruncate(fd, newLength * sizeof(int64_t)) == -1) return false;
 
-        data = (int64_t*)mmap(nullptr, newLength * sizeof(int64_t),
-                              PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+        data = static_cast<int64_t*>(mmap(nullptr, newLength * sizeof(int64_t),
+                                        PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0));
         if (data == MAP_FAILED) { data = nullptr; return false; }
-#endif
+    #endif
         length = newLength;
         return true;
     }

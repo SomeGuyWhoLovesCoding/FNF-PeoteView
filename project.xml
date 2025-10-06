@@ -17,7 +17,9 @@
 	<haxedef name="peoteview_uniformbuffers" />
 	<haxedef name="peoteview_instancedrawing" />
 	<haxedef name="peoteview_vertexarrayobjects" />
-	<haxedef name="peoteview_queueGLbuffering" />
+
+	<!-- Optional (buggy or broken) defines -->
+	<!--<haxedef name="peoteview_queueGLbuffering" />-->
 
 	<!-- for html5 and loading inside onPreloadComplete-event the assets need to be embed=true --> 
 	<assets path="assets" exclude="lime.svg" embed="false" />
