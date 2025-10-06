@@ -1,7 +1,5 @@
 package structures.gameplay;
 
-import sys.thread.FixedThreadPool;
-
 /**
 	The internal note handler.
 	This class is responsible for spawning and despawning notes based on the song's position.
@@ -25,10 +23,6 @@ class NoteSpawner {
 
 	var parent(default, null):NoteSystem;
 
-	var length(default, null):Int64;
-
-	private static var threadPool(default, null):FixedThreadPool = new FixedThreadPool(20);
-
 	/**
 	 * Creates the note spawner.
 	 * @param parent The note system to implement this note spawner on.
@@ -41,8 +35,6 @@ class NoteSpawner {
 
 		curTopNote = File.getNote(0);
 		curBottomNote = File.getNote(0);
-
-		length = File.getLength();
 
 		/*for (i in 0...File.getLength().low) {
 			var note = File.getNote(i);
@@ -58,7 +50,7 @@ class NoteSpawner {
 	// Doing this in a contiguous range ensures tens of thousands of notes in a hot zone are already resident before the loop.
 	// You don't need to loop through every note in the file, only the nearby window.
 	function cacheHotWindow() {
-		var len = length;
+		var len = File.getLength();
 		if (len <= 0) return;
 
 		var cacheStart = bottom - 8192;  // back-fill 8192 notes
@@ -74,10 +66,10 @@ class NoteSpawner {
 
 	// after updating (to cache more)
 	function cacheHotWindow2() {
-		var len = length;
+		var len = File.getLength();
 		if (len <= 0) return;
 
-		var threshold = (bottom - _lastbottom) * 8;
+		var threshold = (bottom - _lastbottom) * 3;
 		var cacheStart = bottom - threshold;  // back-fill 8192 notes
 		if (cacheStart < 0) cacheStart = 0;
 		var cacheEnd   = top + threshold;  // forward-fill a bit
@@ -98,7 +90,7 @@ class NoteSpawner {
 		//var pos = MetaNote.floatToMetaNotePosition(songPosition);
 		//Sys.println('Song Position ${parent.parent.songPosition}, MetaNote Song Position ${MetaNote.metaNotePositionToSongTime(pos)}');
 
-		threadPool.run(cacheHotWindow);
+		cacheHotWindow();
 
 		_lastbottom = bottom;
 		_lasttop = top;
@@ -106,7 +98,7 @@ class NoteSpawner {
 		cullTop(pos);
 		cullBottom(pos);
 
-		threadPool.run(cacheHotWindow2);
+		cacheHotWindow2();
 
 		//Sys.println('Top $top bottom $bottom');
 
@@ -184,7 +176,7 @@ class NoteSpawner {
 	 * @param pos The song's position in the note position format.
 	 */
 	function cullTop(pos:Int64) {
-		var len = length;
+		var len = File.getLength();
 		//Sys.println('Top song position ${MetaNote.metaNotePositionToSongTime(pos)}, Song position: $songPosition');
 		//Sys.println('Top note position ${curTopNote.position}');
 		//Sys.println('TOP: ' + (curTopNote.position - pos));
@@ -207,7 +199,7 @@ class NoteSpawner {
 	 * @param pos The song's position in the note position format.
 	 */
 	function cullBottom(pos:Int64) {
-		var len = length;
+		var len = File.getLength();
 		//Sys.println('BOTTOM: ' + ((pos - MetaNote.intToMetaNoteDuration(curBottomNote.duration)) - curBottomNote.position));
 		//Sys.println('Bottom song position $pos');
 		//Sys.println('Bottom note position ${curBottomNote.position}');
@@ -241,7 +233,7 @@ class NoteSpawner {
 			i++;
 		}
 
-		var len = length;
+		var len = File.getLength();
 		if (len <= 0) return; // no notes, nothing to do
 
 		var songPos = MetaNote.floatToMetaNotePosition(songPosition);
