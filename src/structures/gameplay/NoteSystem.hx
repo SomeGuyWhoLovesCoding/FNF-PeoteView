@@ -20,16 +20,6 @@ class NoteSystem {
 	static var STRUMLINE_Y_OFFSET = 50;
 	static var STRUMLINE_Y_OFFSET_DOWNSCROLL = 150;
 
-	// somewhere near the top of NoteSystem
-	static inline var FLAG_CAPACITY = 1 << 18; // 262,144
-	static var flagBuffer:MetaNoteMap<Int64>;
-	static var missedBuffer:MetaNoteMap<Int64>;
-	static var heldBuffer:MetaNoteMap<Int64>;
-
-	static var flagCounter:Int = 0;
-	static var missedCounter:Int = 0;
-	static var heldCounter:Int = 0;
-
 	static function init() {
 		if (notesBuf == null) {
 			notesBuf = new Buffer<Note>(128, 128, false);
@@ -52,14 +42,6 @@ class NoteSystem {
 			sustainProg = new Program(sustainsBuf);
 			Sustain.init(sustainProg, "sustainTex", tex2);
 		}
-
-		if (flagBuffer == null) flagBuffer = new MetaNoteMap<Int64>(); // 262,144
-		if (missedBuffer == null) missedBuffer = new MetaNoteMap<Int64>();
-		if (heldBuffer == null) heldBuffer = new MetaNoteMap<Int64>();
-
-		flagCounter = 0;
-		missedCounter = 0;
-		heldCounter = 0;
 	}
 
 	var noteSpawner(default, null):NoteSpawner;
@@ -166,9 +148,9 @@ class NoteSystem {
 		var sustainExists = duration != 0;
 
 		var leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
-		var isHit = flagBuffer.exists(_id) || note.flag;
-		var isMissed = missedBuffer.exists(_id) || note.missed;
-		var isHeld = heldBuffer.exists(_id) || note.held;
+		var isHit:Bool = note.flag;
+		var isMissed:Bool = note.missed;
+		var isHeld:Bool = note.held;
 
 		if (parent.downScroll) diff = -diff;
 
@@ -382,47 +364,5 @@ class NoteSystem {
 
 		display.removeProgram(sustainProg);
 		display.removeProgram(notesProg);
-
-		flushAllBuffers();
-	}
-
-	// The rest of the shit (flag buffer bullshit for preventing frequent page faults)
-	static function flushFlagBuffer() {
-		for (id in flagBuffer.keys()) {
-			var n = File.getNote(id);
-			var meta:MetaNote = n;
-			meta.flag = true;
-			File.setNote(id, meta.toNumber());
-		}
-		flagBuffer.clear();
-		flagCounter = 0;
-	}
-
-	static function flushMissedBuffer() {
-		for (id in missedBuffer.keys()) {
-			var n = File.getNote(id);
-			var meta:MetaNote = n;
-			meta.missed = true;
-			File.setNote(id, meta.toNumber());
-		}
-		missedBuffer.clear();
-		missedCounter = 0;
-	}
-
-	static function flushHeldBuffer() {
-		for (id in heldBuffer.keys()) {
-			var n = File.getNote(id);
-			var meta:MetaNote = n;
-			meta.held = true;
-			File.setNote(id, meta.toNumber());
-		}
-		heldBuffer.clear();
-		heldCounter = 0;
-	}
-
-	function flushAllBuffers() {
-		if (flagCounter > 0) flushFlagBuffer();
-		if (missedCounter > 0) flushMissedBuffer();
-		if (heldCounter > 0) flushHeldBuffer();
 	}
 }
