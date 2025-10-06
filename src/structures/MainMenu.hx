@@ -200,16 +200,14 @@ class MainMenu implements State {
 	function doIt() {
 		switch (optionSelected) {
 			case 0: // STORY MODE
-				selectedAlpha = 0.0;
+				// TODO: ONCE STORY MODE IS DONE ENOUGH, I WILL UNCOMMENT THIS
+				/*selectedAlpha = 0.0;
 				Main.current.storyMenu.open();
-				removeEvents();
+				removeEvents();*/
 			case 1: // FREEPLAY
-				// I decided to wrap this with an if condition because my freeplay code is rather bizarre and I haven't found other ways to fix the freeplay bug where if you click the mouse on playstate the freeplay menu opens again, even enough it fucking shouldn't.
-				//if (!Main.current.freeplayMenu.alreadySelected) {
 				selectedAlpha = 0.0;
 				Main.current.freeplayMenu.open();
 				removeEvents();
-				//}
 			case 2: // AWARDS
 				// TODO
 			case 3: // CREDITS
@@ -219,6 +217,7 @@ class MainMenu implements State {
 				Main.current.optionsMenu.open();
 				removeEvents();
 			case 5:
+				// TODO: ONCE TITLE SCREEN IS DONE ENOUGH, I WILL REPLACE THIS
 				Sys.exit(0);
 		}
 	}
