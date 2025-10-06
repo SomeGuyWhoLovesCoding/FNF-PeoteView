@@ -6,10 +6,7 @@
 #include <string>
 
 #ifdef _WIN32
-#define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-#include <memoryapi.h>
-#include <winnt.h>
 #else
 #include <sys/mman.h>
 #include <sys/stat.h>
@@ -34,6 +31,7 @@ public:
         LARGE_INTEGER fileSize;
         GetFileSizeEx(hFile, &fileSize);
         length = fileSize.QuadPart / sizeof(int64_t);
+        return remap(length);
 #else
         fd = ::open(path, O_RDWR | O_CREAT, 0644);
         if (fd == -1) return false;
@@ -41,11 +39,8 @@ public:
         struct stat st;
         fstat(fd, &st);
         length = st.st_size / sizeof(int64_t);
+        return remap(length);
 #endif
-
-        if (!remap(length)) return false;
-        prefault(data, length);
-        return true;
     }
 
     void close() {
@@ -96,8 +91,6 @@ private:
         if (data == MAP_FAILED) { data = nullptr; return false; }
 #endif
         length = newLength;
-
-        prefault(data, length);
         return true;
     }
 
@@ -110,18 +103,6 @@ private:
 #else
     int fd = -1;
 #endif
-
-    void prefault(int64_t* data, size_t length) {
-#ifdef _WIN32
-        PWIN32_MEMORY_RANGE_ENTRY range;
-        range->VirtualAddress = data;
-        range->NumberOfBytes = length * sizeof(int64_t);
-
-        PrefetchVirtualMemory(GetCurrentProcess(), 1, &range, 0);
-#else
-        posix_fadvise(fd, 0, length * sizeof(int64_t), POSIX_FADV_WILLNEED);
-#endif
-    }
 };
 
 // ============================================================================

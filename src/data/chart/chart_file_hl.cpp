@@ -11,7 +11,6 @@
 
 #ifdef _WIN32
 #include <windows.h>
-#include <memoryapi.h>
 #else
 #include <sys/mman.h>
 #include <sys/stat.h>
