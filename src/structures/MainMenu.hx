@@ -104,8 +104,6 @@ class MainMenu implements State {
 
 		updateMenuOptions();
 
-		optionBuf.update();
-
 		actions = [
 			Controls.Action.UI_DOWN => { action: down },
 			Controls.Action.UI_UP => { action: up },
