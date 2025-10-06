@@ -40,17 +40,18 @@ class NotePool {
 
 	/**
 	 * Creates a new note and determines when to add it to note pool or not.
+	 * This function is called every time you call `drawNote`, constantly. Do not implement anything else in there if you want to change something in this note system.
 	 * @param id The index the note sprite (existing or not) should change to.
 	 * @param n The underlying meta note the note sprite's data should be set to.
      * @param index The index the note belongs to.
 	 */
-	function newNote(id:Int, n:MetaNote, index:Int64) {
+	function getNote(id:Int, n:MetaNote, index:Int64) {
 		var allocated = notes.get(n);
 
-		n.flag = false;
+		/*n.flag = false;
 		n.missed = false;
 		n.held = false;
-		File.setNote(index, n);
+		File.setNote(index, n);*/
 
 		if (allocated == null) {
 			var inactiveObject = inactiveNotes.pop();
@@ -75,7 +76,7 @@ class NotePool {
 	 * @param id The index the sustain sprite (existing or not) should change to.
 	 * @param n The underlying meta note the sustain sprite's data should be set to.
 	 */
-	function newSustain(id:Int, n:MetaNote) {
+	function getSustain(id:Int, n:MetaNote) {
 		var allocated = sustains.get(n);
 
 		if (allocated == null) {

@@ -85,7 +85,7 @@ class NoteSystem {
 
 		setScrollSpeed(Chart.header.speed);
 
-		update(_lastPos = MetaNote.floatToMetaNotePosition(parent.songPosition));
+		update(MetaNote.floatToMetaNotePosition(parent.songPosition));
 	}
 
 	private var _lastPos(default, null):Int64; // for adaptive bot timer
@@ -143,8 +143,8 @@ class NoteSystem {
 		var rec = strumline.buffer[index];
 		var id = parent.inputSystem.receptorIds[index];
 
-		var noteSpr = notePool.newNote(id, note, _id);
-		var sustainSpr = duration != 0 ? notePool.newSustain(id, note) : null;
+		var noteSpr = notePool.getNote(id, note, _id);
+		var sustainSpr = duration != 0 ? notePool.getSustain(id, note) : null;
 		var sustainExists = duration != 0;
 
 		var leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
@@ -180,8 +180,9 @@ class NoteSystem {
 
 				if (diff < -parent.hitbox && !isMissed) {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
-					var n = note;
-					n.missed = isMissed = true;
+					var n:Int64 = note.toNumber();
+					(n:MetaNote).missed = true;
+					isMissed = true;
 					File.setNote(_id, n);
 
 					var type = note.type;
@@ -194,8 +195,9 @@ class NoteSystem {
 					if (sustainExists && !isHeld) {
 						sustainSpr.c.aF = Sustain.defaultMissAlpha;
 						sustainSpr.c.luminanceF = Sustain.defaultMissAlpha;
-						var n = note;
-						n.held = isHeld = true;
+						var n:Int64 = note.toNumber();
+						(n:MetaNote).held = true;
+						isHeld = true;
 						File.setNote(_id, n);
 						parent.onSustainRelease.dispatch(note);
 					}
@@ -215,8 +217,8 @@ class NoteSystem {
 		else {
 			// Handle opponent note hit (non-sustain)
 			if (!isHit && diff < 0) {
-				var n = note;
-				n.flag = isHit = true;
+				var n:Int64 = note.toNumber();
+				(n:MetaNote).flag = isHit = true;
 				File.setNote(_id, n);
 				//Sys.println('$_id ' + File.getNote(_id).flag);
 
@@ -258,8 +260,9 @@ class NoteSystem {
 				}
 
 				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainSpr.length) - 70) && !isHeld) {
-					var n = note;
-					n.held = isHeld = true;
+					var n:Int64 = note.toNumber();
+					(n:MetaNote).held = true;
+					isHeld = true;
 					File.setNote(_id, n);
 					strumline.sustainsToHold[index] = null;
 					strumline.sustainsToHold_indexes[index] = 0;
@@ -277,6 +280,8 @@ class NoteSystem {
 			if (@:privateAccess sustainSpr.bytePos == -1)
 				sustainsBuf.addElement(sustainSpr);
 		}
+
+		if (_id == 1) Sys.println('MetaNoet ID 1: ${note.flag}');
 
 		// --- Buffer note ---
 		if (!isHit && @:privateAccess noteSpr.bytePos == -1)

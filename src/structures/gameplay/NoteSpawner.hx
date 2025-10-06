@@ -140,7 +140,12 @@ class NoteSpawner {
 		//Sys.println(top != len && curTopNote.position - pos < spawnDist);
 		while (top != len && curTopNote.position - pos < spawnDist) {
 			++top;
-			curTopNote = File.getNote(top);
+			var n:Int64 = File.getNote(top).toNumber();
+			(n:MetaNote).flag = false;
+			(n:MetaNote).missed = false;
+			(n:MetaNote).held = false;
+			File.setNote(top, n);
+			curTopNote = n;
 		}
 	}
 

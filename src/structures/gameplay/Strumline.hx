@@ -124,8 +124,9 @@ class Strumline {
 				rec.confirm();
 			}
 
-			noteToHit.flag = true;
-			File.setNote(notesToHit_indexes[index], noteToHit);
+			var n:Int64 = noteToHit.toNumber();
+			(n:MetaNote).flag = true;
+			File.setNote(notesToHit_indexes[index], n);
 
 			if (noteToHit.duration > 20) {
 				sustainsToHold[index] = noteToHit;
@@ -151,8 +152,10 @@ class Strumline {
 			(sustainToRelease.flag && !sustainToRelease.held)) {
 			var pf = parent.parent;
 
-			sustainToRelease.held = true;
-			File.setNote(sustainsToHold_indexes[index], sustainToRelease);
+			var n:Int64 = sustainToRelease.toNumber();
+			(n:MetaNote).held = true;
+			File.setNote(sustainsToHold_indexes[index], n);
+
 			pf.onSustainRelease.dispatch(sustainToRelease);
 			sustainsToHold[index] = null;
 			sustainsToHold_indexes[index] = 0;
