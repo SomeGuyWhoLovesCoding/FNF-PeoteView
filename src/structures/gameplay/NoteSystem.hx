@@ -48,7 +48,7 @@ class NoteSystem {
 	var notePool(default, null):NotePool;
 	var strumlines(default, null):Array<Strumline>;
 
-	var noteTypeFunctionality(default, null):Map<Int, Int->Int->Bool->Void>;
+	var noteTypeFunctionalityPre(default, null):Map<Int, Int->Int->Bool->Void>;
 
 	var parent(default, null):PlayField;
 
@@ -57,7 +57,7 @@ class NoteSystem {
 	 * @param parent The parent of this class.
 	**/
 	function new(parent:PlayField) {
-		noteTypeFunctionality = new Map<Int, Int->Int->Bool->Void>();
+		noteTypeFunctionalityPre = new Map<Int, Int->Int->Bool->Void>();
 
 		this.parent = parent;
 
@@ -118,21 +118,156 @@ class NoteSystem {
 	}
 
 	/**
+	 * Resolves the note logic for this MetaNote.
+	 * This mutates MetaNote flags (flag/missed/held), updates strumline state (notesToHit, botTimers, etc.)
+	 * and dispatches events. It does NOT touch any sprite objects or GPU buffers.
+	 *
+	 * @param pos The calculated lane of this meta-note in the file (used for getting the current strumline).
+	 * @param pos The song's position (meta-note position format).
+	 * @param note The meta note to update.
+	 * @param diff The computed diff (used for hit/miss checks).
+	 * @param _id The index of this meta-note in the file (used for File.setNote).
+	 * @param notesInOne Number of merged notes represented by this logical entry.
+	 * @return The (possibly mutated) note.
+	 **/
+	function resolveNoteLogic(lane:Int, pos:Int64, note:MetaNote, diff:Float, _id:Int64, notesInOne:Int64):MetaNote {
+		var index = note.index;
+		var duration = note.duration;
+		var position = note.position;
+
+		var strumline = strumlines[lane];
+		var rec = strumline.buffer[index];
+
+		var sustainExists = duration != 0;
+
+		// helper values
+		var leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
+		var isHit:Bool = note.flag;
+		var isMissed:Bool = note.missed;
+		var isHeld:Bool = note.held;
+
+		var playable = strumline.playable && !(parent.botplay || RenderingMode.enabled);
+
+		// --- Player side (local player, hit registration) ---
+		if (playable) {
+			if (!isHit) {
+				var noteToHit = strumline.notesToHit[index];
+				var noteToHitExists = noteToHit != null;
+				var hitPos = noteToHitExists ? noteToHit.position : 0;
+
+				// register candidate to hit
+				if ((!isMissed && diff < parent.hitbox && !noteToHitExists) ||
+					(noteToHitExists && pos - hitPos > (position - hitPos) >> 1)) {
+					strumline.notesToHit[index] = note;
+					// store the file index that corresponds to this note so the input system can resolve it
+					// we don't modify MetaNote here, but caller should pass _id if needed for input mapping
+					strumline.notesToHit_indexes[index] = _id;
+				}
+
+				// miss handling (we mark missed once the note passed the hit window)
+				if (diff < -parent.hitbox && !isMissed) {
+					var n:Int64 = note.toNumber();
+					(n:MetaNote).missed = true;
+					isMissed = true;
+					// if sustain, mark held and dispatch sustain release (mirror old behavior)
+					if (sustainExists && !isHeld) {
+						(n:MetaNote).held = true;
+						isHeld = true;
+						parent.onSustainRelease.dispatch(note);
+					}
+					File.setNote(_id, n);
+
+					// custom note type callback
+					var type = note.type;
+					if (noteTypeFunctionalityPre.exists(type)) {
+						noteTypeFunctionalityPre[type](index, type, true);
+					}
+
+					// dispatch miss with merged count
+					parent.onNoteMiss.dispatch(note, notesInOne);
+
+					// clear any queued to-hit state
+					strumline.notesToHit[index] = null;
+					strumline.notesToHit_indexes[index] = 0;
+				}
+			}
+		}
+		// --- Opponent / bot side ---
+		else {
+			// If opponent hasn't flagged and the note passed center, mark it hit
+			if (!isHit && diff < 0) {
+				var n:Int64 = note.toNumber();
+				(n:MetaNote).flag = true;
+				isHit = true;
+				File.setNote(_id, n);
+
+				// Confirm the receptor for visual/sound feedback
+				if (!rec.confirmed()) rec.confirm();
+
+				// Start glow timer for non-sustains
+				strumline.botTimers[index] = 0.045;
+				strumline.botHitsToCheck[index] = duration == 0;
+
+				// dispatch hit (notesInOne used by caller)
+				parent.onNoteHit.dispatch(note, 0, notesInOne);
+			}
+		}
+
+		// --- Sustain completion (server-side logic only; no sustain sprite touched here) ---
+		if (sustainExists) {
+			var sustainLengthPos = MetaNote.floatToMetaNotePosition((duration * 4) - 10); // position length used for time compare
+			// if the note was hit and we've passed the sustain end threshold and it isn't held yet, mark held
+			if (isHit && pos > position + (sustainLengthPos - 70) && !isHeld) {
+				var n3:Int64 = note.toNumber();
+				(n3:MetaNote).held = true;
+				isHeld = true;
+				File.setNote(_id, n3);
+
+				// Reeset the receptor for sustain release feedback
+				if (!rec.idle()) rec.reset();
+
+				strumline.sustainsToHold[index] = null;
+				strumline.sustainsToHold_indexes[index] = 0;
+				strumline.botHitsToCheck[index] = false;
+
+				parent.onSustainComplete.dispatch(note);
+			}
+		}
+
+		// return mutated note
+		return note;
+	}
+
+	/**
 	 * Again, do not fuck with this.
 	 * I put lots of effort into this abomination of a function.
 	 * This function was ported from the old note system.
 	 * Note hitreg and sustain inputs are handled here.
+	 * This was a mixed note logic and rendering function.
 	 * @param pos The song's position in note position format.
 	 * @param note The meta note you want to draw the note to.
 	 * @param id The index the note belongs to.
+	 * @param x The horizontal position of the note.
+	 * @param y The vertical position of the note.
+	 * @param notesInOne The amount of notes grouped together to one.
+	 * @param addedAlpha The added alpha of a note in total. Mimics what the real deal would look liked.
 	**/
-	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64):Note {
+	function drawNote(
+		pos:Int64,
+		note:MetaNote,
+		diff:Float,
+		_id:Int64,
+		x:Int,
+		y:Int,
+		notesInOne:Int64,
+		addedAlpha:Float
+	):Note {
 		var index = note.index;
 		var lane = 0;
 		var duration = note.duration;
 		var position = note.position;
 
-		if (!noteTypeFunctionality.exists(note.type)) {
+		if (!noteTypeFunctionalityPre.exists(note.type)) {
 			lane = note.type % strumlines.length;
 		} else {
 			// Special note types get routed to lane 1 by convention.
@@ -144,103 +279,21 @@ class NoteSystem {
 		var id = parent.inputSystem.receptorIds[index];
 
 		var noteSpr = notePool.getNote(id, note, _id);
-		var sustainSpr = duration != 0 ? notePool.getSustain(id, note) : null;
 		var sustainExists = duration != 0;
+		var sustainSpr = sustainExists ? notePool.getSustain(id, note) : null;
 
 		var leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
 		var isHit:Bool = note.flag;
 		var isMissed:Bool = note.missed;
-		var isHeld:Bool = note.held;
 
-		if (parent.downScroll) diff = -diff;
-
-		var noteSprX = rec.x;
-		var noteSprY = rec.y + Std.int(diff);
-
-		if (parent.downScroll) diff = -diff;
-
-		noteSpr.x = noteSprX;
-		noteSpr.y = noteSprY;
+		// --- Note sprite visual setup ---
+		noteSpr.x = x;
+		noteSpr.y = y;
 		noteSpr.scale = rec.scale;
+		noteSpr.notesInOne = notesInOne;
+		noteSpr.addedAlpha = addedAlpha;
 
-		var playable = strumline.playable && !(parent.botplay || RenderingMode.enabled);
-
-		// --- Player side ---
-		if (playable) {
-			if (!isHit) {
-				var noteToHit = strumline.notesToHit[index];
-				var noteToHitExists = noteToHit != null;
-				var hitPos = noteToHitExists ? noteToHit.position : 0;
-
-				if ((!isMissed && diff < parent.hitbox && !noteToHitExists) ||
-					(noteToHitExists && pos - hitPos > (position - hitPos) >> 1)) {
-					strumline.notesToHit[index] = note;
-					strumline.notesToHit_indexes[index] = _id;
-				}
-
-				if (diff < -parent.hitbox && !isMissed) {
-					noteSpr.initialAlpha = Note.defaultMissAlpha;
-					var n:Int64 = note.toNumber();
-					(n:MetaNote).missed = true;
-					isMissed = true;
-					File.setNote(_id, n);
-
-					var type = note.type;
-					if (noteTypeFunctionality.exists(type)) {
-						noteTypeFunctionality[type](index, type, true);
-					}
-
-					parent.onNoteMiss.dispatch(note, noteSpr.notesInOne);
-
-					if (sustainExists && !isHeld) {
-						sustainSpr.c.aF = Sustain.defaultMissAlpha;
-						sustainSpr.c.luminanceF = Sustain.defaultMissAlpha;
-						var n:Int64 = note.toNumber();
-						(n:MetaNote).held = true;
-						isHeld = true;
-						File.setNote(_id, n);
-						parent.onSustainRelease.dispatch(note);
-					}
-
-					strumline.notesToHit[index] = null;
-					strumline.notesToHit_indexes[index] = 0;
-
-					var hud = parent.hud;
-					if (SaveData.state.preferences.ratingPopup && hud != null) {
-						hud.hideRatingPopup();
-					}
-				}
-			}
-		}
-
-		// --- Opponent side ---
-		else {
-			// Handle opponent note hit (non-sustain)
-			if (!isHit && diff < 0) {
-				var n:Int64 = note.toNumber();
-				(n:MetaNote).flag = isHit = true;
-				File.setNote(_id, n);
-				//Sys.println('$_id ' + File.getNote(_id).flag);
-
-				// Confirm the receptor
-				if (!rec.confirmed()) rec.confirm();
-
-				// Start glow timer for non-sustains
-				strumline.botTimers[index] = 0.045;
-				strumline.botHitsToCheck[index] = duration == 0;
-
-				// Setup sustain visuals if needed
-				if (sustainExists) {
-					sustainSpr.followNote(rec);
-					sustainSpr.w = sustainSpr.length - leftover;
-					if (sustainSpr.w < 0) sustainSpr.w = 0;
-				}
-
-				parent.onNoteHit.dispatch(note, 0, noteSpr.notesInOne);
-			}
-		}
-
-		// --- Sustain handling ---
+		// --- Sustain sprite visual setup ---
 		if (sustainExists) {
 			sustainSpr.changeID(id);
 			sustainSpr.parent = noteSpr;
@@ -250,30 +303,15 @@ class NoteSystem {
 			sustainSpr.length = (duration * 4) - 10;
 
 			if (!isHit) {
+				// Full sustain before hit
 				sustainSpr.w = sustainSpr.length;
 				sustainSpr.followNote(noteSpr);
 			} else if (sustainSpr.c.aF != 0) {
+				// Shorten sustain after hit
 				if (sustainSpr.w >= 0) {
 					sustainSpr.followNote(rec);
 					sustainSpr.w = sustainSpr.length - leftover;
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
-				}
-
-				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainSpr.length) - 70) && !isHeld) {
-					var n:Int64 = note.toNumber();
-					(n:MetaNote).held = true;
-					isHeld = true;
-					File.setNote(_id, n);
-					strumline.sustainsToHold[index] = null;
-					strumline.sustainsToHold_indexes[index] = 0;
-    				strumline.botHitsToCheck[index] = false; // only for short notes
-
-					if (rec.confirmed()) {
-						if (playable) rec.press();
-						else rec.reset();
-					}
-
-					parent.onSustainComplete.dispatch(note);
 				}
 			}
 
@@ -281,9 +319,7 @@ class NoteSystem {
 				sustainsBuf.addElement(sustainSpr);
 		}
 
-		//if (_id == 1) Sys.println('MetaNoet ID 1: ${note.flag}');
-
-		// --- Buffer note ---
+		// --- Buffer note sprite ---
 		if (!isHit && @:privateAccess noteSpr.bytePos == -1)
 			notesBuf.addElement(noteSpr);
 

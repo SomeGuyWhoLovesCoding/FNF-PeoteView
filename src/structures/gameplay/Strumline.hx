@@ -16,9 +16,10 @@ class Strumline {
 	var sustainsToHold_indexes(default, null):Array<Int64>;
 	var botHitsToCheck(default, null):Array<Bool>;
 	var playerHitsToCheck(default, null):Array<Bool>;
-	var buffer(default, null):Array<Note>;
 	var fakeOverlapStorage(default, null):Array<Float>; // This is for fake note overlapping!!! So it renders faster instead of just checking one by one without relying on an index based approach like this. Thanks - sgwl
+	var greedyMergeTemp(default, null):Array<Int>;
 	var botTimers(default, null):Array<Float>;
+	var buffer(default, null):Array<Note>;
 
 	var x(default, set):Int;
 	var y(default, set):Int;
@@ -61,6 +62,9 @@ class Strumline {
 		sustainsToHold_indexes.resize(value);
 		botHitsToCheck.resize(value);
 		playerHitsToCheck.resize(value);
+		fakeOverlapStorage.resize(value);
+		greedyMergeTemp.resize(value);
+		botTimers.resize(value);
 		buffer.resize(value);
 
 		var ids = parent.parent.inputSystem.receptorIds;
@@ -88,9 +92,10 @@ class Strumline {
 		sustainsToHold_indexes = [];
 		botHitsToCheck = [];
 		playerHitsToCheck = [];
-		buffer = [];
 		fakeOverlapStorage = [];
+		greedyMergeTemp = [];
 		botTimers = [];
+		buffer = [];
 
 		this.parent = parent;
 
@@ -116,8 +121,8 @@ class Strumline {
 			//var spwn = parent.noteSpawner;
 			var type = noteToHit.type;
 
-			if (parent.noteTypeFunctionality.exists(type)) {
-				parent.noteTypeFunctionality[type](index, type, false);
+			if (parent.noteTypeFunctionalityPre.exists(type)) {
+				parent.noteTypeFunctionalityPre[type](index, type, false);
 			}
 
 			if (!rec.confirmed()) {
@@ -182,12 +187,14 @@ class Strumline {
 		sustainsToHold_indexes.resize(0);
 		botHitsToCheck.resize(0);
 		playerHitsToCheck.resize(0);
+		botTimers.resize(0);
 		notesToHit.resize(length);
 		notesToHit_indexes.resize(length);
 		sustainsToHold.resize(length);
 		sustainsToHold_indexes.resize(length);
 		botHitsToCheck.resize(length);
 		playerHitsToCheck.resize(length);
+		botTimers.resize(length);
 	}
 
 	function resetAnimations() {

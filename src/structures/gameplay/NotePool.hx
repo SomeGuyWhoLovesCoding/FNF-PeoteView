@@ -55,7 +55,7 @@ class NotePool {
 
 		if (allocated == null) {
 			var inactiveObject = inactiveNotes.pop();
-			if (inactiveObject == null) inactiveObject = new Note(-9999, -9999, 0, 0);
+			if (inactiveObject == null) inactiveObject = new Note(-99999, -99999, 0, 0);
 			inactiveObject.initialAlpha = Note.defaultAlpha;
 			inactiveObject.addedAlpha = 0;
 			inactiveObject.notesInOne = 1;
@@ -84,7 +84,7 @@ class NotePool {
 
 			var inactiveObject = inactiveSustains.pop();
 			if (inactiveObject == null) {
-				inactiveObject = new Sustain(-9999, -9999,
+				inactiveObject = new Sustain(-99999, -99999,
 				Math.floor(tex.width / tex.tilesX),
 			        Math.floor(tex.height / tex.tilesY)
 				);
@@ -110,8 +110,8 @@ class NotePool {
 		if (notes.remove(n)) {
 			allocated.initialAlpha = 1;
 			allocated.addedAlpha = 0;
-			allocated.x = -9999;
-			allocated.y = -9999;
+			allocated.x = -99999;
+			allocated.y = -99999;
 			inactiveNotes.push(allocated);
 		}
 
@@ -128,8 +128,8 @@ class NotePool {
 	function putSustain(n:MetaNote) {
 		var allocated:Sustain = sustains.get(n);
 		if (sustains.remove(n)) {
-			allocated.x = -9999;
-			allocated.y = -9999;
+			allocated.x = -99999;
+			allocated.y = -99999;
 			allocated.c.aF = Sustain.defaultAlpha;
 			allocated.c.luminanceF = Sustain.defaultAlpha;
 			inactiveSustains.push(allocated);
