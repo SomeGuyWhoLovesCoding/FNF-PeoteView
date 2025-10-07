@@ -301,7 +301,13 @@ class Main extends Application
 		//Sys.println(1000000 / deltaTime);
 
 		if (_started) {
+			#if FV_LIME_FORK
+			Sys.println('On lime fork! Awesome');
 			newDeltaTime = deltaTime * 0.001;
+			#else
+			Sys.println('Not on lime fork! Awesome');
+			newDeltaTime = deltaTime;
+			#end
 
 			//try {
 				if (mainMenu != null && !mainMenu.disposed) {
