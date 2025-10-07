@@ -17,7 +17,7 @@ class Strumline {
 	var botHitsToCheck(default, null):Array<Bool>;
 	var playerHitsToCheck(default, null):Array<Bool>;
 	var fakeOverlapStorage(default, null):Array<Float>; // This is for fake note overlapping!!! So it renders faster instead of just checking one by one without relying on an index based approach like this. Thanks - sgwl
-	var greedyMergeTemp(default, null):Array<Int>;
+	var greedyMergeTemp:Array<Int>;
 	var botTimers(default, null):Array<Float>;
 	var buffer(default, null):Array<Note>;
 

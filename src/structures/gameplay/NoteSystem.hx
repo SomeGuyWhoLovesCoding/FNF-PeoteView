@@ -291,7 +291,9 @@ class NoteSystem {
 		noteSpr.y = y;
 		noteSpr.scale = rec.scale;
 		noteSpr.notesInOne = notesInOne;
-		noteSpr.addedAlpha = addedAlpha;
+		var addedAlphaI64 = notesInOne;
+		if (addedAlphaI64 > 255) addedAlphaI64 = 255;
+		noteSpr.addedAlpha = Tools.int64ToFloat(addedAlphaI64) + addedAlpha;
 
 		// --- Sustain sprite visual setup ---
 		if (sustainExists) {

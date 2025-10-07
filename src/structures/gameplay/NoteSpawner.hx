@@ -42,11 +42,6 @@ class NoteSpawner {
 	var parent(default, null):NoteSystem;
 
 	/**
-	 * The note sprite queue.
-	 */
-	var _queue(default, null):Array<NoteCmd> = [];
-
-	/**
 	 * Creates the note spawner.
 	 * @param parent The note system to implement this note spawner on.
 	 */
@@ -128,80 +123,116 @@ class NoteSpawner {
 		cacheHotWindow2();
 
 		var scrollSpeed = parent.parent.scrollSpeed;
-		var diff = 0.0;
+		var diff:Float;
 
-		var prev:Null<MetaNote> = null;
-		var mergeTarget:NoteCmd = null;
+		var laneCount = parent.strumlines.length;
+
+		// --- Per-lane + per-index tracking ---
+		var mergeTargets:Array<NoteCmd> = [];
+		var prevNotes:Array<Null<MetaNote>> = [];
+		var queues:Array<Array<Array<NoteCmd>>> = [];
+		var verticalThreshold = 4; // pixels for merging
+
+		for (lane in 0...laneCount) {
+			mergeTargets[lane] = null;
+			prevNotes[lane] = null;
+			var strumline = parent.strumlines[lane];
+
+			// Greedy counters per index
+			strumline.greedyMergeTemp = [];
+			for (i in 0...strumline.buffer.length) strumline.greedyMergeTemp[i] = 1;
+
+			// Initialize per-index queues
+			queues[lane] = [];
+			for (i in 0...strumline.buffer.length) queues[lane][i] = [];
+		}
+
+		// --- Iterate notes ---
 		var i = bottom;
-
 		while (i < top) {
 			var n = File.getNote(i);
 
-			var lane = parent.noteTypeFunctionalityPre.exists(n.type) ? 1 : (n.type % parent.strumlines.length);
+			var lane = parent.noteTypeFunctionalityPre.exists(n.type) ? 1 : (n.type % laneCount);
 			var strumline = parent.strumlines[lane];
 			var receptor = strumline.buffer[n.index];
 			var fakeOverlapStorage = strumline.fakeOverlapStorage;
 			var greedyMergeTemp = strumline.greedyMergeTemp;
+			var queue = queues[lane][n.index];
 
 			diff = MetaNote.metaNotePositionToSongTime(n.position - pos) * scrollSpeed;
 			var newX = receptor.x;
-			var newY = receptor.y + Math.floor(parent.parent.downScroll ? -diff : diff);
+			var newY = receptor.y + Std.int(parent.parent.downScroll ? -diff : diff);
 
-			var prevY = (prev != null) ? fakeOverlapStorage[prev.index] : -99999;
-			var ghost = (prev != null) && prev.position == n.position && prev.index == n.index && prev.type == n.type;
+			var prevY = (prevNotes[lane] != null) ? fakeOverlapStorage[prevNotes[lane].index] : -99999;
+			var mergeTarget = mergeTargets[lane];
+			var prev = prevNotes[lane];
 
 			var canMerge = mergeTarget != null
 				&& prev != null
-				&& (Math.floor(newY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)) - Math.floor(prevY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)) == 0)
-				&& (prev.type == n.type)
-				&& (prev.duration == n.duration)
-				&& mergeTarget.notesInOne <= 63;
+				&& Math.abs(newY - prevY) <= verticalThreshold
+				&& prev.type == n.type
+				&& prev.index == n.index
+				&& prev.duration == n.duration
+				&& mergeTarget.notesInOne <= 16;
 
-			// Always update storage for next notes
+			// Always update fakeOverlapStorage
 			fakeOverlapStorage[n.index] = newY;
 
-			if (canMerge) {
-				// Merge into last sprite
+			if (mergeTarget == null || !canMerge) {
+				// --- Create a new mergeTarget ---
+				mergeTarget = {
+					data: parent.resolveNoteLogic(lane, pos, n, diff, i, 1),
+					x: newX, y: newY,
+					notesInOne: 1, greedyMerge: false,
+					addedAlpha: 0, id_: i, diff: diff
+				};
+				queue.push(mergeTarget); // push immediately for rendering
+				greedyMergeTemp[n.index] = 1;
+			} else {
+				// --- Merge into existing target ---
 				mergeTarget.addedAlpha = Math.min(mergeTarget.addedAlpha + (n.missed ? Note.defaultMissAlpha : Note.defaultAlpha), 255);
 				increaseNotesInOne(mergeTarget);
-			} else {
-				if (greedyMergeTemp[n.index] >= 127) {
-					// Greedy merge reached limit: remove last 128 and create merged sprite
-					var startIndex = _queue.length - 128;
+
+				greedyMergeTemp[n.index]++;
+				if (greedyMergeTemp[n.index] >= 16) {
+					// Split after threshold
+					var startIndex = queue.length - 16;
 					if (startIndex < 0) startIndex = 0;
-					_queue.splice(startIndex, 128);
+					queue.splice(startIndex, 16);
+
 					mergeTarget = {
-						data: parent.resolveNoteLogic(lane, pos, n, diff, i, 128),
-						x: newX, y: newY, notesInOne: 128, greedyMerge: true, addedAlpha: 0, id_: i, diff: diff
+						data: parent.resolveNoteLogic(lane, pos, n, diff, i, 16),
+						x: newX, y: newY,
+						notesInOne: 16, greedyMerge: true,
+						addedAlpha: 0, id_: i, diff: diff
 					};
-					_queue.push(mergeTarget);
-					greedyMergeTemp[n.index] = 0;
-				} else if (!ghost) {
-					// Normal note: create new sprite
-					mergeTarget = {
-						data: parent.resolveNoteLogic(lane, pos, n, diff, i, 1),
-						x: newX, y: newY, notesInOne: 1, greedyMerge: false, addedAlpha: 0, id_: i, diff: diff
-					};
-					_queue.push(mergeTarget);
-					greedyMergeTemp[n.index]++;
-				} else {
-					// Ghost note: merge into current mergeTarget without advancing prev
-					if (mergeTarget != null) increaseNotesInOne(mergeTarget);
+					queue.push(mergeTarget);
+					greedyMergeTemp[n.index] = 1;
 				}
 			}
 
-			// Only advance prev for non-ghost notes
-			if (!ghost) prev = n;
+			// --- Update per-lane tracking ---
+			prevNotes[lane] = n;
+			mergeTargets[lane] = mergeTarget;
+
 			i++;
 		}
 
-		// Draw all queued notes in forward order to prevent popping
-		for (note in _queue) {
-			parent.drawNote(pos, note.data, note.diff, note.id_, note.x, note.y, note.notesInOne, note.addedAlpha);
+		// --- Draw queued notes per lane & per index ---
+		for (lane in 0...laneCount) {
+			var queueLane = queues[lane];
+			for (index in 0...queueLane.length) {
+				var queue = queueLane[index];
+				while (queue.length != 0) {
+					var note = queue.pop();
+					parent.drawNote(pos, note.data, note.diff, note.id_, note.x, note.y, note.notesInOne, note.addedAlpha);
+				}
+			}
 		}
 
-		// Clear queue after drawing
-		_queue.resize(0);
+		Sys.println(queues[0][2]);
+		// Optional debug
+		//Sys.println(parent.strumlines[0].greedyMergeTemp);
 	}
 
 	/**
