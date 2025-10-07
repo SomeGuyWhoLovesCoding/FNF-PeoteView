@@ -302,11 +302,12 @@ class Main extends Application
 
 		if (_started) {
 			#if FV_LIME_FORK
-			Sys.println('On lime fork! Awesome');
+			//Sys.println('On lime fork! Awesome');
 			newDeltaTime = deltaTime * 0.001;
 			#else
-			Sys.println('Not on lime fork! Awesome');
-			newDeltaTime = deltaTime;
+			//Sys.println('Not on lime fork! Awesome');
+			newDeltaTime = 1000 / Application.current.window.frameRate;
+			//Sys.println(newDeltaTime);
 			#end
 
 			//try {
