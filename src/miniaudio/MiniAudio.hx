@@ -61,7 +61,9 @@ class MiniAudio {
 	@:hlNative("ma_thing", "seek_to_pcm_frame") public static function seekToPCMFrame(pos:hl.I64):Void {}
 	@:hlNative("ma_thing", "deactivate_decoder_hl") public static function deactivate_decoder(index:Int):Void {}
 	@:hlNative("ma_thing", "amplify_decoder_hl") public static function amplify_decoder(index:Int, volume:Float):Void {}
-	@:hlNative("ma_thing", "detectLatency") public static function detectLatency():Int {}
+	@:hlNative("ma_thing", "detectLatency") public static function detectLatency():Int {
+		return 0;
+	}
 }
 #else
 class MiniAudio {
