@@ -161,8 +161,14 @@ class PlayField implements State {
 		onStopSong.add(stopSong);
 		onDeath.add(gameOver);
 
-		conductor.offset = latencyCompensation;
+		conductor.offset = -latencyCompensation #if windows - Mixer.latency() #end;
 		songPosition = -conductor.crochet * 4.5;
+
+		/*// This is important!
+		songPosition += latencyCompensation;
+		#if windows
+		songPosition -= Mixer.latency();
+		#end*/
 
 		var pos = MetaNote.floatToMetaNotePosition(songPosition);
 
@@ -223,11 +229,15 @@ class PlayField implements State {
 
 		if (!died) {
 			Mixer.update(this, deltaTime);
-			songPosition += latencyCompensation;
+			songPosition -= latencyCompensation;
+			#if windows
+			songPosition -= Mixer.latency();
+			#end
 			Main.conductor.time = songPosition;
 
 			var pos = MetaNote.floatToMetaNotePosition(songPosition);
 
+			Sys.println('Offset: ' + (songPosition - Main.conductor.time));
 			//Sys.println('Song Position $songPosition, MetaNote Song Position ${MetaNote.metaNotePositionToSongTime(pos)}');
 
 			if (hud != null) hud.update(deltaTime);
@@ -260,7 +270,10 @@ class PlayField implements State {
 		display.shake(dispShake.x, dispShake.y);
 		view.shake(viewShake.x, viewShake.y);
 
-		songPosition -= latencyCompensation;
+		songPosition += latencyCompensation;
+		#if windows
+		songPosition += Mixer.latency();
+		#end
 	}
 
 	/**
@@ -335,7 +348,12 @@ class PlayField implements State {
 		}
 
 		var absTiming = timing < 0 ? -timing : timing;
-		absTiming += Main.conductor.offset;
+		/*timing -= latencyCompensation;
+		#if windows
+		timing += Mixer.latency();
+		#end*/
+
+		//Sys.println(absTiming);
 
 		if (absTiming > 60) {
 			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(3);

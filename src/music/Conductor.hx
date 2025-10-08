@@ -66,6 +66,9 @@ class Conductor
 	function set_time(value:Float):Float
 	{
 		time = value;
+		/*#if windows
+		time -= Mixer.latency();
+		#end*/
 
 		var calc = (time - offsetTime);
 		_stepTracker = Math.ffloor(stepOffset + calc / stepCrochet);
@@ -113,6 +116,11 @@ class Conductor
 		The measure counter.
 	**/
 	var curMeasure(default, null):Float = 0;
+
+	/**
+		The conductor offset (fpr latency during playfield).
+	**/
+	var offset:Float = 0;
 
 	private var _stepTracker(default, null):Float = 0;
 	private var _beatTracker(default, null):Float = 0;

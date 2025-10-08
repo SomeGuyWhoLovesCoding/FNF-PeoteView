@@ -147,6 +147,10 @@ class Mixer {
 			}
 		}
 	}
+
+	static inline function latency():Int {
+		return MiniAudio.detectLatency();
+	}
 }
 
 /**

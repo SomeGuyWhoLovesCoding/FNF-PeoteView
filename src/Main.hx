@@ -10,6 +10,7 @@ import lime.ui.Window;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 import lime.ui.Gamepad;
+import miniaudio.MiniAudio;
 
 @:publicFields
 class Main extends Application
@@ -179,6 +180,9 @@ class Main extends Application
 
 		SaveData.init();
 		Tools.getIconGridMap('assets/ui');
+		#if windows
+		Sys.println('Windows: Audio latency set to ' + Mixer.latency());
+		#end
 
 		window.frameRate = SaveData.state.graphics.frameRate;
 

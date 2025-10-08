@@ -156,13 +156,14 @@ class NoteSpawner {
 				// treat as overlap: merge into existing sprite
 				noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + (n.missed ? Note.defaultMissAlpha : Note.defaultAlpha), 254);
 				noteSpr.notesInOne++;
+				parent.resolveNoteLogic(lane, pos, n, diff, i, 1);
 				prev = n;
 				++i;
 				continue;
 			} else {
 				if (!ghost) {
-					parent.resolveNoteLogic(lane, pos, n, diff, i, 1);
 					noteSpr = parent.drawNote(pos, n, diff, i, newX, newY, 1, 0);
+					parent.resolveNoteLogic(lane, pos, n, diff, i, 1);
 				} else {
 					// ghost -> same exact meta-note (position, index, type) so just increment
 					noteSpr.notesInOne++;

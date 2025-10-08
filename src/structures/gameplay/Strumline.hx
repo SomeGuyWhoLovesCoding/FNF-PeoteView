@@ -138,7 +138,7 @@ class Strumline {
 				sustainsToHold[index] = notesToHit_indexes[index];
 			}
 
-			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + pf.latencyCompensation);
+			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + pf.latencyCompensation #if windows - Mixer.latency() #end);
 			pf.onNoteHit.dispatch(noteToHit, MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency), 1);
 			notesToHit[index] = null;
 			notesToHit_indexes[index] = 0;
