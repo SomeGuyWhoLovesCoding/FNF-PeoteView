@@ -120,8 +120,7 @@ class NoteSpawner {
 
 			// compute diff/newY for this note FIRST (important!)
 			diff = MetaNote.metaNotePositionToSongTime((n.position - pos)) * scrollSpeed;
-			var newX = receptor.x;
-			var newY = receptor.y + Math.floor(parent.parent.downScroll ? -diff : diff);
+			var newY = receptor.y + Math.floor(diff);
 
 			// update fake storage for this index now that we have the current computed Y
 			// (we'll still use prev's stored value to decide overlap)
@@ -156,14 +155,12 @@ class NoteSpawner {
 				// treat as overlap: merge into existing sprite
 				noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + (n.missed ? Note.defaultMissAlpha : Note.defaultAlpha), 254);
 				noteSpr.notesInOne++;
-				parent.resolveNoteLogic(lane, pos, n, diff, i, 1);
 				prev = n;
 				++i;
 				continue;
 			} else {
 				if (!ghost) {
-					noteSpr = parent.drawNote(pos, n, diff, i, newX, newY, 1, 0);
-					parent.resolveNoteLogic(lane, pos, n, diff, i, 1);
+					noteSpr = parent.drawNote(pos, n, diff, i);
 				} else {
 					// ghost -> same exact meta-note (position, index, type) so just increment
 					noteSpr.notesInOne++;
