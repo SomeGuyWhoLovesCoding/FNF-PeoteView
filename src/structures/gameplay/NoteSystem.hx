@@ -30,6 +30,7 @@ class NoteSystem {
 
 			notesProg = new Program(notesBuf);
 			Note.init(notesProg, "noteTex", tex);
+			notesProg.discardAtAlpha(0.0);
 		}
 
 		if (sustainsBuf == null) {
@@ -41,6 +42,7 @@ class NoteSystem {
 
 			sustainProg = new Program(sustainsBuf);
 			Sustain.init(sustainProg, "sustainTex", tex2);
+			sustainProg.discardAtAlpha(0.0);
 		}
 	}
 
@@ -195,7 +197,7 @@ class NoteSystem {
 		// --- Opponent / bot side ---
 		else {
 			// If opponent hasn't flagged and the note passed center, mark it hit
-			if (!isHit && diff < 0) {
+			if (!isHit && diff <= 0) {
 				var n:Int64 = note.toNumber();
 				(n:MetaNote).flag = true;
 				isHit = true;

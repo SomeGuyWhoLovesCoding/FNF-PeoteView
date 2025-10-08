@@ -123,18 +123,15 @@ class NoteSpawner {
 		cacheHotWindow2();
 
 		var scrollSpeed = parent.parent.scrollSpeed;
-		var diff:Float;
+		var diff:Float = 0;
 
 		var laneCount = parent.strumlines.length;
 
 		// --- Per-lane + per-index tracking ---
-		var mergeTargets:Array<NoteCmd> = [];
 		var prevNotes:Array<Null<MetaNote>> = [];
 		var queues:Array<Array<Array<NoteCmd>>> = [];
-		var verticalThreshold = 4; // pixels for merging
 
-		for (lane in 0...laneCount) {
-			mergeTargets[lane] = null;
+		for (lane in 0...parent.strumlines.length) {
 			prevNotes[lane] = null;
 			var strumline = parent.strumlines[lane];
 
@@ -152,7 +149,7 @@ class NoteSpawner {
 		while (i < top) {
 			var n = File.getNote(i);
 
-			var lane = parent.noteTypeFunctionalityPre.exists(n.type) ? 1 : (n.type % laneCount);
+			var lane = parent.noteTypeFunctionalityPre.exists(n.type) ? 1 : (n.type % parent.strumlines.length);
 			var strumline = parent.strumlines[lane];
 			var receptor = strumline.buffer[n.index];
 			var fakeOverlapStorage = strumline.fakeOverlapStorage;
@@ -163,76 +160,81 @@ class NoteSpawner {
 			var newX = receptor.x;
 			var newY = receptor.y + Std.int(parent.parent.downScroll ? -diff : diff);
 
-			var prevY = (prevNotes[lane] != null) ? fakeOverlapStorage[prevNotes[lane].index] : -99999;
-			var mergeTarget = mergeTargets[lane];
 			var prev = prevNotes[lane];
-
-			var canMerge = mergeTarget != null
-				&& prev != null
-				&& Math.abs(newY - prevY) <= verticalThreshold
-				&& prev.type == n.type
-				&& prev.index == n.index
-				&& prev.duration == n.duration
-				&& mergeTarget.notesInOne <= 16;
+			var prevY = (prev != null) ? fakeOverlapStorage[prev.index] : -99999;
 
 			// Always update fakeOverlapStorage
 			fakeOverlapStorage[n.index] = newY;
 
-			if (mergeTarget == null || !canMerge) {
-				// --- Create a new mergeTarget ---
-				mergeTarget = {
-					data: parent.resolveNoteLogic(lane, pos, n, diff, i, 1),
-					x: newX, y: newY,
-					notesInOne: 1, greedyMerge: false,
-					addedAlpha: 0, id_: i, diff: diff
-				};
-				queue.push(mergeTarget); // push immediately for rendering
-				greedyMergeTemp[n.index] = 1;
-			} else {
-				// --- Merge into existing target ---
-				mergeTarget.addedAlpha = Math.min(mergeTarget.addedAlpha + (n.missed ? Note.defaultMissAlpha : Note.defaultAlpha), 255);
-				increaseNotesInOne(mergeTarget);
+			handleNote(lane, pos, diff, queue, n, prev, greedyMergeTemp, i, newX, newY, prevY);
+			
+			// --- Merge into existing target ---
+			// Added alpha (for fake note overlap) -> current.addedAlpha = Math.min(current.addedAlpha + (n.missed ? Note.defaultMissAlpha : Note.defaultAlpha), 255);
+			//increaseNotesInOne(current);
 
-				greedyMergeTemp[n.index]++;
-				if (greedyMergeTemp[n.index] >= 16) {
-					// Split after threshold
-					var startIndex = queue.length - 16;
-					if (startIndex < 0) startIndex = 0;
-					queue.splice(startIndex, 16);
-
-					mergeTarget = {
-						data: parent.resolveNoteLogic(lane, pos, n, diff, i, 16),
-						x: newX, y: newY,
-						notesInOne: 16, greedyMerge: true,
-						addedAlpha: 0, id_: i, diff: diff
-					};
-					queue.push(mergeTarget);
-					greedyMergeTemp[n.index] = 1;
-				}
-			}
-
-			// --- Update per-lane tracking ---
 			prevNotes[lane] = n;
-			mergeTargets[lane] = mergeTarget;
 
 			i++;
 		}
 
+		//Sys.println(queues[0][2]);
+
 		// --- Draw queued notes per lane & per index ---
-		for (lane in 0...laneCount) {
+		for (lane in 0...parent.strumlines.length) {
 			var queueLane = queues[lane];
 			for (index in 0...queueLane.length) {
 				var queue = queueLane[index];
-				while (queue.length != 0) {
-					var note = queue.pop();
+				for (note in queue) {
+					//var note = queue.pop();
 					parent.drawNote(pos, note.data, note.diff, note.id_, note.x, note.y, note.notesInOne, note.addedAlpha);
 				}
+				queue.resize(0);
 			}
 		}
 
-		Sys.println(queues[0][2]);
 		// Optional debug
 		//Sys.println(parent.strumlines[0].greedyMergeTemp);
+	}
+
+	/**
+	 * This part of `update()` was separated due to mismanagement of AI.
+	**/
+	function handleNote(lane:Int,
+		pos:Int64,
+		diff:Float,
+		queue:Array<NoteCmd>,
+		n:MetaNote,
+		prev:Null<MetaNote>,
+		greedyMergeTemp:Array<Int>,
+		i:Int64,
+		x:Int,
+		y:Int,
+		prevY:Int) {
+		var data = parent.resolveNoteLogic(lane, pos, n, diff, i, 1);
+
+		var canOverlap = prev != null
+			&& Math.abs(y - prevY) == 0
+			&& prev.type == n.type
+			&& prev.index == n.index
+			&& prev.duration == n.duration;
+
+		var ghost = (prev != null) && prev.position == n.position && prev.index == n.index && prev.type == n.type;
+
+		// --- Create a new mergeTarget ---
+		if (canOverlap) {
+			queue[queue.length - 1].notesInOne++;
+			queue[queue.length - 1].addedAlpha = Math.min(queue[queue.length - 1].addedAlpha + (n.missed ? Note.defaultMissAlpha : Note.defaultAlpha), 255);
+		} else if (!ghost) {
+			queue.push({
+				data: n,
+				x: x, y: y,
+				notesInOne: 1, greedyMerge: false,
+				addedAlpha: 0, id_: i, diff: diff
+			});
+			greedyMergeTemp[n.index] = 1;
+		} else {
+			queue[queue.length - 1].notesInOne++;
+		}
 	}
 
 	/**
