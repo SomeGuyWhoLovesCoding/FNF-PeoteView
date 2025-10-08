@@ -277,7 +277,7 @@ class PlayField implements State {
 		songPosition += Mixer.latency();
 		#end
 
-		/*if (songStarted)*/ Main.conductor.time = songPosition;
+		/*if (songStarted)*/ if (!died) Main.conductor.time = songPosition;
 	}
 
 	/**
