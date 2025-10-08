@@ -142,6 +142,7 @@ class Mixer {
 
 			if (!playField.songStarted || playField.songEnded || RenderingMode.enabled) {
 				playField.songPosition += deltaTime;
+				//Main.conductor.time += deltaTime;
 			} else {
 				updateSmoothMusicTime(deltaTime, playField);
 			}

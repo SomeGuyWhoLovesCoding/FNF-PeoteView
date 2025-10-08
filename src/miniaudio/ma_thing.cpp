@@ -38,8 +38,6 @@ int MIXER_STATE = 3; // 0=undefined,1=playing,2=stopped,3=finished
 
 int g_measuredLatencyMs = 0; // cached loopback latency
 
-#ifdef _WIN32
-
 // -------------------- LOOPBACK LATENCY MEASUREMENT --------------------
 int detectLatency() {
 	int bufferLatency = 10; // simple.
@@ -48,6 +46,7 @@ int detectLatency() {
 
     if (g_measuredLatencyMs != 0) return result;
 
+	#ifdef _WIN32
     const int PULSE_LENGTH = SAMPLE_RATE / 100; // 10ms pulse
     float pulse[PULSE_LENGTH * CHANNEL_COUNT];
     memset(pulse, 0, sizeof(pulse));
@@ -117,7 +116,7 @@ int detectLatency() {
     ma_device_start(&loopback);
     ma_device_start(&playback);
 
-	printf("MiniAudio (WASAPI) Calibraring latency\n");
+	printf("Calibraring latency\n");
     ma_sleep(300); // capture 1/3 of a second at max
 
     ma_device_uninit(&playback);
@@ -139,13 +138,15 @@ int detectLatency() {
 
     g_measuredLatencyMs = (int)((bestOffset * 1000.0f) / SAMPLE_RATE);
 	result = bufferLatency + osMs + g_measuredLatencyMs;
+	#else
+	g_measuredLatencyMs = 1;
+	#endif // _WIN32
 
-	printf("MiniAudio (WASAPI) Done calibraring latency. It is now %d\n", g_measuredLatencyMs);
+	printf("Done calibraring latency. It is now %d\n", g_measuredLatencyMs);
 
 	//printf("MiniAudio (WASAPI) Detected Latency %dms\n", result);
 	return result;
 }
-#endif // _WIN32
 
 /*
 * 0 = false
