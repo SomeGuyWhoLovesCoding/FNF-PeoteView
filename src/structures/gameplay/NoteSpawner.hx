@@ -1,63 +1,6 @@
 package structures.gameplay;
 
 /**
-	The note render command class.
-	This is used for the rendering queue.
-	@since Development
-**/
-@:structInit
-@:publicFields
-class NoteCmd {
-	var data:MetaNote;
-	var x:Int;
-	var y:Int;
-	var notesInOne:Int64;
-	var greedyMerge:Bool; // false = 1x, true = 128x
-	var addedAlpha:Float;
-	var id_:Int64;
-	var diff:Float;
-}
-
-/**
-	The note render command queue class.
-	This is an isolated class because a nobody else does note render queues. Hell, it might be useful for greedy note merging.
-	@since Development
-**/
-@:publicFields
-class NoteQueue {
-	var _queue(default, null):Array<Array<Array<NoteCmd>>>;
-
-	var parent(default, null):NoteSystem;
-
-	function new(parent:NoteSystem) {
-		this.parent = parent;
-
-		_queue = [for (i in 0...parent.strumlines.length) {
-			[for (j in 0...parent.strumlines[i].buffer.length) []];
-		}];
-	}
-
-	inline function addToQueue(n:NoteCmd, lane:Int) {
-		_queue[lane][n.data.index].push(n);
-	}
-
-	function run(pos:Int64) {
-		for (i in 0..._queue.length) { // base
-			var queueLane = _queue[i];
-			for (j in 0...queueLane.length) { // lane
-				var queueIndex = queueLane[i];
-				for (k in 0...queueIndex.length) { // index
-					while (queueIndex.length != 0) {
-						var noteSpr = queueIndex.pop();
-						parent.drawNote(pos, noteSpr.data, noteSpr.diff, noteSpr.id_, noteSpr.x, noteSpr.y, noteSpr.notesInOne, noteSpr.addedAlpha);
-					}
-				}
-			}
-		}
-	}
-}
-
-/**
 	The internal note handler.
 	This class is responsible for spawning and despawning notes based on the song's position.
 	It handles the culling of notes that are too far away from the current position, and it draws the notes that are within the spawn distance.
@@ -80,8 +23,6 @@ class NoteSpawner {
 
 	var parent(default, null):NoteSystem;
 
-	var queue(default, null):NoteQueue;
-
 	/**
 	 * Creates the note spawner.
 	 * @param parent The note system to implement this note spawner on.
@@ -103,8 +44,6 @@ class NoteSpawner {
 			var type = note.type;
 			trace('Position: $position, Duration: $duration, Index: $index, Type: $type');
 		}*/
-
-		queue = new NoteQueue(parent);
 	}
 
 	// before updating / drawing notes
@@ -168,7 +107,7 @@ class NoteSpawner {
 		var scrollSpeed = parent.parent.scrollSpeed;
 		var diff = 0.0;
 		var noteY = 0;
-		var noteSpr:NoteCmd = null;
+		var noteSpr:Null<Note> = null;
 
 		var prev:Null<MetaNote> = null;
 		while (i < top) {
@@ -205,7 +144,8 @@ class NoteSpawner {
 				&& prev != null
 				&& (Math.abs(Math.floor(newY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)) - Math.floor(prevY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT))) <= OVERLAP_PIXEL_THRESHOLD)
 				&& (prev.type == n.type)
-				&& (prev.index == n.index)
+				&& (noteSpr.r == 0 /* default angle */)
+				&& (noteSpr.scale == receptor.scale)
 				&& (prev.duration == n.duration)
 				&& (noteSpr.x == receptor.x);
 
@@ -216,19 +156,13 @@ class NoteSpawner {
 				// treat as overlap: merge into existing sprite
 				noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + (n.missed ? Note.defaultMissAlpha : Note.defaultAlpha), 254);
 				noteSpr.notesInOne++;
-				parent.resolveNoteLogic(lane, pos, n, diff, i, 1);
 				prev = n;
 				++i;
 				continue;
 			} else {
 				if (!ghost) {
-					noteSpr = {
-						data: parent.resolveNoteLogic(lane, pos, n, diff, i, 1),
-						x: newX, y: newY,
-						notesInOne: 1, greedyMerge: false, addedAlpha: 0,
-						id_: i, diff: diff
-					}; //parent.drawNote(pos, n, diff, i);
-					queue.addToQueue(noteSpr, lane);
+					parent.resolveNoteLogic(lane, pos, n, diff, i, 1);
+					noteSpr = parent.drawNote(pos, n, diff, i, newX, newY, 1, 0);
 				} else {
 					// ghost -> same exact meta-note (position, index, type) so just increment
 					noteSpr.notesInOne++;
@@ -237,8 +171,6 @@ class NoteSpawner {
 				++i;
 			}
 		}
-
-		queue.run(pos);
 	}
 
 	/**

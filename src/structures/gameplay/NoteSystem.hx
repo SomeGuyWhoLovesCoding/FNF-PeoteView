@@ -265,6 +265,8 @@ class NoteSystem {
 		notesInOne:Int64,
 		addedAlpha:Float
 	):Note {
+		if (parent.downScroll) diff = -diff;
+
 		var index = note.index;
 		var lane = 0;
 		var duration = note.duration;
