@@ -235,6 +235,8 @@ class PlayField implements State {
 			#end
 			//if (songStarted && !songEnded) Main.conductor.time = songPosition;
 
+			Main.conductor.time = songPosition;
+
 			var pos = MetaNote.floatToMetaNotePosition(songPosition);
 
 			//Sys.println('Offset: ' + (songPosition - Main.conductor.time));
@@ -277,7 +279,7 @@ class PlayField implements State {
 		songPosition += Mixer.latency();
 		#end
 
-		/*if (songStarted)*/ if (!died) Main.conductor.time = songPosition;
+		/*if (songStarted)*/ //if (!died) Main.conductor.time = songPosition;
 	}
 
 	/**

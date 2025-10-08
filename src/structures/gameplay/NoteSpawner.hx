@@ -95,6 +95,10 @@ class NoteSpawner {
 		_lastbottom = bottom;
 		_lasttop = top;
 
+		if (!parent.parent.songStarted) {
+			pos += MetaNote.floatToMetaNotePosition(Main.conductor.offset);
+		}
+
 		cullTop(pos);
 		cullBottom(pos);
 
