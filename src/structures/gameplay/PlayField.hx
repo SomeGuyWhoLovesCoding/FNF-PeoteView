@@ -223,6 +223,9 @@ class PlayField implements State {
 		if (!died) {
 			Mixer.update(this, deltaTime);
 			songPosition += latencyCompensation;
+			#if windows
+			songPosition -= Mixer.latency();
+			#end
 			Main.conductor.time = songPosition;
 
 			var pos = MetaNote.floatToMetaNotePosition(songPosition);
@@ -260,6 +263,9 @@ class PlayField implements State {
 		view.shake(viewShake.x, viewShake.y);
 
 		songPosition -= latencyCompensation;
+		#if windows
+		songPosition += Mixer.latency();
+		#end
 	}
 
 	/**

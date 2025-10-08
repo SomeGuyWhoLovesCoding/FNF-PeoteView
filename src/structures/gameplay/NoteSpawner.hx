@@ -19,6 +19,45 @@ class NoteCmd {
 }
 
 /**
+	The note render command queue class.
+	This is an isolated class because a nobody else does note render queues. Hell, it might be useful for greedy note merging.
+	@since Development
+**/
+@:publicFields
+class NoteQueue {
+	var _queue(default, null):Array<Array<Array<NoteCmd>>>;
+
+	var parent(default, null):NoteSystem;
+
+	function new(parent:NoteSystem) {
+		this.parent = parent;
+
+		_queue = [for (i in 0...parent.strumlines.length) {
+			[for (j in 0...parent.strumlines[i].buffer.length) []];
+		}];
+	}
+
+	inline function addToQueue(n:NoteCmd, lane:Int) {
+		_queue[lane][n.data.index].push(n);
+	}
+
+	function run(pos:Int64) {
+		for (i in 0..._queue.length) { // base
+			var queueLane = _queue[i];
+			for (j in 0...queueLane.length) { // lane
+				var queueIndex = queueLane[i];
+				for (k in 0...queueIndex.length) { // index
+					while (queueIndex.length != 0) {
+						var noteSpr = queueIndex.pop();
+						parent.drawNote(pos, noteSpr.data, noteSpr.diff, noteSpr.id_, noteSpr.x, noteSpr.y, noteSpr.notesInOne, noteSpr.addedAlpha);
+					}
+				}
+			}
+		}
+	}
+}
+
+/**
 	The internal note handler.
 	This class is responsible for spawning and despawning notes based on the song's position.
 	It handles the culling of notes that are too far away from the current position, and it draws the notes that are within the spawn distance.
@@ -41,6 +80,8 @@ class NoteSpawner {
 
 	var parent(default, null):NoteSystem;
 
+	var queue(default, null):NoteQueue;
+
 	/**
 	 * Creates the note spawner.
 	 * @param parent The note system to implement this note spawner on.
@@ -62,6 +103,8 @@ class NoteSpawner {
 			var type = note.type;
 			trace('Position: $position, Duration: $duration, Index: $index, Type: $type');
 		}*/
+
+		queue = new NoteQueue(parent);
 	}
 
 	// before updating / drawing notes
@@ -100,18 +143,14 @@ class NoteSpawner {
 	}
 
 	/**
-	 * Adds a note to one, preventing any note sprites closer than one pixel 
-	 * @param cmd The note render command to be used.
-	 */
-	function increaseNotesInOne(cmd:NoteCmd) {
-		cmd.notesInOne++;
-	}
-
-	/**
 	 * Updates the note spawner.
 	 * @param pos The song's position in the note position format.
 	 */
 	function update(pos:Int64) {
+		//Sys.println('Why');
+		//var pos = MetaNote.floatToMetaNotePosition(songPosition);
+		//Sys.println('Song Position ${parent.parent.songPosition}, MetaNote Song Position ${MetaNote.metaNotePositionToSongTime(pos)}');
+
 		cacheHotWindow();
 
 		_lastbottom = bottom;
@@ -122,119 +161,84 @@ class NoteSpawner {
 
 		cacheHotWindow2();
 
-		var scrollSpeed = parent.parent.scrollSpeed;
-		var diff:Float = 0;
+		//Sys.println('Top $top bottom $bottom');
 
-		var laneCount = parent.strumlines.length;
-
-		// --- Per-lane + per-index tracking ---
-		var prevNotes:Array<Null<MetaNote>> = [];
-		var queues:Array<Array<Array<NoteCmd>>> = [];
-
-		for (lane in 0...parent.strumlines.length) {
-			prevNotes[lane] = null;
-			var strumline = parent.strumlines[lane];
-
-			// Greedy counters per index
-			strumline.greedyMergeTemp = [];
-			for (i in 0...strumline.buffer.length) strumline.greedyMergeTemp[i] = 1;
-
-			// Initialize per-index queues
-			queues[lane] = [];
-			for (i in 0...strumline.buffer.length) queues[lane][i] = [];
-		}
-
-		// --- Iterate notes ---
 		var i = bottom;
+
+		var scrollSpeed = parent.parent.scrollSpeed;
+		var diff = 0.0;
+		var noteY = 0;
+		var noteSpr:NoteCmd = null;
+
+		var prev:Null<MetaNote> = null;
 		while (i < top) {
 			var n = File.getNote(i);
 
+			// lane/receptor/fake storage lookups
 			var lane = parent.noteTypeFunctionalityPre.exists(n.type) ? 1 : (n.type % parent.strumlines.length);
-			var strumline = parent.strumlines[lane];
-			var receptor = strumline.buffer[n.index];
-			var fakeOverlapStorage = strumline.fakeOverlapStorage;
-			var greedyMergeTemp = strumline.greedyMergeTemp;
-			var queue = queues[lane][n.index];
+			var receptor = parent.strumlines[lane].buffer[n.index];
+			var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
 
-			diff = MetaNote.metaNotePositionToSongTime(n.position - pos) * scrollSpeed;
+			// compute diff/newY for this note FIRST (important!)
+			diff = MetaNote.metaNotePositionToSongTime((n.position - pos)) * scrollSpeed;
 			var newX = receptor.x;
-			var newY = receptor.y + Std.int(parent.parent.downScroll ? -diff : diff);
+			var newY = receptor.y + Math.floor(parent.parent.downScroll ? -diff : diff);
 
-			var prev = prevNotes[lane];
+			// update fake storage for this index now that we have the current computed Y
+			// (we'll still use prev's stored value to decide overlap)
+			// but delay writing it until after overlap decision? Either way, compare against prev value below.
+			// We'll not overwrite it yet so prev comparison can use the prior prev value:
+			// fakeOverlapStorage[n.index] = newY; // only write after deciding not to merge
+
+			// safe ghost check (ensure prev exists)
+			var ghost = (prev != null) && prev.position == n.position && prev.index == n.index && prev.type == n.type;
+
+			// small pixel threshold: how many pixels difference still counts as overlapping
+			// tune this to taste; 0 requires exact same floored pixel, 1 allows a 1-pixel gap, etc.
+			var OVERLAP_PIXEL_THRESHOLD = 0;
+
+			// compute prevY only if prev exists
 			var prevY = (prev != null) ? fakeOverlapStorage[prev.index] : -99999;
 
-			// Always update fakeOverlapStorage
+			// requirements: only consider fake-overlap if we actually have a note sprite and a prev to compare with
+			var requirementsForNoteOverlapSimulationBS = noteSpr != null
+				&& prev != null
+				&& (Math.abs(Math.floor(newY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)) - Math.floor(prevY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT))) <= OVERLAP_PIXEL_THRESHOLD)
+				&& (prev.type == n.type)
+				&& (prev.index == n.index)
+				&& (prev.duration == n.duration)
+				&& (noteSpr.x == receptor.x);
+
+			// now write the computed Y into fake overlap storage (so next notes compare to this)
 			fakeOverlapStorage[n.index] = newY;
 
-			handleNote(lane, pos, diff, queue, n, prev, greedyMergeTemp, i, newX, newY, prevY);
-			
-			// --- Merge into existing target ---
-			// Added alpha (for fake note overlap) -> current.addedAlpha = Math.min(current.addedAlpha + (n.missed ? Note.defaultMissAlpha : Note.defaultAlpha), 255);
-			//increaseNotesInOne(current);
-
-			prevNotes[lane] = n;
-
-			i++;
-		}
-
-		//Sys.println(queues[0][2]);
-
-		// --- Draw queued notes per lane & per index ---
-		for (lane in 0...parent.strumlines.length) {
-			var queueLane = queues[lane];
-			for (index in 0...queueLane.length) {
-				var queue = queueLane[index];
-				for (note in queue) {
-					//var note = queue.pop();
-					parent.drawNote(pos, note.data, note.diff, note.id_, note.x, note.y, note.notesInOne, note.addedAlpha);
+			if (requirementsForNoteOverlapSimulationBS) {
+				// treat as overlap: merge into existing sprite
+				noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + (n.missed ? Note.defaultMissAlpha : Note.defaultAlpha), 254);
+				noteSpr.notesInOne++;
+				parent.resolveNoteLogic(lane, pos, n, diff, i, 1);
+				prev = n;
+				++i;
+				continue;
+			} else {
+				if (!ghost) {
+					noteSpr = {
+						data: parent.resolveNoteLogic(lane, pos, n, diff, i, 1),
+						x: newX, y: newY,
+						notesInOne: 1, greedyMerge: false, addedAlpha: 0,
+						id_: i, diff: diff
+					}; //parent.drawNote(pos, n, diff, i);
+					queue.addToQueue(noteSpr, lane);
+				} else {
+					// ghost -> same exact meta-note (position, index, type) so just increment
+					noteSpr.notesInOne++;
 				}
-				queue.resize(0);
+				prev = n;
+				++i;
 			}
 		}
 
-		// Optional debug
-		//Sys.println(parent.strumlines[0].greedyMergeTemp);
-	}
-
-	/**
-	 * This part of `update()` was separated due to mismanagement of AI.
-	**/
-	function handleNote(lane:Int,
-		pos:Int64,
-		diff:Float,
-		queue:Array<NoteCmd>,
-		n:MetaNote,
-		prev:Null<MetaNote>,
-		greedyMergeTemp:Array<Int>,
-		i:Int64,
-		x:Int,
-		y:Int,
-		prevY:Int) {
-		var data = parent.resolveNoteLogic(lane, pos, n, diff, i, 1);
-
-		var canOverlap = prev != null
-			&& Math.abs(y - prevY) == 0
-			&& prev.type == n.type
-			&& prev.index == n.index
-			&& prev.duration == n.duration;
-
-		var ghost = (prev != null) && prev.position == n.position && prev.index == n.index && prev.type == n.type;
-
-		// --- Create a new mergeTarget ---
-		if (canOverlap) {
-			queue[queue.length - 1].notesInOne++;
-			queue[queue.length - 1].addedAlpha = Math.min(queue[queue.length - 1].addedAlpha + (n.missed ? Note.defaultMissAlpha : Note.defaultAlpha), 255);
-		} else if (!ghost) {
-			queue.push({
-				data: n,
-				x: x, y: y,
-				notesInOne: 1, greedyMerge: false,
-				addedAlpha: 0, id_: i, diff: diff
-			});
-			greedyMergeTemp[n.index] = 1;
-		} else {
-			queue[queue.length - 1].notesInOne++;
-		}
+		queue.run(pos);
 	}
 
 	/**

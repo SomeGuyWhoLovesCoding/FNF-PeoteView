@@ -70,9 +70,6 @@ class NoteSystem {
 
 		var inputSystem = parent.inputSystem;
 
-		notePool = new NotePool(this);
-		noteSpawner = new NoteSpawner(this);
-
 		var mania = Chart.header.mania;
 
 		strumlines = [];
@@ -84,6 +81,10 @@ class NoteSystem {
 			strumline.playable = parent.inputSystem.strumlinePlayable[i];
 			strumlines.push(strumline);
 		}
+
+		// reorder this cuz noteSpawner's queue depends on strumline now
+		notePool = new NotePool(this);
+		noteSpawner = new NoteSpawner(this);
 
 		setScrollSpeed(Chart.header.speed);
 
