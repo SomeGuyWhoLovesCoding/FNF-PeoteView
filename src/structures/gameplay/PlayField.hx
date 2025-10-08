@@ -237,7 +237,7 @@ class PlayField implements State {
 
 			var pos = MetaNote.floatToMetaNotePosition(songPosition);
 
-			Sys.println('Offset: ' + (songPosition - Main.conductor.time));
+			//Sys.println('Offset: ' + (songPosition - Main.conductor.time));
 			//Sys.println('Song Position $songPosition, MetaNote Song Position ${MetaNote.metaNotePositionToSongTime(pos)}');
 
 			if (hud != null) hud.update(deltaTime);
