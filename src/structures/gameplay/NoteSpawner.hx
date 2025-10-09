@@ -81,7 +81,6 @@ class NoteSpawner {
 		}
 	}
 
-	// Help I don't understand this fucking greedy merge shit I have one bug that makes it so the regualr notes that are alone and not notesInOne > 1 AND is further than 1 pixel still get affected and not render.
 	/**
 	 * Updates the note spawner.
 	 * @param pos The song's position in the note position format.
