@@ -99,25 +99,6 @@ class NoteSpawner {
 		var scrollSpeed = parent.parent.scrollSpeed;
 		var i = bottom;
 
-		// Clear all greedy merge queues at the start of each frame
-		for (l in 0...parent.strumlines.length) {
-			var strumline = parent.strumlines[l];
-			for (idx in 0...strumline.greedyMergeTemp.length) {
-				if (strumline.greedyMergeTemp[idx] != null) {
-					strumline.greedyMergeTemp[idx].resize(0);
-				}
-			}
-		}
-
-		// 3D structure: [lane][index][sub-array of sprites]
-		var laneSprites:Array<Array<Array<Note>>> = [];
-		for (l in 0...parent.strumlines.length) {
-			laneSprites.push([]);
-			for (idx in 0...parent.strumlines[l].length) {
-				laneSprites[l].push([]);
-			}
-		}
-
 		var prev:Null<MetaNote> = null;
 
 		while (i < top) {
@@ -144,96 +125,84 @@ class NoteSpawner {
 			var prevY = (prev != null) ? fakeOverlapStorage[prev.index] : -99999;
 			var OVERLAP_PIXEL_THRESHOLD = 0;
 
-			// Get the sprite array for this lane+index combination
-			var spriteArray = laneSprites[lane][n.index];
-			var currentSprite:Null<Note> = spriteArray.length > 0 ? spriteArray[spriteArray.length - 1] : null;
+			// Get the last drawn sprite for fake overlap checking
+			var currentSprite:Null<Note> = null;
 
-			var requirementsForFakeOverlap = currentSprite != null
-				&& prev != null
+			var requirementsForFakeOverlap = prev != null
+				&& greedyMergeLane.length > 0
 				&& (Math.abs(Math.floor(newY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT))
 						- Math.floor(prevY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT))) <= OVERLAP_PIXEL_THRESHOLD)
 				&& prev.type == n.type
-				&& currentSprite.r == 0
-				&& currentSprite.scale == receptor.scale
-				&& prev.duration == n.duration
-				&& currentSprite.x == receptor.x;
+				&& prev.index == n.index
+				&& prev.duration == n.duration;
 
 			var ghost = prev != null && prev.position == n.position && prev.index == n.index && prev.type == n.type;
 
 			fakeOverlapStorage[n.index] = newY;
-
-			// --- handle fake overlap ---
-			if (requirementsForFakeOverlap) {
-				currentSprite.addedAlpha = Math.min(currentSprite.addedAlpha + (n.missed ? Note.defaultMissAlpha : Note.defaultAlpha), 254);
-				currentSprite.notesInOne++;
-				prev = n;
-				++i;
-				continue;
-			}
-
-			// --- handle ghost notes ---
-			if (ghost) {
-				if (currentSprite != null) {
-					currentSprite.notesInOne++;
-				}
-				prev = n;
-				++i;
-				continue;
-			}
 
 			// Check if current note is compatible with previous note for greedy merging
 			var canGreedyMerge = prev != null
 				&& prev.type == n.type
 				&& prev.duration == n.duration
 				&& prev.index == n.index
-				&& prev.position != n.position;
+				&& prev.position != n.position
+				&& !requirementsForFakeOverlap
+				&& !ghost;
 
-			if (canGreedyMerge) {
-				// If queue is empty, add the previous note first
-				if (greedyMergeLane.length == 0) {
-					// We need to add prev's data, but we don't have it stored
-					// So just add current note - the merge will happen on next iteration
-				}
-				
+			if (requirementsForFakeOverlap && greedyMergeLane.length > 0) {
+				// Add to existing greedy batch's alpha/count
+				var lastCmd = greedyMergeLane[greedyMergeLane.length - 1];
+				lastCmd.addedAlpha += (n.missed ? Note.defaultMissAlpha : Note.defaultAlpha);
+				lastCmd.notesInOne++;
+			} else if (ghost && greedyMergeLane.length > 0) {
+				// Add to existing greedy batch's count only
+				var lastCmd = greedyMergeLane[greedyMergeLane.length - 1];
+				lastCmd.notesInOne++;
+			} else if (canGreedyMerge) {
 				// Add current note to greedy merge queue
 				greedyMergeLane.push({
 					n: n,
 					diff: diff,
 					id_: i,
 					pos: pos,
-					notesInOne: 0,
-					addedAlpha: 0
+					notesInOne: 1,
+					addedAlpha: (n.missed ? Note.defaultMissAlpha : Note.defaultAlpha)
 				});
 
-				// Flush if 16 notes accumulated
+				// If this is the first note in the queue, draw it immediately
+				// Subsequent compatible notes will be batched with it
+				if (greedyMergeLane.length == 1) {
+					currentSprite = parent.drawNote(pos, n, diff, i);
+				}
+
+				// Flush and draw if 16 notes accumulated
 				if (greedyMergeLane.length >= 16) {
 					var firstData:NoteCmd = greedyMergeLane[0];
 					currentSprite = parent.drawNote(firstData.pos, firstData.n, firstData.diff, firstData.id_);
-					currentSprite.notesInOne = greedyMergeLane.length;
+					currentSprite.notesInOne = 0;
 					currentSprite.addedAlpha = 0;
 					for (cmd in greedyMergeLane) {
-						currentSprite.addedAlpha += (cmd.n.missed ? Note.defaultMissAlpha : Note.defaultAlpha);
+						currentSprite.notesInOne += cmd.notesInOne;
+						currentSprite.addedAlpha += cmd.addedAlpha;
 					}
 					greedyMergeLane.resize(0);
-					spriteArray.push(currentSprite);
 				}
 			} else {
-				// Not compatible with previous note - flush any existing batch
+				// Not compatible - flush any existing batch first
 				if (greedyMergeLane.length > 0) {
 					var firstData:NoteCmd = greedyMergeLane[0];
 					currentSprite = parent.drawNote(firstData.pos, firstData.n, firstData.diff, firstData.id_);
-					currentSprite.notesInOne = greedyMergeLane.length;
+					currentSprite.notesInOne = 0;
 					currentSprite.addedAlpha = 0;
 					for (cmd in greedyMergeLane) {
-						currentSprite.addedAlpha += (cmd.n.missed ? Note.defaultMissAlpha : Note.defaultAlpha);
+						currentSprite.notesInOne += cmd.notesInOne;
+						currentSprite.addedAlpha += cmd.addedAlpha;
 					}
 					greedyMergeLane.resize(0);
-					spriteArray.push(currentSprite);
 				}
 
 				// Draw current note normally
 				currentSprite = parent.drawNote(pos, n, diff, i);
-				spriteArray.push(currentSprite);
 			}
 
 			prev = n;
@@ -248,10 +217,11 @@ class NoteSpawner {
 				if (greedyQueue != null && greedyQueue.length > 0) {
 					var firstData:NoteCmd = greedyQueue[0];
 					var sprite = parent.drawNote(firstData.pos, firstData.n, firstData.diff, firstData.id_);
-					sprite.notesInOne = greedyQueue.length;
+					sprite.notesInOne = 0;
 					sprite.addedAlpha = 0;
 					for (cmd in greedyQueue) {
-						sprite.addedAlpha += (cmd.n.missed ? Note.defaultMissAlpha : Note.defaultAlpha);
+						sprite.notesInOne += cmd.notesInOne;
+						sprite.addedAlpha += cmd.addedAlpha;
 					}
 					greedyQueue.resize(0);
 				}
