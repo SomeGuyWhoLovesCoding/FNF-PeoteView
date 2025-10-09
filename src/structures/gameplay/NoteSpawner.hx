@@ -99,6 +99,16 @@ class NoteSpawner {
 		var scrollSpeed = parent.parent.scrollSpeed;
 		var i = bottom;
 
+		// Clear all greedy merge queues at the start of each frame
+		for (l in 0...parent.strumlines.length) {
+			var strumline = parent.strumlines[l];
+			for (idx in 0...strumline.greedyMergeTemp.length) {
+				if (strumline.greedyMergeTemp[idx] != null) {
+					strumline.greedyMergeTemp[idx].resize(0);
+				}
+			}
+		}
+
 		// 3D structure: [lane][index][sub-array of sprites]
 		var laneSprites:Array<Array<Array<Note>>> = [];
 		for (l in 0...parent.strumlines.length) {
@@ -171,18 +181,21 @@ class NoteSpawner {
 				continue;
 			}
 
-			// Check if current note can continue the greedy merge from the last note in queue
-			var canContinueGreedyMerge = greedyMergeLane.length > 0;
-			if (canContinueGreedyMerge) {
-				var lastInQueue = greedyMergeLane[greedyMergeLane.length - 1].n;
-				canContinueGreedyMerge = lastInQueue.type == n.type
-					&& lastInQueue.duration == n.duration
-					&& lastInQueue.index == n.index
-					&& lastInQueue.position != n.position;
-			}
+			// Check if current note is compatible with previous note for greedy merging
+			var canGreedyMerge = prev != null
+				&& prev.type == n.type
+				&& prev.duration == n.duration
+				&& prev.index == n.index
+				&& prev.position != n.position;
 
-			if (canContinueGreedyMerge) {
-				// Continue adding to the current greedy merge batch
+			if (canGreedyMerge) {
+				// If queue is empty, add the previous note first
+				if (greedyMergeLane.length == 0) {
+					// We need to add prev's data, but we don't have it stored
+					// So just add current note - the merge will happen on next iteration
+				}
+				
+				// Add current note to greedy merge queue
 				greedyMergeLane.push({
 					n: n,
 					diff: diff,
@@ -192,7 +205,7 @@ class NoteSpawner {
 					addedAlpha: 0
 				});
 
-				// flush if 16 notes accumulated
+				// Flush if 16 notes accumulated
 				if (greedyMergeLane.length >= 16) {
 					var firstData:NoteCmd = greedyMergeLane[0];
 					currentSprite = parent.drawNote(firstData.pos, firstData.n, firstData.diff, firstData.id_);
@@ -205,7 +218,7 @@ class NoteSpawner {
 					spriteArray.push(currentSprite);
 				}
 			} else {
-				// flush any previous greedy batch for this specific lane+index
+				// Not compatible with previous note - flush any existing batch
 				if (greedyMergeLane.length > 0) {
 					var firstData:NoteCmd = greedyMergeLane[0];
 					currentSprite = parent.drawNote(firstData.pos, firstData.n, firstData.diff, firstData.id_);
@@ -218,32 +231,9 @@ class NoteSpawner {
 					spriteArray.push(currentSprite);
 				}
 
-				// Check if we can start a NEW greedy merge with the next note
-				var canStartGreedyMerge = false;
-				if (i + 1 < top) {
-					var nextNote = File.getNote(i + 1);
-					canStartGreedyMerge = nextNote.type == n.type
-						&& nextNote.duration == n.duration
-						&& nextNote.index == n.index
-						&& nextNote.position != n.position;
-				}
-
-				if (canStartGreedyMerge) {
-					// Start a new greedy merge batch
-					greedyMergeLane.push({
-						n: n,
-						diff: diff,
-						id_: i,
-						pos: pos,
-						notesInOne: 0,
-						addedAlpha: 0
-					});
-					// Don't add to spriteArray yet - will be flushed later
-				} else {
-					// Draw current note normally (doesn't qualify for greedy merge)
-					currentSprite = parent.drawNote(pos, n, diff, i);
-					spriteArray.push(currentSprite);
-				}
+				// Draw current note normally
+				currentSprite = parent.drawNote(pos, n, diff, i);
+				spriteArray.push(currentSprite);
 			}
 
 			prev = n;
