@@ -96,7 +96,7 @@ class Mixer {
 
 	static public function updateSmoothMusicTime(deltaTime:Float, playfield:PlayField):Void {
 		if (isPlaying()) {
-			var rawPlaybackPosition = MiniAudio.getPlaybackPosition();
+			var rawPlaybackPosition = MiniAudio.getPlaybackPosition() + Main.conductor.offset;
 			playfield.songPosition += deltaTime;
 			var multiply = 0.05; // Default drift adjustment value
 			var diff = playfield.songPosition - rawPlaybackPosition;

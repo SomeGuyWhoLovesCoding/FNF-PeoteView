@@ -134,7 +134,7 @@ HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
     ma_device_start(&playback);
 
 	printf("Calibraring latency\n");
-    ma_sleep(300); // capture 1/3 of a second at max
+    ma_sleep(2000); // capture 2 seconds at max
 
     ma_device_uninit(&playback);
     ma_device_uninit(&loopback);
@@ -156,8 +156,10 @@ HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
     g_measuredLatencyMs = (int)((bestOffset * 1000.0f) / SAMPLE_RATE);
 	result = bufferLatency + osMs + g_measuredLatencyMs;
 	#else
-	g_measuredLatencyMs = 1;
+	g_measuredLatencyMs = 20;
 	#endif // _WIN32
+
+	result = bufferLatency + osMs + g_measuredLatencyMs;
 
 	printf("Done calibraring latency. It is now %d\n", g_measuredLatencyMs);
 

@@ -81,6 +81,7 @@ class NoteSpawner {
 		}
 	}
 
+	// Help I don't understand this fucking greedy merge shit I have one bug that makes it so the regualr notes that are alone and not notesInOne > 1 AND is further than 1 pixel still get affected and not render.
 	/**
 	 * Updates the note spawner.
 	 * @param pos The song's position in the note position format.
@@ -140,6 +141,8 @@ class NoteSpawner {
 
 			fakeOverlapStorage[n.index] = newY;
 
+			var lastCmd = greedyMergeLane[greedyMergeLane.length - 1];
+
 			// Check if current note is compatible with previous note for greedy merging
 			var canGreedyMerge = prev != null
 				&& prev.type == n.type
@@ -147,17 +150,19 @@ class NoteSpawner {
 				&& prev.index == n.index
 				&& prev.position != n.position
 				&& !requirementsForFakeOverlap
+				//&& (lastCmd != null && lastCmd.notesInOne >= 1) breaks all together
 				&& !ghost;
 
-			if (requirementsForFakeOverlap && greedyMergeLane.length > 0) {
+			if (requirementsForFakeOverlap && greedyMergeLane.length != 0) {
 				// Add to existing greedy batch's alpha/count
-				var lastCmd = greedyMergeLane[greedyMergeLane.length - 1];
 				lastCmd.addedAlpha += (n.missed ? Note.defaultMissAlpha : Note.defaultAlpha);
 				lastCmd.notesInOne++;
-			} else if (ghost && greedyMergeLane.length > 0) {
+			} else if (ghost && greedyMergeLane.length != 0) {
 				// Add to existing greedy batch's count only
-				var lastCmd = greedyMergeLane[greedyMergeLane.length - 1];
 				lastCmd.notesInOne++;
+				prev = n;
+				++i;
+				continue;
 			} else if (canGreedyMerge) {
 				// Add current note to greedy merge queue
 				greedyMergeLane.push({
@@ -179,7 +184,7 @@ class NoteSpawner {
 				if (greedyMergeLane.length >= 16) {
 					var firstData:NoteCmd = greedyMergeLane[0];
 					currentSprite = parent.drawNote(firstData.pos, firstData.n, firstData.diff, firstData.id_);
-					currentSprite.notesInOne = 0;
+					currentSprite.notesInOne = 1;
 					currentSprite.addedAlpha = 0;
 					for (cmd in greedyMergeLane) {
 						currentSprite.notesInOne += cmd.notesInOne;
@@ -191,18 +196,20 @@ class NoteSpawner {
 				// Not compatible - flush any existing batch first
 				if (greedyMergeLane.length > 0) {
 					var firstData:NoteCmd = greedyMergeLane[0];
-					currentSprite = parent.drawNote(firstData.pos, firstData.n, firstData.diff, firstData.id_);
-					currentSprite.notesInOne = 0;
-					currentSprite.addedAlpha = 0;
 					for (cmd in greedyMergeLane) {
-						currentSprite.notesInOne += cmd.notesInOne;
-						currentSprite.addedAlpha += cmd.addedAlpha;
+						currentSprite = parent.drawNote(cmd.pos, cmd.n, cmd.diff, cmd.id_);
+						// Reset to individual note defaults
+						currentSprite.notesInOne = 1;
+						currentSprite.addedAlpha = 0;
 					}
 					greedyMergeLane.resize(0);
 				}
 
 				// Draw current note normally
 				currentSprite = parent.drawNote(pos, n, diff, i);
+				// Reset to individual note defaults
+				currentSprite.notesInOne = 1;
+				currentSprite.addedAlpha = 0;
 			}
 
 			prev = n;
@@ -217,7 +224,7 @@ class NoteSpawner {
 				if (greedyQueue != null && greedyQueue.length > 0) {
 					var firstData:NoteCmd = greedyQueue[0];
 					var sprite = parent.drawNote(firstData.pos, firstData.n, firstData.diff, firstData.id_);
-					sprite.notesInOne = 0;
+					sprite.notesInOne = 1;
 					sprite.addedAlpha = 0;
 					for (cmd in greedyQueue) {
 						sprite.notesInOne += cmd.notesInOne;
@@ -365,6 +372,4 @@ class NoteSpawner {
 		var dividend = (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT);
 		return Math.floor(Math.floor(value / dividend) * dividend);
 	}
-
-	private var zero(default, null):Int64 = 0;
 }
