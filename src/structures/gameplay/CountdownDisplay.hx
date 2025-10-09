@@ -44,6 +44,11 @@ class CountdownDisplay {
 	**/
 	var sounds:Array<AudioSource> = [];
 
+	/**
+		The countdown display's conductor (for actual decoupled countdown logic).
+	**/
+	var conductor:Conductor;
+
 	function setupSounds(suffix:String = "") {
 		CountdownDisplay.suffix = suffix;
 		for (i in 0...4) {
@@ -77,6 +82,16 @@ class CountdownDisplay {
 		sprite.alpha = 0.0;
 
 		buffer.addElement(sprite);
+
+		// Setup a separate conductor used solely for the countdown.
+		var timeSig = Chart.header.timeSig;
+		conductor = new Conductor(Chart.header.bpm, timeSig[0], timeSig[1]);
+
+		// Initialize its offsets so it uses a clean musical timeline (no latency compensation)
+		conductor.offset = 0; // countdown should ignore playback latency
+
+		// Start it at the countdown start position (exact -crochet * 4.5).
+		conductor.time = 0;
 	}
 
 	/**
@@ -122,6 +137,7 @@ class CountdownDisplay {
 		display.removeProgram(program);
 		sprite = null;
 		while (sounds.length != 0) sounds.pop().dispose();
+		conductor = null;
 	}
 
 	/**

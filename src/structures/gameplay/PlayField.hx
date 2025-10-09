@@ -150,7 +150,6 @@ class PlayField implements State {
 		var conductor = Main.conductor;
 		var timeSig = Chart.header.timeSig;
 		conductor.changeBpmAt(0, Chart.header.bpm, timeSig[0], timeSig[1]);
-		conductor.onBeat.add(beatHit);
 		conductor.onMeasure.add(measureHit);
 
 		onNoteHit.add(hitNote);
@@ -173,15 +172,24 @@ class PlayField implements State {
 		var pos = MetaNote.floatToMetaNotePosition(songPosition);
 
 		field = new Field(this);
+
 		inputSystem = new InputSystem(mania, this);
+
 		NoteSystem.init();
 		noteSystem = new NoteSystem(this);
+
 		Mixer.init(Chart.header);
+
 		HUD.init();
 		if (!SaveData.state.preferences.hideHUD) hud = new HUD(display, this);
+
 		CountdownDisplay.init(roof);
 		countdownDisp = new CountdownDisplay();
 		countdownDisp.setupSounds();
+
+		// Attach countdown-specific handler (drives countdownDisp and triggers onStartSong)
+		countdownDisp.conductor.onBeat.add(countdownBeatHit);
+
 		PauseScreen.init(roof);
 		pauseScreen = new PauseScreen(Chart.header.difficulty);
 
@@ -223,12 +231,26 @@ class PlayField implements State {
 		display.update();
 		view.update();
 
+		display.shake(dispShake.x, dispShake.y);
+		view.shake(viewShake.x, viewShake.y);
+
 		var ratio = Math.max(Math.min((deltaTime * 0.01), 1), 0);
 		if (display.fov != 1) display.fov = Tools.lerp(display.fov, 1, ratio);
 		if (view.fov != 1) view.fov = Tools.lerp(view.fov, 1, ratio);
 
 		if (!died) {
 			Mixer.update(this, deltaTime);
+
+			// If the song hasn't started yet, update the countdown conductor only.
+			// Do NOT apply latency compensation here — countdownDisp.conductor must see a pure musical timeline.
+			if (!songStarted) {
+				// Mixer already advanced playfield.songPosition during pre-start,
+				// so simply push that time to the countdown conductor.
+				if (countdownDisp.conductor != null) {
+					countdownDisp.conductor.time = songPosition;
+				}
+			}
+
 			songPosition -= latencyCompensation;
 			#if windows
 			songPosition -= Mixer.latency();
@@ -269,9 +291,6 @@ class PlayField implements State {
 		if (field != null) field.update(deltaTime);
 		if (countdownDisp != null) countdownDisp.update(deltaTime);
 
-		display.shake(dispShake.x, dispShake.y);
-		view.shake(viewShake.x, viewShake.y);
-
 		//if (!songStarted) Main.conductor.time = songPosition;
 
 		songPosition += latencyCompensation;
@@ -310,13 +329,26 @@ class PlayField implements State {
 		paused = false;
 	}
 
-	inline function beatHit(beat:Float) {
-		if (beat == 0 && !songStarted) onStartSong.dispatch(Chart.header);
-		if (beat < 0) countdownDisp.countdownTick(Math.floor(4 + beat));
+	inline function countdownBeatHit(beat:Float) {
+		// This handler belongs to the separate countdownDisp.conductor.
+		// It drives the visual/audio countdown and triggers the start event at beat 0.
+		if (beat == 0 && !songStarted) {
+			// Dispatch the same onStartSong event as before.
+			onStartSong.dispatch(Chart.header);
+
+			// When the game actually begins, remove countdown listener immediately
+			// to avoid duplicate triggers and let Main.conductor take over.
+			if (countdownDisp.conductor != null) countdownDisp.conductor.onBeat.remove(countdownBeatHit);
+		}
+
+		if (beat < 0) {
+			// Countdown visuals: maps beats -4..-1 to 3..0
+			countdownDisp.countdownTick(Math.floor(4 + beat));
+		}
 	}
 
 	inline function measureHit(measure:Float) {
-		if (measure >= 0 && SaveData.state.preferences.cameraZooming) {
+		if (measure >= 0 && SaveData.state.preferences.cameraZooming && songStarted) {
 			display.fov += 0.03;
 			view.fov += 0.015;
 		}
@@ -447,6 +479,14 @@ class PlayField implements State {
 
 		songStarted = true;
 		songEnded = false;
+
+		// Ensure the main conductor is perfectly synced to the current songPosition.
+		// The update cycle will apply latency compensation each frame during gameplay,
+		// but set the main conductor time here as a baseline.
+		Main.conductor.time = songPosition;
+
+		// Remove countdown handler if still present (defensive)
+		if (countdownDisp.conductor != null) countdownDisp.conductor.onBeat.remove(countdownBeatHit);
 	}
 
 	function stopSong(header:Header) {
@@ -486,7 +526,6 @@ class PlayField implements State {
 		onSustainRelease.remove(releaseSustain);
 
 		var conductor = Main.conductor;
-		conductor.onBeat.remove(beatHit);
 		conductor.onMeasure.remove(measureHit);
 
 		Mixer.stopMusic();
@@ -507,7 +546,6 @@ class PlayField implements State {
 		disposed = true;
 
 		var conductor = Main.conductor;
-		conductor.onBeat.remove(beatHit);
 		conductor.onMeasure.remove(measureHit);
 
 		if (field != null) {
