@@ -86,91 +86,185 @@ class NoteSpawner {
 	 * @param pos The song's position in the note position format.
 	 */
 	function update(pos:Int64) {
-		//Sys.println('Why');
-		//var pos = MetaNote.floatToMetaNotePosition(songPosition);
-		//Sys.println('Song Position ${parent.parent.songPosition}, MetaNote Song Position ${MetaNote.metaNotePositionToSongTime(pos)}');
-
 		cacheHotWindow();
 
 		_lastbottom = bottom;
 		_lasttop = top;
-
-		if (!parent.parent.songStarted) {
-			pos += MetaNote.floatToMetaNotePosition(Main.conductor.offset);
-		}
 
 		cullTop(pos);
 		cullBottom(pos);
 
 		cacheHotWindow2();
 
-		//Sys.println('Top $top bottom $bottom');
-
+		var scrollSpeed = parent.parent.scrollSpeed;
 		var i = bottom;
 
-		var scrollSpeed = parent.parent.scrollSpeed;
-		var diff = 0.0;
-		var noteY = 0;
-		var noteSpr:Null<Note> = null;
+		// 3D structure: [lane][index][sub-array of sprites]
+		var laneSprites:Array<Array<Array<Note>>> = [];
+		for (l in 0...parent.strumlines.length) {
+			laneSprites.push([]);
+			for (idx in 0...parent.strumlines[l].length) {
+				laneSprites[l].push([]);
+			}
+		}
 
 		var prev:Null<MetaNote> = null;
+
 		while (i < top) {
 			var n = File.getNote(i);
 
-			// lane/receptor/fake storage lookups
+			// --- lane/receptor/fake storage lookups ---
 			var lane = parent.noteTypeFunctionalityPre.exists(n.type) ? 1 : (n.type % parent.strumlines.length);
-			var receptor = parent.strumlines[lane].buffer[n.index];
-			var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
+			var strumline = parent.strumlines[lane];
+			var receptor = strumline.buffer[n.index];
 
-			// compute diff/newY for this note FIRST (important!)
-			diff = MetaNote.metaNotePositionToSongTime((n.position - pos)) * scrollSpeed;
+			// init greedyMergeTemp subarray if null
+			if (strumline.greedyMergeTemp[n.index] == null) {
+				strumline.greedyMergeTemp[n.index] = [];
+			}
+
+			var greedyMergeLane = strumline.greedyMergeTemp[n.index];
+			var fakeOverlapStorage = strumline.fakeOverlapStorage;
+
+			// --- compute diff and newY ---
+			var diff = MetaNote.metaNotePositionToSongTime(n.position - pos) * scrollSpeed;
 			var newY = receptor.y + Math.floor(diff);
 
-			// update fake storage for this index now that we have the current computed Y
-			// (we'll still use prev's stored value to decide overlap)
-			// but delay writing it until after overlap decision? Either way, compare against prev value below.
-			// We'll not overwrite it yet so prev comparison can use the prior prev value:
-			// fakeOverlapStorage[n.index] = newY; // only write after deciding not to merge
-
-			// safe ghost check (ensure prev exists)
-			var ghost = (prev != null) && prev.position == n.position && prev.index == n.index && prev.type == n.type;
-
-			// small pixel threshold: how many pixels difference still counts as overlapping
-			// tune this to taste; 0 requires exact same floored pixel, 1 allows a 1-pixel gap, etc.
+			// --- fake-overlap storage for next comparisons ---
+			var prevY = (prev != null) ? fakeOverlapStorage[prev.index] : -99999;
 			var OVERLAP_PIXEL_THRESHOLD = 0;
 
-			// compute prevY only if prev exists
-			var prevY = (prev != null) ? fakeOverlapStorage[prev.index] : -99999;
+			// Get the sprite array for this lane+index combination
+			var spriteArray = laneSprites[lane][n.index];
+			var currentSprite:Null<Note> = spriteArray.length > 0 ? spriteArray[spriteArray.length - 1] : null;
 
-			// requirements: only consider fake-overlap if we actually have a note sprite and a prev to compare with
-			var requirementsForNoteOverlapSimulationBS = noteSpr != null
+			var requirementsForFakeOverlap = currentSprite != null
 				&& prev != null
-				&& (Math.abs(Math.floor(newY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)) - Math.floor(prevY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT))) <= OVERLAP_PIXEL_THRESHOLD)
-				&& (prev.type == n.type)
-				&& (noteSpr.r == 0 /* default angle */)
-				&& (noteSpr.scale == receptor.scale)
-				&& (prev.duration == n.duration)
-				&& (noteSpr.x == receptor.x);
+				&& (Math.abs(Math.floor(newY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT))
+						- Math.floor(prevY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT))) <= OVERLAP_PIXEL_THRESHOLD)
+				&& prev.type == n.type
+				&& currentSprite.r == 0
+				&& currentSprite.scale == receptor.scale
+				&& prev.duration == n.duration
+				&& currentSprite.x == receptor.x;
 
-			// now write the computed Y into fake overlap storage (so next notes compare to this)
+			var ghost = prev != null && prev.position == n.position && prev.index == n.index && prev.type == n.type;
+
 			fakeOverlapStorage[n.index] = newY;
 
-			if (requirementsForNoteOverlapSimulationBS) {
-				// treat as overlap: merge into existing sprite
-				noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + (n.missed ? Note.defaultMissAlpha : Note.defaultAlpha), 254);
-				noteSpr.notesInOne++;
+			// --- handle fake overlap ---
+			if (requirementsForFakeOverlap) {
+				currentSprite.addedAlpha = Math.min(currentSprite.addedAlpha + (n.missed ? Note.defaultMissAlpha : Note.defaultAlpha), 254);
+				currentSprite.notesInOne++;
 				prev = n;
 				++i;
 				continue;
-			} else {
-				if (!ghost) {
-					noteSpr = parent.drawNote(pos, n, diff, i);
-				} else {
-					// ghost -> same exact meta-note (position, index, type) so just increment
-					noteSpr.notesInOne++;
+			}
+
+			// --- handle ghost notes ---
+			if (ghost) {
+				if (currentSprite != null) {
+					currentSprite.notesInOne++;
 				}
 				prev = n;
 				++i;
+				continue;
+			}
+
+			// Check if current note can continue the greedy merge from the last note in queue
+			var canContinueGreedyMerge = greedyMergeLane.length > 0;
+			if (canContinueGreedyMerge) {
+				var lastInQueue = greedyMergeLane[greedyMergeLane.length - 1].n;
+				canContinueGreedyMerge = lastInQueue.type == n.type
+					&& lastInQueue.duration == n.duration
+					&& lastInQueue.index == n.index
+					&& lastInQueue.position != n.position;
+			}
+
+			if (canContinueGreedyMerge) {
+				// Continue adding to the current greedy merge batch
+				greedyMergeLane.push({
+					n: n,
+					diff: diff,
+					id_: i,
+					pos: pos,
+					notesInOne: 0,
+					addedAlpha: 0
+				});
+
+				// flush if 16 notes accumulated
+				if (greedyMergeLane.length >= 16) {
+					var firstData:NoteCmd = greedyMergeLane[0];
+					currentSprite = parent.drawNote(firstData.pos, firstData.n, firstData.diff, firstData.id_);
+					currentSprite.notesInOne = greedyMergeLane.length;
+					currentSprite.addedAlpha = 0;
+					for (cmd in greedyMergeLane) {
+						currentSprite.addedAlpha += (cmd.n.missed ? Note.defaultMissAlpha : Note.defaultAlpha);
+					}
+					greedyMergeLane.resize(0);
+					spriteArray.push(currentSprite);
+				}
+			} else {
+				// flush any previous greedy batch for this specific lane+index
+				if (greedyMergeLane.length > 0) {
+					var firstData:NoteCmd = greedyMergeLane[0];
+					currentSprite = parent.drawNote(firstData.pos, firstData.n, firstData.diff, firstData.id_);
+					currentSprite.notesInOne = greedyMergeLane.length;
+					currentSprite.addedAlpha = 0;
+					for (cmd in greedyMergeLane) {
+						currentSprite.addedAlpha += (cmd.n.missed ? Note.defaultMissAlpha : Note.defaultAlpha);
+					}
+					greedyMergeLane.resize(0);
+					spriteArray.push(currentSprite);
+				}
+
+				// Check if we can start a NEW greedy merge with the next note
+				var canStartGreedyMerge = false;
+				if (i + 1 < top) {
+					var nextNote = File.getNote(i + 1);
+					canStartGreedyMerge = nextNote.type == n.type
+						&& nextNote.duration == n.duration
+						&& nextNote.index == n.index
+						&& nextNote.position != n.position;
+				}
+
+				if (canStartGreedyMerge) {
+					// Start a new greedy merge batch
+					greedyMergeLane.push({
+						n: n,
+						diff: diff,
+						id_: i,
+						pos: pos,
+						notesInOne: 0,
+						addedAlpha: 0
+					});
+					// Don't add to spriteArray yet - will be flushed later
+				} else {
+					// Draw current note normally (doesn't qualify for greedy merge)
+					currentSprite = parent.drawNote(pos, n, diff, i);
+					spriteArray.push(currentSprite);
+				}
+			}
+
+			prev = n;
+			++i;
+		}
+
+		// --- flush remaining greedy notes at the end ---
+		for (lane in 0...parent.strumlines.length) {
+			var strumline = parent.strumlines[lane];
+			for (index in 0...strumline.greedyMergeTemp.length) {
+				var greedyQueue = strumline.greedyMergeTemp[index];
+				if (greedyQueue != null && greedyQueue.length > 0) {
+					var firstData:NoteCmd = greedyQueue[0];
+					var sprite = parent.drawNote(firstData.pos, firstData.n, firstData.diff, firstData.id_);
+					sprite.notesInOne = greedyQueue.length;
+					sprite.addedAlpha = 0;
+					for (cmd in greedyQueue) {
+						sprite.addedAlpha += (cmd.n.missed ? Note.defaultMissAlpha : Note.defaultAlpha);
+					}
+					greedyQueue.resize(0);
+				}
 			}
 		}
 	}
