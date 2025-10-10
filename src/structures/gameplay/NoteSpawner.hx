@@ -170,7 +170,7 @@ class NoteSpawner {
 			}
 		}
 
-		Sys.println(NoteSystem.notesBuf.length);
+		//Sys.println(NoteSystem.notesBuf.length);
 	}
 
 	/**
