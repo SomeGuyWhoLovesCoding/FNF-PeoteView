@@ -86,10 +86,6 @@ class NoteSpawner {
 	 * @param pos The song's position in the note position format.
 	 */
 	function update(pos:Int64) {
-		//Sys.println('Why');
-		//var pos = MetaNote.floatToMetaNotePosition(songPosition);
-		//Sys.println('Song Position ${parent.parent.songPosition}, MetaNote Song Position ${MetaNote.metaNotePositionToSongTime(pos)}');
-
 		cacheHotWindow();
 
 		_lastbottom = bottom;
@@ -100,80 +96,63 @@ class NoteSpawner {
 
 		cacheHotWindow2();
 
-		//Sys.println('Top $top bottom $bottom');
+		var scrollSpeed = parent.parent.scrollSpeed;
+		var strumlines = parent.strumlines;
+		var laneCount = strumlines.length;
+		var indexCount = 128; // assuming 128 per strumline, adjust if needed
+
+		// Pre-allocate logical merge arrays
+		var mergedNoteCount:Array<Array<Int>> = [];
+		var mergedAlpha:Array<Array<Float>> = [];
+		for (lane in 0...laneCount) {
+			mergedNoteCount[lane] = [];
+			mergedAlpha[lane] = [];
+			mergedNoteCount[lane].resize(strumlines[lane].buffer.length);
+			mergedAlpha[lane].resize(strumlines[lane].buffer.length);
+		}
 
 		var i = bottom;
-
-		var scrollSpeed = parent.parent.scrollSpeed;
-		var diff = 0.0;
-		var noteY = 0;
-		var noteSpr:Null<Note> = null;
-
-		var createSprite = true;
-		var noteIsNull = true;
-
 		var prev:Null<MetaNote> = null;
+
 		while (i < top) {
 			var n = File.getNote(i);
 
-			// lane/receptor/fake storage lookups
-			var lane = parent.noteTypeFunctionalityPre.exists(n.type) ? 1 : (n.type % parent.strumlines.length);
-			var receptor = parent.strumlines[lane].buffer[n.index];
-			var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
+			var lane = parent.noteTypeFunctionalityPre.exists(n.type) ? 1 : (n.type % laneCount);
+			var rec = strumlines[lane].buffer[n.index];
+			var fakeOverlapStorage = strumlines[lane].fakeOverlapStorage;
 
-			// compute diff/newY for this note FIRST (important!)
-			diff = MetaNote.metaNotePositionToSongTime((n.position - pos)) * scrollSpeed;
-			var newY = receptor.y + Math.floor(diff);
+			var diff = MetaNote.metaNotePositionToSongTime(n.position - pos) * scrollSpeed;
+			if (parent.parent.downScroll) diff = -diff;
+			var newY = rec.y + Std.int(diff);
 
-			// update fake storage for this index now that we have the current computed Y
-			// (we'll still use prev's stored value to decide overlap)
-			// but delay writing it until after overlap decision? Either way, compare against prev value below.
-			// We'll not overwrite it yet so prev comparison can use the prior prev value:
-			// fakeOverlapStorage[n.index] = newY; // only write after deciding not to merge
-
-			// safe ghost check (ensure prev exists)
-			var ghost = (prev != null) && prev.position == n.position && prev.index == n.index && prev.type == n.type;
-
-			// small pixel threshold: how many pixels difference still counts as overlapping
-			// tune this to taste; 0 requires exact same floored pixel, 1 allows a 1-pixel gap, etc.
-			var OVERLAP_PIXEL_THRESHOLD = 0;
-
-			// compute prevY only if prev exists
 			var prevY = (prev != null) ? fakeOverlapStorage[prev.index] : -99999;
+			var OVERLAP_PIXEL_THRESHOLD = 0;
+			var overlap = prev != null
+				&& prev.type == n.type
+				&& Math.abs(newY - prevY) <= OVERLAP_PIXEL_THRESHOLD;
 
-			// requirements: only consider fake-overlap if we actually have a note sprite and a prev to compare with
-			var requirementsForNoteOverlapSimulationBS = noteIsNull
-				&& prev != null
-				&& (Math.abs(Math.floor(newY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)) - Math.floor(prevY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT))) <= OVERLAP_PIXEL_THRESHOLD)
-				&& (prev.type == n.type)
-				&& (noteSpr.r == 0 /* default angle */)
-				&& (noteSpr.scale == receptor.scale)
-				&& (prev.duration == n.duration)
-				&& (noteSpr.x == receptor.x);
-
-			// now write the computed Y into fake overlap storage (so next notes compare to this)
-			fakeOverlapStorage[n.index] = newY;
-
-			if (requirementsForNoteOverlapSimulationBS) {
-				// treat as overlap: merge into existing sprite
-				noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + (n.missed ? Note.defaultMissAlpha : Note.defaultAlpha), 254);
-				noteSpr.notesInOne++;
-				createSprite = false;
+			if (overlap) {
+				mergedNoteCount[lane][n.index]++;
+				mergedAlpha[lane][n.index] = Math.min(254, mergedAlpha[lane][n.index] + (n.missed ? Note.defaultMissAlpha : Note.defaultAlpha));
 			} else {
-				createSprite = true;
+				mergedNoteCount[lane][n.index] = 1;
+				mergedAlpha[lane][n.index] = n.missed ? Note.defaultMissAlpha : Note.defaultAlpha;
 			}
 
-			// Now the finale - draw the note
-			var drawnNote = ghost ? null : parent.drawNote(pos, n, diff, i, createSprite);
-			noteSpr = drawnNote;
-			noteIsNull = noteSpr == null;
+			var createSprite = true; // or your existing conditional
+			var noteSpr:Null<Note> = null;
+			if (createSprite) {
+				noteSpr = parent.drawNote(pos, n, diff, i, true);
+				noteSpr.notesInOne = mergedNoteCount[lane][n.index];
+				noteSpr.addedAlpha = mergedAlpha[lane][n.index];
+			}
 
+			fakeOverlapStorage[n.index] = newY;
 			prev = n;
 			++i;
 		}
-
-		//Sys.println(NoteSystem.notesBuf.length);
 	}
+
 
 	/**
 	 * Culls the top note cull.
