@@ -15,7 +15,7 @@ class NoteSpawner {
 	var _lastbottom:Int64;
 	var _lasttop:Int64;
 
-	var spawnDist:Int64 = MetaNote.floatToMetaNotePosition(1600);
+	var spawnDist:Int64 = MetaNote.floatToMetaNotePosition(1300);
 	var despawnDist:Int64 = MetaNote.floatToMetaNotePosition(300);
 
 	var curTopNote(default, null):MetaNote;
@@ -111,7 +111,7 @@ class NoteSpawner {
 	function processNotes(pos:Int64) {
 		var i = bottom;
 		var scrollSpeed = parent.parent.scrollSpeed;
-		var prev:Null<MetaNote> = null;
+		var prev:MetaNote = -1;
 		var noteSpr:Null<Note> = null;
 
 		while (i < top) {
@@ -132,7 +132,7 @@ class NoteSpawner {
 
 			// Determine if notes should overlap
 			var shouldOverlap = shouldNotesOverlap(prev, n, noteSpr, receptor, newY, 
-				fakeOverlapStorage[prev != null ? prev.index : -1]);
+				fakeOverlapStorage[prev != -1 ? prev.index : -1]);
 
 			// Update fake overlap storage for next iteration
 			fakeOverlapStorage[n.index] = newY;
@@ -179,8 +179,8 @@ class NoteSpawner {
 	 * @param current The current meta note.
 	 * @return True if the notes are duplicates.
 	 */
-	function isGhostNote(prev:Null<MetaNote>, current:MetaNote):Bool {
-		return prev != null 
+	function isGhostNote(prev:MetaNote, current:MetaNote):Bool {
+		return prev != -1 
 			&& prev.position == current.position 
 			&& prev.index == current.index 
 			&& prev.type == current.type;
@@ -196,10 +196,10 @@ class NoteSpawner {
 	 * @param prevY The Y position of the previous note.
 	 * @return True if notes should overlap and merge.
 	 */
-	function shouldNotesOverlap(prev:Null<MetaNote>, current:MetaNote, noteSpr:Null<Note>, 
+	function shouldNotesOverlap(prev:MetaNote, current:MetaNote, noteSpr:Null<Note>, 
 		receptor:Note, newY:Float, prevY:Float):Bool {
 		
-		if (noteSpr == null || prev == null) return false;
+		if (noteSpr == null || prev == -1) return false;
 
 		var OVERLAP_PIXEL_THRESHOLD = 0;
 		
