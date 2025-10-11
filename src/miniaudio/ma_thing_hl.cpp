@@ -57,129 +57,114 @@ int g_measuredLatencyMs = 0; // cached loopback latency
 
 // -------------------- LOOPBACK LATENCY MEASUREMENT --------------------
 HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
-    int bufferLatency = 10;
-    int osMs = 100;
-    int result = bufferLatency + osMs + g_measuredLatencyMs;
+	int bufferLatency = 10; // simple.
+	int osMs = 100; // can be VERY important. this is an approximate of windows audio/video latency in total
+	int result = bufferLatency + osMs + g_measuredLatencyMs;
 
     if (g_measuredLatencyMs != 0) return result;
 
-    #ifdef _WIN32
+	#ifdef _WIN32
     const int PULSE_LENGTH = SAMPLE_RATE / 100; // 10ms pulse
-    float pulse[PULSE_LENGTH];
-    for (int i = 0; i < PULSE_LENGTH; i++) pulse[i] = 0.001f; // Louder for better SNR
+    float pulse[PULSE_LENGTH * CHANNEL_COUNT];
+    memset(pulse, 0, sizeof(pulse));
+    for (int i = 0; i < PULSE_LENGTH * CHANNEL_COUNT; i++) pulse[i] = 0.0001f; // detectable but quiet
 
-    const int RECORD_BUFFER = SAMPLE_RATE * 2;
-    float recorded[RECORD_BUFFER];
-    ma_uint32 recordedFrames = 0;
+    const int RECORD_BUFFER = SAMPLE_RATE * 2; // 2 seconds
+    float recorded[RECORD_BUFFER * CHANNEL_COUNT];
+    ma_uint32 recordedCount = 0;
 
     ma_bool32 pulsePlayed = MA_FALSE;
 
+    // Playback callback (silent except pulse)
     auto output_callback = [](ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
         float* out = (float*)pOutput;
         ma_bool32* played = (ma_bool32*)pDevice->pUserData;
         memset(out, 0, sizeof(float) * frameCount * 2);
         if (!*played) {
-            for (int i = 0; i < 441 && i < (int)frameCount; i++) {
-                out[i*2] = out[i*2 + 1] = 0.001f; // Louder pulse
+            // Inject the pulse at the start
+            for (int i = 0; i < 441; i++) {
+                for (int c = 0; c < 2; c++) out[i*2 + c] = 0.0001f;
             }
             *played = MA_TRUE;
         }
         (void)pInput;
     };
 
-    struct LoopbackData { float* buffer; ma_uint32* frames; ma_uint32 max; };
-    LoopbackData loopData { recorded, &recordedFrames, RECORD_BUFFER };
+    struct LoopbackData { float* buffer; ma_uint32* count; ma_uint32 max; };
+    LoopbackData loopData { recorded, &recordedCount, RECORD_BUFFER };
 
-    // Store mono mix for better correlation
+    // Loopback callback
     auto loopback_callback = [](ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
         LoopbackData* d = (LoopbackData*)pDevice->pUserData;
         const float* in = (const float*)pInput;
         ma_uint32 toCopy = frameCount;
-        if (*d->frames + toCopy > d->max) toCopy = d->max - *d->frames;
-        
-        // Convert to mono for simpler correlation
-        for (ma_uint32 i = 0; i < toCopy; i++) {
-            d->buffer[*d->frames + i] = (in[i*2] + in[i*2 + 1]) * 0.5f;
+        if (*d->count + toCopy > d->max) toCopy = d->max - *d->count;
+        for (ma_uint32 i = 0; i < toCopy*2; i++) {
+            d->buffer[*d->count + i] = in[i];
         }
-        *d->frames += toCopy;
+        *d->count += toCopy;
         (void)pOutput;
     };
 
-    // [Device initialization code remains the same...]
+    // Initialize playback device
     ma_device playback;
     ma_device_config playConfig = ma_device_config_init(ma_device_type_playback);
-    playConfig.playback.format = ma_format_f32;
-    playConfig.playback.channels = CHANNEL_COUNT;
-    playConfig.sampleRate = SAMPLE_RATE;
-    playConfig.dataCallback = output_callback;
-    playConfig.pUserData = &pulsePlayed;
-    if (ma_device_init(NULL, &playConfig, &playback) != MA_SUCCESS) return result;
+    playConfig.playback.format    = ma_format_f32;
+    playConfig.playback.channels  = CHANNEL_COUNT;
+    playConfig.sampleRate         = SAMPLE_RATE;
+    playConfig.dataCallback       = output_callback;
+    playConfig.pUserData          = &pulsePlayed;
+    if (ma_device_init(NULL, &playConfig, &playback) != MA_SUCCESS) return 0;
 
+    // Initialize loopback device
     ma_device loopback;
     ma_backend backends[] = { ma_backend_wasapi };
     ma_device_config loopConfig = ma_device_config_init(ma_device_type_loopback);
-    loopConfig.capture.format = ma_format_f32;
+    loopConfig.capture.format   = ma_format_f32;
     loopConfig.capture.channels = CHANNEL_COUNT;
     loopConfig.sampleRate = SAMPLE_RATE;
-    loopConfig.dataCallback = loopback_callback;
-    loopConfig.pUserData = &loopData;
-    if (ma_device_init_ex(backends, 1, NULL, &loopConfig, &loopback) != MA_SUCCESS) {
+    loopConfig.dataCallback     = loopback_callback;
+    loopConfig.pUserData        = &loopData;
+    if (ma_device_init_ex(backends, sizeof(backends)/sizeof(backends[0]), NULL, &loopConfig, &loopback) != MA_SUCCESS) {
         ma_device_uninit(&playback);
-        return result;
+        return 0;
     }
 
     ma_device_start(&loopback);
     ma_device_start(&playback);
 
-    printf("Calibrating latency\n");
-    ma_sleep(300);
+	printf("Calibraring latency\n");
+    ma_sleep(2000); // capture 2 seconds at max
 
     ma_device_uninit(&playback);
     ma_device_uninit(&loopback);
 
-    // Improved cross-correlation
+    // Cross-correlation to find latency
     int bestOffset = 0;
     float bestScore = -1.0f;
-    float noiseFloor = 0.0f;
 
-    // Calculate noise floor
-    for (int i = 0; i < recordedFrames && i < 1000; i++) {
-        noiseFloor += fabsf(recorded[i]);
-    }
-    noiseFloor /= 1000.0f;
-
-    // Normalize pulse energy for comparison
-    float pulseEnergy = 0.0f;
-    for (int i = 0; i < PULSE_LENGTH; i++) {
-        pulseEnergy += pulse[i] * pulse[i];
-    }
-
-    for (int offset = 0; offset <= (int)recordedFrames - PULSE_LENGTH; offset++) {
+    for (int offset = 0; offset <= (int)recordedCount - PULSE_LENGTH; offset++) {
         float score = 0.0f;
-        for (int i = 0; i < PULSE_LENGTH; i++) {
+        for (int i = 0; i < PULSE_LENGTH * CHANNEL_COUNT; i++)
             score += recorded[offset + i] * pulse[i];
-        }
         if (score > bestScore) {
             bestScore = score;
             bestOffset = offset;
         }
     }
 
-    // Validate detection
-    if (bestScore < pulseEnergy * 0.1f) { // Threshold check
-        printf("Warning: Weak pulse detection (score: %f)\n", bestScore);
-        g_measuredLatencyMs = 20; // Fallback
-    } else {
-        g_measuredLatencyMs = (int)((bestOffset * 1000.0f) / SAMPLE_RATE);
-    }
+    g_measuredLatencyMs = (int)((bestOffset * 1000.0f) / SAMPLE_RATE);
+	result = bufferLatency + osMs + g_measuredLatencyMs;
+	#else
+	g_measuredLatencyMs = 20;
+	#endif // _WIN32
 
-    #else
-    g_measuredLatencyMs = 20;
-    #endif
+	result = bufferLatency + osMs + g_measuredLatencyMs;
 
-    result = bufferLatency + osMs + g_measuredLatencyMs;
-    printf("Done calibrating latency: %dms\n", g_measuredLatencyMs);
-    return result;
+	printf("Done calibraring latency. It is now %d\n", g_measuredLatencyMs);
+
+	//printf("MiniAudio (WASAPI) Detected Latency %dms\n", result);
+	return result;
 }
 
 /*

@@ -20,11 +20,6 @@
 #include <stdint.h>
 #include <string.h>
 
-// async
-#include <thread>
-#include <atomic>
-#include <algorithm>
-
 #define SAMPLE_FORMAT   ma_format_f32
 #define CHANNEL_COUNT   2
 #define SAMPLE_RATE     44100
@@ -41,133 +36,117 @@ float playbackRate = 1;
 
 int MIXER_STATE = 3; // 0=undefined,1=playing,2=stopped,3=finished
 
-std::atomic<int> g_measuredLatencyMs{0};
-std::atomic<bool> g_calibrating{false};
+int g_measuredLatencyMs = 0; // cached loopback latency
 
-int measureOnce() {
-#ifdef _WIN32
-    printf("Starting measurement...\n");
-    const int PULSE_LEN = SAMPLE_RATE / 100;
-    float pulse[PULSE_LEN], recorded[SAMPLE_RATE * 2];
-    for (int i = 0; i < PULSE_LEN; i++) pulse[i] = 0.001f;
-    
-    ma_uint32 recFrames = 0;
-    ma_bool32 played = MA_FALSE;
-    
-    struct LD { float* buf; ma_uint32* frames; ma_uint32 max; };
-    LD loopData{recorded, &recFrames, SAMPLE_RATE * 2};
-    
-    auto outCb = [](ma_device* d, void* out, const void*, ma_uint32 fc) {
-        memset(out, 0, fc * 8);
-        if (!*(ma_bool32*)d->pUserData) {
-            float* o = (float*)out;
-            for (int i = 0; i < 441 && i < (int)fc; i++) o[i*2] = o[i*2+1] = 0.001f;
-            *(ma_bool32*)d->pUserData = MA_TRUE;
-        }
-    };
-    
-    auto inCb = [](ma_device* d, void*, const void* in, ma_uint32 fc) {
-        LD* ld = (LD*)d->pUserData;
-        const float* f = (const float*)in;
-        ma_uint32 n = fc;
-        if (*ld->frames + n > ld->max) n = ld->max - *ld->frames;
-        for (ma_uint32 i = 0; i < n; i++) 
-            ld->buf[*ld->frames + i] = (f[i*2] + f[i*2+1]) * 0.5f;
-        *ld->frames += n;
-    };
-    
-    ma_device pb, lb;
-    ma_device_config pCfg = ma_device_config_init(ma_device_type_playback);
-    pCfg.playback.format = ma_format_f32;
-    pCfg.playback.channels = CHANNEL_COUNT;
-    pCfg.sampleRate = SAMPLE_RATE;
-    pCfg.dataCallback = outCb;
-    pCfg.pUserData = &played;
-    if (ma_device_init(NULL, &pCfg, &pb) != MA_SUCCESS) {
-        printf("Playback init failed\n");
-        return -1;
-    }
-    
-    ma_backend be[] = {ma_backend_wasapi};
-    ma_device_config lCfg = ma_device_config_init(ma_device_type_loopback);
-    lCfg.capture.format = ma_format_f32;
-    lCfg.capture.channels = CHANNEL_COUNT;
-    lCfg.sampleRate = SAMPLE_RATE;
-    lCfg.dataCallback = inCb;
-    lCfg.pUserData = &loopData;
-    if (ma_device_init_ex(be, 1, NULL, &lCfg, &lb) != MA_SUCCESS) {
-        printf("Loopback init failed\n");
-        ma_device_uninit(&pb);
-        return -1;
-    }
-    
-    ma_device_start(&lb);
-    ma_device_start(&pb);
-    ma_sleep(2000);
-    ma_device_uninit(&pb);
-    ma_device_uninit(&lb);
-    
-    printf("Recorded %d frames\n", recFrames);
-    
-    int best = 0;
-    float bestScore = -1.0f, pEnergy = 0.0f;
-    for (int i = 0; i < PULSE_LEN; i++) pEnergy += pulse[i] * pulse[i];
-    
-    for (int o = 0; o <= (int)recFrames - PULSE_LEN; o++) {
-        float s = 0.0f;
-        for (int i = 0; i < PULSE_LEN; i++) s += recorded[o + i] * pulse[i];
-        if (s > bestScore) { bestScore = s; best = o; }
-    }
-    
-    int result = bestScore < pEnergy * 0.1f ? -1 : (best * 1000) / SAMPLE_RATE;
-    printf("Best offset: %d frames, score: %f, result: %dms\n", best, bestScore, result);
-    return result;
-#else
-    return 20;
-#endif
-}
-
-void calibrateLatencyAsync(void(*cb)(int) = nullptr) {
-    if (g_calibrating.exchange(true)) {
-        printf("Calibration already running\n");
-        return;
-    }
-    
-    printf("Starting async calibration...\n");
-    
-    std::thread([cb]() {
-        int valid[3], cnt = 0;
-        for (int i = 0; i < 3; i++) {
-            printf("Attempt %d/3\n", i+1);
-            int m = measureOnce();
-            if (m >= 0) valid[cnt++] = m;
-            if (i < 2) ma_sleep(500);
-        }
-        
-        int result = 20;
-        if (cnt > 0) {
-            std::sort(valid, valid + cnt);
-            result = valid[cnt / 2];
-        }
-        
-        printf("Calibration complete: %dms (%d valid measurements)\n", result, cnt);
-        
-        g_measuredLatencyMs.store(result);
-        g_calibrating.store(false);
-        if (cb) cb(result);
-    }).detach();
-}
-
+// -------------------- LOOPBACK LATENCY MEASUREMENT --------------------
 int detectLatency() {
-	int latency = g_measuredLatencyMs.load();
-	if (latency == 0) {
-		calibrateLatencyAsync();
-		while (g_calibrating.load()) ma_sleep(50);
-		latency = g_measuredLatencyMs.load();
-		printf("Latency: %dms\n", latency);
-		return latency;
-	}
-    return 110 + latency;
+	int bufferLatency = 10; // simple.
+	int osMs = 100; // can be VERY important. this is an approximate of windows audio/video latency in total
+	int result = bufferLatency + osMs + g_measuredLatencyMs;
+
+    if (g_measuredLatencyMs != 0) return result;
+
+	#ifdef _WIN32
+    const int PULSE_LENGTH = SAMPLE_RATE / 100; // 10ms pulse
+    float pulse[PULSE_LENGTH * CHANNEL_COUNT];
+    memset(pulse, 0, sizeof(pulse));
+    for (int i = 0; i < PULSE_LENGTH * CHANNEL_COUNT; i++) pulse[i] = 0.0001f; // detectable but quiet
+
+    const int RECORD_BUFFER = SAMPLE_RATE * 2; // 2 seconds
+    float recorded[RECORD_BUFFER * CHANNEL_COUNT];
+    ma_uint32 recordedCount = 0;
+
+    ma_bool32 pulsePlayed = MA_FALSE;
+
+    // Playback callback (silent except pulse)
+    auto output_callback = [](ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
+        float* out = (float*)pOutput;
+        ma_bool32* played = (ma_bool32*)pDevice->pUserData;
+        memset(out, 0, sizeof(float) * frameCount * 2);
+        if (!*played) {
+            // Inject the pulse at the start
+            for (int i = 0; i < 441; i++) {
+                for (int c = 0; c < 2; c++) out[i*2 + c] = 0.0001f;
+            }
+            *played = MA_TRUE;
+        }
+        (void)pInput;
+    };
+
+    struct LoopbackData { float* buffer; ma_uint32* count; ma_uint32 max; };
+    LoopbackData loopData { recorded, &recordedCount, RECORD_BUFFER };
+
+    // Loopback callback
+    auto loopback_callback = [](ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
+        LoopbackData* d = (LoopbackData*)pDevice->pUserData;
+        const float* in = (const float*)pInput;
+        ma_uint32 toCopy = frameCount;
+        if (*d->count + toCopy > d->max) toCopy = d->max - *d->count;
+        for (ma_uint32 i = 0; i < toCopy*2; i++) {
+            d->buffer[*d->count + i] = in[i];
+        }
+        *d->count += toCopy;
+        (void)pOutput;
+    };
+
+    // Initialize playback device
+    ma_device playback;
+    ma_device_config playConfig = ma_device_config_init(ma_device_type_playback);
+    playConfig.playback.format    = ma_format_f32;
+    playConfig.playback.channels  = CHANNEL_COUNT;
+    playConfig.sampleRate         = SAMPLE_RATE;
+    playConfig.dataCallback       = output_callback;
+    playConfig.pUserData          = &pulsePlayed;
+    if (ma_device_init(NULL, &playConfig, &playback) != MA_SUCCESS) return 0;
+
+    // Initialize loopback device
+    ma_device loopback;
+    ma_backend backends[] = { ma_backend_wasapi };
+    ma_device_config loopConfig = ma_device_config_init(ma_device_type_loopback);
+    loopConfig.capture.format   = ma_format_f32;
+    loopConfig.capture.channels = CHANNEL_COUNT;
+    loopConfig.sampleRate = SAMPLE_RATE;
+    loopConfig.dataCallback     = loopback_callback;
+    loopConfig.pUserData        = &loopData;
+    if (ma_device_init_ex(backends, sizeof(backends)/sizeof(backends[0]), NULL, &loopConfig, &loopback) != MA_SUCCESS) {
+        ma_device_uninit(&playback);
+        return 0;
+    }
+
+    ma_device_start(&loopback);
+    ma_device_start(&playback);
+
+	printf("Calibraring latency\n");
+    ma_sleep(2000); // capture 2 seconds at max
+
+    ma_device_uninit(&playback);
+    ma_device_uninit(&loopback);
+
+    // Cross-correlation to find latency
+    int bestOffset = 0;
+    float bestScore = -1.0f;
+
+    for (int offset = 0; offset <= (int)recordedCount - PULSE_LENGTH; offset++) {
+        float score = 0.0f;
+        for (int i = 0; i < PULSE_LENGTH * CHANNEL_COUNT; i++)
+            score += recorded[offset + i] * pulse[i];
+        if (score > bestScore) {
+            bestScore = score;
+            bestOffset = offset;
+        }
+    }
+
+    g_measuredLatencyMs = (int)((bestOffset * 1000.0f) / SAMPLE_RATE);
+	#else
+	g_measuredLatencyMs = 20;
+	#endif // _WIN32
+
+	result = bufferLatency + osMs + g_measuredLatencyMs;
+
+	printf("Done calibraring latency. It is now %d\n", g_measuredLatencyMs);
+
+	//printf("MiniAudio (WASAPI) Detected Latency %dms\n", result);
+	return result;
 }
 
 /*
