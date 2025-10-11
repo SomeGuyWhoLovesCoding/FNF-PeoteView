@@ -118,10 +118,11 @@ class NoteSpawner {
 			var n = File.getNote(i);
 
 			// Get lane and receptor information
-			var laneInfo = getLaneInfo(n);
-			var lane = laneInfo.lane;
-			var receptor = laneInfo.receptor;
-			var fakeOverlapStorage = laneInfo.fakeOverlapStorage;
+			var lane = parent.noteTypeFunctionalityPre.exists(n.type) 
+				? 1 
+				: (n.type % parent.strumlines.length);
+			var receptor = parent.strumlines[lane].buffer[n.index];
+			var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
 
 			// Calculate note position
 			var diff = MetaNote.metaNotePositionToSongTime((n.position - pos)) * scrollSpeed;
@@ -152,25 +153,6 @@ class NoteSpawner {
 			prev = n;
 			++i;
 		}
-	}
-
-	/**
-	 * Gets lane information for a note.
-	 * @param n The meta note.
-	 * @return Object containing lane, receptor, and fake overlap storage.
-	 */
-	function getLaneInfo(n:MetaNote):{lane:Int, receptor:Note, fakeOverlapStorage:Array<Int>} {
-		var lane = parent.noteTypeFunctionalityPre.exists(n.type) 
-			? 1 
-			: (n.type % parent.strumlines.length);
-		var receptor = parent.strumlines[lane].buffer[n.index];
-		var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
-
-		return {
-			lane: lane,
-			receptor: receptor,
-			fakeOverlapStorage: fakeOverlapStorage
-		};
 	}
 
 	/**

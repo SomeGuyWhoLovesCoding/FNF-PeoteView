@@ -58,7 +58,7 @@ int g_measuredLatencyMs = 0; // cached loopback latency
 // -------------------- LOOPBACK LATENCY MEASUREMENT --------------------
 HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
 	int bufferLatency = 10; // simple.
-	int osMs = 100; // can be VERY important. this is an approximate of windows audio/video latency in total
+	int osMs = 50; // can be VERY important. this is an approximate of windows audio/video latency in total
 	int result = bufferLatency + osMs + g_measuredLatencyMs;
 
     if (g_measuredLatencyMs != 0) return result;
@@ -134,7 +134,7 @@ HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
     ma_device_start(&playback);
 
 	printf("Calibraring latency\n");
-    ma_sleep(2000); // capture 2 seconds at max
+    ma_sleep(300); // capture 2 seconds at max
 
     ma_device_uninit(&playback);
     ma_device_uninit(&loopback);
@@ -154,7 +154,6 @@ HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
     }
 
     g_measuredLatencyMs = (int)((bestOffset * 1000.0f) / SAMPLE_RATE);
-	result = bufferLatency + osMs + g_measuredLatencyMs;
 	#else
 	g_measuredLatencyMs = 20;
 	#endif // _WIN32
