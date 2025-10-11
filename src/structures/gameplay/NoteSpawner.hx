@@ -86,91 +86,147 @@ class NoteSpawner {
 	 * @param pos The song's position in the note position format.
 	 */
 	function update(pos:Int64) {
-		//Sys.println('Why');
-		//var pos = MetaNote.floatToMetaNotePosition(songPosition);
-		//Sys.println('Song Position ${parent.parent.songPosition}, MetaNote Song Position ${MetaNote.metaNotePositionToSongTime(pos)}');
-
+		// Cache hot window for performance
 		cacheHotWindow();
 
+		// Store previous bounds for cache optimization
 		_lastbottom = bottom;
 		_lasttop = top;
 
+		// Update note boundaries
 		cullTop(pos);
 		cullBottom(pos);
 
+		// Cache expanded window after culling
 		cacheHotWindow2();
 
-		//Sys.println('Top $top bottom $bottom');
+		// Process and render notes in current window
+		processNotes(pos);
+	}
 
+	/**
+	 * Processes and renders all notes in the current window.
+	 * @param pos The current song position in note format.
+	 */
+	function processNotes(pos:Int64) {
 		var i = bottom;
-
 		var scrollSpeed = parent.parent.scrollSpeed;
-		var diff = 0.0;
-		var noteY = 0;
+		var prev:Null<MetaNote> = null;
 		var noteSpr:Null<Note> = null;
 
-		var prev:Null<MetaNote> = null;
 		while (i < top) {
 			var n = File.getNote(i);
 
-			// lane/receptor/fake storage lookups
-			var lane = parent.noteTypeFunctionalityPre.exists(n.type) ? 1 : (n.type % parent.strumlines.length);
-			var receptor = parent.strumlines[lane].buffer[n.index];
-			var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
+			// Get lane and receptor information
+			var laneInfo = getLaneInfo(n);
+			var lane = laneInfo.lane;
+			var receptor = laneInfo.receptor;
+			var fakeOverlapStorage = laneInfo.fakeOverlapStorage;
 
-			// compute diff/newY for this note FIRST (important!)
-			diff = MetaNote.metaNotePositionToSongTime((n.position - pos)) * scrollSpeed;
+			// Calculate note position
+			var diff = MetaNote.metaNotePositionToSongTime((n.position - pos)) * scrollSpeed;
 			var newY = receptor.y + Math.floor(diff);
 
-			// update fake storage for this index now that we have the current computed Y
-			// (we'll still use prev's stored value to decide overlap)
-			// but delay writing it until after overlap decision? Either way, compare against prev value below.
-			// We'll not overwrite it yet so prev comparison can use the prior prev value:
-			// fakeOverlapStorage[n.index] = newY; // only write after deciding not to merge
+			// Check if this is a ghost note
+			var ghost = isGhostNote(prev, n);
 
-			// safe ghost check (ensure prev exists)
-			var ghost = (prev != null) && prev.position == n.position && prev.index == n.index && prev.type == n.type;
+			// Determine if notes should overlap
+			var shouldOverlap = shouldNotesOverlap(prev, n, noteSpr, receptor, newY, 
+				fakeOverlapStorage[prev != null ? prev.index : -1]);
 
-			// small pixel threshold: how many pixels difference still counts as overlapping
-			// tune this to taste; 0 requires exact same floored pixel, 1 allows a 1-pixel gap, etc.
-			var OVERLAP_PIXEL_THRESHOLD = 0;
-
-			// compute prevY only if prev exists
-			var prevY = (prev != null) ? fakeOverlapStorage[prev.index] : -99999;
-
-			// requirements: only consider fake-overlap if we actually have a note sprite and a prev to compare with
-			var requirementsForNoteOverlapSimulationBS = noteSpr != null
-				&& prev != null
-				&& (Math.abs(Math.floor(newY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)) - Math.floor(prevY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT))) <= OVERLAP_PIXEL_THRESHOLD)
-				&& (prev.type == n.type)
-				&& (noteSpr.r == 0 /* default angle */)
-				&& (noteSpr.scale == receptor.scale)
-				&& (prev.duration == n.duration)
-				&& (noteSpr.x == receptor.x);
-
-			// now write the computed Y into fake overlap storage (so next notes compare to this)
+			// Update fake overlap storage for next iteration
 			fakeOverlapStorage[n.index] = newY;
 
-			if (requirementsForNoteOverlapSimulationBS) {
-				// treat as overlap: merge into existing sprite
-				noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + (n.missed ? Note.defaultMissAlpha : Note.defaultAlpha), 254);
-				noteSpr.notesInOne++;
-				prev = n;
-				++i;
-				continue;
+			if (shouldOverlap) {
+				// Merge into existing sprite
+				mergeNoteIntoSprite(noteSpr, n);
 			} else {
 				if (!ghost) {
 					noteSpr = parent.drawNote(pos, n, diff, i);
 				} else {
-					// ghost -> same exact meta-note (position, index, type) so just increment
+					// Ghost note - same meta-note, just increment counter
 					noteSpr.notesInOne++;
 				}
-				prev = n;
-				++i;
 			}
-		}
 
-		//Sys.println(NoteSystem.notesBuf.length);
+			prev = n;
+			++i;
+		}
+	}
+
+	/**
+	 * Gets lane information for a note.
+	 * @param n The meta note.
+	 * @return Object containing lane, receptor, and fake overlap storage.
+	 */
+	function getLaneInfo(n:MetaNote):{lane:Int, receptor:Note, fakeOverlapStorage:Array<Int>} {
+		var lane = parent.noteTypeFunctionalityPre.exists(n.type) 
+			? 1 
+			: (n.type % parent.strumlines.length);
+		var receptor = parent.strumlines[lane].buffer[n.index];
+		var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
+
+		return {
+			lane: lane,
+			receptor: receptor,
+			fakeOverlapStorage: fakeOverlapStorage
+		};
+	}
+
+	/**
+	 * Checks if a note is a ghost (duplicate) of the previous note.
+	 * @param prev The previous meta note.
+	 * @param current The current meta note.
+	 * @return True if the notes are duplicates.
+	 */
+	function isGhostNote(prev:Null<MetaNote>, current:MetaNote):Bool {
+		return prev != null 
+			&& prev.position == current.position 
+			&& prev.index == current.index 
+			&& prev.type == current.type;
+	}
+
+	/**
+	 * Determines if two notes should visually overlap.
+	 * @param prev The previous meta note.
+	 * @param current The current meta note.
+	 * @param noteSpr The current note sprite.
+	 * @param receptor The receptor for this lane.
+	 * @param newY The Y position of the current note.
+	 * @param prevY The Y position of the previous note.
+	 * @return True if notes should overlap and merge.
+	 */
+	function shouldNotesOverlap(prev:Null<MetaNote>, current:MetaNote, noteSpr:Null<Note>, 
+		receptor:Note, newY:Float, prevY:Float):Bool {
+		
+		if (noteSpr == null || prev == null) return false;
+
+		var OVERLAP_PIXEL_THRESHOLD = 0;
+		
+		// Calculate pixel difference accounting for resolution scaling
+		var pixelDiff = Math.abs(
+			Math.floor(newY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)) - 
+			Math.floor(prevY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT))
+		);
+
+		// Check all overlap requirements
+		return pixelDiff <= OVERLAP_PIXEL_THRESHOLD
+			&& prev.type == current.type
+			&& noteSpr.r == 0  // default angle
+			&& noteSpr.scale == receptor.scale
+			&& prev.duration == current.duration
+			&& noteSpr.x == receptor.x;
+	}
+
+	/**
+	 * Merges a note into an existing sprite by increasing its alpha.
+	 * @param noteSpr The note sprite to merge into.
+	 * @param n The meta note being merged.
+	 */
+	function mergeNoteIntoSprite(noteSpr:Note, n:MetaNote) {
+		var alphaToAdd = n.missed ? Note.defaultMissAlpha : Note.defaultAlpha;
+		noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + alphaToAdd, 254);
+		noteSpr.notesInOne++;
 	}
 
 	/**
