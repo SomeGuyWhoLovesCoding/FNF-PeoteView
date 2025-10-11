@@ -128,7 +128,7 @@ class NoteSystem {
 	 * @param note The meta note you want to draw the note to.
 	 * @param id The index the note belongs to.
 	**/
-	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64, createSprite:Bool = true):Note {
+	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64):Note {
 		var index = note.index;
 		var lane = 0;
 		var duration = note.duration;
@@ -145,8 +145,8 @@ class NoteSystem {
 		var rec = strumline.buffer[index];
 		var id = parent.inputSystem.receptorIds[index];
 
-		var noteSpr = createSprite ? notePool.getNote(id, note, _id) : null;
-		var sustainSpr = (createSprite && duration != 0) ? notePool.getSustain(id, note) : null;
+		var noteSpr = notePool.getNote(id, note, _id);
+		var sustainSpr = duration != 0 ? notePool.getSustain(id, note) : null;
 		var sustainExists = duration != 0;
 
 		var leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
@@ -161,11 +161,9 @@ class NoteSystem {
 
 		if (parent.downScroll) diff = -diff;
 
-		if (createSprite) {
-			noteSpr.x = noteSprX;
-			noteSpr.y = noteSprY;
-			noteSpr.scale = rec.scale;
-		}
+		noteSpr.x = noteSprX;
+		noteSpr.y = noteSprY;
+		noteSpr.scale = rec.scale;
 
 		var playable = strumline.playable && !(parent.botplay || RenderingMode.enabled);
 
@@ -183,7 +181,7 @@ class NoteSystem {
 				}
 
 				if (diff < -parent.hitbox && !isMissed) {
-					if (createSprite) noteSpr.initialAlpha = Note.defaultMissAlpha;
+					noteSpr.initialAlpha = Note.defaultMissAlpha;
 					var n:Int64 = note.toNumber();
 					(n:MetaNote).missed = true;
 					isMissed = true;
@@ -194,13 +192,11 @@ class NoteSystem {
 						noteTypeFunctionalityPre[type](index, type, true);
 					}
 
-					parent.onNoteMiss.dispatch(note, createSprite ? noteSpr.notesInOne : 1);
+					parent.onNoteMiss.dispatch(note, noteSpr.notesInOne);
 
 					if (sustainExists && !isHeld) {
-						if (createSprite) {
-							sustainSpr.c.aF = Sustain.defaultMissAlpha;
-							sustainSpr.c.luminanceF = Sustain.defaultMissAlpha;
-						}
+						sustainSpr.c.aF = Sustain.defaultMissAlpha;
+						sustainSpr.c.luminanceF = Sustain.defaultMissAlpha;
 						var n:Int64 = note.toNumber();
 						(n:MetaNote).held = true;
 						isHeld = true;
@@ -237,49 +233,39 @@ class NoteSystem {
 
 				// Setup sustain visuals if needed
 				if (sustainExists) {
-					if (createSprite) {
-						sustainSpr.followNote(rec);
-						sustainSpr.w = sustainSpr.length - leftover;
-						if (sustainSpr.w < 0) sustainSpr.w = 0;
-					}
+					sustainSpr.followNote(rec);
+					sustainSpr.w = sustainSpr.length - leftover;
+					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
 
-				parent.onNoteHit.dispatch(note, 0, createSprite ? noteSpr.notesInOne : 1);
+				parent.onNoteHit.dispatch(note, 0, noteSpr.notesInOne);
 			}
 		}
 
 		// --- Sustain handling ---
 		if (sustainExists) {
-			var len = (duration * 4) - 10;
-			if (createSprite) {
-				sustainSpr.changeID(id);
-				sustainSpr.parent = noteSpr;
-				sustainSpr.r = parent.downScroll ? -90 : 90;
-				sustainSpr.speed = parent.scrollSpeed;
-				sustainSpr.scale = rec.scale;
-				sustainSpr.length = len;
-			}
+			sustainSpr.changeID(id);
+			sustainSpr.parent = noteSpr;
+			sustainSpr.r = parent.downScroll ? -90 : 90;
+			sustainSpr.speed = parent.scrollSpeed;
+			sustainSpr.scale = rec.scale;
+			sustainSpr.length = (duration * 4) - 10;
 
 			if (!isHit) {
-				if (createSprite) {
-					sustainSpr.w = sustainSpr.length;
-					sustainSpr.followNote(noteSpr);
-				}
-			} else if (sustainSpr != null ? sustainSpr.c.aF != 0 : true) {
-				if (createSprite) {
-					if (sustainSpr.w >= 0) {
-						sustainSpr.followNote(rec);
-						sustainSpr.w = sustainSpr.length - leftover;
-						if (sustainSpr.w < 0) sustainSpr.w = 0;
-					}
+				sustainSpr.w = sustainSpr.length;
+				sustainSpr.followNote(noteSpr);
+			} else if (sustainSpr.c.aF != 0) {
+				if (sustainSpr.w >= 0) {
+					sustainSpr.followNote(rec);
+					sustainSpr.w = sustainSpr.length - leftover;
+					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
 
-				if (pos > position + (MetaNote.floatToMetaNotePosition(len) - 70) && !isHeld) {
+				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainSpr.length) - 70) && !isHeld) {
 					var n:Int64 = note.toNumber();
 					(n:MetaNote).held = true;
 					isHeld = true;
 					File.setNote(_id, n);
-
 					strumline.sustainsToHold[index] = null;
 					strumline.sustainsToHold_indexes[index] = 0;
     				strumline.botHitsToCheck[index] = false; // only for short notes
@@ -293,17 +279,15 @@ class NoteSystem {
 				}
 			}
 
-			if (createSprite)
-				if (@:privateAccess sustainSpr.bytePos == -1 && createSprite)
-					sustainsBuf.addElement(sustainSpr);
+			if (@:privateAccess sustainSpr.bytePos == -1)
+				sustainsBuf.addElement(sustainSpr);
 		}
 
 		//if (_id == 1) Sys.println('MetaNoet ID 1: ${note.flag}');
 
 		// --- Buffer note ---
-		if (createSprite)
-			if (!isHit && @:privateAccess noteSpr.bytePos == -1)
-				notesBuf.addElement(noteSpr);
+		if (!isHit && @:privateAccess noteSpr.bytePos == -1)
+			notesBuf.addElement(noteSpr);
 
 		return noteSpr;
 	}
