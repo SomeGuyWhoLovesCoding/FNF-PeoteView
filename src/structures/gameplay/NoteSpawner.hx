@@ -109,6 +109,9 @@ class NoteSpawner {
 		var noteY = 0;
 		var noteSpr:Null<Note> = null;
 
+		var createSprite = true;
+		var noteIsNull = true;
+
 		var prev:Null<MetaNote> = null;
 		while (i < top) {
 			var n = File.getNote(i);
@@ -139,7 +142,7 @@ class NoteSpawner {
 			var prevY = (prev != null) ? fakeOverlapStorage[prev.index] : -99999;
 
 			// requirements: only consider fake-overlap if we actually have a note sprite and a prev to compare with
-			var requirementsForNoteOverlapSimulationBS = noteSpr != null
+			var requirementsForNoteOverlapSimulationBS = noteIsNull
 				&& prev != null
 				&& (Math.abs(Math.floor(newY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)) - Math.floor(prevY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT))) <= OVERLAP_PIXEL_THRESHOLD)
 				&& (prev.type == n.type)
@@ -155,19 +158,18 @@ class NoteSpawner {
 				// treat as overlap: merge into existing sprite
 				noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + (n.missed ? Note.defaultMissAlpha : Note.defaultAlpha), 254);
 				noteSpr.notesInOne++;
-				prev = n;
-				++i;
-				continue;
+				createSprite = false;
 			} else {
-				if (!ghost) {
-					noteSpr = parent.drawNote(pos, n, diff, i);
-				} else {
-					// ghost -> same exact meta-note (position, index, type) so just increment
-					noteSpr.notesInOne++;
-				}
-				prev = n;
-				++i;
+				createSprite = true;
 			}
+
+			// Now the finale - draw the note
+			var drawnNote = ghost ? null : parent.drawNote(pos, n, diff, i, createSprite);
+			noteSpr = drawnNote;
+			noteIsNull = noteSpr == null;
+
+			prev = n;
+			++i;
 		}
 
 		//Sys.println(NoteSystem.notesBuf.length);
