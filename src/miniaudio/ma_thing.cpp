@@ -40,9 +40,8 @@ int g_measuredLatencyMs = 0; // cached loopback latency
 
 // -------------------- LOOPBACK LATENCY MEASUREMENT --------------------
 int detectLatency() {
-	int bufferLatency = 10; // simple.
 	int osMs = 50; // can be VERY important. this is an approximate of windows audio/video latency in total
-	int result = bufferLatency + osMs + g_measuredLatencyMs;
+	int result = osMs + g_measuredLatencyMs;
 
     if (g_measuredLatencyMs != 0) return result;
 
@@ -141,7 +140,7 @@ int detectLatency() {
 	g_measuredLatencyMs = 20;
 	#endif // _WIN32
 
-	result = bufferLatency + osMs + g_measuredLatencyMs;
+	result = osMs + g_measuredLatencyMs;
 
 	printf("Done calibraring latency. It is now %d\n", g_measuredLatencyMs);
 
