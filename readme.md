@@ -97,6 +97,8 @@ If you want to compile the hl extern code you just modified, or you just want to
 
 Then, go to https://github.com/Blossomical/customtitlebar#hashlink-setup for instructions on how to build the library to hdll
 
+And then, run `haxelib run hxcpp hashlinkBuildXmls/chartFileBuild.xml` and `haxelib run hxcpp hashlinkBuildXmls/miniaudioBuild.xml`. That is required.
+
 Then, you just `lime test hl` and everything runs good!
 
 ...but except if you want to switch your hl version you have to recompile all the xml's...isn't that required...? Yes. It is required.
