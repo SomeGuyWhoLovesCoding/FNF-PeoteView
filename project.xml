@@ -55,5 +55,9 @@
 
 	<!--<haxedef name="HXCPP_CPP20" />-->
 
+	<!-- Automatically compile externs, hxcpp does the same naturally -->
+	<prebuild command="haxelib run hxcpp hashlinkBuildXmls/miniaudioBuild.xml" if="hl" />
+	<prebuild command="haxelib run hxcpp hashlinkBuildXmls/chartFileBuild.xml" if="hl" />
+
 	<icon path="assets/lime.svg" />
 </project>
