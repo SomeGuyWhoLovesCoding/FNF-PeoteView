@@ -114,7 +114,7 @@ class HealthBarSprite implements Element {
 				int segment = int(floor(fy));       // 0..4
 				float t = fract(fy);                // fractional part
 
-				vec4 colors[6]
+				vec4 colors[6];
 				colors[0] = c1;
 				colors[1] = c2;
 				colors[2] = c3;
