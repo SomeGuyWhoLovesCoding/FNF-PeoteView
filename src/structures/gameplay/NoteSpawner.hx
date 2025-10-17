@@ -102,19 +102,22 @@ class NoteSpawner {
 		// Cache expanded window after culling
 		cacheHotWindow2();
 
-		// Process and render notes in current window
+		// Process notes in current window
 		processNotes(pos);
+
+		// Render notes in current window
+		renderNotes(pos);
 	}
 
 	/**
-	 * Processes and renders all notes in the current window.
+	 * Processes all notes in the current window.
 	 * @param pos The current song position in note format.
 	 */
 	function processNotes(pos:Int64) {
 		var i = bottom;
 		var scrollSpeed = parent.parent.scrollSpeed;
 		var prev:MetaNote = -1;
-		var noteSpr:Null<Note> = null;
+		var noteSpr:VirtualNote = null;
 
 		while (i < top) {
 			var n = File.getNote(i);
@@ -158,6 +161,70 @@ class NoteSpawner {
 	}
 
 	/**
+	 * Renders all notes in the current window.
+	 * @param pos The current song position in note format.
+	 */
+	function renderNotes(pos:Int64) {
+		var prev:MetaNote = -1;
+		var noteSpr:VirtualNote = null;
+		var notes = parent.virtualNoteBuffer;
+
+		var virtualNotes = notes.notes;
+		for (i in 0...virtualNotes.length) {
+			var lane = virtualNotes[i];
+			for (j in 0...lane.length) {
+				var index = lane[j];
+				var length = notes.noteLength[i][j];
+				var id = parent.parent.inputSystem.receptorIds[j];
+				for (k in 0...length) {
+					var virtualNote:VirtualNote = index[k];
+					if (virtualNote == null) continue;
+					//if (virtualNote == null || virtualNote.ref.flag) continue;
+					var note = new Note(-99999, -99999, 0, 0);
+					note.x = virtualNote.x;
+					note.y = virtualNote.y;
+					note.w = virtualNote.w;
+					note.h = virtualNote.h;
+					note.scale = virtualNote.scale;
+					note.initialAlpha = virtualNote.initialAlpha;
+					note.addedAlpha = virtualNote.addedAlpha;
+					note.changeID(id);
+					note.toNote();
+					NoteSystem.notesBuf.addElement(note);
+				}
+			}
+		}
+
+		var virtualSustains = notes.sustains;
+		for (i in 0...virtualSustains.length) {
+			var lane = virtualSustains[i];
+			for (j in 0...lane.length) {
+				var index = lane[j];
+				var length = notes.sustainLength[i][j];
+				var id = parent.parent.inputSystem.receptorIds[j];
+				for (k in 0...length) {
+					var virtualSustain:VirtualSustain = index[k];
+					if (virtualSustain == null) continue;
+					//if (virtualSustain == null || virtualSustain.ref.ref.held) continue;
+					var sustain = new Sustain(-99999, -99999, 0, 0);
+					sustain.x = virtualSustain.x;
+					sustain.y = virtualSustain.y;
+					sustain.w = virtualSustain.w;
+					sustain.h = virtualSustain.h;
+					sustain.r = virtualSustain.r;
+					sustain.scale = virtualSustain.scale;
+					sustain.length = virtualSustain.length;
+					sustain.speed = virtualSustain.speed;
+					sustain.c.aF = virtualSustain.alpha;
+					sustain.c.luminanceF = virtualSustain.alpha;
+					sustain.changeID(id);
+					NoteSystem.sustainsBuf.addElement(sustain);
+				}
+			}
+		}
+	}
+
+	/**
 	 * Checks if a note is a ghost (duplicate) of the previous note.
 	 * @param prev The previous meta note.
 	 * @param current The current meta note.
@@ -180,7 +247,7 @@ class NoteSpawner {
 	 * @param prevY The Y position of the previous note.
 	 * @return True if notes should overlap and merge.
 	 */
-	function shouldNotesOverlap(prev:MetaNote, current:MetaNote, noteSpr:Null<Note>, 
+	function shouldNotesOverlap(prev:MetaNote, current:MetaNote, noteSpr:VirtualNote, 
 		receptor:Note, newY:Float, prevY:Float):Bool {
 		
 		if (noteSpr == null || prev == -1) return false;
@@ -196,7 +263,6 @@ class NoteSpawner {
 		// Check all overlap requirements
 		return pixelDiff <= OVERLAP_PIXEL_THRESHOLD
 			&& prev.type == current.type
-			&& noteSpr.r == 0  // default angle
 			&& noteSpr.scale == receptor.scale
 			&& prev.duration == current.duration
 			&& noteSpr.x == receptor.x;
@@ -207,7 +273,7 @@ class NoteSpawner {
 	 * @param noteSpr The note sprite to merge into.
 	 * @param n The meta note being merged.
 	 */
-	function mergeNoteIntoSprite(noteSpr:Note, n:MetaNote) {
+	function mergeNoteIntoSprite(noteSpr:VirtualNote, n:MetaNote) {
 		var alphaToAdd = n.missed ? Note.defaultMissAlpha : Note.defaultAlpha;
 		noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + alphaToAdd, 254);
 		noteSpr.notesInOne++;

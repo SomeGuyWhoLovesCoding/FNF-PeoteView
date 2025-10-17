@@ -46,9 +46,10 @@ class NoteSystem {
 		}
 	}
 
+	var strumlines(default, null):Array<Strumline>;
 	var noteSpawner(default, null):NoteSpawner;
 	var notePool(default, null):NotePool;
-	var strumlines(default, null):Array<Strumline>;
+	var virtualNoteBuffer(default, null):NoteVB;
 
 	var noteTypeFunctionalityPre(default, null):Map<Int, Int->Int->Bool->Void>;
 
@@ -77,13 +78,15 @@ class NoteSystem {
 
 		strumlines = [];
 
-		for (i in 0...2) {
+		for (i in 0...2) { // how many strumlines you'll use throughout the entire song, only. Not dynamic because I'm lazy to do any overcomplication and I want to keep it pretty simple.
 			var strumline = new Strumline(STRUMLINE_X_OFFSET + Std.int(Main.INITIAL_WIDTH * (i * 0.5)),
 				parent.downScroll ? Main.INITIAL_HEIGHT - STRUMLINE_Y_OFFSET_DOWNSCROLL : STRUMLINE_Y_OFFSET, 
 				Std.int(inputSystem.strumline[0]), inputSystem.strumline[1], mania, this);
 			strumline.playable = parent.inputSystem.strumlinePlayable[i];
 			strumlines.push(strumline);
 		}
+
+		virtualNoteBuffer = new NoteVB(strumlines.length, strumlines[0].buffer.length);
 
 		setScrollSpeed(Chart.header.speed);
 
@@ -92,6 +95,10 @@ class NoteSystem {
 
 	private var _lastPos(default, null):Int64; // for adaptive bot timer
 	function update(pos:Int64) {
+		// Clear up the virtual note buffer for the funnies
+		virtualNoteBuffer.clear();
+
+		// Clear note & sustain buffers to refresh for new window
 		notesBuf.clear();
 		sustainsBuf.clear();
 
@@ -127,8 +134,9 @@ class NoteSystem {
 	 * @param pos The song's position in note position format.
 	 * @param note The meta note you want to draw the note to.
 	 * @param id The index the note belongs to.
+	 * @returns The virtual note that was successfully drawn.
 	**/
-	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64):Note {
+	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64):VirtualNote {
 		var index = note.index;
 		var lane = 0;
 		var duration = note.duration;
@@ -164,6 +172,7 @@ class NoteSystem {
 		noteSpr.x = noteSprX;
 		noteSpr.y = noteSprY;
 		noteSpr.scale = rec.scale;
+		noteSpr.ref = note;
 
 		var playable = strumline.playable && !(parent.botplay || RenderingMode.enabled);
 
@@ -195,8 +204,7 @@ class NoteSystem {
 					parent.onNoteMiss.dispatch(note, noteSpr.notesInOne);
 
 					if (sustainExists && !isHeld) {
-						sustainSpr.c.aF = Sustain.defaultMissAlpha;
-						sustainSpr.c.luminanceF = Sustain.defaultMissAlpha;
+						sustainSpr.alpha = Sustain.defaultMissAlpha;
 						var n:Int64 = note.toNumber();
 						(n:MetaNote).held = true;
 						isHeld = true;
@@ -233,7 +241,7 @@ class NoteSystem {
 
 				// Setup sustain visuals if needed
 				if (sustainExists) {
-					sustainSpr.followNote(rec);
+					sustainSpr.followNote(rec.x, rec.y, id);
 					sustainSpr.w = sustainSpr.length - leftover;
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
@@ -244,8 +252,7 @@ class NoteSystem {
 
 		// --- Sustain handling ---
 		if (sustainExists) {
-			sustainSpr.changeID(id);
-			sustainSpr.parent = noteSpr;
+			sustainSpr.ref = noteSpr;
 			sustainSpr.r = parent.downScroll ? -90 : 90;
 			sustainSpr.speed = parent.scrollSpeed;
 			sustainSpr.scale = rec.scale;
@@ -253,10 +260,10 @@ class NoteSystem {
 
 			if (!isHit) {
 				sustainSpr.w = sustainSpr.length;
-				sustainSpr.followNote(noteSpr);
-			} else if (sustainSpr.c.aF != 0) {
+				sustainSpr.followNote(noteSprX, noteSprY, id);
+			} else if (sustainSpr.alpha != 0) {
 				if (sustainSpr.w >= 0) {
-					sustainSpr.followNote(rec);
+					sustainSpr.followNote(rec.x, rec.y, id);
 					sustainSpr.w = sustainSpr.length - leftover;
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
@@ -279,15 +286,14 @@ class NoteSystem {
 				}
 			}
 
-			if (@:privateAccess sustainSpr.bytePos == -1)
-				sustainsBuf.addElement(sustainSpr);
+			virtualNoteBuffer.addSustain(sustainSpr, noteSpr);
 		}
 
 		//if (_id == 1) Sys.println('MetaNoet ID 1: ${note.flag}');
 
 		// --- Buffer note ---
-		if (!isHit && @:privateAccess noteSpr.bytePos == -1)
-			notesBuf.addElement(noteSpr);
+		if (!isHit)
+			virtualNoteBuffer.addNote(noteSpr);
 
 		return noteSpr;
 	}
@@ -359,6 +365,10 @@ class NoteSystem {
 			notePool = null;
 		}
 
+		// Clear up the virtual note buffer for the funnies
+		virtualNoteBuffer.clear();
+
+		// Clear note & sustain buffers to refresh for new window
 		notesBuf.clear();
 		sustainsBuf.clear();
 

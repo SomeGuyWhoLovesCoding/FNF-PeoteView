@@ -16,26 +16,28 @@ package structures.gameplay;
 **/
 @:publicFields
 class NotePool {
-	var notes(default, null):MetaNoteMap<Note>;
-	var inactiveNotes(default, null):Array<Note>;
-	var sustains(default, null):MetaNoteMap<Sustain>;
-	var inactiveSustains(default, null):Array<Sustain>;
+	//// THE VIRTUAL AREA ////
+	var virtualNotes(default, null):MetaNoteMap<VirtualNote>;
+	var inactiveVirtualNotes(default, null):Array<VirtualNote>;
+	var virtualSustains(default, null):MetaNoteMap<VirtualSustain>;
+	var inactiveVirtualSusses(default, null):Array<VirtualSustain>;
+
+	//// THE ELEMENT AREA ////
+	// todo, so you don't actually `new Note` or `new Sustain` every time you render a virtual note
 
 	var parent(default, null):NoteSystem;
 
 	/**
 	 * Creates the note pool.
 	 * @param parent The parent of this class.
-	 * @param notesToPrealloc How many notes the note pool should preallocate.
-	 * @param sustainsToPrealloc How many sustains the note pool should preallocate.
 	 */
 	function new(parent:NoteSystem) {
 		this.parent = parent;
 
-		notes = new MetaNoteMap<Note>();
-		sustains = new MetaNoteMap<Sustain>();
-		inactiveNotes = [];
-		inactiveSustains = [];
+		virtualNotes = new MetaNoteMap<VirtualNote>();
+		virtualSustains = new MetaNoteMap<VirtualSustain>();
+		inactiveVirtualNotes = [];
+		inactiveVirtualSusses = [];
 	}
 
 	/**
@@ -46,7 +48,7 @@ class NotePool {
      * @param index The index the note belongs to.
 	 */
 	function getNote(id:Int, n:MetaNote, index:Int64) {
-		var allocated = notes.get(n);
+		var allocated = virtualNotes.get(n);
 
 		/*n.flag = false;
 		n.missed = false;
@@ -54,19 +56,19 @@ class NotePool {
 		File.setNote(index, n);*/
 
 		if (allocated == null) {
-			var inactiveObject = inactiveNotes.pop();
-			if (inactiveObject == null) inactiveObject = new Note(-99999, -99999, 0, 0);
+			var inactiveObject = inactiveVirtualNotes.pop();
+			if (inactiveObject == null) inactiveObject = new VirtualNote(-99999, -99999, 0, 0);
 			inactiveObject.initialAlpha = Note.defaultAlpha;
 			inactiveObject.addedAlpha = 0;
 			inactiveObject.notesInOne = 1;
-			inactiveObject.data = n;
+			inactiveObject.ref = n;
 			allocated = inactiveObject;
-			notes.set(n, inactiveObject);
+			virtualNotes.set(n, inactiveObject);
 		}
 
-		allocated.data = n;
-		allocated.changeID(id);
-		allocated.toNote();
+		allocated.ref = n;
+		/*allocated.changeID(id);
+		allocated.toNote();*/
 
 		return allocated;
 	}
@@ -77,25 +79,26 @@ class NotePool {
 	 * @param n The underlying meta note the sustain sprite's data should be set to.
 	 */
 	function getSustain(id:Int, n:MetaNote) {
-		var allocated = sustains.get(n);
+		var allocated = virtualSustains.get(n);
 
 		if (allocated == null) {
 			var tex = TextureSystem.getTexture("sustainTex");
 
-			var inactiveObject = inactiveSustains.pop();
+			var inactiveObject = inactiveVirtualSusses.pop();
 			if (inactiveObject == null) {
-				inactiveObject = new Sustain(-99999, -99999,
+				inactiveObject = new VirtualSustain(-99999, -99999,
 				Math.floor(tex.width / tex.tilesX),
 			        Math.floor(tex.height / tex.tilesY)
 				);
-				inactiveObject.c.aF = Sustain.defaultAlpha;
-				inactiveObject.c.luminanceF = Sustain.defaultAlpha;
+				/*inactiveObject.c.aF = Sustain.defaultAlpha;
+				inactiveObject.c.luminanceF = Sustain.defaultAlpha;*/
+				inactiveObject.alpha = Sustain.defaultAlpha;
 			}
 			allocated = inactiveObject;
-			sustains.set(n, inactiveObject);
+			virtualSustains.set(n, inactiveObject);
 		}
 
-		allocated.changeID(id);
+		//allocated.changeID(id);
 
 		return allocated;
 	}
@@ -105,14 +108,14 @@ class NotePool {
 	 * @param n The underlying meta note in which selects the note sprite to be put in the inactive list.
 	 */
 	function putNote(n:MetaNote, index:Int64) {
-		var allocated:Note = notes.get(n);
+		var allocated:VirtualNote = virtualNotes.get(n);
 
-		if (notes.remove(n)) {
+		if (virtualNotes.remove(n)) {
 			allocated.initialAlpha = 1;
 			allocated.addedAlpha = 0;
 			allocated.x = -99999;
 			allocated.y = -99999;
-			inactiveNotes.push(allocated);
+			inactiveVirtualNotes.push(allocated);
 		}
 
 		n.flag = false;
@@ -126,13 +129,14 @@ class NotePool {
 	 * @param n The underlying meta note in which selects the sustain sprite to be put in the inactive list.
 	 */
 	function putSustain(n:MetaNote) {
-		var allocated:Sustain = sustains.get(n);
-		if (sustains.remove(n)) {
+		var allocated:VirtualSustain = virtualSustains.get(n);
+		if (virtualSustains.remove(n)) {
 			allocated.x = -99999;
 			allocated.y = -99999;
-			allocated.c.aF = Sustain.defaultAlpha;
-			allocated.c.luminanceF = Sustain.defaultAlpha;
-			inactiveSustains.push(allocated);
+			/*allocated.c.aF = Sustain.defaultAlpha;
+			allocated.c.luminanceF = Sustain.defaultAlpha;*/
+			allocated.alpha = Sustain.defaultAlpha;
+			inactiveVirtualSusses.push(allocated);
 		}
 	}
 
@@ -140,14 +144,14 @@ class NotePool {
 	 * Disposes the note pool.
 	 */
 	function dispose() {
-		if (notes != null) {
-			notes.clear();
-			notes = null;
+		if (virtualNotes != null) {
+			virtualNotes.clear();
+			virtualNotes = null;
 		}
 
-		if (sustains != null) {
-			sustains.clear();
-			sustains = null;
+		if (virtualSustains != null) {
+			virtualSustains.clear();
+			virtualSustains = null;
 		}
 	}
 }

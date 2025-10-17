@@ -19,6 +19,8 @@ import interfaces.*;
 import music.*;
 import structures.*;
 import structures.gameplay.*;
+import structures.gameplay.NoteVB.VirtualNote;
+import structures.gameplay.NoteVB.VirtualSustain;
 import system.*;
 import system.internal.*;
 import tests.*;
