@@ -97,6 +97,8 @@ class NoteSpawner {
 		cullTop(pos);
 		cullBottom(pos);
 
+		//Sys.println('Song position: $pos, top & bottom: [$top, $bottom]');
+
 		// Cache expanded window after culling
 		cacheHotWindow2();
 
