@@ -95,7 +95,9 @@ If you want to compile the hl extern code you just modified, or you just want to
 
 - Run the build.xml's in "hashlinkBuildXmls" folder at the root source directory.
 
-Then, go to https://github.com/Blossomical/customtitlebar#hashlink-setup for instructions on how to build the library to hdll
+Then, go to https://github.com/Blossomical/customtitlebar#hashlink-setup for instructions on how to build the library to hdll.
+
+(Since you're at funkin' view, locate the haxelib and check out the hdll at {customtitlebar:haxelib}/titlebar/native/hdlls. Copy that over to the repo's `hdlls` folder, if you dare to edit the haxelib's externs which must change both hxcpp and hl if you want cross compatibility.)
 
 And then, run `haxelib run hxcpp hashlinkBuildXmls/chartFileBuild.xml` and `haxelib run hxcpp hashlinkBuildXmls/miniaudioBuild.xml` if you ever choose to ever edit the hl version of the externs listed on the source code.
 
