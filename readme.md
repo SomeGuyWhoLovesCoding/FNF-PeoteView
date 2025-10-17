@@ -97,7 +97,7 @@ If you want to compile the hl extern code you just modified, or you just want to
 
 Then, go to https://github.com/Blossomical/customtitlebar#hashlink-setup for instructions on how to build the library to hdll
 
-And then, run `haxelib run hxcpp hashlinkBuildXmls/chartFileBuild.xml` and `haxelib run hxcpp hashlinkBuildXmls/miniaudioBuild.xml`. That is required.
+And then, run `haxelib run hxcpp hashlinkBuildXmls/chartFileBuild.xml` and `haxelib run hxcpp hashlinkBuildXmls/miniaudioBuild.xml` if you ever choose to ever edit the hl version of the externs listed on the source code.
 
 Then, you just `lime test hl` and everything runs good!
 

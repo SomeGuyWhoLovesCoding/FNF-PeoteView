@@ -54,7 +54,10 @@
 	<!--<haxelib name="hxcpp-debug-server" if="debug" />-->
 
 	<!-- Copy HDLL's over to cwd on hl -->
-	<assets path="hdlls" rename="bin/hl/bin" include="*" if="hl" />
+	<postbuild cmd="cd" if="windows" />
+	<postbuild cmd='robocopy hdlls bin\hl\bin *.hdll /NFL /NDL /NJH /NJS /NC /NS' if="windows" />
+	<postbuild cmd="cd" if="windows" />
+	<postbuild cmd='cp hdlls/*.hdll bin/hl/bin' if="linux" />
 
 	<!--<haxedef name="HXCPP_CPP20" />-->
 
