@@ -53,11 +53,10 @@
 	<haxedef name="HXCPP_STACK_TRACE" if="release" />
 	<!--<haxelib name="hxcpp-debug-server" if="debug" />-->
 
-	<!--<haxedef name="HXCPP_CPP20" />-->
+	<!-- Copy HDLL's over to cwd on hl -->
+	<assets path="hdlls" rename="bin/hl/bin" include="*" if="hl" />
 
-	<!-- Automatically compile externs, hxcpp does the same naturally -->
-	<prebuild command="haxelib run hxcpp hashlinkBuildXmls/miniaudioBuild.xml" if="hl" />
-	<prebuild command="haxelib run hxcpp hashlinkBuildXmls/chartFileBuild.xml" if="hl" />
+	<!--<haxedef name="HXCPP_CPP20" />-->
 
 	<icon path="assets/lime.svg" />
 </project>

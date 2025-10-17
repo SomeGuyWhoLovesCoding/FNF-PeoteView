@@ -26,6 +26,6 @@
 		<lib name="libhl.lib" if="windows" />
 		<lib name="-lhl" unless="windows" />
 		<ext value=".hdll" />
-		<outdir name="bin/hl/bin" />
+		<outdir name="hdlls" />
 	</target>
 </xml>
