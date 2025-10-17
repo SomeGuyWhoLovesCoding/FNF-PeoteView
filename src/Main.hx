@@ -42,12 +42,16 @@ class Main extends Application
 
 		#if (windows && customtitlebar)
 		Titlebar.setTitlebarColor(titleBarColor.r, titleBarColor.g, titleBarColor.b);
-		Titlebar.setTitleFontColor(0, 0, 0);
-		Titlebar.setButtonFontColor(20, 10, 30);
-		var path = sys.FileSystem.absolutePath('assets/fonts/unispace/unispace bd.ttf');
+		Titlebar.setTitleFontColor(255, 255, 255);
+		Titlebar.setPrimaryButtonImage("assets/system/WM/maximize.png");
+		Titlebar.setSecondaryButtonImage("assets/system/WM/maximize.png");
+		//Titlebar.setPrimaryButtonImage("assets/system/WM/maximize.png");
+		Titlebar.setButtonFontColor(255, 255, 255);
+		var path = sys.FileSystem.absolutePath('assets/fonts/inconsolata/inconsolata-semibold.ttf');
 		trace(path);
-		Titlebar.setTitleFont("Unispace-Bold", path, 16);
+		Titlebar.setTitleFont("Inconsolata-SemiBold", 'assets/fonts/inconsolata/inconsolata-semibold.ttf', 16);
 		Titlebar.initialize();
+		Titlebar.redrawWindow();
 		#end
 
 		switch (window.context.type)

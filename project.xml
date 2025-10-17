@@ -63,5 +63,10 @@
 
 	<!--<haxedef name="HXCPP_CPP20" />-->
 
-	<icon path="assets/lime.svg" />
+	<icon path="assets/system/LimeFriend.png" />
+	<icon path="assets/system/LimeFriend_16.png" size="16"/>
+	<icon path="assets/system/LimeFriend_32.png" size="32"/>
+	<icon path="assets/system/LimeFriend_64.png" size="64"/>
+	<icon path="assets/system/LimeFriend_128.png" size="128"/>
+	<icon path="assets/system/LimeFriend_600.png" size="600"/>
 </project>
