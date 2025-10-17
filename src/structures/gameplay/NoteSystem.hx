@@ -93,11 +93,26 @@ class NoteSystem {
 		update(MetaNote.floatToMetaNotePosition(parent.songPosition));
 	}
 
-	private var _lastPos(default, null):Int64; // for adaptive bot timer
+	/**
+	 * This processes the virtual notes in real time.
+	 * @param pos The song's position in the note position format.
+	**/
 	function update(pos:Int64) {
 		// Clear up the virtual note buffer for the funnies
 		virtualNoteBuffer.clear();
 
+		if (noteSpawner != null) {
+			noteSpawner.update(pos);
+		}
+	}
+
+	private var _lastPos(default, null):Int64; // for adaptive bot timer
+
+	/**
+	 * This function draws all of the strumlines after rendering it.
+	 * @param pos The song's position in the note position format.
+	**/
+	private function refreshRendering(pos:Int64) {
 		// Clear note & sustain buffers to refresh for new window
 		notesBuf.clear();
 		sustainsBuf.clear();
@@ -119,11 +134,18 @@ class NoteSystem {
 			strumline.draw(notesBuf);
 		}
 
-		if (noteSpawner != null) {
-			noteSpawner.update(pos);
-		}
-
 		_lastPos = pos;
+	}
+
+	/**
+	 * Renders the note system.
+	 * @param pos The song's position in the note position format.
+	**/
+	function renderNotes(pos:Int64) {
+		refreshRendering(pos);
+
+		// Render notes in current window
+		noteSpawner.renderNotes(pos);
 	}
 
 	/**

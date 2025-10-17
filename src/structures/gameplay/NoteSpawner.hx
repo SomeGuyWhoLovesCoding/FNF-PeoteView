@@ -104,9 +104,6 @@ class NoteSpawner {
 
 		// Process notes in current window
 		processNotes(pos);
-
-		// Render notes in current window
-		renderNotes(pos);
 	}
 
 	/**
