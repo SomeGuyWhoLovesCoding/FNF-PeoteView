@@ -48,21 +48,6 @@ class Note implements Element
 	@texSizeX var clipSizeX:Int = 100;
 	@texSizeY var clipSizeY:Int = 100;
 
-	public var notesInOne:Int64 = 0;
-
-	/**
-		The data of this note sprite.
-	**/
-	public var data:MetaNote;
-
-	/**
-		The child of this note sprite.
-	**/
-	public var child:Sustain;
-
-	public var playable:Bool;
-	public var missed:Bool;
-
 	public var rW:Int;
 	public var rH:Int;
 
