@@ -183,7 +183,7 @@ class Main extends Application
 		current = this;
 
 		SaveData.init();
-		Tools.getIconGridMap('assets/ui');
+		Tools.getIconGridMap('assets/images/ui');
 		#if windows
 		Sys.println('Windows: Audio latency set to ' + Mixer.latency());
 		#end
@@ -245,22 +245,22 @@ class Main extends Application
 		gamepad = new Gamepad(0);
 		controls = new Controls();
 
-		HealthBarSprite.healthBarProperties = Tools.parseHealthBarConfig('assets/ui');
-		UISprite.timeBarProperties = Tools.parseTimeBarConfig('assets/ui');
-		Tools.parseNoteskinData('assets/notes');
+		HealthBarSprite.healthBarProperties = Tools.parseHealthBarConfig('assets/images/ui');
+		UISprite.timeBarProperties = Tools.parseTimeBarConfig('assets/images/ui');
+		Tools.parseNoteskinData('assets/images/notes');
 	}
 
 	private function createTextures() {
 		var stamp = haxe.Timer.stamp();
 		trace("Preloading textures...");
-		TextureSystem.createTexture("mainMenuBGTex", "assets/mainMenu/menuBG.png", false, true);
-		TextureSystem.createTexture("mainMenuSheet", "assets/mainMenu/sheet.png", false, true);
-		TextureSystem.createTexture("noteTex", "assets/notes/noteSheet.png", false, true);
-		TextureSystem.createTexture("uiTex", "assets/ui/uiSheet.png", false, true);
-		TextureSystem.createTexture("hbTex", "assets/ui/hbSheet.png", false, true);
-		TextureSystem.createTexture("storyModeSheet", "assets/ui/storyModeSheet.png", false, true);
-		TextureSystem.createTexture("optionsMenuSheet", "assets/ui/optionsMenuSheet.png", false, true);
-		TextureSystem.createTexture("alphabetSheet", "assets/alphabetText/sheet.png", false, true);
+		TextureSystem.createTexture("mainMenuBGTex", "assets/images/mainMenu/menuBG.png", false, true);
+		TextureSystem.createTexture("mainMenuSheet", "assets/images/mainMenu/sheet.png", false, true);
+		TextureSystem.createTexture("noteTex", "assets/images/notes/noteSheet.png", false, true);
+		TextureSystem.createTexture("uiTex", "assets/images/ui/uiSheet.png", false, true);
+		TextureSystem.createTexture("hbTex", "assets/images/ui/hbSheet.png", false, true);
+		TextureSystem.createTexture("storyModeSheet", "assets/images/ui/storyModeSheet.png", false, true);
+		TextureSystem.createTexture("optionsMenuSheet", "assets/images/ui/optionsMenuSheet.png", false, true);
+		TextureSystem.createTexture("alphabetSheet", "assets/alphabetText/sheet.png", false, true); // Can't be moved to images folder otherwise the game craps itself.
 		trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 	}
 
