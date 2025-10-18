@@ -17,13 +17,10 @@ class PlayField implements State {
 	var view(default, null):CustomDisplay;
 
 	function new(path:String) {
-		//if (RenderingMode.enabled) renderTime = haxe.Timer.stamp();
 		Chart.load(path);
 
 		if (RenderingMode.enabled) {
-			//renderTime = haxe.Timer.stamp();
 			RenderingMode.initRender();
-			//lime.app.Application.current.window.onClose.add(RenderingMode.stopRender);
 		}
 	}
 
@@ -163,12 +160,6 @@ class PlayField implements State {
 		conductor.offset = -latencyCompensation #if windows - Mixer.latency() #end;
 		songPosition = -conductor.crochet * 4.5;
 
-		/*// This is important!
-		songPosition += latencyCompensation;
-		#if windows
-		songPosition -= Mixer.latency();
-		#end*/
-
 		var pos = MetaNote.floatToMetaNotePosition(songPosition);
 
 		field = new Field(this);
@@ -255,14 +246,10 @@ class PlayField implements State {
 			#if windows
 			songPosition -= Mixer.latency();
 			#end
-			//if (songStarted && !songEnded) Main.conductor.time = songPosition;
 
 			Main.conductor.time = songPosition;
 
 			var pos = MetaNote.floatToMetaNotePosition(songPosition);
-
-			//Sys.println('Offset: ' + (songPosition - Main.conductor.time));
-			//Sys.println('Song Position $songPosition, MetaNote Song Position ${MetaNote.metaNotePositionToSongTime(pos)}');
 
 			if (hud != null) hud.update(deltaTime);
 			if (noteSystem != null) noteSystem.update(pos);
@@ -291,14 +278,10 @@ class PlayField implements State {
 		if (field != null) field.update(deltaTime);
 		if (countdownDisp != null) countdownDisp.update(deltaTime);
 
-		//if (!songStarted) Main.conductor.time = songPosition;
-
 		songPosition += latencyCompensation;
 		#if windows
 		songPosition += Mixer.latency();
 		#end
-
-		/*if (songStarted)*/ //if (!died) Main.conductor.time = songPosition;
 	}
 
 	/**
@@ -367,7 +350,6 @@ class PlayField implements State {
 				health = 0.05;
 			}
 			
-			//rec.confirm();
 			return;
 		}
 
@@ -386,12 +368,6 @@ class PlayField implements State {
 		}
 
 		var absTiming = timing < 0 ? -timing : timing;
-		/*timing -= latencyCompensation;
-		#if windows
-		timing += Mixer.latency();
-		#end*/
-
-		//Sys.println(absTiming);
 
 		if (absTiming > 60) {
 			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(3);
@@ -516,7 +492,6 @@ class PlayField implements State {
 		Sys.println("Game Over");
 
 		if (RenderingMode.enabled) {
-			//lime.app.Application.current.window.onClose.remove(RenderingMode.stopRender);
 			RenderingMode.stopRender();
 		}
 

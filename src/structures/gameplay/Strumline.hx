@@ -120,7 +120,6 @@ class Strumline {
 
 		if (noteToHit != null && !noteToHit.missed && !noteToHit.flag) {
 			var pf = parent.parent;
-			//var spwn = parent.noteSpawner;
 			var type = noteToHit.type;
 
 			if (parent.noteTypeFunctionalityPre.exists(type)) {
@@ -136,7 +135,6 @@ class Strumline {
 			File.setNote(notesToHit_indexes[index], n);
 
 			if (noteToHit.duration > 2) {
-				//Sys.println('Hit $index, true!');
 				sustainsToHold[index] = n; // `n` is modified so don't switch this to `noteToHit` since that variable was never modified
 				sustainsToHold_indexes[index] = notesToHit_indexes[index];
 			}
@@ -154,22 +152,11 @@ class Strumline {
 
 	function release(index:Int) {
 		var sustainToRelease = sustainsToHold[index];
-		//Sys.println('sustainToRelease $sustainToRelease');
 		var rec = buffer[index];
 
 		var sustainReleaseCallbackCanRun = sustainToRelease != null && sustainToRelease.index == index && (sustainToRelease.flag && !sustainToRelease.held);
-		//Sys.println('Can run: $sustainReleaseCallbackCanRun, flag & !held: ${sustainToRelease.flag && !sustainToRelease.held}, !held: ${!sustainToRelease.held}');
-		//Sys.println('flag ${sustainToRelease.flag} held ${sustainToRelease.held}');
-		//Sys.println('index ${sustainToRelease.index == index} flag ${sustainToRelease.flag} held ${sustainToRelease.held}');
-
-		//if (sustainToRelease.index == index) Sys.println('index $index index 2 ${sustainToRelease.index}');
-		//if (sustainToRelease.index == index) Sys.println('index ${sustainToRelease.index == index} flag ${sustainToRelease.flag} held ${sustainToRelease.held}');
-
-		//Sys.println('flag and held ${!sustainToRelease.flag && !sustainToRelease.held}');
-		//Sys.println('flag ${sustainToRelease.flag} held ${sustainToRelease.held}');
 
 		if (sustainReleaseCallbackCanRun) {
-			//Sys.println('Index $index');
 			var pf = parent.parent;
 
 			var n:Int64 = sustainToRelease.toNumber();

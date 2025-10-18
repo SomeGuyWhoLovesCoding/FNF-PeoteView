@@ -35,15 +35,6 @@ class NoteSpawner {
 
 		curTopNote = File.getNote(0);
 		curBottomNote = File.getNote(0);
-
-		/*for (i in 0...File.getLength().low) {
-			var note = File.getNote(i);
-			var position = note.position;
-			var duration = note.duration;
-			var index = note.index;
-			var type = note.type;
-			trace('Position: $position, Duration: $duration, Index: $index, Type: $type');
-		}*/
 	}
 
 	// before updating / drawing notes
@@ -96,8 +87,6 @@ class NoteSpawner {
 		// Update note boundaries
 		cullTop(pos);
 		cullBottom(pos);
-
-		//Sys.println('Song position: $pos, top & bottom: [$top, $bottom]');
 
 		// Cache expanded window after culling
 		cacheHotWindow2();
@@ -176,7 +165,6 @@ class NoteSpawner {
 				for (k in 0...length) {
 					var virtualNote:VirtualNote = index[k];
 					if (virtualNote == null) continue;
-					//if (virtualNote == null || virtualNote.ref.flag) continue;
 					var note = new Note(-99999, -99999, 0, 0);
 					note.x = virtualNote.x;
 					note.y = virtualNote.y;
@@ -202,7 +190,6 @@ class NoteSpawner {
 				for (k in 0...length) {
 					var virtualSustain:VirtualSustain = index[k];
 					if (virtualSustain == null) continue;
-					//if (virtualSustain == null || virtualSustain.ref.ref.held) continue;
 					var sustain = new Sustain(-99999, -99999, 0, 0);
 					sustain.x = virtualSustain.x;
 					sustain.y = virtualSustain.y;
@@ -282,12 +269,6 @@ class NoteSpawner {
 	 */
 	function cullTop(pos:Int64) {
 		var len = File.getLength();
-		//Sys.println('Top song position ${MetaNote.metaNotePositionToSongTime(pos)}, Song position: $songPosition');
-		//Sys.println('Top note position ${curTopNote.position}');
-		//Sys.println('TOP: ' + (curTopNote.position - pos));
-		//Sys.println('Top ${curTopNote.position - pos}');
-		//Sys.println('Pos: $pos');
-		//Sys.println(top != len && curTopNote.position - pos < spawnDist);
 		while (top != len && curTopNote.position - pos < spawnDist) {
 			++top;
 			var n:Int64 = File.getNote(top).toNumber();
@@ -305,10 +286,6 @@ class NoteSpawner {
 	 */
 	function cullBottom(pos:Int64) {
 		var len = File.getLength();
-		//Sys.println('BOTTOM: ' + ((pos - MetaNote.intToMetaNoteDuration(curBottomNote.duration)) - curBottomNote.position));
-		//Sys.println('Bottom song position $pos');
-		//Sys.println('Bottom note position ${curBottomNote.position}');
-		//Sys.println('Bottom ${curBottomNote.position - pos}');
 		while (bottom != len && (pos - MetaNote.intToMetaNoteDuration(curBottomNote.duration)) - curBottomNote.position > despawnDist) {
 			var notePool = parent.notePool;
 			notePool.putNote(curBottomNote, bottom);

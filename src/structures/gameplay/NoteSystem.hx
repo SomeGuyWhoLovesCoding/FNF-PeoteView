@@ -252,7 +252,6 @@ class NoteSystem {
 				var n:Int64 = note.toNumber();
 				(n:MetaNote).flag = isHit = true;
 				File.setNote(_id, n);
-				//Sys.println('$_id ' + File.getNote(_id).flag);
 
 				// Confirm the receptor
 				if (!rec.confirmed()) rec.confirm();
@@ -310,8 +309,6 @@ class NoteSystem {
 
 			virtualNoteBuffer.addSustain(sustainSpr, noteSpr);
 		}
-
-		//if (_id == 1) Sys.println('MetaNoet ID 1: ${note.flag}');
 
 		// --- Buffer note ---
 		if (!isHit)
