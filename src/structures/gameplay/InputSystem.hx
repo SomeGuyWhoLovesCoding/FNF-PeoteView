@@ -215,8 +215,11 @@ class InputSystem {
 
 		if (noteSystem != null) {
 			var strumline = noteSystem.strumlines[lane];
+			var check = strumline.playerHitsToCheck[index];
+			//Sys.println('Fuck off $check');
 			if (strumline.playerHitsToCheck[index]) {
 				strumline.playerHitsToCheck[index] = false;
+				//Sys.println('Fuck off $index');
 				strumline.release(index);
 			}
 		}

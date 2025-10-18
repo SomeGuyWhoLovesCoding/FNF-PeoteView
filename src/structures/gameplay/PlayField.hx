@@ -243,10 +243,10 @@ class PlayField implements State {
 
 			// If the song hasn't started yet, update the countdown conductor only.
 			// Do NOT apply latency compensation here — countdownDisp.conductor must see a pure musical timeline.
-			if (!songStarted) {
+			if (!songStarted && !songEnded) {
 				// Mixer already advanced playfield.songPosition during pre-start,
 				// so simply push that time to the countdown conductor.
-				if (countdownDisp.conductor != null) {
+				if (countdownDisp != null && countdownDisp.conductor != null) {
 					countdownDisp.conductor.time = songPosition;
 				}
 			}

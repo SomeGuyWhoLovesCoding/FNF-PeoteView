@@ -290,7 +290,7 @@ class NoteSystem {
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
 
-				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainSpr.length) - 70) && !isHeld) {
+				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainSpr.length - 6)) && !isHeld) {
 					var n:Int64 = note.toNumber();
 					(n:MetaNote).held = true;
 					isHeld = true;
@@ -369,6 +369,13 @@ class NoteSystem {
 	 * Disposes the note system.
 	**/
 	function dispose() {
+		// Clear up the virtual note buffer for the funnies
+		virtualNoteBuffer.clear();
+
+		// Clear note & sustain buffers to refresh for new window
+		notesBuf.clear();
+		sustainsBuf.clear();
+
 		if (strumlines != null) {
 			while (strumlines.length != 0) {
 				var strumline = strumlines.pop();
@@ -386,13 +393,6 @@ class NoteSystem {
 			notePool.dispose();
 			notePool = null;
 		}
-
-		// Clear up the virtual note buffer for the funnies
-		virtualNoteBuffer.clear();
-
-		// Clear note & sustain buffers to refresh for new window
-		notesBuf.clear();
-		sustainsBuf.clear();
 
 		var display = parent.display;
 

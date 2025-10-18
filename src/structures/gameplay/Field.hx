@@ -190,6 +190,7 @@ class Field {
 	}
 
 	function releaseSustain(note:MetaNote) {
+		//Sys.println('${note.index} weird');
 		sing(note.index, (note.type == 0 ? opponent : player), true, false);
 	}
 
