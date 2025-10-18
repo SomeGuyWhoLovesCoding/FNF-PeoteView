@@ -15,4 +15,5 @@
 	<SubTexture name="tankman" x="22" y="23" />
 	<SubTexture name="tankman-bloody" x="26" y="27" />
 	<SubTexture name="darnell" x="24" y="25" />
+	<SubTexture name="pshaggy" x="6" y="7" />
 </TextureAtlas>
