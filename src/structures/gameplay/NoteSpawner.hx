@@ -273,7 +273,7 @@ class NoteSpawner {
 	 * @param current The current meta note.
 	 * @return True if the notes are duplicates.
 	 */
-	function isGhostNote(prev:MetaNote, current:MetaNote):Bool {
+	inline function isGhostNote(prev:MetaNote, current:MetaNote):Bool {
 		return prev != -1
 			&& prev.position == current.position
 			&& prev.index == current.index
@@ -290,7 +290,7 @@ class NoteSpawner {
 	 * @param prevY The Y position of the previous note.
 	 * @return True if notes should overlap and merge.
 	 */
-	function shouldNotesOverlap(prev:MetaNote, current:MetaNote, noteSpr:VirtualNote,
+	inline function shouldNotesOverlap(prev:MetaNote, current:MetaNote, noteSpr:VirtualNote,
 		receptor:Note, newY:Float, prevY:Float):Bool {
 
 		if (noteSpr == null || prev == -1) return false;
@@ -316,7 +316,7 @@ class NoteSpawner {
 	 * @param noteSpr The note sprite to merge into.
 	 * @param n The meta note being merged.
 	 */
-	function mergeNoteIntoSprite(noteSpr:VirtualNote, n:MetaNote) {
+	inline function mergeNoteIntoSprite(noteSpr:VirtualNote, n:MetaNote) {
 		var alphaToAdd = n.missed ? Note.defaultMissAlpha : Note.defaultAlpha;
 		noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + alphaToAdd, 256);
 		noteSpr.notesInOne++;
