@@ -14,7 +14,7 @@ import lime.ui.MouseWheelMode;
 **/
 @:publicFields
 class MainMenu implements State {
-	static var optionAnims:Array<String> = ['story mode', 'freeplay', /*'awards', 'credits',*/ 'options', 'backspace to exit'];
+	static var optionAnims:Array<String> = ['story mode', 'freeplay', 'awards', 'credits', 'options', 'backspace to exit'];
 
 	var display:CustomDisplay;
 	var view:CustomDisplay;
@@ -92,11 +92,7 @@ class MainMenu implements State {
 					spr.y = Main.current.peoteView.height - spr.h - watermarkTxt.height - 10;
 				} else {
 					spr.x = 20;
-					if (i == 5) {
-						optionYLerps[i] = spr.y = (Main.INITIAL_HEIGHT - 55) - spr.h;
-					} else {
-						optionYLerps[i] = spr.y = (55 + (125 * i)) - (6 * Math.min(optionSelected, optionAnims.length - 2));
-					}
+					optionYLerps[i] = spr.y = optionYFormula(optionSelected, i);
 				}
 				spr.c.aF = 0.0;
 				optionBuf.addElement(spr);
@@ -115,8 +111,6 @@ class MainMenu implements State {
 
 		haxe.Timer.delay(addEvents, 100);
 
-		updateMenuOptions();
-
 		actions = [
 			Controls.Action.UI_DOWN => { action: down },
 			Controls.Action.UI_UP => { action: up },
@@ -126,36 +120,41 @@ class MainMenu implements State {
 		];
 	}
 
+	// Formula to center the options menu stuff
+	inline function optionYFormula(optionSelected:Float, i:Int) {
+		return ((300 - (40 * optionAnims.length)) + (125 * i)) - (6 * Math.min(optionSelected, optionAnims.length - 2));
+	}
+
 	static var optionYLerps:Array<Float> = [for (i in 0...5) 1];
 	static var alphaLerps:Array<Float> = [for (i in 0...6) 1];
+	static var optionSelectedLerp:Float = 0;
 	static var selectedAlpha:Float = 1.0;
 
-	function update(deltaTime:Float) {
+	// moved completely to the render loop to completely delegate the screen tearing like issues where the option's x just doesn't update for one frame. Oh, wait, that can actually be fixed by replacing the stuff that updates the animation of the elements from the input polling stuff directly to the rendering stuff
+	function render(deltaTime:Float) {
 		for (i in 0...optionBuf.length) {
 			var option = optionBuf.getElement(i);
 
 			var t = Math.min(deltaTime * 0.0115, 1);
 			if (t == 1) t = (1/lime.app.Application.current.window.frameRate) * 0.0115; // When loading the freeplay menu the first time it gets stuck at 1.0 for a single frame
 
-			if (optionAnims[i] != 'backspace to exit') { // was gonna -leave the option sprite named backspacetoexit at the magic spot of initialized position
-				optionYLerps[i] = Tools.lerp(optionYLerps[i], (45 + (125 * i)) - (6 * Math.min(optionSelected, optionAnims.length - 2)), t);
-				option.y = optionYLerps[i];
-				option.x = (Main.INITIAL_WIDTH - option.w) * 0.5;
-			}
+			var anim = optionAnims[i];
+
+			if (i == optionSelected) option.playAnimation(anim + ' white', false);
+			else option.playAnimation(anim + ' basic', false);
 
 			var alpha = alphaLerps[i] = Tools.lerp(alphaLerps[i], selectedAlpha, t);
 			option.c.aF = alpha;
 			option.c.luminanceF = alpha;
-			optionBuf.updateElement(option);
-		}
-	}
 
-	function updateMenuOptions() {
-		for (i in 0...optionBuf.length) {
-			var option = optionBuf.getElement(i);
-			var anim = optionAnims[i];
-			if (i == optionSelected) option.playAnimation(anim + ' white', true);
-			else option.playAnimation(anim + ' basic', true);
+			optionSelectedLerp = Tools.lerp(optionSelectedLerp, optionSelected, t);
+
+			if (anim != 'backspace to exit') { // was gonna -leave the option sprite named backspacetoexit at the magic spot of initialized position
+				optionYLerps[i] = Tools.lerp(optionYLerps[i], optionYFormula(optionSelectedLerp, i), t);
+				option.y = optionYLerps[i];
+				option.x = (Main.INITIAL_WIDTH - option.w) * 0.5;
+			}
+			if (i == 0) Sys.println(option.y);
 			optionBuf.updateElement(option);
 		}
 	}
@@ -166,7 +165,6 @@ class MainMenu implements State {
 		if (optionSelected < 0) {
 			optionSelected = optionBuf.length - 1;
 		}
-		updateMenuOptions();
 	}
 
 	function down(isDown:Bool, param:Int) {
@@ -175,19 +173,16 @@ class MainMenu implements State {
 		if (optionSelected >= optionBuf.length) {
 			optionSelected = 0;
 		}
-		updateMenuOptions();
 	}
 
 	function left(isDown:Bool, param:Int) {
 		if (!isDown || disposed) return;
 		optionSelected = optionBuf.length - 1;
-		updateMenuOptions();
 	}
 
 	function right(isDown:Bool, param:Int) {
 		if (!isDown || disposed) return;
 		optionSelected = optionBuf.length - 2;
-		updateMenuOptions();
 	}
 
 	function accept(isDown:Bool, param:Int) {
@@ -204,8 +199,6 @@ class MainMenu implements State {
 		if (optionSelected < 0) {
 			optionSelected = optionBuf.length - 1;
 		}
-
-		updateMenuOptions();
 	}
 
 	function doIt() {
