@@ -354,7 +354,6 @@ class Main extends Application
 
 		if (playField != null) {
 			if (RenderingMode.enabled) {
-
 				if (!playField.paused) {
 					playField.update(1000 / 60);
 					var noteSystem = playField?.noteSystem;
@@ -364,6 +363,12 @@ class Main extends Application
 					}
 
 					RenderingMode.pipeFrame();
+				}
+			} else {
+				var noteSystem = playField?.noteSystem;
+				if (noteSystem != null) {
+					var pos = MetaNote.floatToMetaNotePosition(playField.songPosition);
+					playField.noteSystem.renderNotes(pos);
 				}
 			}
 		}
