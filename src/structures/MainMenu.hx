@@ -14,7 +14,7 @@ import lime.ui.MouseWheelMode;
 **/
 @:publicFields
 class MainMenu implements State {
-	static var optionAnims:Array<String> = ['story mode', 'freeplay', 'awards', 'credits', 'options', 'backspace to exit'];
+	static var optionAnims:Array<String> = ['story mode', 'freeplay', /*'awards', 'credits',*/ 'options', 'backspace to exit'];
 
 	var display:CustomDisplay;
 	var view:CustomDisplay;
@@ -46,30 +46,14 @@ class MainMenu implements State {
 		view.scroll.y = 0;
 		view.fov = 1.0;
 
-		if (optionBuf == null) {
-			optionBuf = new Buffer<Actor>(optionAnims.length);
+		if (watermarkTxt == null) {
+			watermarkTxt = new Text("mainMenuWatermarkTxt", 0, 0, view, "Funkin' View - Prototype");
+			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height - 3;
+			watermarkTxt.x = 3;
 		}
 
-		if (optionProg == null) {
-			optionProg = new Program(optionBuf);
-			optionProg.blendEnabled = true;
-			optionProg.blendSrc = optionProg.blendSrcAlpha = BlendFactor.ONE;
-			optionProg.blendDst = optionProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
-
-			TextureSystem.setTexture(optionProg, "mainMenuSheet", "mainMenuSheet");
-
-			for (i in 0...optionAnims.length) {
-				var spr = new Actor(view, "images/mainMenu", 0, 0, 24, "", false);
-				spr.playAnimation(optionAnims[i] + ' basic', true);
-				spr.x = 20;
-				if (i == 5) {
-					optionYLerps[i] = spr.y = (Main.INITIAL_HEIGHT - 55) - spr.h;
-				} else {
-					optionYLerps[i] = spr.y = (55 + (125 * i)) - (6 * Math.min(optionSelected, optionAnims.length - 2));
-				}
-				spr.c.aF = 0.0;
-				optionBuf.addElement(spr);
-			}
+		if (optionBuf == null) {
+			optionBuf = new Buffer<Actor>(optionAnims.length);
 		}
 
 		if (backgroundBuf == null) {
@@ -92,14 +76,42 @@ class MainMenu implements State {
 			}
 		}
 
+		if (optionProg == null) {
+			optionProg = new Program(optionBuf);
+			optionProg.blendEnabled = true;
+			optionProg.blendSrc = optionProg.blendSrcAlpha = BlendFactor.ONE;
+			optionProg.blendDst = optionProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
+
+			TextureSystem.setTexture(optionProg, "mainMenuSheet", "mainMenuSheet");
+
+			for (i in 0...optionAnims.length) {
+				var spr = new Actor(view, "images/mainMenu", 0, 0, 24, "", false);
+				spr.playAnimation(optionAnims[i] + ' basic', true);
+				if (optionAnims[i] == 'backspace to exit') {
+					spr.x = 20;
+					spr.y = Main.current.peoteView.height - spr.h - watermarkTxt.height - 10;
+				} else {
+					spr.x = 20;
+					if (i == 5) {
+						optionYLerps[i] = spr.y = (Main.INITIAL_HEIGHT - 55) - spr.h;
+					} else {
+						optionYLerps[i] = spr.y = (55 + (125 * i)) - (6 * Math.min(optionSelected, optionAnims.length - 2));
+					}
+				}
+				spr.c.aF = 0.0;
+				optionBuf.addElement(spr);
+			}
+		}
+
 		display.addProgram(optionProg);
 		view.addProgram(backgroundProg);
 
-		if (watermarkTxt == null) {
-			watermarkTxt = new Text("mainMenuWatermarkTxt", 0, 0, view, "Funkin' View - Prototype");
-			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height - 3;
-			watermarkTxt.x = 3;
-		} else view.addProgram(watermarkTxt.program);
+		if (watermarkTxt != null) {
+			view.addProgram(watermarkTxt.program);
+		} else {
+			view.removeProgram(watermarkTxt.program);
+			view.addProgram(watermarkTxt.program);
+		}
 
 		haxe.Timer.delay(addEvents, 100);
 
@@ -125,7 +137,7 @@ class MainMenu implements State {
 			var t = Math.min(deltaTime * 0.0115, 1);
 			if (t == 1) t = (1/lime.app.Application.current.window.frameRate) * 0.0115; // When loading the freeplay menu the first time it gets stuck at 1.0 for a single frame
 
-			if (i != alphaLerps.length - 1) {
+			if (optionAnims[i] != 'backspace to exit') { // was gonna -leave the option sprite named backspacetoexit at the magic spot of initialized position
 				optionYLerps[i] = Tools.lerp(optionYLerps[i], (45 + (125 * i)) - (6 * Math.min(optionSelected, optionAnims.length - 2)), t);
 				option.y = optionYLerps[i];
 				option.x = (Main.INITIAL_WIDTH - option.w) * 0.5;
@@ -197,25 +209,23 @@ class MainMenu implements State {
 	}
 
 	function doIt() {
-		switch (optionSelected) {
-			case 0: // STORY MODE
-				// TODO: ONCE STORY MODE IS DONE ENOUGH, I WILL UNCOMMENT THIS
-				/*selectedAlpha = 0.0;
-				Main.current.storyMenu.open();
-				removeEvents();*/
-			case 1: // FREEPLAY
+		var optionString = optionAnims[optionSelected];
+		switch (optionString) {
+			case 'story mode': // STORY MODE
+				// TODO
+			case 'freeplay': // FREEPLAY
 				selectedAlpha = 0.0;
 				Main.current.freeplayMenu.open();
 				removeEvents();
-			case 2: // AWARDS
+			case 'awards': // AWARDS
 				// TODO
-			case 3: // CREDITS
+			case 'credits': // CREDITS
 				// TODO
-			case 4: // OPTIONS
+			case 'options': // OPTIONS
 				selectedAlpha = 0.0;
 				Main.current.optionsMenu.open();
 				removeEvents();
-			case 5:
+			case 'backspace to exit':
 				// TODO: ONCE TITLE SCREEN IS DONE ENOUGH, I WILL REPLACE THIS
 				Sys.exit(0);
 		}
