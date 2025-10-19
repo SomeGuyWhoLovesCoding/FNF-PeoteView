@@ -133,6 +133,10 @@ Then, you just `lime test hl` and everything runs good!
 
 : Helper (Wrote the customtitlebar haxelib tool. For real, seriously, not joking, I've been waiting for this moment for long enough.)
 
+- SIG7Pro
+
+: Helper (reorganized stuff and stuff)
+
 # Frequently Asked Questions
 
 Q1. Funkin' View takes a very long time to boot! What should I do!?
