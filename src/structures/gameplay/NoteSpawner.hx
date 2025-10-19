@@ -147,54 +147,12 @@ class NoteSpawner {
 
 					//// greedy note merging (16x) ////
 
-					// Check bounds first
-					var count = 64;
-					var granularity = 2;
-					if (k + count <= index.length) { // Check bounds first
-						var check = true;
-						if (check) {
-							var yToUse:Float = 0;
-							var success = false;
-
-							for (g in 0...count) {
-								var virtualNote2:VirtualNote = index[k + g];
-								var nextNote:VirtualNote = index[k + g + 1];
-								if (virtualNote2 == null || nextNote == null) {
-									success = false;
-									break;
-								}
-
-								var yCompare = virtualNote2.y - nextNote.y;
-								if (yCompare < 0) yCompare = -yCompare;
-
-								var notesInOneCompare = virtualNote2.notesInOne - nextNote.notesInOne;
-								if (notesInOneCompare < 0) notesInOneCompare = -notesInOneCompare;
-
-								//if (k == 40) Sys.println('yCompare $yCompare & notesInOneCompare $notesInOneCompare');
-								var check1 = yCompare <= granularity;
-								//if (g == 2) Sys.println('yCompare #2 $yCompare');
-								var check2 = notesInOneCompare <= 2;
-
-								yToUse += yCompare;
-
-								if (nextNote.notesInOne == 1 && (!check1 || !check2)) {
-									success = false;
-									break;
-								}
-
-								success = g == count - 1;
-							}
-
-							if (!success) return;
-
-							yToUse /= count;
-
-							// If we got here, all checks passed
-							virtualNote.greedyMergeType = Note.greedyMergeTypes[Math.floor(yToUse)];
-							virtualNote.greedyMergeVariant = Note.greedyMergeVariant[count];
-							//virtualNote.x += 30;
-							//virtualNote.scale *= 0.85;
-						}
+					// Prevent branch misprediction with like—anything to be completely honest I am very proud I did this
+					if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 16)) {
+						increment = 16;
+						if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 128)) increment = 128;
+						else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 64)) increment = 64;
+						else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 32)) increment = 32;
 					}
 
 					//// finally, do it. ////
@@ -253,6 +211,58 @@ class NoteSpawner {
 				}
 			}
 		}
+	}
+
+	/**
+	 * Greedily merges nearly identical (already-overlapped) notes to optimize rendering.
+	 * This checks up to `count` notes ahead to see if they can be merged.
+	 * @param virtualNote The virtual note to attempt merging on.
+	 * @param index The array of virtual notes in the current lane/index.
+	 * @param strumReceptor The strum receptor for this lane/index.
+	 * @param k The current index in the virtual notes array.
+	 * @param count The number of notes to check for merging.
+	 * @return True if merging was successful.
+	 */
+	function greedyMergeNearlyNotes(virtualNote:VirtualNote, index:Array<VirtualNote>, strumReceptor:Note, k:Int, count:Int = 16, granularity:Int = 2):Bool {
+		// Check bounds first
+		if (k + count >= index.length) return false;
+
+		var check = true;
+		if (!check) return false;
+
+		var yToUse:Float = 0;
+
+		for (g in 0...count) {
+			var virtualNote2:VirtualNote = index[k + g];
+			var nextNote:VirtualNote = index[k + g + 1];
+			if (virtualNote2 == null || nextNote == null) return false;  // Changed from break
+
+			var yCompare = virtualNote2.y - nextNote.y;
+			if (yCompare < 0) yCompare = -yCompare;
+
+			var notesInOneCompare = virtualNote2.notesInOne - nextNote.notesInOne;
+			if (notesInOneCompare < 0) notesInOneCompare = -notesInOneCompare;
+
+			//if (k == 40) Sys.println('yCompare $yCompare & notesInOneCompare $notesInOneCompare');
+			var check1 = yCompare <= granularity;
+			//if (g == 2) Sys.println('yCompare #2 $yCompare');
+			var check2 = notesInOneCompare <= 2;
+
+			yToUse += yCompare;
+
+			if (nextNote.notesInOne == 1 && (!check1 || !check2)) {
+				return false;
+			}
+		}
+
+		yToUse /= count;
+
+		// If we got here, all checks passed
+		virtualNote.greedyMergeType = Note.greedyMergeTypes[Math.floor(yToUse)];
+		virtualNote.greedyMergeVariant = Note.greedyMergeVariant[count];
+		//virtualNote.x += 30;
+		//virtualNote.scale *= 0.85;
+		return true;
 	}
 
 	/**
