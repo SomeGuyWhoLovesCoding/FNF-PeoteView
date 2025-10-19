@@ -348,7 +348,8 @@ class PlayField implements State {
 		var lane = note.type;
 		if (noteSystem.noteSpawner.parent.noteTypeFunctionalityPre.exists(note.type)) lane = 1;
 
-		var index = lane;
+		var index = 1 + lane;
+		if (chart.header.voicesDirs.length > 1) index = 0;
 		if (index > 0 && index <= Mixer.trackCount) Mixer.changeTrackVolume(index, 1);
 
 		if (!inputSystem.strumlinePlayable[lane]) {
@@ -406,7 +407,8 @@ class PlayField implements State {
 		var lane = note.type;
 		if (noteSystem.noteSpawner.parent.noteTypeFunctionalityPre.exists(note.type)) lane = 1;
 
-		var index = lane;
+		var index = 1 + lane;
+		if (chart.header.voicesDirs.length > 1) index = 0;
 		if (index > 0 && index <= Mixer.trackCount) Mixer.changeTrackVolume(index, 0);
 
 		health -= healthLoss[lane] * Tools.int64ToFloat(notesInOne);
