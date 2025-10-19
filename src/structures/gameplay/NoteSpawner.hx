@@ -37,48 +37,13 @@ class NoteSpawner {
 		curBottomNote = File.getNote(0);
 	}
 
-	// before updating / drawing notes
-	// Doing this in a contiguous range ensures tens of thousands of notes in a hot zone are already resident before the loop.
-	// You don't need to loop through every note in the file, only the nearby window.
-	function cacheHotWindow() {
-		var len = File.getLength();
-		if (len <= 0) return;
-
-		var cacheStart = bottom - 8192;  // back-fill 8192 notes
-		if (cacheStart < 0) cacheStart = 0;
-		var cacheEnd   = top + 8192;  // forward-fill a bit
-		if (cacheEnd > len) cacheEnd = len - 1;
-
-		var i = cacheStart;
-		while (i < cacheEnd) {
-			File.getNote(++i);  // accessing the note touches the page
-		}
-	}
-
-	// after updating (to cache more)
-	function cacheHotWindow2() {
-		var len = File.getLength();
-		if (len <= 0) return;
-
-		var threshold = (bottom - _lastbottom) * 3;
-		var cacheStart = bottom - threshold;  // back-fill 8192 notes
-		if (cacheStart < 0) cacheStart = 0;
-		var cacheEnd   = top + threshold;  // forward-fill a bit
-		if (cacheEnd > len) cacheEnd = len - 1;
-
-		var i = cacheStart;
-		while (i < cacheEnd) {
-			File.getNote(++i);  // accessing the note touches the page
-		}
-	}
-
 	/**
 	 * Updates the note spawner.
 	 * @param pos The song's position in the note position format.
 	 */
 	function update(pos:Int64) {
 		// Cache hot window for performance
-		cacheHotWindow();
+		//cacheHotWindow();
 
 		// Store previous bounds for cache optimization
 		_lastbottom = bottom;
@@ -89,11 +54,13 @@ class NoteSpawner {
 		cullBottom(pos);
 
 		// Cache expanded window after culling
-		cacheHotWindow2();
+		//cacheHotWindow2();
 
 		// Process notes in current window
 		processNotes(pos);
 	}
+
+	var timeSpentOnIt:Float = 0;
 
 	/**
 	 * Processes all notes in the current window.
@@ -105,6 +72,7 @@ class NoteSpawner {
 		var prev:MetaNote = -1;
 		var noteSpr:VirtualNote = null;
 
+		var time = haxe.Timer.stamp();
 		while (i < top) {
 			var n = File.getNote(i);
 
@@ -144,6 +112,8 @@ class NoteSpawner {
 			prev = n;
 			++i;
 		}
+		//Sys.println("Time spent on processNotes operation: " + (haxe.Timer.stamp() - time) + "ms");
+		timeSpentOnIt = haxe.Timer.stamp() - time;
 	}
 
 	/**

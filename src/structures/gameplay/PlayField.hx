@@ -252,7 +252,12 @@ class PlayField implements State {
 			var pos = MetaNote.floatToMetaNotePosition(songPosition);
 
 			if (hud != null) hud.update(deltaTime);
-			if (noteSystem != null) noteSystem.update(pos);
+			if (noteSystem != null) {
+				noteSystem.update(pos);
+
+				var noteSpawner = noteSystem.noteSpawner;
+				if (HUD.scoreTxt != null) HUD.scoreTxt.text = ((noteSpawner.timeSpentOnIt * 1000000000) / Tools.int64ToFloat(noteSpawner.top - noteSpawner.bottom)) + "ns";
+			}
 		} else {
 			if (noteSystem != null) {
 				noteSystem.dispose();
