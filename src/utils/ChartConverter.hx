@@ -77,8 +77,10 @@ class ChartConverter
 			return;
 		}
 
+		var chartFileName = '$path/chart.json';
+
 		// Single chart fallback
-		processChart(File.getContent(path), path);
+		processChart(File.getContent(chartFileName), chartFileName);
 
 		if (!multichartMode) {
 			Sys.println('Single chart: writing ${metaNotes.length} notes to CBIN...');
