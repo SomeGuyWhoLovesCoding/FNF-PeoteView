@@ -42,9 +42,6 @@ class NoteSpawner {
 	 * @param pos The song's position in the note position format.
 	 */
 	function update(pos:Int64) {
-		// Cache hot window for performance
-		//cacheHotWindow();
-
 		// Store previous bounds for cache optimization
 		_lastbottom = bottom;
 		_lasttop = top;
@@ -52,9 +49,6 @@ class NoteSpawner {
 		// Update note boundaries
 		cullTop(pos);
 		cullBottom(pos);
-
-		// Cache expanded window after culling
-		//cacheHotWindow2();
 
 		// Process notes in current window
 		processNotes(pos);
@@ -112,7 +106,7 @@ class NoteSpawner {
 			prev = n;
 			++i;
 		}
-		//Sys.println("Time spent on processNotes operation: " + (haxe.Timer.stamp() - time) + "ms");
+
 		timeSpentOnIt = haxe.Timer.stamp() - time;
 	}
 
@@ -125,8 +119,6 @@ class NoteSpawner {
 
 		renderVirtualNotes(notes);
 		renderVirtualSustains(notes);
-
-		//Sys.println('Note Buffer Real length: ${NoteSystem.notesBuf.length}, numIterations: $numIterations');
 	}
 
 	/**
@@ -160,7 +152,6 @@ class NoteSpawner {
 					else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 16)) increment = 16;
 
 					//// finally, do it. ////
-
 					var note = new Note(-99999, -99999, 0, 0);
 					note.x = virtualNote.x;
 					note.y = virtualNote.y;
@@ -215,12 +206,6 @@ class NoteSpawner {
 	}
 
 	/**
-	 * Renders virtual notes into actual note instances for rendering.
-	 * This is separate from the main update loop onto the render loop to allow for optimizations, and most importantly, this function is separate for profiling.
-	 * @param notes 
-	 */
-
-	/**
 	 * Greedily merges nearly identical (already-overlapped) notes to optimize rendering.
 	 * This checks up to `count` notes ahead to see if they can be merged.
 	 * @param virtualNote The virtual note to attempt merging on.
@@ -231,33 +216,38 @@ class NoteSpawner {
 	 * @return True if merging was successful.
 	 */
 	function greedyMergeNearlyNotes(virtualNote:VirtualNote, index:Array<VirtualNote>, strumReceptor:Note, k:Int, count:Int = 16):Bool {
-		var success = false;
-		if (virtualNote.y + count < strumReceptor.y) {
-			var virtualNoteY = 0;
-			var lastVirtualNoteY = 0;
+		// Check bounds first
+		if (k + count >= index.length) return false;
+		
+		var check = true;
+		if (!check) return false;
+		
+		for (g in 0...count) {
+			var virtualNote2:VirtualNote = index[k + g];
+			var nextNote:VirtualNote = index[k + g + 1];
+			if (virtualNote2 == null || nextNote == null) return false;  // Changed from break
+			
+			var yCompare = virtualNote2.y - nextNote.y;
+			if (yCompare < 0) yCompare = -yCompare;
+			
+			var notesInOneCompare = virtualNote2.notesInOne - nextNote.notesInOne;
+			if (notesInOneCompare < 0) notesInOneCompare = -notesInOneCompare;
 
-			var g = 0;
-			while (++g < count) {
-				var virtualNote:VirtualNote = index[k + g];
-				var nextNote:VirtualNote = index[k + g + 1];
-				if (virtualNote == null || nextNote == null) break;
-				virtualNoteY = virtualNote.y;
-				if ((lastVirtualNoteY - virtualNoteY != 1) &&
-					(virtualNote.notesInOne - nextNote.notesInOne) >= 2) {
-					break;
-				}
-				lastVirtualNoteY = virtualNoteY;
-			}
+			//if (k == 40) Sys.println('yCompare $yCompare & notesInOneCompare $notesInOneCompare');
+			var check1 = yCompare > 1;
+			var check2 = notesInOneCompare > 2;
+			var check3 = nextNote.notesInOne <= 1;
 
-			success = g == count;
-			//if (k == 0) Sys.println('Greedy merge for note #0 success? $success - reason: g is $g');
+			Sys.println('Checks: $check1,$check2,$check3');
 
-			if (success) {
-				virtualNote.greedyMerged = true;
-				//virtualNote.greedyCount = count; temp, will remove
+			if (check1 && check2 && check3) {
+				return false;  // Changed from break
 			}
 		}
-		return success;
+		
+		// If we got here, all checks passed
+		virtualNote.greedyMerged = true;
+		return true;
 	}
 
 	/**
@@ -311,7 +301,7 @@ class NoteSpawner {
 	 */
 	function mergeNoteIntoSprite(noteSpr:VirtualNote, n:MetaNote) {
 		var alphaToAdd = n.missed ? Note.defaultMissAlpha : Note.defaultAlpha;
-		noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + alphaToAdd, 254);
+		noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + alphaToAdd, 256);
 		noteSpr.notesInOne++;
 	}
 

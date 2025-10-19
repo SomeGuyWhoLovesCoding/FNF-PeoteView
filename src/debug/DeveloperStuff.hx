@@ -23,6 +23,10 @@ class DeveloperStuff {
 				playField.setTime(playField.songPosition + 2000);
 			case KeyCode.COMMA:
 				playField.setTime(playField.songPosition - 2000);
+			case KeyCode.NUMBER_9:
+				Mixer.speed -= 0.25;
+			case KeyCode.NUMBER_0:
+				Mixer.speed += 0.25;
 			case KeyCode.F8:
 				playField.flipHealthBar = !playField.flipHealthBar;
 			case KeyCode.LEFT_BRACKET:
