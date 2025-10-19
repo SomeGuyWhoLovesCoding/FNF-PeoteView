@@ -30,7 +30,7 @@ class Actor extends ActorElement
 
 	var display(default, null):CustomDisplay;
 
-	function new(display:CustomDisplay, name:String, x:Int = 0, y:Int = 0, fps:Int = 24, folder:String = "characters/", addBufferAndProgram:Bool = true, dontCopy:Bool = false) {
+	function new(display:CustomDisplay, name:String, x:Int = 0, y:Int = 0, fps:Int = 24, folder:String = "images/characters/", addBufferAndProgram:Bool = true, dontCopy:Bool = false) {
 		this.display = display;
 
 		super(Math.ffloor(x), Math.ffloor(y));

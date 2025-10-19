@@ -14,7 +14,7 @@ import lime.ui.MouseWheelMode;
 **/
 @:publicFields
 class MainMenu implements State {
-	static var optionAnims:Array<String> = ['story mode', 'freeplay', 'awards', 'credits', 'options', 'backspace to exit'];
+	static var optionAnims:Array<String> = ['story mode', 'freeplay', /*'awards', 'credits',*/ 'options', /*'backspace to exit'*/];
 
 	var display:CustomDisplay;
 	var view:CustomDisplay;
@@ -59,13 +59,13 @@ class MainMenu implements State {
 			TextureSystem.setTexture(optionProg, "mainMenuSheet", "mainMenuSheet");
 
 			for (i in 0...optionAnims.length) {
-				var spr = new Actor(view, "mainMenu", 0, 0, 24, "", false);
+				var spr = new Actor(view, "images/mainMenu", 0, 0, 24, "", false);
 				spr.playAnimation(optionAnims[i] + ' basic', true);
 				spr.x = 20;
 				if (i == 5) {
-					optionYLerps[i] = spr.y = (Main.INITIAL_HEIGHT - 45) - spr.h;
+					optionYLerps[i] = spr.y = (Main.INITIAL_HEIGHT - 55) - spr.h;
 				} else {
-					optionYLerps[i] = spr.y = (45 + (125 * i)) - (6 * Math.min(optionSelected, optionAnims.length - 2));
+					optionYLerps[i] = spr.y = (55 + (125 * i)) - (6 * Math.min(optionSelected, optionAnims.length - 2));
 				}
 				spr.c.aF = 0.0;
 				optionBuf.addElement(spr);
@@ -96,8 +96,9 @@ class MainMenu implements State {
 		view.addProgram(backgroundProg);
 
 		if (watermarkTxt == null) {
-			watermarkTxt = new Text("mainMenuWatermarkTxt", 0, 0, view, "FV TEST BUILD");
-			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height;
+			watermarkTxt = new Text("mainMenuWatermarkTxt", 0, 0, view, "Funkin' View - Prototype");
+			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height - 3;
+			watermarkTxt.x = 3;
 		} else view.addProgram(watermarkTxt.program);
 
 		haxe.Timer.delay(addEvents, 100);

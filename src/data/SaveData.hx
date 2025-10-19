@@ -59,20 +59,20 @@ class SaveData {
 			inputOffset: 0
 		},
 		preferences: {
-			downScroll: true,
+			downScroll: false,
 			hideHUD: false,
-			smoothHealthbar: false,
+			smoothHealthbar: true,
 			ratingPopup: true,
-			scoreTxtBopping: true,
+			scoreTxtBopping: false,
 			cameraZooming: true,
 			iconBopping: true
 		},
 		graphics: {
 			frameRate: 60,
 			antialiasing: true,
-			customTitleBarColor: 0xFFAA00FF,
-			customWindowOutlineColor: 0x999999FF,
-			customTitleTextFont: "unispace"
+			customTitleBarColor: 0x3d3f4177, // RGB then opacity at the end. Except opacity doesn't work.
+			customWindowOutlineColor: 0x27292b77,
+			customTitleTextFont: "Inconsolata"
 		}
 	};
 

@@ -258,7 +258,7 @@ class HUD {
 		Updates the score text.
 	**/
 	function updateScoreText(deltaTime:Float) {
-		scoreTxt.text = 'Score: ${parent.score}, Misses: ${parent.misses}, Accuracy: ${parent.accuracy.toString()}';
+		scoreTxt.text = 'Score: ${parent.score} | Misses: ${parent.misses} | Accuracy: ${parent.accuracy.toString()}';
 		scoreTxt.scale = Tools.lerp(scoreTxt.scale, 1.0, Math.min(deltaTime * 0.02, 1.0));
 		scoreTxt.x = Math.floor(healthBar.bg.x) + ((healthBar.bg.w - scoreTxt.width) * 0.5);
 		scoreTxt.y = Math.floor(healthBar.bg.y) + (healthBar.bg.h + 6);

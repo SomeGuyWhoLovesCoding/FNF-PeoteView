@@ -32,6 +32,8 @@ class HealthBar {
 	var healthBarXA(default, null):Float;
 	var healthBarYA(default, null):Float;
 
+	var playerOGIcon:Any; // Tracks the player's original icon.
+
 	/**
 		Initializes the health bar.
 		@param display The display to initialize the health bar on. Should be the playfield's display.
@@ -101,19 +103,21 @@ class HealthBar {
 			healthIconIDs[i] = healthIconIndexes;
 		}
 
-		var oppIcon = healthIcons[0] = new HealthBarSprite();
-		oppIcon.type = HEALTH_ICON;
-		oppIcon.changeID(healthIconIDs[0][0]);
+		var iconP2 = healthIcons[0] = new HealthBarSprite();
+		iconP2.type = HEALTH_ICON;
+		iconP2.changeID(healthIconIDs[0][0]);
 
-		var plrIcon = healthIcons[1] = new HealthBarSprite();
-		plrIcon.type = HEALTH_ICON;
-		plrIcon.changeID(healthIconIDs[1][0]);
+		var iconP1 = healthIcons[1] = new HealthBarSprite(); // Made more like FNF, so P1 is da player LOL.
+		iconP1.type = HEALTH_ICON;
+		iconP1.changeID(healthIconIDs[1][0]);
+		playerOGIcon = healthIconIDs[1][0];
+		trace(playerOGIcon + "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
 
-		oppIcon.y = plrIcon.y = bg.y - 75;
-		plrIcon.flip = true;
+		iconP2.y = iconP1.y = bg.y - 75;
+		iconP1.flip = true;
 
-		hbBuf.addElement(oppIcon);
-		hbBuf.addElement(plrIcon);
+		hbBuf.addElement(iconP2);
+		hbBuf.addElement(iconP1);
 
 		updateHealthIcons();
 	}
@@ -189,19 +193,19 @@ class HealthBar {
 		var icons = healthIcons;
 		var ids = healthIconIDs;
 
-		var oppIcon = icons[0];
-		var plrIcon = icons[1];
+		var iconP2 = icons[0];
+		var iconP1 = icons[1];
 
-		var oppIcon = healthIcons[0];
-		oppIcon.x = part1.x - 118;
+		var iconP2 = healthIcons[0];
+		iconP2.x = part1.x - 118;
 
-		var plrIcon = healthIcons[1];
-		plrIcon.x = part1.x - 18;
+		var iconP1 = healthIcons[1];
+		iconP1.x = part1.x - 18;
 
-		oppIcon.y = plrIcon.y = bg.y - 75;
+		iconP2.y = iconP1.y = bg.y - 75;
 
-		var oppIco = parent.flipHealthBar ? plrIcon : oppIcon;
-		var plrIco = parent.flipHealthBar ? oppIcon : plrIcon;
+		var oppIco = parent.flipHealthBar ? iconP1 : iconP2;
+		var plrIco = parent.flipHealthBar ? iconP2 : iconP1;
 
 		if (health > 0.75) oppIco.changeID(ids[0][1]);
 		else oppIco.changeID(ids[0][0]);
@@ -209,8 +213,8 @@ class HealthBar {
 		if (health < 0.25) plrIco.changeID(ids[1][1]);
 		else plrIco.changeID(ids[1][0]);
 
-		hbBuf.updateElement(oppIcon);
-		hbBuf.updateElement(plrIcon);
+		hbBuf.updateElement(iconP2);
+		hbBuf.updateElement(iconP1);
 	}
 
 	/**

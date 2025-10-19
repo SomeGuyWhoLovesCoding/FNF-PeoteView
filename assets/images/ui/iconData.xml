@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TextureAtlas imagePath="alphabet.png">
+	<!-- Created with Adobe Animate version 23.0.2.103 -->
+	<!-- http://www.adobe.com/products/animate.html -->
+	<SubTexture name="face" x="0" y="1" />
+	<SubTexture name="bf" x="2" y="3" />
+	<SubTexture name="bf-Christmas" x="4" y="5" />
+	<SubTexture name="bf-old" x="6" y="7" />
+	<SubTexture name="dad" x="10" y="11" />
+	<SubTexture name="gf" x="8" y="9" />
+	<SubTexture name="spooky" x="12" y="13" />
+	<SubTexture name="monster" x="14" y="15" />
+	<SubTexture name="pico" x="16" y="17" />
+	<SubTexture name="parents-Christmas" x="20" y="21" />
+	<SubTexture name="tankman" x="22" y="23" />
+	<SubTexture name="tankman-bloody" x="26" y="27" />
+	<SubTexture name="darnell" x="24" y="25" />
+	<SubTexture name="pshaggy" x="6" y="7" />
+</TextureAtlas>
