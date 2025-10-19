@@ -137,9 +137,9 @@ class NoteSpawner {
 				var length = notes.noteLength[i][j];
 				var id = parent.parent.inputSystem.receptorIds[j];
 				var strumReceptor = strumline.buffer[j];
-				var k = length;
-				while (k > 0) {
-					var decrement = 1;
+				var k = 0;
+				while (k < length) {
+					var increment = 1;
 					var virtualNote:VirtualNote = index[k];
 					if (virtualNote == null) continue;
 
@@ -149,10 +149,10 @@ class NoteSpawner {
 
 					// Prevent branch misprediction with like—anything to be completely honest I am very proud I did this
 					if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 16)) {
-						decrement = 16;
-						if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 128)) decrement = 128;
-						else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 64)) decrement = 64;
-						else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 32)) decrement = 32;
+						increment = 16;
+						if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 128)) increment = 128;
+						else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 64)) increment = 64;
+						else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 32)) increment = 32;
 					}
 
 					//// finally, do it. ////
@@ -171,7 +171,7 @@ class NoteSpawner {
 					note.toNote();
 					NoteSystem.notesBuf.addElement(note);
 
-					k -= decrement;
+					k += increment;
 					numIterations++;
 				}
 				//if (j == 1) Sys.println('y: ${index[0]?.y},${index[1]?.y}');
@@ -192,8 +192,7 @@ class NoteSpawner {
 				var index = lane[j];
 				var length = notes.sustainLength[i][j];
 				var id = parent.parent.inputSystem.receptorIds[j];
-				var k = length;
-				while (k > 0) {
+				for (k in 0...length) {
 					var virtualSustain:VirtualSustain = index[k];
 					if (virtualSustain == null) continue;
 					var sustain = new Sustain(-99999, -99999, 0, 0);
@@ -209,7 +208,6 @@ class NoteSpawner {
 					sustain.c.luminanceF = virtualSustain.alpha;
 					sustain.changeID(id);
 					NoteSystem.sustainsBuf.addElement(sustain);
-					--k;
 				}
 			}
 		}
