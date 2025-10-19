@@ -133,13 +133,13 @@ class MainMenu implements State {
 			var option = optionBuf.getElement(i);
 
 			var t = Math.min(deltaTime * 0.0115, 1);
-			if (t == 1) t = (1/lime.app.Application.current.window.frameRate) * 0.0115; // When loading the freeplay menu the first time it gets stuck at 1.0 for a single frame
+			if (t == 1) t = (1/lime.app.Application.current.window.frameRate) * 0.0115;
 
 			var anim = optionAnims[i];
 			if (i == optionSelected) option.playAnimation(anim + ' white', true);
 			else option.playAnimation(anim + ' basic', true);
 
-			if (anim != 'backspace to exit') { // was gonna -leave the option sprite named backspacetoexit at the magic spot of initialized position
+			if (anim != 'backspace to exit') {
 				optionYLerps[i] = Tools.lerp(optionYLerps[i], (45 + (125 * i)) - (6 * Math.min(optionSelected, optionAnims.length - 2)), t);
 				option.y = optionYLerps[i];
 				option.x = (Main.INITIAL_WIDTH - option.w) * 0.5;

@@ -109,15 +109,6 @@ class OptionsDisplay {
 					} else {
 						option.c.luminanceF = parent.alphaLerp;
 					}
-				default:
-					/*var optionChecked = false;
-					if (i == parent.optionSelected) {
-						option.c.rF = !optionChecked ? parent.alphaLerp : 0.0;
-						option.c.gF = optionChecked ? parent.alphaLerp : 0.0;
-						option.c.bF = 0.0;
-					} else {
-						option.c.luminanceF = parent.alphaLerp;
-					}*/
 			}
 			OptionsMenu.optionsBuf.updateElement(option);
 		}
