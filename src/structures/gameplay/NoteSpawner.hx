@@ -160,7 +160,8 @@ class NoteSpawner {
 					note.scale = virtualNote.scale;
 					note.initialAlpha = virtualNote.initialAlpha;
 					note.addedAlpha = virtualNote.addedAlpha;
-					note.changeGreedyType(virtualNote.type);
+					//note.changeGreedyType(virtualNote.type);
+					//note.autoMultiplierVariant = virtualNote.greedyMergeVariant;
 					note.changeID(id);
 					note.toNote();
 					NoteSystem.notesBuf.addElement(note);
@@ -224,7 +225,7 @@ class NoteSpawner {
 		var check = true;
 		if (!check) return false;
 
-		var yToUse = 0;
+		var yToUse:Float = 0;
 
 		for (g in 0...count) {
 			var virtualNote2:VirtualNote = index[k + g];
@@ -252,7 +253,7 @@ class NoteSpawner {
 		yToUse /= count;
 
 		// If we got here, all checks passed
-		virtualNote.greedyMergeType = Note.greedyMergeTypes[yToUse];
+		//virtualNote.greedyMergeType = Note.greedyMergeTypes[yToUse];
 		virtualNote.greedyMergeVariant = Note.greedyMergeVariant[count];
 		//virtualNote.x += 30;
 		//virtualNote.scale *= 0.85;
