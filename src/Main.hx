@@ -319,6 +319,10 @@ class Main extends Application
 			#end
 
 			//try {
+				if (mainMenu != null && !mainMenu.disposed) {
+					mainMenu.update(newDeltaTime);
+				}
+
 				if (playField != null && !playField.disposed) {
 					if (playField.pauseScreen != null) {
 						var pauseScreen = playField.pauseScreen;
@@ -351,14 +355,6 @@ class Main extends Application
 
 	override function render(context:RenderContext) {
 		super.render(context);
-
-		if (mainMenu != null && !mainMenu.disposed) {
-			#if FV_LIME_FORK
-			mainMenu.render(1 / Application.current.window.renderFrameRate);
-			#else
-			mainMenu.render(1 / Application.current.window.frameRate);
-			#end
-		}
 
 		if (playField != null) {
 			if (RenderingMode.enabled) {
