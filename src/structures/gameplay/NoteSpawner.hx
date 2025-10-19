@@ -151,7 +151,9 @@ class NoteSpawner {
 					if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 16)) {
 						increment = 16;
 						if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 128)) increment = 128;
+						else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 96)) increment = 96;
 						else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 64)) increment = 64;
+						else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 48)) increment = 48;
 						else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 32)) increment = 32;
 					}
 

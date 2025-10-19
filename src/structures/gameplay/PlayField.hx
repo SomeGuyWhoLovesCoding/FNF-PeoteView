@@ -50,7 +50,8 @@ class PlayField implements State {
 
 	var scrollSpeed(default, set):Float = 1.0;
 	function set_scrollSpeed(value:Float) {
-		return noteSystem.setScrollSpeed(scrollSpeed = value);
+		if (noteSystem != null) noteSystem.setScrollSpeed(scrollSpeed = value);
+		return value;
 	}
 
 	var downScroll(default, set):Bool;
@@ -60,6 +61,7 @@ class PlayField implements State {
 			var pos = MetaNote.floatToMetaNotePosition(songPosition);
 			noteSystem.resetStrumlines(false);
 			noteSystem.update(pos);
+			noteSystem.renderNotes(pos); // new, because of the change I did to the note system to allow for an easy greedy merging optimization
 		}
 		if (hud != null) {
 			hud.update(0.0);

@@ -352,14 +352,19 @@ class Main extends Application
 	override function render(context:RenderContext) {
 		super.render(context);
 
-		if (playField != null && !playField.paused) {
+		if (playField != null) {
 			if (RenderingMode.enabled) {
-				playField.update(1000 / 60);
-				RenderingMode.pipeFrame();
-			}
-			if (playField.noteSystem != null) {
-				var pos = MetaNote.floatToMetaNotePosition(playField.songPosition);
-				playField.noteSystem.renderNotes(pos);
+
+				if (!playField.paused) {
+					playField.update(1000 / 60);
+					var noteSystem = playField?.noteSystem;
+					if (noteSystem != null) {
+						var pos = MetaNote.floatToMetaNotePosition(playField.songPosition);
+						playField.noteSystem.renderNotes(pos);
+					}
+
+					RenderingMode.pipeFrame();
+				}
 			}
 		}
 		//Sys.println("render is decoupled?");
