@@ -115,8 +115,6 @@ class MainMenu implements State {
 
 		haxe.Timer.delay(addEvents, 100);
 
-		updateMenuOptions();
-
 		actions = [
 			Controls.Action.UI_DOWN => { action: down },
 			Controls.Action.UI_UP => { action: up },
@@ -137,7 +135,11 @@ class MainMenu implements State {
 			var t = Math.min(deltaTime * 0.0115, 1);
 			if (t == 1) t = (1/lime.app.Application.current.window.frameRate) * 0.0115; // When loading the freeplay menu the first time it gets stuck at 1.0 for a single frame
 
-			if (optionAnims[i] != 'backspace to exit') { // was gonna -leave the option sprite named backspacetoexit at the magic spot of initialized position
+			var anim = optionAnims[i];
+			if (i == optionSelected) option.playAnimation(anim + ' white', true);
+			else option.playAnimation(anim + ' basic', true);
+
+			if (anim != 'backspace to exit') { // was gonna -leave the option sprite named backspacetoexit at the magic spot of initialized position
 				optionYLerps[i] = Tools.lerp(optionYLerps[i], (45 + (125 * i)) - (6 * Math.min(optionSelected, optionAnims.length - 2)), t);
 				option.y = optionYLerps[i];
 				option.x = (Main.INITIAL_WIDTH - option.w) * 0.5;
@@ -150,23 +152,12 @@ class MainMenu implements State {
 		}
 	}
 
-	function updateMenuOptions() {
-		for (i in 0...optionBuf.length) {
-			var option = optionBuf.getElement(i);
-			var anim = optionAnims[i];
-			if (i == optionSelected) option.playAnimation(anim + ' white', true);
-			else option.playAnimation(anim + ' basic', true);
-			optionBuf.updateElement(option);
-		}
-	}
-
 	function up(isDown:Bool, param:Int) {
 		if (!isDown || disposed) return;
 		optionSelected--;
 		if (optionSelected < 0) {
 			optionSelected = optionBuf.length - 1;
 		}
-		updateMenuOptions();
 	}
 
 	function down(isDown:Bool, param:Int) {
@@ -175,19 +166,16 @@ class MainMenu implements State {
 		if (optionSelected >= optionBuf.length) {
 			optionSelected = 0;
 		}
-		updateMenuOptions();
 	}
 
 	function left(isDown:Bool, param:Int) {
 		if (!isDown || disposed) return;
 		optionSelected = optionBuf.length - 1;
-		updateMenuOptions();
 	}
 
 	function right(isDown:Bool, param:Int) {
 		if (!isDown || disposed) return;
 		optionSelected = optionBuf.length - 2;
-		updateMenuOptions();
 	}
 
 	function accept(isDown:Bool, param:Int) {
@@ -204,8 +192,6 @@ class MainMenu implements State {
 		if (optionSelected < 0) {
 			optionSelected = optionBuf.length - 1;
 		}
-
-		updateMenuOptions();
 	}
 
 	function doIt() {
