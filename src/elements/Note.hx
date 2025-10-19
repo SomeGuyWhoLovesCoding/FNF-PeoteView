@@ -51,7 +51,22 @@ class Note implements Element
 	public var rW:Int;
 	public var rH:Int;
 
+	// this was done to mimic sparrow atlas functionality
 	static public var offsetAndSizeFrames:Array<Int> = [];
+
+	// This is all for the greedy merge stuffs ignore it
+	static public var greedyMergeTypes(default, null):Map<Int, Int> = [
+		1 => 1,
+		2 => 2
+	];
+
+	static public var greedyMergeVariant(default, null):Map<Int, Int> = [
+		16 => 1, // 16x
+		32 => 1, // 32x
+		64 => 1, // 64x
+		128 => 1 // 128x
+	];
+	// finally, the end of it
 
 	public var id:Int = 0;
 

@@ -134,7 +134,7 @@ class Strumline {
 			(n:MetaNote).flag = true;
 			File.setNote(notesToHit_indexes[index], n);
 
-			if (noteToHit.duration > 8) {
+			if (noteToHit.duration > 20) {
 				sustainsToHold[index] = n; // `n` is modified so don't switch this to `noteToHit` since that variable was never modified
 				sustainsToHold_indexes[index] = notesToHit_indexes[index];
 			}

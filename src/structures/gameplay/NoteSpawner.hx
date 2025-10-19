@@ -71,8 +71,8 @@ class NoteSpawner {
 			var n = File.getNote(i);
 
 			// Get lane and receptor information
-			var lane = parent.noteTypeFunctionalityPre.exists(n.type) 
-				? 1 
+			var lane = parent.noteTypeFunctionalityPre.exists(n.type)
+				? 1
 				: (n.type % parent.strumlines.length);
 			var receptor = parent.strumlines[lane].buffer[n.index];
 			var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
@@ -85,7 +85,7 @@ class NoteSpawner {
 			var ghost = isGhostNote(prev, n);
 
 			// Determine if notes should overlap
-			var shouldOverlap = shouldNotesOverlap(prev, n, noteSpr, receptor, newY, 
+			var shouldOverlap = shouldNotesOverlap(prev, n, noteSpr, receptor, newY,
 				fakeOverlapStorage[prev != -1 ? prev.index : -1]);
 
 			// Update fake overlap storage for next iteration
@@ -124,7 +124,7 @@ class NoteSpawner {
 	/**
 	 * Renders virtual notes into actual note instances for rendering.
 	 * This is separate from the main update loop onto the render loop to allow for optimizations, and most importantly, this function is separate for profiling.
-	 * @param notes 
+	 * @param notes
 	 */
 	function renderVirtualNotes(notes:NoteVB) {
 		var numIterations = 0;
@@ -160,6 +160,7 @@ class NoteSpawner {
 					note.scale = virtualNote.scale;
 					note.initialAlpha = virtualNote.initialAlpha;
 					note.addedAlpha = virtualNote.addedAlpha;
+					note.changeGreedyType(virtualNote.type);
 					note.changeID(id);
 					note.toNote();
 					NoteSystem.notesBuf.addElement(note);
@@ -167,6 +168,7 @@ class NoteSpawner {
 					k += increment;
 					numIterations++;
 				}
+				//if (j == 1) Sys.println('y: ${index[0]?.y},${index[1]?.y}');
 			}
 		}
 	}
@@ -174,7 +176,7 @@ class NoteSpawner {
 	/**
 	 * Renders virtual sustains into actual sustain instances for rendering.
 	 * This function is separate for profiling.
-	 * @param notes 
+	 * @param notes
 	 */
 	function renderVirtualSustains(notes:NoteVB) {
 		var virtualSustains = notes.sustains;
@@ -215,38 +217,45 @@ class NoteSpawner {
 	 * @param count The number of notes to check for merging.
 	 * @return True if merging was successful.
 	 */
-	function greedyMergeNearlyNotes(virtualNote:VirtualNote, index:Array<VirtualNote>, strumReceptor:Note, k:Int, count:Int = 16):Bool {
+	function greedyMergeNearlyNotes(virtualNote:VirtualNote, index:Array<VirtualNote>, strumReceptor:Note, k:Int, count:Int = 16, granularity:Int = 2):Bool {
 		// Check bounds first
 		if (k + count >= index.length) return false;
-		
+
 		var check = true;
 		if (!check) return false;
-		
+
+		var yToUse = 0;
+
 		for (g in 0...count) {
 			var virtualNote2:VirtualNote = index[k + g];
 			var nextNote:VirtualNote = index[k + g + 1];
 			if (virtualNote2 == null || nextNote == null) return false;  // Changed from break
-			
+
 			var yCompare = virtualNote2.y - nextNote.y;
 			if (yCompare < 0) yCompare = -yCompare;
-			
+
 			var notesInOneCompare = virtualNote2.notesInOne - nextNote.notesInOne;
 			if (notesInOneCompare < 0) notesInOneCompare = -notesInOneCompare;
 
 			//if (k == 40) Sys.println('yCompare $yCompare & notesInOneCompare $notesInOneCompare');
-			var check1 = yCompare > 1;
-			var check2 = notesInOneCompare > 2;
-			var check3 = nextNote.notesInOne <= 1;
+			var check1 = yCompare <= granularity;
+			//if (g == 2) Sys.println('yCompare #2 $yCompare');
+			var check2 = notesInOneCompare <= 2;
 
-			Sys.println('Checks: $check1,$check2,$check3');
+			yToUse += yCompare;
 
-			if (check1 && check2 && check3) {
-				return false;  // Changed from break
+			if (nextNote.notesInOne == 1 && (!check1 || !check2)) {
+				return false;
 			}
 		}
-		
+
+		yToUse /= count;
+
 		// If we got here, all checks passed
-		virtualNote.greedyMerged = true;
+		virtualNote.greedyMergeType = Note.greedyMergeTypes[yToUse];
+		virtualNote.greedyMergeVariant = Note.greedyMergeVariant[count];
+		//virtualNote.x += 30;
+		//virtualNote.scale *= 0.85;
 		return true;
 	}
 
@@ -257,9 +266,9 @@ class NoteSpawner {
 	 * @return True if the notes are duplicates.
 	 */
 	function isGhostNote(prev:MetaNote, current:MetaNote):Bool {
-		return prev != -1 
-			&& prev.position == current.position 
-			&& prev.index == current.index 
+		return prev != -1
+			&& prev.position == current.position
+			&& prev.index == current.index
 			&& prev.type == current.type;
 	}
 
@@ -273,16 +282,16 @@ class NoteSpawner {
 	 * @param prevY The Y position of the previous note.
 	 * @return True if notes should overlap and merge.
 	 */
-	function shouldNotesOverlap(prev:MetaNote, current:MetaNote, noteSpr:VirtualNote, 
+	function shouldNotesOverlap(prev:MetaNote, current:MetaNote, noteSpr:VirtualNote,
 		receptor:Note, newY:Float, prevY:Float):Bool {
-		
+
 		if (noteSpr == null || prev == -1) return false;
 
 		var OVERLAP_PIXEL_THRESHOLD = 0;
-		
+
 		// Calculate pixel difference accounting for resolution scaling
 		var pixelDiff = Math.abs(
-			Math.floor(newY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)) - 
+			Math.floor(newY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)) -
 			Math.floor(prevY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT))
 		);
 

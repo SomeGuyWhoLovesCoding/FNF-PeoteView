@@ -85,7 +85,7 @@ class NoteVB {
 }
 
 /**
- * Virtual note that acts like a pre-render of a the note element. 49-byte class.
+ * Virtual note that acts like a pre-render of a the note element. 52-byte class.
  * @since Development
 **/
 @:publicFields
@@ -104,9 +104,6 @@ class VirtualNote {
 
 	// the refrence to the note (8 bytes)
 	var ref:MetaNote;
-
-	// if the greedy count of the note is present opnce preparation is done (1 byte)
-	var greedyMerged:Bool;
 
 	// helpers (put these where convenient)
 	inline static function toSigned16(u:Int):Int {
@@ -166,6 +163,31 @@ class VirtualNote {
 	inline function set_h(value:Int):Int {
 		var u = toUint16(value);
 		wh = (wh & 0x0000FFFF) | (u << 16);
+		return value;
+	}
+
+	// once preparation is done, this stuff is used (4 bytes)
+	var tv:Int;
+	var greedyMergeType(get, set):Int;
+	var greedyMergeVariant(get, set):Int;
+
+	inline function get_greedyMergeType():Int {
+		return toSigned16(xy & 0xFFFF);
+	}
+
+	inline function set_greedyMergeType(value:Int):Int {
+		var u = toUint16(value);
+		tv = (tv & 0xFFFF0000) | u;
+		return value;
+	}
+
+	inline function get_greedyMergeVariant():Int {
+		return toSigned16((tv >> 16) & 0xFFFF);
+	}
+
+	inline function set_greedyMergeVariant(value:Int):Int {
+		var u = toUint16(value);
+		tv = (tv & 0x0000FFFF) | (u << 16);
 		return value;
 	}
 
