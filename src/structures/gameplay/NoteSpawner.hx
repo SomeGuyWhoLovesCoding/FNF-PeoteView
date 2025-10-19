@@ -61,13 +61,13 @@ class NoteSpawner {
 	 * @param pos The current song position in note format.
 	 */
 	function processNotes(pos:Int64) {
-		var i = bottom;
+		var i = parent.parent.downScroll ? bottom : top;
 		var scrollSpeed = parent.parent.scrollSpeed;
 		var prev:MetaNote = -1;
 		var noteSpr:VirtualNote = null;
 
 		var time = haxe.Timer.stamp();
-		while (i < top) {
+		while (i < (parent.parent.downScroll ? top : bottom)) {
 			var n = File.getNote(i);
 
 			// Get lane and receptor information
