@@ -146,12 +146,17 @@ class NoteSpawner {
 					// but wait! hold on! do some note rendering optims just in case of a spamtrack real quick
 
 					//// greedy note merging (16x) ////
-					if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 128)) increment = 128;
-					else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 64)) increment = 64;
-					else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 32)) increment = 32;
-					else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 16)) increment = 16;
+
+					// Prevent branch misprediction with like—anything to be completely honest I am very proud I did this
+					if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 16)) {
+						increment = 16;
+						if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 128)) increment = 128;
+						else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 64)) increment = 64;
+						else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 32)) increment = 32;
+					}
 
 					//// finally, do it. ////
+
 					var note = new Note(-99999, -99999, 0, 0);
 					note.x = virtualNote.x;
 					note.y = virtualNote.y;
