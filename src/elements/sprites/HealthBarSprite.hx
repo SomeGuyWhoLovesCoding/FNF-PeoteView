@@ -9,7 +9,7 @@ class HealthBarSprite implements Element {
 	@posY var y:Float = 0.0;
 
 	// size in pixel
-	@sizeX @formula("(_flip != 0.0 ? w * -1.0 : w)") var w:Float = 0.0;
+	@sizeX @formula("(_flip != 0.0 ? -w : w)") var w:Float = 0.0;
 	@sizeY var h:Float = 0.0;
 
 	// extra tex attributes for clipping

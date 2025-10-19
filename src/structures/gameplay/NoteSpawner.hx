@@ -151,20 +151,46 @@ class NoteSpawner {
 	 * @param pos The current song position in note format.
 	 */
 	function renderNotes(pos:Int64) {
-		var prev:MetaNote = -1;
-		var noteSpr:VirtualNote = null;
 		var notes = parent.virtualNoteBuffer;
 
+		renderVirtualNotes(notes);
+		renderVirtualSustains(notes);
+
+		//Sys.println('Note Buffer Real length: ${NoteSystem.notesBuf.length}, numIterations: $numIterations');
+	}
+
+	/**
+	 * Renders virtual notes into actual note instances for rendering.
+	 * This is separate from the main update loop onto the render loop to allow for optimizations, and most importantly, this function is separate for profiling.
+	 * @param notes 
+	 */
+	function renderVirtualNotes(notes:NoteVB) {
+		var numIterations = 0;
 		var virtualNotes = notes.notes;
 		for (i in 0...virtualNotes.length) {
 			var lane = virtualNotes[i];
+			var strumline = parent.strumlines[i];
 			for (j in 0...lane.length) {
 				var index = lane[j];
 				var length = notes.noteLength[i][j];
 				var id = parent.parent.inputSystem.receptorIds[j];
-				for (k in 0...length) {
+				var strumReceptor = strumline.buffer[j];
+				var k = 0;
+				while (k < length) {
+					var increment = 1;
 					var virtualNote:VirtualNote = index[k];
 					if (virtualNote == null) continue;
+
+					// but wait! hold on! do some note rendering optims just in case of a spamtrack real quick
+
+					//// greedy note merging (16x) ////
+					if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 128)) increment = 128;
+					else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 64)) increment = 64;
+					else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 32)) increment = 32;
+					else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 16)) increment = 16;
+
+					//// finally, do it. ////
+
 					var note = new Note(-99999, -99999, 0, 0);
 					note.x = virtualNote.x;
 					note.y = virtualNote.y;
@@ -176,10 +202,20 @@ class NoteSpawner {
 					note.changeID(id);
 					note.toNote();
 					NoteSystem.notesBuf.addElement(note);
+
+					k += increment;
+					numIterations++;
 				}
 			}
 		}
+	}
 
+	/**
+	 * Renders virtual sustains into actual sustain instances for rendering.
+	 * This function is separate for profiling.
+	 * @param notes 
+	 */
+	function renderVirtualSustains(notes:NoteVB) {
 		var virtualSustains = notes.sustains;
 		for (i in 0...virtualSustains.length) {
 			var lane = virtualSustains[i];
@@ -206,6 +242,52 @@ class NoteSpawner {
 				}
 			}
 		}
+	}
+
+	/**
+	 * Renders virtual notes into actual note instances for rendering.
+	 * This is separate from the main update loop onto the render loop to allow for optimizations, and most importantly, this function is separate for profiling.
+	 * @param notes 
+	 */
+
+	/**
+	 * Greedily merges nearly identical (already-overlapped) notes to optimize rendering.
+	 * This checks up to `count` notes ahead to see if they can be merged.
+	 * @param virtualNote The virtual note to attempt merging on.
+	 * @param index The array of virtual notes in the current lane/index.
+	 * @param strumReceptor The strum receptor for this lane/index.
+	 * @param k The current index in the virtual notes array.
+	 * @param count The number of notes to check for merging.
+	 * @return True if merging was successful.
+	 */
+	function greedyMergeNearlyNotes(virtualNote:VirtualNote, index:Array<VirtualNote>, strumReceptor:Note, k:Int, count:Int = 16):Bool {
+		var success = false;
+		if (virtualNote.y + count < strumReceptor.y) {
+			var virtualNoteY = 0;
+			var lastVirtualNoteY = 0;
+
+			var g = 0;
+			while (++g < count) {
+				var virtualNote:VirtualNote = index[k + g];
+				var nextNote:VirtualNote = index[k + g + 1];
+				if (virtualNote == null || nextNote == null) break;
+				virtualNoteY = virtualNote.y;
+				if ((lastVirtualNoteY - virtualNoteY != 1) &&
+					(virtualNote.notesInOne - nextNote.notesInOne) >= 2) {
+					break;
+				}
+				lastVirtualNoteY = virtualNoteY;
+			}
+
+			success = g == count;
+			//if (k == 0) Sys.println('Greedy merge for note #0 success? $success - reason: g is $g');
+
+			if (success) {
+				virtualNote.greedyMerged = true;
+				//virtualNote.greedyCount = count; temp, will remove
+			}
+		}
+		return success;
 	}
 
 	/**

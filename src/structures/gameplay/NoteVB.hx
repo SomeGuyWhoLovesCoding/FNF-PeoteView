@@ -85,7 +85,7 @@ class NoteVB {
 }
 
 /**
- * Virtual note that acts like a pre-render of a the note element. 48-byte class.
+ * Virtual note that acts like a pre-render of a the note element. 49-byte class.
  * @since Development
 **/
 @:publicFields
@@ -104,6 +104,9 @@ class VirtualNote {
 
 	// the refrence to the note (8 bytes)
 	var ref:MetaNote;
+
+	// if the greedy count of the note is present opnce preparation is done (1 byte)
+	var greedyMerged:Bool;
 
 	// helpers (put these where convenient)
 	inline static function toSigned16(u:Int):Int {
