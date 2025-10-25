@@ -109,6 +109,10 @@ class OptionsDisplay {
 					} else {
 						option.c.luminanceF = parent.alphaLerp;
 					}
+				case GAMEPLAY:
+					// todo
+				case CONTROLS:
+					// todo
 			}
 			OptionsMenu.optionsBuf.updateElement(option);
 		}

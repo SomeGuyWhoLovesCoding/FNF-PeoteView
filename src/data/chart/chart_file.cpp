@@ -107,28 +107,14 @@ private:
         if (!SetFilePointerEx(hFile, newSize, NULL, FILE_BEGIN) || !SetEndOfFile(hFile))
             return false;
 
-        SIZE_T largePageSize = GetLargePageMinimum();
-        bool useLargePages = false;
+        
 
-        if (largePageSize > 0) {
-            // Try enabling privilege
-            if (enableLargePagePrivilege()) {
-                useLargePages = true;
-                // Align mapping size
-                SIZE_T mapSize = ((newLength * sizeof(int64_t) + largePageSize - 1) / largePageSize) * largePageSize;
+        // Normal page mapping fallback
+        SIZE_T mapSize = ((newLength * sizeof(int64_t) + largePageSize - 1) / largePageSize) * largePageSize;
 
-                hMap = CreateFileMapping(hFile, NULL, PAGE_READWRITE | SEC_LARGE_PAGES,
-                                        (DWORD)(mapSize >> 32), (DWORD)(mapSize & 0xFFFFFFFF), NULL);
-
-                if (!hMap) useLargePages = false; // fallback if failed
-            }
-        }
-
-        if (!useLargePages) {
-            // Normal page mapping fallback
-            hMap = CreateFileMapping(hFile, NULL, PAGE_READWRITE, 0, 0, NULL);
-            if (!hMap) return false;
-        }
+        hMap = CreateFileMapping(hFile, NULL, PAGE_READWRITE | SEC_LARGE_PAGES,
+                                (DWORD)(mapSize >> 32), (DWORD)(mapSize & 0xFFFFFFFF), NULL);
+        if (!hMap) return false;
 
         data = static_cast<int64_t*>(MapViewOfFile(hMap, FILE_MAP_ALL_ACCESS, 0, 0, 0));
         if (!data) { CloseHandle(hMap); hMap = NULL; return false; }
