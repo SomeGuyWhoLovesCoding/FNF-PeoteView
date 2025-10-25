@@ -112,7 +112,11 @@ private:
 // ============================================================================
 static MappedFile gFile;
 
-int64_t* __restrict data = nullptr;
+#ifdef _WIN32
+/*alignas(32)*/ int64_t* __restrict data = nullptr;
+#else
+/*alignas(32)*/ int64_t* __restrict__ data = nullptr;
+#endif
 int64_t length = 0;
 
 bool remap(size_t newLength) {
@@ -160,7 +164,12 @@ HL_PRIM void HL_NAME(removeNote)(int64_t idx) {
 inline int64_t extractTime(int64_t note) { return (note >> 23) & 0x1FFFFFFFFFFLL; }
 
 HL_PRIM void HL_NAME(insertNotes)(vbyte* arr, int64_t len) {
+    #ifdef _WIN32
     unsigned long long* __restrict ptr = (unsigned long long*)arr;
+    #else
+    unsigned long long* __restrict__ ptr = (unsigned long long*)arr;
+    #endif
+
     std::vector<int64_t> newNotes(ptr, ptr + len);
     if (newNotes.empty()) return;
 
@@ -170,9 +179,15 @@ HL_PRIM void HL_NAME(insertNotes)(vbyte* arr, int64_t len) {
 
     if (!remap(newLen)) throw std::runtime_error("failed to resize file");
 
+    #ifdef _WIN32
     int64_t* __restrict writePtr = data + newLen - 1;
-    int64_t* __restrict dataPtr  = data + oldLen - 1;
+    int64_t* __restrict dataPtr  = data + oldLen - 1;  // safe now
     int64_t* __restrict newPtr   = newNotes.data() + k - 1;
+    #else
+    int64_t* __restrict__ writePtr = data + newLen - 1;
+    int64_t* __restrict__ dataPtr  = data + oldLen - 1;  // safe now
+    int64_t* __restrict__ newPtr   = newNotes.data() + k - 1;
+    #endif
 
     while (dataPtr >= data && newPtr >= newNotes.data()) {
         int64_t timeData = extractTime(*dataPtr);
