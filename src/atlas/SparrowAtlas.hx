@@ -1,5 +1,8 @@
 package atlas;
 
+/**
+ * Implementation of sparrow atlas in my own way, for the character system and note system.
+**/
 @:publicFields
 @:structInit
 @:access(Xml)
