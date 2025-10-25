@@ -56,18 +56,10 @@ class Note implements Element
 	//static public var offsetAndSizeFramesLength:Int;
 
 	// This is all for the greedy merge stuffs ignore it
-	static public var greedyMergeTypes(default, null):Map<Int, Int> = [
-		1 => 1,
-		2 => 2
-	];
-
-	static public var greedyMergeVariant(default, null):Map<Int, Int> = [
-		16 => 1, // 16x
-		32 => 1, // 32x
-		64 => 1, // 64x
-		128 => 1 // 128x
-	];
-	// finally, the end of it
+	/*static public var greedyMergeTypeToCount(default, null):Map<Int, Int> = [
+		1 => 64
+	];*/
+	static public var maxGMAlphaMult:Int = 6;
 
 	public var id:Int = 0;
 
@@ -115,6 +107,15 @@ class Note implements Element
 		// instead of using normal "name" identifier to fetch the texture-color,
 		// the postfix "_ID" gives access to use getTextureColor(textureID, ...) or getTextureResolution(textureID)
 		program.setColorFormula( 'c * why(${name}_ID, initialAlpha, addedAlpha)' );
+	}
+
+	inline public function toggleGMAlphaMult(mult:Int) {
+		/*clipX = offsetAndSizeFrames[offset];
+		clipY = offsetAndSizeFrames[offset + 1];
+		w = clipWidth = clipSizeX = offsetAndSizeFrames[offset + 2];
+		h = clipHeight = clipSizeY = offsetAndSizeFrames[offset + 3];
+		ox = offsetAndSizeFrames[offset + 4];
+		oy = offsetAndSizeFrames[offset + 5];*/
 	}
 
 	inline public function changeID(id:Int) {

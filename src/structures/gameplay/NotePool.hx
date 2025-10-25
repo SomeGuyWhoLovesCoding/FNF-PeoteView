@@ -16,14 +16,10 @@ package structures.gameplay;
 **/
 @:publicFields
 class NotePool {
-	//// THE VIRTUAL AREA ////
 	var virtualNotes(default, null):MetaNoteMap<VirtualNote>;
 	var inactiveVirtualNotes(default, null):Array<VirtualNote>;
 	var virtualSustains(default, null):MetaNoteMap<VirtualSustain>;
 	var inactiveVirtualSusses(default, null):Array<VirtualSustain>;
-
-	//// THE ELEMENT AREA ////
-	// todo, so you don't actually `new Note` or `new Sustain` every time you render a virtual note
 
 	var parent(default, null):NoteSystem;
 

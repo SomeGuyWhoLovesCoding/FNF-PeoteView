@@ -86,7 +86,11 @@ class OptionsDisplay {
 						case "hideHUD" | "ratingPopup":
 							pf.resetHUD();
 						case "smoothHealthbar":
-							pf.hud.healthBar.update(0);
+							var hud = pf.hud;
+							if (hud != null) {
+								var healthBar = hud.healthBar;
+								if (healthBar != null) healthBar.update(0);
+							}
 						default:
 					}
 				}

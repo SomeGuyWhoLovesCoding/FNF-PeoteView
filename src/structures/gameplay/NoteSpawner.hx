@@ -129,6 +129,7 @@ class NoteSpawner {
 	function renderVirtualNotes(notes:NoteVB) {
 		var numIterations = 0;
 		var virtualNotes = notes.notes;
+		var averageNotesPerOne:Int64 = 0;
 		for (i in 0...virtualNotes.length) {
 			var lane = virtualNotes[i];
 			var strumline = parent.strumlines[i];
@@ -148,13 +149,12 @@ class NoteSpawner {
 					//// greedy note merging (16x) ////
 
 					// Prevent branch misprediction with like—anything to be completely honest I am very proud I did this
-					if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 16)) {
-						increment = 16;
-						if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 128)) increment = 128;
-						else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 96)) increment = 96;
-						else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 64)) increment = 64;
-						else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 48)) increment = 48;
-						else if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 32)) increment = 32;
+					if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 32, 2)) {
+						increment = 32;
+					}
+
+					if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 64, 1)) {
+						increment = 64;
 					}
 
 					//// finally, do it. ////
@@ -165,19 +165,27 @@ class NoteSpawner {
 					note.w = virtualNote.w;
 					note.h = virtualNote.h;
 					note.scale = virtualNote.scale;
-					note.initialAlpha = virtualNote.initialAlpha;
-					note.addedAlpha = virtualNote.addedAlpha;
-					//note.changeGreedyType(virtualNote.type);
-					//note.autoMultiplierVariant = virtualNote.greedyMergeVariant;
+
+					if (virtualNote.greedyMergeAlphaMultiplier != 0) {
+						note.toggleGMAlphaMult(virtualNote.greedyMergeAlphaMultiplier);
+					} else {
+						note.initialAlpha = virtualNote.initialAlpha;
+						note.addedAlpha = virtualNote.addedAlpha;
+					}
+
 					note.changeID(id);
 					note.toNote();
 					NoteSystem.notesBuf.addElement(note);
 
 					k += increment;
 					numIterations++;
+					averageNotesPerOne += virtualNote.greedyMergeAlphaMultiplier;
 				}
 				//if (j == 1) Sys.println('y: ${index[0]?.y},${index[1]?.y}');
 			}
+			var zero = notes.noteLength[0][2];
+			if (zero == 0) zero = 1;
+			Sys.println(averageNotesPerOne / zero);
 		}
 	}
 
@@ -227,12 +235,14 @@ class NoteSpawner {
 	 */
 	function greedyMergeNearlyNotes(virtualNote:VirtualNote, index:Array<VirtualNote>, strumReceptor:Note, k:Int, count:Int = 16, granularity:Int = 2):Bool {
 		// Check bounds first
-		if (k + count >= index.length) return false;
+		if (k + count >= index.length ||
+			virtualNote.greedyMergeAlphaMultiplier == -1) return false;
 
 		var check = true;
 		if (!check) return false;
 
 		var yToUse:Float = 0;
+		var notesInOneMerged:Float = 0;
 
 		for (g in 0...count) {
 			var virtualNote2:VirtualNote = index[k + g];
@@ -258,10 +268,11 @@ class NoteSpawner {
 		}
 
 		yToUse /= count;
+		notesInOneMerged /= count;
 
 		// If we got here, all checks passed
-		virtualNote.greedyMergeType = Note.greedyMergeTypes[Math.floor(yToUse)];
-		virtualNote.greedyMergeVariant = Note.greedyMergeVariant[count];
+		virtualNote.greedyMergeType = Math.floor(yToUse);
+		virtualNote.greedyMergeAlphaMultiplier = Math.floor(Math.min(notesInOneMerged, Note.maxGMAlphaMult));
 		//virtualNote.x += 30;
 		//virtualNote.scale *= 0.85;
 		return true;

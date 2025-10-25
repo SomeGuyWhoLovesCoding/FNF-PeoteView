@@ -167,9 +167,9 @@ class VirtualNote {
 	}
 
 	// once preparation is done, this stuff is used (4 bytes)
-	var tv:Int;
+	var tm:Int;
 	var greedyMergeType(get, set):Int;
-	var greedyMergeVariant(get, set):Int;
+	var greedyMergeAlphaMultiplier(get, set):Int;
 
 	inline function get_greedyMergeType():Int {
 		return toSigned16(xy & 0xFFFF);
@@ -177,17 +177,17 @@ class VirtualNote {
 
 	inline function set_greedyMergeType(value:Int):Int {
 		var u = toUint16(value);
-		tv = (tv & 0xFFFF0000) | u;
+		tm = (tm & 0xFFFF0000) | u;
 		return value;
 	}
 
-	inline function get_greedyMergeVariant():Int {
-		return toSigned16((tv >> 16) & 0xFFFF);
+	inline function get_greedyMergeAlphaMultiplier():Int {
+		return toSigned16((tm >> 16) & 0xFFFF);
 	}
 
-	inline function set_greedyMergeVariant(value:Int):Int {
+	inline function set_greedyMergeAlphaMultiplier(value:Int):Int {
 		var u = toUint16(value);
-		tv = (tv & 0x0000FFFF) | (u << 16);
+		tm = (tm & 0x0000FFFF) | (u << 16);
 		return value;
 	}
 
