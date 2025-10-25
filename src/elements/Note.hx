@@ -59,7 +59,7 @@ class Note implements Element
 	/*static public var greedyMergeTypeToCount(default, null):Map<Int, Int> = [
 		1 => 64
 	];*/
-	static public var maxGMAlphaMult:Int = 6; // The usual amount for normal notes
+	static public var maxGMAlphaMult:Int = 8; // The usual amount for normal notes
 
 	public var id:Int = 0;
 

@@ -183,9 +183,11 @@ class NoteSpawner {
 				}
 				//if (j == 1) Sys.println('y: ${index[0]?.y},${index[1]?.y}');
 			}
+			//Sys.println(virtualNotes[0][2][0]?.greedyMergeAlphaMultiplier);
+
 			var zero = notes.noteLength[0][2];
 			if (zero == 0) zero = 1;
-			Sys.println(averageNotesPerOne / zero);
+			//Sys.println(averageNotesPerOne / zero);
 		}
 	}
 

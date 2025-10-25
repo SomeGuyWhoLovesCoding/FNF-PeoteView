@@ -357,8 +357,8 @@ class Main extends Application
 		super.render(context);
 
 		if (playField != null) {
-			if (RenderingMode.enabled) {
-				if (!playField.paused) {
+			if (!playField.paused) {
+				if (RenderingMode.enabled) {
 					playField.update(1000 / 60);
 					var noteSystem = playField?.noteSystem;
 					if (noteSystem != null) {
@@ -367,12 +367,12 @@ class Main extends Application
 					}
 
 					RenderingMode.pipeFrame();
-				}
-			} else {
-				var noteSystem = playField?.noteSystem;
-				if (noteSystem != null) {
-					var pos = MetaNote.floatToMetaNotePosition(playField.songPosition);
-					playField.noteSystem.renderNotes(pos);
+				} else {
+					var noteSystem = playField?.noteSystem;
+					if (noteSystem != null) {
+						var pos = MetaNote.floatToMetaNotePosition(playField.songPosition);
+						playField.noteSystem.renderNotes(pos);
+					}
 				}
 			}
 		}

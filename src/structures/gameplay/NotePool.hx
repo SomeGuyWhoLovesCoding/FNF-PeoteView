@@ -57,7 +57,7 @@ class NotePool {
 			inactiveObject.initialAlpha = Note.defaultAlpha;
 			inactiveObject.addedAlpha = 0;
 			inactiveObject.notesInOne = 1;
-			inactiveObject.greedyMergeAlphaMultiplier = -1;
+			inactiveObject.greedyMergeAlphaMultiplier = 0;
 			inactiveObject.greedyMergeType = 0;
 			inactiveObject.ref = n;
 			allocated = inactiveObject;
