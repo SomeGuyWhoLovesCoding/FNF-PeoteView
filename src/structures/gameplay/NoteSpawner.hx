@@ -171,7 +171,7 @@ class NoteSpawner {
 
 					if (virtualNote.greedyMergeAlphaMultiplier != 0) {
 						note.toggleGMAlphaMult(virtualNote.greedyMergeAlphaMultiplier);
-						note.initialAlpha = 0;
+						note.initialAlpha = 1;
 						note.addedAlpha = 0;
 					}
 
