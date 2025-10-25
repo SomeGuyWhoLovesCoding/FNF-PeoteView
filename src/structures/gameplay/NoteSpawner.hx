@@ -235,44 +235,49 @@ class NoteSpawner {
 	 */
 	function greedyMergeNearlyNotes(virtualNote:VirtualNote, index:Array<VirtualNote>, strumReceptor:Note, k:Int, count:Int = 16, granularity:Int = 2):Bool {
 		// Check bounds first
-		if (k + count >= index.length ||
-			virtualNote.greedyMergeAlphaMultiplier == -1) return false;
+		if (k + count >= index.length) return false;
 
 		var check = true;
 		if (!check) return false;
 
-		var yToUse:Float = 0;
-		var notesInOneMerged:Float = 0;
+		if (virtualNote.greedyMergeAlphaMultiplier == 0) {
+			var yToUse:Float = 0;
+			var notesInOneMerged:Int64 = 0;
 
-		for (g in 0...count) {
-			var virtualNote2:VirtualNote = index[k + g];
-			var nextNote:VirtualNote = index[k + g + 1];
-			if (virtualNote2 == null || nextNote == null) return false;  // Changed from break
+			for (g in 0...count) {
+				var virtualNote2:VirtualNote = index[k + g];
+				var nextNote:VirtualNote = index[k + g + 1];
+				if (virtualNote2 == null || nextNote == null) return false;  // Changed from break
 
-			var yCompare = virtualNote2.y - nextNote.y;
-			if (yCompare < 0) yCompare = -yCompare;
+				var yCompare = virtualNote2.y - nextNote.y;
+				if (yCompare < 0) yCompare = -yCompare;
 
-			var notesInOneCompare = virtualNote2.notesInOne - nextNote.notesInOne;
-			if (notesInOneCompare < 0) notesInOneCompare = -notesInOneCompare;
+				var notesInOneCompare = virtualNote2.notesInOne - nextNote.notesInOne;
+				if (notesInOneCompare < 0) notesInOneCompare = -notesInOneCompare;
 
-			//if (k == 40) Sys.println('yCompare $yCompare & notesInOneCompare $notesInOneCompare');
-			var check1 = yCompare <= granularity;
-			//if (g == 2) Sys.println('yCompare #2 $yCompare');
-			var check2 = notesInOneCompare <= 2;
+				//if (k == 40) Sys.println('yCompare $yCompare & notesInOneCompare $notesInOneCompare');
+				var check1 = yCompare <= granularity;
+				//if (g == 2) Sys.println('yCompare #2 $yCompare');
+				var check2 = notesInOneCompare <= 2;
 
-			yToUse += yCompare;
+				yToUse += yCompare;
+				notesInOneMerged += virtualNote2.notesInOne;
 
-			if (nextNote.notesInOne == 1 && (!check1 || !check2)) {
-				return false;
+				if (nextNote.notesInOne == 1 && (!check1 || !check2)) {
+					return false;
+				}
 			}
+
+			yToUse /= count;
+			notesInOneMerged /= count;
+
+			if (notesInOneMerged > Note.maxGMAlphaMult) notesInOneMerged = Note.maxGMAlphaMult;
+
+			// If we got here, all checks passed
+			virtualNote.greedyMergeType = Math.floor(yToUse);
+			virtualNote.greedyMergeAlphaMultiplier = Int64.toInt(notesInOneMerged);
 		}
 
-		yToUse /= count;
-		notesInOneMerged /= count;
-
-		// If we got here, all checks passed
-		virtualNote.greedyMergeType = Math.floor(yToUse);
-		virtualNote.greedyMergeAlphaMultiplier = Math.floor(Math.min(notesInOneMerged, Note.maxGMAlphaMult));
 		//virtualNote.x += 30;
 		//virtualNote.scale *= 0.85;
 		return true;
