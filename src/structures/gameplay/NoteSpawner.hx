@@ -166,11 +166,13 @@ class NoteSpawner {
 					note.h = virtualNote.h;
 					note.scale = virtualNote.scale;
 
+					note.initialAlpha = virtualNote.initialAlpha;
+					note.addedAlpha = virtualNote.addedAlpha;
+
 					if (virtualNote.greedyMergeAlphaMultiplier != 0) {
 						note.toggleGMAlphaMult(virtualNote.greedyMergeAlphaMultiplier);
-					} else {
-						note.initialAlpha = virtualNote.initialAlpha;
-						note.addedAlpha = virtualNote.addedAlpha;
+						note.initialAlpha = 0;
+						note.addedAlpha = 0;
 					}
 
 					note.changeID(id);
