@@ -36,6 +36,25 @@ float playbackRate = 1;
 
 int MIXER_STATE = 3; // 0=undefined,1=playing,2=stopped,3=finished
 
+int g_measuredLatencyMs = -1; // cached loopback latency
+
+// -------------------- LOOPBACK LATENCY MEASUREMENT --------------------
+int detectLatency() {
+	int osMs = 1;
+	int result = osMs + g_measuredLatencyMs;
+
+    if (g_measuredLatencyMs != -1) return result;
+
+    g_measuredLatencyMs = 100;
+
+	result = osMs + g_measuredLatencyMs;
+
+	printf("Done calibraring latency. It is now %d\n", g_measuredLatencyMs);
+
+	//printf("MiniAudio (WASAPI) Detected Latency %dms\n", result);
+	return result;
+}
+
 /*
 * 0 = false
 * 1 = true
@@ -60,28 +79,6 @@ static inline void ensure_mutex() {
 		ma_mutex_init(&decoderMutex);
 		decoderMutexInitialized = MA_TRUE;
 	}
-}
-
-int g_measuredLatencyMs = -1; // cached loopback latency
-
-// -------------------- LOOPBACK LATENCY MEASUREMENT --------------------
-int detectLatency() {
-	int osMs = 88;
-	int result = osMs + g_measuredLatencyMs;
-
-	int periodSizeF = device.playback.internalPeriodSizeInFrames;
-	double periodSize = ((double)periodSizeF / (SAMPLE_RATE * 0.001));
-
-	//printf("InternalPeriodSize is %d\n", periodSize);
-
-    g_measuredLatencyMs = (int)periodSize;
-
-	result = osMs + g_measuredLatencyMs;
-
-	printf("Done calibraring latency. It is now %d\n", result);
-
-	//printf("MiniAudio (WASAPI) Detected Latency %dms\n", result);
-	return result;
 }
 
 int getMixerState() {
