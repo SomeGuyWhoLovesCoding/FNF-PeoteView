@@ -10,10 +10,8 @@ package structures.gameplay;
 **/
 @:publicFields
 class Strumline {
-	var notesToHit(default, null):Array<Null<MetaNote>>;
-	var notesToHit_indexes(default, null):Array<Int64>;
-	var sustainsToHold(default, null):Array<Null<MetaNote>>;
-	var sustainsToHold_indexes(default, null):Array<Int64>;
+	var notesToHit(default, null):Array<MetaNote>;
+	var sustainsToHold(default, null):Array<MetaNote>;
 	var botHitsToCheck(default, null):Array<Bool>;
 	var playerHitsToCheck(default, null):Array<Bool>;
 	var fakeOverlapStorage(default, null):Array<Int>; // This is for fake note overlapping!!! So it renders faster instead of just checking one by one without relying on an index based approach like this. Thanks - sgwl
@@ -57,9 +55,9 @@ class Strumline {
 
 	function set_length(value:Int) {
 		notesToHit.resize(value);
-		notesToHit_indexes.resize(value);
+		for (i in 0...notesToHit.length) notesToHit[i] = -1;
 		sustainsToHold.resize(value);
-		sustainsToHold_indexes.resize(value);
+		for (i in 0...sustainsToHold.length) sustainsToHold[i] = -1;
 		botHitsToCheck.resize(value);
 		playerHitsToCheck.resize(value);
 		fakeOverlapStorage.resize(value);
@@ -89,9 +87,7 @@ class Strumline {
 
 	function new(x:Int, y:Int, gap:Int, scale:Float, length:Int, parent:NoteSystem) {
 		notesToHit = [];
-		notesToHit_indexes = [];
 		sustainsToHold = [];
-		sustainsToHold_indexes = [];
 		botHitsToCheck = [];
 		playerHitsToCheck = [];
 		fakeOverlapStorage = [];
@@ -118,7 +114,8 @@ class Strumline {
 		var noteToHit = notesToHit[index];
 		var rec = buffer[index];
 
-		if (noteToHit != null && !noteToHit.missed && !noteToHit.flag) {
+		var noteSpawner = parent.noteSpawner;
+		if (noteToHit != -1 && !noteSpawner.notesMissed.get(noteToHit) && !noteSpawner.notesHit.get(noteToHit)) {
 			var pf = parent.parent;
 			var type = noteToHit.type;
 
@@ -130,19 +127,15 @@ class Strumline {
 				rec.confirm();
 			}
 
-			var n:Int64 = noteToHit.toNumber();
-			(n:MetaNote).flag = true;
-			File.setNote(notesToHit_indexes[index], n);
+			noteSpawner.notesHit.set(noteToHit, true);
 
 			if (noteToHit.duration > 20) {
-				sustainsToHold[index] = n; // `n` is modified so don't switch this to `noteToHit` since that variable was never modified
-				sustainsToHold_indexes[index] = notesToHit_indexes[index];
+				sustainsToHold[index] = noteToHit;
 			}
 
 			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + pf.latencyCompensation #if windows - Mixer.latency() #end);
 			pf.onNoteHit.dispatch(noteToHit, MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency), 1);
-			notesToHit[index] = null;
-			notesToHit_indexes[index] = 0;
+			notesToHit[index] = -1;
 		} else {
 			if (!rec.pressed()) {
 				rec.press();
@@ -154,18 +147,16 @@ class Strumline {
 		var sustainToRelease = sustainsToHold[index];
 		var rec = buffer[index];
 
-		var sustainReleaseCallbackCanRun = sustainToRelease != null && sustainToRelease.index == index && (sustainToRelease.flag && !sustainToRelease.held);
+		var noteSpawner = parent.noteSpawner;
+		var sustainReleaseCallbackCanRun = sustainToRelease != -1 && sustainToRelease.index == index && (noteSpawner.notesHit.get(sustainToRelease) && !noteSpawner.notesHeld.get(sustainToRelease));
 
 		if (sustainReleaseCallbackCanRun) {
 			var pf = parent.parent;
 
-			var n:Int64 = sustainToRelease.toNumber();
-			(n:MetaNote).held = true;
-			File.setNote(sustainsToHold_indexes[index], n);
+			noteSpawner.notesHeld.set(sustainToRelease, true);
 
 			pf.onSustainRelease.dispatch(sustainToRelease);
-			sustainsToHold[index] = null;
-			sustainsToHold_indexes[index] = 0;
+			sustainsToHold[index] = -1;
 
 			var hud = pf.hud;
 			if (SaveData.state.preferences.ratingPopup && hud != null) {
@@ -184,17 +175,13 @@ class Strumline {
 
 	function resetInputs() {
 		notesToHit.resize(0);
-		notesToHit_indexes.resize(0);
-		sustainsToHold.resize(0);
-		sustainsToHold_indexes.resize(0);
 		botHitsToCheck.resize(0);
 		playerHitsToCheck.resize(0);
 		botTimers.resize(0);
 		notesToHit.resize(length);
-		notesToHit_indexes.resize(length);
-		sustainsToHold.resize(length);
-		sustainsToHold_indexes.resize(length);
+		for (i in 0...notesToHit.length) notesToHit[i] = -1;
 		botHitsToCheck.resize(length);
+		for (i in 0...sustainsToHold.length) sustainsToHold[i] = -1;
 		playerHitsToCheck.resize(length);
 		botTimers.resize(length);
 	}
@@ -212,15 +199,11 @@ class Strumline {
 	function dispose() {
 		if (notesToHit != null) {
 			while (notesToHit.pop() != null) {}
-			while (notesToHit_indexes.pop() != null) {}
 			notesToHit = null;
-			notesToHit_indexes = null;
 		}
 		if (sustainsToHold != null) {
 			while (sustainsToHold.pop() != null) {}
-			while (sustainsToHold_indexes.pop() != null) {}
 			sustainsToHold = null;
-			sustainsToHold_indexes = null;
 		}
 	}
 }
