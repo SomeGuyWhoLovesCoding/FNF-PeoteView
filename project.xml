@@ -58,7 +58,7 @@
 	<postbuild cmd='robocopy hdlls\windows bin\hl\bin *.hdll /NFL /NDL /NJH /NJS /NC /NS' if="windows" />
 	<postbuild cmd='cp hdlls/linux/*.hdll bin/hl/bin' if="linux" />
 
-	<!--<haxedef name="HXCPP_CPP20" />-->
+	<haxedef name="HXCPP_CPP17" />
 
 	<icon path="assets/system/LimeFriend.png" />
 	<icon path="assets/system/LimeFriend_16.png" size="16"/>
