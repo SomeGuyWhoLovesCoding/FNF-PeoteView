@@ -174,15 +174,16 @@ class NoteSystem {
 		var strumline = strumlines[lane];
 		var rec = strumline.buffer[index];
 		var id = parent.inputSystem.receptorIds[index];
+	
+		var isHit:Bool = noteSpawner.notesHit.get(note);
+		var isMissed:Bool = noteSpawner.notesMissed.get(note);
+		var isHeld:Bool = noteSpawner.notesHeld.get(note);
 
 		var noteSpr = notePool.getNote(id, note, _id);
 		var sustainSpr = duration != 0 ? notePool.getSustain(id, note) : null;
 		var sustainExists = duration != 0;
 
 		var leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
-		var isHit:Bool = noteSpawner.notesHit.get(note);
-		var isMissed:Bool = noteSpawner.notesMissed.get(note);
-		var isHeld:Bool = noteSpawner.notesHeld.get(note);
 
 		if (parent.downScroll) diff = -diff;
 
