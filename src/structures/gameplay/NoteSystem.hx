@@ -180,9 +180,9 @@ class NoteSystem {
 		var sustainExists = duration != 0;
 
 		var leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
-		var isHit:Bool = noteSpawner.notesHit.get(note);
-		var isMissed:Bool = noteSpawner.notesMissed.get(note);
-		var isHeld:Bool = noteSpawner.notesHeld.get(note);
+		var isHit:Bool = note.flag;
+		var isMissed:Bool = note.missed;
+		var isHeld:Bool = note.held;
 
 		if (parent.downScroll) diff = -diff;
 
@@ -202,18 +202,21 @@ class NoteSystem {
 		if (playable) {
 			if (!isHit) {
 				var noteToHit = strumline.notesToHit[index];
-				var noteToHitExists = noteToHit != -1;
+				var noteToHitExists = noteToHit != null;
 				var hitPos = noteToHitExists ? noteToHit.position : 0;
 
 				if ((!isMissed && diff < parent.hitbox && !noteToHitExists) ||
 					(noteToHitExists && pos - hitPos > (position - hitPos) >> 1)) {
 					strumline.notesToHit[index] = note;
+					strumline.notesToHit_indexes[index] = _id;
 				}
 
 				if (diff < -parent.hitbox && !isMissed) {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
-					noteSpawner.notesMissed.set(note, true);
+					var n:Int64 = note.toNumber();
+					(n:MetaNote).missed = true;
 					isMissed = true;
+					File.setNote(_id, n);
 
 					var type = note.type;
 					if (noteTypeFunctionalityPre.exists(type)) {
@@ -224,12 +227,15 @@ class NoteSystem {
 
 					if (sustainExists && !isHeld) {
 						sustainSpr.alpha = Sustain.defaultMissAlpha;
-						noteSpawner.notesHeld.set(note, true);
+						var n:Int64 = note.toNumber();
+						(n:MetaNote).held = true;
 						isHeld = true;
+						File.setNote(_id, n);
 						parent.onSustainRelease.dispatch(note);
 					}
 
-					strumline.notesToHit[index] = -1;
+					strumline.notesToHit[index] = null;
+					strumline.notesToHit_indexes[index] = 0;
 
 					var hud = parent.hud;
 					if (SaveData.state.preferences.ratingPopup && hud != null) {
@@ -243,7 +249,9 @@ class NoteSystem {
 		else {
 			// Handle opponent note hit (non-sustain)
 			if (!isHit && diff < 0) {
-				noteSpawner.notesHit.set(note, true);
+				var n:Int64 = note.toNumber();
+				(n:MetaNote).flag = isHit = true;
+				File.setNote(_id, n);
 
 				// Confirm the receptor
 				if (!rec.confirmed()) rec.confirm();
@@ -282,8 +290,12 @@ class NoteSystem {
 				}
 
 				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainSpr.length - 6)) && !isHeld) {
-					noteSpawner.notesHeld.set(note, true);
-					strumline.sustainsToHold[index] = -1;
+					var n:Int64 = note.toNumber();
+					(n:MetaNote).held = true;
+					isHeld = true;
+					File.setNote(_id, n);
+					strumline.sustainsToHold[index] = null;
+					strumline.sustainsToHold_indexes[index] = 0;
     				strumline.botHitsToCheck[index] = false; // only for short notes
 
 					if (rec.confirmed()) {

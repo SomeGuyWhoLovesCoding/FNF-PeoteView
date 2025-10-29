@@ -37,13 +37,6 @@ class NoteSpawner {
 		curBottomNote = File.getNote(0);
 	}
 
-	// This was originally there to compensate for limitation but now is there as a result of memory mapped io setting an element with poor performance (prob with io)
-	// A maximum of a literal 10mb is used for these three maps but it's also never known to happen in the first place because you're already playing extremely lightweight rhythm anyway
-	// oh yeah the line above only happens if all the notes cover each and every individual pixel on a 720p screen so no need to worry
-	var notesHit(default, null):MetaNoteMap<Bool> = new MetaNoteMap<Bool>();
-	var notesMissed(default, null):MetaNoteMap<Bool> = new MetaNoteMap<Bool>();
-	var notesHeld(default, null):MetaNoteMap<Bool> = new MetaNoteMap<Bool>();
-
 	/**
 	 * Updates the note spawner.
 	 * @param pos The song's position in the note position format.
@@ -357,10 +350,11 @@ class NoteSpawner {
 		var len = File.getLength();
 		while (top != len && curTopNote.position - pos < spawnDist) {
 			++top;
-			var n = File.getNote(top);
-			notesHit.set(n, false);
-			notesMissed.set(n, false);
-			notesHeld.set(n, false);
+			var n:Int64 = File.getNote(top).toNumber();
+			(n:MetaNote).flag = false;
+			(n:MetaNote).missed = false;
+			(n:MetaNote).held = false;
+			File.setNote(top, n);
 			curTopNote = n;
 		}
 	}
@@ -376,12 +370,6 @@ class NoteSpawner {
 			notePool.putNote(curBottomNote, bottom);
 			notePool.putSustain(curBottomNote);
 
-			// I could've done this instead of putting the note directly in `NoteSpawner` but whatevs, practices. Nvm it errors so
-
-			notesHit.remove(curBottomNote);
-			notesMissed.remove(curBottomNote);
-			notesHeld.remove(curBottomNote);
-
 			++bottom;
 
 			curBottomNote = File.getNote(bottom);
@@ -396,9 +384,15 @@ class NoteSpawner {
 		var pf = parent.parent;
 		if (pf.disposed || pf.died) return;
 
-		notesHit.clear();
-		notesMissed.clear();
-		notesHeld.clear();
+		var i = bottom;
+		while (i < top) {
+			var note = File.getNote(i);
+			note.flag = false;
+			note.missed = false;
+			note.held = false;
+			File.setNote(i, note);
+			i++;
+		}
 
 		var len = File.getLength();
 		if (len <= 0) return; // no notes, nothing to do
