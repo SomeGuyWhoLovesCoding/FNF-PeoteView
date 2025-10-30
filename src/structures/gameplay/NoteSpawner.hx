@@ -66,7 +66,7 @@ class NoteSpawner {
 		var prev:MetaNote = -1;
 		var noteSpr:VirtualNote = null;
 
-		var time = haxe.Timer.stamp();
+		//var time = haxe.Timer.stamp();
 		while (i < top) {
 			var n = File.getNote(i);
 
@@ -107,7 +107,7 @@ class NoteSpawner {
 			++i;
 		}
 
-		timeSpentOnIt = haxe.Timer.stamp() - time;
+		//timeSpentOnIt = haxe.Timer.stamp() - time;
 	}
 
 	/**
