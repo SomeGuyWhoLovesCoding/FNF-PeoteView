@@ -259,7 +259,7 @@ class PlayField implements State {
 
 				var noteSpawner = noteSystem.noteSpawner;
 				//if (HUD.scoreTxt != null) HUD.scoreTxt.text = ((noteSpawner.timeSpentOnIt * 1000000000) / Tools.int64ToFloat(noteSpawner.top - noteSpawner.bottom)) + "ns";
-				if (HUD.scoreTxt != null) HUD.scoreTxt.text = (noteSpawner.timeSpentOnIt * 1000) + "ms";
+				//if (HUD.scoreTxt != null) HUD.scoreTxt.text = (noteSpawner.timeSpentOnIt * 1000) + "ms";
 			}
 		} else {
 			if (noteSystem != null) {

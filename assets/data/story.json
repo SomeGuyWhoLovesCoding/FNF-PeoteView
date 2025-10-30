@@ -1,0 +1,77 @@
+{
+	"meta": {
+		"id": "festivalv_campaign",
+		"title": "FestivalV; The Full Experience",
+		"description": "Experience the entirety of FestivalV all in one modpack in Funkin' View."
+	},
+	"startingWeek": "week1",
+	"chapters": [
+		{
+			"id": "week1",
+			"name": "Episode 1",
+			"chapterPath": "data/chapters/week1.json",
+			"cutscenePath": "videos/cutscene/week1",
+			"dialoguePath": "data/dialogue/week1",
+			"next": "week2",
+			"setSaveFlags": ["intro_seen", "week1"]
+		},
+		{
+			"id": "week2",
+			"name": "Episode 2",
+			"chapterPath": "data/chapters/week2.json",
+			"cutscenePath": "videos/cutscenes/week2",
+			"dialoguePath": "data/dialogue/week2",
+			"next": "week3",
+			"setSaveFlags": ["week2_special_unlocked"]
+		},
+		{
+			"id": "week3",
+			"name": "Episode 3",
+			"chapterPath": "data/chapters/week3.json",
+			"cutscenePath": "videos/cutscenes/week3",
+			"dialoguePath": "data/dialogue/week3",
+			"choices": [
+				{
+					"text": "Keep going",
+					"next": "week4",
+					"setSaveFlags": ["unlocked_week4"]
+				},
+				{
+					"text": "Take a detour",
+					"next": "week6",
+					"setSaveFlags": ["detour_taken"]
+				}
+			]
+		},
+		{
+			"id": "week4",
+			"name": "Episode 4",
+			"chapterPath": "data/chapters/week4.json",
+			"cutscenePath": "videos/cutscenes/week4",
+			"dialoguePath": "data/dialogue/week4",
+			"next": "week5",
+			"redirectIfLocked": "week6",
+			"requirements": ["unlocked_week4"],
+			"setSaveFlags": ["week4_special_unlocked"]
+		},
+		{
+			"id": "week3",
+			"name": "Episode 3",
+			"chapterPath": "data/chapters/week3.json",
+			"cutscenePath": "videos/cutscenes/week3",
+			"dialoguePath": "data/dialogue/week3",
+			"choices": [
+				{
+					"text": "Keep going",
+					"next": "week4",
+					"setSaveFlags": ["unlocked_week4"]
+				},
+				{
+					"text": "Take a detour",
+					"next": "week6",
+					"setSaveFlags": ["detour_taken"]
+				}
+			]
+		}
+	]
+}
