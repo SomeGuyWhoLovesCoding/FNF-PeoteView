@@ -346,7 +346,8 @@ class PlayField implements State {
 
 	function hitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
 		var lane = note.type;
-		if (noteSystem.noteSpawner.parent.noteTypeFunctionalityPre.exists(note.type)) lane = 1;
+
+		if (noteSystem.noteTypeFunctionalityPre[note.type] != null) lane = 1;
 
 		var index = 1 + lane;
 		if (Chart.header.voicesDirs.length > 1) index = 1;
@@ -405,7 +406,7 @@ class PlayField implements State {
 
 	function missNote(note:MetaNote, notesInOne:Int64) {
 		var lane = note.type;
-		if (noteSystem.noteSpawner.parent.noteTypeFunctionalityPre.exists(note.type)) lane = 1;
+		if (noteSystem.noteTypeFunctionalityPre[note.type] != null) lane = 1;
 
 		var index = 1 + lane;
 		if (Chart.header.voicesDirs.length > 1) index = 1;
@@ -430,7 +431,7 @@ class PlayField implements State {
 
 	function completeSustain(note:MetaNote) {
 		var lane = note.type;
-		if (noteSystem.noteSpawner.parent.noteTypeFunctionalityPre.exists(note.type)) lane = 1;
+		if (noteSystem.noteTypeFunctionalityPre[note.type] != null) lane = 1;
 
 		if (noteSystem != null && noteSystem.strumlines[lane].confirmed(note.index)) return;
 

@@ -51,7 +51,7 @@ class NoteSystem {
 	var notePool(default, null):NotePool;
 	var virtualNoteBuffer(default, null):NoteVB;
 
-	var noteTypeFunctionalityPre(default, null):Map<Int, Int->Int->Bool->Void>;
+	var noteTypeFunctionalityPre(default, null):Array<Int->Int->Bool->Void>;
 
 	var parent(default, null):PlayField;
 
@@ -60,7 +60,8 @@ class NoteSystem {
 	 * @param parent The parent of this class.
 	**/
 	function new(parent:PlayField) {
-		noteTypeFunctionalityPre = new Map<Int, Int->Int->Bool->Void>();
+		noteTypeFunctionalityPre = [];
+		noteTypeFunctionalityPre.resize(1 << 5); // Max 5 bit value
 
 		this.parent = parent;
 
@@ -164,7 +165,10 @@ class NoteSystem {
 		var duration = note.duration;
 		var position = note.position;
 
-		if (!noteTypeFunctionalityPre.exists(note.type)) {
+		var noteTypeCall:Int->Int->Bool->Void = noteTypeFunctionalityPre[note.type];
+		var noteTypeCallExists = noteTypeCall != null;
+
+		if (!noteTypeCallExists) {
 			lane = note.type % strumlines.length;
 		} else {
 			// Special note types get routed to lane 1 by convention.
@@ -219,8 +223,8 @@ class NoteSystem {
 					File.setNote(_id, n);
 
 					var type = note.type;
-					if (noteTypeFunctionalityPre.exists(type)) {
-						noteTypeFunctionalityPre[type](index, type, true);
+					if (noteTypeCallExists) {
+						noteTypeCall(index, type, true);
 					}
 
 					parent.onNoteMiss.dispatch(note, noteSpr.notesInOne);

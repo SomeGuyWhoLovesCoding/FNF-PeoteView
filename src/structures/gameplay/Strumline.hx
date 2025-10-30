@@ -122,8 +122,11 @@ class Strumline {
 			var pf = parent.parent;
 			var type = noteToHit.type;
 
-			if (parent.noteTypeFunctionalityPre.exists(type)) {
-				parent.noteTypeFunctionalityPre[type](index, type, false);
+			var noteTypeCall:Int->Int->Bool->Void = parent.noteTypeFunctionalityPre[type];
+			var noteTypeCallExists = noteTypeCall != null;
+
+			if (noteTypeCallExists) {
+				noteTypeCall(index, type, false);
 			}
 
 			if (!rec.confirmed()) {

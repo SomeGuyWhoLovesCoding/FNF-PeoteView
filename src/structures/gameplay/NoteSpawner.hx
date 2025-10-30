@@ -71,7 +71,7 @@ class NoteSpawner {
 			var n = File.getNote(i);
 
 			// Get lane and receptor information
-			var lane = parent.noteTypeFunctionalityPre.exists(n.type)
+			var lane = parent.noteTypeFunctionalityPre[n.type] != null
 				? 1
 				: (n.type % parent.strumlines.length);
 			var receptor = parent.strumlines[lane].buffer[n.index];

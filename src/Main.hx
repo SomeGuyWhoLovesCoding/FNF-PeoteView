@@ -61,7 +61,7 @@ class Main extends Application
 			default: throw("Sorry, only works with OpenGL.");
 		}
 
-		/*haxe.Timer.delay(function() {
+		haxe.Timer.delay(function() {
 			// START CHART POFILE
 			Chart.load("assets/songs/termination");
 			var setTime:Float = 0;
@@ -76,7 +76,7 @@ class Main extends Application
 			}
 			Sys.println('Total note setting time: ' + ((((setTime * 1000) / 250)) * 1000000) + 'ns');
 			Chart.destroy();
-		}, 8000);*/
+		}, 8000);
 
 		/*#if (chart_test || hl)
 		haxe.Timer.delay(function() {
