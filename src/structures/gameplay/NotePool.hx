@@ -16,142 +16,119 @@ package structures.gameplay;
 **/
 @:publicFields
 class NotePool {
-	var virtualNotes(default, null):MetaNoteMap<VirtualNote>;
-	var inactiveVirtualNotes(default, null):Array<VirtualNote>;
-	var virtualSustains(default, null):MetaNoteMap<VirtualSustain>;
-	var inactiveVirtualSusses(default, null):Array<VirtualSustain>;
-
-	var parent(default, null):NoteSystem;
+    private var notes:Array<VirtualNote>;
+    private var freeNotes:Array<VirtualNote>;
+    private var sustains:Array<VirtualSustain>;
+    private var freeSustains:Array<VirtualSustain>;
 
 	/**
 	 * Creates the note pool.
 	 * @param parent The parent of this class.
 	 */
-	function new(parent:NoteSystem) {
-		this.parent = parent;
+    public function new(initialCapacity:Int = 10000000) {
+        notes = [];
+        freeNotes = [];
+        sustains = [];
+        freeSustains = [];
 
-		virtualNotes = new MetaNoteMap<VirtualNote>();
-		virtualSustains = new MetaNoteMap<VirtualSustain>();
-		inactiveVirtualNotes = [];
-		inactiveVirtualSusses = [];
-	}
+        // Preallocate objects
+        for (i in 0...initialCapacity) {
+            var n = new VirtualNote();
+            notes.push(n);
+            freeNotes.push(n);
+
+            var s = new VirtualSustain();
+            sustains.push(s);
+            freeSustains.push(s);
+        }
+    }
 
 	/**
 	 * Creates a new note and determines when to add it to note pool or not.
 	 * This function is called every time you call `drawNote`, constantly. Do not implement anything else in there if you want to change something in this note system.
 	 * @param id The index the note sprite (existing or not) should change to.
 	 * @param n The underlying meta note the note sprite's data should be set to.
-     * @param index The index the note belongs to.
+     * @param _id The index the note belongs to.
 	 */
-	function getNote(id:Int, n:MetaNote, index:Int64) {
-		var allocated = virtualNotes.get(n);
+    public function getNote(id:Int, meta:MetaNote, _id:Int64):VirtualNote {
+        if (freeNotes.length == 0) {
+            // Grow dynamically if exhausted
+            var n = new VirtualNote(-9999, -9999, 0, 0);
+			n.initialAlpha = Note.defaultAlpha;
+			n.addedAlpha = 0;
+			n.notesInOne = 1;
+			n.greedyMergeAlphaMultiplier = 0;
+			n.greedyMergeType = 0;
+			n.ref = n;
+            notes.push(n);
+            return n;
+        }
+        var n = freeNotes.pop();
+        resetNote(n, meta);
+        return n;
+    }
 
-		/*n.flag = false;
-		n.missed = false;
-		n.held = false;
-		File.setNote(index, n);*/
-
-		if (allocated == null) {
-			var inactiveObject = inactiveVirtualNotes.pop();
-			if (inactiveObject == null) inactiveObject = new VirtualNote(-9999, -9999, 0, 0);
-			inactiveObject.initialAlpha = Note.defaultAlpha;
-			inactiveObject.addedAlpha = 0;
-			inactiveObject.notesInOne = 1;
-			inactiveObject.greedyMergeAlphaMultiplier = 0;
-			inactiveObject.greedyMergeType = 0;
-			inactiveObject.ref = n;
-			allocated = inactiveObject;
-			virtualNotes.set(n, inactiveObject);
-		}
-
-		allocated.ref = n;
-		/*allocated.changeID(id);
-		allocated.toNote();*/
-
-		return allocated;
-	}
-
-	/**
-	 * Creates a new sustain and determines when to add it to note pool or not.
-	 * @param id The index the sustain sprite (existing or not) should change to.
-	 * @param n The underlying meta note the sustain sprite's data should be set to.
-	 */
-	function getSustain(id:Int, n:MetaNote) {
-		var allocated = virtualSustains.get(n);
-
-		if (allocated == null) {
-			var tex = TextureSystem.getTexture("sustainTex");
-
-			var inactiveObject = inactiveVirtualSusses.pop();
-			if (inactiveObject == null) {
-				inactiveObject = new VirtualSustain(-9999, -9999,
-				Math.floor(tex.width / tex.tilesX),
-			        Math.floor(tex.height / tex.tilesY)
-				);
-				/*inactiveObject.c.aF = Sustain.defaultAlpha;
-				inactiveObject.c.luminanceF = Sustain.defaultAlpha;*/
-				inactiveObject.alpha = Sustain.defaultAlpha;
-			}
-			allocated = inactiveObject;
-			virtualSustains.set(n, inactiveObject);
-		}
-
-		//allocated.changeID(id);
-
-		return allocated;
-	}
+    /** Matches your old API */
+    public function getSustain(id:Int, meta:MetaNote):VirtualSustain {
+        if (freeSustains.length == 0) {
+            var s = new VirtualSustain();
+			s.alpha = Sustain.defaultAlpha;
+            sustains.push(s);
+            return s;
+        }
+        var s = freeSustains.pop();
+        resetSustain(s);
+        return s;
+    }
 
 	/**
 	 * Puts a note in its inactive list.
-	 * @param n The underlying meta note in which selects the note sprite to be put in the inactive list.
-	 */
-	function putNote(n:MetaNote, index:Int64) {
-		var allocated:VirtualNote = virtualNotes.get(n);
-
-		if (virtualNotes.remove(n)) {
-			allocated.initialAlpha = 1;
-			allocated.addedAlpha = 0;
-			allocated.greedyMergeAlphaMultiplier = 0;
-			allocated.greedyMergeType = 0;
-			allocated.x = -9999;
-			allocated.y = -9999;
-			inactiveVirtualNotes.push(allocated);
-		}
-
-		n.flag = false;
-		n.missed = false;
-		n.held = false;
-		File.setNote(index, n);
-	}
+	 * @param s T
+	**/
+    public function putNote(n:VirtualNote):Void {
+		n.initialAlpha = 1;
+		n.addedAlpha = 0;
+		n.greedyMergeAlphaMultiplier = 0;
+		n.greedyMergeType = 0;
+		n.x = -9999;
+		n.y = -9999;
+        freeNotes.push(n);
+    }
 
 	/**
 	 * Puts a sustain in its inactive list.
-	 * @param n The underlying meta note in which selects the sustain sprite to be put in the inactive list.
-	 */
-	function putSustain(n:MetaNote) {
-		var allocated:VirtualSustain = virtualSustains.get(n);
-		if (virtualSustains.remove(n)) {
-			allocated.x = -9999;
-			allocated.y = -9999;
-			/*allocated.c.aF = Sustain.defaultAlpha;
-			allocated.c.luminanceF = Sustain.defaultAlpha;*/
-			allocated.alpha = Sustain.defaultAlpha;
-			inactiveVirtualSusses.push(allocated);
-		}
-	}
+	 * @param s T
+	**/
+    public function putSustain(s:VirtualSustain):Void {
+		s.x = -9999;
+		s.y = -9999;
+		s.alpha = Sustain.defaultAlpha;
+        freeSustains.push(s);
+    }
+
+    /** Optional: reset note state when reused */
+    private inline function resetNote(n:VirtualNote, meta:MetaNote):Void {
+		n.initialAlpha = Note.defaultAlpha;
+		n.addedAlpha = 0;
+		n.notesInOne = 1;
+		n.greedyMergeAlphaMultiplier = 0;
+		n.greedyMergeType = 0;
+		n.ref = meta;
+    }
+
+    /** Optional: reset sustain state when reused */
+    private inline function resetSustain(s:VirtualSustain):Void {
+		s.alpha = Sustain.defaultAlpha;
+		s.ref.ref = null;
+    }
 
 	/**
 	 * Disposes the note pool.
 	 */
 	function dispose() {
-		if (virtualNotes != null) {
-			virtualNotes.clear();
-			virtualNotes = null;
-		}
-
-		if (virtualSustains != null) {
-			virtualSustains.clear();
-			virtualSustains = null;
-		}
+		while (freeNotes.pop() != null) {}
+		while (freeSustain.pop() != null) {}
+		while (notes.pop() != null) {}
+		while (sustains.pop() != null) {}
 	}
 }
