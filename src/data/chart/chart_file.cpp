@@ -13,7 +13,7 @@
 // ============================================================================
 class LazyBufferedFile {
 public:
-    explicit LazyBufferedFile(size_t blockBytes = 1 << 20, size_t maxCachedBlocks = 8)
+    explicit LazyBufferedFile(size_t blockBytes = 1 << 18, size_t maxCachedBlocks = 8)
         : blockSize(blockBytes), maxBlocks(maxCachedBlocks) {}
 
     ~LazyBufferedFile() { close(); }
@@ -131,7 +131,7 @@ private:
     }
 
     void evictBlock() {
-        printf("Evict block");
+        //printf("Evict block\n");
         auto last = std::prev(cacheList.end());
         if (last->dirty) writeBlock(*last);
         cacheMap.erase(last->startIndex);
