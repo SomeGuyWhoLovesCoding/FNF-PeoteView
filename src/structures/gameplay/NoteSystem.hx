@@ -101,6 +101,7 @@ class NoteSystem {
 	function update(pos:Int64) {
 		// Clear up the virtual note buffer for the funnies
 		virtualNoteBuffer.clear();
+		notePool.clearNotePool();
 
 		if (noteSpawner != null) {
 			noteSpawner.update(pos);
@@ -179,7 +180,7 @@ class NoteSystem {
 		var rec = strumline.buffer[index];
 		var id = parent.inputSystem.receptorIds[index];
 
-		var noteSpr = notePool.getNote(id, note, _id);
+		var noteSpr = notePool.getNote(id, note, _id); // was gonna be createNote upon NotePool rewrite lol
 		var sustainSpr = duration != 0 ? notePool.getSustain(id, note) : null;
 		var sustainExists = duration != 0;
 

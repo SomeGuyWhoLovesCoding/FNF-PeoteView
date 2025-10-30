@@ -366,9 +366,11 @@ class NoteSpawner {
 	function cullBottom(pos:Int64) {
 		var len = File.getLength();
 		while (bottom != len && (pos - MetaNote.intToMetaNoteDuration(curBottomNote.duration)) - curBottomNote.position > despawnDist) {
-			var notePool = parent.notePool;
-			notePool.putNote(curBottomNote, bottom);
-			notePool.putSustain(curBottomNote);
+			var n:Int64 = curBottomNote.toNumber();
+			(n:MetaNote).flag = false;
+			(n:MetaNote).missed = false;
+			(n:MetaNote).held = false;
+			File.setNote(bottom, n);
 
 			++bottom;
 
