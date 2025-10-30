@@ -16,6 +16,9 @@ class TextureSystem {
 	**/
 	static var pool:Map<String, Texture> = [];
 
+	static var noteTex(default, null):Texture;
+	static var sustainTex(default, null):Texture;
+
 	/**
 		The multitexture location map.
 	**/
@@ -26,7 +29,13 @@ class TextureSystem {
 		@param key The texture to get from.
 	**/
 	inline static function getTexture(key:String) {
-		return pool[key];
+		var tex = null;
+		switch (key) {
+			case "noteTex": tex = noteTex;
+			case "sustainTex": tex = sustainTex;
+			default: tex = pool[key];
+		}
+		return tex;
 	}
 
 	/**
@@ -102,7 +111,9 @@ class TextureSystem {
 		});
 		texture.setData(textureData);
 
-		pool[key] = texture;
+		if (key == "noteTex") noteTex = texture;
+		else if (key == "sustainTex") sustainTex = texture;
+		else pool[key] = texture;
 	}
 
 	/**
@@ -154,6 +165,8 @@ class TextureSystem {
 		});
 		texture.setData(textureData);
 
+		if (key == "noteTex") noteTex = texture;
+		else if (key == "sustainTex") sustainTex = texture;
 		pool[key] = texture;
 	}
 
@@ -210,6 +223,8 @@ class TextureSystem {
 			texture.setData(texturesToPush[i], i);
 		}
 
+		if (key == "noteTex") noteTex = texture;
+		else if (key == "sustainTex") sustainTex = texture;
 		pool[key] = texture;
 	}
 }

@@ -207,13 +207,13 @@ class Main extends Application
 
 		window.frameRate = SaveData.state.graphics.frameRate;
 
-		prepareGameplayState();
-
 		peoteView = new PeoteView(window);
 
 		haxe.Timer.delay(function() {
 			createTextures();
 			createDisplays();
+
+			prepareGameplayState();
 
 			peoteView.start();
 

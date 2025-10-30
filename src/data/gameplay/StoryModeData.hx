@@ -6,8 +6,8 @@ package data.gameplay;
 @:publicFields
 typedef StoryModeData = {
 	var meta:StoryModeMeta;
-    var startingWeek:String;
-    var chapters:Array<StoryModeChapter>;
+	var startingWeek:String;
+	var chapters:Array<StoryModeChapter>;
 }
 
 /**
@@ -68,7 +68,7 @@ typedef StoryModeChapter = {
 
 	/**
 		The requirements to play this current story week.
-        An array of strings that represent the flags that get checked if they exist. If all of the flags exist, it means you will unlock the week.
+		An array of strings that represent the flags that get checked if they exist. If all of the flags exist, it means you will unlock the week.
 	**/
 	var requirements:Array<String>;
 
