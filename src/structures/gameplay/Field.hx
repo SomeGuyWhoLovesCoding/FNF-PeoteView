@@ -66,6 +66,9 @@ class Field {
 
 		opponent = new Actor(parent.view, "dad", 250, -100, 24, true, true);
 		opponent.mirror = !opponent.mirror;
+		opponent.preComputeSingPosesOfAnimations(singPoses);
+		opponent.preComputeMissPosesOfAnimations(missPoses);
+		trace('dad' + player.atlas.animMap);
 		opponent.playAnimation("idle");
 		opponent.startingShakeFrame = 0;
 		opponent.endingShakeFrame = 1;
@@ -73,6 +76,9 @@ class Field {
 		opponent.addToBuffer();
 
 		player = new Actor(parent.view, "bf", 625, 250, 24, true, true);
+		player.preComputeSingPosesOfAnimations(singPoses);
+		player.preComputeMissPosesOfAnimations(missPoses);
+		trace('bf' + player.atlas.animMap);
 		player.playAnimation("idle");
 		player.startingShakeFrame = 0;
 		player.endingShakeFrame = 1;
@@ -168,28 +174,30 @@ class Field {
 		player.playAnimation("idle");
 	}
 
-	function sing(index:Int, char:Actor, miss:Bool = false, shake:Bool = false, skipAnimation:Bool = false) {
-		var poses = (miss ? missPoses : singPoses);
-		if (!skipAnimation) char.playAnimation(poses[index % poses.length]);
+	inline function sing(index:Int, char:Actor, miss:Bool = false, shake:Bool = false, skipAnimation:Bool = false) {
+		if (!skipAnimation) {
+			if (miss) char.playAnimationFromMissId(index);
+			else char.playAnimationFromSingId(index);
+		}
 		char.shake = shake;
 	}
 
-	function hitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
+	inline function hitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
 		//Sys.println('Index: ${note.index}, Type: ${note.type}');
 		sing(note.index, (note.type == 0 ? opponent : player), false, note.duration > 2 && timing < parent.hitbox * 0.5);
 
 		targetCamera.x = note.type == 0 ? -50 : 50; // Prototype camera logic I have for now
 	}
 
-	function missNote(note:MetaNote, notesInOne:Int64) {
+	inline function missNote(note:MetaNote, notesInOne:Int64) {
 		sing(note.index, (note.type == 0 ? opponent : player), true, false);
 	}
 
-	function completeSustain(note:MetaNote) {
+	inline function completeSustain(note:MetaNote) {
 		sing(note.index, (note.type == 0 ? opponent : player), false, false, true);
 	}
 
-	function releaseSustain(note:MetaNote) {
+	inline function releaseSustain(note:MetaNote) {
 		//Sys.println('${note.index} weird');
 		sing(note.index, (note.type == 0 ? opponent : player), true, false);
 	}

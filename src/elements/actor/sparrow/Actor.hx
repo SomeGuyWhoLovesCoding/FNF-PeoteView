@@ -134,6 +134,107 @@ class Actor extends ActorElement
 		frameTimeRemaining = frameDurationMs;
 	}
 
+	// This is there because singing poses are just common.
+	private var precomputedSingPoses_animData:Array<ActorAnimationData> = [];
+	private var precomputedSingPoses_range:Array<Array<Int>> = [];
+
+	function preComputeSingPosesOfAnimations(anims:Array<String>) {
+		for (i in 0...anims.length) {
+			var str = anims[i];
+			precomputedSingPoses_animData[i] = data.data[str];
+			trace('${atlas.animMap.exists(str)}, ${atlas.animMap[str]}');
+			precomputedSingPoses_range[i] = atlas.animMap[str];
+		}
+		Sys.println('$name, $precomputedSingPoses_animData, $precomputedSingPoses_range');
+	}
+
+	// This is there because missing poses are just common.
+	private var precomputedMissPoses_animData:Array<ActorAnimationData> = [];
+	private var precomputedMissPoses_range:Array<Array<Int>> = [];
+
+	function preComputeMissPosesOfAnimations(anims:Array<String>) {
+		for (i in 0...anims.length) {
+			var str = anims[i];
+			precomputedMissPoses_animData[i] = data.data[str];
+			trace('${atlas.animMap.exists(str)}, ${atlas.animMap[str]}');
+			precomputedMissPoses_range[i] = atlas.animMap[str];
+		}
+		Sys.println('$name, $precomputedSingPoses_animData, $precomputedMissPoses_range');
+	}
+
+	function playAnimationFromSingId(id:Int, loop:Bool = false) {
+		id %= precomputedSingPoses_animData.length;
+		Sys.println(id);
+
+		frameIndex = 0;
+		this.loop = loop;
+
+		var oldName = name;
+
+		var animData = precomputedSingPoses_animData[id];
+		if (animData == null) return;
+		Sys.println('why $id, why!?');
+
+		name = animData.name;
+
+		adjust_x = -animData.offsets[0];
+		if (mirror) adjust_x = -adjust_x;
+		adjust_y = -animData.offsets[1];
+
+		var ind = animData.indices;
+
+		indicesMode = ind != null && ind.length != 0;
+		indices = ind;
+
+		loop = animData.loop;
+
+		setFps(animData.fps);
+
+		var animMap = precomputedSingPoses_range[id];
+		if (animMap == null) return;
+		startingFrameIndex = animMap[0];
+		endingFrameIndex = indicesMode ? startingFrameIndex + indices.length : animMap[1];
+		animationRunning = true;
+
+		changeFrame();
+	}
+
+	function playAnimationFromMissId(id:Int, loop:Bool = false) {
+		id %= precomputedMissPoses_animData.length;
+
+		frameIndex = 0;
+		this.loop = loop;
+
+		var oldName = name;
+
+		var animData = precomputedMissPoses_animData[id];
+		if (animData == null) return;
+		Sys.println('why $id, why!?');
+
+		name = animData.name;
+
+		adjust_x = -animData.offsets[0];
+		if (mirror) adjust_x = -adjust_x;
+		adjust_y = -animData.offsets[1];
+
+		var ind = animData.indices;
+
+		indicesMode = ind != null && ind.length != 0;
+		indices = ind;
+
+		loop = animData.loop;
+
+		setFps(animData.fps);
+
+		var animMap = precomputedMissPoses_range[id];
+		if (animMap == null) return;
+		startingFrameIndex = animMap[0];
+		endingFrameIndex = indicesMode ? startingFrameIndex + indices.length : animMap[1];
+		animationRunning = true;
+
+		changeFrame();
+	}
+
 	function playAnimation(name:String, loop:Bool = false) {
 		frameIndex = 0;
 		this.loop = loop;
