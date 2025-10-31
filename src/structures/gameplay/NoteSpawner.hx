@@ -36,10 +36,10 @@ class NoteSpawner {
 		curTopNote = File.getNote(0);
 		curBottomNote = File.getNote(0);
 
-		for (i in 0...200) {
+		/*for (i in 0...200) {
 			var note = File.getNote(i);
 			Sys.println('${note.position}, ${note.duration}, ${note.index}, ${note.type}');
-		}
+		}*/
 	}
 
 	/**
