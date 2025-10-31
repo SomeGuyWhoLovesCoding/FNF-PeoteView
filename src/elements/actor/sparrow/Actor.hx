@@ -139,13 +139,15 @@ class Actor extends ActorElement
 	private var precomputedSingPoses_range:Array<Array<Int>> = [];
 
 	function preComputeSingPosesOfAnimations(anims:Array<String>) {
+		var dat = data.data;
 		for (i in 0...anims.length) {
 			var str = anims[i];
+			if (!dat.exists(str)) continue;
+			var name = data.data[str].name;
 			precomputedSingPoses_animData[i] = data.data[str];
-			trace('${atlas.animMap.exists(str)}, ${atlas.animMap[str]}');
-			precomputedSingPoses_range[i] = atlas.animMap[str];
+			//trace('${atlas.animMap.exists(name)}, ${atlas.animMap[name]}');
+			precomputedSingPoses_range[i] = atlas.animMap[name];
 		}
-		Sys.println('$name, $precomputedSingPoses_animData, $precomputedSingPoses_range');
 	}
 
 	// This is there because missing poses are just common.
@@ -153,18 +155,20 @@ class Actor extends ActorElement
 	private var precomputedMissPoses_range:Array<Array<Int>> = [];
 
 	function preComputeMissPosesOfAnimations(anims:Array<String>) {
+		var dat = data.data;
 		for (i in 0...anims.length) {
 			var str = anims[i];
+			if (!dat.exists(str)) continue;
+			var name = data.data[str].name;
 			precomputedMissPoses_animData[i] = data.data[str];
-			trace('${atlas.animMap.exists(str)}, ${atlas.animMap[str]}');
-			precomputedMissPoses_range[i] = atlas.animMap[str];
+			//trace('${atlas.animMap.exists(name)}, ${atlas.animMap[name]}');
+			precomputedMissPoses_range[i] = atlas.animMap[name];
 		}
-		Sys.println('$name, $precomputedSingPoses_animData, $precomputedMissPoses_range');
 	}
 
 	function playAnimationFromSingId(id:Int, loop:Bool = false) {
 		id %= precomputedSingPoses_animData.length;
-		Sys.println(id);
+		//Sys.println(id);
 
 		frameIndex = 0;
 		this.loop = loop;
@@ -173,7 +177,6 @@ class Actor extends ActorElement
 
 		var animData = precomputedSingPoses_animData[id];
 		if (animData == null) return;
-		Sys.println('why $id, why!?');
 
 		name = animData.name;
 
@@ -192,6 +195,7 @@ class Actor extends ActorElement
 
 		var animMap = precomputedSingPoses_range[id];
 		if (animMap == null) return;
+		//Sys.println('You did it, ig $id, why!?');
 		startingFrameIndex = animMap[0];
 		endingFrameIndex = indicesMode ? startingFrameIndex + indices.length : animMap[1];
 		animationRunning = true;
@@ -209,7 +213,6 @@ class Actor extends ActorElement
 
 		var animData = precomputedMissPoses_animData[id];
 		if (animData == null) return;
-		Sys.println('why $id, why!?');
 
 		name = animData.name;
 
@@ -228,6 +231,7 @@ class Actor extends ActorElement
 
 		var animMap = precomputedMissPoses_range[id];
 		if (animMap == null) return;
+		//Sys.println('You did it, ig $id, why!?');
 		startingFrameIndex = animMap[0];
 		endingFrameIndex = indicesMode ? startingFrameIndex + indices.length : animMap[1];
 		animationRunning = true;
