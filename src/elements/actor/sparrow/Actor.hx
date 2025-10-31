@@ -69,7 +69,7 @@ class Actor extends ActorElement
 				display.addProgram(program);
 
 				var texName = name + "Char";
-				TextureSystem.createTexture(texName, StringTools.replace(spritesheetDataPath, "data.xml", atlas.imagePath), false, true, true);
+				TextureSystem.createTexture(texName, StringTools.replace(spritesheetDataPath, "data.xml", atlas.imagePath), false, true);
 				TextureSystem.setTexture(program, texName, texName);
 			}
 		}
