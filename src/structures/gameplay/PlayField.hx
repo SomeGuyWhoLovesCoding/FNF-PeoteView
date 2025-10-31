@@ -64,7 +64,7 @@ class PlayField implements State {
 			noteSystem.renderNotes(pos); // new, because of the change I did to the note system to allow for an easy greedy merging optimization
 		}
 		if (hud != null) {
-			hud.update(0.0);
+			hud.render(0.0);
 			hud.updateScoreText(0.0);
 		}
 		return value;
@@ -202,7 +202,7 @@ class PlayField implements State {
 			hud = new HUD(display, this);
 			hud.alphaLerp = 1;
 			hud.setHUDAlpha(1);
-			hud.update(Math.POSITIVE_INFINITY);
+			hud.render(Math.POSITIVE_INFINITY);
 		}
 	}
 
@@ -253,7 +253,6 @@ class PlayField implements State {
 
 			var pos = MetaNote.floatToMetaNotePosition(songPosition);
 
-			if (hud != null) hud.update(deltaTime);
 			if (noteSystem != null) {
 				noteSystem.update(pos);
 

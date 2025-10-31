@@ -136,20 +136,23 @@ class HUD {
 	var alphaLerp:Float = .0;
 
 	/**
-		Updates the HUD.
+		Renders the HUD.
 	**/
-	function update(deltaTime:Float) {
+	function render(deltaTime:Float) {
 		if (SaveData.state.preferences.ratingPopup) {
 			updateRatingPopup(deltaTime);
 			updateComboNumbers();
 		}
-		healthBar.update(deltaTime);
+		healthBar.render(deltaTime);
 		updateTimeBarParts();
 		updateTimeBarText();
 		updateScoreText(deltaTime);
 
+		var t = Math.min(deltaTime * 0.015, 1.0);
+		Sys.println('delta time $deltaTime $t');
+
 		if (parent.songStarted && alphaLerp != 1.0) {
-			alphaLerp = Tools.lerp(alphaLerp, 1.0, Math.min(deltaTime * 0.015, 1.0));
+			alphaLerp = Tools.lerp(alphaLerp, 1.0, t);
 			setHUDAlpha(alphaLerp);
 		}
 	}

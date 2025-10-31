@@ -89,7 +89,7 @@ class OptionsDisplay {
 							var hud = pf.hud;
 							if (hud != null) {
 								var healthBar = hud.healthBar;
-								if (healthBar != null) healthBar.update(0);
+								if (healthBar != null) healthBar.render(0);
 							}
 						default:
 					}
