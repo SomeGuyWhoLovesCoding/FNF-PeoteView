@@ -149,7 +149,6 @@ class HUD {
 		updateScoreText(deltaTime);
 
 		var t = Math.min(deltaTime * 0.015, 1.0);
-		Sys.println('delta time $deltaTime $t');
 
 		if (parent.songStarted && alphaLerp != 1.0) {
 			alphaLerp = Tools.lerp(alphaLerp, 1.0, t);
