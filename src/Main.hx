@@ -374,23 +374,21 @@ class Main extends Application
 		super.render(context);
 
 		if (playField != null) {
+			var renderingModeEnabled = RenderingMode.enabled;
 			if (!playField.paused) {
-				if (RenderingMode.enabled) {
-					playField.update(1000 / 60);
-					var noteSystem = playField?.noteSystem;
-					if (noteSystem != null) {
-						var pos = MetaNote.floatToMetaNotePosition(playField.songPosition);
-						playField.noteSystem.renderNotes(pos);
-					}
-
-					RenderingMode.pipeFrame();
-				} else {
-					var noteSystem = playField?.noteSystem;
-					if (noteSystem != null) {
-						var pos = MetaNote.floatToMetaNotePosition(playField.songPosition);
-						playField.noteSystem.renderNotes(pos);
-					}
+				if (renderingModeEnabled) playField.update(1000 / 60);
+				var noteSystem = playField?.noteSystem;
+				if (noteSystem != null) {
+					var pos = MetaNote.floatToMetaNotePosition(playField.songPosition);
+					playField.noteSystem.renderNotes(pos);
 				}
+
+				var field = playField?.field;
+				if (field != null) {
+					field.render();
+				}
+
+				if (renderingModeEnabled) RenderingMode.pipeFrame();
 			}
 		}
 		//Sys.println("render is decoupled?");

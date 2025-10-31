@@ -161,6 +161,12 @@ class Field {
 		}
 	}
 
+	function render() {
+		for (actor in actors) {
+			actor.render();
+		}
+	}
+
 	function resetCharacters() {
 		spectator.shake = false;
 		spectator.playAnimation("danceLeft");

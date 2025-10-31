@@ -294,8 +294,6 @@ class Actor extends ActorElement
 	}
 
 	function update(deltaTime:Float) {
-		if (buffer != null) buffer.updateElement(this);
-
 		if (!animationRunning) return;
 
 		frameTimeRemaining -= deltaTime;
@@ -315,6 +313,10 @@ class Actor extends ActorElement
 			changeFrame();
 			frameTimeRemaining = frameDurationMs;
 		}
+	}
+
+	function render() {
+		if (buffer != null) buffer.updateElement(this);
 	}
 
 	function updateBuffer() {
