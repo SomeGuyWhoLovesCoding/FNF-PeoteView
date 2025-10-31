@@ -53,7 +53,7 @@ float       playbackRate = 1;
 */
 int MIXER_STATE = 3;
 
-int g_measuredLatencyMs = 0; // cached loopback latency
+int g_measuredLatencyMs = -1; // cached loopback latency
 
 // -------------------- LOOPBACK LATENCY MEASUREMENT --------------------
 HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
