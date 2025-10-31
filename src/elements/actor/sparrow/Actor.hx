@@ -145,7 +145,6 @@ class Actor extends ActorElement
 			if (!dat.exists(str)) continue;
 			var name = data.data[str].name;
 			precomputedSingPoses_animData[i] = data.data[str];
-			//trace('${atlas.animMap.exists(name)}, ${atlas.animMap[name]}');
 			precomputedSingPoses_range[i] = atlas.animMap[name];
 		}
 	}
@@ -161,7 +160,6 @@ class Actor extends ActorElement
 			if (!dat.exists(str)) continue;
 			var name = data.data[str].name;
 			precomputedMissPoses_animData[i] = data.data[str];
-			//trace('${atlas.animMap.exists(name)}, ${atlas.animMap[name]}');
 			precomputedMissPoses_range[i] = atlas.animMap[name];
 		}
 	}
@@ -195,7 +193,6 @@ class Actor extends ActorElement
 
 		var animMap = precomputedSingPoses_range[id];
 		if (animMap == null) return;
-		//Sys.println('You did it, ig $id, why!?');
 		startingFrameIndex = animMap[0];
 		endingFrameIndex = indicesMode ? startingFrameIndex + indices.length : animMap[1];
 		animationRunning = true;
@@ -231,7 +228,6 @@ class Actor extends ActorElement
 
 		var animMap = precomputedMissPoses_range[id];
 		if (animMap == null) return;
-		//Sys.println('You did it, ig $id, why!?');
 		startingFrameIndex = animMap[0];
 		endingFrameIndex = indicesMode ? startingFrameIndex + indices.length : animMap[1];
 		animationRunning = true;

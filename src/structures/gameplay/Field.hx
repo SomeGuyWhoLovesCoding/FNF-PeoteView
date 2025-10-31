@@ -68,7 +68,6 @@ class Field {
 		opponent.mirror = !opponent.mirror;
 		opponent.preComputeSingPosesOfAnimations(singPoses);
 		opponent.preComputeMissPosesOfAnimations(missPoses);
-		//trace('dad' + opponent.atlas.animMap);
 		opponent.playAnimation("idle");
 		opponent.startingShakeFrame = 0;
 		opponent.endingShakeFrame = 1;
@@ -78,7 +77,6 @@ class Field {
 		player = new Actor(parent.view, "bf", 625, 250, 24, true, true);
 		player.preComputeSingPosesOfAnimations(singPoses);
 		player.preComputeMissPosesOfAnimations(missPoses);
-		//trace('bf' + player.atlas.animMap);
 		player.playAnimation("idle");
 		player.startingShakeFrame = 0;
 		player.endingShakeFrame = 1;
