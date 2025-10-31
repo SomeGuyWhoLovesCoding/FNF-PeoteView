@@ -1,252 +1,272 @@
 package elements.actor.sparrow;
 
 import atlas.SparrowAtlas.SubTexture;
-import atlas.SparrowAtlas.AnimationData;
 import elements.actor.*;
 
 /**
-    Sparrow atlas actor element object.
-    Handles animation playback and rendering using SparrowAtlas.
+	Sparrow atlas actor element object.
+	Originally meant to be in the field of the gameplay state.
+	@since Development
 **/
 @:publicFields
-class Actor extends ActorElement {
-    var buffer:Buffer<ActorElement>;
-    var program:Program;
+class Actor extends ActorElement
+{
+	// Stuff for initialization and shit
+	var buffer:Buffer<ActorElement>;
+	var program:Program;
+	static var cachedActorDatas:Map<String, ActorData> = [];
+	static var cachedAtlases:Map<String, SparrowAtlas> = [];
 
-    static var cachedActorDatas:Map<String, ActorData> = [];
-    static var cachedAtlases:Map<String, SparrowAtlas> = [];
+	var name(default, null):String;
+	var atlas(default, null):SparrowAtlas;
+	var data(default, null):ActorData;
 
-    var name(default, null):String;
-    var atlas(default, null):SparrowAtlas;
-    var data(default, null):ActorData;
-    var display(default, null):CustomDisplay;
+	var finishAnim:String = "";
+	var finishCallback:Void->Void;
 
-    var folder:String = "";
+	var folder:String = "";
 
-    // Animation state
-    var currentAnim:AnimationData;
-    var animName:String;
-    var frameIndex:Int;
-    var fps:Float;
-    var frameDurationMs:Float;
-    var frameTimeRemaining:Float;
-    var loop:Bool;
-    var indicesMode:Bool;
-    var indices:Array<Int>;
+	var display(default, null):CustomDisplay;
 
-    var shake:Bool;
-    var startingShakeFrame:Int;
-    var endingShakeFrame:Int;
+	function new(display:CustomDisplay, name:String, x:Int = 0, y:Int = 0, fps:Int = 24, folder:String = "images/characters/", addBufferAndProgram:Bool = true, dontCopy:Bool = false) {
+		this.display = display;
 
-    var finishAnim:String = "";
-    var finishCallback:Void->Void;
-    var animationRunning:Bool;
+		super(Math.ffloor(x), Math.ffloor(y));
 
-    var firstFrameWidth(default, null):Float;
+		this.folder = folder;
 
-    function new(display:CustomDisplay, name:String, x:Int = 0, y:Int = 0, fps:Int = 24, folder:String = "images/characters/", addBufferAndProgram:Bool = true, dontCopy:Bool = false) {
-        this.display = display;
-        super(Math.ffloor(x), Math.ffloor(y));
+		this.name = name;
 
-        this.folder = folder;
-        this.name = name;
+		var spritesheetDataPath = "";
+		var atlasKey = '$name/$folder';
 
-        var atlasKey = '$name/$folder';
-        loadAtlas(atlasKey);
-        loadActorData(atlasKey);
+		if (cachedAtlases[atlasKey] == null && pathExists(name, folder, XML)) {
+			spritesheetDataPath = path(name, folder, XML);
+			cachedAtlases[atlasKey] = atlas = SparrowAtlas.parse(sys.io.File.getContent(spritesheetDataPath));
+		} else if (cachedAtlases[atlasKey] != null) {
+			atlas = cachedAtlases[atlasKey];
+		} else {
+			throw "Atlas data doesn't exist: " + path(name, folder, NONE);
+		}
 
-        if (atlas.imagePath != "" && addBufferAndProgram) setupRendering(atlasKey);
+		if (cachedActorDatas[atlasKey] == null && pathExists(name, folder, DATA)) {
+			cachedActorDatas[atlasKey] = data = ActorData.parse(path(name, folder, DATA));
+		} else if (cachedActorDatas[atlasKey] != null) {
+			data = cachedActorDatas[atlasKey];
+		}
 
-        setFps(fps);
+		if (atlas.imagePath != "" && addBufferAndProgram) {
+			if (buffer == null) {
+				buffer = new Buffer<ActorElement>(1);
+			}
 
-        mirror = !data.flip;
-        scale = data.scale;
-    }
+			if (program == null) {
+				program = new Program(buffer);
+				program.blendEnabled = true;
+				program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
+				program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
-    // --- Loading helpers ---
-    inline function loadAtlas(key:String) {
-        if (cachedAtlases[key] == null && pathExists(name, folder, XML)) {
-            cachedAtlases[key] = atlas = SparrowAtlas.parse(sys.io.File.getContent(path(name, folder, XML)));
-        } else if (cachedAtlases[key] != null) {
-            atlas = cachedAtlases[key];
-        } else {
-            throw "Atlas data doesn't exist: " + path(name, folder, NONE);
-        }
-    }
+				display.addProgram(program);
 
-    inline function loadActorData(key:String) {
-        if (cachedActorDatas[key] == null && pathExists(name, folder, DATA)) {
-            cachedActorDatas[key] = data = ActorData.parse(path(name, folder, DATA));
-        } else if (cachedActorDatas[key] != null) {
-            data = cachedActorDatas[key];
-        }
-    }
+				var texName = name + "Char";
+				TextureSystem.createTexture(texName, StringTools.replace(spritesheetDataPath, "data.xml", atlas.imagePath), false, true);
+				TextureSystem.setTexture(program, texName, texName);
+			}
+		}
 
-    inline function setupRendering(atlasKey:String) {
-        if (buffer == null) buffer = new Buffer<ActorElement>(1);
-        if (program == null) {
-            program = new Program(buffer);
-            program.blendEnabled = true;
-            program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
-            program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
-            display.addProgram(program);
+		setFps(fps);
 
-            var texName = name + "Char";
-            TextureSystem.createTexture(texName, StringTools.replace(path(name, folder, XML), "data.xml", atlas.imagePath), false, true);
-            TextureSystem.setTexture(program, texName, texName);
-        }
-    }
+		mirror = !data.flip;
+		scale = data.scale;
+	}
 
-    // --- FPS & Animation ---
-    inline function setFps(fps:Float) {
-        this.fps = fps;
-        frameDurationMs = 1000.0 / fps;
-        frameTimeRemaining = frameDurationMs;
-    }
+	inline function addToBuffer() {
+		if (buffer != null)
+			buffer.addElement(this);
+	}
 
-    function playAnimation(name:String, loop:Bool = false) {
-        frameIndex = 0;
-        this.loop = loop;
+	static function path(name:String, folder:String, type:CharacterPathType) {
+		var result = 'assets/$folder$name';
 
-        // ActorData override
-        if (data.data.exists(name)) {
-            var ad = data.data[name];
-            animName = ad.name;
+		switch (type) {
+			case IMAGE:
+				result += '/sheet.png';
+			case XML:
+				result += '/data.xml';
+			case JSON:
+				result += '/data.json';
+			case DATA:
+				result += '/charData.json';
+			default:
+		}
 
-            adjust_x = -ad.offsets[0];
-            if (mirror) adjust_x = -adjust_x;
-            adjust_y = -ad.offsets[1];
+		return result;
+	}
 
-            indicesMode = ad.indices != null && ad.indices.length > 0;
-            indices = ad.indices;
+	// This is here to improve readability
+	static function pathExists(name:String, folder:String, type:CharacterPathType) {
+		return sys.FileSystem.exists(path(name, folder, type));
+	}
 
-            loop = ad.loop;
-            setFps(ad.fps);
-        } else {
-            animName = name;
-            indicesMode = false;
-            indices = null;
-        }
+	// Now for the animation stuff
+	// Part of the code is originally from jobf's sparrow atlas demo on peote-view
 
-        currentAnim = atlas.animations[animName];
-        if (currentAnim == null) return;
+	var startingFrameIndex:Int;
+	var endingFrameIndex:Int;
+	var frameIndex:Int;
+	var fps:Float;
+	var frameDurationMs:Float;
+	var frameTimeRemaining:Float;
+	var loop:Bool;
+	var indicesMode:Bool;
+	var indices:Array<Int>;
+	var firstFrameWidth(default, null):Float;
 
-        animationRunning = true;
-        changeFrame();
-    }
+	var shake:Bool;
+	var startingShakeFrame:Int;
+	var endingShakeFrame:Int;
 
-    function stopAnimation() {
-        animationRunning = false;
-    }
+	var animationRunning(default, null):Bool;
 
-    function endOfAnimation():Bool {
-        var totalFrames = indicesMode ? indices.length : currentAnim.frames.length;
-        if (frameIndex >= totalFrames) {
-            animationRunning = false;
+	function setFps(fps:Float) {
+		this.fps = fps;
+		frameDurationMs = 1000.0 / fps;
+		frameTimeRemaining = frameDurationMs;
+	}
 
-            if (finishAnim != "") {
-                if (finishCallback != null) {
-                    finishCallback();
-                    finishCallback = null;
-                }
-                playAnimation(finishAnim);
-                finishAnim = "";
-            }
+	function playAnimation(name:String, loop:Bool = false) {
+		frameIndex = 0;
+		this.loop = loop;
 
-            return true;
-        }
-        return false;
-    }
+		var animDataMap = data.data;
+		if (animDataMap.exists(name)) {
+			var oldName = name;
 
-    function update(deltaTime:Float) {
-        if (buffer != null) buffer.updateElement(this);
-        if (!animationRunning) return;
+			var animData = animDataMap[name];
 
-        frameTimeRemaining -= deltaTime;
+			name = animData.name;
 
-        if (frameTimeRemaining <= 0) {
-            frameIndex++;
-            if (loop) {
-                var totalFrames = indicesMode ? indices.length : currentAnim.frames.length;
-                frameIndex %= totalFrames;
-            }
+			adjust_x = -animData.offsets[0];
+			if (mirror) adjust_x = -adjust_x;
+			adjust_y = -animData.offsets[1];
 
-            if (shake && frameIndex > endingShakeFrame) {
-                frameIndex = startingShakeFrame;
-            }
+			var ind = animData.indices;
 
-            if (endOfAnimation() && !loop) return;
+			indicesMode = ind != null && ind.length != 0;
+			indices = ind;
 
-            changeFrame();
-            frameTimeRemaining = frameDurationMs;
-        }
-    }
+			loop = animData.loop;
 
-    // --- Frame handling ---
-    function changeFrame() {
-        if (currentAnim == null) return;
+			setFps(animData.fps);
+		} else {
+			indicesMode = false;
+			indices = null;
+		}
 
-        var frame:SubTexture = indicesMode
-            ? currentAnim.frames[indices[frameIndex]]
-            : currentAnim.frames[frameIndex];
+		var animMap = atlas.animMap[name];
+		if (animMap == null) return;
+		startingFrameIndex = animMap[0];
+		endingFrameIndex = indicesMode ? startingFrameIndex + indices.length : animMap[1];
+		animationRunning = true;
 
-        configure(frame);
-    }
+		changeFrame();
+	}
 
-    public function configure(frame:SubTexture) {
-        var width = frame.width;
-        var height = frame.height;
+	function stopAnimation() {
+		animationRunning = false;
+	}
 
-        if (frameIndex == 0) firstFrameWidth = width;
+	function endOfAnimation():Bool {
+		if (frameIndex >= endingFrameIndex - startingFrameIndex) {
+			animationRunning = false;
+			if (finishAnim != "") {
+				if (finishCallback != null) {
+					finishCallback();
+					finishCallback = null;
+				}
+				playAnimation(finishAnim);
+				finishAnim = "";
+			}
+			return true;
+		}
+		return false;
+	}
 
-        var xOffset = frame.frameX == null ? 0 : frame.frameX;
-        var yOffset = frame.frameY == null ? 0 : frame.frameY;
-        var flipX = frame.flipX == null ? false : frame.flipX;
-        var flipY = frame.flipY == null ? false : frame.flipY;
-        var frameWidth = frame.frameWidth == null ? 0 : frame.frameWidth;
+	function update(deltaTime:Float) {
+		if (buffer != null) buffer.updateElement(this);
 
-        off_x = -xOffset * scale;
-        if (mirror) off_x = -off_x + (frameWidth - width);
-        off_y = -yOffset * scale;
+		if (!animationRunning) return;
 
-        w = width;
-        h = height;
-        this.flipX = flipX;
-        this.flipY = flipY;
-        clipX = frame.x;
-        clipY = frame.y;
-        clipWidth = width;
-        clipHeight = height;
-    }
+		frameTimeRemaining -= deltaTime;
 
-    // --- Buffer & cleanup ---
-    inline function addToBuffer() {
-        if (buffer != null) buffer.addElement(this);
-    }
+		if (frameTimeRemaining <= 0) {
+			if (loop) frameIndex = (frameIndex + 1) % (endingFrameIndex - startingFrameIndex);
+			else frameIndex++;
 
-    function updateBuffer() {
-        if (buffer != null) buffer.updateElement(this);
-    }
+			if (shake && frameIndex > endingShakeFrame) {
+				frameIndex = startingShakeFrame;
+			}
 
-    function dispose() {
-        if (buffer != null) buffer.clear();
-        if (program != null) display.removeProgram(program);
-    }
+			if (endOfAnimation() && !loop) {
+				return;
+			}
 
-    // --- File helpers ---
-    static function path(name:String, folder:String, type:CharacterPathType):String {
-        var result = 'assets/$folder$name';
-        switch (type) {
-            case IMAGE: result += '/sheet.png';
-            case XML: result += '/data.xml';
-            case JSON: result += '/data.json';
-            case DATA: result += '/charData.json';
-            default:
-        }
-        return result;
-    }
+			changeFrame();
+			frameTimeRemaining = frameDurationMs;
+		}
+	}
 
-    static function pathExists(name:String, folder:String, type:CharacterPathType):Bool {
-        return sys.FileSystem.exists(path(name, folder, type));
-    }
+	function updateBuffer() {
+		if (buffer != null) buffer.updateElement(this);
+	}
+
+	public function configure(config:SubTexture) {
+		var width = config.width;
+		var height = config.height;
+
+		if (frameIndex == 0) {
+			firstFrameWidth = width;
+		}
+
+		var xOffset = config.frameX == null ? 0 : config.frameX;
+		var yOffset = config.frameY == null ? 0 : config.frameY;
+		var flipX = config.flipX == null ? false : config.flipX;
+		var flipY = config.flipY == null ? false : config.flipY;
+		var frameWidth = config.frameWidth == null ? 0 : config.frameWidth;
+
+		off_x = -xOffset * scale;
+		if (mirror) off_x = -off_x + (frameWidth - width);
+		off_y = -yOffset * scale;
+
+		w = width;
+		h = height;
+		this.flipX = flipX;
+		this.flipY = flipY;
+		clipX = config.x;
+		clipY = config.y;
+		clipWidth = width;
+		clipHeight = height;
+	}
+
+	function changeFrame() {
+		var frameIdx = startingFrameIndex;
+
+		if (indicesMode) {
+			frameIdx += indices[frameIndex];
+		} else {
+			frameIdx += frameIndex;
+		}
+
+		configure(atlas.subTextures[frameIdx]);
+	}
+
+	function dispose() {
+		if (buffer != null) {
+			buffer.clear();
+		}
+
+		if (program != null) {
+			display.removeProgram(program);
+		}
+	}
 }
