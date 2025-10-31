@@ -70,7 +70,7 @@ class TextureSystem {
 		@param key The texture's key.
 		@param path The texture path.
 	**/
-	static function createTexture(key:String, path:String, disableAntialiasing:Bool = false, premultiply:Bool = false, mipmap:Bool = false) {
+	static function createTexture(key:String, path:String, disableAntialiasing:Bool = false, premultiply:Bool = false) {
 		if (pool.exists(key)) {
 			return;
 		}
@@ -107,8 +107,7 @@ class TextureSystem {
 			format: textureData.format,
 			powerOfTwo: false,
 			smoothExpand: antialiasing,
-			smoothShrink: antialiasing,
-			mipmap: mipmap
+			smoothShrink: antialiasing
 		});
 		texture.setData(textureData);
 
@@ -123,7 +122,7 @@ class TextureSystem {
 		@param key The texture's key.
 		@param path The texture path.
 	**/
-	static function createTiledTexture(key:String, path:String, tX:Int = 1, tY:Int = 1, disableAntialiasing:Bool = false, premultiply:Bool = false, mipmap:Bool = false) {
+	static function createTiledTexture(key:String, path:String, tX:Int = 1, tY:Int = 1, disableAntialiasing:Bool = false, premultiply:Bool = false) {
 		if (pool.exists(key)) {
 			return;
 		}
@@ -162,8 +161,7 @@ class TextureSystem {
 			format: textureData.format,
 			powerOfTwo: false,
 			smoothExpand: antialiasing,
-			smoothShrink: antialiasing,
-			mipmap: mipmap
+			smoothShrink: antialiasing
 		});
 		texture.setData(textureData);
 

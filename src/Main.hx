@@ -273,11 +273,11 @@ class Main extends Application
 		TextureSystem.createTexture("mainMenuBGTex", "assets/images/mainMenu/menuBG.png", false, true);
 		TextureSystem.createTexture("mainMenuSheet", "assets/images/mainMenu/sheet.png", false, true);
 		TextureSystem.createTexture("noteTex", "assets/images/notes/noteSheet.png", false, true);
-		TextureSystem.createTexture("uiTex", "assets/images/ui/uiSheet.png", false, true, true);
-		TextureSystem.createTexture("hbTex", "assets/images/ui/hbSheet.png", false, true, true);
+		TextureSystem.createTexture("uiTex", "assets/images/ui/uiSheet.png", false, true);
+		TextureSystem.createTexture("hbTex", "assets/images/ui/hbSheet.png", false, true);
 		TextureSystem.createTexture("storyModeSheet", "assets/images/ui/storyModeSheet.png", false, true);
 		TextureSystem.createTexture("optionsMenuSheet", "assets/images/ui/optionsMenuSheet.png", false, true);
-		TextureSystem.createTexture("alphabetSheet", "assets/alphabetText/sheet.png", false, true, true); // Can't be moved to images folder otherwise the game craps itself.
+		TextureSystem.createTexture("alphabetSheet", "assets/alphabetText/sheet.png", false, true); // Can't be moved to images folder otherwise the game craps itself.
 		trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 	}
 
