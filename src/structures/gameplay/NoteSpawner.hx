@@ -35,6 +35,11 @@ class NoteSpawner {
 
 		curTopNote = File.getNote(0);
 		curBottomNote = File.getNote(0);
+
+		for (i in 0...200) {
+			var note = File.getNote(i);
+			Sys.println('${note.position}, ${note.duration}, ${note.index}, ${note.type}');
+		}
 	}
 
 	/**
@@ -183,13 +188,10 @@ class NoteSpawner {
 					numIterations++;
 					averageNotesPerOne += virtualNote.greedyMergeAlphaMultiplier;
 				}
-				//if (j == 1) Sys.println('y: ${index[0]?.y},${index[1]?.y}');
 			}
-			//Sys.println(virtualNotes[0][2][0]?.greedyMergeAlphaMultiplier);
 
 			var zero = notes.noteLength[0][2];
 			if (zero == 0) zero = 1;
-			//Sys.println(averageNotesPerOne / zero);
 		}
 	}
 
@@ -259,9 +261,7 @@ class NoteSpawner {
 				var notesInOneCompare = virtualNote2.notesInOne - nextNote.notesInOne;
 				if (notesInOneCompare < 0) notesInOneCompare = -notesInOneCompare;
 
-				//if (k == 40) Sys.println('yCompare $yCompare & notesInOneCompare $notesInOneCompare');
 				var check1 = yCompare <= granularity;
-				//if (g == 2) Sys.println('yCompare #2 $yCompare');
 				var check2 = notesInOneCompare <= 2;
 
 				yToUse += yCompare;
@@ -281,9 +281,6 @@ class NoteSpawner {
 			virtualNote.greedyMergeType = Math.floor(yToUse);
 			virtualNote.greedyMergeAlphaMultiplier = Int64.toInt(notesInOneMerged);
 		}
-
-		//virtualNote.x += 30;
-		//virtualNote.scale *= 0.85;
 		return true;
 	}
 

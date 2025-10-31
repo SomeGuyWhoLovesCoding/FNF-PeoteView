@@ -105,6 +105,10 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 		return floatToMetaNotePosition(i * 4);
 	}
 
+	inline static function floatDurationToInt(i:Float):Int {
+		return Std.int(i / 4);
+	}
+
 	// Underlying value
 	inline function toNumber():Int64 return this;
 }

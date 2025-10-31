@@ -33,6 +33,16 @@
 				"G": 0,
 				"B": 0
 			}
+		},
+		{
+			"dir": "assets/songs/unpredictable-6",
+			"icon": "bf",
+			"title": "Unpredictable 6",
+			"color": {
+				"R": 255,
+				"G": 0,
+				"B": 0
+			}
 		}
 	]
 }

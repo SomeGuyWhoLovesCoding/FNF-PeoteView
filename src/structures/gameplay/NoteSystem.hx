@@ -311,7 +311,8 @@ class NoteSystem {
 				}
 			}
 
-			virtualNoteBuffer.addSustain(sustainSpr, noteSpr);
+			if (noteSpr != null)
+				virtualNoteBuffer.addSustain(sustainSpr, noteSpr);
 		}
 
 		// --- Buffer note ---

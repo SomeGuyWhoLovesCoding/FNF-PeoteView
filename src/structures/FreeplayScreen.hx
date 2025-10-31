@@ -148,10 +148,12 @@ class FreeplayScreen {
 		xLerp = Tools.lerp(xLerp, 20 - (parent.curSelected * 20), ratio);
 		//Sys.println(curSelectedLerp);
 
-		var incrementBest = Math.floor(Math.min(Math.max(curSelectedLerp - 3, 0), songsAvailable.length - 7));
+		var incrementBest = songsAvailable.length > 7 ? Math.floor(Math.min(Math.max(curSelectedLerp - 3, 0), songsAvailable.length - 7)) : 0;
 
 		for (i in 0...7) {
-			if (songsAvailable.length <= 7 && i <= songsAvailable.length) continue;
+			var k = i + incrementBest;
+			
+			if (k < 0 || k >= songsAvailable.length) continue;
 
 			var k = i + incrementBest;
 			var l = parent.curSelected - incrementBest;

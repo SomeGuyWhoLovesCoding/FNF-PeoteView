@@ -77,10 +77,10 @@ class ChartConverter
 			return;
 		}
 
-		var chartFileName = '$path/chart.json';
+		var chartFileName = path;
 
 		// Single chart fallback
-		processChart(File.getContent(chartFileName), chartFileName);
+		processChart(File.getContent('$chartFileName/chart.json'), chartFileName);
 
 		if (!multichartMode) {
 			Sys.println('Single chart: writing ${metaNotes.length} notes to CBIN...');
@@ -113,9 +113,13 @@ class ChartConverter
 		var stage = song.stage != null ? song.stage : "stage";
 		var gfVersion = song.gfVersion != null ? song.gfVersion : "gf";
 
+		var headerPath = '${multichartMode ? multichartPath : path}/header.txt';
+		alreadywroteheader = FileSystem.stat(headerPath).size != 0;
+
 		// Write header if needed
 		if (!alreadywroteheader) {
-			header = File.write('${multichartMode ? multichartPath : path}/header.txt');
+			//if (!FileSystem.exists(headerPath)) FileSystem.createFile
+			header = File.append(headerPath);
 			writeHeaderString(multichartMode ? multichartPath : path, song, stage, gfVersion, 4);
 			header.close();
 			header = null;
@@ -147,7 +151,7 @@ class ChartConverter
 					var lane = mustHitSection ? 0 : 1;
 					var newNote = new MetaNote(
 						MetaNote.floatToMetaNotePosition(note.position),
-						Std.int(note.duration * 0.25),
+						MetaNote.floatDurationToInt(note.duration),
 						note.index % mania,
 						lane
 					);
@@ -210,6 +214,6 @@ abstract VanillaChartNote(Array<Float>) from Array<Float> {
 	var duration(get, never):Float;
 
 	inline function get_position():Float { return this[0]; }
-	inline function get_index():Int { return Math.floor(this[1]) & 0xF; }
+	inline function get_index():Int { return Math.floor(this[1]) & MetaNote.INDEX_MASK; }
 	inline function get_duration():Float { return this[2]; }
 }

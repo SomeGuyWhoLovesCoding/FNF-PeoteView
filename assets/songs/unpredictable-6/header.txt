@@ -1,5 +1,5 @@
 Title: Unpredictable 6
-Arist: N/A
+Artist: N/A
 Genre: N/A
 Speed: 1.62
 BPM: 185
