@@ -12,14 +12,12 @@ import elements.actor.*;
 class Actor extends ActorElement
 {
 	// Stuff for initialization and shit
-	static var copiesOfCharacters:Map<String, Int> = [];
-	static var buffers:Map<String, Buffer<ActorElement>> = [];
-	static var programs:Map<String, Program> = [];
+	var buffer:Buffer<ActorElement>;
+	var program:Program;
 	static var cachedActorDatas:Map<String, ActorData> = [];
 	static var cachedAtlases:Map<String, SparrowAtlas> = [];
 
 	var name(default, null):String;
-	var displayName(default, null):String;
 	var atlas(default, null):SparrowAtlas;
 	var data(default, null):ActorData;
 
@@ -37,7 +35,7 @@ class Actor extends ActorElement
 
 		this.folder = folder;
 
-		this.name = displayName = name;
+		this.name = name;
 
 		var spritesheetDataPath = "";
 		var atlasKey = '$name/$folder';
@@ -58,19 +56,12 @@ class Actor extends ActorElement
 		}
 
 		if (atlas.imagePath != "" && addBufferAndProgram) {
-			if (buffers.exists(displayName) && !dontCopy) {
-				if (!copiesOfCharacters.exists(name)) {
-					copiesOfCharacters[name] = 0;
-				}
-				displayName += Std.string(copiesOfCharacters[name]++);
+			if (buffer == null) {
+				buffer = new Buffer<ActorElement>(1);
 			}
 
-			if (!buffers.exists(displayName)) {
-				buffers[displayName] = new Buffer<ActorElement>(1);
-			}
-
-			if (!programs.exists(displayName)) {
-				var program = new Program(buffers[displayName]);
+			if (program == null) {
+				program = new Program(buffer);
 				program.blendEnabled = true;
 				program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
 				program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
@@ -80,7 +71,6 @@ class Actor extends ActorElement
 				var texName = name + "Char";
 				TextureSystem.createTexture(texName, StringTools.replace(spritesheetDataPath, "data.xml", atlas.imagePath), false, true);
 				TextureSystem.setTexture(program, texName, texName);
-				programs[displayName] = program;
 			}
 		}
 
@@ -91,13 +81,9 @@ class Actor extends ActorElement
 	}
 
 	inline function addToBuffer() {
-		if (buffers.exists(displayName))
-			buffers[displayName].addElement(this);
+		if (buffer != null)
+			buffer.addElement(this);
 	}
-
-	/*inline static function removeAllCopiesOfCharacters() {
-
-	}*/
 
 	static function path(name:String, folder:String, type:CharacterPathType) {
 		var result = 'assets/$folder$name';
@@ -207,7 +193,6 @@ class Actor extends ActorElement
 	}
 
 	function update(deltaTime:Float) {
-		var buffer = buffers[displayName];
 		if (buffer != null) buffer.updateElement(this);
 
 		if (!animationRunning) return;
@@ -232,7 +217,6 @@ class Actor extends ActorElement
 	}
 
 	function updateBuffer() {
-		var buffer = buffers[displayName];
 		if (buffer != null) buffer.updateElement(this);
 	}
 
@@ -277,8 +261,13 @@ class Actor extends ActorElement
 	}
 
 	function dispose() {
-		display = null;
 
-		if (buffers[displayName] != null) buffers[displayName].clear();
+		if (buffer != null) {
+			buffer.clear();
+		}
+
+		if (program != null) {
+			display.removeProgram(program);
+		}
 	}
 }
