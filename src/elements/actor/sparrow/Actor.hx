@@ -261,7 +261,6 @@ class Actor extends ActorElement
 	}
 
 	function dispose() {
-
 		if (buffer != null) {
 			buffer.clear();
 		}
