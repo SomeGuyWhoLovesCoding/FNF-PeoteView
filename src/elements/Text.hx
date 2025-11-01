@@ -7,20 +7,8 @@ import elements.text.*;
 **/
 @:publicFields
 class Text {
-	static var buffers:Map<String, Buffer<TextCharSprite>> = [];
-	static var programs:Map<String, Program> = [];
-
-	var buffer(get, never):Buffer<TextCharSprite>;
-
-	inline function get_buffer() {
-		return buffers[_key];
-	}
-
-	var program(get, never):Program;
-
-	inline function get_program() {
-		return programs[_key];
-	}
+	var buffer:Buffer<TextCharSprite>;
+	var program:Program;
 
 	var _key:String;
 
@@ -40,7 +28,6 @@ class Text {
 				var elem = buffer.getElement(i);
 				if (elem != null) {
 					elem.x = elem.y = -999999999;
-					buffer.updateElement(elem);
 				}
 			}
 		}
@@ -77,9 +64,9 @@ class Text {
 			if (height < spr.h) {
 				height = spr.h;
 			}
-
-			buffer.updateElement(spr);
 		}
+
+		buffer.update();
 
 		width = advanceX;
 
@@ -96,8 +83,9 @@ class Text {
 		for (i in 0...text.length) {
 			var elem = buffer.getElement(i);
 			elem.x += value - x;
-			buffer.updateElement(elem);
 		}
+
+		buffer.update();
 
 		return x = value;
 	}
@@ -112,8 +100,9 @@ class Text {
 		for (i in 0...text.length) {
 			var elem = buffer.getElement(i);
 			elem.y += value - y;
-			buffer.updateElement(elem);
 		}
+
+		buffer.update();
 
 		return y = value;
 	}
@@ -154,11 +143,9 @@ class Text {
 			if (height < spr.h) {
 				height = spr.h;
 			}
-
-			if (spr != null) {
-				buffer.updateElement(spr);
-			}
 		}
+
+		buffer.update();
 
 		width = advanceX;
 		_scale = scale;
@@ -179,9 +166,10 @@ class Text {
 			var spr = buffer.getElement(i);
 			if (spr != null) {
 				spr.alpha = value;
-				buffer.updateElement(spr);
 			}
 		}
+
+		buffer.update();
 		return alpha = value;
 	}
 
@@ -192,9 +180,10 @@ class Text {
 			var spr = buffer.getElement(i);
 			if (spr != null) {
 				spr.c = value;
-				buffer.updateElement(spr);
 			}
 		}
+
+		buffer.update();
 		return color = value;
 	}
 
@@ -205,9 +194,10 @@ class Text {
 			var spr = buffer.getElement(i);
 			if (spr != null) {
 				spr.oc = value;
-				buffer.updateElement(spr);
 			}
 		}
+
+		buffer.update();
 		return outlineColor = value;
 	}
 
@@ -230,9 +220,10 @@ class Text {
 				spr.c = color;
 				spr.oc = outlineColor;
 				spr.os = outlineSize;
-				buffer.updateElement(spr);
 			}
 		}
+
+		buffer.update();
 	}
 
 	var parsedTextAtlasData:Array<TextCharData>;
@@ -241,18 +232,15 @@ class Text {
 		if (text.length == 0) text = "Sample text";
 		_key = key;
 
-		if (buffers[key] == null) {
-			buffers[key] = new Buffer<TextCharSprite>(8, 8, false);
-		}
+		buffer = new Buffer<TextCharSprite>(8, 8, false);
 
-		if (programs[key] == null) {
-			var program = new Program(buffer);
+		if (program == null) {
+			program = new Program(buffer);
 			program.blendEnabled = true;
 			program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
 			program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 			program.setFragmentFloatPrecision('medium', true);
 			program.setColorFormula('getTextureColor(font_ID, vTexCoord) * (c * alphaColor)');
-			programs[key] = program;
 		}
 
 		this.font = font;

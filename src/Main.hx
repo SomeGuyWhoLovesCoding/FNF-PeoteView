@@ -339,6 +339,7 @@ class Main extends Application
 					mainMenu.update(newDeltaTime);
 				}
 
+				//var timeStamp:Float = haxe.Timer.stamp();
 				if (playField != null && !playField.disposed) {
 					if (playField.pauseScreen != null) {
 						var pauseScreen = playField.pauseScreen;
@@ -349,6 +350,7 @@ class Main extends Application
 						playField.update(newDeltaTime);
 					}
 				}
+				//Sys.println(haxe.Timer.stamp() - timeStamp);
 
 				if (optionsMenu.active) {
 					optionsMenu.update(newDeltaTime);
