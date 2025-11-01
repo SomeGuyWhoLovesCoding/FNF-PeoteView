@@ -193,8 +193,7 @@ class HUD {
 
 		if (ratingPopup == null) return;
 
-		if (ratingPopup.alpha < 0.02) ratingPopup.alpha -= 0.003; // Prevent alpha freezing
-		else ratingPopup.alpha = Tools.lerp(ratingPopup.alpha, 0.0, Math.min(deltaTime * 0.005, 1.0));
+		ratingPopup.alpha = Tools.fixElementAlphaFromFadingLerp(Tools.lerp(ratingPopup.alpha, 0.0, Math.min(deltaTime * 0.005, 1.0)));
 		ratingPopup.y = Tools.lerp(ratingPopup.y, 320, Math.min(deltaTime * 0.0125, 1.0));
 
 		uiBuf.updateElement(ratingPopup);
@@ -231,7 +230,7 @@ class HUD {
 
 			if (i > 2) {
 				if (i >= numStr.length) {
-					comboNumber.alpha = 0.0;
+					comboNumber.alpha = 0;
 				}
 			}
 
@@ -260,7 +259,8 @@ class HUD {
 		Updates the score text.
 	**/
 	function updateScoreText(deltaTime:Float) {
-		scoreTxt.text = 'Score: ${parent.score} | Misses: ${parent.misses} | Accuracy: ${parent.accuracy.toString()}';
+		var scoreText = 'Score: ${parent.score} | Misses: ${parent.misses} | Accuracy: ${parent.accuracy.toString()}';
+		if (scoreTxt.text != scoreText) scoreTxt.text = scoreText;
 		scoreTxt.scale = Tools.lerp(scoreTxt.scale, 1.0, Math.min(deltaTime * 0.02, 1.0));
 		scoreTxt.x = Math.floor(healthBar.bg.x) + ((healthBar.bg.w - scoreTxt.width) * 0.5);
 		scoreTxt.y = Math.floor(healthBar.bg.y) + (healthBar.bg.h + 6);

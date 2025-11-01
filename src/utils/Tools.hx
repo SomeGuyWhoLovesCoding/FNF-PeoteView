@@ -184,6 +184,10 @@ class Tools {
 		}
 	}
 
+	inline static function fixElementAlphaFromFadingLerp(v:Float) {
+		return Math.max((v * 1.002) - 0.002, 0);
+	}
+
 	static function fromIconGridXMLCharacter(path:String):Array<Int> {
 		return iconGridMap.get(path);
 	}

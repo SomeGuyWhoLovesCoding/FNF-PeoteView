@@ -124,8 +124,7 @@ class CountdownDisplay {
 	function update(deltaTime:Float) {
 		var a = sprite.alpha;
 		var ratio = Math.min((deltaTime * 0.00725), 1);
-		if (sprite.alpha < 5/255) sprite.alpha -= 0.003; // Prevent alpha freezing
-		else sprite.alpha = Tools.lerp(sprite.alpha, 0, ratio);
+		sprite.alpha = Tools.fixElementAlphaFromFadingLerp(Tools.lerp(sprite.alpha, 0, ratio));
 		buffer.updateElement(sprite);
 	}
 
