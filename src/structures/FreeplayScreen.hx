@@ -37,7 +37,7 @@ class FreeplayScreen {
 
 	function reload(chapterName:String) {
 		if (songTextsBuf == null) {
-			songTextsBuf = new Buffer<Actor>(32, 32, false);
+			songTextsBuf = new Buffer<Actor>(140, 0, false);
 			songTextsProg = new Program(songTextsBuf);
 			songTextsProg.blendEnabled = true;
 			songTextsProg.blendSrc = songTextsProg.blendSrcAlpha = BlendFactor.ONE;
@@ -48,7 +48,7 @@ class FreeplayScreen {
 		}
 
 		if (songIconsBuf == null) {
-			songIconsBuf = new Buffer<HealthBarSprite>(32, 32, false);
+			songIconsBuf = new Buffer<HealthBarSprite>(8, 0, false);
 			songIconsProg = new Program(songIconsBuf);
 			songIconsProg.blendEnabled = true;
 			songIconsProg.blendSrc = songIconsProg.blendSrcAlpha = BlendFactor.ONE;

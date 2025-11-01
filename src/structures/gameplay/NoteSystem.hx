@@ -293,7 +293,7 @@ class NoteSystem {
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
 
-				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainSpr.length - 6)) && !isHeld) {
+				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainSpr.length - 10)) && !isHeld) {
 					var n:Int64 = note.toNumber();
 					(n:MetaNote).held = true;
 					isHeld = true;
