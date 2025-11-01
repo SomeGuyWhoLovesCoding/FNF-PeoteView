@@ -14,7 +14,7 @@ import lime.ui.MouseWheelMode;
 **/
 @:publicFields
 class MainMenu implements State {
-	static var optionAnims:Array<String> = ['story mode', 'freeplay', 'awards', 'credits', 'options', 'backspace to exit'];
+	static var optionAnims:Array<String> = ['story mode', 'freeplay', /*'awards', 'credits',*/ 'options', 'backspace to exit'];
 
 	var display:CustomDisplay;
 	var view:CustomDisplay;
@@ -135,8 +135,8 @@ class MainMenu implements State {
 	 */
 	inline function optionYFormula(i:Int, o:Int) {
 		return (
-			(90 -
-				(11 * (optionAnims.length - 2)
+			(150 -
+				(24 * (optionAnims.length - 1)
 			)
 		) + (125 * i)
 		) - (
