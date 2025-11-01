@@ -14,7 +14,7 @@ import lime.ui.MouseWheelMode;
 **/
 @:publicFields
 class MainMenu implements State {
-	static var optionAnims:Array<String> = ['story mode', 'freeplay', /*'awards', 'credits',*/ 'options', 'backspace to exit'];
+	static var optionAnims:Array<String> = ['story mode', 'freeplay', 'awards', 'credits', 'options', 'backspace to exit'];
 
 	var display:CustomDisplay;
 	var view:CustomDisplay;
@@ -95,7 +95,7 @@ class MainMenu implements State {
 					if (i == 5) {
 						optionYLerps[i] = spr.y = (Main.INITIAL_HEIGHT - 55) - spr.h;
 					} else {
-						optionYLerps[i] = spr.y = (55 + (125 * i)) - (6 * Math.min(optionSelected, optionAnims.length - 2));
+						optionYLerps[i] = spr.y = optionYFormula(i, optionSelected);
 					}
 				}
 				spr.c.aF = 0.0;
@@ -128,6 +128,22 @@ class MainMenu implements State {
 	static var alphaLerps:Array<Float> = [for (i in 0...6) 1];
 	static var selectedAlpha:Float = 1.0;
 
+	/**
+	 * This is here to clear up duplicated code.
+	 * @param i `i`.
+	 * @param o `optionSelected`.
+	 */
+	inline function optionYFormula(i:Int, o:Int) {
+		return (
+			(90 -
+				(11 * (optionAnims.length - 2)
+			)
+		) + (125 * i)
+		) - (
+			6 * Math.min(o, optionAnims.length - 2)
+		);
+	}
+
 	function update(deltaTime:Float) {
 		for (i in 0...optionBuf.length) {
 			var option = optionBuf.getElement(i);
@@ -140,7 +156,7 @@ class MainMenu implements State {
 			else option.playAnimation(anim + ' basic', true);
 
 			if (anim != 'backspace to exit') {
-				optionYLerps[i] = Tools.lerp(optionYLerps[i], (45 + (125 * i)) - (6 * Math.min(optionSelected, optionAnims.length - 2)), t);
+				optionYLerps[i] = Tools.lerp(optionYLerps[i], optionYFormula(i, optionSelected), t);
 				option.y = optionYLerps[i];
 				option.x = (Main.INITIAL_WIDTH - option.w) * 0.5;
 			}
