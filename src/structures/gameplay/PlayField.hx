@@ -160,7 +160,7 @@ class PlayField implements State {
 		onDeath.add(gameOver);
 
 		conductor.offset = -latencyCompensation #if windows - Mixer.latency() #end;
-		songPosition = -conductor.crochet * 4.5;
+		songPosition = (-conductor.crochet * 4.5) - conductor.offset;
 
 		var pos = MetaNote.floatToMetaNotePosition(songPosition);
 
