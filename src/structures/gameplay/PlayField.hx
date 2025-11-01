@@ -419,6 +419,8 @@ class PlayField implements State {
 		misses += notesInOne;
 		accuracy.increment(10000, true, notesInOne);
 
+		Sys.println('Prosecutor was $notesInOne!');
+
 		if (health < 0 && !disposed) {
 			onDeath.dispatch(Chart.header, lane);
 			return;

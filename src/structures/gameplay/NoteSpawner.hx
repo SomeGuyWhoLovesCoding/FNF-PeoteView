@@ -91,7 +91,7 @@ class NoteSpawner {
 
 			// Determine if notes should overlap
 			var shouldOverlap = shouldNotesOverlap(prev, n, noteSpr, receptor, newY,
-				fakeOverlapStorage[prev != -1 ? prev.index : -1]);
+				fakeOverlapStorage[prev != -1 ? prev.index : -1]) && !ghost;
 
 			// Update fake overlap storage for next iteration
 			fakeOverlapStorage[n.index] = newY;
@@ -102,6 +102,7 @@ class NoteSpawner {
 			} else {
 				if (!ghost) {
 					noteSpr = parent.drawNote(pos, n, diff, i);
+					noteSpr.notesInOne = 0; // don't forget this!
 				} else {
 					// Ghost note - same meta-note, just increment counter
 					noteSpr.notesInOne++;
