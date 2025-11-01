@@ -144,6 +144,9 @@ class InputSystem {
 	}
 
 	function press(code:KeyCode, mod:KeyModifier) {
+		/*var timeStamp:Float = untyped __global__.__time_stamp();
+		timeStamp *= 1000;
+		Sys.println('$timeStamp, ${timeStamp % (1000 / lime.app.Application.current.window.frameRate)}');*/
 		var field = parent.field;
 		var isInGameOver = field.isInGameOver;
 		var controls = SaveData.state.controls;
