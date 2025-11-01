@@ -364,7 +364,7 @@ class Main extends Application
 			//}
 		}
 
-		Tools.profileFrame();
+		//Tools.profileFrame();
 	}
 
 	override function render(context:RenderContext) {
