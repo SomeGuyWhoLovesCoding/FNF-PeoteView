@@ -124,8 +124,7 @@ class FreeplayScreen {
 	var durationRemaining:Float = 0;
 	var canAdvanceFrame:Bool = false;
 
-	function update(deltaTime:Float) {
-		//Sys.println('Freeplay: $deltaTime');
+	function render(deltaTime:Float) {
 		var ratio = Math.min(deltaTime * 0.015, 1);
 		if (ratio == 1) ratio = (1/lime.app.Application.current.window.frameRate) * 0.015; // When loading the freeplay menu the first time it gets stuck at 1.0 for a single frame
 
@@ -146,7 +145,6 @@ class FreeplayScreen {
 		alphaLerp = Tools.lerp(alphaLerp, parent.opened ? 1.0 : 0.0, ratio);
 		curSelectedLerp = Tools.lerp(curSelectedLerp, parent.curSelected, ratio);
 		xLerp = Tools.lerp(xLerp, 20 - (parent.curSelected * 20), ratio);
-		//Sys.println(curSelectedLerp);
 
 		var incrementBest = songsAvailable.length > 7 ? Math.floor(Math.min(Math.max(curSelectedLerp - 3, 0), songsAvailable.length - 7)) : 0;
 

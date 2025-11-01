@@ -354,10 +354,6 @@ class Main extends Application
 					optionsMenu.update(newDeltaTime);
 				}
 
-				if (freeplayMenu.active) {
-					freeplayMenu.update(newDeltaTime);
-				}
-
 				if (storyMenu.active) {
 					storyMenu.update(newDeltaTime);
 				}
@@ -398,6 +394,11 @@ class Main extends Application
 				if (hud != null) hud.render(1000 / renderFrameRate);
 
 				if (renderingModeEnabled) RenderingMode.pipeFrame();
+			}
+		}
+		if (freeplayMenu != null) {
+			if (freeplayMenu.active) {
+				freeplayMenu.render(1000 / renderFrameRate);
 			}
 		}
 		//Sys.println("render is decoupled?");

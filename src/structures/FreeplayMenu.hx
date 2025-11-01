@@ -41,8 +41,8 @@ class FreeplayMenu {
 		display = disp;
 	}
 
-	function update(deltaTime:Float) {
-		freeplayScreen.update(deltaTime);
+	function render(deltaTime:Float) {
+		freeplayScreen.render(deltaTime);
 	}
 
 	function open() {
