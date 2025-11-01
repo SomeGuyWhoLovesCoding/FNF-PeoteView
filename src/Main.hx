@@ -372,7 +372,7 @@ class Main extends Application
 
 		#if FV_LIME_FORK
 		var renderFrameRate = Application.current.window.renderFrameRate;
-		if (renderFrameRate == 0) renderFrameRate = context.window.displayMode.refreshRate;
+		if (renderFrameRate == 0) renderFrameRate = Application.current.window.renderFrameRate = context.window.displayMode.refreshRate;
 		#else
 		var renderFrameRate = Application.current.window.frameRate;
 		#end
