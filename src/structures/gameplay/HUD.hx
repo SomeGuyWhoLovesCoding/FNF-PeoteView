@@ -154,6 +154,9 @@ class HUD {
 			alphaLerp = Tools.lerp(alphaLerp, 1.0, t);
 			setHUDAlpha(alphaLerp);
 		}
+
+		HealthBar.hbBuf.update();
+		uiBuf.update();
 	}
 
 	/**
@@ -161,24 +164,19 @@ class HUD {
 	**/
 	function setHUDAlpha(alpha:Float) {
 		healthBar.bg.alpha = alpha;
-		HealthBar.hbBuf.updateElement(healthBar.bg);
 
 		for (part in healthBar.parts) {
 			part.alpha = alpha;
-			HealthBar.hbBuf.updateElement(part);
 		}
 
 		for (icon in healthBar.healthIcons) {
 			icon.alpha = alpha;
-			HealthBar.hbBuf.updateElement(icon);
 		}
 
 		timeBarBG.alpha = alpha;
-		uiBuf.updateElement(timeBarBG);
 
 		for (part in timeBarParts) {
 			part.alpha = alpha;
-			uiBuf.updateElement(part);
 		}
 
 		timeBarTxt.alpha = alpha;

@@ -142,7 +142,7 @@ class HealthBar {
 		if (parent.disposed || parent.died) return;
 
 		bg.y = parent.downScroll ? 90 : Main.INITIAL_HEIGHT - 90;
-		hbBuf.updateElement(bg);
+		//hbBuf.updateElement(bg);
 
 		var actors = parent.field.actors;
 
@@ -160,7 +160,7 @@ class HealthBar {
 
 		if (part1.w < 0) part1.w = 0;
 
-		hbBuf.updateElement(part1);
+		//hbBuf.updateElement(part1);
 
 		var part2 = parts[1];
 
@@ -176,7 +176,7 @@ class HealthBar {
 
 		if (part2.w < 0) part2.w = 0;
 
-		hbBuf.updateElement(part2);
+		//hbBuf.updateElement(part2);
 	}
 
 	/**
@@ -213,8 +213,8 @@ class HealthBar {
 		if (health < 0.25) plrIco.changeID(ids[1][1]);
 		else plrIco.changeID(ids[1][0]);
 
-		hbBuf.updateElement(iconP2);
-		hbBuf.updateElement(iconP1);
+		//hbBuf.updateElement(iconP2);
+		//hbBuf.updateElement(iconP1);
 	}
 
 	/**
