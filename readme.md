@@ -129,6 +129,12 @@ Then, you just `lime test hl` and everything runs good!
 
 : Peote-view (Wrote peote-view, and wrote the `slices` shader sample for the sustain note.)
 
+- Cobalt
+
+(AKA ccolbaltdev)
+
+: Alphabet Original tweaks of the Alphabet in freeplay menu
+
 - Blossimical
 
 : Helper (Wrote the customtitlebar haxelib tool. For real, seriously, not joking, I've been waiting for this moment for long enough.)
