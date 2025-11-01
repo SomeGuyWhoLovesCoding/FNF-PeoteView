@@ -48,7 +48,6 @@ class Main extends Application
 		//Titlebar.setPrimaryButtonImage("assets/system/WM/maximize.png");
 		Titlebar.setButtonFontColor(255, 255, 255);
 		var path = sys.FileSystem.absolutePath('assets/fonts/inconsolata/inconsolata-semibold.ttf');
-		trace(path);
 		Titlebar.setTitleFont("Inconsolata-SemiBold", 'assets/fonts/inconsolata/inconsolata-semibold.ttf', 16);
 		Titlebar.initialize();
 		Titlebar.redrawWindow();
