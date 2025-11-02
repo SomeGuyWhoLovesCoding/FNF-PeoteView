@@ -113,7 +113,7 @@ class Note implements Element
 		var int = ((id * (arrayLengthOfNoteSkin_gm())) + (granularityValue * 2) + (isCover ? 1 : 0)) * 6;
 		//Sys.println(toggleGMVariant);
 		//Sys.println(int);
-		trace(/*mult,*/g,isCover,id,int,ox,oy,px,py);
+		//trace(/*mult,*/g,isCover,id,int,ox,oy,px,py);
 		setOffsetAndSizeGM(int);
 	}
 
