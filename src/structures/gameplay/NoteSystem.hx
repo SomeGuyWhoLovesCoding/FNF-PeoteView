@@ -144,30 +144,17 @@ class NoteSystem {
 			var botTimers = strumline.botTimers;
 			for (j in 0...botTimers.length) {
 				var rec = strumline.buffer[j];
-				if (strumline.playable) continue;
-
-				// only happens in rare cases
-				//if (j == 0 && rec.confirmed()) trace('$j still stuck? fuck you for that.', strumline.sustainsActive[j], strumline.botTimers[j], strumline.sustainsToHold_duration[j]);
-				/*if (rec.confirmed() && strumline.sustainsActive[j] && strumline.botTimers[j] != 0 && strumline.sustainsToHold_duration[j] == 0) {
-					if (j == 0) trace('RAAAAAAAAAAAAA', strumline.sustainsActive[j], strumline.botTimers[j]);
-					rec.reset();
-					strumline.botTimers[j] = 0;
-				}*/
-
-				/*if (rec.confirmed() && !strumline.sustainsActive[j] && strumline.botTimers[j] > 0) {
-					Sys.println('$j found! kill him!');
-					rec.reset();
-				}*/
-
-				//if (!strumline.playable && j == 1) Sys.println(strumline.botTimers[j]);
-
-				if (!strumline.sustainsActive[j]) {
-					if (shouldDecrement) {
-						if (strumline.botTimers[j] < 0 && !strumline.sustainsActive[j]) {
-							//Sys.println('Sadly reset $j. FUCK!');
-							rec.reset();
-							strumline.botTimers[j] = 0;
-						} else strumline.botTimers[j] -= timeDelta;
+				var canMess = !strumline.playable;
+				if (parent.botplay) canMess = true;
+				if (canMess) {
+					if (!strumline.sustainsActive[j]) {
+						if (shouldDecrement) {
+							if (strumline.botTimers[j] < 0 && !strumline.sustainsActive[j]) {
+								//Sys.println('Sadly reset $j. FUCK!');
+								rec.reset();
+								strumline.botTimers[j] = 0;
+							} else strumline.botTimers[j] -= timeDelta;
+						}
 					}
 				}
 			}

@@ -150,7 +150,7 @@ class NoteSpawner {
 					if (Note.enableGM && greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 64, 1)) {
 						increment = 64;
 						granularity = 1;
-					} else if (Note.enableGM && greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 64, 2)) {
+					} else if (Note.enableGM && greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 32, 2)) {
 						increment = 32;
 						granularity = 2;
 					}
@@ -170,14 +170,23 @@ class NoteSpawner {
 					note.changeID(id);
 					note.toNote();
 
-					if (Note.enableGM && increment != 1 && virtualNote.greedyMergeAlphaMultiplier != 0 && virtualNote.greedyMergeType != 0) {
+					if (Note.enableGM && increment != 1 && virtualNote.greedyMergeAlphaMultiplier != 0) {
+    					var oldOy = note.oy; // Save the original offset
+
 						note.toggleGMVariant(granularity, false);
-						note.initialAlpha = /*virtualNote.ref.missed ? Note.defaultMissAlpha : */Note.defaultAlpha;
+						note.initialAlpha = Note.defaultAlpha;
 						note.addedAlpha = 0;
-						//@:privateAccess if (j == 2) trace(note.clipX,note.clipY,note.clipWidth,note.clipHeight);
-						if (downScroll) note.y -= increment * granularity;
-						note.x += 20;
-						//note.addedAlpha = virtualNote.greedyMergeAlphaMultiplier;
+						if (downScroll) {
+							// Calculate actual distance to the last note in the merge
+							var lastNoteIndex = k + increment - 1;
+							if (lastNoteIndex < index.length && index[lastNoteIndex] != null) {
+        						var oyDiff = note.oy - oldOy;
+								var lastNote = index[lastNoteIndex];
+								var actualSpan = virtualNote.y - lastNote.y; // Distance from first to last note
+								note.y -= actualSpan;
+								//if (j == 2) Sys.println(actualSpan);
+							}
+						}
 					}
 
 					NoteSystem.notesBuf.addElement(note);
@@ -241,48 +250,51 @@ class NoteSpawner {
 		// Check bounds first
 		if (k + count >= index.length) return false;
 
-		var check = true;
-		if (!check) return false;
+		var firstNote = index[k];
+		var lastNote = index[k + count - 1];
+		
+		if (firstNote == null || lastNote == null) return false;
+		
+		// Check total span
+		var totalSpan = firstNote.y - lastNote.y;
+		if (totalSpan < 0) totalSpan = -totalSpan;
+		
+		// Revert to the original working constraint
+		var maxAllowedSpan = granularity * count;
+		
+		if (totalSpan > maxAllowedSpan) return false;
+		
+		var yToUse:Float = 0;
+		var notesInOneMerged:Int64 = 0;
 
-		if (virtualNote.greedyMergeAlphaMultiplier == 0) {
-			var yToUse:Float = 0;
-			var notesInOneMerged:Int64 = 0;
+		for (g in 0...count) {
+			var virtualNote2:VirtualNote = index[k + g];
+			var nextNote:VirtualNote = index[k + g + 1];
+			if (virtualNote2 == null || nextNote == null) return false;
 
-			var firstVirtualNote:VirtualNote = index[k];
-			var nextNote:VirtualNote = index[k + 1];
-			var g = 0;
-			while (Math.abs(firstVirtualNote.y - nextNote.y) <= count * granularity) {
-				var virtualNote2:VirtualNote = index[k + g];
-				nextNote = index[k + g + 1];
-				if (virtualNote2 == null || nextNote == null) return false;
+			var yCompare = virtualNote2.y - nextNote.y;
+			if (yCompare < 0) yCompare = -yCompare;
 
-				var yCompare = virtualNote2.y - nextNote.y;
-				if (yCompare < 0) yCompare = -yCompare;
+			var notesInOneCompare = virtualNote2.notesInOne - nextNote.notesInOne;
+			if (notesInOneCompare < 0) notesInOneCompare = -notesInOneCompare;
 
-				var notesInOneCompare = virtualNote2.notesInOne - nextNote.notesInOne;
-				if (notesInOneCompare < 0) notesInOneCompare = -notesInOneCompare;
+			var check1 = yCompare <= granularity;
+			var check2 = notesInOneCompare <= 2;
 
-				var check1 = yCompare <= granularity;
-				var check2 = notesInOneCompare <= 2;
+			yToUse += yCompare;
+			notesInOneMerged += virtualNote2.notesInOne;
 
-				yToUse += yCompare;
-				notesInOneMerged += virtualNote2.notesInOne;
-
-				if (nextNote.notesInOne == 1 && (!check1 || !check2)) {
-					return false;
-				}
-
-				++g;
+			if (nextNote.notesInOne == 1 && (!check1 || !check2)) {
+				return false;
 			}
-
-			if (g == 0) g = 1; //prevent divide by zero error
-			yToUse /= g;
-			notesInOneMerged /= g;
-
-			// If we got here, all checks passed
-			virtualNote.greedyMergeType = Math.floor(yToUse);
-			virtualNote.greedyMergeAlphaMultiplier = Int64.toInt(notesInOneMerged);
 		}
+
+		yToUse /= count;
+		notesInOneMerged /= count;
+
+		virtualNote.greedyMergeType = Math.floor(totalSpan);
+		virtualNote.greedyMergeAlphaMultiplier = Int64.toInt(notesInOneMerged);
+		
 		return true;
 	}
 
