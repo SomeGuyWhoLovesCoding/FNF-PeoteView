@@ -342,10 +342,7 @@ class NoteSystem {
 					isHeld = true;
 					File.setNote(_id, n);
 
-					if (rec.confirmed()) {
-						if (playable) rec.press();
-						else rec.reset();
-					}
+					if (playable && rec.confirmed()) rec.press();
 
 					strumline.sustainsToHold[index] = null;
 					strumline.sustainsToHold_indexes[index] = 0;
