@@ -35,11 +35,14 @@ class Tools {
 			Note.offsetAndSizeFrames.push(frameX);
 			Note.offsetAndSizeFrames.push(frameY);
 		}
-	
-		Note.KEYS = Std.int(Math.ffloor(Note.offsetAndSizeFrames.length / 4) / 6);
+
+		var floatKeys = Math.ffloor(Note.offsetAndSizeFrames.length / 4) / 6;
+		if (floatKeys != Std.int(floatKeys)) throw "Noteskin not supported! KEYS is not integral!";
+		Note.KEYS = Std.int(floatKeys);
+		//trace('Number of keys supported in jail? ${Note.KEYS}');
 
 		var gmFileExists = Note.enableGM = FileSystem.exists('$path/noteData_gm.xml');
-		trace("GM EXISTS???? HELO??????? - ",gmFileExists);
+		//trace("GM EXISTS???? HELO??????? - ",gmFileExists);
 
 		if (gmFileExists) {
 			var contents = File.getContent('$path/noteData_gm.xml');
@@ -61,7 +64,7 @@ class Tools {
 				Note.offsetAndSizeFramesGM.push(height);
 				Note.offsetAndSizeFramesGM.push(frameX);
 				Note.offsetAndSizeFramesGM.push(frameY);
-				trace(x,y,width,height,frameX,frameY);
+				//trace(x,y,width,height,frameX,frameY);
 			}
 		}
 

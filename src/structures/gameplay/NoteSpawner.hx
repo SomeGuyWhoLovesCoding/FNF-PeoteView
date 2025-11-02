@@ -150,7 +150,7 @@ class NoteSpawner {
 					if (Note.enableGM && greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 64, 1)) {
 						increment = 64;
 						granularity = 1;
-					} else if (Note.enableGM && greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 32, 2)) {
+					} else if (Note.enableGM && greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 64, 2)) {
 						increment = 32;
 						granularity = 2;
 					}
@@ -173,9 +173,10 @@ class NoteSpawner {
 					if (Note.enableGM && increment != 1 && virtualNote.greedyMergeAlphaMultiplier != 0 && virtualNote.greedyMergeType != 0) {
 						note.toggleGMVariant(granularity, false);
 						note.initialAlpha = /*virtualNote.ref.missed ? Note.defaultMissAlpha : */Note.defaultAlpha;
-						note.addedAlpha = 1;
-						@:privateAccess if (j == 2) trace(note.clipX,note.clipY,note.clipWidth,note.clipHeight);
-						if (downScroll) note.y -= increment;
+						note.addedAlpha = 0;
+						//@:privateAccess if (j == 2) trace(note.clipX,note.clipY,note.clipWidth,note.clipHeight);
+						if (downScroll) note.y -= increment * granularity;
+						note.x += 20;
 						//note.addedAlpha = virtualNote.greedyMergeAlphaMultiplier;
 					}
 
@@ -247,9 +248,12 @@ class NoteSpawner {
 			var yToUse:Float = 0;
 			var notesInOneMerged:Int64 = 0;
 
-			for (g in 0...count) {
+			var firstVirtualNote:VirtualNote = index[k];
+			var nextNote:VirtualNote = index[k + 1];
+			var g = 0;
+			while (Math.abs(firstVirtualNote.y - nextNote.y) <= count * granularity) {
 				var virtualNote2:VirtualNote = index[k + g];
-				var nextNote:VirtualNote = index[k + g + 1];
+				nextNote = index[k + g + 1];
 				if (virtualNote2 == null || nextNote == null) return false;
 
 				var yCompare = virtualNote2.y - nextNote.y;
@@ -267,10 +271,13 @@ class NoteSpawner {
 				if (nextNote.notesInOne == 1 && (!check1 || !check2)) {
 					return false;
 				}
+
+				++g;
 			}
 
-			yToUse /= count;
-			notesInOneMerged /= count;
+			if (g == 0) g = 1; //prevent divide by zero error
+			yToUse /= g;
+			notesInOneMerged /= g;
 
 			// If we got here, all checks passed
 			virtualNote.greedyMergeType = Math.floor(yToUse);
