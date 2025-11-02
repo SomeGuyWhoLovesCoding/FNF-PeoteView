@@ -116,6 +116,7 @@ class PlayField implements State {
 		Mixer.setTime(Math.max(value, 0.0), this);
 		if (hud != null && SaveData.state.preferences.ratingPopup) hud.hideRatingPopup();
 		if (noteSystem != null) {
+			var pos = MetaNote.floatToMetaNotePosition(songPosition);
 			noteSystem.resetNotes(songPosition);
 			noteSystem.onSongPositionJump(pos);
 		}
