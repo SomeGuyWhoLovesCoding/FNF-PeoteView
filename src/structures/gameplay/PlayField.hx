@@ -299,7 +299,7 @@ class PlayField implements State {
 
 		pauseScreen.open();
 		if (songStarted) Mixer.stopMusic();
-		if (noteSystem != null) noteSystem.resetPlayerStrumlines();
+		if (noteSystem != null) noteSystem.resetStrumlines();
 		if (inputSystem != null) inputSystem.removeEvents();
 
 		paused = true;
@@ -313,7 +313,7 @@ class PlayField implements State {
 
 		pauseScreen.close();
 		if (!RenderingMode.enabled && songStarted && !songEnded) Mixer.startMusic();
-		if (noteSystem != null) noteSystem.resetPlayerStrumlines();
+		if (noteSystem != null) noteSystem.resetStrumlines();
 		if (inputSystem != null) haxe.Timer.delay(inputSystem.addEvents, 1);
 
 		paused = false;

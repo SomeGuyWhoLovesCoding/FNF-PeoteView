@@ -20,11 +20,11 @@ ___________________________ ___________________________ ________________________
 
 - Position
 
-It's a 41 bit integer designed for extreme position making spammy songs even more precise. *10 μs* precision to be exact. It takes up most of the chart note's space. Also, it's a fixed point number so you don't have to worry about losing precision at absurdly big values which happens with floating point numbers.
+It's a 40 bit integer designed for extreme position making spammy songs even more precise. *50 ns* precision to be exact. It takes up most of the chart note's space. Also, it's a fixed point number so you don't have to worry about losing precision at absurdly big values which happens with floating point numbers.
 
 - Duration
 
-It's a 13 bit integer with the least precision that isn't noticable according to the human reaction time. *5 ms* granularity to be exact. It visually represents the length of a sustain note.
+It's a 12 bit integer with the least precision that isn't noticable according to the human reaction time. *4 ms* granularity to be exact. It visually represents the length of a sustain note.
 
 - Index
 
@@ -32,7 +32,7 @@ It's a 4 bit integer that visually represents the index of the current note elem
 
 - Type
 
-It's a 4 bit integer that visually represents the note type that sometimes can have its own subtexture skin.
+It's a 5 bit integer that visually represents the note type that sometimes can have its own subtexture skin.
 
 - Lane
 
@@ -53,7 +53,7 @@ BPM: 120
 Time Signature: 4/4
 Stage: stage
 Instrumental: InstPath.flac
-Voices: VoicesPath.flac
+Voices: VoicesPath1.flac, VoicesPath2.flac, etc...
 Mania: 4
 Difficulty: #1
 Game Over:
