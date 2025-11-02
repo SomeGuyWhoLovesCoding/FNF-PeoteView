@@ -102,11 +102,7 @@ class NoteSpawner {
 			} else {
 				if (!ghost) {
 					noteSpr = parent.drawNote(pos, n, diff, i);
-					noteSpr.notesInOne = 0; // don't forget this!
-				} else {
-					// Ghost note - same meta-note, just increment counter
-					noteSpr.notesInOne++;
-				}
+				} // fuck ghost notes, don't increment notesInOne on that one
 			}
 
 			prev = n;
