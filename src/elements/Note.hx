@@ -53,13 +53,9 @@ class Note implements Element
 
 	// this was done to mimic sparrow atlas functionality
 	static public var offsetAndSizeFrames:Array<Int> = [];
-	//static public var offsetAndSizeFramesLength:Int;
 
-	// This is all for the greedy merge stuffs ignore it
-	/*static public var greedyMergeTypeToCount(default, null):Map<Int, Int> = [
-		1 => 64
-	];*/
-	static public var maxGMAlphaMult:Int = 8; // The usual amount for normal notes
+	static public var offsetAndSizeFramesGM:Array<Int> = [];
+	static public var enableGM:Bool;
 
 	public var id:Int = 0;
 
@@ -109,13 +105,11 @@ class Note implements Element
 		program.setColorFormula( 'c * why(${name}_ID, initialAlpha, addedAlpha)' );
 	}
 
-	inline public function toggleGMAlphaMult(mult:Int) {
-		/*clipX = offsetAndSizeFrames[offset];
-		clipY = offsetAndSizeFrames[offset + 1];
-		w = clipWidth = clipSizeX = offsetAndSizeFrames[offset + 2];
-		h = clipHeight = clipSizeY = offsetAndSizeFrames[offset + 3];
-		ox = offsetAndSizeFrames[offset + 4];
-		oy = offsetAndSizeFrames[offset + 5];*/
+	inline public function toggleGMVariant(/*mult:Int, */g:Int, isCover:Bool) {
+		var int = (id * 3) - (g - 1);
+		//Sys.println(int);
+		//trace(/*mult,*/g,isCover,id);
+		setOffsetAndSizeGM(int);
 	}
 
 	inline public function changeID(id:Int) {
@@ -169,13 +163,32 @@ class Note implements Element
 		oy = offsetAndSizeFrames[offset + 5];
 	}
 
+	private function setOffsetAndSizeGM(offset:Int) {
+		clipX = offsetAndSizeFramesGM[offset];
+		clipY = offsetAndSizeFramesGM[offset + 1];
+		w = clipWidth = clipSizeX = offsetAndSizeFramesGM[offset + 2];
+		h = clipHeight = clipSizeY = offsetAndSizeFramesGM[offset + 3];
+		ox = offsetAndSizeFramesGM[offset + 4];
+		oy = offsetAndSizeFramesGM[offset + 5];
+	}
+
 	private function isOffsetAndSize(offset:Int) {
 		var X = offsetAndSizeFrames[offset];
 		var Y = offsetAndSizeFrames[offset + 1];
 		var width = offsetAndSizeFrames[offset + 2];
 		var height = offsetAndSizeFrames[offset + 3];
 		return clipX == X && clipY == Y &&
-		(clipWidth == width && clipSizeX == width) && (clipHeight == height && clipSizeY == height) &&
-		ox == offsetAndSizeFrames[offset + 4] && oy == offsetAndSizeFrames[offset + 5];
+			(clipWidth == width && clipSizeX == width) && (clipHeight == height && clipSizeY == height) &&
+			ox == offsetAndSizeFrames[offset + 4] && oy == offsetAndSizeFrames[offset + 5];
+	}
+
+	private function isOffsetAndSizeGM(offset:Int) {
+		var X = offsetAndSizeFramesGM[offset];
+		var Y = offsetAndSizeFramesGM[offset + 1];
+		var width = offsetAndSizeFramesGM[offset + 2];
+		var height = offsetAndSizeFramesGM[offset + 3];
+		return clipX == X && clipY == Y &&
+			(clipWidth == width && clipSizeX == width) && (clipHeight == height && clipSizeY == height) &&
+			ox == offsetAndSizeFramesGM[offset + 4] && oy == offsetAndSizeFramesGM[offset + 5];
 	}
 }

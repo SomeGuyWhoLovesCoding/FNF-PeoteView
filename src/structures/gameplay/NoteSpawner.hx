@@ -75,7 +75,6 @@ class NoteSpawner {
 		while (i < top) {
 			var n = File.getNote(i);
 
-			// Get lane and receptor information
 			var lane = parent.noteTypeFunctionalityPre[n.type] != null
 				? 1
 				: (n.type % parent.strumlines.length);
@@ -86,18 +85,14 @@ class NoteSpawner {
 			var diff = MetaNote.metaNotePositionToSongTime((n.position - pos)) * scrollSpeed;
 			var newY = receptor.y + Math.floor(diff);
 
-			// Check if this is a ghost note
 			var ghost = isGhostNote(prev, n);
 
-			// Determine if notes should overlap
 			var shouldOverlap = shouldNotesOverlap(prev, n, noteSpr, receptor, newY,
 				fakeOverlapStorage[prev != -1 ? prev.index : -1]) && !ghost;
 
-			// Update fake overlap storage for next iteration
 			fakeOverlapStorage[n.index] = newY;
 
 			if (shouldOverlap) {
-				// Merge into existing sprite
 				mergeNoteIntoSprite(noteSpr, n);
 			} else {
 				if (!ghost) {
@@ -129,6 +124,7 @@ class NoteSpawner {
 	 * @param notes
 	 */
 	function renderVirtualNotes(notes:NoteVB) {
+		var downScroll = parent.parent.downScroll;
 		var numIterations = 0;
 		var virtualNotes = notes.notes;
 		var averageNotesPerOne:Int64 = 0;
@@ -143,6 +139,7 @@ class NoteSpawner {
 				var k = 0;
 				while (k < length) {
 					var increment = 1;
+					var granularity = 1;
 					var virtualNote:VirtualNote = index[k];
 					if (virtualNote == null) continue;
 
@@ -150,12 +147,12 @@ class NoteSpawner {
 
 					//// greedy note merging (16x) ////
 
-					// Prevent branch misprediction with like—anything to be completely honest I am very proud I did this
-					if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 32, 2)) {
+					if (Note.enableGM && greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 32, 2)) {
 						increment = 32;
+						granularity = 2;
 					}
 
-					if (greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 64, 1)) {
+					if (Note.enableGM && greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 64, 1)) {
 						increment = 64;
 					}
 
@@ -171,14 +168,16 @@ class NoteSpawner {
 					note.initialAlpha = virtualNote.initialAlpha;
 					note.addedAlpha = virtualNote.addedAlpha;
 
-					if (virtualNote.greedyMergeAlphaMultiplier != 0) {
-						note.toggleGMAlphaMult(virtualNote.greedyMergeAlphaMultiplier);
-						note.initialAlpha = 1;
-						note.addedAlpha = 0;
-					}
-
 					note.changeID(id);
 					note.toNote();
+
+					if (Note.enableGM && increment != 1) {
+						note.toggleGMVariant(granularity, false);
+						note.initialAlpha = /*virtualNote.ref.missed ? Note.defaultMissAlpha : */Note.defaultAlpha;
+						//if (downScroll) note.y -= increment * granularity;
+						//note.addedAlpha = virtualNote.greedyMergeAlphaMultiplier;
+					}
+
 					NoteSystem.notesBuf.addElement(note);
 
 					k += increment;
@@ -250,7 +249,7 @@ class NoteSpawner {
 			for (g in 0...count) {
 				var virtualNote2:VirtualNote = index[k + g];
 				var nextNote:VirtualNote = index[k + g + 1];
-				if (virtualNote2 == null || nextNote == null) return false;  // Changed from break
+				if (virtualNote2 == null || nextNote == null) return false;
 
 				var yCompare = virtualNote2.y - nextNote.y;
 				if (yCompare < 0) yCompare = -yCompare;
@@ -271,8 +270,6 @@ class NoteSpawner {
 
 			yToUse /= count;
 			notesInOneMerged /= count;
-
-			if (notesInOneMerged > Note.maxGMAlphaMult) notesInOneMerged = Note.maxGMAlphaMult;
 
 			// If we got here, all checks passed
 			virtualNote.greedyMergeType = Math.floor(yToUse);

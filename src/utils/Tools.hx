@@ -1,6 +1,7 @@
 package utils;
 
 import sys.io.File;
+import sys.FileSystem;
 import data.chart.Header;
 using StringTools;
 
@@ -10,6 +11,7 @@ class Tools {
 
 	static function parseNoteskinData(path:String) {
 		while (Note.offsetAndSizeFrames.length != 0) Note.offsetAndSizeFrames.pop();
+		while (Note.offsetAndSizeFramesGM.length != 0) Note.offsetAndSizeFramesGM.pop();
 		while (Sustain.offsets.length != 0) Sustain.offsets.pop();
 		while (Sustain.tailPoints.length != 0) Sustain.tailPoints.pop();
 
@@ -32,6 +34,32 @@ class Tools {
 			Note.offsetAndSizeFrames.push(height);
 			Note.offsetAndSizeFrames.push(frameX);
 			Note.offsetAndSizeFrames.push(frameY);
+		}
+
+		var gmFileExists = Note.enableGM = FileSystem.exists('$path/noteData_gm.xml');
+		trace("GM EXISTS???? HELO??????? - ",gmFileExists);
+
+		if (gmFileExists) {
+			var contents = File.getContent('$path/noteData_gm.xml');
+			var xml = Xml.parse(contents);
+			var root = xml.firstElement();
+
+			for (element in root.elementsNamed("SubTexture")) {
+				var name = element.get("name");
+				var x = Std.parseInt(element.get("x"));
+				var y = Std.parseInt(element.get("y"));
+				var width = Std.parseInt(element.get("width"));
+				var height = Std.parseInt(element.get("height"));
+				var frameX = element.exists("frameX") ? Std.parseInt(element.get("frameX")) : 0;
+				var frameY = element.exists("frameY") ? Std.parseInt(element.get("frameY")) : 0;
+
+				Note.offsetAndSizeFramesGM.push(x);
+				Note.offsetAndSizeFramesGM.push(y);
+				Note.offsetAndSizeFramesGM.push(width);
+				Note.offsetAndSizeFramesGM.push(height);
+				Note.offsetAndSizeFramesGM.push(frameX);
+				Note.offsetAndSizeFramesGM.push(frameY);
+			}
 		}
 
 		var data = File.read('$path/sustainProperties.txt');
