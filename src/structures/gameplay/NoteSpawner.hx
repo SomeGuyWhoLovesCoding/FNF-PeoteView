@@ -147,13 +147,12 @@ class NoteSpawner {
 
 					//// greedy note merging (16x) ////
 
-					if (Note.enableGM && greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 32, 2)) {
-						increment = 32;
-						granularity = 2;
-					}
-
 					if (Note.enableGM && greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 64, 1)) {
 						increment = 64;
+						granularity = 1;
+					} else if (Note.enableGM && greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 32, 2)) {
+						increment = 32;
+						granularity = 2;
 					}
 
 					//// finally, do it. ////
@@ -171,10 +170,12 @@ class NoteSpawner {
 					note.changeID(id);
 					note.toNote();
 
-					if (Note.enableGM && increment != 1) {
+					if (Note.enableGM && increment != 1 && virtualNote.greedyMergeAlphaMultiplier != 0 && virtualNote.greedyMergeType != 0) {
 						note.toggleGMVariant(granularity, false);
 						note.initialAlpha = /*virtualNote.ref.missed ? Note.defaultMissAlpha : */Note.defaultAlpha;
-						//if (downScroll) note.y -= increment * granularity;
+						note.addedAlpha = 1;
+						@:privateAccess if (j == 2) trace(note.clipX,note.clipY,note.clipWidth,note.clipHeight);
+						if (downScroll) note.y -= increment;
 						//note.addedAlpha = virtualNote.greedyMergeAlphaMultiplier;
 					}
 

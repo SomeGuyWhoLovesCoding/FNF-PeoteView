@@ -51,6 +51,8 @@ class Note implements Element
 	public var rW:Int;
 	public var rH:Int;
 
+	static public var KEYS:Int;
+
 	// this was done to mimic sparrow atlas functionality
 	static public var offsetAndSizeFrames:Array<Int> = [];
 
@@ -106,9 +108,12 @@ class Note implements Element
 	}
 
 	inline public function toggleGMVariant(/*mult:Int, */g:Int, isCover:Bool) {
-		var int = (id * 3) - (g - 1);
+		var granularityValue = g - 1;
+		//var int = (id + (granularityValue * 2)) * (24 - (isCover ? 12 : 0));
+		var int = ((id * (arrayLengthOfNoteSkin_gm())) + (granularityValue * 2) + (isCover ? 1 : 0)) * 6;
+		//Sys.println(toggleGMVariant);
 		//Sys.println(int);
-		//trace(/*mult,*/g,isCover,id);
+		trace(/*mult,*/g,isCover,id,int);
 		setOffsetAndSizeGM(int);
 	}
 
@@ -119,39 +124,39 @@ class Note implements Element
 	// Command functions
 
 	inline public function reset() {
-		setOffsetAndSize(0 + (24 * id));
+		setOffsetAndSize(0 + ((arrayLengthOfNoteSkin_main()) * id));
 		rW = w;
 		rH = h;
 	}
 
 	inline public function toNote() {
-		setOffsetAndSize(6 + (24 * id));
+		setOffsetAndSize(6 + ((arrayLengthOfNoteSkin_main()) * id));
 	}
 
 	inline public function press() {
-		setOffsetAndSize(12 + (24 * id));
+		setOffsetAndSize(12 + ((arrayLengthOfNoteSkin_main()) * id));
 	}
 
 	inline public function confirm() {
-		setOffsetAndSize(18 + (24 * id));
+		setOffsetAndSize(18 + ((arrayLengthOfNoteSkin_main()) * id));
 	}
 
 	// Checking functions
 
 	inline public function idle() {
-		return isOffsetAndSize(0 + (24 * id));
+		return isOffsetAndSize(0 + ((arrayLengthOfNoteSkin_main()) * id));
 	}
 
 	inline public function isNote() {
-		return isOffsetAndSize(6 + (24 * id));
+		return isOffsetAndSize(6 + ((arrayLengthOfNoteSkin_main()) * id));
 	}
 
 	inline public function pressed() {
-		return isOffsetAndSize(12 + (24 * id));
+		return isOffsetAndSize(12 + ((arrayLengthOfNoteSkin_main()) * id));
 	}
 
 	inline public function confirmed() {
-		return isOffsetAndSize(18 + (24 * id));
+		return isOffsetAndSize(18 + ((arrayLengthOfNoteSkin_main()) * id));
 	}
 
 	private function setOffsetAndSize(offset:Int) {
@@ -190,5 +195,13 @@ class Note implements Element
 		return clipX == X && clipY == Y &&
 			(clipWidth == width && clipSizeX == width) && (clipHeight == height && clipSizeY == height) &&
 			ox == offsetAndSizeFramesGM[offset + 4] && oy == offsetAndSizeFramesGM[offset + 5];
+	}
+
+	inline static function arrayLengthOfNoteSkin_main() {
+		return Std.int(Math.ffloor(offsetAndSizeFrames.length) / KEYS);
+	}
+
+	inline static function arrayLengthOfNoteSkin_gm() {
+		return Std.int(Math.ffloor(offsetAndSizeFramesGM.length) / (KEYS * 6));
 	}
 }

@@ -35,6 +35,8 @@ class Tools {
 			Note.offsetAndSizeFrames.push(frameX);
 			Note.offsetAndSizeFrames.push(frameY);
 		}
+	
+		Note.KEYS = Std.int(Math.ffloor(Note.offsetAndSizeFrames.length / 4) / 6);
 
 		var gmFileExists = Note.enableGM = FileSystem.exists('$path/noteData_gm.xml');
 		trace("GM EXISTS???? HELO??????? - ",gmFileExists);
@@ -59,6 +61,7 @@ class Tools {
 				Note.offsetAndSizeFramesGM.push(height);
 				Note.offsetAndSizeFramesGM.push(frameX);
 				Note.offsetAndSizeFramesGM.push(frameY);
+				trace(x,y,width,height,frameX,frameY);
 			}
 		}
 
