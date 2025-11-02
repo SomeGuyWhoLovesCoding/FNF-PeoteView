@@ -123,6 +123,12 @@ class NoteSystem {
 		resetStrumlines(); // force reset them
 	}
 
+	inline function stopStrumlineGlow(rec:Note, strumline:Strumline, j:Int) {
+		rec.reset();
+		strumline.botHitsToCheck[j] = false; // reset the flag safely
+		strumline.botTimers[j] = 0;
+	}
+
 	// Modified refreshRendering to handle timer decrements more safely:
 	// very shotty attempt at resetting receptors once one has an idle still sticking around after a note or sustain hit
 	private function refreshRendering(pos:Int64) {
@@ -134,6 +140,7 @@ class NoteSystem {
 		var delta = pos - _lastPos;
 		if (delta < 0) delta = -delta;
 		var timeDelta = MetaNote.metaNotePositionToSongTime(delta) * 0.001;
+		//Sys.println('Time delta: $timeDelta');
 
 		// If the delta is too large (pause/seek detected) or negative, don't decrement timers
 		var shouldDecrement = timeDelta > 0 && timeDelta < 0.5; // Max 500ms per frame
@@ -144,22 +151,19 @@ class NoteSystem {
 			for (j in 0...botTimers.length) {
 				var rec = strumline.buffer[j];
 
-				// *sigh* Now THAT'S a fucking relief... I'm done trying to fix this shit man...
-				if ((!strumline.playable && rec.confirmed()) &&
-					(strumline.botTimers[j] == 0 && !strumline.botHitsToCheck[j]) &&
-					(strumline.notesToHit[j] == null && strumline.sustainsToHold[j] == null)) {
-					//trace("Still stuck, go:", j, rec.id, strumline.botTimers[j]);
-					rec.reset();
-				}
+				if (!strumline.playable && j == 1) Sys.println(strumline.botTimers[j]);
 
 				if (shouldDecrement) {
 					strumline.botTimers[j] -= timeDelta;
-					if (strumline.botTimers[j] < 0) strumline.botTimers[j] = 0;
+					if (strumline.botTimers[j] < 0 && strumline.sustainsToHold[j] == null) stopStrumlineGlow(rec, strumline, j);
 				}
 
-				if (strumline.botTimers[j] == 0 && strumline.botHitsToCheck[j]) {
+				// *sigh* Now THAT'S a fucking relief... I'm done trying to fix this shit man...
+				if ((!strumline.playable && rec.confirmed()) &&
+					(strumline.botTimers[j] == 0 && !strumline.botHitsToCheck[j]) &&
+					(strumline.sustainsToHold_duration[j] == 0)) {
+					//trace("Still stuck, go:", j, rec.id, strumline.botTimers[j]);
 					rec.reset();
-					strumline.botHitsToCheck[j] = false; // reset the flag safely
 				}
 			}
 			strumline.draw(notesBuf);
@@ -291,7 +295,7 @@ class NoteSystem {
 				if (!rec.confirmed()) rec.confirm();
 
 				// Start glow timer for non-sustains
-				strumline.botTimers[index] = 0.045;
+				strumline.botTimers[index] = 0.08;
 				strumline.botHitsToCheck[index] = duration == 0;
 
 				// Setup sustain visuals if needed

@@ -14,6 +14,7 @@ class Strumline {
 	var notesToHit_indexes(default, null):Array<Int64>;
 	var sustainsToHold(default, null):Array<Null<MetaNote>>;
 	var sustainsToHold_indexes(default, null):Array<Int64>;
+	var sustainsToHold_duration(default, null):Array<Int>;
 	var botHitsToCheck(default, null):Array<Bool>;
 	var playerHitsToCheck(default, null):Array<Bool>;
 	var fakeOverlapStorage(default, null):Array<Int>; // This is for fake note overlapping!!! So it renders faster instead of just checking one by one without relying on an index based approach like this. Thanks - sgwl
@@ -60,6 +61,7 @@ class Strumline {
 		notesToHit_indexes.resize(value);
 		sustainsToHold.resize(value);
 		sustainsToHold_indexes.resize(value);
+		sustainsToHold_duration.resize(value);
 		botHitsToCheck.resize(value);
 		playerHitsToCheck.resize(value);
 		fakeOverlapStorage.resize(value);
@@ -91,6 +93,7 @@ class Strumline {
 		notesToHit = [];
 		notesToHit_indexes = [];
 		sustainsToHold = [];
+		sustainsToHold_duration = [];
 		sustainsToHold_indexes = [];
 		botHitsToCheck = [];
 		playerHitsToCheck = [];
@@ -136,6 +139,7 @@ class Strumline {
 			var n:Int64 = noteToHit.toNumber();
 			(n:MetaNote).flag = true;
 			File.setNote(notesToHit_indexes[index], n);
+			sustainsToHold_duration[index] = noteToHit.duration;
 
 			if (noteToHit.duration > 20) {
 				sustainsToHold[index] = n; // `n` is modified so don't switch this to `noteToHit` since that variable was never modified
@@ -169,6 +173,7 @@ class Strumline {
 			pf.onSustainRelease.dispatch(sustainToRelease);
 			sustainsToHold[index] = null;
 			sustainsToHold_indexes[index] = 0;
+			sustainsToHold_duration[index] = 0;
 
 			var hud = pf.hud;
 			if (SaveData.state.preferences.ratingPopup && hud != null) {
@@ -190,6 +195,7 @@ class Strumline {
 		notesToHit_indexes.resize(0);
 		sustainsToHold.resize(0);
 		sustainsToHold_indexes.resize(0);
+		sustainsToHold_duration.resize(0);
 		botHitsToCheck.resize(0);
 		playerHitsToCheck.resize(0);
 		botTimers.resize(0);
@@ -197,6 +203,7 @@ class Strumline {
 		notesToHit_indexes.resize(length);
 		sustainsToHold.resize(length);
 		sustainsToHold_indexes.resize(length);
+		sustainsToHold_duration.resize(length);
 		botHitsToCheck.resize(length);
 		playerHitsToCheck.resize(length);
 		botTimers.resize(length);
@@ -222,8 +229,10 @@ class Strumline {
 		if (sustainsToHold != null) {
 			while (sustainsToHold.pop() != null) {}
 			while (sustainsToHold_indexes.pop() != null) {}
+			while (sustainsToHold_duration.pop() != null) {}
 			sustainsToHold = null;
 			sustainsToHold_indexes = null;
+			sustainsToHold_duration = null;
 		}
 	}
 }
