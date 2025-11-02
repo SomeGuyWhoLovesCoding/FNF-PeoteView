@@ -79,7 +79,7 @@ class NoteSystem {
 
 		for (i in 0...2) { // how many strumlines you'll use throughout the entire song, only. Not dynamic because I'm lazy to do any overcomplication and I want to keep it pretty simple.
 			var strumline = new Strumline(STRUMLINE_X_OFFSET + Std.int(Main.INITIAL_WIDTH * (i * 0.5)),
-				parent.downScroll ? Main.INITIAL_HEIGHT - STRUMLINE_Y_OFFSET_DOWNSCROLL : STRUMLINE_Y_OFFSET, 
+				parent.downScroll ? Main.INITIAL_HEIGHT - STRUMLINE_Y_OFFSET_DOWNSCROLL : STRUMLINE_Y_OFFSET,
 				Std.int(inputSystem.strumline[0]), inputSystem.strumline[1], mania, this);
 			strumline.playable = parent.inputSystem.strumlinePlayable[i];
 			strumlines.push(strumline);
@@ -97,12 +97,19 @@ class NoteSystem {
 	 * @param pos The song's position in the note position format.
 	**/
 	function update(pos:Int64) {
-		// Clear up the virtual note buffer for the funnies
+		if (_lastPos == 0) _lastPos = pos; // initialize safely
+
+		// if position jumped too far (pause or seek), resync
+		var delta = pos - _lastPos;
+		if (delta < 0 || MetaNote.metaNotePositionToSongTime(delta) > 200)
+			_lastPos = pos;
+
 		virtualNoteBuffer.clear();
 
-		if (noteSpawner != null) {
+		if (noteSpawner != null)
 			noteSpawner.update(pos);
-		}
+
+		_lastPos = pos;
 	}
 
 	private var _lastPos(default, null):Int64; // for adaptive bot timer
@@ -113,17 +120,21 @@ class NoteSystem {
 	**/
 	function onSongPositionJump(pos:Int64) {
 		_lastPos = pos;
+		resetStrumlines(); // force reset them
 	}
 
 	// Modified refreshRendering to handle timer decrements more safely:
+	// very shotty attempt at resetting receptors once one has an idle still sticking around after a note or sustain hit
 	private function refreshRendering(pos:Int64) {
 		// Clear note & sustain buffers to refresh for new window
 		notesBuf.clear();
 		sustainsBuf.clear();
 
 		// Calculate time delta - clamp to prevent issues from pausing/seeking
-		var timeDelta = MetaNote.metaNotePositionToSongTime(pos - _lastPos) * 0.001;
-		
+		var delta = pos - _lastPos;
+		if (delta < 0) delta = -delta;
+		var timeDelta = MetaNote.metaNotePositionToSongTime(delta) * 0.001;
+
 		// If the delta is too large (pause/seek detected) or negative, don't decrement timers
 		var shouldDecrement = timeDelta > 0 && timeDelta < 0.5; // Max 500ms per frame
 
@@ -131,16 +142,24 @@ class NoteSystem {
 			var strumline = strumlines[i];
 			var botTimers = strumline.botTimers;
 			for (j in 0...botTimers.length) {
-				if (botTimers[j] > 0) {
-					if (shouldDecrement) {
-						botTimers[j] -= timeDelta;
-					}
-					
-					if (botTimers[j] <= 0 && strumline.botHitsToCheck[j]) {
-						strumline.buffer[j].reset();
-						botTimers[j] = 0;
-						strumline.botHitsToCheck[j] = false; // reset the flag safely
-					}
+				var rec = strumline.buffer[j];
+
+				// *sigh* Now THAT'S a fucking relief... I'm done trying to fix this shit man...
+				if ((!strumline.playable && rec.confirmed()) &&
+					(strumline.botTimers[j] == 0 && !strumline.botHitsToCheck[j]) &&
+					(strumline.notesToHit[j] == null && strumline.sustainsToHold[j] == null)) {
+					//trace("Still stuck, go:", j, rec.id, strumline.botTimers[j]);
+					rec.reset();
+				}
+
+				if (shouldDecrement) {
+					strumline.botTimers[j] -= timeDelta;
+					if (strumline.botTimers[j] < 0) strumline.botTimers[j] = 0;
+				}
+
+				if (strumline.botTimers[j] == 0 && strumline.botHitsToCheck[j]) {
+					rec.reset();
+					strumline.botHitsToCheck[j] = false; // reset the flag safely
 				}
 			}
 			strumline.draw(notesBuf);
@@ -317,7 +336,7 @@ class NoteSystem {
 
 					strumline.sustainsToHold[index] = null;
 					strumline.sustainsToHold_indexes[index] = 0;
-    				strumline.botHitsToCheck[index] = false; // only for short notes
+					strumline.botHitsToCheck[index] = false; // only for short notes
 
 					parent.onSustainComplete.dispatch(note);
 				}
@@ -395,7 +414,7 @@ class NoteSystem {
 				var strumline = strumlines.pop();
 				strumline.dispose();
 			}
-	
+
 			strumlines = null;
 		}
 

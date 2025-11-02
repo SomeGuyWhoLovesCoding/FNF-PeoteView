@@ -304,9 +304,9 @@ class PlayField implements State {
 		pauseScreen.open();
 		if (songStarted) Mixer.stopMusic();
 		if (noteSystem != null) {
-			noteSystem.resetStrumlines();
 			var pos = MetaNote.floatToMetaNotePosition(songPosition);
 			noteSystem.onSongPositionJump(pos);
+			noteSystem.resetStrumlines();
 		}
 		if (inputSystem != null) inputSystem.removeEvents();
 
@@ -322,7 +322,6 @@ class PlayField implements State {
 		pauseScreen.close();
 		if (!RenderingMode.enabled && songStarted && !songEnded) Mixer.startMusic();
 		if (noteSystem != null) {
-			noteSystem.resetStrumlines();
 			var pos = MetaNote.floatToMetaNotePosition(songPosition);
 			noteSystem.onSongPositionJump(pos);
 		}
@@ -370,7 +369,7 @@ class PlayField implements State {
 			if (health < 0.05) {
 				health = 0.05;
 			}
-			
+
 			return;
 		}
 
