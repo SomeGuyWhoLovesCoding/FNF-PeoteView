@@ -20,6 +20,7 @@ class Strumline {
 	var fakeOverlapStorage(default, null):Array<Int>; // This is for fake note overlapping!!! So it renders faster instead of just checking one by one without relying on an index based approach like this. Thanks - sgwl
 	var greedyMergeTemp:Array<Array<NoteCmd>>;
 	var botTimers(default, null):Array<Float>;
+	var sustainsActive(default, null):Array<Bool>;
 	var buffer(default, null):Array<Note>;
 
 	var x(default, set):Int;
@@ -62,6 +63,7 @@ class Strumline {
 		sustainsToHold.resize(value);
 		sustainsToHold_indexes.resize(value);
 		sustainsToHold_duration.resize(value);
+		sustainsActive.resize(value);
 		botHitsToCheck.resize(value);
 		playerHitsToCheck.resize(value);
 		fakeOverlapStorage.resize(value);
@@ -100,6 +102,7 @@ class Strumline {
 		fakeOverlapStorage = [];
 		greedyMergeTemp = [];
 		botTimers = [];
+		sustainsActive = [];
 		buffer = [];
 
 		this.parent = parent;
@@ -199,6 +202,7 @@ class Strumline {
 		botHitsToCheck.resize(0);
 		playerHitsToCheck.resize(0);
 		botTimers.resize(0);
+		sustainsActive.resize(0);
 		notesToHit.resize(length);
 		notesToHit_indexes.resize(length);
 		sustainsToHold.resize(length);
@@ -207,6 +211,7 @@ class Strumline {
 		botHitsToCheck.resize(length);
 		playerHitsToCheck.resize(length);
 		botTimers.resize(length);
+		sustainsActive.resize(length);
 	}
 
 	function resetAnimations() {

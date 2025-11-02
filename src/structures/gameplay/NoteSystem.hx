@@ -123,12 +123,6 @@ class NoteSystem {
 		resetStrumlines(); // force reset them
 	}
 
-	inline function stopStrumlineGlow(rec:Note, strumline:Strumline, j:Int) {
-		rec.reset();
-		strumline.botHitsToCheck[j] = false; // reset the flag safely
-		strumline.botTimers[j] = 0;
-	}
-
 	// Modified refreshRendering to handle timer decrements more safely:
 	// very shotty attempt at resetting receptors once one has an idle still sticking around after a note or sustain hit
 	private function refreshRendering(pos:Int64) {
@@ -150,20 +144,31 @@ class NoteSystem {
 			var botTimers = strumline.botTimers;
 			for (j in 0...botTimers.length) {
 				var rec = strumline.buffer[j];
+				if (strumline.playable) continue;
 
-				if (!strumline.playable && j == 1) Sys.println(strumline.botTimers[j]);
-
-				if (shouldDecrement) {
-					strumline.botTimers[j] -= timeDelta;
-					if (strumline.botTimers[j] < 0 && strumline.sustainsToHold[j] == null) stopStrumlineGlow(rec, strumline, j);
-				}
-
-				// *sigh* Now THAT'S a fucking relief... I'm done trying to fix this shit man...
-				if ((!strumline.playable && rec.confirmed()) &&
-					(strumline.botTimers[j] == 0 && !strumline.botHitsToCheck[j]) &&
-					(strumline.sustainsToHold_duration[j] == 0)) {
-					//trace("Still stuck, go:", j, rec.id, strumline.botTimers[j]);
+				// only happens in rare cases
+				//if (j == 0 && rec.confirmed()) trace('$j still stuck? fuck you for that.', strumline.sustainsActive[j], strumline.botTimers[j], strumline.sustainsToHold_duration[j]);
+				/*if (rec.confirmed() && strumline.sustainsActive[j] && strumline.botTimers[j] != 0 && strumline.sustainsToHold_duration[j] == 0) {
+					if (j == 0) trace('RAAAAAAAAAAAAA', strumline.sustainsActive[j], strumline.botTimers[j]);
 					rec.reset();
+					strumline.botTimers[j] = 0;
+				}*/
+
+				/*if (rec.confirmed() && !strumline.sustainsActive[j] && strumline.botTimers[j] > 0) {
+					Sys.println('$j found! kill him!');
+					rec.reset();
+				}*/
+
+				//if (!strumline.playable && j == 1) Sys.println(strumline.botTimers[j]);
+
+				if (!strumline.sustainsActive[j]) {
+					if (shouldDecrement) {
+						if (strumline.botTimers[j] < 0 && !strumline.sustainsActive[j]) {
+							//Sys.println('Sadly reset $j. FUCK!');
+							rec.reset();
+							strumline.botTimers[j] = 0;
+						} else strumline.botTimers[j] -= timeDelta;
+					}
 				}
 			}
 			strumline.draw(notesBuf);
@@ -295,11 +300,14 @@ class NoteSystem {
 				if (!rec.confirmed()) rec.confirm();
 
 				// Start glow timer for non-sustains
-				strumline.botTimers[index] = 0.08;
-				strumline.botHitsToCheck[index] = duration == 0;
+				strumline.botTimers[index] = 0.045;
+
+				strumline.sustainsToHold_duration[index] = 0;
 
 				// Setup sustain visuals if needed
 				if (sustainExists) {
+					strumline.sustainsActive[index] = true;
+					strumline.sustainsToHold_duration[index] = note.duration;
 					sustainSpr.followNote(rec.x, rec.y, id);
 					sustainSpr.w = sustainSpr.length - leftover;
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
@@ -310,24 +318,25 @@ class NoteSystem {
 		}
 
 		// --- Sustain handling ---
+		var sustainLength = (duration * 4) - 10;
 		if (sustainExists) {
 			sustainSpr.ref = noteSpr;
 			sustainSpr.r = parent.downScroll ? -90 : 90;
 			sustainSpr.speed = parent.scrollSpeed;
 			sustainSpr.scale = rec.scale;
-			sustainSpr.length = (duration * 4) - 10;
+			sustainSpr.length = sustainLength;
 
 			if (!isHit) {
-				sustainSpr.w = sustainSpr.length;
+				sustainSpr.w = sustainLength;
 				sustainSpr.followNote(noteSprX, noteSprY, id);
 			} else if (sustainSpr.alpha != 0) {
 				if (sustainSpr.w >= 0) {
 					sustainSpr.followNote(rec.x, rec.y, id);
-					sustainSpr.w = sustainSpr.length - leftover;
+					sustainSpr.w = sustainLength - leftover;
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
 
-				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainSpr.length - 10)) && !isHeld) {
+				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainLength - 12)) && !isHeld) {
 					var n:Int64 = note.toNumber();
 					(n:MetaNote).held = true;
 					isHeld = true;
@@ -340,11 +349,14 @@ class NoteSystem {
 
 					strumline.sustainsToHold[index] = null;
 					strumline.sustainsToHold_indexes[index] = 0;
-					strumline.botHitsToCheck[index] = false; // only for short notes
 
 					parent.onSustainComplete.dispatch(note);
 				}
 			}
+
+			// Fixes the rare receptor pause issue, finally
+			if (diff + sustainLength - 12 < 0)
+				strumline.sustainsActive[index] = !isHeld;
 
 			if (noteSpr != null)
 				virtualNoteBuffer.addSustain(sustainSpr, noteSpr);
