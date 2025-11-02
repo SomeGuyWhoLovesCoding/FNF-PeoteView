@@ -115,7 +115,10 @@ class PlayField implements State {
 
 		Mixer.setTime(Math.max(value, 0.0), this);
 		if (hud != null && SaveData.state.preferences.ratingPopup) hud.hideRatingPopup();
-		if (noteSystem != null) noteSystem.resetNotes(songPosition);
+		if (noteSystem != null) {
+			noteSystem.resetNotes(songPosition);
+			noteSystem.onSongPositionJump(pos);
+		}
 		if (field != null) field.resetCharacters();
 	}
 
@@ -299,7 +302,11 @@ class PlayField implements State {
 
 		pauseScreen.open();
 		if (songStarted) Mixer.stopMusic();
-		if (noteSystem != null) noteSystem.resetStrumlines();
+		if (noteSystem != null) {
+			noteSystem.resetStrumlines();
+			var pos = MetaNote.floatToMetaNotePosition(songPosition);
+			noteSystem.onSongPositionJump(pos);
+		}
 		if (inputSystem != null) inputSystem.removeEvents();
 
 		paused = true;
@@ -313,7 +320,11 @@ class PlayField implements State {
 
 		pauseScreen.close();
 		if (!RenderingMode.enabled && songStarted && !songEnded) Mixer.startMusic();
-		if (noteSystem != null) noteSystem.resetStrumlines();
+		if (noteSystem != null) {
+			noteSystem.resetStrumlines();
+			var pos = MetaNote.floatToMetaNotePosition(songPosition);
+			noteSystem.onSongPositionJump(pos);
+		}
 		if (inputSystem != null) haxe.Timer.delay(inputSystem.addEvents, 1);
 
 		paused = false;

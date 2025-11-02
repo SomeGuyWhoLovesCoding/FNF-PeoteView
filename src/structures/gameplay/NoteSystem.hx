@@ -108,21 +108,34 @@ class NoteSystem {
 	private var _lastPos(default, null):Int64; // for adaptive bot timer
 
 	/**
-	 * This function draws all of the strumlines after rendering it.
-	 * @param pos The song's position in the note position format.
+	 * Call this when pausing, seeking, or any time the song position jumps.
+	 * This ensures bot timers are properly synchronized.
 	**/
+	function onSongPositionJump(pos:Int64) {
+		_lastPos = pos;
+	}
+
+	// Modified refreshRendering to handle timer decrements more safely:
 	private function refreshRendering(pos:Int64) {
 		// Clear note & sustain buffers to refresh for new window
 		notesBuf.clear();
 		sustainsBuf.clear();
+
+		// Calculate time delta - clamp to prevent issues from pausing/seeking
+		var timeDelta = MetaNote.metaNotePositionToSongTime(pos - _lastPos) * 0.001;
+		
+		// If the delta is too large (pause/seek detected) or negative, don't decrement timers
+		var shouldDecrement = timeDelta > 0 && timeDelta < 0.5; // Max 500ms per frame
 
 		for (i in 0...strumlines.length) {
 			var strumline = strumlines[i];
 			var botTimers = strumline.botTimers;
 			for (j in 0...botTimers.length) {
 				if (botTimers[j] > 0) {
-					var decrement = pos - _lastPos;
-					botTimers[j] -= MetaNote.metaNotePositionToSongTime(decrement) * 0.001;
+					if (shouldDecrement) {
+						botTimers[j] -= timeDelta;
+					}
+					
 					if (botTimers[j] <= 0 && strumline.botHitsToCheck[j]) {
 						strumline.buffer[j].reset();
 						botTimers[j] = 0;
@@ -296,14 +309,15 @@ class NoteSystem {
 					(n:MetaNote).held = true;
 					isHeld = true;
 					File.setNote(_id, n);
-					strumline.sustainsToHold[index] = null;
-					strumline.sustainsToHold_indexes[index] = 0;
-    				strumline.botHitsToCheck[index] = false; // only for short notes
 
 					if (rec.confirmed()) {
 						if (playable) rec.press();
 						else rec.reset();
 					}
+
+					strumline.sustainsToHold[index] = null;
+					strumline.sustainsToHold_indexes[index] = 0;
+    				strumline.botHitsToCheck[index] = false; // only for short notes
 
 					parent.onSustainComplete.dispatch(note);
 				}
