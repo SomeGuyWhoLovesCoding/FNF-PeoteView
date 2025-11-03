@@ -5,7 +5,7 @@ package elements;
 **/
 class Note implements Element
 {
-	static public var defaultAlpha:Float = 1;
+	static public var defaultAlpha:Float = 0.5;
 	static public var defaultMissAlpha:Float = 0.5;
 
 	// position in pixel (relative to upper left corner of Display)
@@ -29,6 +29,7 @@ class Note implements Element
 	@varying @custom public var initialAlpha(default, set):Float = 1.0;
 	inline public function set_initialAlpha(value:Float) {
 		initialAlpha = value;
+
 		if (initialAlpha < 0) initialAlpha = 0;
 		if (initialAlpha > 1) initialAlpha = 1;
 		return value;
@@ -84,11 +85,9 @@ class Note implements Element
 				vec2 coord = vTexCoord;
 				vec4 tex = getTextureColor(textureID, coord);
 
-				// Apply your alpha adjustments
 				if (tex.a != 0.0) {
-					tex.rgb *= initialAlpha;
 					float oldA = tex.a;
-					float newA = clamp(oldA + addedAlpha, 0.0, 1.0);
+					float newA = clamp(oldA * initialAlpha + addedAlpha, 0.0, 1.0);
 
 					// Adjust premultiplied color to match the new alpha
 					if (oldA > 0.0) {

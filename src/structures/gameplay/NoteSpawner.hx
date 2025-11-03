@@ -160,17 +160,15 @@ class NoteSpawner {
 						increment = 64;
 						granularity = 1;
 						greedyMerged = true;
-					} else if (Note.enableGM && greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 32, 2)) {
-						increment = 32;
+					} else if (Note.enableGM && greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 64, 2)) {
+						increment = 64;
 						granularity = 2;
 						greedyMerged = true;
 					}
 
 					//// finally, do it. ////
 
-					var note = new Note(-99999, -99999, 0, 0);
-					note.x = virtualNote.x;
-					note.y = virtualNote.y;
+					var note = new Note(virtualNote.x, virtualNote.y, 0, 0);
 					note.w = virtualNote.w;
 					note.h = virtualNote.h;
 					note.scale = virtualNote.scale;
@@ -184,7 +182,7 @@ class NoteSpawner {
 
 					if (Note.enableGM && greedyMerged && virtualNote.greedyMergeAlphaMultiplier != 0 && virtualNote.greedyMergeType != 0) {
 						var h = note.h;
-						//note.toggleGMVariant(granularity, false);
+						note.toggleGMVariant(granularity, false);
 						//@:privateAccess trace('GM variant: x=${note.clipX}, y=${note.clipY}, w=${note.clipWidth}, h=${note.clipHeight}');
 						note.initialAlpha = Note.defaultAlpha;
 						note.addedAlpha = 0;
@@ -195,6 +193,7 @@ class NoteSpawner {
 							note.y -= note.h - h;  // Adjust so bottom of sprite is there
 							//note.y -= h;  // Subtract original note height to align properly
 						}
+						note.x = Math.floor(note.y * 0.008);
 						greedyMergedNoteList.push(note);
 					} else {
 						regularNoteList.push(note);
