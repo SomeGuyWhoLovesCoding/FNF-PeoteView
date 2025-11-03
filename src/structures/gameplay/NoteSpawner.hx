@@ -114,20 +114,21 @@ class NoteSpawner {
 	function renderNotes(pos:Int64) {
 		var notes = parent.virtualNoteBuffer;
 
-		renderVirtualNotes(notes);
+		renderVirtualNotes(notes, pos);
 		renderVirtualSustains(notes);
 	}
 
 	// both of these arrays are used to easily render notes in the opposite order.
 	var regularNoteList:Array<Note> = [];
 	var greedyMergedNoteList:Array<Note> = [];
+	var incrementAndGranularity:Array<Int> = [];
 
 	/**
 	 * Renders virtual notes into actual note instances for rendering.
 	 * This is separate from the main update loop onto the render loop to allow for optimizations, and most importantly, this function is separate for profiling.
 	 * @param notes
 	 */
-	function renderVirtualNotes(notes:NoteVB) {
+	function renderVirtualNotes(notes:NoteVB, pos:Int64) {
 		var downScroll = parent.parent.downScroll;
 		var numIterations = 0;
 		var virtualNotes = notes.notes;
@@ -143,12 +144,12 @@ class NoteSpawner {
 				var k = 0;
 				if (length == 0) continue;
 				while (k < length) {
-					var increment = 1;
-					var granularity = 1;
+					incrementAndGranularity[0] = 1;
+					incrementAndGranularity[1] = 1;
 					var virtualNote:VirtualNote = index[k];
 					var greedyMerged:Bool = false;
 					if (virtualNote == null) {
-						k += increment;
+						k += incrementAndGranularity[0];
 						continue;
 					}
 
@@ -156,14 +157,11 @@ class NoteSpawner {
 
 					//// greedy note merging (64x) ////
 
-					if (Note.enableGM && greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 64, 1)) {
-						increment = 64;
-						granularity = 1;
-						greedyMerged = true;
-					} else if (Note.enableGM && greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 64, 2)) {
-						increment = 64;
-						granularity = 2;
-						greedyMerged = true;
+					if (Note.enableGM) {
+						var mergedNotes = greedyMergeNearlyNotes(virtualNote, index, k, 64, 2);
+						if (mergedNotes > 1) greedyMerged = true;
+						incrementAndGranularity[0] = mergedNotes; // skip exactly that many notes
+						if (incrementAndGranularity[0] == 0) incrementAndGranularity[0] = 1;
 					}
 
 					//// finally, do it. ////
@@ -182,7 +180,7 @@ class NoteSpawner {
 
 					if (Note.enableGM && greedyMerged && virtualNote.greedyMergeAlphaMultiplier != 0 && virtualNote.greedyMergeType != 0) {
 						var h = note.h;
-						note.toggleGMVariant(granularity, false);
+						note.toggleGMVariant(incrementAndGranularity[1], false);
 						//@:privateAccess trace('GM variant: x=${note.clipX}, y=${note.clipY}, w=${note.clipWidth}, h=${note.clipHeight}');
 						note.initialAlpha = Note.defaultAlpha;
 						note.addedAlpha = 0;
@@ -193,13 +191,13 @@ class NoteSpawner {
 							note.y -= note.h - h;  // Adjust so bottom of sprite is there
 							//note.y -= h;  // Subtract original note height to align properly
 						}
-						note.x = Math.floor(note.y * 0.008);
+						note.x += Math.floor(MetaNote.metaNotePositionToSongTime(virtualNote.ref.position - pos) * 0.08);
 						greedyMergedNoteList.push(note);
 					} else {
 						regularNoteList.push(note);
 					}
 
-					k += increment;
+					k += incrementAndGranularity[0];
 					numIterations++;
 					averageNotesPerOne += virtualNote.greedyMergeAlphaMultiplier;
 				}
@@ -264,56 +262,57 @@ class NoteSpawner {
 	 * @param count The number of notes to check for merging.
 	 * @return True if merging was successful.
 	 */
-	function greedyMergeNearlyNotes(virtualNote:VirtualNote, index:Array<VirtualNote>, strumReceptor:Note, k:Int, count:Int = 16, granularity:Int = 2):Bool {
-		// Check bounds first
-		if (k + count >= index.length) return false;
-
+	function greedyMergeNearlyNotes(
+		virtualNote:VirtualNote,
+		index:Array<VirtualNote>,
+		k:Int,
+		boundary:Float = 64,
+		maxSmallDistance:Float = 2
+	):Int {
 		var firstNote = index[k];
-		var lastNote = index[k + count - 1];
-		
-		if (firstNote == null || lastNote == null) return false;
-		
-		// Check total span
-		var totalSpan = firstNote.y - lastNote.y;
-		if (totalSpan < 0) totalSpan = -totalSpan;
-		
-		var maxAllowedSpan = granularity * count;
-		
-		if (totalSpan > maxAllowedSpan) return false;
-		
-		var yToUse:Float = 0;
-		var notesInOneMerged:Int64 = 0;
+		if (firstNote == null) return 1;
 
-		for (g in 0...count) {
-			var virtualNote2:VirtualNote = index[k + g];
-			var nextNote:VirtualNote = index[k + g + 1];
-			if (virtualNote2 == null || nextNote == null) return false;
+		var totalSpan:Float = 0;
+		var sumNotesInOne:Int64 = firstNote.notesInOne;
+		var lastIndex = k;
 
-			var yCompare = virtualNote2.y - nextNote.y;
-			if (yCompare < 0) yCompare = -yCompare;
+		// Check first gap
+		if (k + 1 >= index.length) return 1;
+		var nextNote = index[k + 1];
+		if (nextNote == null) return 1;
 
-			var notesInOneCompare = virtualNote2.notesInOne - nextNote.notesInOne;
-			if (notesInOneCompare < 0) notesInOneCompare = -notesInOneCompare;
+		var firstGap = Math.abs(nextNote.y - firstNote.y);
+		if (firstGap > maxSmallDistance) return 1; // too far to start
 
-			var check1 = yCompare <= granularity;
-			var check2 = notesInOneCompare <= 2;
+		totalSpan = firstGap;
+		sumNotesInOne += nextNote.notesInOne;
+		lastIndex = k + 1;
 
-			yToUse += yCompare;
-			notesInOneMerged += virtualNote2.notesInOne;
+		// Merge subsequent notes while respecting maxSmallDistance per-note and boundary
+		for (i in k + 2...index.length) {
+			var note = index[i];
+			if (note == null) break;
 
-			if (nextNote.notesInOne == 1 && (!check1 || !check2)) {
-				return false;
-			}
+			var deltaY = Math.abs(note.y - index[lastIndex].y);
+			if (deltaY > maxSmallDistance) break;      // stop if gap too big
+			if (totalSpan + deltaY > boundary) break;  // stop if cumulative span too big
+
+			totalSpan += deltaY;
+			sumNotesInOne += note.notesInOne;
+			lastIndex = i;
 		}
 
-		yToUse /= count;
-		notesInOneMerged /= count;
+		var mergedCount = lastIndex - k + 1;
 
-		// ADD THESE LINES BACK:
-		virtualNote.greedyMergeType = Math.floor(totalSpan);
-		virtualNote.greedyMergeAlphaMultiplier = Int64.toInt(notesInOneMerged);
-		
-		return true;
+		if (mergedCount > 1) {
+			virtualNote.greedyMergeType = Math.round(totalSpan);
+			virtualNote.greedyMergeAlphaMultiplier = Int64.toInt(sumNotesInOne / mergedCount);
+		} else {
+			virtualNote.greedyMergeType = 0;
+			virtualNote.greedyMergeAlphaMultiplier = 0;
+		}
+
+		return mergedCount;
 	}
 
 	/**
