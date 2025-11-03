@@ -146,6 +146,7 @@ class NoteSpawner {
 					var increment = 1;
 					var granularity = 1;
 					var virtualNote:VirtualNote = index[k];
+					var greedyMerged:Bool = false;
 					if (virtualNote == null) {
 						k += increment;
 						continue;
@@ -158,9 +159,11 @@ class NoteSpawner {
 					if (Note.enableGM && greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 64, 1)) {
 						increment = 64;
 						granularity = 1;
+						greedyMerged = true;
 					} else if (Note.enableGM && greedyMergeNearlyNotes(virtualNote, index, strumReceptor, k, 32, 2)) {
 						increment = 32;
 						granularity = 2;
+						greedyMerged = true;
 					}
 
 					//// finally, do it. ////
@@ -179,9 +182,9 @@ class NoteSpawner {
 					note.toNote();
 					//@:privateAccess trace('Regular note: x=${note.clipX}, y=${note.clipY}, w=${note.clipWidth}, h=${note.clipHeight}');
 
-					if (Note.enableGM && increment != 1 && virtualNote.greedyMergeAlphaMultiplier != 0) {
+					if (Note.enableGM && greedyMerged && virtualNote.greedyMergeAlphaMultiplier != 0 && virtualNote.greedyMergeType != 0) {
 						var h = note.h;
-						note.toggleGMVariant(granularity, false);
+						//note.toggleGMVariant(granularity, false);
 						//@:privateAccess trace('GM variant: x=${note.clipX}, y=${note.clipY}, w=${note.clipWidth}, h=${note.clipHeight}');
 						note.initialAlpha = Note.defaultAlpha;
 						note.addedAlpha = 0;
@@ -411,43 +414,20 @@ class NoteSpawner {
 		var pf = parent.parent;
 		if (pf.disposed || pf.died) return;
 
-		var i = bottom;
-		while (i < top) {
-			var note = File.getNote(i);
-			note.flag = false;
-			note.missed = false;
-			note.held = false;
-			File.setNote(i, note);
-			i++;
-		}
-
 		var len = File.getLength();
-		if (len <= 0) return; // no notes, nothing to do
+		if (len <= 0) return;
 
 		var songPos = MetaNote.floatToMetaNotePosition(songPosition);
-		var songPosTop = songPos + spawnDist;
+		var minPos:Int64;
+		var maxPos:Int64;
 
-		// --- Fast check: before first note ---
-		var firstNote = File.getNote(0);
-		if (firstNote.position > songPosTop || firstNote.position > songPos) {
-			top = bottom = 0;
-			curBottomNote = curTopNote = firstNote;
-			parent.resetStrumlines();
-			return;
-		}
+		minPos = songPos - spawnDist;
+		maxPos = songPos;
 
-		// --- Fast check: after last note ---
-		var lastNote = File.getNote(len - 1);
-		if (lastNote.position < songPos) {
-			// clamp to last note so we don't freeze
-			top = bottom = len - 1;
-			curBottomNote = curTopNote = lastNote;
-			parent.resetStrumlines();
-			return;
-		}
+		if (minPos < 0) minPos = 0;
 
 		// --- Binary search helpers ---
-		inline function lowerBound(target:Int64):Int64 {
+		function lowerBound(target:Int64):Int64 {
 			var lo:Int64 = 0;
 			var hi:Int64 = len;
 			while (lo < hi) {
@@ -459,7 +439,8 @@ class NoteSpawner {
 			}
 			return lo;
 		}
-		inline function upperBound(target:Int64):Int64 {
+
+		function upperBound(target:Int64):Int64 {
 			var lo:Int64 = 0;
 			var hi:Int64 = len;
 			while (lo < hi) {
@@ -472,13 +453,15 @@ class NoteSpawner {
 			return lo;
 		}
 
-		// --- Find bottom (first note >= songPos) ---
-		bottom = lowerBound(songPos);
-		if (bottom >= len) bottom = len - 1;
+		// --- Determine indices ---
+		bottom = lowerBound(minPos);
+		top = upperBound(maxPos) - 1;
 
-		// --- Find top (last note <= songPosTop) ---
-		top = upperBound(songPosTop) - 1;
+		if (bottom < 0) bottom = 0;
+		else if (bottom >= len) bottom = len - 1;
+
 		if (top < 0) top = 0;
+		else if (top >= len) top = len - 1;
 
 		curBottomNote = File.getNote(bottom);
 		curTopNote = File.getNote(top);

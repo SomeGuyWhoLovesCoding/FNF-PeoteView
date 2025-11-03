@@ -96,7 +96,7 @@ class Mixer {
 
 	static public function updateSmoothMusicTime(deltaTime:Float, playfield:PlayField):Void {
 		if (isPlaying()) {
-			var rawPlaybackPosition = MiniAudio.getPlaybackPosition() + Main.conductor.offset;
+			var rawPlaybackPosition = MiniAudio.getPlaybackPosition() + (Main.conductor.offset * Mixer.speed);
 			playfield.songPosition += deltaTime;
 			var multiply = 0.05; // Default drift adjustment value
 			var diff = playfield.songPosition - rawPlaybackPosition;
@@ -141,7 +141,7 @@ class Mixer {
 			}
 
 			if (!playField.songStarted || playField.songEnded || RenderingMode.enabled) {
-				playField.songPosition += deltaTime;
+				playField.songPosition += deltaTime * Mixer.speed;
 				//Main.conductor.time += deltaTime;
 			} else {
 				updateSmoothMusicTime(deltaTime, playField);

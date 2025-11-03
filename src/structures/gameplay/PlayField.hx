@@ -116,8 +116,8 @@ class PlayField implements State {
 		Mixer.setTime(Math.max(value, 0.0), this);
 		if (hud != null && SaveData.state.preferences.ratingPopup) hud.hideRatingPopup();
 		if (noteSystem != null) {
-			var pos = MetaNote.floatToMetaNotePosition(songPosition);
-			noteSystem.resetNotes(songPosition);
+			var pos = MetaNote.floatToMetaNotePosition(value);
+			noteSystem.resetNotes(value);
 			noteSystem.onSongPositionJump(pos);
 		}
 		if (field != null) field.resetCharacters();
@@ -152,7 +152,7 @@ class PlayField implements State {
 
 		var conductor = Main.conductor;
 		var timeSig = Chart.header.timeSig;
-		conductor.changeBpmAt(0, Chart.header.bpm, timeSig[0], timeSig[1]);
+		conductor.changeBpmAt(0, Chart.header.bpm * Mixer.speed, timeSig[0], timeSig[1]);
 		conductor.onMeasure.add(measureHit);
 
 		onNoteHit.add(hitNote);
@@ -164,7 +164,7 @@ class PlayField implements State {
 		onDeath.add(gameOver);
 
 		conductor.offset = -latencyCompensation #if windows - Mixer.latency() #end;
-		songPosition = (-conductor.crochet * 4.5) - conductor.offset;
+		songPosition = ((-conductor.crochet * 4.5) / Mixer.speed) - (conductor.offset * Mixer.speed);
 
 		var pos = MetaNote.floatToMetaNotePosition(songPosition);
 
