@@ -96,7 +96,7 @@ class Mixer {
 
 	static public function updateSmoothMusicTime(deltaTime:Float, playfield:PlayField):Void {
 		if (isPlaying()) {
-			var rawPlaybackPosition = MiniAudio.getPlaybackPosition() + (Main.conductor.offset * Mixer.speed);
+			var rawPlaybackPosition = MiniAudio.getPlaybackPosition() + Main.conductor.offset + playbackRateOutputLatency();
 			playfield.songPosition += deltaTime;
 			var multiply = 0.05; // Default drift adjustment value
 			var diff = playfield.songPosition - rawPlaybackPosition;
@@ -106,7 +106,6 @@ class Mixer {
 			if (diff > 50 || diff < -50) multiply = 1.0;
 			var subtract = diff * multiply;
 			playfield.songPosition -= subtract;
-			//Sys.println('Time: $time, Drift Adjustment Value: $multiply, Offset: $diff');
 		}
 	}
 
@@ -142,7 +141,6 @@ class Mixer {
 
 			if (!playField.songStarted || playField.songEnded || RenderingMode.enabled) {
 				playField.songPosition += deltaTime * Mixer.speed;
-				//Main.conductor.time += deltaTime;
 			} else {
 				updateSmoothMusicTime(deltaTime, playField);
 			}
@@ -151,6 +149,10 @@ class Mixer {
 
 	static inline function latency():Int {
 		return MiniAudio.detectLatency();
+	}
+
+	static inline function playbackRateOutputLatency():Int {
+		return MiniAudio.playbackRateOutputLatency();
 	}
 }
 

@@ -27,6 +27,7 @@ extern class MiniAudio {
 	@:native("amplify_decoder") static function amplify_decoder(index:Int, volume:Float):Void;
 
 	@:native("detectLatency") static function detectLatency():Int;
+	@:native("playbackRateOutputLatency") static function playbackRateOutputLatency():Int;
 }
 #elseif hl
 class MiniAudio {
@@ -62,6 +63,9 @@ class MiniAudio {
 	@:hlNative("ma_thing", "deactivate_decoder_hl") public static function deactivate_decoder(index:Int):Void {}
 	@:hlNative("ma_thing", "amplify_decoder_hl") public static function amplify_decoder(index:Int, volume:Float):Void {}
 	@:hlNative("ma_thing", "detectLatency") public static function detectLatency():Int {
+		return 0;
+	}
+	@:hlNative("ma_thing", "playbackRateOutputLatency") static function playbackRateOutputLatency():Int {
 		return 0;
 	}
 }
