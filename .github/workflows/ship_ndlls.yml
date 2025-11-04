@@ -44,9 +44,7 @@ jobs:
         uses: actions/upload-artifact@v4.3.3
         with:
           name: 'NDLL-Windows'
-          run: |
-            cd "C:/Users/runneradmin/"
-          path: haxelib/lime/git/ndlls/Windows64
+          path: C:/Users/runneradmin/haxelib/lime/git/ndll/Windows64
   NDLLLinux:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
@@ -91,5 +89,5 @@ jobs:
         with:
           name: 'NDLL-Linux'
           run: |
-            cd ~/home/runner/
-          path: haxelib/lime/git/ndlls/Linux64
+            cd ~
+          path: /home/runner/haxelib/lime/git/ndll/Linux64
