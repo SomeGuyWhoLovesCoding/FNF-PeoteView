@@ -80,13 +80,13 @@ class SaveData {
 		var window = lime.app.Application.current.window;
 		window.onClose.add(save);
 
+		open();
+
 		if (!FileSystem.exists('save.dat')) {
 			var window = lime.app.Application.current.window;
 			if (state.graphics.frameRate == 0) state.graphics.frameRate = window.displayMode.refreshRate;
 			save();
 		}
-
-		open();
 	}
 
 	static function open() {
