@@ -1,0 +1,80 @@
+# This is a basic workflow to help you get started with Actions
+
+name: Build
+
+
+# Controls when the action will run.
+on:
+  # Triggers the workflow on push or pull request events but only for the master branch
+  push:
+    branches: [ official ]
+  pull_request:
+    branches: [ official ]
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+jobs:
+  WindowsBuild:
+    runs-on: windows-latest
+
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v4.1.6
+
+      - uses: krdlab/setup-haxe@master
+        with:
+          haxe-version: 4.3.6
+      # Runs a set of commands using the runners shell
+      - name: Install required haxelibs
+        run: |
+          haxelib setup C:/haxelib
+          haxelib install hxcpp > /dev/null --quiet
+          haxelib install lime --quiet
+          haxelib run lime setup --quiet
+          haxelib install peote-view --quiet
+          haxelib install input2action --quiet
+          haxelib install customtitlebar --quiet
+        shell: cmd
+      - name: Create version tag
+        run: echo "${{github.run_id}}" > VERSION
+      - name: Compile
+        run: haxelib run lime build windows --app-version="4.0.0-${{ github.run_id}}"
+      - name: Publish artifact
+        uses: actions/upload-artifact@v4.3.3
+        with:
+          name: 'FV-Windows'
+          path: hl/windows/bin
+  LinuxBuild:
+    # The type of runner that the job will run on
+    runs-on: ubuntu-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v4.1.6
+
+      - uses: krdlab/setup-haxe@master
+        with:
+          haxe-version: 4.3.6
+      # Runs a set of commands using the runners shell
+      - name: Install required haxelibs
+        run: |
+          haxelib setup ~/haxelib
+          haxelib install hxcpp > /dev/null --quiet
+          haxelib install lime --quiet
+          haxelib run lime setup --quiet
+          haxelib install peote-view --quiet
+          haxelib install input2action --quiet
+          haxelib install customtitlebar --quiet
+      - name: Create version tag
+        run: echo "${{github.run_id}}" > VERSION
+      - name: Compile
+        run: |
+          haxelib run lime build Project.xml linux --app-version="4.0.0-${{ github.run_id}}"
+      - name: Publish artifact
+        uses: actions/upload-artifact@v4.3.3
+        with:
+          name: 'FV-Linux'
+          path: bin/linux/bin
