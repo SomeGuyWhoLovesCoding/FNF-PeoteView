@@ -104,7 +104,7 @@ class Mixer {
 			#if FV_LIME_FORK
 			var frameTimeDiff:Float = (1000 / window.frameRate) / (1000 / window.renderFrameRate);
 			#else
-			var refreshRate = window.displayMode.refreshRate;
+			var refreshRate = window.displayMode.refreshRate; // integer version if you're on vanilla lime
 			var frameTimeDiff:Float = (1000 / window.frameRate) / (1000 / refreshRate);
 			#end
 			var smallest:Float = 5;

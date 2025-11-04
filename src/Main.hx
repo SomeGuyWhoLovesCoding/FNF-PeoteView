@@ -200,9 +200,7 @@ class Main extends Application
 
 		SaveData.init();
 		Tools.getIconGridMap('assets/images/ui');
-		#if windows
-		Sys.println('Windows: Audio latency set to ' + Mixer.latency());
-		#end
+		//Sys.println('Windows: Audio latency set to ' + Mixer.latency());
 
 		window.frameRate = SaveData.state.graphics.frameRate;
 
@@ -325,9 +323,9 @@ class Main extends Application
 	#end
 	override function update(deltaTime:Int) {
 		#if hxcpp
-		var timestamp:Float = untyped __global__.__time_stamp();
+		/*var timestamp:Float = untyped __global__.__time_stamp();
 		Sys.println('New frame rate ${1 / (timestamp - newTimestamp)}fps');
-		newTimestamp = timestamp;
+		newTimestamp = timestamp;*/
 		#end
 
 		Tools.profileFrame();
@@ -382,6 +380,7 @@ class Main extends Application
 		#if FV_LIME_FORK
 		var renderFrameRate = Application.current.window.renderFrameRate;
 		if (renderFrameRate == 0) renderFrameRate = Application.current.window.renderFrameRate = context.window.displayMode.refreshRate;
+		//Sys.println('Monitor refresh rate right now is $renderFrameRate');
 		#else
 		var renderFrameRate = Application.current.window.frameRate;
 		#end
