@@ -63,7 +63,7 @@ jobs:
       # Runs a set of commands using the runners 
       # fucking hidden dependencies at the start of `run`
       - name: Install required Linux libraries
-      - run: |
+        run: |
           sudo apt-get install libc6-dev-i386
           export LIBRARY_PATH=/usr/lib/$(gcc -print-multiarch)
           export C_INCLUDE_PATH=/usr/include/$(gcc -print-multiarch)
