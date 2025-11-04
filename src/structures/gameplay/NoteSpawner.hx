@@ -154,7 +154,7 @@ class NoteSpawner {
 					}
 
 					// We're cool now I think?
-					if (virtualNote.y < virtualNote.h - 10 || virtualNote.y > Main.current.peoteView.height + 10) {
+					if (virtualNote.y < -200 || virtualNote.y > Main.current.peoteView.height + 10) {
 						k += increment;
 						continue;
 					}

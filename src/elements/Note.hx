@@ -5,7 +5,7 @@ package elements;
 **/
 class Note implements Element
 {
-	static public var defaultAlpha:Float = 0.5;
+	static public var defaultAlpha:Float = 1;
 	static public var defaultMissAlpha:Float = 0.5;
 
 	// position in pixel (relative to upper left corner of Display)

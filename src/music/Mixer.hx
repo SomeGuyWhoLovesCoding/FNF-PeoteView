@@ -100,10 +100,20 @@ class Mixer {
 			playfield.songPosition += deltaTime;
 			var multiply = 0.05; // Default drift adjustment value
 			var diff = playfield.songPosition - rawPlaybackPosition;
-			if (diff > 5 || diff < -5) multiply = 0.1;
-			if (diff > 12.5 || diff < -12.5) multiply = 0.325;
-			if (diff > 25 || diff < -25) multiply = 0.975;
-			if (diff > 50 || diff < -50) multiply = 1.0;
+			var smallest:Float = 5;
+			var small:Float = 12.5;
+			var big:Float = 25;
+			var biggest:Float = 50;
+			if (speed != 1) {
+				smallest *= speed;
+				small *= speed;
+				big *= speed;
+				biggest *= speed;
+			}
+			if (diff > smallest || diff < -smallest) multiply = 0.1;
+			if (diff > small || diff < small) multiply = 0.325;
+			if (diff > big || diff < -big) multiply = 0.975;
+			if (diff > biggest || diff < -biggest) multiply = 1.0;
 			var subtract = diff * multiply;
 			playfield.songPosition -= subtract;
 		}
