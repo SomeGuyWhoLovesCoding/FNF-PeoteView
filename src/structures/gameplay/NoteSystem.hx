@@ -108,8 +108,6 @@ class NoteSystem {
 
 		if (noteSpawner != null)
 			noteSpawner.update(pos);
-
-		_lastPos = pos;
 	}
 
 	private var _lastPos(default, null):Int64; // for adaptive bot timer
@@ -134,11 +132,7 @@ class NoteSystem {
 		var delta = pos - _lastPos;
 		if (delta < 0) delta = -delta;
 		var timeDelta = MetaNote.metaNotePositionToSongTime(delta) * 0.001;
-		Sys.println('Strumline renderer time delta: $timeDelta');
-
-		// If the delta is too large (pause/seek detected) or negative, don't decrement timers
-		var shouldDecrement = timeDelta > 0 && timeDelta < 0.5; // Max 500ms per frame
-
+		//Sys.println('Strumline renderer time delta: $timeDelta');
 		for (i in 0...strumlines.length) {
 			var strumline = strumlines[i];
 			var botTimers = strumline.botTimers;
@@ -148,12 +142,11 @@ class NoteSystem {
 				if (parent.botplay) canMess = true;
 				if (canMess) {
 					if (!strumline.sustainsActive[j]) {
-						if (shouldDecrement) {
-							if (strumline.botTimers[j] < 0 && !strumline.sustainsActive[j]) {
-								rec.reset();
-								strumline.botTimers[j] = 0;
-							} else strumline.botTimers[j] -= timeDelta;
+						if (strumline.botTimers[j] < 0 && !strumline.sustainsActive[j]) {
+							rec.reset();
+							strumline.botTimers[j] = 0;
 						}
+						strumline.botTimers[j] -= timeDelta;
 					}
 				}
 			}
