@@ -31,6 +31,9 @@ jobs:
         run: |
           haxelib setup ~/haxelib
           haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet
+          haxelib install format --quiet
+          haxelib install hxp --quiet
+          haxelib install hxcpp > /dev/null --quiet
       - name: Make NDLL
         run: |
           haxelib run lime setup --quiet
@@ -69,6 +72,9 @@ jobs:
         run: |
           haxelib setup ~/haxelib
           haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet
+          haxelib install format --quiet
+          haxelib install hxp --quiet
+          haxelib install hxcpp > /dev/null --quiet
       - name: Make NDLL
         run: |
           haxelib run lime setup --quiet
