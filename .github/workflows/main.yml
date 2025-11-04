@@ -31,9 +31,10 @@ jobs:
         run: |
           haxelib setup C:/haxelib
           haxelib install hxcpp > /dev/null --quiet
-          haxelib install lime --quiet
+          haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet
           haxelib run lime setup --quiet
           haxelib install peote-view --quiet
+          haxelib install format --quiet
           haxelib install input2action --quiet
           haxelib install customtitlebar --quiet
         shell: cmd
@@ -63,16 +64,17 @@ jobs:
         run: |
           haxelib setup ~/haxelib
           haxelib install hxcpp > /dev/null --quiet
-          haxelib install lime --quiet
+          haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet
           haxelib run lime setup --quiet
           haxelib install peote-view --quiet
+          haxelib install format --quiet
           haxelib install input2action --quiet
           haxelib install customtitlebar --quiet
       - name: Create version tag
         run: echo "${{github.run_id}}" > VERSION
       - name: Compile
         run: |
-          haxelib run lime build Project.xml linux --app-version="4.0.0-${{ github.run_id}}"
+          haxelib run lime build linux --app-version="4.0.0-${{ github.run_id}}"
       - name: Publish artifact
         uses: actions/upload-artifact@v4.3.3
         with:
