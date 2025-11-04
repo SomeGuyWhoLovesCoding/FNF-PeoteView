@@ -73,6 +73,8 @@ jobs:
           haxelib install peote-view --quiet
           haxelib install input2action --quiet
           haxelib install customtitlebar --quiet
+          sudo apt update
+          sudo apt install libx11-dev
       - name: Create version tag
         run: echo "${{github.run_id}}" > VERSION
       - name: Compile
