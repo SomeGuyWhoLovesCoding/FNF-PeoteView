@@ -30,11 +30,12 @@ jobs:
       - name: Install required haxelibs
         run: |
           haxelib setup C:/haxelib
-          haxelib install hxcpp > /dev/null --quiet
+          haxelib install format --quiet
+          haxelib install hxp --quiet
+          haxelib install hxcpp --quiet
           haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet
           haxelib run lime setup --quiet
           haxelib install peote-view --quiet
-          haxelib install format --quiet
           haxelib install input2action --quiet
           haxelib install customtitlebar --quiet
         shell: cmd
@@ -63,11 +64,12 @@ jobs:
       - name: Install required haxelibs
         run: |
           haxelib setup ~/haxelib
+          haxelib install format --quiet
+          haxelib install hxp --quiet
           haxelib install hxcpp > /dev/null --quiet
           haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet
           haxelib run lime setup --quiet
           haxelib install peote-view --quiet
-          haxelib install format --quiet
           haxelib install input2action --quiet
           haxelib install customtitlebar --quiet
       - name: Create version tag
