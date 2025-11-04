@@ -322,9 +322,14 @@ class Main extends Application
 
 	#if hxcpp
 	var newTimestamp:Float = 0;
+	#end
 	override function update(deltaTime:Int) {
+		#if hxcpp
 		var timestamp:Float = untyped __global__.__time_stamp();
 		Sys.println('New frame time ${timestamp - newTimestamp}');
+		newTimestamp = timeStamp;
+		#end
+
 		Tools.profileFrame();
 		//Sys.println(1000000 / deltaTime);
 

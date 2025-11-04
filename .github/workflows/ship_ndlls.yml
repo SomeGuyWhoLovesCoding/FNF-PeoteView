@@ -27,7 +27,7 @@ jobs:
         with:
           haxe-version: 4.3.6
       # Runs a set of commands using the runners shell
-      - name: Install required haxelibs + make ndll
+      - name: Install required haxelibs
         run: |
           haxelib setup ~/haxelib
           haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet
@@ -41,7 +41,7 @@ jobs:
         uses: actions/upload-artifact@v4.3.3
         with:
           name: 'NDLL-Windows'
-          path: ~/haxelib/lime/ndlls/Windows64
+          path: ~/haxelib/lime/git/ndlls/Windows64
   LinuxBuild:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
@@ -68,7 +68,7 @@ jobs:
           sudo apt-get install libxinerama-dev
           sudo apt-get install libgl1-mesa-dev
           sudo apt-get install libasound2-dev
-      - name: Install required haxelibs + make ndll
+      - name: Install required haxelibs
         run: |
           haxelib setup ~/haxelib
           haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet
@@ -82,4 +82,4 @@ jobs:
         uses: actions/upload-artifact@v4.3.3
         with:
           name: 'NDLL-Linux'
-          path: ~/haxelib/lime/ndlls/Linux64
+          path: ~/haxelib/lime/git/ndlls/Linux64
