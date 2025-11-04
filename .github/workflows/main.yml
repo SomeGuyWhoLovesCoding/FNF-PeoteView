@@ -71,7 +71,7 @@ jobs:
           export CPLUS_INCLUDE_PATH=/usr/include/$(gcc -print-multiarch)
           sudo apt-get install g++-multilib
           sudo apt install libx11-dev
-          sudo apt install libXrandr-devel
+          sudo apt install libxrandr-dev
           haxelib install format --quiet
           haxelib install hxp --quiet
           haxelib install hxcpp > /dev/null --quiet
