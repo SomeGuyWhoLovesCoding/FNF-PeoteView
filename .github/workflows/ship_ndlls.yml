@@ -37,6 +37,7 @@ jobs:
       - name: Make NDLL
         run: |
           haxelib run lime setup --quiet
+          haxelib libpath lime
       - name: Publish artifact
         uses: actions/upload-artifact@v4.3.3
         with:
@@ -78,7 +79,7 @@ jobs:
       - name: Make NDLL
         run: |
           haxelib run lime setup --quiet
-          haxelib list lime
+          haxelib libpath lime
       - name: Publish artifact
         uses: actions/upload-artifact@v4.3.3
         with:
