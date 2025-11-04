@@ -327,7 +327,7 @@ class Main extends Application
 		#if hxcpp
 		var timestamp:Float = untyped __global__.__time_stamp();
 		Sys.println('New frame time ${timestamp - newTimestamp}');
-		newTimestamp = timeStamp;
+		newTimestamp = timestamp;
 		#end
 
 		Tools.profileFrame();
