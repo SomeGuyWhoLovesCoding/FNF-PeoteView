@@ -21,7 +21,7 @@ jobs:
 
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v4.1.6
+      - uses: actions/checkout@v5.0.0
 
       - uses: krdlab/setup-haxe@master
         with:
@@ -41,7 +41,7 @@ jobs:
           echo "-----------------"
           haxelib run lime setup --quiet
       - name: Publish artifact
-        uses: actions/upload-artifact@v4.3.3
+        uses: actions/upload-artifact@v5.0.0
         with:
           name: 'NDLL-Windows'
           path: C:/Users/runneradmin/haxelib/lime/git/ndll/Windows64
@@ -52,7 +52,7 @@ jobs:
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v4.1.6
+      - uses: actions/checkout@v5.0.0
 
       - uses: krdlab/setup-haxe@master
         with:
@@ -85,7 +85,7 @@ jobs:
           echo "-----------------"
           haxelib run lime setup --quiet
       - name: Publish artifact
-        uses: actions/upload-artifact@v4.3.3
+        uses: actions/upload-artifact@v5.0.0
         with:
           name: 'NDLL-Linux'
           path: /home/runner/haxelib/lime/git/ndll/Linux64
