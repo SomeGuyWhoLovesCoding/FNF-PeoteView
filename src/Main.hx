@@ -403,7 +403,7 @@ class Main extends Application
 				}
 
 				var hud = playField?.hud;
-				if (hud != null) hud.render(1000 / renderFrameRate);
+				if (hud != null) hud.render(1000 / (renderingModeEnabled ? 60 : renderFrameRate));
 
 				if (renderingModeEnabled) RenderingMode.pipeFrame();
 			}

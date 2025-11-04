@@ -134,7 +134,7 @@ class NoteSystem {
 		var delta = pos - _lastPos;
 		if (delta < 0) delta = -delta;
 		var timeDelta = MetaNote.metaNotePositionToSongTime(delta) * 0.001;
-		//Sys.println('Time delta: $timeDelta');
+		Sys.println('Strumline renderer time delta: $timeDelta');
 
 		// If the delta is too large (pause/seek detected) or negative, don't decrement timers
 		var shouldDecrement = timeDelta > 0 && timeDelta < 0.5; // Max 500ms per frame
@@ -150,7 +150,6 @@ class NoteSystem {
 					if (!strumline.sustainsActive[j]) {
 						if (shouldDecrement) {
 							if (strumline.botTimers[j] < 0 && !strumline.sustainsActive[j]) {
-								//Sys.println('Sadly reset $j. FUCK!');
 								rec.reset();
 								strumline.botTimers[j] = 0;
 							} else strumline.botTimers[j] -= timeDelta;
