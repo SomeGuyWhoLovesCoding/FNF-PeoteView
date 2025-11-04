@@ -179,17 +179,19 @@ class SaveData_Graphics {
 	inline function set_frameRate(value:Float) {
 		var window = lime.app.Application.current.window;
 		var newValue:Float = value;
-		var rateAlignment:Float = Math.ffloor(newValue / window.displayMode.refreshRate);
+		var refreshRate:Float = window.displayMode.refreshRate;
+		if (refreshRate == 0) refreshRate = 60;
+		var rateAlignment:Float = Math.ffloor(newValue / refreshRate);
 
 		if (newValue == 0 ||
-			newValue < window.displayMode.refreshRate // too slow!
+			newValue < refreshRate // too slow!
 		) {
-			newValue = window.displayMode.refreshRate * 4;
+			newValue = refreshRate * 4;
 		} else if (
-			newValue / window.displayMode.refreshRate != rateAlignment // Doesn't align properly with new frameRate)
+			newValue / refreshRate != rateAlignment // Doesn't align properly with new frameRate)
 			|| rateAlignment < 2
 		) {
-			newValue = window.displayMode.refreshRate * Math.max(rateAlignment, 2);
+			newValue = refreshRate * Math.max(rateAlignment, 2);
 		}
 
 		return frameRate = newValue;
