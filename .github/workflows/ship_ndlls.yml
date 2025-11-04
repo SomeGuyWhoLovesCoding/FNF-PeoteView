@@ -33,7 +33,7 @@ jobs:
           haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet
           haxelib install format --quiet
           haxelib install hxp --quiet
-          haxelib install hxcpp > /dev/null --quiet
+          haxelib install hxcpp --quiet
       - name: Make NDLL
         run: |
           haxelib run lime setup --quiet
@@ -78,6 +78,7 @@ jobs:
       - name: Make NDLL
         run: |
           haxelib run lime setup --quiet
+          haxelib list lime
       - name: Publish artifact
         uses: actions/upload-artifact@v4.3.3
         with:
