@@ -88,6 +88,4 @@ jobs:
         uses: actions/upload-artifact@v4.3.3
         with:
           name: 'NDLL-Linux'
-          run: |
-            cd ~
           path: /home/runner/haxelib/lime/git/ndll/Linux64
