@@ -46,11 +46,6 @@ class NotePool {
 	function getNote(id:Int, n:MetaNote, index:Int64) {
 		var allocated = virtualNotes.get(n);
 
-		/*n.flag = false;
-		n.missed = false;
-		n.held = false;
-		File.setNote(index, n);*/
-
 		if (allocated == null) {
 			var inactiveObject = inactiveVirtualNotes.pop();
 			if (inactiveObject == null) inactiveObject = new VirtualNote(-9999, -9999, 0, 0);
@@ -64,9 +59,8 @@ class NotePool {
 			virtualNotes.set(n, inactiveObject);
 		}
 
+		allocated.initialAlpha = Note.defaultAlpha;
 		allocated.ref = n;
-		/*allocated.changeID(id);
-		allocated.toNote();*/
 
 		return allocated;
 	}
@@ -88,15 +82,12 @@ class NotePool {
 				Math.floor(tex.width / tex.tilesX),
 			        Math.floor(tex.height / tex.tilesY)
 				);
-				/*inactiveObject.c.aF = Sustain.defaultAlpha;
-				inactiveObject.c.luminanceF = Sustain.defaultAlpha;*/
 				inactiveObject.alpha = Sustain.defaultAlpha;
 			}
 			allocated = inactiveObject;
 			virtualSustains.set(n, inactiveObject);
 		}
 
-		//allocated.changeID(id);
 
 		return allocated;
 	}
@@ -109,7 +100,7 @@ class NotePool {
 		var allocated:VirtualNote = virtualNotes.get(n);
 
 		if (virtualNotes.remove(n)) {
-			allocated.initialAlpha = 1;
+			allocated.initialAlpha = Note.defaultAlpha;
 			allocated.addedAlpha = 0;
 			allocated.greedyMergeAlphaMultiplier = 0;
 			allocated.greedyMergeType = 0;
@@ -133,8 +124,6 @@ class NotePool {
 		if (virtualSustains.remove(n)) {
 			allocated.x = -9999;
 			allocated.y = -9999;
-			/*allocated.c.aF = Sustain.defaultAlpha;
-			allocated.c.luminanceF = Sustain.defaultAlpha;*/
 			allocated.alpha = Sustain.defaultAlpha;
 			inactiveVirtualSusses.push(allocated);
 		}

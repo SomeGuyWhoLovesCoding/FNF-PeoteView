@@ -100,6 +100,11 @@ class Mixer {
 			playfield.songPosition += deltaTime;
 			var multiply = 0.05; // Default drift adjustment value
 			var diff = playfield.songPosition - rawPlaybackPosition;
+			#if FV_LIME_FORK
+			var frameTimeDiff:Float = (1000 / lime.app.Application.current.window.frameRate) / (1000 / lime.app.Application.current.window.renderFrameRate);
+			#else
+			var frameTimeDiff:Float = (1000 / lime.app.Application.current.window.frameRate) / (1000 / 60);
+			#end
 			var smallest:Float = 5;
 			var small:Float = 12.5;
 			var big:Float = 25;
@@ -110,10 +115,11 @@ class Mixer {
 				big *= speed;
 				biggest *= speed;
 			}
-			if (diff > smallest || diff < -smallest) multiply = 0.1;
-			if (diff > small || diff < small) multiply = 0.325;
-			if (diff > big || diff < -big) multiply = 0.975;
-			if (diff > biggest || diff < -biggest) multiply = 1.0;
+			//Sys.println(frameTimeDiff);
+			if (diff > smallest || diff < -smallest) multiply = 0.1 * frameTimeDiff;
+			if (diff > small || diff < small) multiply = 0.325 * frameTimeDiff;
+			if (diff > big || diff < -big) multiply = 0.975 * frameTimeDiff;
+			if (diff > biggest || diff < -biggest) multiply = 1.0 * frameTimeDiff;
 			var subtract = diff * multiply;
 			playfield.songPosition -= subtract;
 		}
