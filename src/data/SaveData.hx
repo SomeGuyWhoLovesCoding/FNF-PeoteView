@@ -68,7 +68,7 @@ class SaveData {
 			iconBopping: true
 		},
 		graphics: {
-			frameRate: 60,
+			frameRate: 0,
 			antialiasing: true,
 			customTitleBarColor: 0x3d3f4177, // RGB then opacity at the end. Except opacity doesn't work.
 			customWindowOutlineColor: 0x27292b77,
@@ -81,6 +81,8 @@ class SaveData {
 		window.onClose.add(save);
 
 		if (!FileSystem.exists('save.dat')) {
+			var window = lime.app.Application.current.window;
+			if (state.graphics.frameRate == 0) state.graphics.frameRate = window.displayMode.refreshRate;
 			save();
 		}
 

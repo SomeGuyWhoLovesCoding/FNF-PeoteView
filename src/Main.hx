@@ -326,7 +326,7 @@ class Main extends Application
 	override function update(deltaTime:Int) {
 		#if hxcpp
 		var timestamp:Float = untyped __global__.__time_stamp();
-		//Sys.println('New frame rate ${1 / (timestamp - newTimestamp)}fps');
+		Sys.println('New frame rate ${1 / (timestamp - newTimestamp)}fps');
 		newTimestamp = timestamp;
 		#end
 

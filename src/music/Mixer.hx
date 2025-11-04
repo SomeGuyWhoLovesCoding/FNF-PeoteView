@@ -96,14 +96,16 @@ class Mixer {
 
 	static public function updateSmoothMusicTime(deltaTime:Float, playfield:PlayField):Void {
 		if (isPlaying()) {
+			var window = lime.app.Application.current.window;
 			var rawPlaybackPosition = MiniAudio.getPlaybackPosition() + Main.conductor.offset;
 			playfield.songPosition += deltaTime;
 			var multiply = 0.05; // Default drift adjustment value
 			var diff = playfield.songPosition - rawPlaybackPosition;
 			#if FV_LIME_FORK
-			var frameTimeDiff:Float = (1000 / lime.app.Application.current.window.frameRate) / (1000 / lime.app.Application.current.window.renderFrameRate);
+			var frameTimeDiff:Float = (1000 / window.frameRate) / (1000 / window.renderFrameRate);
 			#else
-			var frameTimeDiff:Float = (1000 / lime.app.Application.current.window.frameRate) / (1000 / 60);
+			var refreshRate = window.displayMode.refreshRate;
+			var frameTimeDiff:Float = (1000 / window.frameRate) / (1000 / refreshRate);
 			#end
 			var smallest:Float = 5;
 			var small:Float = 12.5;
