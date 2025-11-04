@@ -39,7 +39,7 @@ jobs:
           haxelib install input2action --quiet
           haxelib install customtitlebar --quiet
         shell: cmd
-      - name: Create version tag
+      - name: Check version tag
         run: echo "${{github.run_id}}" > VERSION
       - name: Compile
         run: haxelib run lime build windows --app-version="4.0.0-${{ github.run_id}}"
@@ -65,6 +65,9 @@ jobs:
       - name: Install required haxelibs
         run: |
           haxelib setup ~/haxelib
+          sudo apt install libX11-devel
+          sudo apt install libx11-dev
+          sudo apt install libXrandr-devel
           haxelib install format --quiet
           haxelib install hxp --quiet
           haxelib install hxcpp > /dev/null --quiet
@@ -73,9 +76,7 @@ jobs:
           haxelib install peote-view --quiet
           haxelib install input2action --quiet
           haxelib install customtitlebar --quiet
-          sudo apt update
-          sudo apt install libx11-dev
-      - name: Create version tag
+      - name: Check version tag
         run: echo "${{github.run_id}}" > VERSION
       - name: Compile
         run: |
