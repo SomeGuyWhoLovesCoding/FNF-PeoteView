@@ -65,7 +65,7 @@ jobs:
       - name: Install required haxelibs
         run: |
           haxelib setup ~/haxelib
-          sudo apt install libX11-devel
+          sudo dnf install libX11-devel
           sudo apt install libx11-dev
           sudo apt install libXrandr-devel
           haxelib install format --quiet
