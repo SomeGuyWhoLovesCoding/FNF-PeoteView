@@ -62,9 +62,8 @@ jobs:
           haxe-version: 4.3.6
       # Runs a set of commands using the runners 
       # fucking hidden dependencies at the start of `run`
-      - name: Install required haxelibs
-        run: |
-          haxelib setup ~/haxelib
+      - name: Linux library setup
+      - run: |
           sudo apt-get install libc6-dev-i386
           export LIBRARY_PATH=/usr/lib/$(gcc -print-multiarch)
           export C_INCLUDE_PATH=/usr/include/$(gcc -print-multiarch)
@@ -75,6 +74,9 @@ jobs:
           sudo apt-get install libxinerama-dev
           sudo apt-get install libgl1-mesa-dev
           sudo apt-get install libasound2-dev
+      - name: Install required haxelibs
+        run: |
+          haxelib setup ~/haxelib
           haxelib install format --quiet
           haxelib install hxp --quiet
           haxelib install hxcpp > /dev/null --quiet
