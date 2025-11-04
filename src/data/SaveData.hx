@@ -183,8 +183,7 @@ class SaveData_Graphics {
 		if (refreshRate == 0) refreshRate = 60;
 		var rateAlignment:Float = Math.ffloor(newValue / refreshRate);
 
-		if (newValue == 0 ||
-			newValue < refreshRate // too slow!
+		if (newValue < refreshRate // too slow!
 		) {
 			newValue = refreshRate * 4;
 		} else if (
