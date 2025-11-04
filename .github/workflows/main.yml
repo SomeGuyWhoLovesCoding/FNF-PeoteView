@@ -65,7 +65,11 @@ jobs:
       - name: Install required haxelibs
         run: |
           haxelib setup ~/haxelib
-          sudo dnf install libX11-devel
+          sudo apt-get install libc6-dev-i386
+          export LIBRARY_PATH=/usr/lib/$(gcc -print-multiarch)
+          export C_INCLUDE_PATH=/usr/include/$(gcc -print-multiarch)
+          export CPLUS_INCLUDE_PATH=/usr/include/$(gcc -print-multiarch)
+          sudo apt-get install g++-multilib
           sudo apt install libx11-dev
           sudo apt install libXrandr-devel
           haxelib install format --quiet
