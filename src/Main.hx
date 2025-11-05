@@ -12,6 +12,14 @@ import lime.ui.KeyModifier;
 import lime.ui.Gamepad;
 import miniaudio.MiniAudio;
 
+private enum abstract StateSelection(Int) {
+	var NONE;
+	var MAIN_MENU;
+	var GAMEPLAY;
+	var AWARDS;
+	var CREDITS;
+}
+
 @:publicFields
 class Main extends Application
 {
@@ -463,12 +471,4 @@ class Main extends Application
 	// ------------------------------------------------------------
 	// ---------------------- GAME ENDS HERE ----------------------
 	// ------------------------------------------------------------
-}
-
-private enum abstract StateSelection(Int) {
-	var NONE;
-	var MAIN_MENU;
-	var GAMEPLAY;
-	var AWARDS;
-	var CREDITS;
 }
