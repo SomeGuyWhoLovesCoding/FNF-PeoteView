@@ -105,10 +105,12 @@ class SaveData {
 	}
 
 	static function save() {
-		var result = SaveData_Securer.lock(state);
-		var fo:FileOutput = File.write("save.dat");
-		fo.writeString(result);
-		fo.close();
+		try {
+			var result = SaveData_Securer.lock(state);
+			var fo:FileOutput = File.write("save.dat");
+			fo.writeString(result);
+			fo.close();
+		} catch(e) {} // for rare cases like actually editing the save file itself
 	}
 
 	var controls:SaveData_Controls;
