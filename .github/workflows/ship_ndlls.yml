@@ -84,8 +84,12 @@ jobs:
           haxelib libpath lime
           echo "-----------------"
           haxelib run lime rebuild linux
+      - name: 'Tar files'
+        run: |
+          tar -cvf Linux64.tar /home/runner/haxelib/lime/git/ndll/Linux64
+          gzip Linux64.tar
       - name: Publish artifact
         uses: actions/upload-artifact@v5.0.0
         with:
           name: 'NDLL-Linux'
-          path: /home/runner/haxelib/lime/git/ndll/Linux64
+          path: Linux64.tar.gz
