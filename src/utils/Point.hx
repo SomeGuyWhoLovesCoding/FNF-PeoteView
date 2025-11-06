@@ -3,6 +3,9 @@ package utils;
 /**
 	2 dimensional point class with the update callback.
 **/
+#if cpp
+@:unreflective
+#end
 @:structInit
 @:publicFields
 class Point {

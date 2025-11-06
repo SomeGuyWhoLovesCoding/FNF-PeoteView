@@ -327,6 +327,8 @@ class Actor extends ActorElement
 		var width = config.width;
 		var height = config.height;
 
+		rotated = config.rotated;
+
 		if (frameIndex == 0) {
 			firstFrameWidth = width;
 		}
@@ -338,8 +340,15 @@ class Actor extends ActorElement
 		var frameWidth = config.frameWidth == null ? 0 : config.frameWidth;
 
 		off_x = -xOffset * scale;
-		if (mirror) off_x = -off_x + (frameWidth - width);
+		if (mirror) off_x = -off_x + (frameWidth - width); // yes, I actually had to do this to fix mirrored frame offsets and shit.
 		off_y = -yOffset * scale;
+
+		if (rotated) {
+			var rotatedWidth = height;
+			var rotatedHeight = width;
+			width = rotatedWidth;
+			height = rotatedHeight;
+		}
 
 		w = width;
 		h = height;

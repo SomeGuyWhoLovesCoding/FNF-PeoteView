@@ -206,9 +206,8 @@ class Main extends Application
 	{
 		current = this;
 
-		SaveData.init();
+		SaveData.init(window);
 		Tools.getIconGridMap('assets/images/ui');
-		//Sys.println('Windows: Audio latency set to ' + Mixer.latency());
 
 		window.frameRate = SaveData.state.graphics.frameRate;
 

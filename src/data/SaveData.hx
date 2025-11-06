@@ -9,6 +9,7 @@ import sys.io.FileOutput;
 import haxe.Serializer;
 import haxe.Unserializer;
 import lime.ui.KeyCode;
+import lime.ui.Window;
 
 /**
 	The save data securer.
@@ -76,8 +77,7 @@ class SaveData {
 		}
 	};
 
-	static function init() {
-		var window = lime.app.Application.current.window;
+	static function init(window:Window) {
 		window.onClose.add(save);
 
 		if (!FileSystem.exists('save.dat')) {
@@ -95,22 +95,28 @@ class SaveData {
 		var result:SaveData = null;
 		try {
 			result = SaveData_Securer.unlock(File.getContent("save.dat"));
+			trace('AAAAAAAAAAAAAAAAAA2');
 		} catch (e) {
 			FileSystem.deleteFile("save.dat");
 			save();
 			open();
+			trace('AAAAAAAAAAAAAAAAAA');
 			return;
 		}
 		state = result;
 	}
 
 	static function save() {
+		trace('Reah');
 		try {
 			var result = SaveData_Securer.lock(state);
+			FileSystem.deleteFile("save.dat");
 			var fo:FileOutput = File.write("save.dat");
 			fo.writeString(result);
 			fo.close();
-		} catch(e) {} // for rare cases like actually editing the save file itself
+		} catch(e) {
+			trace('Reah');
+		} // for rare cases like actually editing the save file itself
 	}
 
 	var controls:SaveData_Controls;

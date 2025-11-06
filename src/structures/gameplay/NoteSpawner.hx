@@ -198,6 +198,19 @@ class NoteSpawner {
 							//note.y -= h;  // Subtract original note height to align properly
 						}
 						//note.x += Math.floor(MetaNote.metaNotePositionToSongTime(virtualNote.ref.position - pos) * 0.08);
+
+						// and then the addedalpha glossy cover that goes along with it
+						var cover = new Note(note.x, note.y, 0, 0);
+						cover.initialAlpha = 1;
+						cover.addedAlpha = Math.min(virtualNote.greedyMergeAlphaMultiplier * virtualNote.addedAlpha, 256);
+						Sys.println(cover.addedAlpha);
+
+						cover.changeID(id);
+						cover.toNote();
+						cover.toggleGMVariant(granularity, true);
+						greedyMergedNoteList.push(cover);
+
+						// you add the cover first so this goes last
 						greedyMergedNoteList.push(note);
 					} else {
 						regularNoteList.push(note);

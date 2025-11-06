@@ -29,6 +29,7 @@ class ActorElement implements Element {
 	@varying @custom @formula("_mirror == 1.0 ? (_flipX == 0.0 ? 1.0 : 0.0) : _flipX") var _flipX:Float = 0.0;
 	@varying @custom var _flipY:Float = 0.0;
 	@varying @custom var _mirror:Float = 0.0;
+	@varying @custom var _rotated:Float = 0.0;
 
 	var flipX(default, set):Bool;
 
@@ -51,6 +52,13 @@ class ActorElement implements Element {
 		return mirror = value;
 	}
 
+	var rotated(default, set):Bool;
+
+	inline function set_rotated(value:Bool):Bool {
+		_rotated = value ? 1.0 : 0.0;
+		return rotated = value;
+	}
+
 	@posX @formula("x + off_x + px + adjust_x + (w * (_mirror == 1.0 ? _flipX : -_flipX))") var x:Float;
 	@posY @formula("y + off_y + py + adjust_y + (h * _flipY)") var y:Float;
 	@sizeX @formula("(w * scale) * (_flipX == 1.0 ? -1.0 : 1.0)") var w:Float;
@@ -59,7 +67,7 @@ class ActorElement implements Element {
 	@pivotX @formula("(w < 0.0 ? -w : w) * 0.5") var px:Float;
 	@pivotY @formula("(h < 0.0 ? -h : h) * 0.5") var py:Float;
 
-	@rotation var r:Float;
+	@rotation @formula("_rotated == 1.0 ? -90.0 : 0.0") var r:Float;
 
 	@varying @custom @formula("off_x * scale") var off_x:Float;
 	@varying @custom @formula("off_y * scale") var off_y:Float;
