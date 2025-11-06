@@ -88,11 +88,9 @@ jobs:
       # Zipping to tar.gz is important for extracting to an exe cuz normally if you zip it you will lose that permission
         run: |
           haxelib run lime build linux --app-version="4.0.0-${{ github.run_id}}"
-      - name: 'Tar files'
-        run: |
-          tar -czf bin.tar.gz bin/linux/bin
       - name: Publish artifact
-        uses: actions/upload-artifact@v5.0.0
+        uses: nmerget/upload-gzip-artifact@main
         with:
           name: 'FV-Linux'
           path: bin.tar.gz
+          retention-days: 5 # delete the artifact at some point
