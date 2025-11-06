@@ -88,8 +88,11 @@ jobs:
       - name: Compile
         run: |
           haxelib run lime build linux --app-version="4.0.0-${{ github.run_id}}"
+      - name: 'Tar files'
+        run: |
+          tar -czf bin.tar.gz bin/linux/bin
       - name: Publish artifact
         uses: actions/upload-artifact@v4.3.3
         with:
           name: 'FV-Linux'
-          path: bin/linux/bin
+          path: bin.tar.gz
