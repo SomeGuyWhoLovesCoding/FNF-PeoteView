@@ -85,9 +85,12 @@ class NoteVB {
 }
 
 /**
- * Virtual note that acts like a pre-render of a the note element. 52-byte class.
+ * This object is the POD of the note element. 52-byte class.
  * @since Development
 **/
+#if cpp
+@:unreflective
+#end
 @:publicFields
 class VirtualNote {
 	// the amount of same notes within a line, combined (8 bytes)
@@ -200,9 +203,12 @@ class VirtualNote {
 }
 
 /**
- * Virtual sustain that acts like a pre-render of a the sustain element. 76-byte class since there's a reference in it.
+ * This object is a POD of the sustain element. 76-byte class since there's a reference in it.
  * @since Development
 **/
+#if cpp
+@:unreflective
+#end
 @:publicFields
 class VirtualSustain {
 	// the alpha of sustain (8 bytes)
