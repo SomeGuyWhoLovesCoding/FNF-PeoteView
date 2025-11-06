@@ -252,9 +252,6 @@ class Main extends Application
 				if (mouseDown != null) mouseDown(x, y, button);
 			});
 
-			GC.run(10);
-			GC.enable(false);
-
 			_started = true;
 		}, 100);
 	}
