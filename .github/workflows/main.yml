@@ -21,7 +21,7 @@ jobs:
 
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v4.1.6
+      - uses: actions/checkout@v5.0.0
 
       - uses: krdlab/setup-haxe@master
         with:
@@ -43,7 +43,7 @@ jobs:
       - name: Compile
         run: haxelib run lime build windows --app-version="4.0.0-${{ github.run_id}}"
       - name: Publish artifact
-        uses: actions/upload-artifact@v4.3.3
+        uses: actions/upload-artifact@v5.0.0
         with:
           name: 'FV-Windows'
           path: bin/windows/bin
@@ -54,13 +54,12 @@ jobs:
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v4.1.6
+      - uses: actions/checkout@v5.0.0
 
       - uses: krdlab/setup-haxe@master
         with:
           haxe-version: 4.3.6
-      # Runs a set of commands using the runners 
-      # fucking hidden dependencies at the start of `run`
+      # Runs a set of commands using the runners shell
       - name: Install required Linux libraries
         run: |
           sudo apt-get install libc6-dev-i386
@@ -86,13 +85,14 @@ jobs:
       - name: Check version tag
         run: echo "${{github.run_id}}" > VERSION
       - name: Compile
+      # Zipping to tar.gz is important for extracting to an exe cuz normally if you zip it you will lose that permission
         run: |
           haxelib run lime build linux --app-version="4.0.0-${{ github.run_id}}"
       - name: 'Tar files'
         run: |
           tar -czf bin.tar.gz bin/linux/bin
       - name: Publish artifact
-        uses: actions/upload-artifact@v4.3.3
+        uses: actions/upload-artifact@v5.0.0
         with:
           name: 'FV-Linux'
           path: bin.tar.gz

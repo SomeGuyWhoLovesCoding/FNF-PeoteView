@@ -57,8 +57,7 @@ jobs:
       - uses: krdlab/setup-haxe@master
         with:
           haxe-version: 4.3.6
-      # Runs a set of commands using the runners 
-      # fucking hidden dependencies at the start of `run`
+      # Runs a set of commands using the runners shell
       - name: Install required Linux libraries
         run: |
           sudo apt-get install libc6-dev-i386
