@@ -71,7 +71,7 @@ class NoteSpawner {
 		var prev:MetaNote = -1;
 		var noteSpr:VirtualNote = null;
 
-		//var time = haxe.Timer.stamp();
+		var time = haxe.Timer.stamp();
 		while (i < top) {
 			var n = File.getNote(i);
 
@@ -104,7 +104,7 @@ class NoteSpawner {
 			++i;
 		}
 
-		//timeSpentOnIt = haxe.Timer.stamp() - time;
+		timeSpentOnIt = haxe.Timer.stamp() - time;
 	}
 
 	/**
@@ -415,8 +415,8 @@ class NoteSpawner {
 		var len = File.getLength();
 		while (bottom != len && (pos - MetaNote.intToMetaNoteDuration(curBottomNote.duration)) - curBottomNote.position > despawnDist) {
 			var notePool = parent.notePool;
-			notePool.putNote(curBottomNote, bottom);
-			notePool.putSustain(curBottomNote);
+			notePool.putNote(bottom);
+			notePool.putSustain(bottom);
 
 			++bottom;
 

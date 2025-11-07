@@ -1,146 +1,162 @@
 package structures.gameplay;
 
-/**
-	The pool of the note system.
-	I'm proud of this class, it is the most efficient way to handle notes and sustains when working with peote-view.
-	It uses a map to store the notes and sustains, and an array to store the inactive notes and sustains.
-	When a note or sustain is needed, it checks if it is already allocated, if not, it creates a new one.
-	When a note or sustain is no longer needed, it puts it in the inactive list.
-	When a note or sustain is needed again, it checks the inactive list first, if it is not empty, it uses the last inactive note or sustain.
-	This way, it reduces the number of objects created and destroyed, which is a performance boost.
-	It also allows for easy access to the notes and sustains by their underlying meta note.
-	This is a very important class for the note system, and it is used in the NoteSystem class.
-	It is also used in said class to handle the notes and sustains.
-	This entire passage was written with github copilot, and I am very proud of it.
-	@since Development
-**/
 @:publicFields
 class NotePool {
-	var virtualNotes(default, null):MetaNoteMap<VirtualNote>;
-	var inactiveVirtualNotes(default, null):Array<VirtualNote>;
-	var virtualSustains(default, null):MetaNoteMap<VirtualSustain>;
-	var inactiveVirtualSusses(default, null):Array<VirtualSustain>;
-
-	var parent(default, null):NoteSystem;
-
-	/**
-	 * Creates the note pool.
-	 * @param parent The parent of this class.
-	 */
-	function new(parent:NoteSystem) {
-		this.parent = parent;
-
-		virtualNotes = new MetaNoteMap<VirtualNote>();
-		virtualSustains = new MetaNoteMap<VirtualSustain>();
-		inactiveVirtualNotes = [];
-		inactiveVirtualSusses = [];
-	}
-
-	/**
-	 * Creates a new note and determines when to add it to note pool or not.
-	 * This function is called every time you call `drawNote`, constantly. Do not implement anything else in there if you want to change something in this note system.
-	 * @param id The index the note sprite (existing or not) should change to.
-	 * @param n The underlying meta note the note sprite's data should be set to.
-     * @param index The index the note belongs to.
-	 */
-	function getNote(id:Int, n:MetaNote, index:Int64) {
-		var allocated = virtualNotes.get(n);
-
-		if (allocated == null) {
-			var inactiveObject = inactiveVirtualNotes.pop();
-			if (inactiveObject == null) inactiveObject = new VirtualNote(-9999, -9999, 0, 0);
-			inactiveObject.initialAlpha = Note.defaultAlpha;
-			inactiveObject.addedAlpha = 0;
-			inactiveObject.notesInOne = 1;
-			inactiveObject.greedyMergeAlphaMultiplier = 0;
-			inactiveObject.greedyMergeType = 0;
-			inactiveObject.ref = n;
-			allocated = inactiveObject;
-			virtualNotes.set(n, inactiveObject);
-		}
-
-		allocated.initialAlpha = Note.defaultAlpha;
-		allocated.ref = n;
-
-		return allocated;
-	}
-
-	/**
-	 * Creates a new sustain and determines when to add it to note pool or not.
-	 * @param id The index the sustain sprite (existing or not) should change to.
-	 * @param n The underlying meta note the sustain sprite's data should be set to.
-	 */
-	function getSustain(id:Int, n:MetaNote) {
-		var allocated = virtualSustains.get(n);
-
-		if (allocated == null) {
-			var tex = TextureSystem.getTexture("sustainTex");
-
-			var inactiveObject = inactiveVirtualSusses.pop();
-			if (inactiveObject == null) {
-				inactiveObject = new VirtualSustain(-9999, -9999,
-				Math.floor(tex.width / tex.tilesX),
-			        Math.floor(tex.height / tex.tilesY)
-				);
-				inactiveObject.alpha = Sustain.defaultAlpha;
-			}
-			allocated = inactiveObject;
-			virtualSustains.set(n, inactiveObject);
-		}
-
-
-		return allocated;
-	}
-
-	/**
-	 * Puts a note in its inactive list.
-	 * @param n The underlying meta note in which selects the note sprite to be put in the inactive list.
-	 */
-	function putNote(n:MetaNote, index:Int64) {
-		var allocated:VirtualNote = virtualNotes.get(n);
-
-		if (virtualNotes.remove(n)) {
-			allocated.initialAlpha = Note.defaultAlpha;
-			allocated.addedAlpha = 0;
-			allocated.greedyMergeAlphaMultiplier = 0;
-			allocated.greedyMergeType = 0;
-			allocated.x = -9999;
-			allocated.y = -9999;
-			inactiveVirtualNotes.push(allocated);
-		}
-
-		n.flag = false;
-		n.missed = false;
-		n.held = false;
-		File.setNote(index, n);
-	}
-
-	/**
-	 * Puts a sustain in its inactive list.
-	 * @param n The underlying meta note in which selects the sustain sprite to be put in the inactive list.
-	 */
-	function putSustain(n:MetaNote) {
-		var allocated:VirtualSustain = virtualSustains.get(n);
-		if (virtualSustains.remove(n)) {
-			allocated.x = -9999;
-			allocated.y = -9999;
-			allocated.alpha = Sustain.defaultAlpha;
-			inactiveVirtualSusses.push(allocated);
-		}
-	}
-
-	/**
-	 * Disposes the note pool.
-	 */
-	function dispose() {
-		if (virtualNotes != null) {
-			virtualNotes.clear();
-			virtualNotes = null;
-		}
-
-		if (virtualSustains != null) {
-			virtualSustains.clear();
-			virtualSustains = null;
-		}
-	}
+    public var startIndex:Int64 = 0; // chart index of the first element in the ring
+    private var capacity:Int;
+    
+    private var virtualNotes:Array<VirtualNote>;
+    private var virtualSustains:Array<VirtualSustain>;
+    
+    private var inactiveVirtualNotes:Array<VirtualNote>;
+    private var inactiveVirtualSustains:Array<VirtualSustain>;
+    
+    public var parent(default, null):NoteSystem;
+    
+    private static inline var INITIAL_CAPACITY = 256;
+    
+    public function new(parent:NoteSystem) {
+        this.parent = parent;
+        capacity = INITIAL_CAPACITY;
+        
+        virtualNotes = [];
+        virtualSustains = [];
+        inactiveVirtualNotes = [];
+        inactiveVirtualSustains = [];
+        
+        for (i in 0...capacity) {
+            virtualNotes.push(null);
+            virtualSustains.push(null);
+        }
+    }
+    
+    private function ensureCapacity(requiredSize:Int) {
+        if (requiredSize <= capacity) return;
+        var newCap = capacity;
+        while (newCap < requiredSize) newCap *= 2;
+        
+        for (i in capacity...newCap) {
+            virtualNotes.push(null);
+            virtualSustains.push(null);
+        }
+        capacity = newCap;
+    }
+    
+    /**
+     * Slide the ring buffer to a new window start index.
+     * Automatically reclaims old notes and sustains outside the window.
+     */
+    public function advanceRing(newStart:Int64) {
+        var shift = Int64.toInt(newStart - startIndex);
+        if (shift <= 0) return; // seeking backwards handled by lazy overwrite
+        
+        var used = shift;
+		if (used >= virtualNotes.length) used = virtualNotes.length;
+        for (i in 0...used) {
+            var idx = (i) % capacity;
+            var n = virtualNotes[idx];
+            if (n != null) inactiveVirtualNotes.push(n);
+            virtualNotes[idx] = null;
+            
+            var s = virtualSustains[idx];
+            if (s != null) inactiveVirtualSustains.push(s);
+            virtualSustains[idx] = null;
+        }
+        startIndex = newStart;
+    }
+    
+    /**
+     * Returns the VirtualNote corresponding to a chart index.
+     * Automatically slides the ring if index is outside the current window.
+     */
+    public function getNote(index:Int64, note:MetaNote):VirtualNote {
+        if (index < startIndex) {
+            // backward seek: overwrite from startIndex
+            startIndex = index;
+        } else {
+            // forward seek: slide ring automatically
+            advanceRing(index - capacity + 1);
+        }
+        
+        ensureCapacity(Int64.toInt(index - startIndex + 1));
+        var offset = Int64.toInt(index - startIndex) % capacity;
+        
+        var allocated = virtualNotes[offset];
+        if (allocated == null) {
+            allocated = inactiveVirtualNotes.pop();
+            if (allocated == null) allocated = new VirtualNote(-9999, -9999, 0, 0);
+            
+            allocated.addedAlpha = 0;
+            allocated.notesInOne = 1;
+            allocated.greedyMergeAlphaMultiplier = 0;
+            allocated.greedyMergeType = 0;
+            
+            virtualNotes[offset] = allocated;
+        }
+        
+        allocated.ref = note;
+        allocated.initialAlpha = Note.defaultAlpha;
+        return allocated;
+    }
+    
+    /**
+     * Returns the VirtualSustain corresponding to a chart index.
+     */
+    public function getSustain(index:Int64, note:MetaNote):VirtualSustain {
+        if (index < startIndex) startIndex = index;
+        else advanceRing(index - capacity + 1);
+        
+        ensureCapacity(Int64.toInt(index - startIndex + 1));
+        var offset = Int64.toInt(index - startIndex) % capacity;
+        
+        var allocated = virtualSustains[offset];
+        if (allocated == null) {
+            var tex = TextureSystem.getTexture("sustainTex");
+            allocated = inactiveVirtualSustains.pop();
+            if (allocated == null) {
+                allocated = new VirtualSustain(-9999, -9999,
+                    Math.floor(tex.width / tex.tilesX),
+                    Math.floor(tex.height / tex.tilesY)
+                );
+                allocated.alpha = Sustain.defaultAlpha;
+            }
+            virtualSustains[offset] = allocated;
+        }
+        
+        return allocated;
+    }
+    
+    /**
+     * Return a note to the inactive pool.
+     */
+    public function putNote(index:Int64) {
+        var offset = Int64.toInt(index - startIndex) % capacity;
+        var n = virtualNotes[offset];
+        if (n != null) {
+            n.x = n.y = -9999;
+            inactiveVirtualNotes.push(n);
+            virtualNotes[offset] = null;
+        }
+    }
+    
+    /**
+     * Return a sustain to the inactive pool.
+     */
+    public function putSustain(index:Int64) {
+        var offset = Int64.toInt(index - startIndex) % capacity;
+        var s = virtualSustains[offset];
+        if (s != null) {
+            s.x = s.y = -9999;
+            s.alpha = Sustain.defaultAlpha;
+            inactiveVirtualSustains.push(s);
+            virtualSustains[offset] = null;
+        }
+    }
+    
+    public function dispose() {
+        virtualNotes = null;
+        virtualSustains = null;
+        inactiveVirtualNotes = null;
+        inactiveVirtualSustains = null;
+    }
 }
