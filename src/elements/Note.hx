@@ -59,7 +59,6 @@ class Note implements Element
 
 	static public var offsetAndSizeFramesGM:Array<Int> = [];
 	static public var enableGM:Bool;
-	static public var maxGMAlpha:Int;
 
 	public var id:Int = 0;
 
@@ -73,6 +72,7 @@ class Note implements Element
 
 	static public function init(program:Program, name:String, texture:Texture)
 	{
+		// creates a texture-layer named "name"
 		program.setTexture(texture, name);
 		program.blendEnabled = true;
 		program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
@@ -80,37 +80,30 @@ class Note implements Element
 
 		program.injectIntoFragmentShader(
 		'
-			vec4 simulateOverdraw(int textureID, float initialAlpha, float addedAlpha)
+			vec4 why(int textureID, float initialAlpha, float addedAlpha)
 			{
 				vec2 coord = vTexCoord;
 				vec4 tex = getTextureColor(textureID, coord);
-				
-				if (tex.a == 0.0) {
-					return vec4(0.0);
+
+				if (tex.a != 0.0) {
+					float oldA = tex.a;
+					float newA = clamp(oldA * initialAlpha + addedAlpha, 0.0, 1.0);
+
+					// Adjust premultiplied color to match the new alpha
+					if (oldA > 0.0) {
+						tex.rgb *= newA / oldA;
+					}
+
+					tex.a = newA;
 				}
-				
-				// Base case: render as-is
-				if (addedAlpha == 0.0) {
-					return vec4(tex.rgb * initialAlpha, tex.a * initialAlpha);
-				}
-				
-				// For cover: treat addedAlpha as a direct brightness multiplier
-				// Don\'t try to simulate "correct" blending - just make it brighter
-				
-				// Scale the multiplier to a reasonable range
-				// At 211 layers, this should be VERY bright
-				float brightnessMult = 1.0 + (addedAlpha / 256.0); // Adjust the 0.01 factor as needed
-				
-				// Apply to premultiplied color
-				vec3 brightRGB = tex.rgb * initialAlpha * brightnessMult;
-				float brightAlpha = min(tex.a * initialAlpha * brightnessMult, 1.0);
-				
-				// Keep RGB premultiplied
-				return vec4(brightRGB, brightAlpha);
+
+				return tex;
 			}
 		');
 
-		program.setColorFormula( 'c * simulateOverdraw(${name}_ID, initialAlpha, addedAlpha)' );
+		// instead of using normal "name" identifier to fetch the texture-color,
+		// the postfix "_ID" gives access to use getTextureColor(textureID, ...) or getTextureResolution(textureID)
+		program.setColorFormula( 'c * why(${name}_ID, initialAlpha, addedAlpha)' );
 	}
 
 	inline public function toggleGMVariant(/*mult:Int, */g:Int, isCover:Bool) {
