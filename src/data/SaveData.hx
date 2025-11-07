@@ -88,7 +88,7 @@ class SaveData {
 		open();
 
 		if (state.graphics.frameRate == 0) {
-			state.graphics.frameRate = window.displayMode.refreshRate * 4;
+			state.graphics.frameRate = window.displayMode.refreshRate * 2;
 		}
 	}
 
@@ -192,7 +192,7 @@ class SaveData_Graphics {
 
 		if (newValue < refreshRate // too slow!
 		) {
-			newValue = refreshRate * 4;
+			newValue = refreshRate * 2;
 		} else if (
 			newValue / refreshRate != rateAlignment // Doesn't align properly with new frameRate)
 			|| rateAlignment < 2
