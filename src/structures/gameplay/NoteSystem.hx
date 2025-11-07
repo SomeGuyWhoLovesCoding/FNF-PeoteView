@@ -238,7 +238,7 @@ class NoteSystem {
 					var n:Int64 = note.toNumber();
 					(n:MetaNote).missed = true;
 					isMissed = true;
-					File.setNote(_id, n);
+					noteSpawner.setCachedNote(_id, n);
 
 					var type = note.type;
 					if (noteTypeCallExists) {
@@ -252,7 +252,7 @@ class NoteSystem {
 						var n:Int64 = note.toNumber();
 						(n:MetaNote).held = true;
 						isHeld = true;
-						File.setNote(_id, n);
+						noteSpawner.setCachedNote(_id, n);
 						parent.onSustainRelease.dispatch(note);
 					}
 
@@ -273,7 +273,7 @@ class NoteSystem {
 			if (!isHit && diff < 0) {
 				var n:Int64 = note.toNumber();
 				(n:MetaNote).flag = isHit = true;
-				File.setNote(_id, n);
+				noteSpawner.setCachedNote(_id, n);
 
 				// Confirm the receptor
 				if (!rec.confirmed()) rec.confirm();
@@ -319,7 +319,7 @@ class NoteSystem {
 					var n:Int64 = note.toNumber();
 					(n:MetaNote).held = true;
 					isHeld = true;
-					File.setNote(_id, n);
+					noteSpawner.setCachedNote(_id, n);
 
 					if (playable && rec.confirmed()) rec.press();
 

@@ -1,111 +1,273 @@
 package structures.gameplay;
 
-/**
-	The internal note handler.
-	This class is responsible for spawning and despawning notes based on the song's position.
-	It handles the culling of notes that are too far away from the current position, and it draws the notes that are within the spawn distance.
-	It also handles the resetting of notes when the song position changes significantly.
-	@since Development
-**/
 @:publicFields
 class NoteSpawner {
-	var bottom:Int64;
-	var top:Int64;
+    var bottom:Int64;
+    var top:Int64;
 
-	var _lastbottom:Int64;
-	var _lasttop:Int64;
+    var _lastbottom:Int64;
+    var _lasttop:Int64;
 
-	var spawnDist:Int64 = MetaNote.floatToMetaNotePosition(1300);
-	var despawnDist:Int64 = MetaNote.floatToMetaNotePosition(300);
+    var spawnDist:Int64 = MetaNote.floatToMetaNotePosition(1300);
+    var despawnDist:Int64 = MetaNote.floatToMetaNotePosition(300);
 
-	var curTopNote(default, null):MetaNote;
-	var curBottomNote(default, null):MetaNote;
+    var curTopNote(default, null):MetaNote;
+    var curBottomNote(default, null):MetaNote;
 
-	var parent(default, null):NoteSystem;
+    var parent(default, null):NoteSystem;
 
-	/**
-	 * Creates the note spawner.
-	 * @param parent The note system to implement this note spawner on.
-	 */
-	function new(parent:NoteSystem) {
-		this.parent = parent;
+    // --- Sliding + dynamic cache ---
+    var noteCache:Array<MetaNote> = [];
+    var cacheStart:Int64 = 0;
+    var cacheOffset:Int = 0; // Offset for sliding window
+    var minCacheLength:Int64 = 1048576; // minimum number of notes to keep in cache
 
-		bottom = 0;
-		top = 0;
+    function new(parent:NoteSystem) {
+        this.parent = parent;
 
-		curTopNote = File.getNote(0);
-		curBottomNote = File.getNote(0);
+        bottom = 0;
+        top = 0;
 
-		/*for (i in 0...200) {
-			var note = File.getNote(i);
-			Sys.println('${note.position}, ${note.duration}, ${note.index}, ${note.type}');
-		}*/
-	}
+        loadCache(0);
+        curTopNote = noteCache[0];
+        curBottomNote = noteCache[0];
+    }
 
-	/**
-	 * Updates the note spawner.
-	 * @param pos The song's position in the note position format.
-	 */
-	function update(pos:Int64) {
-		// Store previous bounds for cache optimization
-		_lastbottom = bottom;
-		_lasttop = top;
+    // --- Load cache starting at startIdx ---
+    function loadCache(startIdx:Int64) {
+        var len = File.getLength();
+        if (startIdx >= len) return;
 
-		// Update note boundaries
-		cullTop(pos);
-		cullBottom(pos);
+        cacheStart = startIdx;
+        cacheOffset = 0;
 
-		// Process notes in current window
-		processNotes(pos);
-	}
+        var newNotes:Array<MetaNote> = [];
+        var maxLoad = len - startIdx;
+        if (maxLoad < 0) maxLoad = 0;
 
-	var timeSpentOnIt:Float = 0;
+        var i:Int64 = 0;
+        while (i < maxLoad) {
+            newNotes.push(File.getNote(startIdx + i));
+            i++;
+        }
 
-	/**
-	 * Processes all notes in the current window.
-	 * @param pos The current song position in note format.
-	 */
-	function processNotes(pos:Int64) {
-		var i = bottom;
-		var scrollSpeed = parent.parent.scrollSpeed;
-		var prev:MetaNote = -1;
-		var noteSpr:VirtualNote = null;
+        noteCache = newNotes;
+    }
 
-		//var time = haxe.Timer.stamp();
-		while (i < top) {
-			var n = File.getNote(i);
+    // --- Get note from cache; dynamically grow and slide ---
+    inline function getCachedNote(idx:Int64):MetaNote {
+        var relativeIdx = Int64.toInt(idx - cacheStart) + cacheOffset;
 
-			var lane = parent.noteTypeFunctionalityPre[n.type] != null
-				? 1
-				: (n.type % parent.strumlines.length);
-			var receptor = parent.strumlines[lane].buffer[n.index];
-			var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
+        if (relativeIdx >= 0 && relativeIdx < noteCache.length) {
+            return noteCache[relativeIdx];
+        }
 
-			// Calculate note position
-			var diff = MetaNote.metaNotePositionToSongTime((n.position - pos)) * scrollSpeed;
-			var newY = receptor.y + Math.floor(diff);
+        var len = File.getLength();
+        if (idx >= len) return -1;
 
-			var ghost = isGhostNote(prev, n);
+        // Slide cache forward if idx is ahead
+        if (idx >= cacheStart + noteCache.length - cacheOffset) {
+            var startLoad = cacheStart + noteCache.length - cacheOffset;
+            var endLoad = idx + 1;
+            if (endLoad > len) endLoad = len;
 
-			var shouldOverlap = shouldNotesOverlap(prev, n, noteSpr, receptor, newY,
-				fakeOverlapStorage[prev != -1 ? prev.index : -1]) && !ghost;
+            var i = startLoad;
+            while (i < endLoad) {
+                noteCache.push(File.getNote(i));
+                i++;
+            }
+            return noteCache[Int64.toInt(idx - cacheStart) + cacheOffset];
+        }
 
-			fakeOverlapStorage[n.index] = newY;
+        // Slide cache backward if idx is before cacheStart
+        if (idx < cacheStart) {
+            loadCache(idx);
+            return noteCache[0];
+        }
 
-			if (shouldOverlap) {
-				mergeNoteIntoSprite(noteSpr, n);
-			} else {
-				if (!ghost) {
-					noteSpr = parent.drawNote(pos, n, diff, i);
-				} // fuck ghost notes, don't increment notesInOne on that one
-			}
+        return -1; // should not happen
+    }
 
-			prev = n;
-			++i;
+    // --- Set note in cache; dynamically grow and slide ---
+    inline function setCachedNote(idx:Int64, value:MetaNote):MetaNote {
+        var relativeIdx = Int64.toInt(idx - cacheStart) + cacheOffset;
+
+        if (relativeIdx >= 0 && relativeIdx < noteCache.length) {
+            noteCache[relativeIdx] = value;
+            return value;
+        }
+
+        getCachedNote(idx); // grow/slide to cover
+        noteCache[Int64.toInt(idx - cacheStart) + cacheOffset] = value;
+        return value;
+    }
+
+    // --- Optionally prune old notes far below bottom ---
+    function pruneCache() {
+        var minBottom = bottom - minCacheLength;
+        if (minBottom <= cacheStart) return;
+
+        var toRemove = Int64.toInt(minBottom - cacheStart);
+        cacheOffset += toRemove;
+        cacheStart = minBottom;
+
+        // Occasionally shrink array to avoid huge offset
+        if (cacheOffset > 1024) {
+            noteCache = noteCache.slice(cacheOffset, noteCache.length);
+            cacheOffset = 0;
+        }
+    }
+
+    function update(pos:Int64) {
+        _lastbottom = bottom;
+        _lasttop = top;
+
+        cullTop(pos);
+        cullBottom(pos);
+
+        processNotes(pos);
+
+        pruneCache(); // remove old notes far below bottom
+    }
+
+    var timeSpentOnIt:Float = 0;
+
+    function processNotes(pos:Int64) {
+        var i = bottom;
+        var scrollSpeed = parent.parent.scrollSpeed;
+        var prev:MetaNote = -1;
+        var noteSpr:VirtualNote = null;
+
+        while (i < top) {
+            var n = getCachedNote(i); // use sliding cache
+
+            var lane = parent.noteTypeFunctionalityPre[n.type] != null
+                ? 1
+                : (n.type % parent.strumlines.length);
+            var receptor = parent.strumlines[lane].buffer[n.index];
+            var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
+
+            var diff = MetaNote.metaNotePositionToSongTime((n.position - pos)) * scrollSpeed;
+            var newY = receptor.y + Math.floor(diff);
+
+            var ghost = isGhostNote(prev, n);
+
+            var shouldOverlap = shouldNotesOverlap(prev, n, noteSpr, receptor, newY,
+                fakeOverlapStorage[prev != -1 ? prev.index : -1]) && !ghost;
+
+            fakeOverlapStorage[n.index] = newY;
+
+            if (shouldOverlap) {
+                mergeNoteIntoSprite(noteSpr, n);
+            } else {
+                if (!ghost) {
+                    noteSpr = parent.drawNote(pos, n, diff, i);
+                }
+            }
+
+            prev = n;
+            ++i;
+        }
+    }
+
+	function cullTop(pos:Int64) {
+		var len = File.getLength();
+		while (top != len) {
+			// Only fetch once
+			var n = getCachedNote(top);
+			if (n.position - pos >= spawnDist) break;
+
+			// Initialize the note once
+			n.flag = false;
+			n.missed = false;
+			n.held = false;
+			setCachedNote(top, n);
+
+			++top;
 		}
 
-		//timeSpentOnIt = haxe.Timer.stamp() - time;
+		// Cache the top note once
+		if (top < len) curTopNote = getCachedNote(top);
 	}
+
+	function cullBottom(pos:Int64) {
+		var len = File.getLength();
+		while (bottom != len) {
+			var n = getCachedNote(bottom);
+
+			// Only calculate once
+			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - n.position;
+			if (despawnCheck <= despawnDist) break;
+
+			// Return to pool
+			var notePool = parent.notePool;
+			notePool.putNote(n, bottom);
+			notePool.putSustain(n);
+
+			++bottom;
+		}
+
+		// Cache the bottom note once
+		if (bottom < len) curBottomNote = getCachedNote(bottom);
+	}
+
+    function resetNotes(songPosition:Float) {
+        var pf = parent.parent;
+        if (pf.disposed || pf.died) return;
+
+        var len = File.getLength();
+        if (len <= 0) return;
+
+        var songPos = MetaNote.floatToMetaNotePosition(songPosition);
+        var minPos:Int64 = songPos - spawnDist;
+        var maxPos:Int64 = songPos;
+        if (minPos < 0) minPos = 0;
+
+        function lowerBound(target:Int64):Int64 {
+            var lo:Int64 = 0;
+            var hi:Int64 = len;
+            while (lo < hi) {
+                var mid = (lo + hi) >> 1;
+                if (getCachedNote(mid).position < target)
+                    lo = mid + 1;
+                else
+                    hi = mid;
+            }
+            return lo;
+        }
+
+        function upperBound(target:Int64):Int64 {
+            var lo:Int64 = 0;
+            var hi:Int64 = len;
+            while (lo < hi) {
+                var mid = (lo + hi) >> 1;
+                if (getCachedNote(mid).position <= target)
+                    lo = mid + 1;
+                else
+                    hi = mid;
+            }
+            return lo;
+        }
+
+        bottom = lowerBound(minPos);
+        top = upperBound(maxPos) - 1;
+
+        if (bottom < 0) bottom = 0;
+        else if (bottom >= len) bottom = len - 1;
+
+        if (top < 0) top = 0;
+        else if (top >= len) top = len - 1;
+
+        curBottomNote = getCachedNote(bottom);
+        curTopNote = getCachedNote(top);
+
+        // Slide cache to cover current bottom/top
+        loadCache(bottom);
+
+        parent.resetStrumlines();
+    }
+
+	// Now we're onto the real shit.
 
 	/**
 	 * Renders all notes in the current window.
@@ -389,113 +551,4 @@ class NoteSpawner {
 		noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + alphaToAdd, 256);
 		noteSpr.notesInOne++;
 	}
-
-	/**
-	 * Culls the top note cull.
-	 * @param pos The song's position in the note position format.
-	 */
-	function cullTop(pos:Int64) {
-		var len = File.getLength();
-		while (top != len && curTopNote.position - pos < spawnDist) {
-			++top;
-			var n:Int64 = File.getNote(top).toNumber();
-			(n:MetaNote).flag = false;
-			(n:MetaNote).missed = false;
-			(n:MetaNote).held = false;
-			File.setNote(top, n);
-			curTopNote = n;
-		}
-	}
-
-	/**
-	 * Culls the bottom note cull.
-	 * @param pos The song's position in the note position format.
-	 */
-	function cullBottom(pos:Int64) {
-		var len = File.getLength();
-		while (bottom != len && (pos - MetaNote.intToMetaNoteDuration(curBottomNote.duration)) - curBottomNote.position > despawnDist) {
-			var notePool = parent.notePool;
-			notePool.putNote(curBottomNote, bottom);
-			notePool.putSustain(curBottomNote);
-
-			++bottom;
-
-			curBottomNote = File.getNote(bottom);
-		}
-	}
-
-	/**
-	 * Reload the notes.
-	 * @param songPosition The time from the song.
-	 */
-	function resetNotes(songPosition:Float) {
-		var pf = parent.parent;
-		if (pf.disposed || pf.died) return;
-
-		var len = File.getLength();
-		if (len <= 0) return;
-
-		var songPos = MetaNote.floatToMetaNotePosition(songPosition);
-		var minPos:Int64;
-		var maxPos:Int64;
-
-		minPos = songPos - spawnDist;
-		maxPos = songPos;
-
-		if (minPos < 0) minPos = 0;
-
-		// --- Binary search helpers ---
-		function lowerBound(target:Int64):Int64 {
-			var lo:Int64 = 0;
-			var hi:Int64 = len;
-			while (lo < hi) {
-				var mid = (lo + hi) >> 1;
-				if (File.getNote(mid).position < target)
-					lo = mid + 1;
-				else
-					hi = mid;
-			}
-			return lo;
-		}
-
-		function upperBound(target:Int64):Int64 {
-			var lo:Int64 = 0;
-			var hi:Int64 = len;
-			while (lo < hi) {
-				var mid = (lo + hi) >> 1;
-				if (File.getNote(mid).position <= target)
-					lo = mid + 1;
-				else
-					hi = mid;
-			}
-			return lo;
-		}
-
-		// --- Determine indices ---
-		bottom = lowerBound(minPos);
-		top = upperBound(maxPos) - 1;
-
-		if (bottom < 0) bottom = 0;
-		else if (bottom >= len) bottom = len - 1;
-
-		if (top < 0) top = 0;
-		else if (top >= len) top = len - 1;
-
-		curBottomNote = File.getNote(bottom);
-		curTopNote = File.getNote(top);
-
-		parent.resetStrumlines();
-	}
-
-	/**
-	 * Floors the given value by pixels.
-	 * @param value The value to floor.
-	 * @return The floored value.
-	 */
-	function floorByPixels(value:Float):Int {
-		var dividend = (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT);
-		return Math.floor(Math.floor(value / dividend) * dividend);
-	}
-
-	private var zero(default, null):Int64 = 0;
 }
