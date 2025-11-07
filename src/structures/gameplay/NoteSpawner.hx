@@ -202,12 +202,13 @@ class NoteSpawner {
 						// and then the addedalpha glossy cover that goes along with it
 						var cover = new Note(note.x, note.y, 0, 0);
 						cover.initialAlpha = 1;
-						cover.addedAlpha = Math.min(virtualNote.greedyMergeAlphaMultiplier * virtualNote.addedAlpha, Note.maxGMAlpha);
+						cover.addedAlpha = virtualNote.greedyMergeAlphaMultiplier * virtualNote.addedAlpha;
 						//Sys.println(cover.addedAlpha);
 
 						cover.changeID(id);
 						cover.toNote();
 						cover.toggleGMVariant(granularity, true);
+						//cover.x = 20;
 						greedyMergedNoteList.push(cover);
 
 						// you add the cover first so this goes last
