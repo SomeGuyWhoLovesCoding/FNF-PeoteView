@@ -208,7 +208,7 @@ class NoteSpawner {
 						cover.changeID(id);
 						cover.toNote();
 						cover.toggleGMVariant(granularity, true);
-						cover.x = 20;
+						//cover.x = 20;
 						greedyMergedNoteList.push(cover);
 
 						// you add the cover first so this goes last
