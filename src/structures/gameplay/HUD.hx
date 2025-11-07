@@ -154,12 +154,7 @@ class HUD {
 			alphaLerp = Tools.lerp(alphaLerp, 1.0, t);
 			setHUDAlpha(alphaLerp);
 		}
-	}
 
-	/**
-		Individualized function to make it possible to change the score text even after render has happened.
-	**/
-	function updateBuffers() {
 		HealthBar.hbBuf.update();
 		uiBuf.update();
 	}

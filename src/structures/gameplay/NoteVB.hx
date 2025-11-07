@@ -120,7 +120,7 @@ class VirtualNote {
 	}
 
 	// position (4 bytes)
-	var xy:Int = 0;
+	var xy:Int;
 	var x(get, set):Int;
 	var y(get, set):Int;
 
@@ -145,7 +145,7 @@ class VirtualNote {
 	}
 
 	// size (4 bytes)
-	var wh:Int = 0;
+	var wh:Int;
 	var w(get, set):Int; // width
 	var h(get, set):Int; // height
 
@@ -170,7 +170,7 @@ class VirtualNote {
 	}
 
 	// once preparation is done, this stuff is used (4 bytes)
-	var tm:Int = 0;
+	var tm:Int;
 	var greedyMergeType(get, set):Int;
 	var greedyMergeAlphaMultiplier(get, set):Int;
 
@@ -241,7 +241,7 @@ class VirtualSustain {
 	}
 
 	// position (4 bytes)
-	var xy:Int = 0;
+	var xy:Int;
 	var x(get, set):Int;
 	var y(get, set):Int;
 
@@ -266,7 +266,7 @@ class VirtualSustain {
 	}
 
 	// size (4 bytes)
-	var wh:Int = 0;
+	var wh:Int;
 	var w(get, set):Int; // width
 	var h(get, set):Int; // height
 
