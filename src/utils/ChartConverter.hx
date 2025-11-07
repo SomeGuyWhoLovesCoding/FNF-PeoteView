@@ -148,7 +148,8 @@ class ChartConverter
 
 				for (j in 0...sectionNotes.length) {
 					var note:VanillaChartNote = sectionNotes[j];
-					var lane = mustHitSection ? 0 : 1;
+					var lane = mustHitSection ? 1 : 0;
+					if (note.index % (mania * 2) > mania) lane = lane == 1 ? 0 : 1;
 					var newNote = new MetaNote(
 						MetaNote.floatToMetaNotePosition(note.position),
 						MetaNote.floatDurationToInt(note.duration),
@@ -214,6 +215,6 @@ abstract VanillaChartNote(Array<Float>) from Array<Float> {
 	var duration(get, never):Float;
 
 	inline function get_position():Float { return this[0]; }
-	inline function get_index():Int { return Math.floor(this[1]) & MetaNote.INDEX_MASK; }
+	inline function get_index():Int { return Math.floor(this[1]); }
 	inline function get_duration():Float { return this[2]; }
 }
