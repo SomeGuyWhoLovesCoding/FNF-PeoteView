@@ -43,8 +43,6 @@ class Tools {
 		Note.enableGM = FileSystem.exists('$path/noteData_gm.xml');
 
 		if (Note.enableGM) {
-			if (FileSystem.exists('$path/noteData_gm_maxalpha.txt'))
-				Note.maxGMAlpha = Std.parseInt(File.getContent('$path/noteData_gm_maxalpha.txt'));
 			var contents = File.getContent('$path/noteData_gm.xml');
 			var xml = Xml.parse(contents);
 			var root = xml.firstElement();
