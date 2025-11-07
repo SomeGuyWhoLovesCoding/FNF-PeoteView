@@ -408,7 +408,16 @@ class Main extends Application
 				}
 
 				var hud = playField?.hud;
-				if (hud != null) hud.render(1000 / (renderingModeEnabled ? 60 : renderFrameRate));
+				if (hud != null) {
+					hud.render(1000 / (renderingModeEnabled ? 60 : renderFrameRate));
+
+					var scoreTxt = HUD.scoreTxt;
+					var noteSpawner = noteSystem.noteSpawner;
+					//if (scoreTxt != null) scoreTxt.text = ((noteSpawner.timeSpentOnIt * 1000000000) / Tools.int64ToFloat(noteSpawner.top - noteSpawner.bottom)) + "ns";
+					if (scoreTxt != null) scoreTxt.text = (noteSpawner.timeSpentOnIt * 1000) + "ms";
+
+					hud.updateBuffers();
+				}
 
 				if (renderingModeEnabled) RenderingMode.pipeFrame();
 			}
