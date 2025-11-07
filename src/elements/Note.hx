@@ -59,6 +59,7 @@ class Note implements Element
 
 	static public var offsetAndSizeFramesGM:Array<Int> = [];
 	static public var enableGM:Bool;
+	static public var maxGMAlpha:Int;
 
 	public var id:Int = 0;
 

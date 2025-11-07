@@ -78,7 +78,8 @@ class SaveData {
 	};
 
 	static function init(window:Window) {
-		window.onClose.add(save);
+		window.onClose.add(save, Math.floor(-Math.POSITIVE_INFINITY));
+		//lime.app.Application.onExit.add(save); // Much better. window.onClose doesn't even work on my lime fork anymore due to the change I made to remove recursion so I basically just did this:
 
 		if (!FileSystem.exists('save.dat')) {
 			save();
@@ -97,8 +98,6 @@ class SaveData {
 			result = SaveData_Securer.unlock(File.getContent("save.dat"));
 			trace('AAAAAAAAAAAAAAAAAA2');
 		} catch (e) {
-			FileSystem.deleteFile("save.dat");
-			save();
 			open();
 			trace('AAAAAAAAAAAAAAAAAA');
 			return;
@@ -107,15 +106,15 @@ class SaveData {
 	}
 
 	static function save() {
-		trace('Reah');
+		//trace('Reah');
 		try {
 			var result = SaveData_Securer.lock(state);
-			FileSystem.deleteFile("save.dat");
+			//FileSystem.deleteFile("save.dat");
 			var fo:FileOutput = File.write("save.dat");
 			fo.writeString(result);
 			fo.close();
 		} catch(e) {
-			trace('Reah');
+			//trace('Reah');
 		} // for rare cases like actually editing the save file itself
 	}
 

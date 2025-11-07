@@ -123,15 +123,15 @@ class InputSystem {
 
 	function addEvents() {
 		var window = lime.app.Application.current.window;
-		window.onKeyDown.add(press);
-		window.onKeyUp.add(release);
+		window.onKeyDownPrecise.add(press);
+		window.onKeyUpPrecise.add(release);
 		Main.current.mouseDown = mousePress;
 	}
 
 	function removeEvents() {
 		var window = lime.app.Application.current.window;
-		window.onKeyDown.remove(press);
-		window.onKeyUp.remove(release);
+		window.onKeyDownPrecise.remove(press);
+		window.onKeyUpPrecise.remove(release);
 		Main.current.mouseDown = null;
 	}
 
@@ -143,7 +143,7 @@ class InputSystem {
 		return untyped map.get(keyCode);
 	}
 
-	function press(code:KeyCode, mod:KeyModifier) {
+	function press(code:KeyCode, mod:KeyModifier, timestamp:Float) {
 		/*var timeStamp:Float = untyped __global__.__time_stamp();
 		timeStamp *= 1000;
 		Sys.println('$timeStamp, ${timeStamp % (1000 / lime.app.Application.current.window.frameRate)}');*/
@@ -199,7 +199,7 @@ class InputSystem {
 		parent.onKeyPress.dispatch(code);
 	}
 
-	function release(code:KeyCode, mod:KeyModifier) {
+	function release(code:KeyCode, mod:KeyModifier, timestamp:Float) {
 		if (parent.disposed || parent.botplay
 			|| parent.field.isInGameOver
 			|| RenderingMode.enabled || parent.paused) {

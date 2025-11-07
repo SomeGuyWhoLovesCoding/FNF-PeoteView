@@ -153,7 +153,6 @@ class PlayField implements State {
 		var conductor = Main.conductor;
 		var timeSig = Chart.header.timeSig;
 		conductor.changeBpmAt(0, Chart.header.bpm, timeSig[0], timeSig[1]);
-		conductor.onMeasure.add(measureHit);
 
 		onNoteHit.add(hitNote);
 		onNoteMiss.add(missNote);
@@ -340,6 +339,7 @@ class PlayField implements State {
 			// When the game actually begins, remove countdown listener immediately
 			// to avoid duplicate triggers and let Main.conductor take over.
 			if (countdownDisp.conductor != null) countdownDisp.conductor.onBeat.remove(countdownBeatHit);
+			Main.conductor.onMeasure.add(measureHit);
 		}
 
 		if (beat < 0) {

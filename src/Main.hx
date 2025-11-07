@@ -326,6 +326,7 @@ class Main extends Application
 	var newTimestamp:Float = 0;
 	#end
 	override function update(deltaTime:Int) {
+		//Sys.println(@:privateAccess current.window.onClose.__listeners);
 		#if hxcpp
 		/*var timestamp:Float = untyped __global__.__time_stamp();
 		Sys.println('New frame rate ${1 / (timestamp - newTimestamp)}fps');

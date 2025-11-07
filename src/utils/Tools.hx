@@ -39,12 +39,12 @@ class Tools {
 		var floatKeys = Math.ffloor(Note.offsetAndSizeFrames.length / 4) / 6;
 		if (floatKeys != Std.int(floatKeys)) throw "Noteskin not supported! KEYS is not integral!";
 		Note.KEYS = Std.int(floatKeys);
-		//trace('Number of keys supported in jail? ${Note.KEYS}');
 
-		var gmFileExists = Note.enableGM = FileSystem.exists('$path/noteData_gm.xml');
-		//trace("GM EXISTS???? HELO??????? - ",gmFileExists);
+		Note.enableGM = FileSystem.exists('$path/noteData_gm.xml');
 
-		if (gmFileExists) {
+		if (Note.enableGM) {
+			if (FileSystem.exists('$path/noteData_gm_maxalpha.txt'))
+				Note.maxGMAlpha = Std.parseInt(File.getContent('$path/noteData_gm_maxalpha.txt'));
 			var contents = File.getContent('$path/noteData_gm.xml');
 			var xml = Xml.parse(contents);
 			var root = xml.firstElement();
