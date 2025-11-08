@@ -105,6 +105,7 @@ class NoteSystem {
 			_lastPos = pos;
 
 		virtualNoteBuffer.clear();
+		notePool.startOver();
 
 		if (noteSpawner != null)
 			noteSpawner.update(pos);
