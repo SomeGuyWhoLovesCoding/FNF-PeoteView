@@ -198,8 +198,8 @@ class NoteSystem {
 		var rec = strumline.buffer[index];
 		var id = parent.inputSystem.receptorIds[index];
 
-		var noteSpr = notePool.getNote();
-		var sustainSpr = duration != 0 ? notePool.getSustain() : null;
+		var noteSpr = notePool.getNote(note);
+		var sustainSpr = duration != 0 ? notePool.getSustain(note) : null;
 		var sustainExists = duration != 0;
 
 		var leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
