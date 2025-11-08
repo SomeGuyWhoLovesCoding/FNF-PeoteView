@@ -53,7 +53,6 @@ class NotePool {
 			inactiveObject.greedyMergeType = 0;
 			inactiveObject.ref = n;
 			allocated = inactiveObject;
-			virtualNotes.set(n, inactiveObject);
 		} else {
 			allocated = virtualNotes[++virtualNotesLen];
 			allocated.initialAlpha = Note.defaultAlpha;
