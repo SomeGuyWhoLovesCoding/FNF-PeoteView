@@ -74,9 +74,8 @@ class NotePool {
 			var tex = TextureSystem.getTexture("sustainTex");
 			var inactiveObject:VirtualSustain = virtualSustains[++virtualSustainsLen] = new VirtualSustain(-9999, -9999,
 				Math.floor(tex.width / tex.tilesX),
-			        Math.floor(tex.height / tex.tilesY)
-				);
-			}
+			    Math.floor(tex.height / tex.tilesY)
+			);
 			allocated = inactiveObject;
 		} else {
 			allocated = virtualSustains[++virtualSustainsLen];
