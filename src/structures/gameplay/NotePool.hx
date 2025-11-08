@@ -41,7 +41,7 @@ class NotePool {
 	 * @param n The underlying meta note the note sprite's data should be set to.
      * @param index The index the note belongs to.
 	 */
-	function getNote() {
+	function getNote(n:MetaNote) {
 		var allocated:VirtualNote = null;
 
 		if (virtualNotesLen >= virtualNotes.length - 1) {
