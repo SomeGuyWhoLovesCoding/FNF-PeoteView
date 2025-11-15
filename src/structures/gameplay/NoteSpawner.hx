@@ -217,11 +217,6 @@ class NoteSpawner {
 			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - n.position;
 			if (despawnCheck <= despawnDist) break;
 
-			// Return to pool
-			var notePool = parent.notePool;
-			notePool.putNote(n, bottom);
-			notePool.putSustain(n);
-
 			++bottom;
 		}
 
