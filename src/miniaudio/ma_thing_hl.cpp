@@ -53,25 +53,6 @@ float       playbackRate = 1;
 */
 int MIXER_STATE = 3;
 
-int g_measuredLatencyMs = -1; // cached loopback latency
-
-// -------------------- LOOPBACK LATENCY MEASUREMENT --------------------
-HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
-	int osMs = 1;
-	int result = osMs + g_measuredLatencyMs;
-
-    if (g_measuredLatencyMs != -1) return result;
-
-    g_measuredLatencyMs = 100;
-
-	result = osMs + g_measuredLatencyMs;
-
-	printf("Done calibraring latency. It is now %d\n", g_measuredLatencyMs);
-
-	//printf("MiniAudio (WASAPI) Detected Latency %dms\n", result);
-	return result;
-}
-
 /*
 * 0 = false
 * 1 = true
@@ -82,7 +63,23 @@ ma_result result;
 ma_decoder_config decoderConfig;
 ma_device_config  deviceConfig;
 ma_device         device;
+ma_bool32 deviceExists = MA_FALSE;
 ma_uint32         iDecoder;
+
+// -------------------- LATENCY MEASUREMENT --------------------
+HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
+	//#ifdef HX_WINDOWS
+	int osMs = 93; // Shared audio driver latency by ms (windows), everything else 95ms by default
+	/*#else
+	int osMs = 95;
+	#endif*/
+
+	if (deviceExists == MA_TRUE) {
+		osMs += device.playback.internalPeriodSizeInFrames / (SAMPLE_RATE * 0.001);
+	}
+
+	return osMs;
+}
 
 /*
 * IMPORTANT!
@@ -357,6 +354,7 @@ HL_PRIM void HL_NAME(destroy)(_NO_ARG) {
 	exists = 0;
 
 	ma_device_uninit(&device);
+	deviceExists = MA_FALSE;
 
 	for (iDecoder = 0; iDecoder < g_decoderCount; ++iDecoder) {
 		ma_decoder_uninit(&g_pDecoders[iDecoder]);
@@ -438,6 +436,7 @@ HL_PRIM void HL_NAME(loadFiles)(varray* argv)
 		printf("Failed to open playback device.\n");
 		return;
 	}
+	deviceExists = MA_FALSE;
 }
 
 DEFINE_PRIM(_I32, detectLatency, _NO_ARG)

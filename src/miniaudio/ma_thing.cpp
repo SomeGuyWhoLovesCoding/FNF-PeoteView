@@ -36,25 +36,6 @@ float playbackRate = 1;
 
 int MIXER_STATE = 3; // 0=undefined,1=playing,2=stopped,3=finished
 
-int g_measuredLatencyMs = -1; // cached loopback latency
-
-// -------------------- LOOPBACK LATENCY MEASUREMENT --------------------
-int detectLatency() {
-	int osMs = 1;
-	int result = osMs + g_measuredLatencyMs;
-
-    if (g_measuredLatencyMs != -1) return result;
-
-    g_measuredLatencyMs = 100;
-
-	result = osMs + g_measuredLatencyMs;
-
-	printf("Done calibraring latency. It is now %d\n", g_measuredLatencyMs);
-
-	//printf("MiniAudio (WASAPI) Detected Latency %dms\n", result);
-	return result;
-}
-
 /*
 * 0 = false
 * 1 = true
@@ -65,7 +46,23 @@ ma_result result;
 ma_decoder_config decoderConfig;
 ma_device_config deviceConfig;
 ma_device device;
+ma_bool32 deviceExists = MA_FALSE;
 ma_uint32 iDecoder;
+
+// -------------------- LATENCY MEASUREMENT --------------------
+int detectLatency() {
+	//#ifdef HX_WINDOWS
+	int osMs = 93; // Shared audio driver latency by ms (windows), everything else 95ms by default
+	/*#else
+	int osMs = 95;
+	#endif*/
+
+	if (deviceExists == MA_TRUE) {
+		osMs += device.playback.internalPeriodSizeInFrames / (SAMPLE_RATE * 0.001);
+	}
+
+	return osMs;
+}
 
 /*
 * IMPORTANT!
@@ -288,7 +285,7 @@ void setPlaybackRate(float value) {
 	ensure_mutex();
 	ma_mutex_lock(&decoderMutex);
 	if (latencyFrames > 0) {
-		ma_decoder_read_pcm_frames(pDecoder, latencyData.data(), (ma_uint64)latencyFrames, NULL);
+		ma_decoder_read_pcm_frames(pDecoder, latencyData.data(), (ma_uint64)latencyFrames, nullptr);
 		ma_decoder_seek_to_pcm_frame(pDecoder, cursor2);
 	}
 	ma_mutex_unlock(&decoderMutex);
@@ -319,6 +316,7 @@ void destroy() {
 	if (exists == 0) return;
 	exists = 0;
 	ma_device_uninit(&device);
+	deviceExists = MA_FALSE;
 
 	for (iDecoder = 0; iDecoder < g_decoderCount; ++iDecoder) {
 		ma_decoder_uninit(&g_pDecoders[iDecoder]);
@@ -389,9 +387,9 @@ void loadFiles(std::vector<const char*> argv)
 	deviceConfig.playback.channels = CHANNEL_COUNT;
 	deviceConfig.sampleRate        = SAMPLE_RATE;
 	deviceConfig.dataCallback      = data_callback;
-	deviceConfig.pUserData         = NULL;
+	deviceConfig.pUserData         = nullptr;
 
-	if (ma_device_init(NULL, &deviceConfig, &device) != MA_SUCCESS) {
+	if (ma_device_init(nullptr, &deviceConfig, &device) != MA_SUCCESS) {
 		for (iDecoder = 0; iDecoder < g_decoderCount; ++iDecoder) {
 			ma_decoder_uninit(&g_pDecoders[iDecoder]);
 		}
@@ -400,4 +398,6 @@ void loadFiles(std::vector<const char*> argv)
 		printf("Failed to open playback device.\n");
 		return;
 	}
+
+	deviceExists = MA_TRUE;
 }
