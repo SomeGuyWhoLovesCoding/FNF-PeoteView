@@ -55,10 +55,13 @@ class NoteSpawner {
     }
 
     // --- Get note from cache; dynamically grow and slide ---
-    inline function getCachedNote(idx:Int64):MetaNote {
+    function getCachedNote(idx:Int64):MetaNote {
+		//var time = haxe.Timer.stamp();
         var relativeIdx = Int64.toInt(idx - cacheStart) + cacheOffset;
 
         if (relativeIdx >= 0 && relativeIdx < noteCache.length) {
+			//timeSpentOnIt += haxe.Timer.stamp() - time;
+			//timeSpentOnItIncrement++;
             return noteCache[relativeIdx];
         }
 
@@ -76,20 +79,27 @@ class NoteSpawner {
                 noteCache.push(File.getNote(i));
                 i++;
             }
+			//timeSpentOnIt += haxe.Timer.stamp() - time;
+			//timeSpentOnItIncrement++;
             return noteCache[Int64.toInt(idx - cacheStart) + cacheOffset];
         }
 
         // Slide cache backward if idx is before cacheStart
         if (idx < cacheStart) {
             loadCache(idx);
+			//timeSpentOnIt += haxe.Timer.stamp() - time;
+			//timeSpentOnItIncrement++;
+			Sys.println('RAAAAAAAAAAAAAAAAAAAAAAAAAA');
             return noteCache[0];
         }
 
+		//timeSpentOnIt += haxe.Timer.stamp() - time;
+		//timeSpentOnItIncrement++;
         return -1; // should not happen
     }
 
     // --- Set note in cache; dynamically grow and slide ---
-    inline function setCachedNote(idx:Int64, value:MetaNote):MetaNote {
+    function setCachedNote(idx:Int64, value:MetaNote):MetaNote {
         var relativeIdx = Int64.toInt(idx - cacheStart) + cacheOffset;
 
         if (relativeIdx >= 0 && relativeIdx < noteCache.length) {
@@ -112,11 +122,14 @@ class NoteSpawner {
         cacheStart = minBottom;
 
         // Occasionally shrink array to avoid huge offset
-        if (cacheOffset > 1024) {
+        if (cacheOffset > minCacheLength) {
             noteCache = noteCache.slice(cacheOffset, noteCache.length);
             cacheOffset = 0;
         }
     }
+
+    var timeSpentOnIt:Float = 0;
+    var timeSpentOnItIncrement:Float = 0;
 
     function update(pos:Int64) {
         _lastbottom = bottom;
@@ -125,19 +138,20 @@ class NoteSpawner {
         cullTop(pos);
         cullBottom(pos);
 
+		//Sys.println(top - bottom);
         processNotes(pos);
 
         pruneCache(); // remove old notes far below bottom
     }
-
-    var timeSpentOnIt:Float = 0;
 
     function processNotes(pos:Int64) {
         var i = bottom;
         var scrollSpeed = parent.parent.scrollSpeed;
         var prev:MetaNote = -1;
         var noteSpr:VirtualNote = null;
+		var j:Int = 0;
 
+		var time = haxe.Timer.stamp();
         while (i < top) {
             var n = getCachedNote(i); // use sliding cache
 
@@ -161,6 +175,7 @@ class NoteSpawner {
                 mergeNoteIntoSprite(noteSpr, n);
             } else {
                 if (!ghost) {
+					++j;
                     noteSpr = parent.drawNote(pos, n, diff, i);
                 }
             }
@@ -168,6 +183,9 @@ class NoteSpawner {
             prev = n;
             ++i;
         }
+		timeSpentOnIt = haxe.Timer.stamp() - time;
+
+		//Sys.println(j);
     }
 
 	function cullTop(pos:Int64) {

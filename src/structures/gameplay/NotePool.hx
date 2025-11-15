@@ -112,7 +112,7 @@ class NotePool {
 		n.flag = false;
 		n.missed = false;
 		n.held = false;
-		File.setNote(index, n);
+		parent.noteSpawner.setCachedNote(index, n);
 	}
 
 	/**
