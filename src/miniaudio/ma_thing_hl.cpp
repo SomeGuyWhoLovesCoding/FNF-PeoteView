@@ -69,13 +69,14 @@ ma_uint32         iDecoder;
 // -------------------- LATENCY MEASUREMENT --------------------
 HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
 	//#ifdef HX_WINDOWS
-	int osMs = 93; // Shared audio driver latency by ms (windows), everything else 95ms by default
+	int osMs = 92; // Shared audio driver latency by ms (windows), everything else 95ms by default
 	/*#else
 	int osMs = 95;
 	#endif*/
 
 	if (deviceExists == MA_TRUE) {
-		osMs += device.playback.internalPeriodSizeInFrames / (SAMPLE_RATE * 0.001);
+		osMs += (int)(device.playback.internalPeriodSizeInFrames / (SAMPLE_RATE * 0.001));
+		//printf("%i\n", (int)(device.playback.internalPeriodSizeInFrames / (SAMPLE_RATE * 0.001)));
 	}
 
 	return osMs;
