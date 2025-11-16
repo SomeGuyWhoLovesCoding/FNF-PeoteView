@@ -141,6 +141,7 @@ class HealthBar {
 	function updateBar() {
 		if (parent.disposed || parent.died) return;
 
+		trace(parent.downScroll);
 		bg.y = parent.downScroll ? 90 : Main.INITIAL_HEIGHT - 90;
 		//hbBuf.updateElement(bg);
 

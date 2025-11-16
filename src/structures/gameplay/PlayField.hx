@@ -64,8 +64,8 @@ class PlayField implements State {
 			noteSystem.renderNotes(pos); // new, because of the change I did to the note system to allow for an easy greedy merging optimization
 		}
 		if (hud != null) {
-			hud.render(0.0);
-			hud.updateScoreText(0.0);
+			hud.render(Math.POSITIVE_INFINITY);
+			hud.updateBuffers();
 		}
 		return value;
 	}
@@ -196,6 +196,7 @@ class PlayField implements State {
 		Reests the playfield's HUD.
 	**/
 	function resetHUD() {
+		// dispose first then re-render since that's the easiest way out
 		if (hud != null) {
 			hud.dispose();
 			hud = null;
@@ -206,6 +207,7 @@ class PlayField implements State {
 			hud.alphaLerp = 1;
 			hud.setHUDAlpha(1);
 			hud.render(Math.POSITIVE_INFINITY);
+			hud.updateBuffers();
 		}
 	}
 
