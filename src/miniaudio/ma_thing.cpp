@@ -52,7 +52,7 @@ ma_uint32 iDecoder;
 // -------------------- LATENCY MEASUREMENT --------------------
 int detectLatency() {
 	//#ifdef HX_WINDOWS
-	int osMs = 92; // Shared audio driver latency by ms (windows), everything else 95ms by default
+	int osMs = 100; // Shared audio driver latency by ms (windows), everything else 95ms by default
 	/*#else
 	int osMs = 95;
 	#endif*/
