@@ -68,7 +68,7 @@ ma_uint32         iDecoder;
 
 // -------------------- LATENCY MEASUREMENT --------------------
 HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
-	int osMs = 97;
+	int osMs = 102;
 
 	if (deviceExists == MA_TRUE) {
 		osMs += (int)(device.playback.internalPeriodSizeInFrames / (SAMPLE_RATE * 0.001));
@@ -433,7 +433,7 @@ HL_PRIM void HL_NAME(loadFiles)(varray* argv)
 		printf("Failed to open playback device.\n");
 		return;
 	}
-	deviceExists = MA_FALSE;
+	deviceExists = MA_TRUE;
 }
 
 DEFINE_PRIM(_I32, detectLatency, _NO_ARG)
