@@ -56,12 +56,9 @@ class NoteSpawner {
 
     // --- Get note from cache; dynamically grow and slide ---
     function getCachedNote(idx:Int64):MetaNote {
-		//var time = haxe.Timer.stamp();
         var relativeIdx = Int64.toInt(idx - cacheStart) + cacheOffset;
 
         if (relativeIdx >= 0 && relativeIdx < noteCache.length) {
-			//timeSpentOnIt += haxe.Timer.stamp() - time;
-			//timeSpentOnItIncrement++;
             return noteCache[relativeIdx];
         }
 
@@ -79,22 +76,15 @@ class NoteSpawner {
                 noteCache.push(File.getNote(i));
                 i++;
             }
-			//timeSpentOnIt += haxe.Timer.stamp() - time;
-			//timeSpentOnItIncrement++;
             return noteCache[Int64.toInt(idx - cacheStart) + cacheOffset];
         }
 
         // Slide cache backward if idx is before cacheStart
         if (idx < cacheStart) {
             loadCache(idx);
-			//timeSpentOnIt += haxe.Timer.stamp() - time;
-			//timeSpentOnItIncrement++;
-			Sys.println('RAAAAAAAAAAAAAAAAAAAAAAAAAA');
             return noteCache[0];
         }
 
-		//timeSpentOnIt += haxe.Timer.stamp() - time;
-		//timeSpentOnItIncrement++;
         return -1; // should not happen
     }
 
@@ -138,7 +128,6 @@ class NoteSpawner {
         cullTop(pos);
         cullBottom(pos);
 
-		//Sys.println(top - bottom);
         processNotes(pos);
 
         pruneCache(); // remove old notes far below bottom
@@ -184,8 +173,6 @@ class NoteSpawner {
             ++i;
         }
 		timeSpentOnIt = haxe.Timer.stamp() - time;
-
-		//Sys.println(j);
     }
 
 	function cullTop(pos:Int64) {
@@ -377,18 +364,15 @@ class NoteSpawner {
 							note.y -= note.h - h;  // Adjust so bottom of sprite is there
 							//note.y -= h;  // Subtract original note height to align properly
 						}
-						//note.x += Math.floor(MetaNote.metaNotePositionToSongTime(virtualNote.ref.position - pos) * 0.08);
 
 						// and then the addedalpha glossy cover that goes along with it
 						var cover = new Note(note.x, note.y, 0, 0);
 						cover.initialAlpha = 1;
 						cover.addedAlpha = virtualNote.greedyMergeAlphaMultiplier * virtualNote.addedAlpha;
-						//Sys.println(cover.addedAlpha);
 
 						cover.changeID(id);
 						cover.toNote();
 						cover.toggleGMVariant(granularity, true);
-						//cover.x = 20;
 						greedyMergedNoteList.push(cover);
 
 						// you add the cover first so this goes last
