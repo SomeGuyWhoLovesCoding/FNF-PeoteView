@@ -246,6 +246,7 @@ class NoteSystem {
 						noteTypeCall(index, type, true);
 					}
 
+					Sys.println(@:privateAccess parent.onNoteMiss.__listeners.length != 0);
 					if (@:privateAccess parent.onNoteMiss.__listeners.length != 0)
 						parent.onNoteMiss.dispatch(note, noteSpr.notesInOne);
 					if (parent.field != null)

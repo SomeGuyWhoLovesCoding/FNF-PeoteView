@@ -129,34 +129,15 @@ class Field {
 			actor.update(deltaTime);
 		}
 
+		var check = !isInGameOver && parent.died;
+		#if !FV_LIME_FORK
+		check = parent.died;
 		if (isInGameOver) {
-			Main.current.mouseDown = gameOverConfirmed ? null : _gameover_end_call;
-
-			if (gameOverMusic != null) {
-				if (@:privateAccess gameOverMusic.__backend.playing) {
-					Main.conductor.time = gameOverMusic.currentTime;
-				}
-
-				try {
-					if (gameOverMusic.currentTime == gameOverMusic.length) {
-						endGameOver();
-					}
-				} catch(e) {
-					trace('No such game over audio files exist by the theme "${Chart.header.gameOver.theme}".');
-				}
-			}
-	
-			if (gameOverConfirm != null) {
-				if (gameOverConfirm.currentTime == gameOverConfirm.length) {
-					gameOverConfirm = null;
-					isInGameOver = gameOverConfirmed = false;
-					Main.switchState(GAMEPLAY);
-					parent.display.show();
-				}
-			}
-		} else if (parent.died) {
+			updateGameOver();
+		} else #end if (check) {
 			gameOver();
 		}
+
 	}
 
 	function render() {
@@ -247,18 +228,22 @@ class Field {
 		var theme = gameOverMeta.theme;
 		var bpm = gameOverMeta.bpm;
 
+		gameOverMusic = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_music-${theme}.ogg'));
+
 		gameOverSound = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_sfx-${theme}.ogg'));
 		gameOverSound.play();
+
+		gameOverConfirm = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_end-${theme}.ogg'));
 
 		Main.conductor.reset();
 		Main.conductor.changeBpmAt(0, bpm);
 
+		actorOnGameOver.playAnimation("firstDeath");
 		actorOnGameOver.finishAnim = "deathLoop";
 		actorOnGameOver.shake = false;
-		actorOnGameOver.playAnimation("firstDeath");
 
 		actorOnGameOver.finishCallback = () -> {
-			gameOverMusic = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_music-${theme}.ogg'));
+			Sys.println('RAAAAAA');
 			gameOverMusic.play();
 		}
 
@@ -280,7 +265,6 @@ class Field {
 		var gameOverMeta = Chart.header.gameOver;
 		var theme = gameOverMeta.theme;
 
-		gameOverConfirm = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_end-${theme}.ogg'));
 		gameOverConfirm.play();
 
 		actorOnGameOver.finishAnim = "";
@@ -289,6 +273,34 @@ class Field {
 		Main.current.controls.unBind();
 		parent.inputSystem.removeEvents();
 		gameOverConfirmed = true;
+	}
+
+	function updateGameOver() {
+		//Sys.println('RAAAAAAAAAAAAAAAAAAAAAAAA');
+		Main.current.mouseDown = gameOverConfirmed ? null : _gameover_end_call;
+
+		if (gameOverMusic != null) {
+			if (@:privateAccess gameOverMusic.__backend.playing) {
+				Main.conductor.time = gameOverMusic.currentTime;
+			}
+
+			try {
+				if (gameOverMusic.currentTime == gameOverMusic.length) {
+					endGameOver();
+				}
+			} catch(e) {
+				trace('No such game over audio files exist by the theme "${Chart.header.gameOver.theme}".');
+			}
+		}
+
+		if (gameOverConfirm != null) {
+			if (gameOverConfirm.currentTime == gameOverConfirm.length) {
+				gameOverConfirm = null;
+				isInGameOver = gameOverConfirmed = false;
+				Main.switchState(GAMEPLAY);
+				parent.display.show();
+			}
+		}
 	}
 
 	// to fix the stupid shit that can't be fixed anywhere else
