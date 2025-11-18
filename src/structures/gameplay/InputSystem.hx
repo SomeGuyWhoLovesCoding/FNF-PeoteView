@@ -123,15 +123,25 @@ class InputSystem {
 
 	function addEvents() {
 		var window = lime.app.Application.current.window;
+		#if FV_LIME_FORK
 		window.onKeyDownPrecise.add(press);
 		window.onKeyUpPrecise.add(release);
+		#else
+		window.onKeyDown.add(press);
+		window.onKeyUp.add(release);
+		#end
 		Main.current.mouseDown = mousePress;
 	}
 
 	function removeEvents() {
 		var window = lime.app.Application.current.window;
+		#if FV_LIME_FORK
 		window.onKeyDownPrecise.remove(press);
 		window.onKeyUpPrecise.remove(release);
+		#else
+		window.onKeyDown.remove(press);
+		window.onKeyUp.remove(release);
+		#end
 		Main.current.mouseDown = null;
 	}
 
@@ -143,7 +153,10 @@ class InputSystem {
 		return untyped map.get(keyCode);
 	}
 
-	function press(code:KeyCode, mod:KeyModifier, timestamp:Float) {
+	function press(code:KeyCode, mod:KeyModifier
+		#if FV_LIME_FORK
+		, timestamp:Float
+		#end) {
 		/*var timeStamp:Float = timestamp;
 		Sys.println('Press: $timeStamp, ${timeStamp % (/*100000000/1000 / lime.app.Application.current.window.frameRate)}');*/
 		var field = parent.field;
@@ -191,14 +204,17 @@ class InputSystem {
 			var strumline = noteSystem.strumlines[lane];
 			if (!strumline.playerHitsToCheck[index]) {
 				strumline.playerHitsToCheck[index] = true;
-				strumline.press(index, timestamp);
+				strumline.press(index #if FV_LIME_FORK , timestamp #end);
 			}
 		}
 
 		parent.onKeyPress.dispatch(code);
 	}
 
-	function release(code:KeyCode, mod:KeyModifier, timestamp:Float) {
+	function release(code:KeyCode, mod:KeyModifier
+		#if FV_LIME_FORK
+		, timestamp:Float
+		#end) {
 		if (parent.disposed || parent.botplay
 			|| parent.field.isInGameOver
 			|| RenderingMode.enabled || parent.paused) {

@@ -115,7 +115,7 @@ class Strumline {
 		}
 	}
 
-	function press(index:Int, timestamp:Float) {
+	function press(index:Int #if FV_LIME_FORK , timestamp:Float #end) {
 		var noteToHit = notesToHit[index];
 		var rec = buffer[index];
 
@@ -146,7 +146,6 @@ class Strumline {
 
 			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + pf.latencyCompensation - Mixer.latency());
 			var finalPosition = MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency);
-			//Sys.println('Note difference: ${finalPosition - timestamp}ms - $finalPosition');
 
 			pf.onNoteHit.dispatch(noteToHit, MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency), 1);
 
