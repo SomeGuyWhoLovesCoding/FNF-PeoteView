@@ -56,7 +56,7 @@ import lime.ui.Window;
 	@since Development
  */
 #if (FV_LIME_FORK && sys)
-using lime._internal.backend.native.NativeCFFI;
+import lime._internal.backend.native.NativeCFFI;
 @:access(lime._internal.backend.native.NativeCFFI)
 #end
 @:publicFields
@@ -91,7 +91,7 @@ class Mixer {
 		hasSubLoopTick = true;
 		#if sys
 		var backend = @:privateAccess lime.app.Application.current.__backend;
-		@:privateAccess lime_subloop_event_manager_register(subLoopTick_init, backend.subLoopTickEventInfo);
+		@:privateAccess NativeCFFI.lime_subloop_event_manager_register(subLoopTick_init, backend.subLoopTickEventInfo);
 		#end
 		#end
 	}
@@ -117,7 +117,7 @@ class Mixer {
 		hasSubLoopTick = false;
 		#if sys
 		var backend = @:privateAccess lime.app.Application.current.__backend;
-		@:privateAccess lime_subloop_event_manager_register(backend.handleSubLoopEvent, backend.subLoopTickEventInfo);
+		@:privateAccess NativeCFFI.lime_subloop_event_manager_register(backend.handleSubLoopEvent, backend.subLoopTickEventInfo);
 		#end
 		#end
 	}
