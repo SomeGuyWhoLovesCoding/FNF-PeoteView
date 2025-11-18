@@ -87,11 +87,25 @@ class Mixer {
 		MiniAudio.loadFiles(files);
 		trackCount = files.length;
 		length = MiniAudio.getDuration();
+		enableSubLoop();
+	}
+
+	inline static function enableSubLoop() {
 		#if FV_LIME_FORK
 		hasSubLoopTick = true;
 		#if sys
 		var backend = @:privateAccess lime.app.Application.current.__backend;
 		@:privateAccess NativeCFFI.lime_subloop_event_manager_register(subLoopTick_init, backend.subLoopTickEventInfo);
+		#end
+		#end
+	}
+
+	inline static function disableSubLoop() {
+		#if FV_LIME_FORK
+		hasSubLoopTick = false;
+		#if sys
+		var backend = @:privateAccess lime.app.Application.current.__backend;
+		@:privateAccess NativeCFFI.lime_subloop_event_manager_register(backend.handleSubLoopEvent, backend.subLoopTickEventInfo);
 		#end
 		#end
 	}
@@ -105,21 +119,17 @@ class Mixer {
 
 	static public function startMusic():Void {
 		MiniAudio.start();
+		enableSubLoop();
 	}
 
 	static public function stopMusic():Void {
 		MiniAudio.stop();
+		disableSubLoop();
 	}
 
 	static public function destroyMusic():Void {
 		MiniAudio.destroy();
-		#if FV_LIME_FORK
-		hasSubLoopTick = false;
-		#if sys
-		var backend = @:privateAccess lime.app.Application.current.__backend;
-		@:privateAccess NativeCFFI.lime_subloop_event_manager_register(backend.handleSubLoopEvent, backend.subLoopTickEventInfo);
-		#end
-		#end
+		disableSubLoop();
 	}
 
 	static public function updateSmoothMusicTime(deltaTime:Float, playfield:PlayField, window:Window):Void {
@@ -155,14 +165,25 @@ class Mixer {
 
 	#if FV_LIME_FORK
 	static var lastTimestamp:Int64 = 0;
+	static var lastTimestamp1s:Int64 = 0;
 	inline static function subLoopTick(timestamp:Int64):Void {
 		var window = lime.app.Application.current.window;
 		var renderDelta = 1000 / window.renderFrameRate;
 		var playField = Main.current.playField;
 		if (lastTimestamp == 0) lastTimestamp = timestamp;
+		if (lastTimestamp1s == 0) lastTimestamp1s = timestamp;
 		var deltaTime:Float = Tools.int64ToFloat(timestamp - lastTimestamp) / 100000;
 		if (deltaTime < 0.0001) deltaTime = 0.0001;
 		if (playField != null) {
+			// If the song hasn't started yet, update the countdown conductor only.
+			// Do NOT apply latency compensation here — countdownDisp.conductor must see a pure musical timeline.
+			if (!playField.songStarted && !playField.songEnded) {
+				// Mixer already advanced playfield.songPosition during pre-start,
+				// so simply push that time to the countdown conductor.
+				if (playField.countdownDisp != null && playField.countdownDisp.conductor != null) {
+					playField.countdownDisp.conductor.time = playField.songPosition;
+				}
+			}
 			if (!playField.paused) {
 				if (!playField.songStarted || playField.songEnded || RenderingMode.enabled) {
 					if (deltaTime > renderDelta) deltaTime = renderDelta;
@@ -171,6 +192,14 @@ class Mixer {
 					updateSmoothMusicTime(deltaTime, playField, window);
 				}
 			}
+
+			Main.conductor.time = playField.songPosition - playField.latencyCompensation - Mixer.latency();
+		}
+
+		//Sys.println(timestamp - lastTimestamp1s);
+		if (timestamp - lastTimestamp1s > 100000000) {
+			Sys.println(deltaTime);
+			lastTimestamp1s = timestamp;
 		}
 		lastTimestamp = timestamp;
 	}

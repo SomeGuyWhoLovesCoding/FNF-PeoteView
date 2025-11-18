@@ -239,6 +239,7 @@ class PlayField implements State {
 		if (!died) {
 			Mixer.update(this, deltaTime);
 
+			#if !FV_LIME_FORK
 			// If the song hasn't started yet, update the countdown conductor only.
 			// Do NOT apply latency compensation here — countdownDisp.conductor must see a pure musical timeline.
 			if (!songStarted && !songEnded) {
@@ -248,11 +249,14 @@ class PlayField implements State {
 					countdownDisp.conductor.time = songPosition;
 				}
 			}
+			#end
 
 			songPosition -= latencyCompensation;
 			songPosition -= Mixer.latency();
 
+			#if !FV_LIME_FORK
 			Main.conductor.time = songPosition;
+			#end
 
 			var pos = MetaNote.floatToMetaNotePosition(songPosition);
 
@@ -289,7 +293,7 @@ class PlayField implements State {
 		if (countdownDisp != null) countdownDisp.update(deltaTime);
 
 		songPosition += latencyCompensation;
-		songPosition += Mixer.latency(); 
+		songPosition += Mixer.latency();
 	}
 
 	/**
