@@ -55,6 +55,10 @@ import lime.ui.Window;
 	- Does **not** perform low-level audio processing directly
 	@since Development
  */
+#if (FV_LIME_FORK && sys)
+using lime._internal.backend.native.NativeCFFI;
+@:access(lime._internal.backend.native.NativeCFFI)
+#end
 @:publicFields
 class Mixer {
 	static var trackCount:Int;
@@ -63,6 +67,8 @@ class Mixer {
 	static var length(default, null):Float;
 
 	static var speed(default, set):Float = 1;
+
+	private static var hasSubLoopTick(default, null):Bool;
 
 	static function set_speed(value:Float) {
 		speed = Math.max(value, 0.1);
@@ -82,9 +88,20 @@ class Mixer {
 		trackCount = files.length;
 		length = MiniAudio.getDuration();
 		#if FV_LIME_FORK
-		lime.app.Application.current.onSubLoopTick.add(subLoopTick);
+		hasSubLoopTick = true;
+		#if sys
+		var backend = @:privateAccess lime.app.Application.current.__backend;
+		@:privateAccess lime_subloop_event_manager_register(subLoopTick_init, backend.subLoopTickEventInfo);
+		#end
 		#end
 	}
+
+	#if (FV_LIME_FORK && sys)
+	inline static function subLoopTick_init() {
+		var backend = @:privateAccess lime.app.Application.current.__backend;
+		@:privateAccess subLoopTick(backend.subLoopTickEventInfo.timestamp);
+	}
+	#end
 
 	static public function startMusic():Void {
 		MiniAudio.start();
@@ -97,7 +114,11 @@ class Mixer {
 	static public function destroyMusic():Void {
 		MiniAudio.destroy();
 		#if FV_LIME_FORK
-		lime.app.Application.current.onSubLoopTick.remove(subLoopTick);
+		hasSubLoopTick = false;
+		#if sys
+		var backend = @:privateAccess lime.app.Application.current.__backend;
+		@:privateAccess lime_subloop_event_manager_register(backend.handleSubLoopEvent, backend.subLoopTickEventInfo);
+		#end
 		#end
 	}
 

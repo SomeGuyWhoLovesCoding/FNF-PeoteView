@@ -9,7 +9,6 @@ import lime.app.Application;
 import lime.ui.Window;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
-import lime.ui.Gamepad;
 import miniaudio.MiniAudio;
 
 private enum abstract StateSelection(Int) {
@@ -151,7 +150,6 @@ class Main extends Application
 
 		switch (newState) {
 			case MAIN_MENU:
-				//trace('That\'s it I\'m crashing out');
 				instance.mainMenu = new MainMenu();
 				instance.mainMenu.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
 			case GAMEPLAY:
@@ -197,7 +195,6 @@ class Main extends Application
 
 	// CONTROLS
 	var controls(default, null):Controls;
-	var gamepad(default, null):Gamepad;
 
 	// This is a replacement for Application.current.window.onMouseDown as it's a rogue piece a shit I've noticed was especially targetable on hashlink where the freeplay mouse click bug arose
 	var mouseDown:(Float, Float, MouseButton)->Void;
@@ -247,7 +244,6 @@ class Main extends Application
 			#end
 
 			window.onMouseDown.add((x, y, button) -> {
-				//trace('$mouseDown $currentState');
 				if (mouseDown != null) mouseDown(x, y, button);
 			});
 
@@ -256,11 +252,6 @@ class Main extends Application
 	}
 
 	private function prepareGameplayState() {
-		Gamepad.onConnect.add((gamepad:Gamepad) -> {
-			trace('Gamepad ${gamepad.name} connected');
-		});
-
-		gamepad = new Gamepad(0);
 		controls = new Controls();
 
 		HealthBarSprite.healthBarProperties = Tools.parseHealthBarConfig('assets/images/ui');
@@ -270,7 +261,7 @@ class Main extends Application
 
 	private function createTextures() {
 		var stamp = haxe.Timer.stamp();
-		trace("Preloading textures...");
+		Sys.println("Preloading textures...");
 		TextureSystem.createTexture("mainMenuBGTex", "assets/images/mainMenu/menuBG.png", false, true);
 		TextureSystem.createTexture("mainMenuSheet", "assets/images/mainMenu/sheet.png", false, true);
 		TextureSystem.createTexture("noteTex", "assets/images/notes/noteSheet.png", false, true);
@@ -279,24 +270,24 @@ class Main extends Application
 		TextureSystem.createTexture("storyModeSheet", "assets/images/ui/storyModeSheet.png", false, true);
 		TextureSystem.createTexture("optionsMenuSheet", "assets/images/ui/optionsMenuSheet.png", false, true);
 		TextureSystem.createTexture("alphabetSheet", "assets/alphabetText/sheet.png", false, true); // Can't be moved to images folder otherwise the game craps itself.
-		trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
+		Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 	}
 
 	private function createDisplays() {
 		var stamp = haxe.Timer.stamp();
-		trace("Creating displays...");
+		Sys.println("Creating displays...");
 		bottomDisplay = new CustomDisplay(0, 0, window.width, window.height, 0xFFFFFF33);
 		middleDisplay = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
 		topDisplay = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
 		optionsScreen = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
 		freeplayScreen = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
 		storyScreen = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
-		trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
+		Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 	}
 
 	private function addDisplays() {
 		var stamp = haxe.Timer.stamp();
-		trace("Adding displays...");
+		Sys.println("Adding displays...");
 
 		peoteView.addDisplay(bottomDisplay);
 		peoteView.addDisplay(middleDisplay);
@@ -304,7 +295,7 @@ class Main extends Application
 		peoteView.addDisplay(optionsScreen);
 		peoteView.addDisplay(freeplayScreen);
 		peoteView.addDisplay(storyScreen);
-		trace('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
+		Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 	}
 
 	private function controlVolume(keyCode:KeyCode, keyModifier:KeyModifier) {
@@ -326,57 +317,39 @@ class Main extends Application
 	var newTimestamp:Float = 0;
 	#end
 	override function update(deltaTime:Int) {
-		//Sys.println(@:privateAccess current.window.onClose.__listeners);
-		#if hxcpp
-		/*var timestamp:Float = untyped __global__.__time_stamp();
-		Sys.println('New frame rate ${1 / (timestamp - newTimestamp)}fps');
-		newTimestamp = timestamp;*/
-		#end
-
-		//Tools.profileFrame();
-		//Sys.println(1000000 / deltaTime);
+		Tools.profileFrame();
 
 		if (_started) {
 			#if FV_LIME_FORK
-			//Sys.println('On lime fork! Awesome');
 			newDeltaTime = deltaTime * 0.00001;
 			#else
-			//Sys.println('Not on lime fork! Awesome');
 			newDeltaTime = 1000 / Application.current.window.frameRate;
-			//Sys.println(newDeltaTime);
 			#end
 
-			//try {
-				if (mainMenu != null && !mainMenu.disposed) {
-					mainMenu.update(newDeltaTime);
+			if (mainMenu != null && !mainMenu.disposed) {
+				mainMenu.update(newDeltaTime);
+			}
+
+			if (playField != null && !playField.disposed) {
+				if (playField.pauseScreen != null) {
+					var pauseScreen = playField.pauseScreen;
+					if (!pauseScreen.disposed) pauseScreen.update(newDeltaTime);
 				}
 
-				//var timeStamp:Float = haxe.Timer.stamp();
-				if (playField != null && !playField.disposed) {
-					if (playField.pauseScreen != null) {
-						var pauseScreen = playField.pauseScreen;
-						if (!pauseScreen.disposed) pauseScreen.update(newDeltaTime);
-					}
-
-					if (!playField.paused && !RenderingMode.enabled) {
-						playField.update(newDeltaTime);
-					}
+				if (!playField.paused && !RenderingMode.enabled) {
+					playField.update(newDeltaTime);
 				}
-				//Sys.println(haxe.Timer.stamp() - timeStamp);
+			}
 
-				if (optionsMenu.active) {
-					optionsMenu.update(newDeltaTime);
-				}
+			if (optionsMenu.active) {
+				optionsMenu.update(newDeltaTime);
+			}
 
-				if (storyMenu.active) {
-					storyMenu.update(newDeltaTime);
-				}
-			//} catch (_) {
-			//	trace(haxe.CallStack.toString(haxe.CallStack.exceptionStack()));
-			//}
+			if (storyMenu.active) {
+				storyMenu.update(newDeltaTime);
+			}
 		}
 
-		//Tools.profileFrame();
 	}
 
 	override function render(context:RenderContext) {
@@ -387,7 +360,6 @@ class Main extends Application
 		var refreshRate:Float = Application.current.window.displayMode.refreshRate;
 		if (refreshRate == 0) refreshRate = 60;
 		if (renderFrameRate == 0) renderFrameRate = Application.current.window.renderFrameRate = refreshRate;
-		//Sys.println('Monitor refresh rate right now is $renderFrameRate');
 		#else
 		var renderFrameRate = Application.current.window.frameRate;
 		#end
@@ -427,7 +399,6 @@ class Main extends Application
 				freeplayMenu.render(1000 / renderFrameRate);
 			}
 		}
-		//Sys.println("render is decoupled?");
 	}
 
 	function popupOptionsMenu() {
