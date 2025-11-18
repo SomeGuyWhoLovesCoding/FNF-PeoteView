@@ -196,9 +196,8 @@ class Mixer {
 			Main.conductor.time = playField.songPosition - playField.latencyCompensation - Mixer.latency();
 		}
 
-		//Sys.println(timestamp - lastTimestamp1s);
 		if (timestamp - lastTimestamp1s > 100000000) {
-			Sys.println(deltaTime);
+			//Sys.println(deltaTime);
 			lastTimestamp1s = timestamp;
 		}
 		lastTimestamp = timestamp;
@@ -256,7 +255,7 @@ class Mixer {
 	- `1` - Playing
 	- `2` - Paused
 	- `3` - Finished
-	*/
+*/
 enum abstract MixerState(Int) from Int to Int {
 	var PLAYING = 1;
 	var STOPPED = 2;
