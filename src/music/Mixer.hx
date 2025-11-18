@@ -119,12 +119,10 @@ class Mixer {
 
 	static public function startMusic():Void {
 		MiniAudio.start();
-		enableSubLoop();
 	}
 
 	static public function stopMusic():Void {
 		MiniAudio.stop();
-		disableSubLoop();
 	}
 
 	static public function destroyMusic():Void {

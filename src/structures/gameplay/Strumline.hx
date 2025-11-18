@@ -37,15 +37,19 @@ class Strumline {
 	}
 
 	function set_y(value:Int) {
-		for (i in 0...length) {
-			buffer[i].y = value;
+		if (value != y) {
+			for (i in 0...length) {
+				buffer[i].y = value;
+			}
 		}
 		return y = value;
 	}
 
 	function set_scale(value:Float) {
-		for (i in 0...length) {
-			buffer[i].scale = value;
+		if (value != scale) {
+			for (i in 0...length) {
+				buffer[i].scale = value;
+			}
 		}
 		return scale = value;
 	}
