@@ -104,14 +104,11 @@ class Mixer {
 	static public function updateSmoothMusicTime(deltaTime:Float, playfield:PlayField, window:Window):Void {
 		if (isPlaying()) {
 			var rawPlaybackPosition = MiniAudio.getPlaybackPosition() + Main.conductor.offset;
-			//var playField = Main.current.
 			playfield.songPosition += deltaTime;
 			var multiply = 0.05; // Default drift adjustment value
 			var diff = playfield.songPosition - rawPlaybackPosition;
 			#if FV_LIME_FORK
-			//var smoothedTimeMult:Float = /*100000.0 / */deltaTime * 0.001;
 			var smoothedTimeMult:Float = deltaTime / (1000 / window.renderFrameRate);
-			//Sys.println(smoothedTimeMult);
 			#else
 			var refreshRate = window.displayMode.refreshRate; // integer version if you're on vanilla lime
 			var smoothedTimeMult:Float = (1000 / window.frameRate) / (1000 / refreshRate);
@@ -126,7 +123,6 @@ class Mixer {
 				big *= speed;
 				biggest *= speed;
 			}
-			//Sys.println(smoothedTimeMult);
 			if (diff > smallest || diff < -smallest) multiply = 0.1 * smoothedTimeMult;
 			if (diff > small || diff < small) multiply = 0.325 * smoothedTimeMult;
 			if (diff > big || diff < -big) multiply = 0.975 * smoothedTimeMult;
@@ -138,15 +134,13 @@ class Mixer {
 
 	#if FV_LIME_FORK
 	static var lastTimestamp:Int64 = 0;
-	//static var startTimestamp:Int64 = 0;
 	inline static function subLoopTick(timestamp:Int64):Void {
 		var window = lime.app.Application.current.window;
 		var renderDelta = 1000 / window.renderFrameRate;
 		var playField = Main.current.playField;
 		if (lastTimestamp == 0) lastTimestamp = timestamp;
-		var deltaTime:Float = Tools.int64ToFloat(timestamp - lastTimestamp) / 100000 /* * 100000*/;
-		if (deltaTime < 0.0001) deltaTime = 0.0001; // Prevent divide by zero
-		//Sys.println(deltaTime);
+		var deltaTime:Float = Tools.int64ToFloat(timestamp - lastTimestamp) / 100000;
+		if (deltaTime < 0.0001) deltaTime = 0.0001;
 		if (playField != null) {
 			if (!playField.paused) {
 				if (!playField.songStarted || playField.songEnded || RenderingMode.enabled) {
@@ -157,7 +151,6 @@ class Mixer {
 				}
 			}
 		}
-		//Sys.println('Delta: $deltaTime, Song Position: ${playField.songPosition}');
 		lastTimestamp = timestamp;
 	}
 	#end
@@ -193,10 +186,7 @@ class Mixer {
 			}
 
 			#if !FV_LIME_FORK
-			var checkIfMusicIsNotPlaying = !playField.songStarted || playField.songEnded || RenderingMode.enabled;
-			//canUpdateTimeOnSubLoop = !check;
-
-			if (checkIfMusicIsNotPlaying) {
+			if (!playField.songStarted || playField.songEnded || RenderingMode.enabled) {
 				playField.songPosition += deltaTime * Mixer.speed;
 			} else {
 				var window = lime.app.Application.current.window;
