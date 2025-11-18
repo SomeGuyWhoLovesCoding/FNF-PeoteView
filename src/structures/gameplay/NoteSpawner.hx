@@ -140,6 +140,7 @@ class NoteSpawner {
         var noteSpr:VirtualNote = null;
 		var j:Int = 0;
 
+		Tools.profileFrame();
 		var time = haxe.Timer.stamp();
         while (i < top) {
             var n = getCachedNote(i); // use sliding cache

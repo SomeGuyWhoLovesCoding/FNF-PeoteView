@@ -198,6 +198,7 @@ class NoteSystem {
 		var id = parent.inputSystem.receptorIds[index];
 
 		var noteSpr = notePool.getNote(id, note, _id);
+		if (noteSpr == null) return noteSpr;
 		var sustainSpr = duration != 0 ? notePool.getSustain(id, note) : null;
 		var sustainExists = duration != 0;
 

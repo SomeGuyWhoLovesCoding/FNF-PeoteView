@@ -43,7 +43,7 @@ class NotePool {
 	 * @param n The underlying meta note the note sprite's data should be set to.
      * @param index The index the note belongs to.
 	 */
-	function getNote(id:Int, n:MetaNote, index:Int64) {
+	function getNote(id:Int, n:MetaNote, index:Int64):VirtualNote {
 		var allocated = virtualNotes.get(n);
 
 		if (allocated == null) {
@@ -63,6 +63,7 @@ class NotePool {
 		allocated.ref = n;
 
 		return allocated;
+		//return null;
 	}
 
 	/**
@@ -70,7 +71,7 @@ class NotePool {
 	 * @param id The index the sustain sprite (existing or not) should change to.
 	 * @param n The underlying meta note the sustain sprite's data should be set to.
 	 */
-	function getSustain(id:Int, n:MetaNote) {
+	function getSustain(id:Int, n:MetaNote):VirtualSustain {
 		var allocated = virtualSustains.get(n);
 
 		if (allocated == null) {
@@ -90,6 +91,7 @@ class NotePool {
 
 
 		return allocated;
+		//return null;
 	}
 
 	/**

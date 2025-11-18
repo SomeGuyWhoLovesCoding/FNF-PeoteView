@@ -333,7 +333,7 @@ class Main extends Application
 		newTimestamp = timestamp;*/
 		#end
 
-		Tools.profileFrame();
+		//Tools.profileFrame();
 		//Sys.println(1000000 / deltaTime);
 
 		if (_started) {
@@ -414,7 +414,7 @@ class Main extends Application
 					var scoreTxt = HUD.scoreTxt;
 					var noteSpawner = noteSystem.noteSpawner;
 					//if (scoreTxt != null) scoreTxt.text = ((noteSpawner.timeSpentOnIt * 1000000000) / Tools.int64ToFloat(noteSpawner.top - noteSpawner.bottom)) + "ns";
-					//if (scoreTxt != null) scoreTxt.text = (noteSpawner.timeSpentOnIt * 1000) + "ms";
+					if (scoreTxt != null) scoreTxt.text = (noteSpawner.timeSpentOnIt * 1000) + "ms";
 
 					hud.updateBuffers();
 				}
