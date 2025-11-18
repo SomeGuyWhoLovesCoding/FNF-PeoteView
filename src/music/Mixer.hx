@@ -52,7 +52,6 @@ import lime.ui.Window;
 	## 📌 Notes
 
 	- Acts as a **high-level abstraction** for music playback
-	- Does **not** perform low-level audio processing directly
 	@since Development
  */
 #if (FV_LIME_FORK && sys)
@@ -134,28 +133,31 @@ class Mixer {
 		if (isPlaying()) {
 			var rawPlaybackPosition = MiniAudio.getPlaybackPosition() + Main.conductor.offset;
 			playfield.songPosition += deltaTime;
-			var multiply = 0.05; // Default drift adjustment value
-			var diff = playfield.songPosition - rawPlaybackPosition;
+
 			#if FV_LIME_FORK
 			var smoothedTimeMult:Float = deltaTime / (1000 / window.renderFrameRate);
 			#else
 			var refreshRate = window.displayMode.refreshRate; // integer version if you're on vanilla lime
 			var smoothedTimeMult:Float = (1000 / window.frameRate) / (1000 / refreshRate);
 			#end
-			var smallest:Float = 5;
-			var small:Float = 12.5;
-			var big:Float = 25;
-			var biggest:Float = 50;
-			if (speed != 1) {
-				smallest *= speed;
-				small *= speed;
-				big *= speed;
-				biggest *= speed;
-			}
-			if (diff > smallest || diff < -smallest) multiply = 0.1 * smoothedTimeMult;
-			if (diff > small || diff < -small) multiply = 0.325 * smoothedTimeMult;
-			if (diff > big || diff < -big) multiply = 0.975 * smoothedTimeMult;
-			if (diff > biggest || diff < -biggest) multiply = 1.0 * smoothedTimeMult;
+
+			var diff = playfield.songPosition - rawPlaybackPosition;
+			var absDiff = Math.abs(diff);
+
+			// Thresholds scaled by speed to maintain consistent correction behavior
+			var speedFactor = speed;
+			var smallest:Float = 5 * speedFactor;
+			var small:Float = 12.5 * speedFactor;
+			var big:Float = 25 * speedFactor;
+			var biggest:Float = 50 * speedFactor;
+
+			// Determine correction strength based on drift magnitude
+			var multiply:Float = 0.05;
+			if (absDiff > smallest) multiply = 0.1 * smoothedTimeMult;
+			if (absDiff > small) multiply = 0.325 * smoothedTimeMult;
+			if (absDiff > big) multiply = 0.975 * smoothedTimeMult;
+			if (absDiff > biggest) multiply = 1.0 * smoothedTimeMult;
+
 			var subtract = diff * multiply;
 			playfield.songPosition -= subtract;
 		}
@@ -181,8 +183,9 @@ class Mixer {
 					if (!playField.songStarted && !playField.songEnded) {
 						// Mixer already advanced playfield.songPosition during pre-start,
 						// so simply push that time to the countdown conductor.
-						if (playField.countdownDisp != null && playField.countdownDisp.conductor != null) {
-							playField.countdownDisp.conductor.time = playField.songPosition;
+						if (playField.countdownDisp != null) {
+							if (playField.countdownDisp.conductor != null)
+								playField.countdownDisp.conductor.time = playField.songPosition;
 						}
 					}
 					if (!playField.paused) {
