@@ -246,7 +246,11 @@ class NoteSystem {
 						noteTypeCall(index, type, true);
 					}
 
-					parent.onNoteMiss.dispatch(note, noteSpr.notesInOne);
+					if (@:privateAccess parent.onNoteMiss.__listeners.length != 0)
+						parent.onNoteMiss.dispatch(note, noteSpr.notesInOne);
+					if (parent.field != null)
+						parent.field.missNote(note, noteSpr.notesInOne);
+					parent.missNote(note, noteSpr.notesInOne);
 
 					if (sustainExists && !isHeld) {
 						sustainSpr.alpha = Sustain.defaultMissAlpha;
@@ -293,7 +297,11 @@ class NoteSystem {
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
 
-				parent.onNoteHit.dispatch(note, 0, noteSpr.notesInOne);
+				if (@:privateAccess parent.onNoteHit.__listeners.length != 0)
+					parent.onNoteHit.dispatch(note, 0, noteSpr.notesInOne);
+				if (parent.field != null)
+					parent.field.hitNote(note, 0, noteSpr.notesInOne);
+				parent.hitNote(note, 0, noteSpr.notesInOne);
 			}
 		}
 
@@ -327,7 +335,11 @@ class NoteSystem {
 					strumline.sustainsToHold[index] = null;
 					strumline.sustainsToHold_indexes[index] = 0;
 
-					parent.onSustainComplete.dispatch(note);
+					if (@:privateAccess parent.onSustainComplete.__listeners.length != 0)
+						parent.onSustainComplete.dispatch(note);
+					if (parent.field != null)
+						parent.field.completeSustain(note);
+					parent.completeSustain(note);
 				}
 			}
 

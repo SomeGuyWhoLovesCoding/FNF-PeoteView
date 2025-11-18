@@ -152,7 +152,11 @@ class Strumline {
 			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + pf.latencyCompensation - mixer);
 			var finalPosition = MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency);
 
-			pf.onNoteHit.dispatch(noteToHit, MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency), 1);
+			if (@:privateAccess pf.onNoteHit.__listeners.length != 0)
+				pf.onNoteHit.dispatch(noteToHit, MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency), 1);
+			if (pf.field != null)
+				pf.field.hitNote(noteToHit, MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency), 1);
+			pf.hitNote(noteToHit, MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency), 1);
 
 			notesToHit[index] = null;
 			notesToHit_indexes[index] = 0;
@@ -176,7 +180,11 @@ class Strumline {
 			(n:MetaNote).held = true;
 			parent.noteSpawner.setCachedNote(sustainsToHold_indexes[index], n);
 
-			pf.onSustainRelease.dispatch(sustainToRelease);
+			if (@:privateAccess pf.onSustainRelease.__listeners.length != 0)
+				pf.onSustainRelease.dispatch(sustainToRelease);
+			if (pf.field != null)
+				pf.field.releaseSustain(sustainToRelease);
+			pf.releaseSustain(sustainToRelease);
 			sustainsToHold[index] = null;
 			sustainsToHold_indexes[index] = 0;
 			sustainsToHold_duration[index] = 0;

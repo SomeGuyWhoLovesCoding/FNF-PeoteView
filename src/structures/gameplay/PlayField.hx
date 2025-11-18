@@ -154,10 +154,6 @@ class PlayField implements State {
 		var timeSig = Chart.header.timeSig;
 		conductor.changeBpmAt(0, Chart.header.bpm, timeSig[0], timeSig[1]);
 
-		onNoteHit.add(hitNote);
-		onNoteMiss.add(missNote);
-		onSustainComplete.add(completeSustain);
-		onSustainRelease.add(releaseSustain);
 		onStartSong.add(startSong);
 		onStopSong.add(stopSong);
 		onDeath.add(gameOver);
@@ -465,7 +461,7 @@ class PlayField implements State {
 		}
 	}
 
-	function releaseSustain(note:MetaNote) {
+	inline function releaseSustain(note:MetaNote) {
 		combo = 0;
 	}
 
@@ -517,11 +513,6 @@ class PlayField implements State {
 		if (RenderingMode.enabled) {
 			RenderingMode.stopRender();
 		}
-
-		onNoteHit.remove(hitNote);
-		onNoteMiss.remove(missNote);
-		onSustainComplete.remove(completeSustain);
-		onSustainRelease.remove(releaseSustain);
 
 		var conductor = Main.conductor;
 		conductor.onMeasure.remove(measureHit);
@@ -576,10 +567,6 @@ class PlayField implements State {
 			hud = null;
 		}
 
-		onNoteHit.remove(hitNote);
-		onNoteMiss.remove(missNote);
-		onSustainComplete.remove(completeSustain);
-		onSustainRelease.remove(releaseSustain);
 		onStartSong.remove(startSong);
 		onStopSong.remove(stopSong);
 		onDeath.remove(gameOver);

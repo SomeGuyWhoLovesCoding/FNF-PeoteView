@@ -83,8 +83,6 @@ class Field {
 		player.finishAnim = "idle";
 		player.addToBuffer();
 
-		addCallbacks();
-
 		Main.conductor.onBeat.add(beatHit);
 
 		parent.view.scroll.y = -100;
@@ -187,7 +185,6 @@ class Field {
 	}
 
 	inline function hitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
-		//Sys.println('Index: ${note.index}, Type: ${note.type}');
 		sing(note.index, (note.type == 0 ? opponent : player), false, note.duration > 2 && timing < parent.hitbox * 0.5);
 
 		targetCamera.x = note.type == 0 ? -50 : 50; // Prototype camera logic I have for now
@@ -206,23 +203,7 @@ class Field {
 		sing(note.index, (note.type == 0 ? opponent : player), true, false);
 	}
 
-	function addCallbacks() {
-		parent.onNoteHit.add(hitNote);
-		parent.onNoteMiss.add(missNote);
-		parent.onSustainComplete.add(completeSustain);
-		parent.onSustainRelease.add(releaseSustain);
-	}
-
-	function removeCallbacks() {
-		parent.onNoteHit.remove(hitNote);
-		parent.onNoteMiss.remove(missNote);
-		parent.onSustainComplete.remove(completeSustain);
-		parent.onSustainRelease.remove(releaseSustain);
-	}
-
 	function dispose() {
-		removeCallbacks();
-
 		for (actor in actors)
 			actor.dispose();
 
@@ -258,7 +239,6 @@ class Field {
 
 
 	function gameOver() {
-		removeCallbacks();
 		_gameover_end_call = (x:Float, y:Float, button:MouseButton) -> {
 			endGameOver(false);
 		};
