@@ -115,7 +115,7 @@ class Strumline {
 		}
 	}
 
-	function press(index:Int) {
+	function press(index:Int, timestamp:Float) {
 		var noteToHit = notesToHit[index];
 		var rec = buffer[index];
 
@@ -144,8 +144,12 @@ class Strumline {
 				sustainsToHold_indexes[index] = notesToHit_indexes[index];
 			}
 
-			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + pf.latencyCompensation #if windows - Mixer.latency() #end);
+			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + pf.latencyCompensation - Mixer.latency());
+			var finalPosition = MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency);
+			Sys.println('Note difference: ${finalPosition - timestamp}ms - $finalPosition');
+
 			pf.onNoteHit.dispatch(noteToHit, MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency), 1);
+
 			notesToHit[index] = null;
 			notesToHit_indexes[index] = 0;
 		} else {

@@ -162,7 +162,7 @@ class PlayField implements State {
 		onStopSong.add(stopSong);
 		onDeath.add(gameOver);
 
-		conductor.offset = -latencyCompensation #if windows - Mixer.latency() #end;
+		conductor.offset = -latencyCompensation - Mixer.latency();
 		songPosition = (-conductor.crochet * 4.5) - conductor.offset;
 
 		var pos = MetaNote.floatToMetaNotePosition(songPosition);
@@ -250,9 +250,7 @@ class PlayField implements State {
 			}
 
 			songPosition -= latencyCompensation;
-			#if windows
 			songPosition -= Mixer.latency();
-			#end
 
 			Main.conductor.time = songPosition;
 
@@ -291,9 +289,7 @@ class PlayField implements State {
 		if (countdownDisp != null) countdownDisp.update(deltaTime);
 
 		songPosition += latencyCompensation;
-		#if windows
-		songPosition += Mixer.latency();
-		#end
+		songPosition += Mixer.latency(); 
 	}
 
 	/**

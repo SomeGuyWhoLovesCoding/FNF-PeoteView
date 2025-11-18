@@ -144,9 +144,8 @@ class InputSystem {
 	}
 
 	function press(code:KeyCode, mod:KeyModifier, timestamp:Float) {
-		/*var timeStamp:Float = untyped __global__.__time_stamp();
-		timeStamp *= 1000;
-		Sys.println('$timeStamp, ${timeStamp % (1000 / lime.app.Application.current.window.frameRate)}');*/
+		/*var timeStamp:Float = timestamp;
+		Sys.println('Press: $timeStamp, ${timeStamp % (/*100000000/1000 / lime.app.Application.current.window.frameRate)}');*/
 		var field = parent.field;
 		var isInGameOver = field.isInGameOver;
 		var controls = SaveData.state.controls;
@@ -192,7 +191,7 @@ class InputSystem {
 			var strumline = noteSystem.strumlines[lane];
 			if (!strumline.playerHitsToCheck[index]) {
 				strumline.playerHitsToCheck[index] = true;
-				strumline.press(index);
+				strumline.press(index, timestamp);
 			}
 		}
 
@@ -219,10 +218,8 @@ class InputSystem {
 		if (noteSystem != null) {
 			var strumline = noteSystem.strumlines[lane];
 			var check = strumline.playerHitsToCheck[index];
-			//Sys.println('Fuck off $check');
 			if (strumline.playerHitsToCheck[index]) {
 				strumline.playerHitsToCheck[index] = false;
-				//Sys.println('Fuck off $index');
 				strumline.release(index);
 			}
 		}
