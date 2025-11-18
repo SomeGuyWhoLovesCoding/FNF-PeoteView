@@ -68,7 +68,7 @@ ma_uint32         iDecoder;
 
 // -------------------- LATENCY MEASUREMENT --------------------
 HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
-	int osMs = 102;
+	int osMs = 95;
 
 	if (deviceExists == MA_TRUE) {
 		osMs += (int)(device.playback.internalPeriodSizeInFrames / (SAMPLE_RATE * 0.001));

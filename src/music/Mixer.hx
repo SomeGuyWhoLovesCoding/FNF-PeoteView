@@ -3,6 +3,7 @@ package music;
 import miniaudio.MiniAudio;
 import miniaudio.StdVectorString;
 import utils.Tools;
+import lime.ui.Window;
 
 /**
 	# Music Playback Helper (Haxe + MiniAudio)
@@ -80,6 +81,9 @@ class Mixer {
 		MiniAudio.loadFiles(files);
 		trackCount = files.length;
 		length = MiniAudio.getDuration();
+		#if FV_LIME_FORK
+		lime.app.Application.current.onSubLoopTick.add(subLoopTick);
+		#end
 	}
 
 	static public function startMusic():Void {
@@ -92,20 +96,25 @@ class Mixer {
 
 	static public function destroyMusic():Void {
 		MiniAudio.destroy();
+		#if FV_LIME_FORK
+		lime.app.Application.current.onSubLoopTick.remove(subLoopTick);
+		#end
 	}
 
-	static public function updateSmoothMusicTime(deltaTime:Float, playfield:PlayField):Void {
+	static public function updateSmoothMusicTime(deltaTime:Float, playfield:PlayField, window:Window):Void {
 		if (isPlaying()) {
-			var window = lime.app.Application.current.window;
 			var rawPlaybackPosition = MiniAudio.getPlaybackPosition() + Main.conductor.offset;
+			//var playField = Main.current.
 			playfield.songPosition += deltaTime;
 			var multiply = 0.05; // Default drift adjustment value
 			var diff = playfield.songPosition - rawPlaybackPosition;
 			#if FV_LIME_FORK
-			var frameTimeDiff:Float = (1000 / window.frameRate) / (1000 / window.renderFrameRate);
+			//var smoothedTimeMult:Float = /*100000.0 / */deltaTime * 0.001;
+			var smoothedTimeMult:Float = deltaTime / (1000 / window.renderFrameRate);
+			//Sys.println(smoothedTimeMult);
 			#else
 			var refreshRate = window.displayMode.refreshRate; // integer version if you're on vanilla lime
-			var frameTimeDiff:Float = (1000 / window.frameRate) / (1000 / refreshRate);
+			var smoothedTimeMult:Float = (1000 / window.frameRate) / (1000 / refreshRate);
 			#end
 			var smallest:Float = 5;
 			var small:Float = 12.5;
@@ -117,15 +126,41 @@ class Mixer {
 				big *= speed;
 				biggest *= speed;
 			}
-			//Sys.println(frameTimeDiff);
-			if (diff > smallest || diff < -smallest) multiply = 0.1 * frameTimeDiff;
-			if (diff > small || diff < small) multiply = 0.325 * frameTimeDiff;
-			if (diff > big || diff < -big) multiply = 0.975 * frameTimeDiff;
-			if (diff > biggest || diff < -biggest) multiply = 1.0 * frameTimeDiff;
+			//Sys.println(smoothedTimeMult);
+			if (diff > smallest || diff < -smallest) multiply = 0.1 * smoothedTimeMult;
+			if (diff > small || diff < small) multiply = 0.325 * smoothedTimeMult;
+			if (diff > big || diff < -big) multiply = 0.975 * smoothedTimeMult;
+			if (diff > biggest || diff < -biggest) multiply = 1.0 * smoothedTimeMult;
 			var subtract = diff * multiply;
 			playfield.songPosition -= subtract;
 		}
 	}
+
+	#if FV_LIME_FORK
+	static var lastTimestamp:Int64 = 0;
+	//static var startTimestamp:Int64 = 0;
+	inline static function subLoopTick(timestamp:Int64):Void {
+		var window = lime.app.Application.current.window;
+		var renderDelta = 1000 / window.renderFrameRate;
+		var playField = Main.current.playField;
+		if (lastTimestamp == 0) lastTimestamp = timestamp;
+		var deltaTime:Float = Tools.int64ToFloat(timestamp - lastTimestamp) / 100000 /* * 100000*/;
+		if (deltaTime < 0.0001) deltaTime = 0.0001; // Prevent divide by zero
+		//Sys.println(deltaTime);
+		if (playField != null) {
+			if (!playField.paused) {
+				if (!playField.songStarted || playField.songEnded || RenderingMode.enabled) {
+					if (deltaTime > renderDelta) deltaTime = renderDelta;
+					playField.songPosition += deltaTime * Mixer.speed;
+				} else {
+					updateSmoothMusicTime(deltaTime, playField, window);
+				}
+			}
+		}
+		//Sys.println('Delta: $deltaTime, Song Position: ${playField.songPosition}');
+		lastTimestamp = timestamp;
+	}
+	#end
 
 	static function isPlaying():Bool {
 		return MiniAudio.getMixerState() == MixerState.PLAYING;
@@ -157,11 +192,17 @@ class Mixer {
 				}
 			}
 
-			if (!playField.songStarted || playField.songEnded || RenderingMode.enabled) {
+			#if !FV_LIME_FORK
+			var checkIfMusicIsNotPlaying = !playField.songStarted || playField.songEnded || RenderingMode.enabled;
+			//canUpdateTimeOnSubLoop = !check;
+
+			if (checkIfMusicIsNotPlaying) {
 				playField.songPosition += deltaTime * Mixer.speed;
 			} else {
-				updateSmoothMusicTime(deltaTime, playField);
+				var window = lime.app.Application.current.window;
+				updateSmoothMusicTime(deltaTime, playField, window);
 			}
+			#end
 		}
 	}
 
