@@ -47,7 +47,6 @@ class FreeplayMenu {
 
 	function open() {
 		Main.current.popupFreeplayMenu();
-		//trace("Events removed");
 
 		opened = active = true;
 

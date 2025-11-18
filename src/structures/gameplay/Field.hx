@@ -180,7 +180,6 @@ class Field {
 	}
 
 	inline function releaseSustain(note:MetaNote) {
-		//Sys.println('${note.index} weird');
 		sing(note.index, (note.type == 0 ? opponent : player), true, false);
 	}
 
@@ -242,10 +241,7 @@ class Field {
 		actorOnGameOver.finishAnim = "deathLoop";
 		actorOnGameOver.shake = false;
 
-		actorOnGameOver.finishCallback = () -> {
-			Sys.println('RAAAAAA');
-			gameOverMusic.play();
-		}
+		actorOnGameOver.finishCallback = gameOverMusic.play;
 
 		isInGameOver = true;
 	}
@@ -276,7 +272,6 @@ class Field {
 	}
 
 	function updateGameOver() {
-		//Sys.println('RAAAAAAAAAAAAAAAAAAAAAAAA');
 		Main.current.mouseDown = gameOverConfirmed ? null : _gameover_end_call;
 
 		if (gameOverMusic != null) {

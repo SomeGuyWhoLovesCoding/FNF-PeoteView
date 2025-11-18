@@ -135,7 +135,7 @@ class CountdownDisplay {
 		buffer.clear();
 		display.removeProgram(program);
 		sprite = null;
-		while (sounds.length != 0) sounds.pop().dispose();
+		while (sounds.pop() != null) {}
 		conductor = null;
 	}
 

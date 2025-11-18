@@ -240,7 +240,6 @@ class MainMenu implements State {
 	}
 
 	function addEvents() {
-		//trace("Bitch yore dead now!");
 		var window = lime.app.Application.current.window;
 
 		Main.current.controls.bindTo(actions);
@@ -249,7 +248,6 @@ class MainMenu implements State {
 	}
 
 	function removeEvents() {
-		//trace("Fuck you all events");
 		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
 		window.onMouseWheel.remove(updateMenuOptions_mouse);
