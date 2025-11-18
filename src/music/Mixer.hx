@@ -124,7 +124,7 @@ class Mixer {
 				biggest *= speed;
 			}
 			if (diff > smallest || diff < -smallest) multiply = 0.1 * smoothedTimeMult;
-			if (diff > small || diff < small) multiply = 0.325 * smoothedTimeMult;
+			if (diff > small || diff < -small) multiply = 0.325 * smoothedTimeMult;
 			if (diff > big || diff < -big) multiply = 0.975 * smoothedTimeMult;
 			if (diff > biggest || diff < -biggest) multiply = 1.0 * smoothedTimeMult;
 			var subtract = diff * multiply;
