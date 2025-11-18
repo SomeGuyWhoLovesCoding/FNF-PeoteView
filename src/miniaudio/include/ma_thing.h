@@ -3,9 +3,7 @@
 #include <vector>
 #include <stdint.h>
 
-#ifdef _WIN32
 int detectLatency(void);
-#endif
 int getMixerState(void);
 double getPlaybackPosition(void);
 double getDuration(void);
