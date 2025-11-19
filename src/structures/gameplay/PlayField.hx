@@ -17,7 +17,7 @@ class PlayField implements State {
 	var view(default, null):CustomDisplay;
 
 	function new(path:String) {
-		Chart.load(path);
+		Chart.load(Paths.asset(path));
 
 		if (RenderingMode.enabled) {
 			RenderingMode.initRender();

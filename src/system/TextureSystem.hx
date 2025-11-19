@@ -78,7 +78,7 @@ class TextureSystem {
 		var currentSaveState = SaveData.state.graphics;
 		var antialiasing = currentSaveState.antialiasing && !disableAntialiasing;
 
-		var image = Image.fromFile(path);
+		var image = Image.fromFile(Paths.asset(path));
 
 		// I'm proud of this fix, but it couldn't be better be this:
 		var textureData = !premultiply ? TextureData.fromLimeImage(image) : new TextureData(image.width, image.height, TextureFormat.RGBA);
@@ -130,7 +130,7 @@ class TextureSystem {
 		var currentSaveState = SaveData.state.graphics;
 		var antialiasing = currentSaveState.antialiasing && !disableAntialiasing;
 
-		var image = Image.fromFile(path);
+		var image = Image.fromFile(Paths.asset(path));
 
 		// I'm proud of this fix, but it couldn't be better be this:
 		var textureData = !premultiply ? TextureData.fromLimeImage(image) : new TextureData(image.width, image.height, TextureFormat.RGBA);
@@ -164,64 +164,6 @@ class TextureSystem {
 			smoothShrink: antialiasing
 		});
 		texture.setData(textureData);
-
-		if (key == "noteTex") noteTex = texture;
-		else if (key == "sustainTex") sustainTex = texture;
-		pool[key] = texture;
-	}
-
-	/**
-		Create a multitexture and put it in the texture pool.
-		@param key The multitexture's key.
-		@param paths The texture paths.
-	**/
-	static function createMultiTexture(key:String, paths:Array<String>, disableAntialiasing:Bool = false) {
-		if (pool.exists(key)) {
-			return;
-		}
-
-		multitexLocMap[key] = [];
-
-		var currentSaveState = SaveData.state.graphics;
-		var antialiasing = currentSaveState.antialiasing && !disableAntialiasing;
-		var texturesToPush:Array<TextureData> = [];
-
-		var totalTextureWidth:Int = 0;
-		var totalTextureHeight:Int = 0;
-
-		var textureLocX:Int = 0;
-
-		for (i in 0...paths.length) {
-			var textureBytes = File.getBytes(paths[i]);
-			var textureData = TextureData.RGBAfrom(TextureData.fromFormatPNG(textureBytes));
-
-			texturesToPush.push(textureData);
-
-			if (totalTextureWidth < textureData.width) {
-				totalTextureWidth = textureData.width;
-			}
-
-			if (totalTextureHeight < textureData.height) {
-				totalTextureHeight = textureData.height;
-			}
-		}
-
-		for (i in 0...paths.length) {
-			multitexLocMap[key].push(textureLocX);
-			textureLocX += totalTextureWidth;
-		}
-
-		var texture = new Texture(totalTextureWidth, totalTextureHeight, null, {
-			slotsX: texturesToPush.length,
-			slotsY: 1,
-			powerOfTwo: false,
-			smoothExpand: antialiasing,
-			smoothShrink: antialiasing
-		});
-
-		for (i in 0...texturesToPush.length) {
-			texture.setData(texturesToPush[i], i);
-		}
 
 		if (key == "noteTex") noteTex = texture;
 		else if (key == "sustainTex") sustainTex = texture;

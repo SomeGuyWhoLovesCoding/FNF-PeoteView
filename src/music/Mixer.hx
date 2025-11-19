@@ -83,6 +83,9 @@ class Mixer {
 	}
 
 	static public function load(files:Array<String>):Void { // Don't rename this to `loadFiles` as it will conflict with the MiniAudio extern class
+		for (i in 0...files.length)
+			files[i] = Paths.asset(files[i]);
+
 		MiniAudio.loadFiles(files);
 		trackCount = files.length;
 		length = MiniAudio.getDuration();
