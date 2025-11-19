@@ -54,7 +54,7 @@ import lime.ui.Window;
 	- Acts as a **high-level abstraction** for music playback
 	@since Development
  */
-#if (FV_LIME_FORK && sys)
+#if (FV_LIME_FORK && lime_cffi)
 import lime._internal.backend.native.NativeCFFI;
 @:access(lime._internal.backend.native.NativeCFFI)
 #end
@@ -92,7 +92,7 @@ class Mixer {
 	inline static function enableSubLoop() {
 		#if FV_LIME_FORK
 		hasSubLoopTick = true;
-		#if sys
+		#if lime_cffi
 		var backend = @:privateAccess lime.app.Application.current.__backend;
 		@:privateAccess NativeCFFI.lime_subloop_event_manager_register(subLoopTick_init, backend.subLoopTickEventInfo);
 		#end
@@ -102,14 +102,14 @@ class Mixer {
 	inline static function disableSubLoop() {
 		#if FV_LIME_FORK
 		hasSubLoopTick = false;
-		#if sys
+		#if lime_cffi
 		var backend = @:privateAccess lime.app.Application.current.__backend;
 		@:privateAccess NativeCFFI.lime_subloop_event_manager_register(backend.handleSubLoopEvent, backend.subLoopTickEventInfo);
 		#end
 		#end
 	}
 
-	#if (FV_LIME_FORK && sys)
+	#if (FV_LIME_FORK && lime_cffi)
 	inline static function subLoopTick_init() {
 		var backend = @:privateAccess lime.app.Application.current.__backend;
 		@:privateAccess subLoopTick(backend.subLoopTickEventInfo.timestamp);
@@ -143,7 +143,7 @@ class Mixer {
 
 			var diff = playfield.songPosition - rawPlaybackPosition;
 			var absDiff = Math.abs(diff);
-			//Sys.println(absDiff);
+			//lime_cffi.println(absDiff);
 
 			// Thresholds scaled by speed to maintain consistent correction behavior
 			var speedFactor = speed;
@@ -234,10 +234,10 @@ class Mixer {
 		if (playField != null) {
 			if (!playField.songEnded) {
 				if (RenderingMode.enabled && playField.songPosition > length) {
-					Sys.println('Stopping song playback due to rendering mode.');
+					lime_cffi.println('Stopping song playback due to rendering mode.');
 					playField.onStopSong.dispatch(Chart.header);
 				} else if (playField.songStarted && isStopped() && !playField.songEnded) {
-					Sys.println('Stopping song playback due to stop condition.');
+					lime_cffi.println('Stopping song playback due to stop condition.');
 					playField.onStopSong.dispatch(Chart.header);
 				}
 			}
