@@ -143,13 +143,14 @@ class Mixer {
 
 			var diff = playfield.songPosition - rawPlaybackPosition;
 			var absDiff = Math.abs(diff);
+			//Sys.println(absDiff);
 
 			// Thresholds scaled by speed to maintain consistent correction behavior
 			var speedFactor = speed;
-			var smallest:Float = 5 * speedFactor;
-			var small:Float = 12.5 * speedFactor;
-			var big:Float = 25 * speedFactor;
-			var biggest:Float = 50 * speedFactor;
+			var smallest:Float = 3.75 * speedFactor;
+			var small:Float = 8.5 * speedFactor;
+			var big:Float = 17.5 * speedFactor;
+			var biggest:Float = 40 * speedFactor;
 
 			// Determine correction strength based on drift magnitude
 			var multiply:Float = 0.05;
@@ -197,7 +198,9 @@ class Mixer {
 						}
 					}
 
-					Main.conductor.time = playField.songPosition - playField.latencyCompensation - Mixer.latency();
+					var lastConductorTime = Main.conductor.time;
+					var currentConductorTime = playField.songPosition - playField.latencyCompensation - Mixer.latency();
+					Main.conductor.time = currentConductorTime;
 				} else {
 					field.updateGameOver();
 				}
@@ -205,8 +208,9 @@ class Mixer {
 		}
 
 		if (timestamp - lastTimestamp1s > 100000000) {
-			//Sys.println(deltaTime);
 			lastTimestamp1s = timestamp;
+			//Sys.sleep(0.4);
+			for (i in 0...2000000000) {}
 		}
 		lastTimestamp = timestamp;
 	}
