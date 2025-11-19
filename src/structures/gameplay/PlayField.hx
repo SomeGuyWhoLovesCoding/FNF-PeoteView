@@ -348,8 +348,8 @@ class PlayField implements State {
 
 	inline function measureHit(measure:Float) {
 		if (measure >= 0 && SaveData.state.preferences.cameraZooming && songStarted) {
-			display.fov += 0.03;
-			view.fov += 0.015;
+			display.fov += 0.025;
+			view.fov += 0.011;
 		}
 	}
 
