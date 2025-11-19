@@ -198,9 +198,7 @@ class Mixer {
 						}
 					}
 
-					var lastConductorTime = Main.conductor.time;
-					var currentConductorTime = playField.songPosition - playField.latencyCompensation - Mixer.latency();
-					Main.conductor.time = currentConductorTime;
+					Main.conductor.time = playField.songPosition - playField.latencyCompensation - Mixer.latency();
 				} else {
 					field.updateGameOver();
 				}
@@ -209,8 +207,6 @@ class Mixer {
 
 		if (timestamp - lastTimestamp1s > 100000000) {
 			lastTimestamp1s = timestamp;
-			//Sys.sleep(0.4);
-			for (i in 0...2000000000) {}
 		}
 		lastTimestamp = timestamp;
 	}
