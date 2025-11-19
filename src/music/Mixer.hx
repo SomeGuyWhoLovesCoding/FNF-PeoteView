@@ -143,7 +143,7 @@ class Mixer {
 
 			var diff = playfield.songPosition - rawPlaybackPosition;
 			var absDiff = Math.abs(diff);
-			//lime_cffi.println(absDiff);
+			//Sys.println(absDiff);
 
 			// Thresholds scaled by speed to maintain consistent correction behavior
 			var speedFactor = speed;
@@ -234,10 +234,10 @@ class Mixer {
 		if (playField != null) {
 			if (!playField.songEnded) {
 				if (RenderingMode.enabled && playField.songPosition > length) {
-					lime_cffi.println('Stopping song playback due to rendering mode.');
+					Sys.println('Stopping song playback due to rendering mode.');
 					playField.onStopSong.dispatch(Chart.header);
 				} else if (playField.songStarted && isStopped() && !playField.songEnded) {
-					lime_cffi.println('Stopping song playback due to stop condition.');
+					Sys.println('Stopping song playback due to stop condition.');
 					playField.onStopSong.dispatch(Chart.header);
 				}
 			}
