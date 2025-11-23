@@ -353,7 +353,8 @@ class PlayField implements State {
 		}
 	}
 
-	function hitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
+	inline function hitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
+		notesInOne *= 10000;
 		var lane = note.type;
 
 		if (noteSystem.noteTypeFunctionalityPre[note.type] != null) lane = 1;
@@ -362,58 +363,64 @@ class PlayField implements State {
 		if (Chart.header.voicesDirs.length > 1) index = 1;
 		if (index > 0 && index <= Mixer.trackCount) Mixer.changeTrackVolume(index, 1);
 
-		if (!inputSystem.strumlinePlayable[lane]) {
+		var playable = inputSystem.strumlinePlayable[lane];
+
+		if (!playable) {
 			health -= healthLoss[lane];
 			if (health < 0.05) {
 				health = 0.05;
 			}
+		} else {
+			combo += notesInOne;
 
-			return;
+			health += healthGain[lane] * Tools.int64ToFloat(notesInOne);
+			if (health > 1) {
+				health = 1;
+			}
+
+			var preferences = SaveData.state.preferences;
+			var scoreTxt = HUD.scoreTxt;
+
+			if (scoreTxt != null && preferences.scoreTxtBopping) {
+				scoreTxt.scale = 1.1;
+			}
+
+			var absTiming = timing < 0 ? -timing : timing;
+
+			if (absTiming > 60) {
+				if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(3);
+				accuracy.increment(5000, false, notesInOne);
+				score += shitScore * notesInOne;
+				return;
+			}
+
+			if (absTiming > 45) {
+				if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(2);
+				accuracy.increment(7500, false, notesInOne);
+				score += badScore * notesInOne;
+				return;
+			}
+
+			if (absTiming > 30) {
+				if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(1);
+				accuracy.increment(8000, false, notesInOne);
+				score += goodScore * notesInOne;
+				return;
+			}
+
+			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(0);
+			accuracy.increment(10000, false, notesInOne);
+			score += sickScore * notesInOne;
 		}
-
-		combo += notesInOne;
-
-		health += healthGain[lane] * Tools.int64ToFloat(notesInOne);
-		if (health > 1) {
-			health = 1;
-		}
-
-		var preferences = SaveData.state.preferences;
-		var scoreTxt = HUD.scoreTxt;
-
-		if (scoreTxt != null && preferences.scoreTxtBopping) {
-			scoreTxt.scale = 1.1;
-		}
-
-		var absTiming = timing < 0 ? -timing : timing;
-
-		if (absTiming > 60) {
-			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(3);
-			accuracy.increment(5000, false, notesInOne);
-			score += shitScore * notesInOne;
-			return;
-		}
-
-		if (absTiming > 45) {
-			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(2);
-			accuracy.increment(7500, false, notesInOne);
-			score += badScore * notesInOne;
-			return;
-		}
-
-		if (absTiming > 30) {
-			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(1);
-			accuracy.increment(8000, false, notesInOne);
-			score += goodScore * notesInOne;
-			return;
-		}
-
-		if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(0);
-		accuracy.increment(10000, false, notesInOne);
-		score += sickScore * notesInOne;
 	}
 
-	function missNote(note:MetaNote, notesInOne:Int64) {
+	inline function missNote(note:MetaNote, notesInOne:Int64) {
+		if (practiceMode && health < 0.05) {
+			health = 0.05;
+		}
+
+		notesInOne *= 10000;
+
 		var lane = note.type;
 		if (noteSystem.noteTypeFunctionalityPre[note.type] != null) lane = 1;
 
@@ -428,14 +435,8 @@ class PlayField implements State {
 		misses += notesInOne;
 		accuracy.increment(10000, true, notesInOne);
 
-		if (health < 0 && !disposed) {
+		if (health < 0 && !disposed)
 			onDeath.dispatch(Chart.header, lane);
-			return;
-		}
-
-		if (practiceMode && health < 0.05) {
-			health = 0.05;
-		}
 	}
 
 	function completeSustain(note:MetaNote) {
@@ -444,20 +445,20 @@ class PlayField implements State {
 
 		if (noteSystem != null && noteSystem.strumlines[lane].confirmed(note.index)) return;
 
-		if (!inputSystem.strumlinePlayable[lane]) {
+		var playable = inputSystem.strumlinePlayable[lane];
+
+		if (!playable) {
 			health -= healthLoss[lane];
 
 			if (health < 0.05) {
 				health = 0.05;
 			}
+		} else {
+			health += healthGain[lane];
 
-			return;
-		}
-
-		health += healthGain[lane];
-
-		if (health > 1) {
-			health = 1;
+			if (health > 1) {
+				health = 1;
+			}
 		}
 	}
 

@@ -1,5 +1,11 @@
 package data.gameplay;
 
+/*@:publicFields
+class AccuracyVariables {
+	static inline var INCREMENT:Int128 = 10000;
+	static inline var ZERO:Int128 = 0;
+}*/
+
 @:publicFields
 abstract Accuracy(Array<Int128>) {
 	var left(get, never):Int128;
@@ -14,8 +20,7 @@ abstract Accuracy(Array<Int128>) {
 		return this[1];
 	}
 
-	function increment(value:Int128, missed:Bool = false, count:Int128) {
-		count *= Int128.ofInt(10000);
+	inline function increment(value:Int128, missed:Bool = false, count:Int128) {
 		if (!missed) this[0] += value * count;
 		this[1] += count;
 	}
