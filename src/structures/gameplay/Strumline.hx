@@ -127,13 +127,6 @@ class Strumline {
 		var rec = buffer[index];
 
 		if (noteToHit != null && !noteToHit.missed && !noteToHit.flag) {
-			var sprite = notesToHit_sprites[index];
-			if (sprite != null) {
-				sprite.initialAlpha = 0;
-				NoteSystem.notesBuf.updateElement(sprite);
-				notesToHit_sprites[index] = null;
-			}
-
 			var pf = parent.parent;
 			var type = noteToHit.type;
 
@@ -146,6 +139,14 @@ class Strumline {
 
 			if (!rec.confirmed()) {
 				rec.confirm();
+			}
+
+			var sprite = notesToHit_sprites[index];
+			if (sprite != null) {
+				sprite.initialAlpha = 0;
+				if (@:privateAccess sprite.bytePos != -1)
+					NoteSystem.notesBuf.updateElement(sprite);
+				notesToHit_sprites[index] = null;
 			}
 
 			var n:Int64 = noteToHit.toNumber();
