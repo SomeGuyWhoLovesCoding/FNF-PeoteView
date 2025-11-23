@@ -127,6 +127,13 @@ class Strumline {
 		var rec = buffer[index];
 
 		if (noteToHit != null && !noteToHit.missed && !noteToHit.flag) {
+			var sprite = notesToHit_sprites[index];
+			if (sprite != null) {
+				sprite.initialAlpha = 0;
+				NoteSystem.notesBuf.updateElement(sprite);
+				notesToHit_sprites[index] = null;
+			}
+
 			var pf = parent.parent;
 			var type = noteToHit.type;
 
@@ -151,23 +158,17 @@ class Strumline {
 				sustainsToHold_indexes[index] = notesToHit_indexes[index];
 			}
 
-            var mixer = Mixer.latency();
-			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + pf.latencyCompensation - mixer);
+			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + pf.latencyCompensation - Mixer.latency());
 			var finalPosition = MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency);
 
 			if (@:privateAccess pf.onNoteHit.__listeners.length != 0)
-				pf.onNoteHit.dispatch(noteToHit, MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency), 1);
+				pf.onNoteHit.dispatch(noteToHit, finalPosition, 1);
 			if (pf.field != null)
-				pf.field.hitNote(noteToHit, MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency), 1);
-			pf.hitNote(noteToHit, MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency), 1);
+				pf.field.hitNote(noteToHit, finalPosition, 1);
+			pf.hitNote(noteToHit, finalPosition, 1);
 
 			notesToHit[index] = null;
-			var sprite = notesToHit_sprites[index];
-			if (sprite != null) {
-				sprite.initialAlpha = 0;
-				NoteSystem.notesBuf.updateElement(sprite);
-				notesToHit_sprites[index] = null;
-			}
+
 			notesToHit_indexes[index] = 0;
 		} else {
 			if (!rec.pressed()) {
