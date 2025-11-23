@@ -349,6 +349,11 @@ class NoteSpawner {
 
 					note.changeID(id);
 					note.toNote();
+
+					// This is here in order to fix the note still visible for the remaining time rendering or so when inputs are polled at an extemely high rate.
+					var noteToHit = strumline.notesToHit[j];
+					strumline.notesToHit_sprites[j] = noteToHit == virtualNote.ref ? note : null;
+
 					//@:privateAccess trace('Regular note: x=${note.clipX}, y=${note.clipY}, w=${note.clipWidth}, h=${note.clipHeight}');
 
 					if (Note.enableGM && greedyMerged && virtualNote.greedyMergeAlphaMultiplier != 0 && virtualNote.greedyMergeType != 0) {

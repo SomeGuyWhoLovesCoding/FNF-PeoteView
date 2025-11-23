@@ -354,7 +354,6 @@ class PlayField implements State {
 	}
 
 	inline function hitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
-		notesInOne *= 10000;
 		var lane = note.type;
 
 		if (noteSystem.noteTypeFunctionalityPre[note.type] != null) lane = 1;
@@ -386,30 +385,31 @@ class PlayField implements State {
 			}
 
 			var absTiming = timing < 0 ? -timing : timing;
+			var notesInOne_accuracy = notesInOne * 10000;
 
 			if (absTiming > 60) {
 				if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(3);
-				accuracy.increment(5000, false, notesInOne);
+				accuracy.increment(5000, false, notesInOne_accuracy);
 				score += shitScore * notesInOne;
 				return;
 			}
 
 			if (absTiming > 45) {
 				if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(2);
-				accuracy.increment(7500, false, notesInOne);
+				accuracy.increment(7500, false, notesInOne_accuracy);
 				score += badScore * notesInOne;
 				return;
 			}
 
 			if (absTiming > 30) {
 				if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(1);
-				accuracy.increment(8000, false, notesInOne);
+				accuracy.increment(8000, false, notesInOne_accuracy);
 				score += goodScore * notesInOne;
 				return;
 			}
 
 			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(0);
-			accuracy.increment(10000, false, notesInOne);
+			accuracy.increment(10000, false, notesInOne_accuracy);
 			score += sickScore * notesInOne;
 		}
 	}
@@ -418,8 +418,6 @@ class PlayField implements State {
 		if (practiceMode && health < 0.05) {
 			health = 0.05;
 		}
-
-		notesInOne *= 10000;
 
 		var lane = note.type;
 		if (noteSystem.noteTypeFunctionalityPre[note.type] != null) lane = 1;
@@ -433,7 +431,7 @@ class PlayField implements State {
 		combo = 0;
 		score -= 50 * notesInOne;
 		misses += notesInOne;
-		accuracy.increment(10000, true, notesInOne);
+		accuracy.increment(10000, true, notesInOne * 10000);
 
 		if (health < 0 && !disposed)
 			onDeath.dispatch(Chart.header, lane);

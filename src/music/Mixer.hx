@@ -59,6 +59,7 @@ import lime._internal.backend.native.NativeCFFI;
 @:access(lime._internal.backend.native.NativeCFFI)
 #end
 @:publicFields
+@:noDebug
 class Mixer {
 	static var trackCount:Int;
 	static inline var sampleRate:Int = 44100;
@@ -82,10 +83,13 @@ class Mixer {
 		}
 	}
 
-	static public function load(files:Array<String>):Void { // Don't rename this to `loadFiles` as it will conflict with the MiniAudio extern class
+	static var loadedFiles:Array<String>; // Add this
+
+	static public function load(files:Array<String>):Void {
 		for (i in 0...files.length)
 			files[i] = Paths.asset(files[i]);
 
+		loadedFiles = files; // Keep a reference to prevent GC
 		MiniAudio.loadFiles(files);
 		trackCount = files.length;
 		length = MiniAudio.getDuration();
@@ -129,6 +133,8 @@ class Mixer {
 
 	static public function destroyMusic():Void {
 		MiniAudio.destroy();
+		while (loadedFiles.pop() != null) {}
+		loadedFiles = null; // Clean up
 		disableSubLoop();
 	}
 

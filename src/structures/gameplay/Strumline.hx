@@ -11,6 +11,7 @@ package structures.gameplay;
 @:publicFields
 class Strumline {
 	var notesToHit(default, null):Array<Null<MetaNote>>;
+	var notesToHit_sprites(default, null):Array<Note>;
 	var notesToHit_indexes(default, null):Array<Int64>;
 	var sustainsToHold(default, null):Array<Null<MetaNote>>;
 	var sustainsToHold_indexes(default, null):Array<Int64>;
@@ -62,6 +63,7 @@ class Strumline {
 
 	function set_length(value:Int) {
 		notesToHit.resize(value);
+		notesToHit_sprites.resize(value);
 		notesToHit_indexes.resize(value);
 		sustainsToHold.resize(value);
 		sustainsToHold_indexes.resize(value);
@@ -93,6 +95,7 @@ class Strumline {
 
 	function new(x:Int, y:Int, gap:Int, scale:Float, length:Int, parent:NoteSystem) {
 		notesToHit = [];
+		notesToHit_sprites = [];
 		notesToHit_indexes = [];
 		sustainsToHold = [];
 		sustainsToHold_duration = [];
@@ -159,6 +162,12 @@ class Strumline {
 			pf.hitNote(noteToHit, MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency), 1);
 
 			notesToHit[index] = null;
+			var sprite = notesToHit_sprites[index];
+			if (sprite != null) {
+				sprite.initialAlpha = 0;
+				NoteSystem.notesBuf.updateElement(sprite);
+				notesToHit_sprites[index] = null;
+			}
 			notesToHit_indexes[index] = 0;
 		} else {
 			if (!rec.pressed()) {
