@@ -11,7 +11,7 @@ sudo apt-get install libasound2-dev
 haxelib setup ~/haxelib
 haxelib install format --quiet
 haxelib install hxp --quiet
-haxelib install hxcpp > /dev/null --quiet
+haxelib install hxcpp --quiet
 haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet
 haxelib install peote-view --quiet
 haxelib install input2action --quiet
