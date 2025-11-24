@@ -6,15 +6,13 @@ import lime.ui.MouseButton;
 
 /**
 	The input system for the playfield.
-	Warning: 70% of this class is very messy inside.
-	...And I don't recommend you touching this at all.
 	This class handles the input for the playfield, including key presses, releases, and mouse clicks.
 	It maps key codes to receptor IDs and manages the strumline for different mania modes.
 	But! It is very important to note that this class is not meant to be used outside of the playfield.
 **/
 @:publicFields
 class InputSystem {
-	var map:Map<KeyCode, Array<Int>>;
+	var keyMap:Array<Array<Int>>; // indexed by KeyCode, stores [index, lane]
 	var receptorIds:Array<Int>;
 	var strumline:Array<Float>;
 	var strumlinePlayable:Array<Bool>;
@@ -24,12 +22,10 @@ class InputSystem {
 	function new(mania:Int, parent:PlayField) {
 		this.parent = parent;
 
-		map = [];
+		keyMap = [];
 
 		reloadKeybinds(mania);
 
-		// This shit is fucking unbearable as FUCK
-		// It's why it's in its own class
 		switch (mania) {
 			case 1:
 				receptorIds = [0];
@@ -111,13 +107,15 @@ class InputSystem {
 	}
 
 	function reloadKeybinds(mania:Int = 4) {
-		map.clear();
+		keyMap = [];
 
 		var keybinds = SaveData.state.controls.game.keybindArray[mania - 1];
 		for (i in 0...keybinds.length) {
 			var keybind = keybinds[i];
-			for (j in 0...keybind.length)
-				map[keybind[j]] = [i, 1];
+			for (j in 0...keybind.length) {
+				var keyCode = keybind[j];
+				keyMap[keyCode] = [i, 1];
+			}
 		}
 	}
 
@@ -143,14 +141,6 @@ class InputSystem {
 		window.onKeyUp.remove(release);
 		#end
 		Main.current.mouseDown = null;
-	}
-
-	inline function exists(keyCode:KeyCode) {
-		return untyped map.exists(keyCode);
-	}
-
-	inline function get(keyCode:KeyCode) {
-		return untyped map.get(keyCode);
 	}
 
 	function press(code:KeyCode, mod:KeyModifier
@@ -190,13 +180,13 @@ class InputSystem {
 			return;
 		}
 
-		if (!exists(code)) {
+		var keyData = keyMap[code];
+		if (keyData == null) {
 			return;
 		}
 
-		var map = get(code);
-		var lane = map[1];
-		var index = map[0];
+		var index = keyData[0];
+		var lane = keyData[1];
 
 		var noteSystem = parent.noteSystem;
 
@@ -221,19 +211,18 @@ class InputSystem {
 			return;
 		}
 
-		if (!exists(code)) {
+		var keyData = keyMap[code];
+		if (keyData == null) {
 			return;
 		}
 
-		var map = get(code);
-		var lane = map[1];
-		var index = map[0];
+		var index = keyData[0];
+		var lane = keyData[1];
 
 		var noteSystem = parent.noteSystem;
 
 		if (noteSystem != null) {
 			var strumline = noteSystem.strumlines[lane];
-			var check = strumline.playerHitsToCheck[index];
 			if (strumline.playerHitsToCheck[index]) {
 				strumline.playerHitsToCheck[index] = false;
 				strumline.release(index);
@@ -250,8 +239,8 @@ class InputSystem {
 	function dispose() {
 		removeEvents();
 
-		map.clear();
-		map = null;
+		while (keyMap.pop() != null) {}
+		keyMap = null;
 		receptorIds = null;
 		strumline = null;
 		strumlinePlayable = null;
