@@ -23,6 +23,7 @@ class InputSystem {
 		this.parent = parent;
 
 		keyMap = [];
+		keyMap.resize(0x111A); // Refer to https://github.com/openfl/lime/blob/develop/src/lime/ui/KeyCode.hx#L251C14-L251C24 to see what I mean by this
 
 		reloadKeybinds(mania);
 
@@ -113,7 +114,7 @@ class InputSystem {
 		for (i in 0...keybinds.length) {
 			var keybind = keybinds[i];
 			for (j in 0...keybind.length) {
-				var keyCode = keybind[j];
+				var keyCode = minimize(keybind[j]);
 				keyMap[keyCode] = [i, 1];
 			}
 		}
@@ -154,6 +155,8 @@ class InputSystem {
 		var controls = SaveData.state.controls;
 		var game = controls.game;
 		var ui = controls.ui;
+
+		code = minimize(code);
 
 		if (parent.ready && code == game.pause
 			&& !parent.songEnded) {
@@ -211,6 +214,8 @@ class InputSystem {
 			return;
 		}
 
+		code = minimize(code);
+
 		var keyData = keyMap[code];
 		if (keyData == null) {
 			return;
@@ -236,11 +241,18 @@ class InputSystem {
 		parent.pause();
 	}
 
+	// This is here to prevent invalid array index error because I chose to have an indexed two-dimensional array instead of a map. Another dumb yet smart microoptimization just in case lol
+	inline function minimize(code:Int) {
+		if (code > 0x40000000) {
+			code -= 0x40000000;
+			code += 0x1000;
+		}
+		return code;
+	}
+
 	function dispose() {
 		removeEvents();
 
-		while (keyMap.pop() != null) {}
-		keyMap = null;
 		receptorIds = null;
 		strumline = null;
 		strumlinePlayable = null;
