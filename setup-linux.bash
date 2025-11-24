@@ -7,7 +7,6 @@ sudo apt install libx11-dev
 sudo apt install libxrandr-dev
 sudo apt-get install libxinerama-dev
 sudo apt-get install libgl1-mesa-dev
-sudo apt-get install libwayland-dev
 sudo apt-get install libasound2-dev
 haxelib setup ~/haxelib
 haxelib install format --quiet
