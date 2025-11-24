@@ -253,6 +253,8 @@ class InputSystem {
 	function dispose() {
 		removeEvents();
 
+		while (keyMap.pop() != null) {}
+		keyMap = null;
 		receptorIds = null;
 		strumline = null;
 		strumlinePlayable = null;
