@@ -68,7 +68,7 @@ ma_uint32         iDecoder;
 
 // -------------------- LATENCY MEASUREMENT --------------------
 HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
-	int osMs = 90;
+	int osMs = 93;
 
 	if (deviceExists == MA_TRUE) {
 		osMs += (int)(device.playback.internalPeriodSizeInFrames / (SAMPLE_RATE * 0.001));
@@ -138,6 +138,7 @@ static ma_uint32 read_pcm_frames_f32(ma_uint32 index, float* pBuffer, ma_uint32 
 
 static void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
 {
+	MIXER_STATE = 1;
 	float* pOutputF32 = (float*)pOutput;
 
 	MA_ASSERT(pDevice->playback.format == SAMPLE_FORMAT);
@@ -274,7 +275,7 @@ HL_PRIM void HL_NAME(seek_to_pcm_frame)(ma_uint64 pos) {
 
 	ma_mutex_unlock(&decoderMutex);
 
-	MIXER_STATE = anyActive ? 1 : 3;
+	MIXER_STATE = anyActive ? 2 : 3;
 }
 
 HL_PRIM void HL_NAME(deactivate_decoder_hl)(int index) {
@@ -333,7 +334,6 @@ HL_PRIM void HL_NAME(start)(_NO_ARG) {
 		HL_NAME(seek_to_pcm_frame)(0);
 	}
 	ma_device_start(&device);
-	MIXER_STATE = 1;
 }
 
 HL_PRIM void HL_NAME(stop)(_NO_ARG) {

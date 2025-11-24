@@ -51,7 +51,7 @@ ma_uint32 iDecoder;
 
 // -------------------- LATENCY MEASUREMENT --------------------
 int detectLatency() {
-	int osMs = 90;
+	int osMs = 93;
 
 	if (deviceExists == MA_TRUE) {
 		osMs += (int)(device.playback.internalPeriodSizeInFrames / (SAMPLE_RATE * 0.001));
@@ -131,7 +131,7 @@ void seekToPCMFrame(int64_t pos) {
 
 	ma_mutex_unlock(&decoderMutex);
 
-	MIXER_STATE = anyActive ? 1 : 3;
+	MIXER_STATE = anyActive ? 2 : 3;
 }
 
 void freeThingies() {
@@ -242,6 +242,8 @@ void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uin
 		MIXER_STATE = 3;
 	}
 
+	MIXER_STATE = 1;
+
 	(void)pInput;
 }
 
@@ -296,7 +298,6 @@ void start() {
 		seekToPCMFrame(0);
 	}
 	ma_device_start(&device);
-	MIXER_STATE = 1;
 }
 
 void stop() {

@@ -206,8 +206,6 @@ class Main extends Application
 		SaveData.init(window);
 		Tools.getIconGridMap('assets/images/ui');
 
-		window.frameRate = SaveData.state.graphics.frameRate;
-
 		peoteView = new PeoteView(window);
 
 		haxe.Timer.delay(function() {
@@ -360,8 +358,10 @@ class Main extends Application
 		var refreshRate:Float = Application.current.window.displayMode.refreshRate;
 		if (refreshRate == 0) refreshRate = 60;
 		if (renderFrameRate == 0) renderFrameRate = Application.current.window.renderFrameRate = refreshRate;
+		var renderRate = newDeltaTime; // Render is set directly after updating so this is the solution
 		#else
 		var renderFrameRate = Application.current.window.frameRate;
+		var renderRate = 1000 / renderFrameRate;
 		#end
 
 		if (playField != null) {
@@ -381,7 +381,7 @@ class Main extends Application
 
 				var hud = playField?.hud;
 				if (hud != null) {
-					hud.render(1000 / (renderingModeEnabled ? 60 : renderFrameRate));
+					hud.render(renderingModeEnabled ? 1000 / 60 : renderRate);
 
 					var scoreTxt = HUD.scoreTxt;
 					var noteSpawner = noteSystem.noteSpawner;
@@ -396,7 +396,7 @@ class Main extends Application
 		}
 		if (freeplayMenu != null) {
 			if (freeplayMenu.active) {
-				freeplayMenu.render(1000 / renderFrameRate);
+				freeplayMenu.render(renderRate);
 			}
 		}
 	}

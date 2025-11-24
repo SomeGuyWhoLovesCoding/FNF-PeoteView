@@ -86,10 +86,6 @@ class SaveData {
 		}
 
 		open();
-
-		if (state.graphics.frameRate == 0) {
-			state.graphics.frameRate = window.displayMode.refreshRate * 2;
-		}
 	}
 
 	static function open() {
@@ -182,26 +178,7 @@ class SaveData_Preferences {
 @:structInit
 @:publicFields
 class SaveData_Graphics {
-	var frameRate(default, set):Float;
-	inline function set_frameRate(value:Float) {
-		var window = lime.app.Application.current.window;
-		var newValue:Float = value;
-		var refreshRate:Float = window.displayMode.refreshRate;
-		if (refreshRate == 0) refreshRate = 60;
-		var rateAlignment:Float = Math.ffloor(newValue / refreshRate);
-
-		if (newValue < refreshRate // too slow!
-		) {
-			newValue = refreshRate * 2;
-		} else if (
-			newValue / refreshRate != rateAlignment // Doesn't align properly with new frameRate)
-			|| rateAlignment < 2
-		) {
-			newValue = refreshRate * Math.max(rateAlignment, 2);
-		}
-
-		return frameRate = newValue;
-	}
+	var frameRate:Float;
 	var antialiasing:Bool;
 	var customTitleBarColor:Int;
 	var customWindowOutlineColor:Int;
