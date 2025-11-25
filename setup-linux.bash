@@ -9,6 +9,7 @@ sudo apt-get install libxinerama-dev
 sudo apt-get install libgl-dev
 sudo apt-get install libgl1-mesa-dev
 sudo apt-get install libasound2-dev
+sudo apt-get install ia32-libs
 haxelib setup ~/haxelib
 haxelib install format --quiet
 haxelib install hxp --quiet

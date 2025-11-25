@@ -72,18 +72,7 @@ jobs:
           sudo apt-get install libgl1-mesa-dev
           sudo apt-get install libglu1-mesa-dev
           sudo apt-get install libasound2-dev
-
-          echo RAAAAAAAAA
-          # Check the architecture of the library files
-          file /usr/lib/x86_64-linux-gnu/libX11.so
-          file /usr/lib/x86_64-linux-gnu/libX11.so.6
-          file /usr/lib/x86_64-linux-gnu/libGL.so
-          file /usr/lib/x86_64-linux-gnu/libGL.so.1
-
-          # Also check what kind of files these are
-          ls -la /usr/lib/x86_64-linux-gnu/libX11.so
-          ls -la /usr/lib/x86_64-linux-gnu/libGL.so
-          echo "OH FUCK YOU"
+          sudo apt-get install ia32-libs
       - name: Install required haxelibs
         run: |
           haxelib setup ~/haxelib
