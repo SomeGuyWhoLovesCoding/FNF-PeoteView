@@ -96,6 +96,8 @@ jobs:
       - name: Compile
       # Zipping to tar.gz is important for extracting to an exe cuz normally if you zip it you will lose that permission
         run: |
+          # Rebuild is required here, I'm on mobile
+          haxelib run lime rebuild linux
           haxelib run lime build linux --app-version="4.0.0-${{ github.run_id}}"
       - name: Publish artifact
         uses: nmerget/upload-gzip-artifact@main
