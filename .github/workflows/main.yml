@@ -104,4 +104,4 @@ jobs:
         with:
           name: 'FV-Linux'
           path: bin/linux/bin
-          retention-days: 5 # delete the artifact at some point
+          retention-days: 5
