@@ -348,6 +348,7 @@ class Main extends Application
 			}
 		}
 
+		Sys.println('${1000 / newDeltaTime} fps');
 	}
 
 	override function render(context:RenderContext) {
