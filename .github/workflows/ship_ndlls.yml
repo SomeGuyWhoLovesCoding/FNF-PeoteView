@@ -73,6 +73,11 @@ jobs:
           sudo apt-get install libglu1-mesa-dev
           sudo apt-get install libasound2-dev
           sudo apt-get install ia32-libs
+          sudo dpkg --add-architecture i386
+          sudo apt update
+          sudo apt-get install libgl-dev:i386
+          sudo apt-get install libgl1-mesa-dev:i386
+          sudo apt-get install libglu1-mesa-dev:i386
       - name: Install required haxelibs
         run: |
           haxelib setup ~/haxelib
