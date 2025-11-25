@@ -70,23 +70,20 @@ jobs:
           sudo apt-get install libxinerama-dev
           sudo apt-get install libgl-dev
           sudo apt-get install libgl1-mesa-dev
+          sudo apt-get install libglu1-mesa-dev
           sudo apt-get install libasound2-dev
-          # Check if libraries exist
-          ls -la /usr/lib/x86_64-linux-gnu/libX11*
-          ls -la /usr/lib/x86_64-linux-gnu/libGL*
 
-          # Check linker paths
-          ldconfig -p | grep libX11
-          ldconfig -p | grep libGL
+          echo RAAAAAAAAA
+          # Check the architecture of the library files
+          file /usr/lib/x86_64-linux-gnu/libX11.so
+          file /usr/lib/x86_64-linux-gnu/libX11.so.6
+          file /usr/lib/x86_64-linux-gnu/libGL.so
+          file /usr/lib/x86_64-linux-gnu/libGL.so.1
 
-          # Create development symlinks for X11
-          sudo ln -sf /usr/lib/x86_64-linux-gnu/libX11.so.6 /usr/lib/x86_64-linux-gnu/libX11.so
-
-          # Create development symlinks for GL  
-          sudo ln -sf /usr/lib/x86_64-linux-gnu/libGL.so.1 /usr/lib/x86_64-linux-gnu/libGL.so
-
-          # Update library cache
-          sudo ldconfig
+          # Also check what kind of files these are
+          ls -la /usr/lib/x86_64-linux-gnu/libX11.so
+          ls -la /usr/lib/x86_64-linux-gnu/libGL.so
+          echo "OH FUCK YOU"
       - name: Install required haxelibs
         run: |
           haxelib setup ~/haxelib
