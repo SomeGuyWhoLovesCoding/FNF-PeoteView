@@ -13,7 +13,7 @@ sudo apt-get install libxinerama-dev
 sudo apt-get install libgl-dev
 sudo apt-get install libgl1-mesa-dev
 sudo apt-get install libasound2-dev
-sudo apt-get install libdrm-dev libgbm-dev mesa-common-dev libegl1-mesa-dev libgles2-mesa-dev
+sudo apt-get install libdrm-dev=2.4.120-1 libgbm-dev mesa-common-dev libegl1-mesa-dev libgles2-mesa-dev
 
 # This shit is fucking important
 sudo dpkg --add-architecture i386
@@ -21,7 +21,7 @@ sudo apt update
 sudo apt-get install libgl-dev:i386
 sudo apt-get install libgl1-mesa-dev:i386
 sudo apt-get install libglu1-mesa-dev:i386
-sudo apt-get install libdrm-dev:i386 libgbm-dev:i386 mesa-common-dev:i386 libegl1-mesa-dev:i386 libgles2-mesa-dev:i386
+sudo apt-get install libdrm-dev=2.4.120-1:i386 libgbm-dev:i386 mesa-common-dev:i386 libegl1-mesa-dev:i386 libgles2-mesa-dev:i386
 
 # Now onto the shit we actually want to do on our end
 haxelib setup ~/haxelib
