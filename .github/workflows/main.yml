@@ -62,31 +62,27 @@ jobs:
       # Runs a set of commands using the runners shell
       - name: Install required Linux libraries
         run: |
-          # this is needed for installing libdrm-dev to work
+          # Fix repositories and update
           sudo sed -i 's/azure.archive.ubuntu.com/archive.ubuntu.com/g' /etc/apt/sources.list
           sudo apt-get update
 
+          # Install 64-bit dependencies
           sudo apt-get install libc6-dev-i386
           export LIBRARY_PATH=/usr/lib/$(gcc -print-multiarch)
           export C_INCLUDE_PATH=/usr/include/$(gcc -print-multiarch)
           export CPLUS_INCLUDE_PATH=/usr/include/$(gcc -print-multiarch)
           sudo apt-get install g++-multilib
-          sudo apt install libx11-dev
-          sudo apt install libxrandr-dev
-          sudo apt-get install libxinerama-dev
-          sudo apt-get install libgl-dev
-          sudo apt-get install libgl1-mesa-dev
-          sudo apt-get install libglu1-mesa-dev
-          sudo apt-get install libasound2-dev
-          sudo apt-get install libdrm-dev=2.4.120-1 libgbm-dev mesa-common-dev libegl1-mesa-dev libgles2-mesa-dev
+          sudo apt install libx11-dev libxrandr-dev libxinerama-dev
 
-          # This shit is fucking important
+          # Install 64-bit graphics libraries (without version pinning)
+          sudo apt-get install libgl-dev libgl1-mesa-dev libasound2-dev
+          sudo apt-get install libdrm-dev libgbm-dev mesa-common-dev libegl1-mesa-dev libgles2-mesa-dev
+
+          # Add i386 architecture and install 32-bit libraries
           sudo dpkg --add-architecture i386
           sudo apt update
-          sudo apt-get install libgl-dev:i386
-          sudo apt-get install libgl1-mesa-dev:i386
-          sudo apt-get install libglu1-mesa-dev:i386
-          sudo apt-get install libdrm-dev=2.4.120-1:i386 libgbm-dev:i386 mesa-common-dev:i386 libegl1-mesa-dev:i386 libgles2-mesa-dev:i386
+          sudo apt-get install libgl-dev:i386 libgl1-mesa-dev:i386 libglu1-mesa-dev:i386
+          sudo apt-get install libdrm-dev:i386 libgbm-dev:i386 mesa-common-dev:i386 libegl1-mesa-dev:i386 libgles2-mesa-dev:i386
       - name: Install required haxelibs
         run: |
           haxelib setup ~/haxelib
