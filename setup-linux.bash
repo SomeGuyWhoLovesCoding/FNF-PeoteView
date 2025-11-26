@@ -1,3 +1,6 @@
+sudo sed -i 's/security.ubuntu.com/archive.ubuntu.com/g' /etc/apt/sources.list
+sudo apt-get update
+
 sudo apt-get install libc6-dev-i386
 export LIBRARY_PATH=/usr/lib/$(gcc -print-multiarch)
 export C_INCLUDE_PATH=/usr/include/$(gcc -print-multiarch)
@@ -17,6 +20,7 @@ sudo apt update
 sudo apt-get install libgl-dev:i386
 sudo apt-get install libgl1-mesa-dev:i386
 sudo apt-get install libglu1-mesa-dev:i386
+sudo apt-get install libdrm-dev:i386
 
 # Now onto the shit we actually want to do on our end
 haxelib setup ~/haxelib

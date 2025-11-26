@@ -62,6 +62,9 @@ jobs:
       # Runs a set of commands using the runners shell
       - name: Install required Linux libraries
         run: |
+          sudo sed -i 's/security.ubuntu.com/archive.ubuntu.com/g' /etc/apt/sources.list
+          sudo apt-get update
+
           sudo apt-get install libc6-dev-i386
           export LIBRARY_PATH=/usr/lib/$(gcc -print-multiarch)
           export C_INCLUDE_PATH=/usr/include/$(gcc -print-multiarch)
