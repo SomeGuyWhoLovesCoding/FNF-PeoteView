@@ -20,6 +20,9 @@ sudo apt update
 sudo apt-get install libgl-dev:i386 libgl1-mesa-dev:i386 libglu1-mesa-dev:i386
 sudo apt-get install libdrm-dev:i386 libgbm-dev:i386 mesa-common-dev:i386 libegl1-mesa-dev:i386 libgles2-mesa-dev:i386
 
+# patch from https://github.com/NixOS/nixpkgs/issues/348171#issuecomment-2409584594
+sudo sed -i -e 's|<drm.h>|<libdrm/drm.h>|' $dev/include/xf86drm.h
+
 # Continue with your haxe setup
 haxelib setup ~/haxelib
 haxelib install format --quiet
