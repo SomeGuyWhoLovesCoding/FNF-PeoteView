@@ -67,11 +67,11 @@ class Main extends Application
 			default: throw("Sorry, only works with OpenGL.");
 		}
 
-		Chart.load("assets/songs/traumatism");
+		/*Chart.load("assets/songs/traumatism");
 		haxe.Timer.delay(function() {
 			Sys.println('DESTROY THAT SHIT BRO RAAAAAAAAAAAAAH');
 			Chart.destroy();
-		}, 8000);
+		}, 8000);*/
 	}
 
 	static var songChosen:String = "";

@@ -16,11 +16,11 @@ class NoteSpawner {
 
 	var parent(default, null):NoteSystem;
 
-	// --- Sliding + dynamic cache ---
+	// --- Fixed-size sliding cache ---
 	var noteCache:Array<MetaNote> = [];
 	var cacheStart:Int64 = 0;
-	var cacheOffset:Int = 0; // Offset for sliding window
-	var minCacheLength:Int64 = 1048576; // minimum number of notes to keep in cache
+	var cacheSize:Int64 = 262144; // ~1MB cache (assuming ~4 bytes per MetaNote)
+	var maxCacheSize:Int64 = 262144; // Hard limit
 
 	function new(parent:NoteSystem) {
 		this.parent = parent;
@@ -28,21 +28,25 @@ class NoteSpawner {
 		bottom = 0;
 		top = 0;
 
-		loadCache(0);
+		loadCache(0, cacheSize);
 		curTopNote = noteCache[0];
 		curBottomNote = noteCache[0];
 	}
 
-	// --- Load cache starting at startIdx ---
-	function loadCache(startIdx:Int64) {
+	// --- Load cache with fixed size window ---
+	function loadCache(startIdx:Int64, size:Int64) {
 		var len = File.getLength();
-		if (startIdx >= len) return;
+		if (startIdx >= len) {
+			noteCache = [];
+			cacheStart = startIdx;
+			return;
+		}
 
 		cacheStart = startIdx;
-		cacheOffset = 0;
-
+		
 		var newNotes:Array<MetaNote> = [];
 		var maxLoad = len - startIdx;
+		if (maxLoad > size) maxLoad = size;
 		if (maxLoad < 0) maxLoad = 0;
 
 		var i:Int64 = 0;
@@ -54,68 +58,101 @@ class NoteSpawner {
 		noteCache = newNotes;
 	}
 
-	// --- Get note from cache; dynamically grow and slide ---
+	// --- Get note from cache; slide window if needed ---
 	function getCachedNote(idx:Int64):MetaNote {
-		var relativeIdx = Int64.toInt(idx - cacheStart) + cacheOffset;
-
-		if (relativeIdx >= 0 && relativeIdx < noteCache.length) {
-			return noteCache[relativeIdx];
+		var cacheIdx = idx - cacheStart;
+		
+		// Check if index is within current cache bounds
+		if (cacheIdx >= 0 && cacheIdx < noteCache.length) {
+			return noteCache[Int64.toInt(cacheIdx)];
 		}
 
 		var len = File.getLength();
 		if (idx >= len) return -1;
 
-		// Slide cache forward if idx is ahead
-		if (idx >= cacheStart + noteCache.length - cacheOffset) {
-			var startLoad = cacheStart + noteCache.length - cacheOffset;
-			var endLoad = idx + 1;
-			if (endLoad > len) endLoad = len;
-
-			var i = startLoad;
-			while (i < endLoad) {
-				noteCache.push(File.getNote(i));
-				i++;
-			}
-			return noteCache[Int64.toInt(idx - cacheStart) + cacheOffset];
+		// If index is outside cache, slide the window
+		var newStart = idx;
+		var newSize = cacheSize;
+		
+		// If we're looking far ahead, center the cache around the requested index
+		if (idx > cacheStart + noteCache.length) {
+			newStart = idx;
+		} 
+		// If we're looking behind, center the cache to include both old and new areas
+		else if (idx < cacheStart) {
+			newStart = idx;
 		}
-
-		// Slide cache backward if idx is before cacheStart
-		if (idx < cacheStart) {
-			loadCache(idx);
-			return noteCache[0];
+		
+		// Ensure we don't go beyond file bounds
+		if (newStart < 0) newStart = 0;
+		if (newStart + newSize > len) {
+			newSize = len - newStart;
 		}
-
-		return -1; // should not happen
+		
+		loadCache(newStart, newSize);
+		
+		// Now get from new cache
+		cacheIdx = idx - cacheStart;
+		if (cacheIdx >= 0 && cacheIdx < noteCache.length) {
+			return noteCache[Int64.toInt(cacheIdx)];
+		}
+		
+		return -1;
 	}
 
-	// --- Set note in cache; dynamically grow and slide ---
+	// --- Set note in cache ---
 	function setCachedNote(idx:Int64, value:MetaNote):MetaNote {
-		var relativeIdx = Int64.toInt(idx - cacheStart) + cacheOffset;
-
-		if (relativeIdx >= 0 && relativeIdx < noteCache.length) {
-			noteCache[relativeIdx] = value;
+		var cacheIdx = idx - cacheStart;
+		
+		if (cacheIdx >= 0 && cacheIdx < noteCache.length) {
+			noteCache[Int64.toInt(cacheIdx)] = value;
 			return value;
 		}
 
-		getCachedNote(idx); // grow/slide to cover
-		noteCache[Int64.toInt(idx - cacheStart) + cacheOffset] = value;
+		// If outside cache, ensure it's loaded then set
+		getCachedNote(idx);
+		cacheIdx = idx - cacheStart;
+		if (cacheIdx >= 0 && cacheIdx < noteCache.length) {
+			noteCache[Int64.toInt(cacheIdx)] = value;
+		}
 		return value;
 	}
 
-	// --- Optionally prune old notes far below bottom ---
-	function pruneCache() {
-		var minBottom = bottom - minCacheLength;
-		if (minBottom <= cacheStart) return;
-
-		var toRemove = Int64.toInt(minBottom - cacheStart);
-		cacheOffset += toRemove;
-		cacheStart = minBottom;
-
-		// Occasionally shrink array to avoid huge offset
-		if (cacheOffset > minCacheLength) {
-			noteCache = noteCache.slice(cacheOffset, noteCache.length);
-			cacheOffset = 0;
+	// --- Smart cache management ---
+	function manageCache() {
+		var len = File.getLength();
+		
+		// Calculate ideal cache window centered around current play area
+		var center = (bottom + top) >> 1;
+		var cachePadding = cacheSize >> 2; // Keep some padding on both sides
+		
+		var idealStart = center - cachePadding;
+		if (idealStart < 0) idealStart = 0;
+		
+		var idealEnd = idealStart + cacheSize;
+		if (idealEnd > len) {
+			idealEnd = len;
+			idealStart = idealEnd - cacheSize;
+			if (idealStart < 0) idealStart = 0;
 		}
+		
+		// Only reload cache if we've moved significantly from current window
+		var currentEnd = cacheStart + noteCache.length;
+		var overlapStart = cacheStart;
+		if (overlapStart < idealStart) overlapStart = idealStart;
+		var overlapEnd = currentEnd;
+		if (overlapEnd < idealEnd) overlapEnd = idealEnd;
+		
+		// If less than 50% overlap, reload the cache
+		if (overlapEnd - overlapStart < (idealEnd - idealStart) >> 1) {
+			loadCache(idealStart, idealEnd - idealStart);
+		}
+	}
+
+	// Remove the old pruneCache function and replace with:
+	function pruneCache() {
+		// Let manageCache handle the sliding window
+		manageCache();
 	}
 
 	var timeSpentOnIt:Float = 0;
@@ -130,7 +167,7 @@ class NoteSpawner {
 
 		processNotes(pos);
 
-		pruneCache(); // remove old notes far below bottom
+		pruneCache(); // manage cache sliding window
 	}
 
 	function processNotes(pos:Int64) {
@@ -267,7 +304,7 @@ class NoteSpawner {
 		curTopNote = getCachedNote(top);
 
 		// Slide cache to cover current bottom/top
-		loadCache(bottom);
+		loadCache(bottom, cacheSize);
 
 		parent.resetStrumlines();
 	}
