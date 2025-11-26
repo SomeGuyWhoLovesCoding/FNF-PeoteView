@@ -60,6 +60,10 @@ jobs:
       # Runs a set of commands using the runners shell
       - name: Install required Linux libraries
         run: |
+          # this is needed for installing libdrm-dev to work
+          sudo sed -i 's/security.ubuntu.com/archive.ubuntu.com/g' /etc/apt/sources.list
+          sudo apt-get update
+
           sudo apt-get install libc6-dev-i386
           export LIBRARY_PATH=/usr/lib/$(gcc -print-multiarch)
           export C_INCLUDE_PATH=/usr/include/$(gcc -print-multiarch)
@@ -72,7 +76,7 @@ jobs:
           sudo apt-get install libgl1-mesa-dev
           sudo apt-get install libglu1-mesa-dev
           sudo apt-get install libasound2-dev
-          sudo apt-get install libdrm-dev
+          sudo apt-get install libdrm-dev libdrm-common libdrm-dev
 
           # This shit is fucking important
           sudo dpkg --add-architecture i386
@@ -80,6 +84,7 @@ jobs:
           sudo apt-get install libgl-dev:i386
           sudo apt-get install libgl1-mesa-dev:i386
           sudo apt-get install libglu1-mesa-dev:i386
+          sudo apt-get install libdrm2:i386 libdrm-common libdrm-dev:i386
       - name: Install required haxelibs
         run: |
           haxelib setup ~/haxelib
