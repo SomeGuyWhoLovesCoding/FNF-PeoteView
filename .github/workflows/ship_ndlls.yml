@@ -80,7 +80,6 @@ jobs:
           sudo apt-get install libgl-dev:i386
           sudo apt-get install libgl1-mesa-dev:i386
           sudo apt-get install libglu1-mesa-dev:i386
-          sudo apt-get install libdrm-dev:i386
       - name: Install required haxelibs
         run: |
           haxelib setup ~/haxelib
