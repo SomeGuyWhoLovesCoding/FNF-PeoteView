@@ -67,66 +67,11 @@ class Main extends Application
 			default: throw("Sorry, only works with OpenGL.");
 		}
 
-		/*haxe.Timer.delay(function() {
-			// START CHART POFILE
-			Chart.load("assets/songs/termination");
-			var setTime:Float = 0;
-			var TIMES = 20000;
-			for (i in 0...250) {
-				var stamp = haxe.Timer.stamp();
-				for (j in 0...TIMES) {
-					var n = File.getNote(j);
-					File.setNote(j, n);
-				}
-				setTime += haxe.Timer.stamp() - stamp;
-			}
-			Sys.println('Total note setting time: ' + ((((setTime * 1000) / 250)) * 1000000) + 'ns');
-			Chart.destroy();
-		}, 8000);*/
-
-		/*#if (chart_test || hl)
+		Chart.load("assets/songs/traumatism");
 		haxe.Timer.delay(function() {
-			// START CHART POFILE
-			Chart.load("assets/songs/termination");
-			// Start initializing total time variables
-			var insertTime:Float = 0;
-			var removalTime:Float = 0;
-
-			var arr = new Array<MetaNote>();
-			for (i in 0...1000000) {
-				arr.push(new MetaNote(Tools.betterInt64FromFloat((50.0 + (50.0 * i)) * 100),
-					Math.floor(//100
-						0 * 0.2), // Equal to `note.duration / 5`.
-					i % 4,
-					0,
-				1));
-				//Sys.println(i);
-			}
-
-			for (i in 0...250) {
-				var stamp = haxe.Timer.stamp();
-				//trace("Insert 1,000,000 notes (array)");
-				//Sys.println("Insert 1,000,000 notes (function)");
-				var stamp2 = haxe.Timer.stamp();
-				File.insertNotes(arr);
-				insertTime += haxe.Timer.stamp() - stamp2;
-				//Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp2) * 1000}ms');
-				// Remove notes
-				var stamp3 = haxe.Timer.stamp();
-				//Sys.println("Remove 1,000,000 notes (function)");
-				//Sys.println(arr.length);
-				File.removeNotes(arr);
-				removalTime += haxe.Timer.stamp() - stamp3;
-				//Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp3) * 1000}ms');
-				//Sys.println('Inserting 1,000,000 notes fully done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
-				Sys.println('Iteration $i done');
-			}
-			// Average it out
-			Sys.println('Total insert time: ' + ((insertTime * 1000) / 250) + 'ms');
-			Sys.println('Total removal time: ' + ((removalTime * 1000) / 250) + 'ms');
+			Sys.println('DESTROY THAT SHIT BRO RAAAAAAAAAAAAAH');
 			Chart.destroy();
 		}, 8000);
-		#end*/
 	}
 
 	static var songChosen:String = "";
