@@ -1,5 +1,5 @@
 # this is needed for installing libdrm-dev to work
-sudo sed -i 's/security.ubuntu.com/archive.ubuntu.com/g' /etc/apt/sources.list
+sudo sed -i 's/azure.archive.ubuntu.com/archive.ubuntu.com/g' /etc/apt/sources.list
 sudo apt-get update
 
 sudo apt-get install libc6-dev-i386
