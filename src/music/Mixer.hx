@@ -68,11 +68,6 @@ class Mixer {
 
 	static var speed(default, set):Float = 1;
 
-	// Even then, this real-time audio must have this because miniaudio's sound stuff won't start immediately
-	private static var offsetBetweenExpectedAndReality(default, null):Float;
-	static var __isPlaying(default, null):Bool; // this here too
-	static var calibratedMirroringOffset(default, null):Bool; // and this here too
-
 	private static var hasSubLoopTick(default, null):Bool;
 
 	static function set_speed(value:Float) {
@@ -82,7 +77,6 @@ class Mixer {
 	}
 
 	static function setTime(value:Float, playfield:PlayField) {
-		calibratedMirroringOffset = false;
 		MiniAudio.seekToPCMFrame(Tools.betterInt64FromFloat(value * 0.001) * sampleRate);
 		if (playfield != null) {
 			if (playfield.songEnded) playfield.songPosition = MiniAudio.getPlaybackPosition();
@@ -100,8 +94,6 @@ class Mixer {
 		trackCount = files.length;
 		length = MiniAudio.getDuration();
 		enableSubLoop();
-		__isPlaying = calibratedMirroringOffset = false;
-		offsetBetweenExpectedAndReality = 0;
 	}
 
 	inline static function enableSubLoop() {
@@ -132,18 +124,14 @@ class Mixer {
 	#end
 
 	static public function startMusic():Void {
-		__isPlaying = true;
 		MiniAudio.start();
 	}
 
 	static public function stopMusic():Void {
-		__isPlaying = calibratedMirroringOffset = false;
 		MiniAudio.stop();
 	}
 
 	static public function destroyMusic():Void {
-		__isPlaying = calibratedMirroringOffset = false;
-		offsetBetweenExpectedAndReality = 0;
 		MiniAudio.destroy();
 		while (loadedFiles.pop() != null) {}
 		loadedFiles = null; // Clean up
@@ -152,6 +140,7 @@ class Mixer {
 
 	inline static public function updateSmoothMusicTime(deltaTime:Float, playfield:PlayField, window:Window):Void {
 		if (isPlaying()) {
+			var ogSongPos = playfield.songPosition + deltaTime;
 			var rawPlaybackPosition = MiniAudio.getPlaybackPosition() + Main.conductor.offset;
 			playfield.songPosition += deltaTime;
 
@@ -162,7 +151,7 @@ class Mixer {
 			var smoothedTimeMult:Float = (1000 / window.frameRate) / (1000 / refreshRate);
 			#end
 
-			var diff = playfield.songPosition - rawPlaybackPosition;
+			var diff = ogSongPos - rawPlaybackPosition;
 			var absDiff = Math.abs(diff);
 			//Sys.println(absDiff);
 
@@ -178,35 +167,18 @@ class Mixer {
 			if (absDiff > smallest) multiply = 0.1 * smoothedTimeMult;
 			if (absDiff > small) multiply = 0.325 * smoothedTimeMult;
 			if (absDiff > big) multiply = 0.975 * smoothedTimeMult;
-			if (absDiff > biggest) multiply = 1.0 * smoothedTimeMult;
+			if (absDiff > biggest) multiply = 1.0;
 
 			var subtract = diff * multiply;
-			if (calibratedMirroringOffset && __isPlaying) {
-				subtract -= offsetBetweenExpectedAndReality;
-			}
-			playfield.songPosition -= subtract;
+			ogSongPos -= Math.min(subtract, biggest); // Math.min here to prevent supernova from gc
+			playfield.songPosition = ogSongPos;
 		}
 	}
 
 	#if FV_LIME_FORK
 	static var lastTimestamp:Int64 = 0;
 	static var lastTimestamp1s:Int64 = 0;
-	static var obear_t:Int64; // long: offsetBetweenExpectedAndReality_timestamp
 	static function subLoopTick(timestamp:Int64):Void {
-		if (__isPlaying) {
-			if (!calibratedMirroringOffset) {
-				if (obear_t == 0) {
-					obear_t = timestamp;
-				}
-				if (isPlaying()) {
-					var value = timestamp - obear_t;
-					offsetBetweenExpectedAndReality = Tools.int64ToFloat(value) / 100000.0;
-					obear_t = 0;
-					calibratedMirroringOffset = true;
-				}
-			}
-		}
-
 		var window = lime.app.Application.current.window;
 		var renderDelta = 1000 / window.renderFrameRate;
 		var playField = Main.current.playField;
