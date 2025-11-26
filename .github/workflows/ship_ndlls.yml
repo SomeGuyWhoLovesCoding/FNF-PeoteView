@@ -81,6 +81,8 @@ jobs:
           sudo apt update
           sudo apt-get install libgl-dev:i386 libgl1-mesa-dev:i386 libglu1-mesa-dev:i386
           sudo apt-get install libdrm-dev:i386 libgbm-dev:i386 mesa-common-dev:i386 libegl1-mesa-dev:i386 libgles2-mesa-dev:i386
+
+          find /usr -name "drm.h" 2>/dev/null
       - name: Install required haxelibs
         run: |
           haxelib setup ~/haxelib
