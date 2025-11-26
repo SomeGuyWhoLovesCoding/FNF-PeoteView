@@ -76,7 +76,7 @@ jobs:
           sudo apt-get install libgl1-mesa-dev
           sudo apt-get install libglu1-mesa-dev
           sudo apt-get install libasound2-dev
-          sudo apt-get install libdrm-dev libdrm-common libdrm-dev
+          sudo apt-get install libdrm-dev libgbm-dev mesa-common-dev libegl1-mesa-dev libgles2-mesa-dev
 
           # This shit is fucking important
           sudo dpkg --add-architecture i386
@@ -84,7 +84,7 @@ jobs:
           sudo apt-get install libgl-dev:i386
           sudo apt-get install libgl1-mesa-dev:i386
           sudo apt-get install libglu1-mesa-dev:i386
-          sudo apt-get install libdrm2:i386 libdrm-common libdrm-dev:i386
+          sudo apt-get install libdrm-dev:i386 libgbm-dev:i386 mesa-common-dev:i386 libegl1-mesa-dev:i386 libgles2-mesa-dev:i386
       - name: Install required haxelibs
         run: |
           haxelib setup ~/haxelib
