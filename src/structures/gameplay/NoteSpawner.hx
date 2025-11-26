@@ -19,8 +19,8 @@ class NoteSpawner {
 	// --- Fixed-size sliding cache ---
 	var noteCache:Array<MetaNote> = [];
 	var cacheStart:Int64 = 0;
-	var cacheSize:Int64 = 262144; // ~1MB cache (assuming ~4 bytes per MetaNote)
-	var maxCacheSize:Int64 = 262144; // Hard limit
+	var cacheSize:Int64 = 1048576; // ~1MB cache (assuming ~4 bytes per MetaNote)
+	var maxCacheSize:Int64 = 1048576; // Hard limit
 
 	function new(parent:NoteSystem) {
 		this.parent = parent;
@@ -192,7 +192,7 @@ class NoteSpawner {
 
 			var ghost = isGhostNote(prev, n);
 
-			var shouldOverlap = shouldNotesOverlap(prev, n, noteSpr, receptor, newY,
+			var shouldOverlap = noteSpr != null && shouldNotesOverlap(prev, n, noteSpr, receptor, newY,
 				fakeOverlapStorage[prev != -1 ? prev.index : -1]) && !ghost;
 
 			fakeOverlapStorage[n.index] = newY;
