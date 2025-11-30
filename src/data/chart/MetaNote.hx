@@ -68,6 +68,20 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 			pos += (CHART_EPOCH_DIFF * (POSITION_MASK + 1));
 			LAST_CHART_POSITION = pos;
 		}
+
+		var playfield = Main.current.playField;
+		if (playfield != null) {
+			var noteSystem = playfield.noteSystem;
+			if (noteSystem != null) {
+				var noteSpawner = noteSystem.noteSpawner;
+				if (noteSpawner != null) {
+					var epochDiff = Math.floor((playfield.songPosition - MetaNote.metaNotePositionToSongTime(noteSpawner.spawnDist)) / POSITION_OVERFLOWHANDLEVALUE);
+					if (epochDiff < 0) epochDiff = 0; // don't have negative epoch or you emit weird behavior
+					pos += MetaNote.floatToMetaNotePosition(epochDiff * POSITION_OVERFLOWHANDLEVALUE);
+				}
+			}
+		}
+
 		return pos;
 	}
 
@@ -125,17 +139,6 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 		var remainder:Int64 = absPos % 20000;
 
 		var result = Tools.int64ToFloat(scaled) + Tools.int64ToFloat(remainder) / 20000;
-
-		// wait, hold on, let's handle overflow with playfield song position
-		// never tested this. wait until someone discovers it in the year 2027 when this shit finally releases
-		if (__overflowHandle && !isNegative) {
-			var playfield = Main.current.playField;
-			if (playfield != null) {
-				var epochDiff = Math.floor(playfield.songPosition / POSITION_OVERFLOWHANDLEVALUE);
-				if (epochDiff < 0) epochDiff = 0; // don't have negative epoch or you emit weird behavior
-				result += epochDiff * POSITION_OVERFLOWHANDLEVALUE;
-			}
-		}
 
 		return isNegative ? -result : result;
 	}
