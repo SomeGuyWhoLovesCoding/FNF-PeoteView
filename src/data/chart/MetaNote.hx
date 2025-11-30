@@ -77,7 +77,7 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 				if (noteSpawner != null) {
 					var epochDiff = Math.floor((playfield.songPosition - MetaNote.metaNotePositionToSongTime(noteSpawner.spawnDist)) / POSITION_OVERFLOWHANDLEVALUE);
 					if (epochDiff < 0) epochDiff = 0; // don't have negative epoch or you emit weird behavior
-					pos += MetaNote.floatToMetaNotePosition(epochDiff * POSITION_OVERFLOWHANDLEVALUE);
+					if (epochDiff != 0) pos += MetaNote.floatToMetaNotePosition(epochDiff * POSITION_OVERFLOWHANDLEVALUE);
 				}
 			}
 		}
