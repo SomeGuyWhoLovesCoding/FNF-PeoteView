@@ -19,6 +19,8 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 	static var INDEX_MASK    = 0xF;   // 4 bits
 	static var TYPE_MASK     = 0x1F;  // 5 bits
 
+	static var POSITION_OVERFLOWHANDLEVALUE = metaNotePositionToSongTime(POSITION_MASK+1, false);
+
 	// Constructor
 	inline function new(position:Int64, duration:Int, index:Int, type:Int, flag:Bool = false, missed:Bool = false, held:Bool = false) {
 		this =
@@ -42,8 +44,33 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 	var missed(get, set):Bool;
 	var held(get, set):Bool;
 
+	// EPOCH HANDLER
+	private static var CHART_EPOCH_DIFF(default, null):Int64 = 0;
+	private static var LAST_CHART_POSITION(default, null):Int64 = 0;
+	private static var CHART_EPOCH_DIFF_ENABLED(default, null):Bool = false;
+
+	// Helper for correcting note overflow handling after exporting/converting a chart in its binary form.
+	// Edge case here is if your chart is at the slightest of unordered
+	private inline static function RESET_CHART_EPOCH() {
+		CHART_EPOCH_DIFF = 0;
+	}
+	private inline static function CHART_EPOCH_DIFF_ENABLE(value:Bool) {
+		CHART_EPOCH_DIFF_ENABLED = value;
+	}
+
 	// Getters
-	inline function get_position():Int64 return (this >> SHIFT_POSITION) & POSITION_MASK;
+	inline function get_position():Int64 {
+		var pos:Int64 = ((this >> SHIFT_POSITION) & POSITION_MASK);
+		if (CHART_EPOCH_DIFF_ENABLED) {
+			if (LAST_CHART_POSITION > pos && LAST_CHART_POSITION - pos > (POSITION_MASK + 1) >> 2) {
+				CHART_EPOCH_DIFF++;
+			}
+			pos += (CHART_EPOCH_DIFF * (POSITION_MASK + 1));
+			LAST_CHART_POSITION = pos;
+		}
+		return pos;
+	}
+
 	inline function get_duration():Int {
 		var v:Int64 = (this >> SHIFT_DURATION) & Int64.ofInt(DURATION_MASK);
 		return v.low;
@@ -90,7 +117,7 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 		return Tools.betterInt64FromFloat(f * 20000);
 	}
 
-	inline static function metaNotePositionToSongTime(pos:Int64):Float {
+	inline static function metaNotePositionToSongTime(pos:Int64, __overflowHandle:Bool = true):Float {
 		var isNegative = pos < 0;
 		var absPos = isNegative ? -pos : pos;
 
@@ -98,6 +125,18 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 		var remainder:Int64 = absPos % 20000;
 
 		var result = Tools.int64ToFloat(scaled) + Tools.int64ToFloat(remainder) / 20000;
+
+		// wait, hold on, let's handle overflow with playfield song position
+		// never tested this. wait until someone discovers it in the year 2027 when this shit finally releases
+		if (__overflowHandle && !isNegative) {
+			var playfield = Main.current.playField;
+			if (playfield != null) {
+				var epochDiff = Math.floor(playfield.songPosition / POSITION_OVERFLOWHANDLEVALUE);
+				if (epochDiff < 0) epochDiff = 0; // don't have negative epoch or you emit weird behavior
+				result += epochDiff * POSITION_OVERFLOWHANDLEVALUE;
+			}
+		}
+
 		return isNegative ? -result : result;
 	}
 
