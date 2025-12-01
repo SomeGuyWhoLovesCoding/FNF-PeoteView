@@ -301,7 +301,45 @@ class Tools {
 		return result;
 	}
 
-	/*static function radixSortInt64(array:Array<Int64>, len:Int64) {
-		
-	}*/
+	static function convertToSixColors(col:Array<Int>) {
+		if (col == null) return [for (i in 0...6) 0];
+		var arr:Array<Int> = [for (i in 0...6) 0];
+		switch (col.length) {
+			case 1:
+				for (i in 0...6) arr[i] = col[0];
+			case 2:
+				for (i in 0...6) arr[i] = col[Std.int(i/3)];
+			case 3:
+				for (i in 0...6) arr[i] = col[Std.int(i/4)];
+			case 4:
+				for (i in 0...6) {
+					var iCustom = 0;
+					switch (i) {
+						case 0 | 1:
+							iCustom = 0;
+						case 2:
+							iCustom = 2;
+						case 3:
+							iCustom = 3;
+						case 4 | 5:
+							iCustom = 4;
+					}
+					arr[i] = col[iCustom];
+				}
+			default:
+				arr = col;
+		}
+		return arr;
+	}
+
+	static function hexesToOpaqueColor(col:Array<String>) {
+		if (col == null) return [for (i in 0...6) 0];
+		var arr:Array<Int> = [];
+		for (i in 0...col.length) {
+			var str = col[i];
+			var argbColor:Color = Std.parseInt('0x${str}ff');
+			arr.push((argbColor:Int));
+		}
+		return arr;
+	}
 }
