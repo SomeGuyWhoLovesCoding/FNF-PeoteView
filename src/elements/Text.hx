@@ -29,6 +29,8 @@ class Text {
 				var elem = buffer.getElement(i);
 				if (elem != null) {
 					elem.x = elem.y = -999999999;
+					elem.w = elem.h = 0;  // Also set width/height to 0
+					elem.alpha = 0;        // And make them invisible
 				}
 
 				buffer.updateElement(elem); // don't remove this or a bug will appear
@@ -62,6 +64,7 @@ class Text {
 			spr.x = x + (data.char.offset.x * scale) + advanceX;
 			spr.y = y + (data.char.offset.y * scale);
 			spr.c = color;
+			spr.alpha = alpha;  // Restore alpha to current value
 			advanceX += (data.char.advanceX * scale);
 
 			if (height < spr.h) {
