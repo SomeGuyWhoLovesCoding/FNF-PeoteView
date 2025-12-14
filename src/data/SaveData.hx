@@ -92,10 +92,8 @@ class SaveData {
 		var result:SaveData = null;
 		try {
 			result = SaveData_Securer.unlock(File.getContent("save.dat"));
-			trace('AAAAAAAAAAAAAAAAAA2');
 		} catch (e) {
 			open();
-			trace('AAAAAAAAAAAAAAAAAA');
 			return;
 		}
 		state = result;
