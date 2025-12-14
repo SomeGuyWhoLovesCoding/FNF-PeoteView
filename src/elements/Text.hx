@@ -285,27 +285,16 @@ class Text {
 					float y = coord.y;
 					
 					vec4 current = getTextureColor(textureID, coord);
-					
-					if (current.a != 1.0) {
-						float offset = os;
+
+					if (current.a <= 0.7) {
+						float w = os;
+						float h = os;
 						
-						vec4 top = getTextureColor(textureID, vec2(x, y - offset));
-						vec4 topRight = getTextureColor(textureID, vec2(x + offset, y - offset));
-						vec4 topLeft = getTextureColor(textureID, vec2(x - offset, y - offset));
-						vec4 right = getTextureColor(textureID, vec2(x + offset, y));
-						vec4 bottom = getTextureColor(textureID, vec2(x, y + offset));
-						vec4 bottomLeft = getTextureColor(textureID, vec2(x - offset, y + offset));
-						vec4 bottomRight = getTextureColor(textureID, vec2(x + offset, y + offset));
-						vec4 left = getTextureColor(textureID, vec2(x - offset, y));
-						
-						if (top.a > 0.4 || bottom.a > 0.4 || left.a > 0.4 || right.a > 0.4 || 
-							topLeft.a > 0.4 || topRight.a > 0.4 || bottomLeft.a > 0.4 || bottomRight.a > 0.4) {
-							if (current.a != 0.0) {
-								current = mix(oc, current, current.a);
-							} else {
-								current = oc;
-							}
-						}
+						if (getTextureColor(textureID, vec2(coord.x + w, coord.y)).a != 0.0
+						|| getTextureColor(textureID, vec2(coord.x - w, coord.y)).a != 0.0
+						|| getTextureColor(textureID, vec2(coord.x, coord.y + h)).a != 0.0
+						|| getTextureColor(textureID, vec2(coord.x, coord.y - h)).a != 0.0)
+							current = oc;
 					}
 					
 					return current;

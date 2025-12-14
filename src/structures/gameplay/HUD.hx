@@ -363,8 +363,7 @@ class HUD {
 			scoreTxt.color = 0xFFFFFFFF;
 			scoreTxt.color.aF = 1.0;
 			scoreTxt.color.luminanceF = 1.0;
-			scoreTxt.outlineColor.aF = 1.0;
-			scoreTxt.outlineColor.luminanceF = 1.0;
+			scoreTxt.outlineColor = 0x000000FF;
 			scoreTxt.outlineSize = 0.09; // Usually the default text+ color on DaVinci Resolve
 		}
 

@@ -5,10 +5,10 @@ package elements.text;
 **/
 @:publicFields
 class TextCharSprite implements Element {
-	@posX @formula("x - os") var x:Float;
-	@posY @formula("y - os")  var y:Float;
-	@sizeX @formula("w + (w * os * 2.0)") var w:Float;
-	@sizeY @formula("h + (h * os * 2.0)") var h:Float;
+	@posX @formula("x - (os + os)") var x:Float;
+	@posY @formula("y - (os + os)")  var y:Float;
+	@sizeX @formula("w + (w * (os + os))") var w:Float;
+	@sizeY @formula("h + (h * (os + os))") var h:Float;
 
 	// extra tex attributes for clipping
 	@texX var clipX:Int = 0;
