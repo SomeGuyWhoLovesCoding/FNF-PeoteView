@@ -16,4 +16,7 @@ void start(void);
 void stop(void);
 bool stopped(void);
 void loadFiles(std::vector<const char*> argv);
+
+double getGlobalVolume();
+double setGlobalVolume(double value);
 #endif /* MA_THING_H */

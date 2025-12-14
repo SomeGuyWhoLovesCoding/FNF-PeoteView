@@ -44,6 +44,7 @@ ma_uint64*  g_pDecoderLengths;
 int         g_pLongestDecoderIndex;
 float*      g_pDecodersVolume;
 float       playbackRate = 1;
+double      masterVolume = 1;
 
 /*
 * 0 = UNDEFINED
@@ -125,7 +126,7 @@ static ma_uint32 read_pcm_frames_f32(ma_uint32 index, float* pBuffer, ma_uint32 
 		// Mix into destination with gain
 		const ma_uint64 samples = framesReadThisIteration * CHANNEL_COUNT;
 		for (ma_uint64 i = 0; i < samples; ++i) {
-			pBuffer[totalFramesRead * CHANNEL_COUNT + i] += temp[i] * g_pDecodersVolume[index];
+			pBuffer[totalFramesRead * CHANNEL_COUNT + i] += (temp[i] * g_pDecodersVolume[index]) * masterVolume;
 		}
 
 		totalFramesRead += (ma_uint32)framesReadThisIteration;
@@ -436,6 +437,17 @@ HL_PRIM void HL_NAME(loadFiles)(varray* argv)
 	deviceExists = MA_TRUE;
 }
 
+HL_PRIM double HL_NAME(getGlobalVolume)(_NO_ARG) {
+	printf("New volume: %f\n", masterVolume);
+	return masterVolume;
+}
+
+HL_PRIM double HL_NAME(setGlobalVolume)(double value) {
+	masterVolume = value;
+	printf("New volume setted: %f\n", masterVolume);
+	return masterVolume;
+}
+
 DEFINE_PRIM(_I32, detectLatency, _NO_ARG)
 DEFINE_PRIM(_I32, get_mixer_state, _NO_ARG)
 DEFINE_PRIM(_F64, get_playback_position, _NO_ARG)
@@ -449,3 +461,5 @@ DEFINE_PRIM(_VOID, stop, _NO_ARG)
 DEFINE_PRIM(_BOOL, stopped, _NO_ARG)
 DEFINE_PRIM(_VOID, destroy, _NO_ARG)
 DEFINE_PRIM(_VOID, loadFiles, _ARR)
+DEFINE_PRIM(_F64, getGlobalVolume, _NO_ARG)
+DEFINE_PRIM(_F64, setGlobalVolume, _F64)

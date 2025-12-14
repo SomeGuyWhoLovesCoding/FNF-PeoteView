@@ -33,6 +33,7 @@ ma_uint64* g_pDecoderLengths;
 int g_pLongestDecoderIndex;
 float*  g_pDecodersVolume;
 float playbackRate = 1;
+double masterVolume = 1;
 
 int MIXER_STATE = 3; // 0=undefined,1=playing,2=stopped,3=finished
 
@@ -159,7 +160,7 @@ ma_uint32 read_pcm_frames_f32(ma_uint32 index, float* pBuffer, ma_uint32 frameCo
 		if (result != MA_SUCCESS || framesReadThisIteration == 0) break;
 
 		for (ma_uint64 i = 0; i < framesReadThisIteration * CHANNEL_COUNT; ++i) {
-			pBuffer[totalFramesRead * CHANNEL_COUNT + i] += temp[i] * g_pDecodersVolume[index];
+			pBuffer[totalFramesRead * CHANNEL_COUNT + i] += (temp[i] * g_pDecodersVolume[index]) * masterVolume;
 		}
 
 		totalFramesRead += (ma_uint32)framesReadThisIteration;
@@ -398,4 +399,14 @@ void loadFiles(std::vector<const char*> argv)
 	}
 
 	deviceExists = MA_TRUE;
+}
+
+// pseudocode of what I'm doing
+double getGlobalVolume() {
+    return masterVolume;
+}
+
+double setGlobalVolume(double value) {
+    masterVolume = value;
+    return masterVolume;
 }

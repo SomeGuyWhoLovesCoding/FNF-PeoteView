@@ -61,6 +61,14 @@ import lime._internal.backend.native.NativeCFFI;
 @:publicFields
 @:noDebug
 class Mixer {
+	static var globalVolume(get, set):Float;
+	inline static function get_globalVolume():Float {
+		return MiniAudio.getGlobalVolume();
+	}
+	inline static function set_globalVolume(value:Float):Float {
+		return MiniAudio.setGlobalVolume(value);
+	}
+
 	static var trackCount:Int;
 	static inline var sampleRate:Int = 44100;
 

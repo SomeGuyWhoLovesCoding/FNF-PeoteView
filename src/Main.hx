@@ -248,16 +248,16 @@ class Main extends Application
 	}
 
 	private function controlVolume(keyCode:KeyCode, keyModifier:KeyModifier) {
-		// Temporarily disabled volume control because its music mixer system is currently wip
-		/*switch (keyCode) {
+		//Sys.println('INITIAL VOLUME: ${Mixer.globalVolume}');
+		switch (keyCode) {
 			case KeyCode.EQUALS:
-				Sound.globalVolume += 0.1;
-				Sys.println('NEW VOLUME: ${Sound.globalVolume}');
+				Mixer.globalVolume = Math.min(Mixer.globalVolume + 0.1, 1);
+				Sys.println('NEW VOLUME: ${Mixer.globalVolume}');
 			case KeyCode.MINUS:
-				Sound.globalVolume -= 0.1;
-				Sys.println('NEW VOLUME: ${Sound.globalVolume}');
+				Mixer.globalVolume = Math.max(Mixer.globalVolume - 0.1, 0);
+				Sys.println('NEW VOLUME: ${Mixer.globalVolume}');
 			default:
-		}*/
+		}
 	}
 
 	var newDeltaTime:Float = 0;
