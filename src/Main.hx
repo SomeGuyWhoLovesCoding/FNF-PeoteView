@@ -180,9 +180,9 @@ class Main extends Application
 			StoryMenu.init(storyScreen);
 			storyMenu = new StoryMenu();
 
-			resize(peoteView.width, peoteView.height);
-
 			switchState(MAIN_MENU);
+
+			resize(peoteView.width, peoteView.height);
 
 			window.onResize.add(resize);
 			window.onKeyDown.add(controlVolume);

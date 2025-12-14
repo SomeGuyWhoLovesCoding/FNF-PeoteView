@@ -14,9 +14,10 @@ class Text {
 
 	var display:Display;
 
-	var text(default, set):String;
+	var text(default, set):String = "";
 
 	function set_text(str:String) {
+		//if (text.length == 0) text = "_";
 		if (str == text) {
 			return text;
 		}
@@ -64,9 +65,9 @@ class Text {
 			if (height < spr.h) {
 				height = spr.h;
 			}
-		}
 
-		buffer.update();
+			buffer.updateElement(spr);
+		}
 
 		width = advanceX;
 
@@ -83,9 +84,9 @@ class Text {
 		for (i in 0...text.length) {
 			var elem = buffer.getElement(i);
 			elem.x += value - x;
-		}
 
-		buffer.update();
+			buffer.updateElement(elem);
+		}
 
 		return x = value;
 	}
@@ -100,9 +101,9 @@ class Text {
 		for (i in 0...text.length) {
 			var elem = buffer.getElement(i);
 			elem.y += value - y;
-		}
 
-		buffer.update();
+			buffer.updateElement(elem);
+		}
 
 		return y = value;
 	}
@@ -143,9 +144,9 @@ class Text {
 			if (height < spr.h) {
 				height = spr.h;
 			}
-		}
 
-		buffer.update();
+			buffer.updateElement(spr);
+		}
 
 		width = advanceX;
 		_scale = scale;
@@ -167,9 +168,10 @@ class Text {
 			if (spr != null) {
 				spr.alpha = value;
 			}
+
+			buffer.updateElement(spr);
 		}
 
-		buffer.update();
 		return alpha = value;
 	}
 
@@ -181,9 +183,10 @@ class Text {
 			if (spr != null) {
 				spr.c = value;
 			}
+
+			buffer.updateElement(spr);
 		}
 
-		buffer.update();
 		return color = value;
 	}
 
@@ -195,9 +198,10 @@ class Text {
 			if (spr != null) {
 				spr.oc = value;
 			}
+
+			buffer.updateElement(spr);
 		}
 
-		buffer.update();
 		return outlineColor = value;
 	}
 
@@ -221,17 +225,17 @@ class Text {
 				spr.oc = outlineColor;
 				spr.os = outlineSize;
 			}
-		}
 
-		buffer.update();
+			buffer.updateElement(spr);
+		}
 	}
 
 	var parsedTextAtlasData:Array<TextCharData>;
 
 	function new(key:String, x:Float, y:Float, display:Display, text:String = "Sample text", font:String = "vcr") {
-		if (text.length == 0) text = "Sample text";
 		_key = key;
 
+		//trace("Okay, so new buffer is finally made now");
 		buffer = new Buffer<TextCharSprite>(8, 8, false);
 
 		if (program == null) {
@@ -240,20 +244,27 @@ class Text {
 			program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
 			program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 			program.setFragmentFloatPrecision('medium', true);
-			program.setColorFormula('getTextureColor(font_ID, vTexCoord) * (c * alphaColor)');
+			program.injectIntoFragmentShader('
+			vec4 text_shader(int textureID, vec4 c, vec4 alphaColor) {
+				return getTextureColor(textureID, vTexCoord) * (c * alphaColor);
+			}');
+
+			program.setColorFormula('text_shader(font_ID, c, alphaColor)');
 		}
-
-		this.font = font;
-
-		this.display = display;
 
 		if (!program.isIn(display)) {
 			display.addProgram(program);
 		}
+		this.font = font;
 
-		this.text = text;
+		//trace("Fuck all of this");
+		//Sys.println(buffer != null);
+		if (text.length == 0 || text == null) text = "Sample text";
+		else this.text = text;
 		this.x = x;
 		this.y = y;
+
+		this.display = display;
 	}
 
 	function dispose() {
