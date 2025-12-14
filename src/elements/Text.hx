@@ -30,6 +30,8 @@ class Text {
 				if (elem != null) {
 					elem.x = elem.y = -999999999;
 				}
+
+				buffer.updateElement(elem); // don't remove this or a bug will appear
 			}
 		}
 
@@ -244,18 +246,14 @@ class Text {
 			program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
 			program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 			program.setFragmentFloatPrecision('medium', true);
-			program.injectIntoFragmentShader('
-			vec4 text_shader(int textureID, vec4 c, vec4 alphaColor) {
-				return getTextureColor(textureID, vTexCoord) * (c * alphaColor);
-			}');
-
-			program.setColorFormula('text_shader(font_ID, c, alphaColor)');
+			program.setColorFormula('getTextureColor(font_ID, vTexCoord) * (c * alphaColor)');
 		}
+
+		this.font = font;
 
 		if (!program.isIn(display)) {
 			display.addProgram(program);
 		}
-		this.font = font;
 
 		//trace("Fuck all of this");
 		//Sys.println(buffer != null);
