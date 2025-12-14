@@ -50,6 +50,8 @@ class MainMenu implements State {
 			watermarkTxt = new Text("mainMenuWatermarkTxt", 0, 0, view, "Funkin' View - Prototype");
 			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height - 3;
 			watermarkTxt.x = 3;
+			watermarkTxt.outlineColor = 0x000000FF;
+			watermarkTxt.outlineSize = 0.09; // Usually the default text+ color on DaVinci Resolve
 		}
 
 		if (optionBuf == null) {

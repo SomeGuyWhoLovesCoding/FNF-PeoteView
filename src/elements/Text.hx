@@ -51,8 +51,8 @@ class Text {
 
 			var canUseFromBuffer = i < buffer.length;
 
-			var spr:TextCharSprite = canUseFromBuffer 
-				? buffer.getElement(i) 
+			var spr:TextCharSprite = canUseFromBuffer
+				? buffer.getElement(i)
 				: buffer.addElement(new TextCharSprite());
 
 			spr.clipX = data.position.x + padding;
@@ -64,6 +64,8 @@ class Text {
 			spr.x = x + (data.char.offset.x * scale) + advanceX;
 			spr.y = y + (data.char.offset.y * scale);
 			spr.c = color;
+			spr.oc = outlineColor;
+			spr.os = outlineSize;
 			spr.alpha = alpha;  // Restore alpha to current value
 			advanceX += (data.char.advanceX * scale);
 
@@ -210,6 +212,22 @@ class Text {
 		return outlineColor = value;
 	}
 
+	var outlineSize(default, set):Float = 0;
+
+	function set_outlineSize(value:Float):Float {
+		if (outlineSize <= 0) outlineSize = -1;
+		for (i in 0...text.length) {
+			var spr = buffer.getElement(i);
+			if (spr != null) {
+				spr.os = value;
+			}
+
+			buffer.updateElement(spr);
+		}
+
+		return outlineSize = value;
+	}
+
 	var font(default, set):String;
 
 	function set_font(value:String) {
@@ -243,13 +261,58 @@ class Text {
 		//trace("Okay, so new buffer is finally made now");
 		buffer = new Buffer<TextCharSprite>(8, 8, false);
 
-		if (program == null) {
+		var noProgram = program == null;
+
+		if (noProgram) {
 			program = new Program(buffer);
 			program.blendEnabled = true;
 			program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
 			program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 			program.setFragmentFloatPrecision('medium', true);
-			program.setColorFormula('getTextureColor(font_ID, vTexCoord) * (c * alphaColor)');
+
+			program.injectIntoFragmentShader('
+				vec4 outline(int textureID, float os, vec4 oc) {
+					// original code from https://stackoverflow.com/q/69481402/21013172, translated using claude.ai
+
+					// Since sprite is enlarged by formula w + (w * os * 2.0), 
+					// the original texture should map to the center portion
+					// Invert the enlargement: if new_size = old_size * (1 + os * 2), 
+					// then old_size / new_size = 1 / (1 + os * 2)
+					float invScale = 1.0 + os * 2.0;
+					vec2 coord = (vTexCoord - 0.5) * invScale + 0.5;
+
+					float x = coord.x;
+					float y = coord.y;
+					
+					vec4 current = getTextureColor(textureID, coord);
+					
+					if (current.a != 1.0) {
+						float offset = os;
+						
+						vec4 top = getTextureColor(textureID, vec2(x, y - offset));
+						vec4 topRight = getTextureColor(textureID, vec2(x + offset, y - offset));
+						vec4 topLeft = getTextureColor(textureID, vec2(x - offset, y - offset));
+						vec4 right = getTextureColor(textureID, vec2(x + offset, y));
+						vec4 bottom = getTextureColor(textureID, vec2(x, y + offset));
+						vec4 bottomLeft = getTextureColor(textureID, vec2(x - offset, y + offset));
+						vec4 bottomRight = getTextureColor(textureID, vec2(x + offset, y + offset));
+						vec4 left = getTextureColor(textureID, vec2(x - offset, y));
+						
+						if (top.a > 0.4 || bottom.a > 0.4 || left.a > 0.4 || right.a > 0.4 || 
+							topLeft.a > 0.4 || topRight.a > 0.4 || bottomLeft.a > 0.4 || bottomRight.a > 0.4) {
+							if (current.a != 0.0) {
+								current = mix(oc, current, current.a);
+							} else {
+								current = oc;
+							}
+						}
+					}
+					
+					return current;
+				}
+			');
+
+			program.setColorFormula('outline(font_ID, os, oc) * (c * alphaColor)');
 		}
 
 		this.font = font;

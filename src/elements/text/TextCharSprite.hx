@@ -7,8 +7,8 @@ package elements.text;
 class TextCharSprite implements Element {
 	@posX @formula("x - os") var x:Float;
 	@posY @formula("y - os")  var y:Float;
-	@sizeX @formula("w + (os * 2.0)") var w:Float;
-	@sizeY @formula("h + (os * 2.0)") var h:Float;
+	@sizeX @formula("w + (w * os * 2.0)") var w:Float;
+	@sizeY @formula("h + (h * os * 2.0)") var h:Float;
 
 	// extra tex attributes for clipping
 	@texX var clipX:Int = 0;

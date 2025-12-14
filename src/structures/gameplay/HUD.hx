@@ -94,11 +94,18 @@ class HUD {
 			timeBarTxt.y = timeBarBG.y - 2;
 			timeBarTxt.scale = 1.15;
 			timeBarTxt.outlineColor = 0x000000FF;
+			timeBarTxt.outlineSize = 0.09; // Usually the default text+ color on DaVinci Resolve
 		} else display.addProgram(timeBarTxt.program);
 
 		updateTimeBarText();
 
-		if (scoreTxt == null) scoreTxt = new Text("scoreTxt", 0, 0, display);
+		if (scoreTxt == null) {
+			scoreTxt = new Text("scoreTxt", 0, 0, display);
+			scoreTxt.color.aF = 1.0;
+			scoreTxt.color.luminanceF = 1.0;
+			scoreTxt.outlineColor = 0x000000FF;
+			scoreTxt.outlineSize = 0.09; // Usually the default text+ color on DaVinci Resolve
+		}
 		else display.addProgram(scoreTxt.program);
 
 		updateScoreText(0.0);
@@ -267,10 +274,6 @@ class HUD {
 		scoreTxt.scale = Tools.lerp(scoreTxt.scale, 1.0, Math.min(deltaTime * 0.02, 1.0));
 		scoreTxt.x = Math.floor(healthBar.bg.x) + ((healthBar.bg.w - scoreTxt.width) * 0.5);
 		scoreTxt.y = Math.floor(healthBar.bg.y) + (healthBar.bg.h + 6);
-		scoreTxt.color.aF = 1.0;
-		scoreTxt.color.luminanceF = 1.0;
-		scoreTxt.outlineColor.aF = 1.0;
-		scoreTxt.outlineColor.luminanceF = 1.0;
 		/*scoreTxt.color = 0xFFDC8CFF;
 		scoreTxt.setMarkerPair('Score: ', Color.WHITE);
 		scoreTxt.setMarkerPair(', Misses: ', Color.WHITE);
@@ -353,6 +356,17 @@ class HUD {
 			uiBuf.removeElement(timeBarPart);
 		}
 		timeBarParts = null;
+
+		// reset scoretxt values
+		if (scoreTxt != null) {
+			scoreTxt.text = "";
+			scoreTxt.color = 0xFFFFFFFF;
+			scoreTxt.color.aF = 1.0;
+			scoreTxt.color.luminanceF = 1.0;
+			scoreTxt.outlineColor.aF = 1.0;
+			scoreTxt.outlineColor.luminanceF = 1.0;
+			scoreTxt.outlineSize = 0.09; // Usually the default text+ color on DaVinci Resolve
+		}
 
 		display.removeProgram(watermarkTxt.program);
 		display.removeProgram(timeBarTxt.program);
