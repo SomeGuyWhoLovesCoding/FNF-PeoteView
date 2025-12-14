@@ -50,17 +50,17 @@ class Main extends Application
 		#if customtitlebar
 		//trace("Setting rita to Inconsolata");
 		var path = sys.FileSystem.absolutePath('assets/fonts/inconsolata/inconsolata-semibold.ttf');
-		haxe.Timer.delay(() -> {
+		/*haxe.Timer.delay(() -> {
 			//trace('FUCK YOUUUUUU');
 			Sys.println("\n");
 			Titlebar.setTitleFont("Inconsolata SemiBold", 'assets/fonts/inconsolata/inconsolata-semibold.ttf', 16);
-		}, 3000);
+		}, 3000);*/
 		//trace("wackamoly");
 		Titlebar.setTitlebarColor(titleBarColor.r, titleBarColor.g, titleBarColor.b);
 		Titlebar.setTitleFontColor(255, 255, 255);
 		Titlebar.setPrimaryButtonImage("assets/system/WM/maximize.png");
 		Titlebar.setSecondaryButtonImage("assets/system/WM/maximize.png");
-		//Titlebar.setPrimaryButtonImage("assets/system/WM/maximize.png");
+		Titlebar.setTitleFont("Inconsolata SemiBold", 'assets/fonts/inconsolata/inconsolata-semibold.ttf', 16);
 		Titlebar.setButtonFontColor(255, 255, 255);
 		Titlebar.initialize();
 		Titlebar.redrawWindow();
