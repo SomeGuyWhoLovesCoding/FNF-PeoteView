@@ -238,6 +238,7 @@ class InputSystem {
 	}
 
 	function mousePress(x:Float, y:Float, mouseButton:MouseButton) {
+		if (mouseButton != MouseButton.LEFT) return;
 		parent.pause();
 	}
 
