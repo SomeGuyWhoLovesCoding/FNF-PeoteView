@@ -51,6 +51,8 @@ class Main extends Application
 		//trace("Setting rita to Inconsolata");
 		var path = sys.FileSystem.absolutePath('assets/fonts/inconsolata/inconsolata-semibold.ttf');
 		haxe.Timer.delay(() -> {
+			//trace('FUCK YOUUUUUU');
+			Sys.println("\n");
 			Titlebar.setTitleFont("Inconsolata SemiBold", 'assets/fonts/inconsolata/inconsolata-semibold.ttf', 16);
 		}, 3000);
 		//trace("wackamoly");
