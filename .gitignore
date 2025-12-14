@@ -10,3 +10,5 @@ bin/
 # Visual Studio (and code)
 .vs/
 .vscode/
+
+hdll/
