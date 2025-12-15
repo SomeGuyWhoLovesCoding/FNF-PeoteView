@@ -301,7 +301,7 @@ class Text {
 				}
 			');
 
-			program.setColorFormula('outline(font_ID, os, oc) * (c * alphaColor)');
+			program.setColorFormula('(os == 0.0 ? getTextureColor(font_ID, vTexCoord) : outline(font_ID, os, oc)) * (c * alphaColor)');
 		}
 
 		this.font = font;
