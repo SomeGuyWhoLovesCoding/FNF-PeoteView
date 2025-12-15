@@ -438,13 +438,13 @@ HL_PRIM void HL_NAME(loadFiles)(varray* argv)
 }
 
 HL_PRIM double HL_NAME(getGlobalVolume)(_NO_ARG) {
-	printf("New volume: %f\n", masterVolume);
+	//printf("New volume: %f\n", masterVolume);
 	return masterVolume;
 }
 
 HL_PRIM double HL_NAME(setGlobalVolume)(double value) {
 	masterVolume = value;
-	printf("New volume setted: %f\n", masterVolume);
+	//printf("New volume setted: %f\n", masterVolume);
 	return masterVolume;
 }
 
