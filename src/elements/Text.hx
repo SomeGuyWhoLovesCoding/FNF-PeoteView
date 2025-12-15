@@ -39,15 +39,12 @@ class Text {
 
 		text = str;
 
-		for (i in 0...str.length) {
-			var code = str.charCodeAt(i) - 32;
+		var quarterScale = scale / 4; // Yes, I did this intentionally.
 
-			if (code > 95) {
-				code = 0;
-			}
+		for (i in 0...str.length) {
+			var code = str.charCodeAt(i);
 
 			var data = parsedTextAtlasData[code];
-			var padding = data.padding;
 
 			var canUseFromBuffer = i < buffer.length;
 
@@ -55,19 +52,19 @@ class Text {
 				? buffer.getElement(i)
 				: buffer.addElement(new TextCharSprite());
 
-			spr.clipX = data.position.x + padding;
-			spr.clipY = data.position.y + padding;
-			spr.clipWidth = spr.clipSizeX = data.sourceSize.width;
-			spr.w = (spr.clipWidth * scale);
-			spr.clipHeight = spr.clipSizeY = data.sourceSize.height;
-			spr.h = (spr.clipHeight * scale);
-			spr.x = x + (data.char.offset.x * scale) + advanceX;
-			spr.y = y + (data.char.offset.y * scale);
+			spr.clipX = data[0];
+			spr.clipY = data[1];
+			spr.clipWidth = spr.clipSizeX = data[2];
+			spr.w = (spr.clipWidth * quarterScale);
+			spr.clipHeight = spr.clipSizeY = data[3];
+			spr.h = (spr.clipHeight * quarterScale);
+			spr.x = x + (data[4] * quarterScale) + advanceX;
+			spr.y = y + (data[5] * quarterScale);
 			spr.c = color;
 			spr.oc = outlineColor;
 			spr.os = outlineSize;
 			spr.alpha = alpha;  // Restore alpha to current value
-			advanceX += (data.char.advanceX * scale);
+			advanceX += (data[6] * quarterScale);
 
 			if (height < spr.h) {
 				height = spr.h;
@@ -123,30 +120,26 @@ class Text {
 		}
 
 		scale = value;
+		var quarterScale = scale / 4; // Yes, I did this intentionally.
 
 		var advanceX:Float = 0;
 
 		for (i in 0...text.length) {
-			var code = text.charCodeAt(i) - 32;
-
-			if (code > 95) {
-				code = 0;
-			}
+			var code = text.charCodeAt(i);
 
 			var data = parsedTextAtlasData[code];
-			var padding = data.padding;
 
 			var spr = buffer.getElement(i);
 
-			spr.clipX = data.position.x + padding;
-			spr.clipY = data.position.y + padding;
-			spr.clipWidth = spr.clipSizeX = data.sourceSize.width;
-			spr.w = (spr.clipWidth * scale);
-			spr.clipHeight = spr.clipSizeY = data.sourceSize.height;
-			spr.h = (spr.clipHeight * scale);
-			spr.x = x + (data.char.offset.x * scale) + advanceX;
-			spr.y = y + (data.char.offset.y * scale);
-			advanceX += (data.char.advanceX * scale);
+			spr.clipX = data[0];
+			spr.clipY = data[1];
+			spr.clipWidth = spr.clipSizeX = data[2];
+			spr.w = (spr.clipWidth * quarterScale);
+			spr.clipHeight = spr.clipSizeY = data[3];
+			spr.h = (spr.clipHeight * quarterScale);
+			spr.x = x + (data[4] * quarterScale) + advanceX;
+			spr.y = y + (data[5] * quarterScale);
+			advanceX += (data[6] * quarterScale);
 
 			if (height < spr.h) {
 				height = spr.h;

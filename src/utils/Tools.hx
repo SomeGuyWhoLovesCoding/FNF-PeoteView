@@ -137,11 +137,53 @@ class Tools {
 		return finalData;
 	}
 
+	private static var _fontsCached(default, null):Map<String, Array<elements.text.TextCharData>> = [];
 	static function parseFont(name:String):Array<elements.text.TextCharData> {
-		var path = 'assets/fonts/$name/data.json';
-		var data = haxe.Json.parse(sys.io.File.getContent(path));
-		TextureSystem.createTexture(name + "Font", path.replace('data.json', data.atlas.imagePath), false, true);
-		return data.sprites;
+		Sys.println('QUERY GAME FONT: $name');
+		if (_fontsCached.exists(name))
+			return _fontsCached[name];
+
+		var path = 'assets/fonts/$name';
+		var fontPath = '$path/${name}.fnt';
+		var fontPNGPath = '$path/${name}_0.png';
+
+		/*var condition = !sys.FileSystem.exists(path);
+
+		if (condition) { // automatically make the path
+			// placeholder
+			*/// - V  this is required. V  - the batchfile (or bash if you're on linux) doesn't make any directories and only saves to whatever exists.
+			sys.FileSystem.createDirectory(path);
+			#if windows
+			var processfile = "assets/fonts/batch_fonts.bat";
+			#elseif linux
+			processfile = "assets/fonts/batch_fonts.sh";
+			#end
+			var process = new sys.io.Process(processfile, [name], true);
+			//while (process.exitCode(false) != 1) Sys.sleep(0.001);
+		//}
+
+		var contents = File.getContent(fontPath);
+		var data = haxe.Json.parse(contents);
+
+		var parsedData:Array<elements.text.TextCharData> = [for (i in 0...256) [0, 0, 0, 0, 0, 0, 0]];
+		var padding:Array<Int> = data.info.padding;
+		var chars = data.chars;
+		for (i in 0...chars.length) {
+			var element = chars[i];
+			var number:Int = element.id;
+			parsedData[number][0] = element.x - padding[0];
+			parsedData[number][1] = element.y - padding[1];
+			parsedData[number][2] = element.width;
+			parsedData[number][3] = element.height;
+			parsedData[number][4] = element.xoffset;
+			parsedData[number][5] = element.yoffset;
+			parsedData[number][6] = element.xadvance;
+		}
+
+		TextureSystem.createTexture(name + "Font", fontPNGPath, false, true);
+
+		_fontsCached[name] = parsedData;
+		return parsedData;
 	}
 
 	/**

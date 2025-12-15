@@ -3,12 +3,12 @@ fileVersion=1
 
 # font settings
 fontName=VCR OSD Mono
-fontFile=
+fontFile=assets/fonts/vcr/vcr.ttf
 charSet=0
-fontSize=-20
+fontSize=20
 aa=1
 scaleH=100
-useSmoothing=0
+useSmoothing=1
 isBold=0
 isItalic=0
 useUnicode=1
@@ -16,26 +16,26 @@ disableBoxChars=1
 outputInvalidCharGlyph=0
 dontIncludeKerningPairs=0
 useHinting=1
-renderFromOutline=0
+renderFromOutline=1
 useClearType=0
 autoFitNumPages=0
 autoFitFontSizeMin=0
 autoFitFontSizeMax=0
 
 # character alignment
-paddingDown=0
-paddingUp=0
-paddingRight=0
-paddingLeft=0
-spacingHoriz=1
-spacingVert=1
-useFixedHeight=0
+paddingDown=2
+paddingUp=2
+paddingRight=2
+paddingLeft=2
+spacingHoriz=0
+spacingVert=0
+useFixedHeight=1
 forceZero=0
 widthPaddingFactor=0.00
 
 # output file
-outWidth=512
-outHeight=512
+outWidth=256
+outHeight=256
 outBitDepth=32
 fontDescFormat=1
 fourChnlPacked=0

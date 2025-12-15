@@ -1,1 +1,0 @@
-Unispace and vcr are fonts used for the game where inside the options menu the sprites are scattered around in the controls menu
