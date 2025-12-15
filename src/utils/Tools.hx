@@ -159,7 +159,7 @@ class Tools {
 			//trace(fontPathSub);
 			FileSystem.createDirectory(path);
 			//var processfile:String = "assets/fonts/fontbm";
-			_process = new Process("assets/fonts/fontbm", [
+			_process = new Process("assets/fonts/fontbm.exe", [
 				'--font-file', '"ttfs/$name.ttf"',
 				'--font-size', '60',
 				'--data-format', 'json',
@@ -171,8 +171,8 @@ class Tools {
 				'--output', '"$fontPathSub"'
 			], true);
 			//trace(process.exitCode(true));
-			trace(_process.stdout.readAll().length);
-			while (_process.exitCode(false) == null) Sys.sleep(0.001);
+			//trace(_process.stdout.readAll().length);
+			//while (_process.exitCode(false) == null) Sys.sleep(0.001);
 		}
 
 		var contents = File.getContent(fontPath);
