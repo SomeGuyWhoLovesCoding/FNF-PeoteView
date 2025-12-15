@@ -68,10 +68,10 @@ class MiniAudio {
 		return 0;
 	}
 
-	@:native("getGlobalVolume") public static function getGlobalVolume():Float {
+	@:hlNative("getGlobalVolume") public static function getGlobalVolume():Float {
 		return 0;
 	}
-	@:native("setGlobalVolume") public static function setGlobalVolume(value:Float):Float {
+	@:hlNative("setGlobalVolume") public static function setGlobalVolume(value:Float):Float {
 		return 0;
 	}
 }
