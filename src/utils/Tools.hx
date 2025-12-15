@@ -169,9 +169,10 @@ class Tools {
 				'--padding-left', '3',
 				'--extra-info',
 				'--output', '"$fontPathSub"'
-			]);
+			], true);
 			//trace(process.exitCode(true));
-			while (_process.exitCode(false) != null) Sys.sleep(0.001);
+			trace(_process.stdout.readAll().length);
+			while (_process.exitCode(false) == null) Sys.sleep(0.001);
 		}
 
 		var contents = File.getContent(fontPath);
@@ -183,8 +184,8 @@ class Tools {
 		for (i in 0...chars.length) {
 			var element = chars[i];
 			var number:Int = element.id;
-			parsedData[number][0] = element.x - padding[0];
-			parsedData[number][1] = element.y - padding[1];
+			parsedData[number][0] = element.x + padding[0];
+			parsedData[number][1] = element.y + padding[1];
 			parsedData[number][2] = element.width;
 			parsedData[number][3] = element.height;
 			parsedData[number][4] = element.xoffset;
