@@ -47,7 +47,7 @@ class Main extends Application
 	{
 		var titleBarColor:Color = SaveData.state.graphics.customTitleBarColor;
 
-		#if customtitlebar
+		#if (windows && customtitlebar)
 		//trace("Setting rita to Inconsolata");
 		var path = sys.FileSystem.absolutePath('assets/fonts/inconsolata/inconsolata-semibold.ttf');
 		/*haxe.Timer.delay(() -> {
