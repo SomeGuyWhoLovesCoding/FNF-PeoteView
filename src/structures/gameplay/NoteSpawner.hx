@@ -16,17 +16,11 @@ class NoteSpawner {
 
 	var parent(default, null):NoteSystem;
 
-	// --- Optimized cache system ---
+	// --- Fixed-size sliding cache ---
 	var noteCache:Array<MetaNote> = [];
 	var cacheStart:Int64 = 0;
-	var cacheEnd:Int64 = 0;  // Track end explicitly
-	var cacheSize:Int64 = 1048576;
-	
-	// Dirty tracking for batched writes
-	var dirtyNotes:Array<MetaNote> = [];
-	var dirtyIndices:Array<Int64> = [];
-	var dirtyCount:Int = 0;
-	var maxDirtyBatch:Int = 1024;  // Flush after this many dirty writes
+	var cacheSize:Int64 = 1048576; // ~1MB cache (assuming ~4 bytes per MetaNote)
+	var maxCacheSize:Int64 = 1048576; // Hard limit
 
 	function new(parent:NoteSystem) {
 		this.parent = parent;
@@ -35,77 +29,70 @@ class NoteSpawner {
 		top = 0;
 
 		loadCache(0, cacheSize);
-		cacheEnd = cacheStart + noteCache.length;
 		curTopNote = noteCache[0];
 		curBottomNote = noteCache[0];
-		
-		// Pre-allocate dirty arrays
-		dirtyNotes.resize(maxDirtyBatch);
-		dirtyIndices.resize(maxDirtyBatch);
 	}
 
-	// --- Optimized cache loading with pre-allocation ---
+	// --- Load cache with fixed size window ---
 	function loadCache(startIdx:Int64, size:Int64) {
 		var len = File.getLength();
 		if (startIdx >= len) {
 			noteCache = [];
 			cacheStart = startIdx;
-			cacheEnd = startIdx;
 			return;
 		}
 
 		cacheStart = startIdx;
 		
+		var newNotes:Array<MetaNote> = [];
 		var maxLoad = len - startIdx;
 		if (maxLoad > size) maxLoad = size;
 		if (maxLoad < 0) maxLoad = 0;
 
-		var loadSize = Int64.toInt(maxLoad);
-		
-		// Reuse array if possible to avoid allocation
-		if (noteCache.length != loadSize) {
-			noteCache = [];
-			noteCache.resize(loadSize);
-		}
-
-		// Bulk load notes
 		var i:Int64 = 0;
 		while (i < maxLoad) {
-			noteCache[Int64.toInt(i)] = File.getNote(startIdx + i);
+			newNotes.push(File.getNote(startIdx + i));
 			i++;
 		}
-		
-		cacheEnd = cacheStart + maxLoad;
+
+		noteCache = newNotes;
 	}
 
-	// --- Optimized get with bounds caching ---
-	inline function getCachedNote(idx:Int64):MetaNote {
-		// Fast path: check cached bounds first
-		if (idx >= cacheStart && idx < cacheEnd) {
-			return noteCache[Int64.toInt(idx - cacheStart)];
+	// --- Get note from cache; slide window if needed ---
+	function getCachedNote(idx:Int64):MetaNote {
+		var cacheIdx = idx - cacheStart;
+		
+		// Check if index is within current cache bounds
+		if (cacheIdx >= 0 && cacheIdx < noteCache.length) {
+			return noteCache[Int64.toInt(cacheIdx)];
 		}
 
-		// Slow path: reload cache
-		return getCachedNoteSlow(idx);
-	}
-	
-	function getCachedNoteSlow(idx:Int64):MetaNote {
 		var len = File.getLength();
 		if (idx >= len) return -1;
 
-		// Slide cache window to center around requested index
-		var newStart = idx - (cacheSize >> 2);  // Center with 25% padding before
-		if (newStart < 0) newStart = 0;
-		
+		// If index is outside cache, slide the window
+		var newStart = idx;
 		var newSize = cacheSize;
+		
+		// If we're looking far ahead, center the cache around the requested index
+		if (idx > cacheStart + noteCache.length) {
+			newStart = idx;
+		} 
+		// If we're looking behind, center the cache to include both old and new areas
+		else if (idx < cacheStart) {
+			newStart = idx;
+		}
+		
+		// Ensure we don't go beyond file bounds
+		if (newStart < 0) newStart = 0;
 		if (newStart + newSize > len) {
 			newSize = len - newStart;
 		}
 		
 		loadCache(newStart, newSize);
 		
-		// Return from new cache
-		var cacheIdx = idx - cacheStart;
+		// Now get from new cache
+		cacheIdx = idx - cacheStart;
 		if (cacheIdx >= 0 && cacheIdx < noteCache.length) {
 			return noteCache[Int64.toInt(cacheIdx)];
 		}
@@ -113,61 +100,32 @@ class NoteSpawner {
 		return -1;
 	}
 
-	// --- Batched write system ---
-	inline function setCachedNote(idx:Int64, value:MetaNote) {
-		// Fast path: if in cache, mark dirty
-		if (idx >= cacheStart && idx < cacheEnd) {
-			var cacheIdx = Int64.toInt(idx - cacheStart);
-			noteCache[cacheIdx] = value;
-			
-			// Add to dirty batch
-			dirtyIndices[dirtyCount] = idx;
-			dirtyNotes[dirtyCount] = value;
-			dirtyCount++;
-			
-			// Auto-flush if batch is full
-			if (dirtyCount >= maxDirtyBatch) {
-				flushDirtyNotes();
-			}
-			return;
+	// --- Set note in cache ---
+	function setCachedNote(idx:Int64, value:MetaNote):MetaNote {
+		var cacheIdx = idx - cacheStart;
+		
+		if (cacheIdx >= 0 && cacheIdx < noteCache.length) {
+			noteCache[Int64.toInt(cacheIdx)] = value;
+			return value;
 		}
 
-		// Slow path: outside cache, write directly
-		File.setNote(idx, value);
-	}
-	
-	// --- Flush dirty notes in one batch ---
-	function flushDirtyNotes() {
-		if (dirtyCount == 0) return;
-		
-		// Write all dirty notes back to file in batch
-		// This is where you'd do bulk I/O if File supports it
-		for (i in 0...dirtyCount) {
-			File.setNote(dirtyIndices[i], dirtyNotes[i]);
+		// If outside cache, ensure it's loaded then set
+		getCachedNote(idx);
+		cacheIdx = idx - cacheStart;
+		if (cacheIdx >= 0 && cacheIdx < noteCache.length) {
+			noteCache[Int64.toInt(cacheIdx)] = value;
 		}
-		
-		dirtyCount = 0;
+		return value;
 	}
 
-	// --- Smart cache management with hysteresis ---
-	var lastManagePos:Int64 = 0;
-	var manageThreshold:Int64 = 256;  // Only manage every N notes moved
-	
+	// --- Smart cache management ---
 	function manageCache() {
 		var len = File.getLength();
 		
-		// Calculate center of active window
+		// Calculate ideal cache window centered around current play area
 		var center = (bottom + top) >> 1;
+		var cachePadding = cacheSize >> 2; // Keep some padding on both sides
 		
-		// Only reposition if we've moved significantly
-		var movement = center - lastManagePos;
-		if (movement < 0) movement = -movement;
-		
-		if (movement < manageThreshold) return;
-		lastManagePos = center;
-		
-		// Calculate ideal cache window
-		var cachePadding = cacheSize >> 2;
 		var idealStart = center - cachePadding;
 		if (idealStart < 0) idealStart = 0;
 		
@@ -178,23 +136,27 @@ class NoteSpawner {
 			if (idealStart < 0) idealStart = 0;
 		}
 		
-		// Check if current cache still has good overlap
-		var overlapStart = cacheStart > idealStart ? cacheStart : idealStart;
-		var overlapEnd = cacheEnd < idealEnd ? cacheEnd : idealEnd;
-		var overlap = overlapEnd - overlapStart;
+		// Only reload cache if we've moved significantly from current window
+		var currentEnd = cacheStart + noteCache.length;
+		var overlapStart = cacheStart;
+		if (overlapStart < idealStart) overlapStart = idealStart;
+		var overlapEnd = currentEnd;
+		if (overlapEnd < idealEnd) overlapEnd = idealEnd;
 		
-		// Only reload if overlap is less than 60%
-		if (overlap < (cacheSize * 3) / 5) {
-			flushDirtyNotes();  // Flush before reloading
+		// If less than 50% overlap, reload the cache
+		if (overlapEnd - overlapStart < (idealEnd - idealStart) >> 1) {
 			loadCache(idealStart, idealEnd - idealStart);
 		}
 	}
 
+	// Remove the old pruneCache function and replace with:
 	function pruneCache() {
+		// Let manageCache handle the sliding window
 		manageCache();
 	}
 
 	var timeSpentOnIt:Float = 0;
+	var timeSpentOnItIncrement:Float = 0;
 
 	function update(pos:Int64) {
 		_lastbottom = bottom;
@@ -205,112 +167,59 @@ class NoteSpawner {
 
 		processNotes(pos);
 
-		// Flush dirty writes at end of frame
-		flushDirtyNotes();
-		
-		pruneCache();
+		pruneCache(); // manage cache sliding window
 	}
 
 	function processNotes(pos:Int64) {
+		var i = bottom;
 		var scrollSpeed = parent.parent.scrollSpeed;
-		var time = haxe.Timer.stamp();
-		
-		var batchSize = Int64.toInt(top - bottom);
-		if (batchSize <= 0) {
-			timeSpentOnIt = 0;
-			return;
-		}
-		
-		// Cache everything
-		var strumlines = parent.strumlines;
-		var noteTypeFunctionalityPre = parent.noteTypeFunctionalityPre;
-		var strumlineCount = strumlines.length;
-		var heightScale = Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT;
-		
 		var prev:MetaNote = -1;
 		var noteSpr:VirtualNote = null;
-		var prevY:Float = 0;
-		var prevLane:Int = -1;
-		var prevFakeOverlapStorage:Array<Float> = null;
 		var j:Int = 0;
-		
-		var i = bottom;
+
+		var time = haxe.Timer.stamp();
 		while (i < top) {
-			var n = getCachedNote(i);
-			
-			// Fast lane calculation
-			var lane:Int;
-			if (noteTypeFunctionalityPre[n.type] != null) {
-				lane = 1;
-			} else {
-				lane = n.type % strumlineCount;
-			}
-			
-			// Cache strumline data per lane change
-			var fakeOverlapStorage:Array<Float>;
-			var receptor:Note;
-			
-			if (lane != prevLane) {
-				var strumline = strumlines[lane];
-				fakeOverlapStorage = strumline.fakeOverlapStorage;
-				receptor = strumline.buffer[n.index];
-				prevLane = lane;
-				prevFakeOverlapStorage = fakeOverlapStorage;
-			} else {
-				fakeOverlapStorage = prevFakeOverlapStorage;
-				receptor = strumlines[lane].buffer[n.index];
-			}
-			
-			// Calculate position
+			var n = getCachedNote(i); // use sliding cache
+
+			var lane = parent.noteTypeFunctionalityPre[n.type] != null
+				? 1
+				: (n.type % parent.strumlines.length);
+			var receptor = parent.strumlines[lane].buffer[n.index];
+			var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
+
 			var diff = MetaNote.metaNotePositionToSongTime((n.position - pos)) * scrollSpeed;
 			var newY = receptor.y + Math.floor(diff);
-			
-			// Fast ghost check
-			var ghost = prev != -1
-				&& prev.position == n.position
-				&& prev.index == n.index
-				&& prev.type == n.type;
-			
-			// Overlap check with early exits
-			var shouldOverlap = false;
-			if (!ghost && noteSpr != null && prev != -1) {
-				if (prev.type == n.type && prev.duration == n.duration) {
-					if (noteSpr.scale == receptor.scale && noteSpr.x == receptor.x) {
-						var pixelDiff = Math.abs(
-							Math.floor(newY / heightScale) -
-							Math.floor(prevY / heightScale)
-						);
-						shouldOverlap = pixelDiff == 0;
-					}
+
+			var ghost = isGhostNote(prev, n);
+
+			var shouldOverlap = noteSpr != null && shouldNotesOverlap(prev, n, noteSpr, receptor, newY,
+				fakeOverlapStorage[prev != -1 ? prev.index : -1]) && !ghost;
+
+			fakeOverlapStorage[n.index] = newY;
+
+			if (shouldOverlap) {
+				mergeNoteIntoSprite(noteSpr, n);
+			} else {
+				if (!ghost) {
+					++j;
+					noteSpr = parent.drawNote(pos, n, diff, i);
 				}
 			}
-			
-			fakeOverlapStorage[n.index] = newY;
-			
-			if (shouldOverlap) {
-				var alphaToAdd = n.missed ? Note.defaultMissAlpha : Note.defaultAlpha;
-				noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + alphaToAdd, 256);
-				noteSpr.notesInOne++;
-			} else if (!ghost) {
-				++j;
-				noteSpr = parent.drawNote(pos, n, diff, i);
-			}
-			
+
 			prev = n;
-			prevY = newY;
 			++i;
 		}
-		
 		timeSpentOnIt = haxe.Timer.stamp() - time;
 	}
 
 	function cullTop(pos:Int64) {
 		var len = File.getLength();
 		while (top != len) {
+			// Only fetch once
 			var n = getCachedNote(top);
 			if (n.position - pos >= spawnDist) break;
 
-			// Modify note and mark dirty
+			// Initialize the note once
 			n.flag = false;
 			n.missed = false;
 			n.held = false;
@@ -319,6 +228,7 @@ class NoteSpawner {
 			++top;
 		}
 
+		// Cache the top note once
 		if (top < len) curTopNote = getCachedNote(top);
 	}
 
@@ -327,6 +237,7 @@ class NoteSpawner {
 		while (bottom != len) {
 			var n = getCachedNote(bottom);
 
+			// Only calculate once
 			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - n.position;
 			if (despawnCheck <= despawnDist) break;
 
@@ -338,6 +249,7 @@ class NoteSpawner {
 			++bottom;
 		}
 
+		// Cache the bottom note once
 		if (bottom < len) curBottomNote = getCachedNote(bottom);
 	}
 
@@ -347,9 +259,6 @@ class NoteSpawner {
 
 		var len = File.getLength();
 		if (len <= 0) return;
-		
-		// Flush any pending writes before reset
-		flushDirtyNotes();
 
 		var songPos = MetaNote.floatToMetaNotePosition(songPosition);
 		var minPos:Int64 = songPos - spawnDist;
@@ -400,20 +309,33 @@ class NoteSpawner {
 		parent.resetStrumlines();
 	}
 
-	// [Rest of your render functions unchanged...]
-	
+	// Now we're onto the real shit.
+
+	/**
+	 * Renders all notes in the current window.
+	 * @param pos The current song position in note format.
+	 */
 	function renderNotes(pos:Int64) {
 		var notes = parent.virtualNoteBuffer;
+
 		renderVirtualNotes(notes, pos);
 		renderVirtualSustains(notes);
 	}
 
+	// both of these arrays are used to easily render notes in the opposite order.
 	var regularNoteList:Array<Note> = [];
 	var greedyMergedNoteList:Array<Note> = [];
 
+	/**
+	 * Renders virtual notes into actual note instances for rendering.
+	 * This is separate from the main update loop onto the render loop to allow for optimizations, and most importantly, this function is separate for profiling.
+	 * @param notes
+	 */
 	function renderVirtualNotes(notes:NoteVB, pos:Int64) {
 		var downScroll = parent.parent.downScroll;
+		var numIterations = 0;
 		var virtualNotes = notes.notes;
+		var averageNotesPerOne:Int64 = 0;
 		for (i in 0...virtualNotes.length) {
 			var lane = virtualNotes[i];
 			var strumline = parent.strumlines[i];
@@ -435,53 +357,75 @@ class NoteSpawner {
 						continue;
 					}
 
+					// We're cool now I think?
 					if (virtualNote.y < -200 || virtualNote.y > Main.current.peoteView.height + 10) {
 						k += increment;
 						continue;
 					}
 
+					// but wait! hold on! do some note rendering optims just in case of a spamtrack real quick
+
+					//// greedy note merging (64x) ////
+
 					if (Note.enableGM) {
-						greedyMerged = greedyMergeNearlyNotes(virtualNote, index, k, 64);
+						greedyMerged = greedyMergeNearlyNotes(virtualNote, index, k, 64); //????????????
 						if (greedyMerged) {
 							increment = 64;
 						}
 					}
 
+					//// finally, do it. ////
+
 					var note = new Note(virtualNote.x, virtualNote.y, 0, 0);
 					note.w = virtualNote.w;
 					note.h = virtualNote.h;
 					note.scale = virtualNote.scale;
+
 					note.initialAlpha = virtualNote.initialAlpha;
 					note.addedAlpha = virtualNote.addedAlpha;
+
 					note.changeID(id);
 					note.toNote();
 
+					// This is here in order to fix the note still visible for the remaining time rendering or so when inputs are polled at an extemely high rate.
 					var noteToHit = strumline.notesToHit[j];
 					strumline.notesToHit_sprites[j] = noteToHit == virtualNote.ref ? note : null;
+
+					//@:privateAccess trace('Regular note: x=${note.clipX}, y=${note.clipY}, w=${note.clipWidth}, h=${note.clipHeight}');
 
 					if (Note.enableGM && greedyMerged && virtualNote.greedyMergeAlphaMultiplier != 0 && virtualNote.greedyMergeType != 0) {
 						var h = note.h;
 						note.toggleGMVariant(granularity, false);
+						//@:privateAccess trace('GM variant: x=${note.clipX}, y=${note.clipY}, w=${note.clipWidth}, h=${note.clipHeight}');
 						note.initialAlpha = Note.defaultAlpha;
 						note.addedAlpha = 0;
 						
 						if (downScroll) {
-							note.y -= note.h - h;
+							// Move to where the last note would be, then adjust for sprite height
+							//note.y -= virtualNote.greedyMergeType;  // Move to last note
+							note.y -= note.h - h;  // Adjust so bottom of sprite is there
+							//note.y -= h;  // Subtract original note height to align properly
 						}
 
+						// and then the addedalpha glossy cover that goes along with it
 						var cover = new Note(note.x, note.y, 0, 0);
 						cover.initialAlpha = 1;
 						cover.addedAlpha = virtualNote.greedyMergeAlphaMultiplier * virtualNote.addedAlpha;
+
 						cover.changeID(id);
 						cover.toNote();
 						cover.toggleGMVariant(granularity, true);
 						greedyMergedNoteList.push(cover);
+
+						// you add the cover first so this goes last
 						greedyMergedNoteList.push(note);
 					} else {
 						regularNoteList.push(note);
 					}
 
 					k += increment;
+					numIterations++;
+					averageNotesPerOne += virtualNote.greedyMergeAlphaMultiplier;
 				}
 			}
 
@@ -494,9 +438,17 @@ class NoteSpawner {
 				var note = greedyMergedNoteList.pop();
 				NoteSystem.notesBuf.addElement(note);
 			}
+
+			var zero = notes.noteLength[0][2];
+			if (zero == 0) zero = 1;
 		}
 	}
 
+	/**
+	 * Renders virtual sustains into actual sustain instances for rendering.
+	 * This function is separate for profiling.
+	 * @param notes
+	 */
 	function renderVirtualSustains(notes:NoteVB) {
 		var virtualSustains = notes.sustains;
 		for (i in 0...virtualSustains.length) {
@@ -526,7 +478,19 @@ class NoteSpawner {
 		}
 	}
 
+	// TODO; ENGINEER THIS SHIT TO HANDLE MIXED 1-2PX DISTANCES IN A 64PX VERTICAL BOUNDARY
+	/**
+	 * Greedily merges nearly identical (already-overlapped) notes to optimize rendering.
+	 * This checks up to `count` notes ahead to see if they can be merged.
+	 * @param virtualNote The virtual note to attempt merging on.
+	 * @param index The array of virtual notes in the current lane/index.
+	 * @param strumReceptor The strum receptor for this lane/index.
+	 * @param k The current index in the virtual notes array.
+	 * @param count The number of notes to check for merging.
+	 * @return True if merging was successful.
+	 */
 	function greedyMergeNearlyNotes(virtualNote:VirtualNote, index:Array<VirtualNote>, k:Int, count:Int = 16):Bool {
+		// Check bounds first
 		if (k + count >= index.length) return false;
 
 		var firstNote = index[k];
@@ -534,6 +498,7 @@ class NoteSpawner {
 		
 		if (firstNote == null || lastNote == null) return false;
 		
+		// Check total span
 		var totalSpan = firstNote.y - lastNote.y;
 		if (totalSpan < 0) totalSpan = -totalSpan;
 		
@@ -569,12 +534,19 @@ class NoteSpawner {
 		yToUse /= count;
 		notesInOneMerged /= count;
 
+		// ADD THESE LINES BACK:
 		virtualNote.greedyMergeType = Math.floor(totalSpan);
 		virtualNote.greedyMergeAlphaMultiplier = Int64.toInt(notesInOneMerged);
 		
 		return true;
 	}
 
+	/**
+	 * Checks if a note is a ghost (duplicate) of the previous note.
+	 * @param prev The previous meta note.
+	 * @param current The current meta note.
+	 * @return True if the notes are duplicates.
+	 */
 	inline function isGhostNote(prev:MetaNote, current:MetaNote):Bool {
 		return prev != -1
 			&& prev.position == current.position
@@ -582,6 +554,16 @@ class NoteSpawner {
 			&& prev.type == current.type;
 	}
 
+	/**
+	 * Determines if two notes should visually overlap.
+	 * @param prev The previous meta note.
+	 * @param current The current meta note.
+	 * @param noteSpr The current note sprite.
+	 * @param receptor The receptor for this lane.
+	 * @param newY The Y position of the current note.
+	 * @param prevY The Y position of the previous note.
+	 * @return True if notes should overlap and merge.
+	 */
 	inline function shouldNotesOverlap(prev:MetaNote, current:MetaNote, noteSpr:VirtualNote,
 		receptor:Note, newY:Float, prevY:Float):Bool {
 
@@ -589,11 +571,13 @@ class NoteSpawner {
 
 		var OVERLAP_PIXEL_THRESHOLD = 0;
 
+		// Calculate pixel difference accounting for resolution scaling
 		var pixelDiff = Math.abs(
 			Math.floor(newY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)) -
 			Math.floor(prevY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT))
 		);
 
+		// Check all overlap requirements
 		return pixelDiff <= OVERLAP_PIXEL_THRESHOLD
 			&& prev.type == current.type
 			&& noteSpr.scale == receptor.scale
@@ -601,6 +585,11 @@ class NoteSpawner {
 			&& noteSpr.x == receptor.x;
 	}
 
+	/**
+	 * Merges a note into an existing sprite by increasing its alpha.
+	 * @param noteSpr The note sprite to merge into.
+	 * @param n The meta note being merged.
+	 */
 	inline function mergeNoteIntoSprite(noteSpr:VirtualNote, n:MetaNote) {
 		var alphaToAdd = n.missed ? Note.defaultMissAlpha : Note.defaultAlpha;
 		noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + alphaToAdd, 256);
