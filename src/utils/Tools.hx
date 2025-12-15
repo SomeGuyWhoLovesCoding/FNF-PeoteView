@@ -139,28 +139,36 @@ class Tools {
 
 	private static var _fontsCached(default, null):Map<String, Array<elements.text.TextCharData>> = [];
 	static function parseFont(name:String):Array<elements.text.TextCharData> {
-		Sys.println('QUERY GAME FONT: $name');
+		//Sys.println('QUERY GAME FONT: $name');
 		if (_fontsCached.exists(name))
 			return _fontsCached[name];
 
 		var path = 'assets/fonts/$name';
-		var fontPath = '$path/${name}.fnt';
-		var fontPNGPath = '$path/${name}_0.png';
+		var fontPathSub = '$path/$name';
+		var fontPath = '$fontPathSub.fnt';
+		var fontPNGPath = '${fontPathSub}_0.png';
 
-		/*var condition = !sys.FileSystem.exists(path);
+		var condition = FileSystem.exists(fontPath) && FileSystem.exists(fontPNGPath);
 
-		if (condition) { // automatically make the path
+		if (!condition) { // automatically make the path
 			// placeholder
-			*/// - V  this is required. V  - the batchfile (or bash if you're on linux) doesn't make any directories and only saves to whatever exists.
-			sys.FileSystem.createDirectory(path);
-			#if windows
-			var processfile = "assets/fonts/batch_fonts.bat";
-			#elseif linux
-			processfile = "assets/fonts/batch_fonts.sh";
-			#end
-			var process = new sys.io.Process(processfile, [name], true);
+			// - V  this is required. V  - the batchfile (or bash if you're on linux) doesn't make any directories and only saves to whatever exists.
+			Sys.println('CREATE GAME FONT PATH: $name');
+			FileSystem.createDirectory(path);
+			var processfile = "assets/fonts/fontbm";
+			var process = new sys.io.Process(processfile, [
+				'--font-file', '"ttfs/$name.ttf"',
+				'--font-size', '60',
+				'--data-format', 'json',
+				'--padding-up', '3',
+				'--padding-right', '3',
+				'--padding-down', '3',
+				'--padding-left', '3',
+				'--extra-info',
+				'--output', '"$fontPathSub"'
+			]);
 			//while (process.exitCode(false) != 1) Sys.sleep(0.001);
-		//}
+		}
 
 		var contents = File.getContent(fontPath);
 		var data = haxe.Json.parse(contents);
