@@ -3,6 +3,7 @@ package utils;
 import sys.io.File;
 import sys.FileSystem;
 import data.chart.Header;
+import sys.io.Process;
 using StringTools;
 
 @:publicFields
@@ -138,6 +139,7 @@ class Tools {
 	}
 
 	private static var _fontsCached(default, null):Map<String, Array<elements.text.TextCharData>> = [];
+	private static var _process(default, null):Process;
 	static function parseFont(name:String):Array<elements.text.TextCharData> {
 		//Sys.println('QUERY GAME FONT: $name');
 		if (_fontsCached.exists(name))
@@ -153,10 +155,11 @@ class Tools {
 		if (!condition) { // automatically make the path
 			// placeholder
 			// - V  this is required. V  - the batchfile (or bash if you're on linux) doesn't make any directories and only saves to whatever exists.
-			Sys.println('CREATE GAME FONT PATH: $name');
+			//Sys.println('CREATE GAME FONT PATH: $name');
+			//trace(fontPathSub);
 			FileSystem.createDirectory(path);
-			var processfile = "assets/fonts/fontbm";
-			var process = new sys.io.Process(processfile, [
+			//var processfile:String = "assets/fonts/fontbm";
+			_process = new Process("assets/fonts/fontbm", [
 				'--font-file', '"ttfs/$name.ttf"',
 				'--font-size', '60',
 				'--data-format', 'json',
@@ -167,7 +170,8 @@ class Tools {
 				'--extra-info',
 				'--output', '"$fontPathSub"'
 			]);
-			//while (process.exitCode(false) != 1) Sys.sleep(0.001);
+			//trace(process.exitCode(true));
+			while (_process.exitCode(false) != null) Sys.sleep(0.001);
 		}
 
 		var contents = File.getContent(fontPath);
