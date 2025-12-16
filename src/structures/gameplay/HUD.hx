@@ -94,7 +94,7 @@ class HUD {
 			timeBarTxt.y = timeBarBG.y - 2;
 			timeBarTxt.scale = 1.15;
 			timeBarTxt.outlineColor = 0x000000FF;
-			timeBarTxt.outlineSize = 0.09; // Usually the default text+ color on DaVinci Resolve
+			timeBarTxt.outlineSize = 0.2; // Usually the default text+ outline size on DaVinci Resolve
 		} else display.addProgram(timeBarTxt.program);
 
 		updateTimeBarText();
@@ -104,7 +104,7 @@ class HUD {
 			scoreTxt.color.aF = 1.0;
 			scoreTxt.color.luminanceF = 1.0;
 			scoreTxt.outlineColor = 0x000000FF;
-			scoreTxt.outlineSize = 0.09; // Usually the default text+ color on DaVinci Resolve
+			scoreTxt.outlineSize = 0.2; // Usually the default text+ outline size on DaVinci Resolve
 		}
 		else display.addProgram(scoreTxt.program);
 
@@ -348,6 +348,25 @@ class HUD {
 			healthBar = null;
 		}
 
+		// reset scoretxt values
+		if (scoreTxt != null) {
+			scoreTxt.text = "";
+			scoreTxt.color = 0xFFFFFFFF;
+			scoreTxt.color.aF = 1.0;
+			scoreTxt.color.luminanceF = 1.0;
+			scoreTxt.outlineColor = 0x000000FF;
+			scoreTxt.outlineSize = 0.2; // Usually the default text+ color on DaVinci Resolve
+		}
+
+		// reset timebartxt values
+		if (timeBarTxt != null) {
+			timeBarTxt.x = (Main.INITIAL_WIDTH - timeBarTxt.width) * 0.5;
+			timeBarTxt.y = timeBarBG.y - 2;
+			timeBarTxt.scale = 1.15;
+			timeBarTxt.outlineColor = 0x000000FF;
+			timeBarTxt.outlineSize = 0.2; // Usually the default text+ color on DaVinci Resolve
+		}
+
 		uiBuf.removeElement(timeBarBG);
 		timeBarBG = null;
 
@@ -356,16 +375,6 @@ class HUD {
 			uiBuf.removeElement(timeBarPart);
 		}
 		timeBarParts = null;
-
-		// reset scoretxt values
-		if (scoreTxt != null) {
-			scoreTxt.text = "";
-			scoreTxt.color = 0xFFFFFFFF;
-			scoreTxt.color.aF = 1.0;
-			scoreTxt.color.luminanceF = 1.0;
-			scoreTxt.outlineColor = 0x000000FF;
-			scoreTxt.outlineSize = 0.09; // Usually the default text+ color on DaVinci Resolve
-		}
 
 		display.removeProgram(watermarkTxt.program);
 		display.removeProgram(timeBarTxt.program);

@@ -54,14 +54,11 @@ class Text {
 
 			advanceX = setupCharSprite(spr, data, quarterScale, x, y, advanceX, color, outlineColor, outlineSize, alpha, parsedTextAtlasData);
 
-			if (height < spr.h) {
-				height = spr.h;
-			}
-
 			buffer.updateElement(spr);
 		}
 
 		width = advanceX;
+		height = parsedTextAtlasData[256][2] * quarterScale;
 
 		return str;
 	}
@@ -121,14 +118,11 @@ class Text {
 
 			advanceX = setupCharSpriteScaled(spr, data, quarterScale, x, y, advanceX, parsedTextAtlasData);
 
-			if (height < spr.h) {
-				height = spr.h;
-			}
-
 			buffer.updateElement(spr);
 		}
 
 		width = advanceX;
+		height = parsedTextAtlasData[256][2] * quarterScale;
 		_scale = scale;
 
 		return value;
@@ -188,7 +182,6 @@ class Text {
 	var outlineSize(default, set):Float = 0;
 
 	function set_outlineSize(value:Float):Float {
-		if (outlineSize <= 0) outlineSize = -1;
 		for (i in 0...text.length) {
 			var spr = buffer.getElement(i);
 			if (spr != null) {
@@ -277,32 +270,42 @@ class Text {
 
 			program.injectIntoFragmentShader('
 				vec4 outline(int textureID, float os, vec4 oc) {
-					// original code from https://stackoverflow.com/q/69481402/21013172, translated using claude.ai
-
-					// Since sprite is enlarged by formula w + (w * os * 2.0), 
-					// the original texture should map to the center portion
-					// Invert the enlargement: if new_size = old_size * (1 + os * 2), 
-					// then old_size / new_size = 1 / (1 + os * 2)
+					// True anti-aliased outline shader using multi-radius sampling
+					
 					float invScale = 1.0 + os * 2.0;
 					vec2 coord = (vTexCoord - 0.5) * invScale + 0.5;
-
-					float x = coord.x;
-					float y = coord.y;
 					
 					vec4 current = getTextureColor(textureID, coord);
-
-					if (current.a <= 0.7) {
-						float w = os;
-						float h = os;
+					
+					// Multi-ring sampling for smooth distance field approximation
+					float outlineAlpha = 0.0;
+					int angularSamples = 8;
+					int radialSamples = 3; // Multiple distance rings
+					
+					for (int r = 1; r <= radialSamples; r++) {
+						float radius = os * (float(r) / float(radialSamples));
+						// Sharper falloff: square the weight to reduce distant ring contribution
+						float ringWeight = 1.0 - (float(r - 1) / float(radialSamples));
+						ringWeight = ringWeight * ringWeight; // Exponential falloff
 						
-						if (getTextureColor(textureID, vec2(coord.x + w, coord.y)).a != 0.0
-						|| getTextureColor(textureID, vec2(coord.x - w, coord.y)).a != 0.0
-						|| getTextureColor(textureID, vec2(coord.x, coord.y + h)).a != 0.0
-						|| getTextureColor(textureID, vec2(coord.x, coord.y - h)).a != 0.0)
-							current = oc;
+						for (int i = 0; i < angularSamples; i++) {
+							float angle = float(i) * 3.14159265 * 2.0 / float(angularSamples);
+							vec2 offset = vec2(cos(angle), sin(angle)) * radius;
+							float alpha = getTextureColor(textureID, coord + offset).a;
+							outlineAlpha = max(outlineAlpha, alpha * ringWeight);
+						}
 					}
 					
-					return current;
+					// Smooth falloff based on distance from text edge
+					outlineAlpha = smoothstep(0.0, 0.7, outlineAlpha);
+					
+					// Only apply outline where original is transparent
+					outlineAlpha *= (1.0 - current.a);
+					
+					// Composite: outline behind text
+					vec4 result = mix(vec4(oc.rgb, outlineAlpha), current, current.a);
+					
+					return result;
 				}
 			');
 

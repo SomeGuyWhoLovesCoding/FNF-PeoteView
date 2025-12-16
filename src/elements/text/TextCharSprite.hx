@@ -5,8 +5,8 @@ package elements.text;
 **/
 @:publicFields
 class TextCharSprite implements Element {
-	@posX @formula("x - (w * (os + os))") var x:Float;
-	@posY @formula("y - (h * (os + os))")  var y:Float;
+	@posX @formula("x - (w * os * 0.5)") var x:Float;
+	@posY @formula("y - (h * os * 0.5)")  var y:Float;
 	@sizeX @formula("w + (w * (os + os))") var w:Float;
 	@sizeY @formula("h + (h * (os + os))") var h:Float;
 

@@ -187,7 +187,8 @@ class Tools {
 			parsedData[number][6] = element.xadvance;
 		}
 		parsedData[256][0] = padding[0];
-		parsedData[256][1] = padding[0];
+		parsedData[256][1] = padding[1];
+		parsedData[256][2] = data.common.totalHeight;
 
 		TextureSystem.createTexture(name + "Font", fontPNGPath, false, true);
 
