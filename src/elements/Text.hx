@@ -52,19 +52,7 @@ class Text {
 				? buffer.getElement(i)
 				: buffer.addElement(new TextCharSprite());
 
-			spr.clipX = data[0];
-			spr.clipY = data[1];
-			spr.clipWidth = spr.clipSizeX = data[2];
-			spr.w = (spr.clipWidth * quarterScale);
-			spr.clipHeight = spr.clipSizeY = data[3];
-			spr.h = (spr.clipHeight * quarterScale);
-			spr.x = x + (data[4] * quarterScale) + advanceX;
-			spr.y = y + (data[5] * quarterScale);
-			spr.c = color;
-			spr.oc = outlineColor;
-			spr.os = outlineSize;
-			spr.alpha = alpha;  // Restore alpha to current value
-			advanceX += (data[6] * quarterScale);
+			advanceX = setupCharSprite(spr, data, quarterScale, x, y, advanceX, color, outlineColor, outlineSize, alpha, parsedTextAtlasData);
 
 			if (height < spr.h) {
 				height = spr.h;
@@ -131,15 +119,7 @@ class Text {
 
 			var spr = buffer.getElement(i);
 
-			spr.clipX = data[0];
-			spr.clipY = data[1];
-			spr.clipWidth = spr.clipSizeX = data[2];
-			spr.w = (spr.clipWidth * quarterScale);
-			spr.clipHeight = spr.clipSizeY = data[3];
-			spr.h = (spr.clipHeight * quarterScale);
-			spr.x = x + (data[4] * quarterScale) + advanceX;
-			spr.y = y + (data[5] * quarterScale);
-			advanceX += (data[6] * quarterScale);
+			advanceX = setupCharSpriteScaled(spr, data, quarterScale, x, y, advanceX, parsedTextAtlasData);
 
 			if (height < spr.h) {
 				height = spr.h;
@@ -247,6 +227,38 @@ class Text {
 	}
 
 	var parsedTextAtlasData:Array<TextCharData>;
+
+	function setupCharSprite(spr:TextCharSprite, data:TextCharData, quarterScale:Float, x:Float, y:Float, advanceX:Float, color:Color, outlineColor:Color, outlineSize:Float, alpha:Float, atlasData:Array<TextCharData>):Float {
+		var padding = atlasData[256];
+		spr.clipX = data[0] - (padding[0] >> 1);
+		spr.clipY = data[1] - (padding[1] >> 1);
+		spr.clipWidth = spr.clipSizeX = data[2] + padding[0];
+		spr.w = (spr.clipWidth * quarterScale);
+		spr.clipHeight = spr.clipSizeY = data[3] + padding[0];
+		spr.h = (spr.clipHeight * quarterScale);
+		spr.x = x + (data[4] * quarterScale) + advanceX;
+		spr.y = y + (data[5] * quarterScale);
+		spr.c = color;
+		spr.oc = outlineColor;
+		spr.os = outlineSize;
+		spr.alpha = alpha;
+		advanceX += (data[6] * quarterScale);
+		return advanceX;
+	}
+
+	function setupCharSpriteScaled(spr:TextCharSprite, data:TextCharData, quarterScale:Float, x:Float, y:Float, advanceX:Float, atlasData:Array<TextCharData>):Float {
+		var padding = atlasData[256];
+		spr.clipX = data[0] - (padding[0] >> 1);
+		spr.clipY = data[1] - (padding[1] >> 1);
+		spr.clipWidth = spr.clipSizeX = data[2] + padding[0];
+		spr.w = (spr.clipWidth * quarterScale);
+		spr.clipHeight = spr.clipSizeY = data[3] + padding[0];
+		spr.h = (spr.clipHeight * quarterScale);
+		spr.x = x + (data[4] * quarterScale) + advanceX;
+		spr.y = y + (data[5] * quarterScale);
+		advanceX += (data[6] * quarterScale);
+		return advanceX;
+	}
 
 	function new(key:String, x:Float, y:Float, display:Display, text:String = "Sample text", font:String = "vcr") {
 		_key = key;

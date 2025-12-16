@@ -1,7 +1,7 @@
 #!/bin/sh
 
 "assets/fonts/fontbm" --font-file "assets/fonts/ttfs/$1.ttf" \
-       --font-size 60 \
+       --font-size 80 \
        --data-format json \
        --padding-up 3 \
        --padding-right 3 \

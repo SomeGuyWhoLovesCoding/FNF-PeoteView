@@ -172,20 +172,22 @@ class Tools {
 		var contents = File.getContent(fontPath);
 		var data = haxe.Json.parse(contents);
 
-		var parsedData:Array<elements.text.TextCharData> = [for (i in 0...256) [0, 0, 0, 0, 0, 0, 0]];
+		var parsedData:Array<elements.text.TextCharData> = [for (i in 0...257) [0, 0, 0, 0, 0, 0, 0]];
 		var padding:Array<Int> = data.info.padding;
 		var chars = data.chars;
 		for (i in 0...chars.length) {
 			var element = chars[i];
 			var number:Int = element.id;
-			parsedData[number][0] = element.x + padding[0];
-			parsedData[number][1] = element.y + padding[1];
+			parsedData[number][0] = element.x;
+			parsedData[number][1] = element.y;
 			parsedData[number][2] = element.width;
 			parsedData[number][3] = element.height;
 			parsedData[number][4] = element.xoffset;
 			parsedData[number][5] = element.yoffset;
 			parsedData[number][6] = element.xadvance;
 		}
+		parsedData[256][0] = padding[0];
+		parsedData[256][1] = padding[0];
 
 		TextureSystem.createTexture(name + "Font", fontPNGPath, false, true);
 
