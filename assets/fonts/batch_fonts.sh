@@ -1,6 +1,6 @@
 #!/bin/sh
 
-fontbm --font-file "ttfs/$1.ttf" \
+"assets/fonts/fontbm" --font-file "assets/fonts/ttfs/$1.ttf" \
        --font-size 60 \
        --data-format json \
        --padding-up 3 \
@@ -8,4 +8,4 @@ fontbm --font-file "ttfs/$1.ttf" \
        --padding-down 3 \
        --padding-left 3 \
        --extra-info \
-       --output "$1/$1"
+       --output "assets/fonts/$1/$1"

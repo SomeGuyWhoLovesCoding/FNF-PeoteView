@@ -157,19 +157,13 @@ class Tools {
 			// - V  this is required. V  - the batchfile (or bash if you're on linux) doesn't make any directories and only saves to whatever exists.
 			//Sys.println('CREATE GAME FONT PATH: $name');
 			//trace(fontPathSub);
+			var fontPathSys = 'ttfs/$name.ttf';
+			Sys.println('FONT PATH $fontPathSys');
 			FileSystem.createDirectory(path);
 			//var processfile:String = "assets/fonts/fontbm";
-			_process = new Process("assets/fonts/fontbm.exe", [
-				'--font-file', '"ttfs/$name.ttf"',
-				'--font-size', '60',
-				'--data-format', 'json',
-				'--padding-up', '3',
-				'--padding-right', '3',
-				'--padding-down', '3',
-				'--padding-left', '3',
-				'--extra-info',
-				'--output', '"$fontPathSub"'
-			], true);
+			Sys.command("assets\\fonts\\batch_fonts", [
+				'$name'
+			]);
 			//trace(process.exitCode(true));
 			//trace(_process.stdout.readAll().length);
 			//while (_process.exitCode(false) == null) Sys.sleep(0.001);
