@@ -54,11 +54,14 @@ class Text {
 
 			advanceX = setupCharSprite(spr, data, quarterScale, x, y, advanceX, color, outlineColor, outlineSize, alpha, parsedTextAtlasData);
 
+			if (height < spr.h + spr.y-data[1]) {
+				height = spr.h + spr.y-data[1];
+			}
+
 			buffer.updateElement(spr);
 		}
 
 		width = advanceX;
-		height = parsedTextAtlasData[256][2] * quarterScale;
 
 		return str;
 	}
@@ -117,6 +120,10 @@ class Text {
 			var spr = buffer.getElement(i);
 
 			advanceX = setupCharSpriteScaled(spr, data, quarterScale, x, y, advanceX, parsedTextAtlasData);
+
+			if (height < spr.h + spr.y-data[1]) {
+				height = spr.h + spr.y-data[1];
+			}
 
 			buffer.updateElement(spr);
 		}
