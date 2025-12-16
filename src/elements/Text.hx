@@ -270,41 +270,30 @@ class Text {
 
 			program.injectIntoFragmentShader('
 				vec4 outline(int textureID, float os, vec4 oc) {
-					// True anti-aliased outline shader using multi-radius sampling
-					
+					// Simple 8-directional outline like HaxeFlixel
+
 					float invScale = 1.0 + os * 2.0;
 					vec2 coord = (vTexCoord - 0.5) * invScale + 0.5;
-					
+
 					vec4 current = getTextureColor(textureID, coord);
-					
-					// Multi-ring sampling for smooth distance field approximation
+
+					// Sample 8 directions around the pixel
 					float outlineAlpha = 0.0;
-					int angularSamples = 8;
-					int radialSamples = 3; // Multiple distance rings
-					
-					for (int r = 1; r <= radialSamples; r++) {
-						float radius = os * (float(r) / float(radialSamples));
-						// Sharper falloff: square the weight to reduce distant ring contribution
-						float ringWeight = 1.0 - (float(r - 1) / float(radialSamples));
-						ringWeight = ringWeight * ringWeight; // Exponential falloff
-						
-						for (int i = 0; i < angularSamples; i++) {
-							float angle = float(i) * 3.14159265 * 2.0 / float(angularSamples);
-							vec2 offset = vec2(cos(angle), sin(angle)) * radius;
-							float alpha = getTextureColor(textureID, coord + offset).a;
-							outlineAlpha = max(outlineAlpha, alpha * ringWeight);
-						}
+					int samples = 64;
+
+					for (int i = 0; i < samples; i++) {
+						float angle = float(i) * 0.09817477;
+						vec2 offset = vec2(cos(angle), sin(angle)) * os;
+						float alpha = getTextureColor(textureID, coord + offset).a;
+						outlineAlpha = max(outlineAlpha, alpha);
 					}
-					
-					// Smooth falloff based on distance from text edge
-					outlineAlpha = smoothstep(0.0, 0.7, outlineAlpha);
-					
+
 					// Only apply outline where original is transparent
 					outlineAlpha *= (1.0 - current.a);
-					
+
 					// Composite: outline behind text
 					vec4 result = mix(vec4(oc.rgb, outlineAlpha), current, current.a);
-					
+
 					return result;
 				}
 			');
