@@ -138,9 +138,9 @@ class Tools {
 		return finalData;
 	}
 
-	private static var _fontsCached(default, null):Map<String, Array<Int>> = [];
+	private static var _fontsCached(default, null):Map<String, Array<elements.text.TextCharData>> = [];
 	private static var _process(default, null):Process;
-	static function parseFont(name:String):Array<Int> {
+	static function parseFont(name:String):Array<elements.text.TextCharData> {
 		//Sys.println('QUERY GAME FONT: $name');
 		if (_fontsCached.exists(name))
 			return _fontsCached[name];
@@ -158,7 +158,7 @@ class Tools {
 			//Sys.println('CREATE GAME FONT PATH: $name');
 			//trace(fontPathSub);
 			var fontPathSys = 'ttfs/$name.ttf';
-			//Sys.println('FONT PATH $fontPathSys');
+			Sys.println('FONT PATH $fontPathSys');
 			FileSystem.createDirectory(path);
 			//var processfile:String = "assets/fonts/fontbm";
 			Sys.command("assets\\fonts\\batch_fonts", [
@@ -172,19 +172,19 @@ class Tools {
 		var contents = File.getContent(fontPath);
 		var data = haxe.Json.parse(contents);
 
-		var parsedData:Array<Int> = [for (i in 0...256 << 3) 0];
+		var parsedData:Array<elements.text.TextCharData> = [for (i in 0...256) [0, 0, 0, 0, 0, 0, 0]];
 		var padding:Array<Int> = data.info.padding;
 		var chars = data.chars;
 		for (i in 0...chars.length) {
 			var element = chars[i];
-			var number:Int = element.id << 3;
-			parsedData[number + 0] = element.x + padding[0];
-			parsedData[number + 1] = element.y + padding[1];
-			parsedData[number + 2] = element.width;
-			parsedData[number + 3] = element.height;
-			parsedData[number + 4] = element.xoffset;
-			parsedData[number + 5] = element.yoffset;
-			parsedData[number + 6] = element.xadvance;
+			var number:Int = element.id;
+			parsedData[number][0] = element.x + padding[0];
+			parsedData[number][1] = element.y + padding[1];
+			parsedData[number][2] = element.width;
+			parsedData[number][3] = element.height;
+			parsedData[number][4] = element.xoffset;
+			parsedData[number][5] = element.yoffset;
+			parsedData[number][6] = element.xadvance;
 		}
 
 		TextureSystem.createTexture(name + "Font", fontPNGPath, false, true);
