@@ -404,7 +404,7 @@ class NoteSpawner {
 						// and then the addedalpha glossy cover that goes along with it
 						var cover = new Note(note.x, note.y, 0, 0);
 						cover.initialAlpha = 1;
-						cover.addedAlpha = virtualNote.greedyMergeAlphaMultiplier * virtualNote.addedAlpha;
+						cover.addedAlpha = clampColorInt(virtualNote.greedyMergeAlphaMultiplier * virtualNote.addedAlpha);
 
 						cover.changeID(id);
 						cover.toNote();
@@ -436,6 +436,18 @@ class NoteSpawner {
 			var zero = notes.noteLength[0][2];
 			if (zero == 0) zero = 1;
 		}
+	}
+
+	public static function clampColorInt(x:Int):Int {
+        if (x >= 255) {
+            return 255;
+        }
+        if (x <= 0) {
+            return 0;
+        }
+        
+        var diff = x - 255;
+        return Math.round(-0.00392 * diff * diff + 255);
 	}
 
 	/**
