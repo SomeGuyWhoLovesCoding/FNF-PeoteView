@@ -404,7 +404,7 @@ class NoteSpawner {
 						// and then the addedalpha glossy cover that goes along with it
 						var cover = new Note(note.x, note.y, 0, 0);
 						cover.initialAlpha = 1;
-						cover.addedAlpha = clampColorInt(virtualNote.greedyMergeAlphaMultiplier * virtualNote.addedAlpha);
+						cover.addedAlpha = clampColorInt(Math.round(virtualNote.greedyMergeAlphaMultiplier * virtualNote.addedAlpha));
 
 						cover.changeID(id);
 						cover.toNote();
