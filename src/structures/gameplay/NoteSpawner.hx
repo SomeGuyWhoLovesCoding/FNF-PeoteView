@@ -348,7 +348,6 @@ class NoteSpawner {
 				if (length == 0) continue;
 				while (k < length) {
 					var increment = 1;
-					var granularity = 1;
 					var virtualNote:VirtualNote = index[k];
 					var greedyMerged:Bool = false;
 
@@ -391,20 +390,15 @@ class NoteSpawner {
 					var noteToHit = strumline.notesToHit[j];
 					strumline.notesToHit_sprites[j] = noteToHit == virtualNote.ref ? note : null;
 
-					//@:privateAccess trace('Regular note: x=${note.clipX}, y=${note.clipY}, w=${note.clipWidth}, h=${note.clipHeight}');
-
 					if (Note.enableGM && greedyMerged && virtualNote.greedyMergeAlphaMultiplier != 0 && virtualNote.greedyMergeType != 0) {
+						var formerlyGranularity = downScroll ? 2 : 1;
 						var h = note.h;
-						note.toggleGMVariant(granularity, false);
-						//@:privateAccess trace('GM variant: x=${note.clipX}, y=${note.clipY}, w=${note.clipWidth}, h=${note.clipHeight}');
+						note.toggleGMVariant(formerlyGranularity, false);
 						note.initialAlpha = Note.defaultAlpha;
 						note.addedAlpha = 0;
-						
+
 						if (downScroll) {
-							// Move to where the last note would be, then adjust for sprite height
-							//note.y -= virtualNote.greedyMergeType;  // Move to last note
-							note.y -= note.h - h;  // Adjust so bottom of sprite is there
-							//note.y -= h;  // Subtract original note height to align properly
+							note.y -= note.h - h;
 						}
 
 						// and then the addedalpha glossy cover that goes along with it
@@ -414,7 +408,7 @@ class NoteSpawner {
 
 						cover.changeID(id);
 						cover.toNote();
-						cover.toggleGMVariant(granularity, true);
+						cover.toggleGMVariant(formerlyGranularity, true);
 						greedyMergedNoteList.push(cover);
 
 						// you add the cover first so this goes last
@@ -478,7 +472,6 @@ class NoteSpawner {
 		}
 	}
 
-	// TODO; ENGINEER THIS SHIT TO HANDLE MIXED 1-2PX DISTANCES IN A 64PX VERTICAL BOUNDARY
 	/**
 	 * Greedily merges nearly identical (already-overlapped) notes to optimize rendering.
 	 * This checks up to `count` notes ahead to see if they can be merged.
