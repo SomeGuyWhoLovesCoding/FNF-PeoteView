@@ -356,12 +356,6 @@ class NoteSpawner {
 						continue;
 					}
 
-					// We're cool now I think?
-					if (virtualNote.y < -200 || virtualNote.y > Main.current.peoteView.height + 10) {
-						k += increment;
-						continue;
-					}
-
 					// but wait! hold on! do some note rendering optims just in case of a spamtrack real quick
 
 					//// greedy note merging (64x) ////
