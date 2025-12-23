@@ -27,6 +27,38 @@
 #include <vector>
 #include <stdint.h>
 #include <string.h>
+#include <algorithm>
+#include <array>
+#include <atomic>
+
+struct TrieNode {
+    std::array<TrieNode*, 26> children = {nullptr};
+    bool isEnd = false;
+    
+    static TrieNode* createHeadphoneTrie() {
+        static TrieNode root;
+        static bool initialized = false;
+        
+        if (!initialized) {
+            const char* keywords[] = {"headphone", "headset", "earphone", "earbud", "airpod", "bluetooth"};
+            
+            for (const char* keyword : keywords) {
+                TrieNode* node = &root;
+                for (const char* c = keyword; *c; ++c) {
+                    int index = *c - 'a';
+                    if (!node->children[index]) {
+                        node->children[index] = new TrieNode();
+                    }
+                    node = node->children[index];
+                }
+                node->isEnd = true;
+            }
+            initialized = true;
+        }
+        
+        return &root;
+    }
+};
 
 /*
 For simplicity, this example requires the device to use floating point samples.
@@ -66,14 +98,113 @@ ma_device_config  deviceConfig;
 ma_device         device;
 ma_bool32 deviceExists = MA_FALSE;
 ma_uint32         iDecoder;
+ma_context gDevicesContext;
+ma_bool32 gDevicesContextInitialized = MA_FALSE;
+
+// -------------------- HEADPHONE DETECTION --------------------
+bool isHeadphoneDevice(const ma_device_info& deviceInfo) {
+    const char* name = deviceInfo.name;
+    if (!name) return false;
+    
+    TrieNode* trie = TrieNode::createHeadphoneTrie();
+    
+    for (const char* p = name; *p; ++p) {
+        TrieNode* node = trie;
+        
+        // Try to match from current position
+        for (const char* q = p; *q; ++q) {
+            char c = (char)std::tolower((unsigned char)*q);
+            if (c < 'a' || c > 'z') break;
+            
+            int index = c - 'a';
+            if (!node->children[index]) break;
+            
+            node = node->children[index];
+            if (node->isEnd) {
+                return true;
+            }
+        }
+    }
+    
+    return false;
+}
+
+// Use atomic for thread-safe caching
+static std::atomic<int> headphoneCacheState{0}; // 0 = not checked, 1 = checking, 2 = headphones, 3 = not headphones
+
+bool checkIfUsingHeadphones() {
+    if (deviceExists == MA_FALSE) {
+        return false;
+    }
+    
+    int state = headphoneCacheState.load(std::memory_order_acquire);
+    
+    // Return cached result if available
+    if (state >= 2) {
+        return state == 2;
+    }
+    
+    // Try to acquire the check lock
+    int expected = 0;
+    if (!headphoneCacheState.compare_exchange_strong(expected, 1, 
+                                                     std::memory_order_acq_rel)) {
+        // Another thread is checking, wait for result
+        while (headphoneCacheState.load(std::memory_order_acquire) == 1) {
+            // Brief spin wait or yield
+            #ifdef _WIN32
+            YieldProcessor();
+            #else
+            __builtin_ia32_pause();
+            #endif
+        }
+        state = headphoneCacheState.load(std::memory_order_acquire);
+        return state == 2;
+    }
+    
+    // We're the thread doing the check
+    bool isHeadphones = false;
+    
+    // Use try-catch for safety
+    try {
+        if (!gDevicesContextInitialized) {
+            ma_result result = ma_context_init(NULL, 0, NULL, &gDevicesContext);
+            if (result == MA_SUCCESS) {
+                gDevicesContextInitialized = MA_TRUE;
+            }
+        }
+        
+        if (gDevicesContextInitialized) {
+            ma_device_info defaultDeviceInfo;
+            ma_result result = ma_context_get_device_info(&gDevicesContext, 
+                                                         ma_device_type_playback, 
+                                                         NULL, 
+                                                         &defaultDeviceInfo);
+            if (result == MA_SUCCESS) {
+                isHeadphones = isHeadphoneDevice(defaultDeviceInfo);
+            }
+        }
+    } catch (...) {
+        // If anything fails, assume not headphones
+        isHeadphones = false;
+    }
+    
+    // Store result
+    headphoneCacheState.store(isHeadphones ? 2 : 3, std::memory_order_release);
+    
+    return isHeadphones;
+}
 
 // -------------------- LATENCY MEASUREMENT --------------------
 HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
-	int osMs = 93;
+	int osMs = 95;
 
 	if (deviceExists == MA_TRUE) {
 		osMs += (int)(device.playback.internalPeriodSizeInFrames / (SAMPLE_RATE * 0.001));
-		//printf("%i\n", (int)(device.playback.internalPeriodSizeInFrames / (SAMPLE_RATE * 0.001)));
+		
+		// Add 100ms extra latency if using headphones
+		if (checkIfUsingHeadphones()) {
+			osMs += 32;
+		}
 	}
 
 	return osMs;
