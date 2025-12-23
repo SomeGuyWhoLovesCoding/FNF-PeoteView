@@ -51,12 +51,7 @@ class NoteSpawner {
 
 		var i:Int64 = 0;
 		while (i < maxLoad) {
-			// Initialize the note once
-			var n = File.getNote(startIdx + i);
-			n.flag = false;
-			n.missed = false;
-			n.held = false;
-			newNotes.push(n);
+			newNotes.push(File.getNote(startIdx + i));
 			i++;
 		}
 
@@ -215,13 +210,9 @@ class NoteSpawner {
 			++i;
 		}
 		timeSpentOnIt = haxe.Timer.stamp() - time;
-
-		Sys.println('top $top bottom $bottom');
 	}
 
 	function cullTop(pos:Int64) {
-		
-		trace('topunculled:$top');
 		var len = File.getLength();
 		while (top != len) {
 			// Only fetch once
@@ -236,16 +227,12 @@ class NoteSpawner {
 
 			++top;
 		}
-		
-		trace('topculled:$top');
 
 		// Cache the top note once
 		if (top < len) curTopNote = getCachedNote(top);
 	}
 
 	function cullBottom(pos:Int64) {
-		
-		trace('Bottomunculled:$bottom');
 		var len = File.getLength();
 		while (bottom != len) {
 			var n = getCachedNote(bottom);
@@ -261,18 +248,11 @@ class NoteSpawner {
 
 			++bottom;
 		}
-		
-		trace('Bottomculled:$bottom');
 
 		// Cache the bottom note once
 		if (bottom < len) curBottomNote = getCachedNote(bottom);
 	}
 
-	/**
-	 * Resets the note spawner to a specific song position.
-	 * Handles both forward and backward seeking by resetting note states.
-	 * @param songPosition The song position to seek to
-	 */
 	function resetNotes(songPosition:Float) {
 		var pf = parent.parent;
 		if (pf.disposed || pf.died) return;
@@ -281,8 +261,8 @@ class NoteSpawner {
 		if (len <= 0) return;
 
 		var songPos = MetaNote.floatToMetaNotePosition(songPosition);
-		var minPos:Int64 = songPos - despawnDist;
-		var maxPos:Int64 = songPos + spawnDist;
+		var minPos:Int64 = songPos - spawnDist;
+		var maxPos:Int64 = songPos;
 		if (minPos < 0) minPos = 0;
 
 		function lowerBound(target:Int64):Int64 {
@@ -311,39 +291,20 @@ class NoteSpawner {
 			return lo;
 		}
 
-		var newBottom = lowerBound(minPos);
-		var newTop = upperBound(maxPos);
+		bottom = lowerBound(minPos);
+		top = upperBound(maxPos) - 1;
 
-		if (newBottom < 0) newBottom = 0;
-		else if (newBottom >= len) newBottom = len;
+		if (bottom < 0) bottom = 0;
+		else if (bottom >= len) bottom = len - 1;
 
-		if (newTop < 0) newTop = 0;
-		else if (newTop > len) newTop = len;
-		
-		// Load cache covering the new range
-		var cacheLoadSize = newTop - newBottom;
-		if (cacheLoadSize > cacheSize) cacheLoadSize = cacheSize;
-		loadCache(newBottom, cacheLoadSize);
-		
-		// Reset all notes in the range from newBottom to newTop
-		// This ensures notes that were previously hit/missed/held are reset
-		var i:Int64 = newBottom;
-		while (i < newTop) {
-			var n = getCachedNote(i);
-			if (n != -1) {
-				n.flag = false;
-				n.missed = false;
-				n.held = false;
-				setCachedNote(i, n);
-			}
-			++i;
-		}
-		
-		_lastbottom = bottom = newBottom;
-		_lasttop = top = newTop;
+		if (top < 0) top = 0;
+		else if (top >= len) top = len - 1;
 
-		if (bottom < len) curBottomNote = getCachedNote(bottom);
-		if (top < len) curTopNote = getCachedNote(top);
+		curBottomNote = getCachedNote(bottom);
+		curTopNote = getCachedNote(top);
+
+		// Slide cache to cover current bottom/top
+		loadCache(bottom, cacheSize);
 
 		parent.resetStrumlines();
 	}
