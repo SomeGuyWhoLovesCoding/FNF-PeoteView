@@ -161,7 +161,7 @@ class Tools {
 			Sys.println('FONT PATH $fontPathSys');
 			FileSystem.createDirectory(path);
 			//var processfile:String = "assets/fonts/fontbm";
-			Sys.command("assets\\fonts\\batch_fonts" #if linux + ".sh" #end, [
+			Sys.command("assets/fonts/batch_fonts" #if linux + ".sh" #end, [
 				'$name'
 			]);
 			//trace(process.exitCode(true));
