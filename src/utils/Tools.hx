@@ -160,8 +160,8 @@ class Tools {
 			var fontPathSys = 'ttfs/$name.ttf';
 			Sys.println('FONT PATH $fontPathSys');
 			FileSystem.createDirectory(path);
-			//var processfile:String = "assets/fonts/fontbm";
-			Sys.command("assets/fonts/fontbm", [
+			Sys.command(#if linux "bash" #else "assets/fonts/fontbm" #end, [
+				#if linux "assets/fonts/fontbm", #end
 				'--font-file', 'assets/fonts/ttfs/$name.ttf',
 				'--font-size', '80',
 				'--data-format', 'json',
@@ -172,9 +172,6 @@ class Tools {
 				'--extra-info',
 				'--output', 'assets/fonts/$name/$name'
 			]);
-			//trace(process.exitCode(true));
-			//trace(_process.stdout.readAll().length);
-			//while (_process.exitCode(false) == null) Sys.sleep(0.001);
 		}
 
 		var contents = File.getContent(fontPath);
