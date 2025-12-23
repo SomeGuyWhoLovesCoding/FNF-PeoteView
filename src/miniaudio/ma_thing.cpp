@@ -19,8 +19,6 @@
 #include <vector>
 #include <stdint.h>
 #include <string.h>
-#include <string>
-#include <algorithm>
 
 #define SAMPLE_FORMAT   ma_format_f32
 #define CHANNEL_COUNT   2
@@ -51,72 +49,14 @@ ma_device_config deviceConfig;
 ma_device device;
 ma_bool32 deviceExists = MA_FALSE;
 ma_uint32 iDecoder;
-ma_context gDevicesContext;
-ma_bool32 gDevicesContextInitialized = MA_FALSE;
-
-// -------------------- HEADPHONE DETECTION --------------------
-bool isHeadphoneDevice(const ma_device_info& deviceInfo) {
-	std::string name = deviceInfo.name;
-	
-	// Convert to lowercase for case-insensitive comparison
-	std::transform(name.begin(), name.end(), name.begin(), ::tolower);
-	
-	// Common keywords that indicate headphones
-	const char* headphoneKeywords[] = {
-		"headphone",
-		"headset",
-		"earphone",
-		"earbud",
-		"airpod",
-		"bluetooth headset"
-	};
-	
-	for (const char* keyword : headphoneKeywords) {
-		if (name.find(keyword) != std::string::npos) {
-			return true;
-		}
-	}
-	
-	return false;
-}
-
-bool checkIfUsingHeadphones() {
-	if (deviceExists == MA_FALSE) {
-		return false;
-	}
-	
-	// Initialize context if not already done
-	if (!gDevicesContextInitialized) {
-		ma_result result = ma_context_init(NULL, 0, NULL, &gDevicesContext);
-		if (result != MA_SUCCESS) {
-			return false;
-		}
-		gDevicesContextInitialized = MA_TRUE;
-	}
-	
-	// Check the default playback device
-	ma_device_info defaultDeviceInfo;
-	ma_result result = ma_context_get_device_info(&gDevicesContext, ma_device_type_playback, NULL, &defaultDeviceInfo);
-	
-	bool isHeadphones = false;
-	if (result == MA_SUCCESS) {
-		isHeadphones = isHeadphoneDevice(defaultDeviceInfo);
-	}
-	
-	return isHeadphones;
-}
 
 // -------------------- LATENCY MEASUREMENT --------------------
 int detectLatency() {
-	int osMs = 95;
+	int osMs = 93;
 
 	if (deviceExists == MA_TRUE) {
 		osMs += (int)(device.playback.internalPeriodSizeInFrames / (SAMPLE_RATE * 0.001));
-		
-		// Add 100ms extra latency if using headphones
-		if (checkIfUsingHeadphones()) {
-			osMs += 50;
-		}
+		//printf("%i\n", (int)(device.playback.internalPeriodSizeInFrames / (SAMPLE_RATE * 0.001)));
 	}
 
 	return osMs;
@@ -391,11 +331,6 @@ void destroy() {
 		ma_mutex_uninit(&decoderMutex);
 		decoderMutexInitialized = MA_FALSE;
 	}
-	
-	if (gDevicesContextInitialized) {
-		ma_context_uninit(&gDevicesContext);
-		gDevicesContextInitialized = MA_FALSE;
-	}
 }
 
 void loadFiles(std::vector<const char*> argv)
@@ -468,10 +403,10 @@ void loadFiles(std::vector<const char*> argv)
 
 // pseudocode of what I'm doing
 double getGlobalVolume() {
-	return masterVolume;
+    return masterVolume;
 }
 
 double setGlobalVolume(double value) {
-	masterVolume = value;
-	return masterVolume;
+    masterVolume = value;
+    return masterVolume;
 }

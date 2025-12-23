@@ -161,8 +161,16 @@ class Tools {
 			Sys.println('FONT PATH $fontPathSys');
 			FileSystem.createDirectory(path);
 			//var processfile:String = "assets/fonts/fontbm";
-			Sys.command("assets/fonts/batch_fonts" #if linux + ".sh" #end, [
-				'$name'
+			Sys.command("assets/fonts/fontbm", [
+				'--font-file', 'assets/fonts/ttfs/$name.ttf',
+				'--font-size', '80',
+				'--data-format', 'json',
+				'--padding-up', '3',
+				'--padding-right', '3',
+				'--padding-down', '3',
+				'--padding-left', '3',
+				'--extra-info',
+				'--output', 'assets/fonts/$name/$name'
 			]);
 			//trace(process.exitCode(true));
 			//trace(_process.stdout.readAll().length);
