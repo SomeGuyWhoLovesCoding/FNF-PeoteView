@@ -33,7 +33,7 @@ import lime.ui.Window;
 	- `loadFiles()` – Initialize music from file paths
 	- `startMusic()` / `stopMusic()` – Control playback
 	- `destroyMusic()` – Clean up resources
-	- `updateSmoothMusicTime()` – Prevent timing drift
+	- `updateSmoothMusicTime()` – Simulate smooth audio time by subloop tick & prevent timing drift
 
 	---
 
@@ -255,7 +255,7 @@ class Mixer {
 				if (RenderingMode.enabled && playField.songPosition > length) {
 					Sys.println('Stopping song playback due to rendering mode.');
 					playField.onStopSong.dispatch(Chart.header);
-				} else if (playField.songStarted && isStopped() && !playField.songEnded) {
+				} else if (playField.songStarted && isStopped() && !playField.songEnded && !RenderingMode.enabled) {
 					Sys.println('Stopping song playback due to stop condition.');
 					playField.onStopSong.dispatch(Chart.header);
 				}

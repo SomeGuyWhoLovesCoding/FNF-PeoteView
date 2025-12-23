@@ -18,10 +18,6 @@ class PlayField implements State {
 
 	function new(path:String) {
 		Chart.load(Paths.asset(path));
-
-		if (RenderingMode.enabled) {
-			RenderingMode.initRender();
-		}
 	}
 
 	function init(roof:CustomDisplay, display:CustomDisplay, view:CustomDisplay) {
@@ -186,6 +182,10 @@ class PlayField implements State {
 		pauseScreen = new PauseScreen(Chart.header.difficulty);
 
 		scrollSpeed = Chart.header.speed;
+
+		if (RenderingMode.enabled) {
+			RenderingMode.initRender();
+		}
 	}
 
 	/**
