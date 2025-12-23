@@ -136,9 +136,9 @@ class NoteSystem {
 		for (i in 0...strumlines.length) {
 			var strumline = strumlines[i];
 			var botTimers = strumline.botTimers;
+			var canMess = !strumline.playable || RenderingMode.enabled || parent.botplay;
 			for (j in 0...botTimers.length) {
 				var rec = strumline.buffer[j];
-				var canMess = !strumline.playable;
 				if (parent.botplay) canMess = true;
 				if (canMess) {
 					if (!strumline.sustainsActive[j]) {

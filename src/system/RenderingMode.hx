@@ -10,7 +10,7 @@ class RenderingMode {
 	private static var ffmpegExists(default, null):Bool;
 
 	static var process:Process;
-	static var enabled:Bool = false;
+	static var enabled:Bool = true;
 	static var started:Bool = false;
 
 	static var songName:String;
