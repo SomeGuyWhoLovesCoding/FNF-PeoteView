@@ -203,7 +203,7 @@ HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
 		
 		// Add 100ms extra latency if using headphones
 		if (checkIfUsingHeadphones()) {
-			osMs += 32;
+			osMs += 24;
 		}
 	}
 

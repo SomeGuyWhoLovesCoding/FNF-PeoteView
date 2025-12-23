@@ -186,7 +186,7 @@ int detectLatency() {
 		
 		// Add 100ms extra latency if using headphones
 		if (checkIfUsingHeadphones()) {
-			osMs += 32;
+			osMs += 24;
 		}
 	}
 
