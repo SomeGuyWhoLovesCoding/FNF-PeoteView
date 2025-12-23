@@ -1,23 +1,7 @@
-﻿/*
-	* If it weren't for ChatGPT's and Estrol's help the time-stretching shit wouldn't have been possible.
-	* Honestly thank fucking god cuz I'm ready to put this all together nicely.
-
-	Oh and Estrol has his own fork of signalsmith-stretch if you want to go check it out: https://github.com/Estrol/signalsmith-stretch
-	(It was updated recently as of the time when developing the time stretching implementation for fun)
-
-	* Note: Fuck hxcpp's externing shit I don't wanna deal with it for any longer
-
-
-	* I will fucking kill whoever structured hl like this(not)
-	* Yannaris did
-*/
-
-#define HL_NAME(n) ma_thing_##n
+﻿#define HL_NAME(n) ma_thing_##n
 
 #include <hl.h>
-
 #include "include/ma_thing.h"
-
 #include "signalsmith-stretch/signalsmith-stretch.h"
 
 #define MINIAUDIO_IMPLEMENTATION
@@ -26,43 +10,76 @@
 #include <stdio.h>
 #include <vector>
 #include <stdint.h>
-#include <string.h>
+#include <string>
 #include <algorithm>
 #include <array>
 #include <atomic>
+#include <thread>
+#include <mutex>
+#include <chrono>
+#include <unordered_set>
 
-struct TrieNode {
-    std::array<TrieNode*, 26> children = {nullptr};
-    bool isEnd = false;
-    
-    static TrieNode* createHeadphoneTrie() {
-        static TrieNode root;
-        static bool initialized = false;
-        
-        if (!initialized) {
-            const char* keywords[] = {"headphone", "headset", "earphone", "earbud", "airpod", "bluetooth"};
-            
-            for (const char* keyword : keywords) {
-                TrieNode* node = &root;
-                for (const char* c = keyword; *c; ++c) {
-                    int index = *c - 'a';
-                    if (!node->children[index]) {
-                        node->children[index] = new TrieNode();
+#ifdef HX_WINDOWS
+#include <mmdeviceapi.h>
+#include <endpointvolume.h>
+#include <functiondiscoverykeys_devpkey.h>
+#include <locale>
+#include <codecvt>
+#pragma comment(lib, "ole32.lib")
+
+static std::string wstring_to_string(const std::wstring& wstr) {
+    if (wstr.empty()) return std::string();
+    int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(),
+                                          nullptr, 0, nullptr, nullptr);
+    std::string strTo(size_needed, 0);
+    WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(),
+                       &strTo[0], size_needed, nullptr, nullptr);
+    return strTo;
+}
+
+bool checkWindowsHeadphoneStatus() {
+    HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+    if (FAILED(hr)) return false;
+
+    bool isHeadphones = false;
+    IMMDeviceEnumerator* pEnumerator = nullptr;
+    IMMDevice* pDevice = nullptr;
+    IPropertyStore* pProps = nullptr;
+
+    hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL,
+                          __uuidof(IMMDeviceEnumerator), (void**)&pEnumerator);
+    if (SUCCEEDED(hr) && pEnumerator) {
+        if (SUCCEEDED(pEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &pDevice)) && pDevice) {
+            if (SUCCEEDED(pDevice->OpenPropertyStore(STGM_READ, &pProps)) && pProps) {
+                PROPVARIANT varName;
+                PropVariantInit(&varName);
+                const PROPERTYKEY* propertyKeys[] = {&PKEY_Device_DeviceDesc, &PKEY_Device_FriendlyName};
+
+                for (int i = 0; i < 2 && !isHeadphones; ++i) {
+                    if (SUCCEEDED(pProps->GetValue(*propertyKeys[i], &varName)) && varName.vt == VT_LPWSTR && varName.pwszVal) {
+                        std::string name = wstring_to_string(varName.pwszVal);
+                        std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+
+                        const char* keywords[] = {"headphone", "headset", "earphone", "earbud",
+                                                 "airpod", "bluetooth", "bt", "wireless", "ear piece"};
+                        for (const char* kw : keywords) {
+                            if (name.find(kw) != std::string::npos) { isHeadphones = true; break; }
+                        }
                     }
-                    node = node->children[index];
+                    PropVariantClear(&varName);
                 }
-                node->isEnd = true;
+                pProps->Release();
             }
-            initialized = true;
+            pDevice->Release();
         }
-        
-        return &root;
+        pEnumerator->Release();
     }
-};
+    CoUninitialize();
+    return isHeadphones;
+}
+#endif
 
-/*
-For simplicity, this example requires the device to use floating point samples.
-*/
+// -------------------- CONFIG --------------------
 #define SAMPLE_FORMAT   ma_format_f32
 #define CHANNEL_COUNT   2
 #define SAMPLE_RATE     44100
@@ -70,26 +87,15 @@ For simplicity, this example requires the device to use floating point samples.
 signalsmith::stretch::SignalsmithStretch* stretch = nullptr;
 
 ma_uint32   g_decoderCount;
-ma_decoder* g_pDecoders;
-ma_bool32*  g_pDecodersActive;
-ma_uint64*  g_pDecoderLengths;
+ma_decoder* g_pDecoders = nullptr;
+ma_bool32*  g_pDecodersActive = nullptr;
+ma_uint64*  g_pDecoderLengths = nullptr;
+float*      g_pDecodersVolume = nullptr;
 int         g_pLongestDecoderIndex;
-float*      g_pDecodersVolume;
 float       playbackRate = 1;
 double      masterVolume = 1;
 
-/*
-* 0 = UNDEFINED
-* 1 = PLAYING
-* 2 = STOPPED
-* 3 = FINISHED
-*/
-int MIXER_STATE = 3;
-
-/*
-* 0 = false
-* 1 = true
-*/
+int MIXER_STATE = 3; // 0=UNDEF, 1=PLAYING, 2=STOPPED, 3=FINISHED
 int exists = 0;
 
 ma_result result;
@@ -97,500 +103,381 @@ ma_decoder_config decoderConfig;
 ma_device_config  deviceConfig;
 ma_device         device;
 ma_bool32 deviceExists = MA_FALSE;
-ma_uint32         iDecoder;
+ma_uint32 iDecoder;
 ma_context gDevicesContext;
 ma_bool32 gDevicesContextInitialized = MA_FALSE;
 
+ma_mutex decoderMutex;
+ma_bool32 decoderMutexInitialized = MA_FALSE;
+
 // -------------------- HEADPHONE DETECTION --------------------
+static const std::unordered_set<std::string> headphoneKeywords = {
+    "headphone", "headset", "earphone", "earbud",
+    "airpod", "bluetooth", "bt", "wireless", "ear piece"
+};
+
+static inline std::string toLower(const std::string& s) {
+    std::string out = s;
+    std::transform(out.begin(), out.end(), out.begin(), ::tolower);
+    return out;
+}
+
 bool isHeadphoneDevice(const ma_device_info& deviceInfo) {
-    const char* name = deviceInfo.name;
-    if (!name) return false;
-    
-    TrieNode* trie = TrieNode::createHeadphoneTrie();
-    
-    for (const char* p = name; *p; ++p) {
-        TrieNode* node = trie;
-        
-        // Try to match from current position
-        for (const char* q = p; *q; ++q) {
-            char c = (char)std::tolower((unsigned char)*q);
-            if (c < 'a' || c > 'z') break;
-            
-            int index = c - 'a';
-            if (!node->children[index]) break;
-            
-            node = node->children[index];
-            if (node->isEnd) {
-                return true;
-            }
-        }
-    }
-    
+    if (!deviceInfo.name) return false;
+    std::string nameLower = toLower(deviceInfo.name);
+    for (const auto& kw : headphoneKeywords)
+        if (nameLower.find(kw) != std::string::npos) return true;
     return false;
 }
 
-// Use atomic for thread-safe caching
-static std::atomic<int> headphoneCacheState{0}; // 0 = not checked, 1 = checking, 2 = headphones, 3 = not headphones
+static std::string currentDeviceName;
+static std::mutex deviceInfoMutex;
+static std::atomic<int> deviceChangeCounter{0};
+
+static void updateCurrentDeviceInfo() {
+    std::lock_guard<std::mutex> lock(deviceInfoMutex);
+    if (deviceExists) {
+        currentDeviceName = device.playback.name[0] != '\0' ? device.playback.name : "Unknown Device";
+    }
+}
 
 bool checkIfUsingHeadphones() {
-    if (deviceExists == MA_FALSE) {
-        return false;
-    }
-    
-    int state = headphoneCacheState.load(std::memory_order_acquire);
-    
-    // Return cached result if available
-    if (state >= 2) {
-        return state == 2;
-    }
-    
-    // Try to acquire the check lock
-    int expected = 0;
-    if (!headphoneCacheState.compare_exchange_strong(expected, 1, 
-                                                     std::memory_order_acq_rel)) {
-        // Another thread is checking, wait for result
-        while (headphoneCacheState.load(std::memory_order_acquire) == 1) {
-            // Brief spin wait or yield
-            #ifdef _WIN32
-            YieldProcessor();
-            #else
-            __builtin_ia32_pause();
-            #endif
+    if (!deviceExists) return false;
+
+    static auto lastCheckTime = std::chrono::steady_clock::now();
+    static bool cachedResult = false;
+
+    auto now = std::chrono::steady_clock::now();
+    if (deviceChangeCounter.load() != 0 || now - lastCheckTime > std::chrono::seconds(2)) {
+        lastCheckTime = now;
+        updateCurrentDeviceInfo();
+
+        bool result = false;
+        {
+            std::lock_guard<std::mutex> lock(deviceInfoMutex);
+            std::string nameLower = toLower(currentDeviceName);
+            for (const auto& kw : headphoneKeywords)
+                if (nameLower.find(kw) != std::string::npos) { result = true; break; }
         }
-        state = headphoneCacheState.load(std::memory_order_acquire);
-        return state == 2;
+
+#ifdef HX_WINDOWS
+        if (!result) result = checkWindowsHeadphoneStatus();
+#endif
+        cachedResult = result;
     }
-    
-    // We're the thread doing the check
-    bool isHeadphones = false;
-    
-    // Use try-catch for safety
-    try {
-        if (!gDevicesContextInitialized) {
-            ma_result result = ma_context_init(NULL, 0, NULL, &gDevicesContext);
-            if (result == MA_SUCCESS) {
-                gDevicesContextInitialized = MA_TRUE;
-            }
-        }
-        
-        if (gDevicesContextInitialized) {
-            ma_device_info defaultDeviceInfo;
-            ma_result result = ma_context_get_device_info(&gDevicesContext, 
-                                                         ma_device_type_playback, 
-                                                         NULL, 
-                                                         &defaultDeviceInfo);
-            if (result == MA_SUCCESS) {
-                isHeadphones = isHeadphoneDevice(defaultDeviceInfo);
-            }
-        }
-    } catch (...) {
-        // If anything fails, assume not headphones
-        isHeadphones = false;
-    }
-    
-    // Store result
-    headphoneCacheState.store(isHeadphones ? 2 : 3, std::memory_order_release);
-    
-    return isHeadphones;
+
+    return cachedResult;
 }
 
-// -------------------- LATENCY MEASUREMENT --------------------
+// -------------------- LATENCY --------------------
 HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
-	int osMs = 95;
-
-	if (deviceExists == MA_TRUE) {
-		osMs += (int)(device.playback.internalPeriodSizeInFrames / (SAMPLE_RATE * 0.001));
-		
-		// Add 100ms extra latency if using headphones
-		if (checkIfUsingHeadphones()) {
-			osMs += 24;
-		}
-	}
-
-	return osMs;
+    int osMs = 95;
+    if (deviceExists) {
+        osMs += static_cast<int>(device.playback.internalPeriodSizeInFrames / (SAMPLE_RATE * 0.001));
+        if (checkIfUsingHeadphones()) osMs += 20;
+    }
+    return osMs;
 }
 
-/*
-* IMPORTANT!
-* When decoding multiple formats concurrently, guard decoder ops with a mutex.
-*/
-ma_mutex  decoderMutex;
-ma_bool32 decoderMutexInitialized = MA_FALSE;
-
+// -------------------- MUTEX --------------------
 static inline void ensure_mutex() {
-	if (!decoderMutexInitialized) {
-		ma_mutex_init(&decoderMutex);
-		decoderMutexInitialized = MA_TRUE;
-	}
+    if (!decoderMutexInitialized) {
+        ma_mutex_init(&decoderMutex);
+        decoderMutexInitialized = MA_TRUE;
+    }
 }
 
-static inline void freeThingies() {
-	free(g_pDecoders);
-	free(g_pDecodersActive);
-	free(g_pDecoderLengths);
-	free(g_pDecodersVolume);
+// -------------------- DECODER HELPERS --------------------
+ma_uint32 read_pcm_frames_f32(ma_uint32 index, float* pBuffer, ma_uint32 frameCount) {
+    ma_decoder* pDecoder = &g_pDecoders[index];
+    constexpr ma_uint32 tempCapInFrames = 4096 / CHANNEL_COUNT;
+    float temp[4096] = {};
+    ma_uint32 totalFramesRead = 0;
+
+    while (totalFramesRead < frameCount) {
+        ma_uint32 framesToRead = std::min<ma_uint32>(frameCount - totalFramesRead, tempCapInFrames);
+        ma_uint64 framesReadThisIteration = 0;
+        if (ma_decoder_read_pcm_frames(pDecoder, temp, framesToRead, &framesReadThisIteration) != MA_SUCCESS || framesReadThisIteration == 0)
+            break;
+
+        float volume = g_pDecodersVolume[index] * static_cast<float>(masterVolume);
+        for (ma_uint64 i = 0; i < framesReadThisIteration * CHANNEL_COUNT; ++i)
+            pBuffer[totalFramesRead * CHANNEL_COUNT + i] += temp[i] * volume;
+
+        totalFramesRead += static_cast<ma_uint32>(framesReadThisIteration);
+        if (framesReadThisIteration < framesToRead) break;
+    }
+    return totalFramesRead;
 }
 
 static inline bool any_active() {
-	for (ma_uint32 i = 0; i < g_decoderCount; ++i) {
-		if (g_pDecodersActive[i]) return true;
-	}
-	return false;
+    for (ma_uint32 i = 0; i < g_decoderCount; ++i)
+        if (g_pDecodersActive[i]) return true;
+    return false;
 }
 
-static ma_uint32 read_pcm_frames_f32(ma_uint32 index, float* pBuffer, ma_uint32 frameCount)
-{
-	ma_decoder* pDecoder = &g_pDecoders[index];
-	float temp[4096];
-	ma_uint32 tempCapInFrames = 4096 / CHANNEL_COUNT;
-	ma_uint32 totalFramesRead = 0;
-	memset(temp, 0, sizeof(temp));
+// -------------------- AUDIO CALLBACK --------------------
+void data_callback(ma_device* pDevice, void* pOutput, const void* /*pInput*/, ma_uint32 frameCount) {
+    float* out = reinterpret_cast<float*>(pOutput);
+    MA_ASSERT(pDevice->playback.format == SAMPLE_FORMAT);
 
-	while (totalFramesRead < frameCount) {
-		ma_uint64 framesReadThisIteration = 0;
-		ma_uint32 totalFramesRemaining   = frameCount - totalFramesRead;
-		ma_uint32 framesToReadThisIter   = (totalFramesRemaining < tempCapInFrames) ? totalFramesRemaining : tempCapInFrames;
+    if (!any_active()) { std::fill(out, out + frameCount * CHANNEL_COUNT, 0.0f); MIXER_STATE = 3; return; }
 
-		ma_result r = ma_decoder_read_pcm_frames(pDecoder, temp, framesToReadThisIter, &framesReadThisIteration);
-		if (r != MA_SUCCESS || framesReadThisIteration == 0) break;
+    if (playbackRate == 1.0f) {
+        std::fill(out, out + frameCount * CHANNEL_COUNT, 0.0f);
+        for (ma_uint32 i = 0; i < g_decoderCount; ++i) {
+            if (!g_pDecodersActive[i]) continue;
+            ensure_mutex();
+            ma_mutex_lock(&decoderMutex);
+            ma_uint32 framesRead = read_pcm_frames_f32(i, out, frameCount);
+            ma_mutex_unlock(&decoderMutex);
+            if (framesRead == 0) g_pDecodersActive[i] = MA_FALSE;
+        }
+    } else {
+        static thread_local std::vector<float> inputMix(4096 * CHANNEL_COUNT, 0.0f);
+        static thread_local std::vector<float> stretchedOutput(4096 * CHANNEL_COUNT, 0.0f);
 
-		// Mix into destination with gain
-		const ma_uint64 samples = framesReadThisIteration * CHANNEL_COUNT;
-		for (ma_uint64 i = 0; i < samples; ++i) {
-			pBuffer[totalFramesRead * CHANNEL_COUNT + i] += (temp[i] * g_pDecodersVolume[index]) * masterVolume;
-		}
+        ma_uint32 maxFramesToRead = std::min<ma_uint32>(static_cast<ma_uint32>(frameCount * playbackRate), 4096u);
+        std::fill(inputMix.begin(), inputMix.begin() + maxFramesToRead * CHANNEL_COUNT, 0.0f);
 
-		totalFramesRead += (ma_uint32)framesReadThisIteration;
+        for (ma_uint32 i = 0; i < g_decoderCount; ++i) {
+            if (!g_pDecodersActive[i]) continue;
+            ensure_mutex();
+            ma_mutex_lock(&decoderMutex);
+            ma_uint32 framesRead = read_pcm_frames_f32(i, inputMix.data(), maxFramesToRead);
+            ma_mutex_unlock(&decoderMutex);
+            if (framesRead == 0) g_pDecodersActive[i] = MA_FALSE;
+        }
 
-		if (framesReadThisIteration < framesToReadThisIter) break; // EOF
-	}
+        if (any_active()) {
+            if (!stretch) { stretch = new signalsmith::stretch::SignalsmithStretch(); stretch->presetCheaper(CHANNEL_COUNT, SAMPLE_RATE); }
+            stretch->process(inputMix.data(), maxFramesToRead, stretchedOutput.data(), frameCount);
+            std::memcpy(out, stretchedOutput.data(), frameCount * CHANNEL_COUNT * sizeof(float));
+        } else std::fill(out, out + frameCount * CHANNEL_COUNT, 0.0f);
+    }
 
-	return totalFramesRead;
+    MIXER_STATE = any_active() ? 1 : 3;
 }
 
-static void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount)
-{
-	MIXER_STATE = 1;
-	float* pOutputF32 = (float*)pOutput;
-
-	MA_ASSERT(pDevice->playback.format == SAMPLE_FORMAT);
-
-	// Early out if nothing is active
-	if (!any_active()) {
-		memset(pOutputF32, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
-		MIXER_STATE = 3;
-		(void)pInput;
-		return;
-	}
-
-	if (playbackRate == 1.0f) {
-		memset(pOutputF32, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
-
-		for (ma_uint32 i = 0; i < g_decoderCount; ++i) {
-			if (!g_pDecodersActive[i]) continue;
-
-			ensure_mutex();
-			ma_mutex_lock(&decoderMutex);
-			ma_uint32 framesRead = read_pcm_frames_f32(i, pOutputF32, frameCount);
-			ma_mutex_unlock(&decoderMutex);
-
-			if (framesRead == 0) {
-				g_pDecodersActive[i] = MA_FALSE;
-			}
-		}
-	} else {
-		// Temp buffers
-		float inputMix[4096 * CHANNEL_COUNT]        = {0};
-		float stretchedOutput[4096 * CHANNEL_COUNT] = {0};
-
-		ma_uint32 maxFramesToRead = (ma_uint32)(frameCount * playbackRate); // pre-stretch input size
-		if (maxFramesToRead > 4096) maxFramesToRead = 4096;
-
-		// Reset mix buffer each callback to avoid residue across callbacks.
-		memset(inputMix, 0, sizeof(inputMix));
-
-		for (ma_uint32 i = 0; i < g_decoderCount; ++i) {
-			if (!g_pDecodersActive[i]) continue;
-
-			ensure_mutex();
-			ma_mutex_lock(&decoderMutex);
-			ma_uint32 framesRead = read_pcm_frames_f32(i, inputMix, maxFramesToRead);
-			ma_mutex_unlock(&decoderMutex);
-
-			if (framesRead == 0) {
-				g_pDecodersActive[i] = MA_FALSE;
-			}
-		}
-
-		if (any_active()) {
-			if (stretch == nullptr) {
-				stretch = new signalsmith::stretch::SignalsmithStretch();
-				stretch->presetCheaper(CHANNEL_COUNT, SAMPLE_RATE);
-			}
-			stretch->process(
-				inputMix,
-				maxFramesToRead,
-				stretchedOutput,
-				frameCount
-			);
-
-			memcpy(pOutputF32, stretchedOutput, sizeof(float) * frameCount * CHANNEL_COUNT);
-		} else {
-			memset(pOutputF32, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
-		}
-	}
-
-	if (!any_active()) {
-		// Song finished.
-		MIXER_STATE = 3;
-	}
-
-	(void)pInput;
+// -------------------- DECODER CONTROL --------------------
+HL_PRIM void HL_NAME(deactivate_decoder_hl)(int index) { 
+    if (index >= 0 && (ma_uint32)index < g_decoderCount) g_pDecodersActive[index] = MA_FALSE; 
 }
 
-HL_PRIM int HL_NAME(get_mixer_state)(_NO_ARG) {
-	return MIXER_STATE;
-}
-
-HL_PRIM double HL_NAME(get_playback_position)(_NO_ARG) {
-	ma_uint64 pos = 0;
-	ensure_mutex();
-	ma_mutex_lock(&decoderMutex);
-
-	if (g_pDecodersActive[g_pLongestDecoderIndex] == MA_TRUE) {
-		ma_decoder_get_cursor_in_pcm_frames(&g_pDecoders[g_pLongestDecoderIndex], &pos);
-	} else {
-		pos = g_pDecoderLengths[g_pLongestDecoderIndex]; // report EOF when inactive
-	}
-
-	ma_mutex_unlock(&decoderMutex);
-	return (double)pos / (SAMPLE_RATE * 0.001);
-}
-
-HL_PRIM double HL_NAME(get_duration)(_NO_ARG) {
-	ma_uint64 len = 0;
-	// cached read, lock optional but harmless
-	len = g_pDecoderLengths[g_pLongestDecoderIndex];
-	return (double)len / (SAMPLE_RATE * 0.001);
-}
-
-HL_PRIM void HL_NAME(seek_to_pcm_frame)(ma_uint64 pos) {
-	if (exists == 0) return;
-
-	ensure_mutex();
-	ma_mutex_lock(&decoderMutex);
-
-	bool anyActive = false;
-
-	for (iDecoder = 0; iDecoder < g_decoderCount; ++iDecoder) {
-		ma_uint64 len = g_pDecoderLengths[iDecoder];
-		ma_uint64 target = 0;
-
-		if (pos == 0) {
-			target = 0;
-		} else if (pos >= len) {
-			target = len; // snap to EOF
-		} else {
-			target = pos;
-		}
-
-		ma_decoder_seek_to_pcm_frame(&g_pDecoders[iDecoder], target);
-
-		// Active only if strictly before EOF
-		if (target < len) {
-			g_pDecodersActive[iDecoder] = MA_TRUE;
-			anyActive = true;
-		} else {
-			g_pDecodersActive[iDecoder] = MA_FALSE;
-		}
-	}
-
-	ma_mutex_unlock(&decoderMutex);
-
-	MIXER_STATE = anyActive ? 2 : 3;
-}
-
-HL_PRIM void HL_NAME(deactivate_decoder_hl)(int index) {
-	if (index >= 0 && (ma_uint32)index < g_decoderCount) {
-		g_pDecodersActive[index] = MA_FALSE;
-	}
-}
-
-HL_PRIM void HL_NAME(amplify_decoder_hl)(int index, double volume) {
-	if (index >= 0 && (ma_uint32)index < g_decoderCount) {
-		g_pDecodersVolume[index] = (float)volume;
-	}
+HL_PRIM void HL_NAME(amplify_decoder_hl)(int index, double volume) { 
+    if (index >= 0 && (ma_uint32)index < g_decoderCount) g_pDecodersVolume[index] = static_cast<float>(volume); 
 }
 
 HL_PRIM void HL_NAME(setPlaybackRate)(float value) {
-	if (exists == 0) return;
-	if (value == playbackRate) return; // No change
+    if (!exists || value == playbackRate) return;
+    playbackRate = value;
 
-	playbackRate = value;
+    ma_decoder* pDecoder = &g_pDecoders[g_pLongestDecoderIndex];
+    ma_uint64 cursor = 0;
+    if (g_pDecodersActive[g_pLongestDecoderIndex]) {
+        ensure_mutex();
+        ma_mutex_lock(&decoderMutex);
+        ma_decoder_get_cursor_in_pcm_frames(pDecoder, &cursor);
+        ma_mutex_unlock(&decoderMutex);
+    }
 
-	ma_decoder* pDecoder = &g_pDecoders[g_pLongestDecoderIndex];
+    if (!stretch) { stretch = new signalsmith::stretch::SignalsmithStretch(); stretch->presetCheaper(CHANNEL_COUNT, SAMPLE_RATE); }
 
-	ma_uint64 cursor2 = 0;
-	if (g_pDecodersActive[g_pLongestDecoderIndex] == MA_TRUE) {
-		ensure_mutex();
-		ma_mutex_lock(&decoderMutex);
-		ma_decoder_get_cursor_in_pcm_frames(pDecoder, &cursor2);
-		ma_mutex_unlock(&decoderMutex);
-	}
+    int latencyFrames = std::max<int>(stretch->inputLatency(), 0);
+    std::vector<float> latencyData(latencyFrames * CHANNEL_COUNT, 0.0f);
 
-	// Reset stretch state with new rate
-	if (stretch == nullptr) {
-		stretch = new signalsmith::stretch::SignalsmithStretch();
-		stretch->presetCheaper(CHANNEL_COUNT, SAMPLE_RATE);
-	}
-	int latencyFrames = stretch->inputLatency();
-	if (latencyFrames < 0) latencyFrames = 0;
-	std::vector<float> latencyData((size_t)latencyFrames * CHANNEL_COUNT, 0.0f);
+    ensure_mutex();
+    ma_mutex_lock(&decoderMutex);
+    if (latencyFrames > 0) {
+        ma_decoder_read_pcm_frames(pDecoder, latencyData.data(), latencyFrames, nullptr);
+        ma_decoder_seek_to_pcm_frame(pDecoder, cursor);
+    }
+    ma_mutex_unlock(&decoderMutex);
 
-	ensure_mutex();
-	ma_mutex_lock(&decoderMutex);
-	if (latencyFrames > 0) {
-		ma_decoder_read_pcm_frames(pDecoder, latencyData.data(), (ma_uint64)latencyFrames, nullptr);
-		ma_decoder_seek_to_pcm_frame(pDecoder, cursor2);
-	}
-	ma_mutex_unlock(&decoderMutex);
-
-	// Only need to seek from one decoder
-	stretch->seek(latencyData.data(), latencyFrames, playbackRate);
+    stretch->seek(latencyData.data(), latencyFrames, playbackRate);
 }
 
-HL_PRIM void HL_NAME(start)(_NO_ARG) {
-	if (exists == 0) return;
-	if (MIXER_STATE == 3) {
-		// rewind when starting after finished
-		HL_NAME(seek_to_pcm_frame)(0);
-	}
-	ma_device_start(&device);
+// -------------------- PLAYBACK HANDLING --------------------
+HL_PRIM void HL_NAME(seek_to_pcm_frame)(ma_uint64 pos) {
+    if (exists == 0) return;
+
+    ensure_mutex();
+    ma_mutex_lock(&decoderMutex);
+
+    bool anyActive = false;
+
+    for (iDecoder = 0; iDecoder < g_decoderCount; ++iDecoder) {
+        ma_uint64 len = g_pDecoderLengths[iDecoder];
+        ma_uint64 target = 0;
+
+        if (pos == 0) {
+            target = 0;
+        } else if (pos >= len) {
+            target = len;
+        } else {
+            target = pos;
+        }
+
+        ma_decoder_seek_to_pcm_frame(&g_pDecoders[iDecoder], target);
+
+        if (target < len) {
+            g_pDecodersActive[iDecoder] = MA_TRUE;
+            anyActive = true;
+        } else {
+            g_pDecodersActive[iDecoder] = MA_FALSE;
+        }
+    }
+
+    ma_mutex_unlock(&decoderMutex);
+
+    MIXER_STATE = anyActive ? 2 : 3;
 }
 
-HL_PRIM void HL_NAME(stop)(_NO_ARG) {
-	if (exists == 0) return;
-	ma_device_stop(&device);
-	MIXER_STATE = 2;
+HL_PRIM double HL_NAME(get_duration)(_NO_ARG) {
+    ma_uint64 length = g_pDecoderLengths[g_pLongestDecoderIndex];
+    return (double)length / (SAMPLE_RATE * 0.001);
 }
 
-HL_PRIM bool HL_NAME(stopped)(_NO_ARG) {
-	return MIXER_STATE == 3;
+HL_PRIM double HL_NAME(get_playback_position)(_NO_ARG) {
+    ma_uint64 pos = 0;
+    ensure_mutex();
+    ma_mutex_lock(&decoderMutex);
+    if (g_pDecodersActive[g_pLongestDecoderIndex] == MA_TRUE) {
+        ma_decoder_get_cursor_in_pcm_frames(&g_pDecoders[g_pLongestDecoderIndex], &pos);
+    } else {
+        pos = g_pDecoderLengths[g_pLongestDecoderIndex];
+    }
+    ma_mutex_unlock(&decoderMutex);
+    return ((double)pos / (SAMPLE_RATE * 0.001));
+}
+
+// -------------------- PLAYBACK CONTROL --------------------
+HL_PRIM void HL_NAME(start)(_NO_ARG) { 
+    if (!exists) return; 
+    if (MIXER_STATE == 3) HL_NAME(seek_to_pcm_frame)(0); 
+    ma_device_start(&device); 
+}
+
+HL_PRIM void HL_NAME(stop)(_NO_ARG) { 
+    if (!exists) return; 
+    ma_device_stop(&device); 
+    MIXER_STATE = 2; 
+}
+
+HL_PRIM bool HL_NAME(stopped)(_NO_ARG) { 
+    return MIXER_STATE == 3; 
+}
+
+// -------------------- CLEANUP --------------------
+void freeThingies() {
+    if (g_pDecodersVolume) { free(g_pDecodersVolume); g_pDecodersVolume = nullptr; }
+    if (g_pDecoders) { free(g_pDecoders); g_pDecoders = nullptr; }
+    if (g_pDecodersActive) { free(g_pDecodersActive); g_pDecodersActive = nullptr; }
+    if (g_pDecoderLengths) { free(g_pDecoderLengths); g_pDecoderLengths = nullptr; }
 }
 
 HL_PRIM void HL_NAME(destroy)(_NO_ARG) {
-	if (exists == 0) return;
-	exists = 0;
+    if (!exists) return;
+    exists = 0;
 
-	ma_device_uninit(&device);
-	deviceExists = MA_FALSE;
+    ma_device_uninit(&device);
+    deviceExists = MA_FALSE;
 
-	for (iDecoder = 0; iDecoder < g_decoderCount; ++iDecoder) {
-		ma_decoder_uninit(&g_pDecoders[iDecoder]);
-	}
-	freeThingies();
+    for (ma_uint32 i = 0; i < g_decoderCount; ++i) ma_decoder_uninit(&g_pDecoders[i]);
+    freeThingies();
 
-	if (stretch) {
-		delete stretch;
-		stretch = nullptr;
-	}
+    delete stretch; stretch = nullptr;
 
-	if (decoderMutexInitialized) {
-		ma_mutex_uninit(&decoderMutex);
-		decoderMutexInitialized = MA_FALSE;
-	}
+    if (decoderMutexInitialized) { ma_mutex_uninit(&decoderMutex); decoderMutexInitialized = MA_FALSE; }
+    if (gDevicesContextInitialized) { ma_context_uninit(&gDevicesContext); gDevicesContextInitialized = MA_FALSE; }
 }
 
-HL_PRIM void HL_NAME(loadFiles)(varray* argv)
-{
-	if (argv->size == 0) {
-		printf("No input files.\n");
-		return;
-	}
+// -------------------- LOAD FILES --------------------
+HL_PRIM void HL_NAME(loadFiles)(varray* argv) {
+    if (argv->size == 0) { printf("No input files.\n"); return; }
 
-	g_decoderCount    = (ma_uint32)argv->size;
-	g_pDecoders       = (ma_decoder*)malloc(sizeof(*g_pDecoders)      * g_decoderCount);
-	g_pDecodersActive = (ma_bool32*)malloc(sizeof(ma_bool32)          * g_decoderCount);
-	g_pDecoderLengths = (ma_uint64*)malloc(sizeof(ma_uint64)          * g_decoderCount);
-	g_pDecodersVolume = (float*)    malloc(sizeof(*g_pDecodersVolume) * g_decoderCount);
+    g_decoderCount = static_cast<ma_uint32>(argv->size);
 
-	ma_uint64 absoluteLengthOfSong = 0;
-	decoderConfig = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
+    g_pDecoders = (ma_decoder*)malloc(sizeof(*g_pDecoders) * g_decoderCount);
+    g_pDecodersActive = (ma_bool32*)malloc(sizeof(ma_bool32) * g_decoderCount);
+    g_pDecoderLengths = (ma_uint64*)malloc(sizeof(ma_uint64) * g_decoderCount);
+    g_pDecodersVolume = (float*)malloc(sizeof(*g_pDecodersVolume) * g_decoderCount);
 
-	for (iDecoder = 0; iDecoder < g_decoderCount; ++iDecoder) {
-		const char* path = hl_aptr(argv, const char*)[iDecoder];
+    ma_uint64 maxLength = 0;
+    g_pLongestDecoderIndex = 0;
 
-		g_pDecodersVolume[iDecoder] = 1.0f;
+    decoderConfig = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
 
-		result = ma_decoder_init_file(path, &decoderConfig, &g_pDecoders[iDecoder]);
-		if (result != MA_SUCCESS) {
-			ma_uint32 iDecoder2;
-			for (iDecoder2 = 0; iDecoder2 < iDecoder; ++iDecoder2) {
-				ma_decoder_uninit(&g_pDecoders[iDecoder2]);
-			}
-			freeThingies();
+    for (ma_uint32 i = 0; i < g_decoderCount; ++i) {
+        const char* path = hl_aptr(argv, const char*)[i];
+        g_pDecodersVolume[i] = 1.0f;
 
-			printf("Failed to load %s.\n", path);
-			exists = 0;
-			return;
-		}
+        ma_result result = ma_decoder_init_file(path, &decoderConfig, &g_pDecoders[i]);
+        if (result != MA_SUCCESS) {
+            for (ma_uint32 j = 0; j < i; ++j) ma_decoder_uninit(&g_pDecoders[j]);
+            freeThingies();
+            printf("Failed to load %s.\n", path); 
+            exists = 0; 
+            return;
+        }
+        
+        ma_data_source_set_looping(&g_pDecoders[i], MA_FALSE);
+        g_pDecodersActive[i] = MA_TRUE;
+        ma_decoder_get_length_in_pcm_frames(&g_pDecoders[i], &g_pDecoderLengths[i]);
+        
+        if (g_pDecoderLengths[i] > maxLength) { 
+            maxLength = g_pDecoderLengths[i]; 
+            g_pLongestDecoderIndex = i; 
+        }
+    }
 
-		ma_data_source_set_looping(&g_pDecoders[iDecoder], MA_FALSE);
-		g_pDecodersActive[iDecoder] = MA_TRUE;
+    exists = 1;
 
-		ma_decoder_get_length_in_pcm_frames(&g_pDecoders[iDecoder], &g_pDecoderLengths[iDecoder]);
+    deviceConfig = ma_device_config_init(ma_device_type_playback);
+    deviceConfig.playback.format = SAMPLE_FORMAT;
+    deviceConfig.playback.channels = CHANNEL_COUNT;
+    deviceConfig.sampleRate = SAMPLE_RATE;
+    deviceConfig.dataCallback = data_callback;
+    deviceConfig.pUserData = nullptr;
 
-		if (g_pDecoderLengths[iDecoder] > absoluteLengthOfSong) {
-			absoluteLengthOfSong = g_pDecoderLengths[iDecoder];
-			g_pLongestDecoderIndex = (int)iDecoder;
-		}
-
-		exists = 1;
-	}
-
-	/* Create only a single device. The decoders will be mixed together in the callback. In this example the data format needs to be the same as the decoders. */
-	deviceConfig = ma_device_config_init(ma_device_type_playback);
-	deviceConfig.playback.format   = SAMPLE_FORMAT;
-	deviceConfig.playback.channels = CHANNEL_COUNT;
-	deviceConfig.sampleRate        = SAMPLE_RATE;
-	deviceConfig.dataCallback      = data_callback;
-	deviceConfig.pUserData         = nullptr;
-
-	if (ma_device_init(nullptr, &deviceConfig, &device) != MA_SUCCESS) {
-		for (iDecoder = 0; iDecoder < g_decoderCount; ++iDecoder) {
-			ma_decoder_uninit(&g_pDecoders[iDecoder]);
-		}
-		freeThingies();
-
-		printf("Failed to open playback device.\n");
-		return;
-	}
-	deviceExists = MA_TRUE;
+    if (ma_device_init(nullptr, &deviceConfig, &device) != MA_SUCCESS) {
+        for (ma_uint32 i = 0; i < g_decoderCount; ++i) ma_decoder_uninit(&g_pDecoders[i]);
+        freeThingies();
+        printf("Failed to open playback device.\n");
+        return;
+    }
+    deviceExists = MA_TRUE;
+    updateCurrentDeviceInfo();
 }
 
-HL_PRIM double HL_NAME(getGlobalVolume)(_NO_ARG) {
-	//printf("New volume: %f\n", masterVolume);
-	return masterVolume;
+// -------------------- GLOBAL VOLUME --------------------
+HL_PRIM double HL_NAME(getGlobalVolume)(_NO_ARG) { 
+    return masterVolume; 
 }
 
-HL_PRIM double HL_NAME(setGlobalVolume)(double value) {
-	masterVolume = value;
-	//printf("New volume setted: %f\n", masterVolume);
-	return masterVolume;
+HL_PRIM double HL_NAME(setGlobalVolume)(double value) { 
+    masterVolume = value; 
+    return masterVolume; 
 }
 
-DEFINE_PRIM(_I32, detectLatency, _NO_ARG)
-DEFINE_PRIM(_I32, get_mixer_state, _NO_ARG)
-DEFINE_PRIM(_F64, get_playback_position, _NO_ARG)
-DEFINE_PRIM(_F64, get_duration, _NO_ARG)
-DEFINE_PRIM(_VOID, seek_to_pcm_frame, _I64)
-DEFINE_PRIM(_VOID, deactivate_decoder_hl, _I32)
-DEFINE_PRIM(_VOID, amplify_decoder_hl, _I32 _F64)
-DEFINE_PRIM(_VOID, setPlaybackRate, _F32)
-DEFINE_PRIM(_VOID, start, _NO_ARG)
-DEFINE_PRIM(_VOID, stop, _NO_ARG)
-DEFINE_PRIM(_BOOL, stopped, _NO_ARG)
-DEFINE_PRIM(_VOID, destroy, _NO_ARG)
-DEFINE_PRIM(_VOID, loadFiles, _ARR)
-DEFINE_PRIM(_F64, getGlobalVolume, _NO_ARG)
-DEFINE_PRIM(_F64, setGlobalVolume, _F64)
+// -------------------- MIXER STATE --------------------
+HL_PRIM int HL_NAME(get_mixer_state)(_NO_ARG) {
+    return MIXER_STATE;
+}
+
+// -------------------- DEFINE HASHLINK BINDINGS --------------------
+DEFINE_PRIM(_I32, detectLatency, _NO_ARG);
+DEFINE_PRIM(_VOID, deactivate_decoder_hl, _I32);
+DEFINE_PRIM(_VOID, amplify_decoder_hl, _I32 _F64);
+DEFINE_PRIM(_VOID, setPlaybackRate, _F32);
+DEFINE_PRIM(_VOID, start, _NO_ARG);
+DEFINE_PRIM(_VOID, stop, _NO_ARG);
+DEFINE_PRIM(_BOOL, stopped, _NO_ARG);
+DEFINE_PRIM(_VOID, seek_to_pcm_frame, _I64);
+DEFINE_PRIM(_F64, get_duration, _NO_ARG);
+DEFINE_PRIM(_F64, get_playback_position, _NO_ARG);
+DEFINE_PRIM(_VOID, destroy, _NO_ARG);
+DEFINE_PRIM(_VOID, loadFiles, _ARR);
+DEFINE_PRIM(_F64, getGlobalVolume, _NO_ARG);
+DEFINE_PRIM(_F64, setGlobalVolume, _F64);
+DEFINE_PRIM(_I32, get_mixer_state, _NO_ARG);

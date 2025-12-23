@@ -291,7 +291,7 @@ class Mixer {
 
 	static inline function latency():Int {
 		__cachedLatency_times++;
-		if (__cachedLatency_times > 50) {
+		if (__cachedLatency_times > 250) {
 			__cachedLatency = MiniAudio.detectLatency();
 			__cachedLatency_times = 0;
 		}
