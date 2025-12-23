@@ -187,7 +187,7 @@ class Mixer {
 			playfield.songPosition = ogSongPos;
 
 			if (ogLatencyForImmediateChange != __cachedLatency) {
-				playfield.songPosition = rawPlaybackPosition;
+				playfield.songPosition = rawPlaybackPosition + deltaTime;
 			}
 
 			ogLatencyForImmediateChange = __cachedLatency;
