@@ -152,17 +152,30 @@ class Tools {
 
 		var condition = FileSystem.exists(fontPath) && FileSystem.exists(fontPNGPath);
 
-		if (!condition) { // automatically make the path
-			// placeholder
-			// - V  this is required. V  - the batchfile (or bash if you're on linux) doesn't make any directories and only saves to whatever exists.
-			//Sys.println('CREATE GAME FONT PATH: $name');
-			//trace(fontPathSub);
-			var fontPathSys = 'ttfs/$name.ttf';
-			Sys.println('FONT PATH $fontPathSys');
+		if (!condition) {
 			FileSystem.createDirectory(path);
-			Sys.command(#if linux "bash" #else "assets/fonts/fontbm" #end, [
-				#if linux "assets/fonts/fontbm", #end
-				'--font-file', 'assets/fonts/ttfs/$name.ttf',
+
+			var fontbmPath = "assets/fonts/fontbm";
+			var fontFile = 'assets/fonts/ttfs/$name.ttf';
+			var outputPath = 'assets/fonts/$name/$name';
+
+			#if linux
+			// Ensure executable permissions on Linux
+			try {
+				// Check if we can execute it
+				var result = Sys.command(fontbmPath, ["--version"]);
+				if (result != 0) {
+					// Try to fix permissions
+					Sys.command("chmod", ["+x", fontbmPath]);
+				}
+			} catch (e:Dynamic) {
+				// Try chmod and retry
+				Sys.command("chmod", ["+x", fontbmPath]);
+			}
+			#end
+
+			var args = [
+				'--font-file', fontFile,
 				'--font-size', '80',
 				'--data-format', 'json',
 				'--padding-up', '3',
@@ -170,8 +183,15 @@ class Tools {
 				'--padding-down', '3',
 				'--padding-left', '3',
 				'--extra-info',
-				'--output', 'assets/fonts/$name/$name'
-			]);
+				'--output', outputPath
+			];
+
+			Sys.println('Generating font bitmap for: $name');
+			var exitCode = Sys.command(fontbmPath, args);
+
+			if (exitCode != 0) {
+				Sys.println('WARNING: fontbm exited with code $exitCode');
+			}
 		}
 
 		var contents = File.getContent(fontPath);
