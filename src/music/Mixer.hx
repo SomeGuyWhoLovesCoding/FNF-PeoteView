@@ -146,6 +146,7 @@ class Mixer {
 		disableSubLoop();
 	}
 
+	private static var ogLatencyForImmediateChange(default, null):Int = 100;
 	inline static public function updateSmoothMusicTime(deltaTime:Float, playfield:PlayField, window:Window):Void {
 		if (isPlaying()) {
 			var ogSongPos = playfield.songPosition + deltaTime;
@@ -172,14 +173,24 @@ class Mixer {
 
 			// Determine correction strength based on drift magnitude
 			var multiply:Float = 0.05;
-			if (absDiff > smallest) multiply = 0.1 * smoothedTimeMult;
-			if (absDiff > small) multiply = 0.325 * smoothedTimeMult;
-			if (absDiff > big) multiply = 0.975 * smoothedTimeMult;
-			if (absDiff > biggest) multiply = 1.0;
+			if (ogLatencyForImmediateChange != __cachedLatency) {
+				multiply = 1.0; // immediately change if latency has changed
+			} else {
+				if (absDiff > smallest) multiply = 0.1 * smoothedTimeMult;
+				if (absDiff > small) multiply = 0.325 * smoothedTimeMult;
+				if (absDiff > big) multiply = 0.975 * smoothedTimeMult;
+				if (absDiff > biggest) multiply = 1.0;
+			}
 
 			var subtract = diff * multiply;
 			ogSongPos -= Math.min(subtract, biggest); // Math.min here to prevent supernova from gc
 			playfield.songPosition = ogSongPos;
+
+			if (ogLatencyForImmediateChange != __cachedLatency) {
+				playfield.songPosition = rawPlaybackPosition;
+			}
+
+			ogLatencyForImmediateChange = __cachedLatency;
 		}
 	}
 
@@ -272,8 +283,19 @@ class Mixer {
 		}
 	}
 
+	private static var __cachedLatency(default, null):Int = 100;
+
+	// This is for optimization to reduce cpu usage. And yes, this is necessary because playback device connection times are not instant.
+	private static var __cachedLatency_times(default, null):Int;
+	//
+
 	static inline function latency():Int {
-		return MiniAudio.detectLatency();
+		__cachedLatency_times++;
+		if (__cachedLatency_times > 50) {
+			__cachedLatency = MiniAudio.detectLatency();
+			__cachedLatency_times = 0;
+		}
+		return __cachedLatency;
 	}
 }
 
