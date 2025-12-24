@@ -790,7 +790,7 @@ HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
 		// Add 16ms extra latency if using headphones
 		if (checkIfUsingHeadphones()) {
 			std::lock_guard<std::mutex> lock(deviceInfoMutex);
-			osMs += 16;
+			osMs += 20;
 		}
 	}
 

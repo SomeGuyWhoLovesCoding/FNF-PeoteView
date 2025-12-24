@@ -768,7 +768,7 @@ int detectLatency() {
 		// Add 16ms extra latency if using headphones
 		if (checkIfUsingHeadphones()) {
 			std::lock_guard<std::mutex> lock(deviceInfoMutex);
-			osMs += 16;
+			osMs += 20;
 		}
 	}
 
