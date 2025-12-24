@@ -40,10 +40,24 @@
 #ifdef HX_WINDOWS
 #include <mmdeviceapi.h>
 #include <endpointvolume.h>
-#include <functiondiscoverykeys_devpkey.h>
+#include <Functiondiscoverykeys_devpkey.h>
+#include <propvarutil.h>
+#include <propkey.h>  // For PKEY_Device_*
 #include <locale>
 #include <codecvt>
 #pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "mmdevapi.lib")
+#pragma comment(lib, "propsys.lib")
+
+// Define the PKEYs manually if they're not available in your SDK
+// These GUIDs and PIDs are from Windows SDK
+#ifndef PKEY_AudioEndpoint_PhysicalSpeakers
+DEFINE_PROPERTYKEY(PKEY_AudioEndpoint_PhysicalSpeakers, 0x1da5d803, 0xd492, 0x4edd, 0x8c, 0x23, 0xe0, 0xc0, 0xff, 0xee, 0x7f, 0x0e, 7); // PID = 7
+#endif
+
+#ifndef PKEY_AudioEndpoint_ConnectorType
+DEFINE_PROPERTYKEY(PKEY_AudioEndpoint_ConnectorType, 0xa45c254e, 0xdf1c, 0x4efd, 0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0, 8); // PID = 8
+#endif
 
 // Helper function to convert wide string to UTF-8 string
 static std::string wstring_to_utf8(const std::wstring& wstr) {
@@ -127,6 +141,156 @@ bool checkWindowsHeadphoneStatus() {
 	CoUninitialize();
 	return isHeadphones;
 }
+
+bool checkIfPnPDevice() {
+	HRESULT hr = S_OK;
+	bool isPnP = false;
+
+	// Initialize COM for this thread if needed
+	hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+	bool comInitialized = SUCCEEDED(hr);
+	if (hr == RPC_E_CHANGED_MODE) {
+		comInitialized = false; // COM was already initialized
+	}
+
+	IMMDeviceEnumerator* pEnumerator = NULL;
+	IMMDevice* pDevice = NULL;
+	IPropertyStore* pProps = NULL;
+	LPWSTR pwszDeviceId = NULL;
+
+	hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL,
+						 __uuidof(IMMDeviceEnumerator), (void**)&pEnumerator);
+	if (FAILED(hr)) {
+		goto cleanup;
+	}
+
+	hr = pEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &pDevice);
+	if (FAILED(hr)) {
+		goto cleanup;
+	}
+
+	// Get the device ID - this is the most reliable way
+	hr = pDevice->GetId(&pwszDeviceId);
+	if (SUCCEEDED(hr) && pwszDeviceId) {
+		std::wstring deviceId(pwszDeviceId);
+		std::string deviceIdUtf8 = wstring_to_string(deviceId);
+		std::transform(deviceIdUtf8.begin(), deviceIdUtf8.end(), deviceIdUtf8.begin(),
+					  [](unsigned char c) { return std::tolower(c); });
+
+		// Check for device path patterns that indicate PnP
+		// USB devices: \\?\usb#vid_xxxx&pid_xxxx...
+		// Bluetooth: \\?\bth#... or \\?\bthenum#...
+		// External/Network: \\?\swd#mmdevapi#...
+		// Internal: \\?\hdaudio#...
+
+		const char* pnpPatterns[] = {
+			"usb#", "bth#", "bthenum#", "swd#mmdevapi#",
+			"bluetooth", "hid#", "uefi"
+		};
+
+		const char* internalPatterns[] = {
+			"hdaudio#", "intel", "realtek", "amd", "nvidia",
+			"high definition audio", "hd audio"
+		};
+
+		for (const char* pattern : pnpPatterns) {
+			if (deviceIdUtf8.find(pattern) != std::string::npos) {
+				isPnP = true;
+				break;
+			}
+		}
+
+		// If not PnP by ID pattern, check for internal patterns
+		if (!isPnP) {
+			for (const char* pattern : internalPatterns) {
+				if (deviceIdUtf8.find(pattern) != std::string::npos) {
+					isPnP = false; // Definitely internal
+					break;
+				}
+			}
+		}
+
+		CoTaskMemFree(pwszDeviceId);
+	}
+
+	// If still undetermined, check device properties
+	if (!isPnP) {
+		hr = pDevice->OpenPropertyStore(STGM_READ, &pProps);
+		if (SUCCEEDED(hr)) {
+			PROPVARIANT var;
+			PropVariantInit(&var);
+
+			// Check device description/friendly name
+			// Try multiple property keys
+			const PROPERTYKEY* keysToCheck[] = {
+				&PKEY_Device_FriendlyName,
+				&PKEY_Device_DeviceDesc,
+				&PKEY_DeviceInterface_FriendlyName
+			};
+
+			for (int i = 0; i < 3 && !isPnP; i++) {
+				PropVariantClear(&var);
+				hr = pProps->GetValue(*keysToCheck[i], &var);
+				if (SUCCEEDED(hr) && var.vt == VT_LPWSTR && var.pwszVal) {
+					std::wstring propValue(var.pwszVal);
+					std::string propStr = wstring_to_string(propValue);
+					std::transform(propStr.begin(), propStr.end(), propStr.begin(),
+								  [](unsigned char c) { return std::tolower(c); });
+
+					// PnP device keywords
+					const char* pnpKeywords[] = {
+						"usb", "bluetooth", "bt", "wireless",
+						"external", "headset", "airpod", "bose",
+						"sony", "jbl", "logitech", "hdmi",
+						"displayport", "digital audio", "digital output",
+						"soundblaster", "audio interface", "dac", "amplifier"
+					};
+
+					// Internal speaker keywords (if found, not PnP)
+					const char* internalKeywords[] = {
+						"speakers", "internal", "built-in", "default",
+						"primary", "main", "system", "laptop",
+						"desktop", "monitor", "display"
+					};
+
+					bool foundInternal = false;
+					for (const char* keyword : internalKeywords) {
+						if (propStr.find(keyword) != std::string::npos) {
+							foundInternal = true;
+							break;
+						}
+					}
+
+					if (!foundInternal) {
+						for (const char* keyword : pnpKeywords) {
+							if (propStr.find(keyword) != std::string::npos) {
+								isPnP = true;
+								break;
+							}
+						}
+					}
+				}
+			}
+
+			PropVariantClear(&var);
+			pProps->Release();
+		}
+	}
+
+cleanup:
+	if (pProps) pProps->Release();
+	if (pDevice) pDevice->Release();
+	if (pEnumerator) pEnumerator->Release();
+
+	if (comInitialized) {
+		CoUninitialize();
+	}
+
+	// Debug output
+	//printf("PnP detection: %s\n", isPnP ? "PnP device" : "Internal device");
+
+	return isPnP;
+}
 #endif
 
 struct TrieNode {
@@ -146,11 +310,11 @@ struct TrieNode {
 	static TrieNode* getHeadphoneTrie() {
 		static TrieNode* root = nullptr;
 		static std::once_flag initFlag;
-		
+
 		std::call_once(initFlag, []() {
 			root = new TrieNode();
 			const char* keywords[] = {
-				"headphone", "headset", "earphone", "earbud", 
+				"headphone", "headset", "earphone", "earbud",
 				"airpod", "bluetooth", "usb audio speakers"
 			};
 
@@ -159,7 +323,7 @@ struct TrieNode {
 				for (const char* c = keyword; *c; ++c) {
 					int index = *c - 'a';
 					if (index < 0 || index >= 26) continue; // Skip non-lowercase letters
-					
+
 					if (!node->children[index]) {
 						node->children[index] = new TrieNode();
 					}
@@ -237,6 +401,61 @@ static void resetHeadphoneCache() {
 	headphoneCacheState.store(0, std::memory_order_release);
 }
 
+// Cache for PnP status
+static std::atomic<int> pnpCacheState{0}; // 0 = not checked, 1 = checking, 2 = PnP, 3 = not PnP
+
+// Function to reset PnP cache
+static void resetPnPCache() {
+	pnpCacheState.store(0, std::memory_order_release);
+}
+
+// Function to check if using PnP device with caching
+bool checkIfUsingPnPDevice() {
+	if (exists == 0 || deviceExists == MA_FALSE) {
+		return false;
+	}
+
+	// Check for device changes
+	static int lastChangeCounterPnP = 0;
+	if (deviceChangeCounter.load() != lastChangeCounterPnP) {
+		lastChangeCounterPnP = deviceChangeCounter.load();
+		resetPnPCache();
+	}
+
+	int state = pnpCacheState.load(std::memory_order_acquire);
+	if (state >= 2) {
+		return state == 2;
+	}
+
+	// Try to acquire the check lock
+	int expected = 0;
+	if (!pnpCacheState.compare_exchange_strong(expected, 1,
+											   std::memory_order_acq_rel)) {
+		// Another thread is checking, wait for result
+		while (pnpCacheState.load(std::memory_order_acquire) == 1) {
+			std::this_thread::yield();
+		}
+		state = pnpCacheState.load(std::memory_order_acquire);
+		return state == 2;
+	}
+
+	bool isPnP = false;
+
+#ifdef HX_WINDOWS
+	try {
+		isPnP = checkIfPnPDevice();
+	} catch (...) {
+		isPnP = false;
+	}
+#else
+	// On non-Windows platforms, assume PnP (most modern devices are)
+	isPnP = true;
+#endif
+
+	pnpCacheState.store(isPnP ? 2 : 3, std::memory_order_release);
+	return isPnP;
+}
+
 // Function to get current device ID and name
 static void updateCurrentDeviceInfo() {
 	// Don't try to access device if shutting down
@@ -277,42 +496,124 @@ static bool hasDeviceChanged() {
 }
 
 // Device monitoring thread function
+// Add this helper function to get the current default device ID
+#ifdef HX_WINDOWS
+static std::string getCurrentDefaultDeviceId() {
+	HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+	bool comInitialized = SUCCEEDED(hr);
+	if (hr == RPC_E_CHANGED_MODE) {
+		comInitialized = false;
+	}
+
+	std::string deviceId;
+	IMMDeviceEnumerator* pEnumerator = nullptr;
+	IMMDevice* pDevice = nullptr;
+	LPWSTR pwszDeviceId = nullptr;
+
+	hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL,
+						 __uuidof(IMMDeviceEnumerator), (void**)&pEnumerator);
+	if (SUCCEEDED(hr)) {
+		hr = pEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &pDevice);
+		if (SUCCEEDED(hr)) {
+			hr = pDevice->GetId(&pwszDeviceId);
+			if (SUCCEEDED(hr) && pwszDeviceId) {
+				// Convert to UTF-8
+				int size_needed = WideCharToMultiByte(CP_UTF8, 0, pwszDeviceId, -1,
+													 nullptr, 0, nullptr, nullptr);
+				if (size_needed > 0) {
+					deviceId.resize(size_needed - 1);
+					WideCharToMultiByte(CP_UTF8, 0, pwszDeviceId, -1,
+									   &deviceId[0], size_needed, nullptr, nullptr);
+				}
+				CoTaskMemFree(pwszDeviceId);
+			}
+			pDevice->Release();
+		}
+		pEnumerator->Release();
+	}
+
+	if (comInitialized) {
+		CoUninitialize();
+	}
+
+	return deviceId;
+}
+#endif
+
+// Device monitoring thread function
 static void deviceMonitorThread() {
+#ifdef HX_WINDOWS
+	// Initialize COM for this monitoring thread
+	HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+	if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) {
+		return;
+	}
+#endif
+
 	ma_result result = ma_context_init(NULL, 0, NULL, &monitorContext);
 	if (result != MA_SUCCESS) {
+#ifdef HX_WINDOWS
+		CoUninitialize();
+#endif
 		return;
 	}
 	monitorContextInitialized = true;
 
-	// Set up device enumeration
-	ma_device_info* pPlaybackDeviceInfos = nullptr;
-	ma_uint32 playbackDeviceCount = 0;
+	std::string lastDeviceId;
 	ma_uint32 lastDeviceCount = 0;
 
 	while (monitorRunning) {
-		// Enumerate devices
-		result = ma_context_get_devices(&monitorContext, &pPlaybackDeviceInfos, &playbackDeviceCount, NULL, NULL);
+		bool deviceChanged = false;
 
-		if (result == MA_SUCCESS) {
-			// Check if device count changed
-			if (playbackDeviceCount != lastDeviceCount) {
-				deviceChangeCounter++;
-				lastDeviceCount = playbackDeviceCount;
-				resetHeadphoneCache(); // Reset cache when device count changes
+		// Method 1: Check default device ID (Windows-specific, most reliable)
+#ifdef HX_WINDOWS
+		std::string currentDeviceId = getCurrentDefaultDeviceId();
+		if (!currentDeviceId.empty()) {
+			if (lastDeviceId.empty()) {
+				lastDeviceId = currentDeviceId;
+			} else if (currentDeviceId != lastDeviceId) {
+				// Device changed!
+				deviceChanged = true;
+				lastDeviceId = currentDeviceId;
+
+				// Update device info immediately
+				updateCurrentDeviceInfo();
 			}
+		}
+#endif
 
-			// Update current device info
-			updateCurrentDeviceInfo();
+		// Method 2: Check device count via miniaudio (cross-platform)
+		ma_device_info* pPlaybackDeviceInfos = nullptr;
+		ma_uint32 playbackDeviceCount = 0;
 
-			// Check if our current device has changed properties
-			if (hasDeviceChanged()) {
-				resetHeadphoneCache(); // Reset cache when device changes
+		result = ma_context_get_devices(&monitorContext, &pPlaybackDeviceInfos,
+									   &playbackDeviceCount, NULL, NULL);
+		if (result == MA_SUCCESS) {
+			if (playbackDeviceCount != lastDeviceCount) {
+				deviceChanged = true;
+				lastDeviceCount = playbackDeviceCount;
 			}
 		}
 
-		// Sleep for a bit to avoid excessive CPU usage
-		std::this_thread::sleep_for(std::chrono::milliseconds(250)); // Check every quarter of a second (negligable)
+		// If device changed, trigger updates
+		if (deviceChanged) {
+			deviceChangeCounter++;
+			resetHeadphoneCache();
+			resetPnPCache();
+
+			// Force an immediate re-check of device status
+			updateCurrentDeviceInfo();
+
+			// Debug output
+			printf("Device change detected! Counter: %d\n", deviceChangeCounter.load());
+		}
+
+		std::this_thread::sleep_for(std::chrono::milliseconds(100)); // Check more frequently
 	}
+
+#ifdef HX_WINDOWS
+	CoUninitialize();
+#endif
 
 	if (monitorContextInitialized) {
 		ma_context_uninit(&monitorContext);
@@ -476,20 +777,20 @@ bool checkIfUsingHeadphones() {
 
 // -------------------- LATENCY MEASUREMENT --------------------
 HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
-	int osMs = 100;
+	int osMs = 40;
 
 	if (deviceExists == MA_TRUE) {
+		// Check if PnP device - if so, reduce base latency by 50ms
+		if (!checkIfUsingPnPDevice()) {
+			osMs += 50;
+		}
+
 		osMs += (int)(deviceConfig.periodSizeInMilliseconds);
-		// Add 20ms extra latency if using headphones (now with auto-detection)
+
+		// Add 16ms extra latency if using headphones
 		if (checkIfUsingHeadphones()) {
 			std::lock_guard<std::mutex> lock(deviceInfoMutex);
-			//printf("Using headphones: %s (added 20ms latency)\n", currentDeviceName.c_str());
 			osMs += 16;
-		} else {
-			std::lock_guard<std::mutex> lock(deviceInfoMutex);
-			if (!currentDeviceName.empty()) {
-				//printf("Using speakers: %s\n", currentDeviceName.c_str());
-			}
 		}
 	}
 
