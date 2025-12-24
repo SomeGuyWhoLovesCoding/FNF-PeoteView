@@ -122,20 +122,36 @@ bool checkWindowsHeadphoneStatus() {
 #endif
 
 struct TrieNode {
-	std::array<TrieNode*, 26> children = {nullptr};
-	bool isEnd = false;
+	std::array<TrieNode*, 26> children;
+	bool isEnd;
 
-	static TrieNode* createHeadphoneTrie() {
-		static TrieNode root;
-		static bool initialized = false;
+	TrieNode() : isEnd(false) {
+		children.fill(nullptr);
+	}
 
-		if (!initialized) {
-			const char* keywords[] = {"headphone", "headset", "earphone", "earbud", "airpod", "bluetooth", "usb audio speakers"};
+	~TrieNode() {
+		for (auto* child : children) {
+			delete child;
+		}
+	}
+
+	static TrieNode* getHeadphoneTrie() {
+		static TrieNode* root = nullptr;
+		static std::once_flag initFlag;
+		
+		std::call_once(initFlag, []() {
+			root = new TrieNode();
+			const char* keywords[] = {
+				"headphone", "headset", "earphone", "earbud", 
+				"airpod", "bluetooth", "usb audio speakers"
+			};
 
 			for (const char* keyword : keywords) {
-				TrieNode* node = &root;
+				TrieNode* node = root;
 				for (const char* c = keyword; *c; ++c) {
 					int index = *c - 'a';
+					if (index < 0 || index >= 26) continue; // Skip non-lowercase letters
+					
 					if (!node->children[index]) {
 						node->children[index] = new TrieNode();
 					}
@@ -143,10 +159,9 @@ struct TrieNode {
 				}
 				node->isEnd = true;
 			}
-			initialized = true;
-		}
+		});
 
-		return &root;
+		return root;
 	}
 };
 
@@ -315,7 +330,8 @@ bool isHeadphoneDevice(const ma_device_info& deviceInfo) {
 	const char* name = deviceInfo.name;
 	if (!name) return false;
 
-	TrieNode* trie = TrieNode::createHeadphoneTrie();
+	TrieNode* trie = TrieNode::getHeadphoneTrie();
+	if (!trie) return false; // Safety check
 
 	for (const char* p = name; *p; ++p) {
 		TrieNode* node = trie;
@@ -455,7 +471,7 @@ int detectLatency() {
 		if (checkIfUsingHeadphones()) {
 			std::lock_guard<std::mutex> lock(deviceInfoMutex);
 			//printf("Using headphones: %s (added 20ms latency)\n", currentDeviceName.c_str());
-			osMs += 20;
+			osMs += 16;
 		} else {
 			std::lock_guard<std::mutex> lock(deviceInfoMutex);
 			if (!currentDeviceName.empty()) {
