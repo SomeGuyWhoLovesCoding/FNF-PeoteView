@@ -105,7 +105,7 @@ bool checkWindowsHeadphoneStatus() {
 
 						// Check for headphone keywords
 						const char* keywords[] = {"headphone", "headset", "earphone", "earbud",
-												 "airpod", "bluetooth", "bt", "wireless", "ear piece"};
+												 "airpod", "bluetooth", "bt", "wireless", "ear piece", "usb audio speakers"};
 						for (const char* keyword : keywords) {
 							if (name.find(keyword) != std::string::npos) {
 								isHeadphones = true;
@@ -137,7 +137,7 @@ struct TrieNode {
 		static bool initialized = false;
 
 		if (!initialized) {
-			const char* keywords[] = {"headphone", "headset", "earphone", "earbud", "airpod", "bluetooth"};
+			const char* keywords[] = {"headphone", "headset", "earphone", "earbud", "airpod", "bluetooth", "usb audio speakers"};
 
 			for (const char* keyword : keywords) {
 				TrieNode* node = &root;
@@ -400,7 +400,7 @@ bool checkIfUsingHeadphones() {
 
 			// Check against our keywords
 			const char* keywords[] = {"headphone", "headset", "earphone", "earbud",
-									 "airpod", "bluetooth", "bt", "wireless", "ear piece"};
+									 "airpod", "bluetooth", "bt", "wireless", "ear piece", "usb audio speakers"};
 			for (const char* keyword : keywords) {
 				if (nameLower.find(keyword) != std::string::npos) {
 					isHeadphones = true;
