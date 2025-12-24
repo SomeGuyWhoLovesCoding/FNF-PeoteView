@@ -26,7 +26,11 @@
 #include <mutex>
 #include <chrono>
 #include <cstring>
+#include <cwctype>
 #include <unordered_map>
+
+static std::string currentDeviceName;
+static std::mutex deviceInfoMutex;
 
 // Windows-specific headphone detection (if you're on Windows)
 #ifdef HX_WINDOWS
@@ -37,87 +41,62 @@
 #include <codecvt>
 #pragma comment(lib, "ole32.lib")
 
-// Helper function to convert wide string to UTF-8 string
-static std::string wstring_to_utf8(const std::wstring& wstr) {
-	if (wstr.empty()) return std::string();
+bool isBluetoothDevice()
+{
+    HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
+    if (FAILED(hr)) return false;
 
-	// Use the C++11 codecvt utilities for proper conversion
-	std::wstring_convert<std::codecvt_utf8<wchar_t>> converter;
-	return converter.to_bytes(wstr);
-}
+    IMMDeviceEnumerator* enumerator = nullptr;
+    IMMDevice* device = nullptr;
+    IPropertyStore* props = nullptr;
 
-// Helper function to convert wide string to UTF-8 string (alternative method)
-static std::string wstring_to_string(const std::wstring& wstr) {
-	if (wstr.empty()) return std::string();
+    bool isBluetooth = false;
 
-	int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(),
-										 nullptr, 0, nullptr, nullptr);
-	std::string strTo(size_needed, 0);
-	WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(),
-					   &strTo[0], size_needed, nullptr, nullptr);
-	return strTo;
-}
+    if (SUCCEEDED(CoCreateInstance(
+        __uuidof(MMDeviceEnumerator), nullptr,
+        CLSCTX_ALL, IID_PPV_ARGS(&enumerator))))
+    {
+        if (SUCCEEDED(enumerator->GetDefaultAudioEndpoint(
+            eRender, eConsole, &device)))
+        {
+            if (SUCCEEDED(device->OpenPropertyStore(STGM_READ, &props)))
+            {
+                PROPVARIANT var;
+                PropVariantInit(&var);
 
-bool checkWindowsHeadphoneStatus() {
-	HRESULT hr = S_OK;
-	bool isHeadphones = false;
+				const PROPERTYKEY keys[] = {
+					PKEY_Device_FriendlyName
+				};
 
-	hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-	if (FAILED(hr)) {
-		return false;
-	}
-
-	IMMDeviceEnumerator* pEnumerator = NULL;
-	IMMDevice* pDevice = NULL;
-	IPropertyStore* pProps = NULL;
-
-	hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL,
-						 __uuidof(IMMDeviceEnumerator), (void**)&pEnumerator);
-	if (SUCCEEDED(hr)) {
-		hr = pEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &pDevice);
-		if (SUCCEEDED(hr)) {
-			hr = pDevice->OpenPropertyStore(STGM_READ, &pProps);
-			if (SUCCEEDED(hr)) {
-				PROPVARIANT varName;
-				PropVariantInit(&varName);
-
-				// Check both device description and friendly name
-				const PROPERTYKEY* propertyKeys[] = {&PKEY_Device_DeviceDesc, &PKEY_Device_FriendlyName};
-
-				for (int i = 0; i < 2 && !isHeadphones; ++i) {
-					hr = pProps->GetValue(*propertyKeys[i], &varName);
-					if (SUCCEEDED(hr) && varName.vt == VT_LPWSTR && varName.pwszVal != nullptr) {
-						std::wstring wname(varName.pwszVal);
-
-						// Convert to UTF-8 string
-						std::string name = wstring_to_string(wname);
-
-						// Convert to lowercase for case-insensitive comparison
+                for (auto& key : keys)
+                {
+                    if (SUCCEEDED(props->GetValue(key, &var)) &&
+                        var.vt == VT_LPWSTR)
+                    {
+                        std::wstring name(var.pwszVal);
 						std::transform(name.begin(), name.end(), name.begin(),
-									 [](unsigned char c) { return std::tolower(c); });
+									[](wchar_t c) { return std::towlower(c); });
 
-						// Check for headphone keywords
-						const char* keywords[] = {"headphone", "headset", "earphone", "earbud",
-												 "airpod", "bluetooth", "bt", "wireless", "ear piece", "usb audio speakers"};
-						for (const char* keyword : keywords) {
-							if (name.find(keyword) != std::string::npos) {
-								isHeadphones = true;
-								break;
-							}
+						if (name.find(L"bluetooth") != std::wstring::npos ||
+							name.find(L"hands-free") != std::wstring::npos ||
+							name.find(L"a2dp") != std::wstring::npos)
+						{
+							isBluetooth = true;
 						}
-					}
-					PropVariantClear(&varName);
-				}
 
-				pProps->Release();
-			}
-			pDevice->Release();
-		}
-		pEnumerator->Release();
-	}
+                    }
+                    PropVariantClear(&var);
+                }
 
-	CoUninitialize();
-	return isHeadphones;
+                props->Release();
+            }
+            device->Release();
+        }
+        enumerator->Release();
+    }
+
+    CoUninitialize();
+    return isBluetooth;
 }
 #endif
 
@@ -150,6 +129,7 @@ struct TrieNode {
 				TrieNode* node = root;
 				for (const char* c = keyword; *c; ++c) {
 					int index = *c - 'a';
+					
 					if (index < 0 || index >= 26) continue; // Skip non-lowercase letters
 					
 					if (!node->children[index]) {
@@ -203,287 +183,20 @@ ma_device_config  deviceConfig;
 ma_device         device;
 ma_bool32 deviceExists = MA_FALSE;
 ma_uint32         iDecoder;
-ma_context gDevicesContext;
-ma_bool32 gDevicesContextInitialized = MA_FALSE;
-
-// -------------------- AUTOMATIC HEADPHONE DETECTION WITH DEVICE MONITORING --------------------
-
-// Keep track of the current device ID
-static std::string currentDeviceId;
-static std::string currentDeviceName;
-static std::mutex deviceInfoMutex;
-
-// Device change detection thread
-static std::atomic<bool> monitorRunning{false};
-static std::thread monitorThread;
-static std::atomic<int> deviceChangeCounter{0};
-static ma_context monitorContext;
-static bool monitorContextInitialized = false;
-
-// Use atomic for thread-safe caching with auto-reset
-static std::atomic<int> headphoneCacheState{0}; // 0 = not checked, 1 = checking, 2 = headphones, 3 = not headphones
-static std::chrono::steady_clock::time_point lastCheckTime;
-
-// Function to reset headphone cache
-static void resetHeadphoneCache() {
-	headphoneCacheState.store(0, std::memory_order_release);
-}
-
-// Function to get current device ID and name
-static void updateCurrentDeviceInfo() {
-	// Don't try to access device if shutting down
-	if (exists == 0 || deviceExists == MA_FALSE) {
-		return;
-	}
-
-	std::lock_guard<std::mutex> lock(deviceInfoMutex);
-
-	if (deviceExists) {
-		// Convert device ID to string
-		char idStr[64] = {0};
-		snprintf(idStr, sizeof(idStr), "%p", (void*)&device.playback.id);
-		currentDeviceId = idStr;
-
-		// Get device name if available
-		if (device.playback.name[0] != '\0') {
-			currentDeviceName = device.playback.name;
-		} else {
-			currentDeviceName = "Unknown Device";
-		}
-	}
-}
-
-// Check if device has changed
-static bool hasDeviceChanged() {
-	static std::string lastDeviceId;
-	static std::string lastDeviceName;
-
-	std::lock_guard<std::mutex> lock(deviceInfoMutex);
-
-	if (currentDeviceId != lastDeviceId || currentDeviceName != lastDeviceName) {
-		lastDeviceId = currentDeviceId;
-		lastDeviceName = currentDeviceName;
-		return true;
-	}
-	return false;
-}
-
-// Device monitoring thread function
-static void deviceMonitorThread() {
-	ma_result result = ma_context_init(NULL, 0, NULL, &monitorContext);
-	if (result != MA_SUCCESS) {
-		return;
-	}
-	monitorContextInitialized = true;
-
-	// Set up device enumeration
-	ma_device_info* pPlaybackDeviceInfos = nullptr;
-	ma_uint32 playbackDeviceCount = 0;
-	ma_uint32 lastDeviceCount = 0;
-
-	while (monitorRunning) {
-		// Enumerate devices
-		result = ma_context_get_devices(&monitorContext, &pPlaybackDeviceInfos, &playbackDeviceCount, NULL, NULL);
-
-		if (result == MA_SUCCESS) {
-			// Check if device count changed
-			if (playbackDeviceCount != lastDeviceCount) {
-				deviceChangeCounter++;
-				lastDeviceCount = playbackDeviceCount;
-				resetHeadphoneCache(); // Reset cache when device count changes
-			}
-
-			// Update current device info
-			updateCurrentDeviceInfo();
-
-			// Check if our current device has changed properties
-			if (hasDeviceChanged()) {
-				resetHeadphoneCache(); // Reset cache when device changes
-			}
-		}
-
-		// Sleep for a bit to avoid excessive CPU usage
-		std::this_thread::sleep_for(std::chrono::milliseconds(250)); // Check every quarter of a second (negligable)
-	}
-
-	if (monitorContextInitialized) {
-		ma_context_uninit(&monitorContext);
-		monitorContextInitialized = false;
-	}
-}
-
-// Start device monitoring
-static void startDeviceMonitor() {
-	if (!monitorRunning) {
-		monitorRunning = true;
-		monitorThread = std::thread(deviceMonitorThread);
-	}
-}
-
-// Stop device monitoring
-static void stopDeviceMonitor() {
-	if (monitorRunning) {
-		monitorRunning = false;
-		if (monitorThread.joinable()) {
-			monitorThread.join();
-		}
-	}
-}
-
-// Original headphone detection function
-bool isHeadphoneDevice(const ma_device_info& deviceInfo) {
-	const char* name = deviceInfo.name;
-	if (!name) return false;
-
-	TrieNode* trie = TrieNode::getHeadphoneTrie();
-	if (!trie) return false; // Safety check
-
-	for (const char* p = name; *p; ++p) {
-		TrieNode* node = trie;
-
-		// Try to match from current position
-		for (const char* q = p; *q; ++q) {
-			char c = (char)std::tolower((unsigned char)*q);
-			if (c < 'a' || c > 'z') break;
-
-			int index = c - 'a';
-			if (!node->children[index]) break;
-
-			node = node->children[index];
-			if (node->isEnd) {
-				return true;
-			}
-		}
-	}
-
-	return false;
-}
-
-// Enhanced headphone detection with automatic device change detection
-bool checkIfUsingHeadphones() {
-	// CRITICAL: Don't check if we're shutting down
-	if (exists == 0 || deviceExists == MA_FALSE) {
-		return false;
-	}
-
-	// Check for device changes
-	static int lastChangeCounter = 0;
-	if (deviceChangeCounter.load() != lastChangeCounter) {
-		lastChangeCounter = deviceChangeCounter.load();
-		resetHeadphoneCache(); // Force re-check
-	}
-
-	// Check if cache is still valid (re-check every 2 seconds)
-	auto now = std::chrono::steady_clock::now();
-	static auto lastDeviceCheck = now;
-
-	if (now - lastDeviceCheck > std::chrono::seconds(2)) {
-		resetHeadphoneCache();
-		lastDeviceCheck = now;
-	}
-
-	int state = headphoneCacheState.load(std::memory_order_acquire);
-	if (state >= 2) {
-		return state == 2;
-	}
-
-	// Try to acquire the check lock
-	int expected = 0;
-	if (!headphoneCacheState.compare_exchange_strong(expected, 1,
-													 std::memory_order_acq_rel)) {
-		// Another thread is checking, wait for result
-		while (headphoneCacheState.load(std::memory_order_acquire) == 1) {
-			std::this_thread::yield();
-		}
-		state = headphoneCacheState.load(std::memory_order_acquire);
-		return state == 2;
-	}
-
-	// We're the thread doing the check
-	bool isHeadphones = false;
-
-	try {
-		updateCurrentDeviceInfo(); // Ensure we have current device info
-
-		std::lock_guard<std::mutex> lock(deviceInfoMutex);
-
-		// Method 1: Check current device name directly
-		if (!currentDeviceName.empty()) {
-			std::string nameLower = currentDeviceName;
-			std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(),
-						 [](unsigned char c) { return std::tolower(c); });
-
-			// Check against our keywords
-			const char* keywords[] = {"headphone", "headset", "earphone", "earbud",
-									 "airpod", "bluetooth", "bt", "wireless", "ear piece", "usb audio speakers"};
-			for (const char* keyword : keywords) {
-				if (nameLower.find(keyword) != std::string::npos) {
-					isHeadphones = true;
-					break;
-				}
-			}
-		}
-
-		// Method 2: If direct check fails, try to get device info from context
-		if (!isHeadphones) {
-			if (!gDevicesContextInitialized) {
-				ma_result result = ma_context_init(NULL, 0, NULL, &gDevicesContext);
-				if (result == MA_SUCCESS) {
-					gDevicesContextInitialized = MA_TRUE;
-				}
-			}
-
-			if (gDevicesContextInitialized) {
-				ma_device_info defaultDeviceInfo;
-				ma_result result = ma_context_get_device_info(&gDevicesContext,
-															 ma_device_type_playback,
-															 NULL,
-															 &defaultDeviceInfo);
-				if (result == MA_SUCCESS) {
-					isHeadphones = isHeadphoneDevice(defaultDeviceInfo);
-				}
-			}
-		}
-
-		// Method 3: Windows-specific detection (if you're on Windows)
-#ifdef HX_WINDOWS
-		if (!isHeadphones) {
-			// Windows-specific headphone detection using MMDevice API
-			// This is more reliable on Windows
-			isHeadphones = checkWindowsHeadphoneStatus();
-		}
-#endif
-
-	} catch (...) {
-		// If anything fails, assume not headphones
-		isHeadphones = false;
-	}
-
-	// Store result
-	headphoneCacheState.store(isHeadphones ? 2 : 3, std::memory_order_release);
-	lastDeviceCheck = now;
-
-	return isHeadphones;
-}
 
 // -------------------- LATENCY MEASUREMENT --------------------
 int detectLatency() {
-	int osMs = 95;
+	int osMs = 60;
 
 	if (deviceExists == MA_TRUE) {
 		osMs += (int)(device.playback.internalPeriodSizeInFrames / (SAMPLE_RATE * 0.001));
 
 		// Add 20ms extra latency if using headphones (now with auto-detection)
-		if (checkIfUsingHeadphones()) {
-			std::lock_guard<std::mutex> lock(deviceInfoMutex);
-			//printf("Using headphones: %s (added 20ms latency)\n", currentDeviceName.c_str());
-			osMs += 16;
-		} else {
-			std::lock_guard<std::mutex> lock(deviceInfoMutex);
-			if (!currentDeviceName.empty()) {
-				//printf("Using speakers: %s\n", currentDeviceName.c_str());
-			}
+		#if HX_WINDOWS
+		if (isBluetoothDevice()) {
+			osMs += 110; // realistic BT latency
 		}
+		#endif
 	}
 
 	return osMs;
@@ -741,9 +454,6 @@ bool stopped() {
 void destroy() {
 	if (exists == 0) return;
 	exists = 0;
-	
-	// CRITICAL: Stop the device monitor thread FIRST
-	stopDeviceMonitor();
 
 	ma_device_uninit(&device);
 	deviceExists = MA_FALSE;
@@ -762,11 +472,41 @@ void destroy() {
 		ma_mutex_uninit(&decoderMutex);
 		decoderMutexInitialized = MA_FALSE;
 	}
+}
 
-	if (gDevicesContextInitialized) {
-		ma_context_uninit(&gDevicesContext);
-		gDevicesContextInitialized = MA_FALSE;
-	}
+bool shouldUseExclusiveMode()
+{
+#ifdef HX_WINDOWS
+    if (isBluetoothDevice()) {
+        return false; // Bluetooth hates exclusive mode
+    }
+
+    // Optional: block known virtual devices
+    std::string name;
+    {
+        std::lock_guard<std::mutex> lock(deviceInfoMutex);
+        name = currentDeviceName;
+    }
+
+    std::transform(name.begin(), name.end(), name.begin(), ::tolower);
+
+    const char* virtualKeywords[] = {
+        "voicemeeter",
+        "virtual",
+        "vb-audio",
+        "cable",
+        "obs"
+    };
+
+    for (auto k : virtualKeywords) {
+        if (name.find(k) != std::string::npos)
+            return false;
+    }
+
+    return true;
+#else
+    return false;
+#endif
 }
 
 void loadFiles(std::vector<const char*> argv)
@@ -822,7 +562,14 @@ void loadFiles(std::vector<const char*> argv)
 	deviceConfig.playback.channels = CHANNEL_COUNT;
 	deviceConfig.sampleRate        = SAMPLE_RATE;
 	deviceConfig.dataCallback      = data_callback;
-	deviceConfig.pUserData         = nullptr;
+
+	#ifdef HX_WINDOWS
+	if (shouldUseExclusiveMode()) {
+		deviceConfig.wasapi.noAutoConvertSRC = MA_TRUE;
+		deviceConfig.wasapi.noDefaultQualitySRC = MA_TRUE;
+		deviceConfig.playback.shareMode = ma_share_mode_exclusive;
+	}
+	#endif
 
 	if (ma_device_init(nullptr, &deviceConfig, &device) != MA_SUCCESS) {
 		for (iDecoder = 0; iDecoder < g_decoderCount; ++iDecoder) {
@@ -835,9 +582,6 @@ void loadFiles(std::vector<const char*> argv)
 	}
 
 	deviceExists = MA_TRUE;
-	
-	// Start monitoring for device changes
-	startDeviceMonitor();
 }
 
 // pseudocode of what I'm doing
