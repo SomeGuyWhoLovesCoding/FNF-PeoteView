@@ -25,6 +25,7 @@
 #include <thread>
 #include <mutex>
 #include <chrono>
+#include <cstring>
 #include <unordered_map>
 
 // Windows-specific headphone detection (if you're on Windows)
