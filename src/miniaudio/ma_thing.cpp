@@ -755,7 +755,7 @@ bool checkIfUsingHeadphones() {
 
 // -------------------- LATENCY MEASUREMENT --------------------
 int detectLatency() {
-	int osMs = 40;
+	int osMs = 48;
 
 	if (deviceExists == MA_TRUE) {
 		// Check if PnP device - if so, reduce base latency by 50ms
