@@ -34,7 +34,6 @@
 #include <mutex>
 #include <chrono>
 #include <cstring>
-#include <cwctype>
 #include <unordered_map>
 
 // Windows-specific headphone detection (if you're on Windows)
