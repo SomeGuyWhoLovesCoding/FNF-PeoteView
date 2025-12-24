@@ -735,6 +735,10 @@ bool stopped() {
 void destroy() {
 	if (exists == 0) return;
 	exists = 0;
+	
+	// CRITICAL: Stop the device monitor thread FIRST
+	stopDeviceMonitor();
+
 	ma_device_uninit(&device);
 	deviceExists = MA_FALSE;
 
@@ -825,6 +829,9 @@ void loadFiles(std::vector<const char*> argv)
 	}
 
 	deviceExists = MA_TRUE;
+	
+	// Start monitoring for device changes
+	startDeviceMonitor();
 }
 
 // pseudocode of what I'm doing
