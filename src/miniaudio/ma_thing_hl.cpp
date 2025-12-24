@@ -239,6 +239,11 @@ static void resetHeadphoneCache() {
 
 // Function to get current device ID and name
 static void updateCurrentDeviceInfo() {
+	// Don't try to access device if shutting down
+	if (exists == 0 || deviceExists == MA_FALSE) {
+		return;
+	}
+
 	std::lock_guard<std::mutex> lock(deviceInfoMutex);
 
 	if (deviceExists) {
@@ -364,7 +369,8 @@ bool isHeadphoneDevice(const ma_device_info& deviceInfo) {
 
 // Enhanced headphone detection with automatic device change detection
 bool checkIfUsingHeadphones() {
-	if (deviceExists == MA_FALSE) {
+	// CRITICAL: Don't check if we're shutting down
+	if (exists == 0 || deviceExists == MA_FALSE) {
 		return false;
 	}
 
