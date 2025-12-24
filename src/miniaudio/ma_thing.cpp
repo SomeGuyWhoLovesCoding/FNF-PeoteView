@@ -468,11 +468,10 @@ bool checkIfUsingHeadphones() {
 
 // -------------------- LATENCY MEASUREMENT --------------------
 int detectLatency() {
-	int osMs = 95;
+	int osMs = 100;
 
 	if (deviceExists == MA_TRUE) {
-		osMs += (int)(device.playback.internalPeriodSizeInFrames / (SAMPLE_RATE * 0.001));
-
+		osMs += (int)(deviceConfig.periodSizeInMilliseconds);
 		// Add 20ms extra latency if using headphones (now with auto-detection)
 		if (checkIfUsingHeadphones()) {
 			std::lock_guard<std::mutex> lock(deviceInfoMutex);
@@ -823,6 +822,8 @@ void loadFiles(std::vector<const char*> argv)
 	deviceConfig.sampleRate        = SAMPLE_RATE;
 	deviceConfig.dataCallback      = data_callback;
 	deviceConfig.pUserData         = nullptr;
+	deviceConfig.periodSizeInFrames = 256;
+	deviceConfig.periods = 2;  // Double buffering
 
 	if (ma_device_init(nullptr, &deviceConfig, &device) != MA_SUCCESS) {
 		for (iDecoder = 0; iDecoder < g_decoderCount; ++iDecoder) {
@@ -849,3 +850,8 @@ double setGlobalVolume(double value) {
 	masterVolume = value;
 	return masterVolume;
 }
+
+/*void setPeriodSizeToFramerate(double rate) {
+	int periodSizePerMs = (SAMPLE_RATE * 0.00);
+	deviceConfig.periodSizeInFrames = std::min<int>((int)((rate * 0.5) * periodSizePerMs), periodSizePerMs);  // Try smaller buffer for lower latency
+}*/
