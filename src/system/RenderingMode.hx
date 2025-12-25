@@ -4,6 +4,7 @@ import sys.io.Process;
 import sys.FileSystem;
 import haxe.io.Bytes;
 import lime.graphics.opengl.GL;
+import lime.app.Application;
 
 @:publicFields
 class RenderingMode {
@@ -73,6 +74,12 @@ class RenderingMode {
 		ffmpegExists = true;
 
 		Sys.println("Rendering Mode System - Initializing...");
+
+		#if FV_LIME_FORK
+		Application.current.window.uncappedFrameRate = true;
+		#else
+		Application.current.window.frameRate = 1000;
+		#end
 
 		songName = Chart.header.title;
 
@@ -144,6 +151,12 @@ class RenderingMode {
 			process.close();
 			process.kill();
 		}
+
+		#if FV_LIME_FORK
+		Application.current.window.uncappedFrameRate = false;
+		#else
+		Application.current.window.frameRate = SaveData.graphics.frameRate;
+		#end
 
 		renderTime = haxe.Timer.stamp() - renderTime;
 		Sys.println('Rendering Mode System - Finished Rendering in just ${Tools.formatTime(renderTime * 1000)}.');

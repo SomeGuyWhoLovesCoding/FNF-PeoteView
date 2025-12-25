@@ -206,6 +206,7 @@ class Mixer {
 		if (lastTimestamp1s == 0) lastTimestamp1s = timestamp;
 		var deltaTime:Float = Tools.int64ToFloat(timestamp - lastTimestamp) / 100000;
 		if (deltaTime < 0.0001) deltaTime = 0.0001;
+		if (RenderingMode.enabled) deltaTime = 1000 / 60;
 		if (playField != null) {
 			var field = playField.field;
 			if (field != null) {
@@ -280,6 +281,11 @@ class Mixer {
 				var window = lime.app.Application.current.window;
 				updateSmoothMusicTime(deltaTime, playField, window);
 			}
+			#else
+			/*if (RenderingMode.enabled) {
+				//Sys.println('RenderMode Delta Time: $deltaTime');
+				subLoopTick(Tools.betterInt64FromFloat(deltaTime / 0.00001));
+			}*/
 			#end
 		}
 	}
