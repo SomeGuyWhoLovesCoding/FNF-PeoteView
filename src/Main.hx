@@ -303,8 +303,6 @@ class Main extends Application
 				storyMenu.update(newDeltaTime);
 			}
 		}
-
-		//Sys.println('${1000 / newDeltaTime} fps');
 	}
 
 	override function render(context:RenderContext) {
@@ -324,7 +322,7 @@ class Main extends Application
 		if (playField != null) {
 			var renderingModeEnabled = RenderingMode.enabled;
 			if (!playField.paused) {
-				if (renderingModeEnabled) playField.update(1000 / 60);
+				if (renderingModeEnabled) playField.update(16.66666);
 				var noteSystem = playField?.noteSystem;
 				if (noteSystem != null) {
 					var pos = MetaNote.floatToMetaNotePosition(playField.songPosition);
@@ -338,7 +336,7 @@ class Main extends Application
 
 				var hud = playField?.hud;
 				if (hud != null) {
-					hud.render(renderingModeEnabled ? 1000 / 60 : renderRate);
+					hud.render(renderingModeEnabled ? 16.66666 : renderRate);
 
 					var scoreTxt = HUD.scoreTxt;
 					var noteSpawner = noteSystem.noteSpawner;
