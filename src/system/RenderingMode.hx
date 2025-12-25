@@ -10,12 +10,49 @@ class RenderingMode {
 	private static var ffmpegExists(default, null):Bool;
 
 	static var process:Process;
-	static var enabled:Bool = false;
+	static var enabled:Bool = true;
 	static var started:Bool = false;
 
 	static var songName:String;
 
 	static var renderTime(default, null):Float;
+
+	static function getBestEncoder():Array<String> {
+		var encoders = [
+			{name: 'h264_nvenc', args: ['-c:v', 'h264_nvenc', '-preset', 'p4', '-b:v', '20M']},
+			{name: 'h264_amf', args: ['-c:v', 'h264_amf', '-quality', 'balanced', '-b:v', '20M']},
+			{name: 'h264_qsv', args: ['-c:v', 'h264_qsv', '-preset', 'medium', '-b:v', '20M']},
+			{name: 'libx264', args: ['-c:v', 'libx264', '-crf', '18', '-preset', 'veryfast']}
+		];
+
+		for (encoder in encoders) {
+			try {
+				// Actually test if the encoder works by trying to encode a single frame
+				var testProcess = new Process('ffmpeg', [
+					'-f', 'lavfi',
+					'-i', 'color=black:s=64x64:d=0.1',
+					'-c:v', encoder.name,
+					'-f', 'null',
+					'-'
+				]);
+				
+				var exitCode = testProcess.exitCode();
+				testProcess.close();
+				
+				if (exitCode == 0) {
+					Sys.println('Rendering Mode System - Using encoder: ${encoder.name}');
+					return encoder.args;
+				}
+			} catch (e:Dynamic) {
+				// Encoder test failed, try next one
+				continue;
+			}
+		}
+
+		// Fallback to software encoding
+		Sys.println('Rendering Mode System - Using encoder: libx264 (software fallback)');
+		return ['-c:v', 'libx264', '-crf', '18', '-preset', 'veryfast'];
+	}
 
 	static function initRender()
 	{
@@ -39,21 +76,31 @@ class RenderingMode {
 
 		songName = Chart.header.title;
 
-		process = new Process('ffmpeg', [
-			'-v', 'quiet', '-y', // START
+		// Get best encoder settings
+		var encoderSettings = getBestEncoder();
+
+		// Build the full arguments array
+		var args = [
+			'-y', // START (removed -v quiet for debugging)
 			'-f', 'rawvideo', // FILTER
 			'-pix_fmt', 'rgba', // PIXEL FORMAT
 			'-s', Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT, // DIMENSIONS
 			'-r', '60', // FRAMERATE
-			'-display_hflip', '-display_rotation', '180', // This is here because the original output is mirrored and upside down
 			'-i', '-', // INPUT INIT
-			'-vcodec', 'libx264', // ENCODER
-			'-crf', '0', // CRF
-			'-preset', 'ultrafast', // PRESET
-			'-c:a', 'copy', // COPY,
+			'-vf', 'vflip', // Use video filter instead of display flags
+		];
+
+		// Add encoder settings
+		args = args.concat(encoderSettings);
+
+		// Add remaining settings
+		args = args.concat([
 			'-colorspace', 'bt709', // CONVERT TO BT709 COLORSPACE
+			'-pix_fmt', 'yuv420p', // Ensure compatibility
 			'assets/videos/rendered/' + songName + '.mp4' // END (FILEPATH)
 		]);
+
+		process = new Process('ffmpeg', args);
 
 		renderTime = haxe.Timer.stamp();
 		started = true;
@@ -66,12 +113,17 @@ class RenderingMode {
 		if (!enabled || !started || !ffmpegExists || process == null)
 			return;
 
-		if (bytes == null) {
-			bytes = new haxe.io.UInt8Array(Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 4);
-		}
+		try {
+			if (bytes == null) {
+				bytes = new haxe.io.UInt8Array(Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 4);
+			}
 
-		Main.current.peoteView.gl.readPixels(1, 1, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, GL.RGBA, GL.UNSIGNED_BYTE, bytes);
-		process.stdin.write(untyped bytes.bytes);
+			Main.current.peoteView.gl.readPixels(1, 1, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, GL.RGBA, GL.UNSIGNED_BYTE, bytes);
+			process.stdin.write(untyped bytes.bytes);
+		} catch (e:Dynamic) {
+			Sys.println('Rendering Mode System - Error writing frame: $e');
+			stopRender();
+		}
 	}
 
 	static function stopRender()
@@ -82,8 +134,12 @@ class RenderingMode {
 		started = false;
 
 		if (process != null) {
-			if (process.stdin != null)
-				process.stdin.close();
+			try {
+				if (process.stdin != null)
+					process.stdin.close();
+			} catch (e:Dynamic) {
+				// Ignore close errors
+			}
 
 			process.close();
 			process.kill();
