@@ -36,10 +36,11 @@ class RenderingMode {
 					'-f', 'null',
 					'-'
 				]);
-				
+
 				var exitCode = testProcess.exitCode();
+				testProcess.kill();
 				testProcess.close();
-				
+
 				if (exitCode == 0) {
 					Sys.println('Rendering Mode System - Using encoder: ${encoder.name}');
 					return encoder.args;
