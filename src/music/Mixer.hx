@@ -175,6 +175,7 @@ class Mixer {
 			var multiply:Float = 0.05;
 			if (ogLatencyForImmediateChange != __cachedLatency) {
 				multiply = 1.0; // immediately change if latency has changed
+				ogSongPos -= (ogLatencyForImmediateChange - __cachedLatency); // please do this or your song position will take forever to return back to where it was before
 			} else {
 				if (absDiff > smallest) multiply = 0.1 * smoothedTimeMult;
 				if (absDiff > small) multiply = 0.325 * smoothedTimeMult;
