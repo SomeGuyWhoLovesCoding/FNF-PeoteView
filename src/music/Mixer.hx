@@ -228,7 +228,7 @@ class Mixer {
 						}
 					}
 
-					Main.conductor.time = playField.songPosition - playField.latencyCompensation - Mixer.latency();
+					Main.conductor.time = playField.songPosition + (playField.latencyCompensation - Mixer.latency());
 				} else {
 					field.updateGameOver();
 				}

@@ -1032,7 +1032,6 @@ void destroy() {
 	stopDeviceMonitor();
 
 	ma_device_uninit(&device);
-	deviceExists = MA_FALSE;
 
 	for (iDecoder = 0; iDecoder < g_decoderCount; ++iDecoder) {
 		ma_decoder_uninit(&g_pDecoders[iDecoder]);
@@ -1053,6 +1052,8 @@ void destroy() {
 		ma_context_uninit(&gDevicesContext);
 		gDevicesContextInitialized = MA_FALSE;
 	}
+
+	deviceExists = MA_FALSE;
 }
 
 void loadFiles(std::vector<const char*> argv)
@@ -1136,6 +1137,14 @@ double getGlobalVolume() {
 double setGlobalVolume(double value) {
 	masterVolume = value;
 	return masterVolume;
+}
+
+bool wearingHeadphones() {
+	return checkIfUsingHeadphones();
+}
+
+bool wearingPlugNPlay() {
+	return checkIfUsingPnPDevice();
 }
 
 /*void setPeriodSizeToFramerate(double rate) {

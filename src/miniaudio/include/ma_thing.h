@@ -19,4 +19,7 @@ void loadFiles(std::vector<const char*> argv);
 
 double getGlobalVolume();
 double setGlobalVolume(double value);
+
+bool wearingHeadphones();
+bool wearingPlugNPlay();
 #endif /* MA_THING_H */

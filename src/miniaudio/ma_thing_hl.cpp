@@ -1077,7 +1077,6 @@ HL_PRIM void HL_NAME(destroy)(_NO_ARG) {
 	stopDeviceMonitor();
 
 	ma_device_uninit(&device);
-	deviceExists = MA_FALSE;
 
 	for (iDecoder = 0; iDecoder < g_decoderCount; ++iDecoder) {
 		ma_decoder_uninit(&g_pDecoders[iDecoder]);
@@ -1093,6 +1092,8 @@ HL_PRIM void HL_NAME(destroy)(_NO_ARG) {
 		ma_mutex_uninit(&decoderMutex);
 		decoderMutexInitialized = MA_FALSE;
 	}
+
+	deviceExists = MA_FALSE;
 }
 
 HL_PRIM void HL_NAME(loadFiles)(varray* argv)
@@ -1179,6 +1180,14 @@ HL_PRIM double HL_NAME(setGlobalVolume)(double value) {
 	return masterVolume;
 }
 
+HL_PRIM bool HL_NAME(wearingHeadphones)(_NO_ARG)  {
+	return checkIfUsingHeadphones();
+}
+
+HL_PRIM bool HL_NAME(wearingPlugNPlay)(_NO_ARG) {
+	return checkIfUsingPnPDevice();
+}
+
 DEFINE_PRIM(_I32, detectLatency, _NO_ARG)
 DEFINE_PRIM(_I32, get_mixer_state, _NO_ARG)
 DEFINE_PRIM(_F64, get_playback_position, _NO_ARG)
@@ -1194,3 +1203,5 @@ DEFINE_PRIM(_VOID, destroy, _NO_ARG)
 DEFINE_PRIM(_VOID, loadFiles, _ARR)
 DEFINE_PRIM(_F64, getGlobalVolume, _NO_ARG)
 DEFINE_PRIM(_F64, setGlobalVolume, _F64)
+DEFINE_PRIM(_BOOL, wearingHeadphones, _NO_ARG)
+DEFINE_PRIM(_BOOL, wearingPlugNPlay, _NO_ARG)

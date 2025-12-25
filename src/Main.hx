@@ -260,6 +260,19 @@ class Main extends Application
 	override function update(deltaTime:Int) {
 		Tools.profileFrame();
 
+		var lastTitle = Application.current.window.title;
+
+		if (MiniAudio.wearingHeadphones()) {
+			if (lastTitle != "Wearing headphones (test)")
+				Application.current.window.title = "Wearing headphones (test)";
+		} else if (MiniAudio.wearingPlugNPlay()) {
+			if (lastTitle != "Wearing plug n play, near-zero latency (test)")
+				Application.current.window.title = "Wearing plug n play, near-zero latency (test)";
+		} else {
+			if (lastTitle != "yes im wearing speakers")
+				Application.current.window.title = "yes im wearing speakers";
+		}
+
 		if (_started) {
 			#if FV_LIME_FORK
 			newDeltaTime = deltaTime * 0.00001;

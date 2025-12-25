@@ -30,6 +30,9 @@ extern class MiniAudio {
 
 	@:native("getGlobalVolume") static function getGlobalVolume():cpp.Float64;
 	@:native("setGlobalVolume") static function setGlobalVolume(value:cpp.Float64):cpp.Float64;
+
+	@:native("wearingHeadphones") static function wearingHeadphones():Bool;
+	@:native("wearingPlugNPlay") static function wearingPlugNPlay():Bool;
 }
 #elseif hl
 class MiniAudio {
@@ -73,6 +76,13 @@ class MiniAudio {
 	}
 	@:hlNative("ma_thing", "setGlobalVolume") public static function setGlobalVolume(value:Float):Float {
 		return 0;
+	}
+
+	@:hlNative("ma_thing", "wearingHeadphones") public static function wearingHeadphones():Bool {
+		return false;
+	}
+	@:hlNative("ma_thing", "wearingPlugNPlay") public static function wearingPlugNPlay():Bool {
+		return false;
 	}
 }
 #else
