@@ -90,7 +90,7 @@ class RenderingMode {
 			'-s', Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
 			'-r', '60',
 			'-i', '-',
-			'-vf', 'vflip',
+			'-vf', 'vflip'
 		];
 
 		args = args.concat(encoderSettings);
