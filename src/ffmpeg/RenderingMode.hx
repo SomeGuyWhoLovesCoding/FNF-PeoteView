@@ -2,6 +2,8 @@ package ffmpeg;
 
 import sys.io.Process;
 import sys.FileSystem;
+import sys.thread.Thread;
+import sys.thread.Mutex;
 import haxe.io.Bytes;
 import lime.utils.UInt8Array;
 import lime.graphics.opengl.GL;
@@ -17,6 +19,13 @@ class RenderingMode {
 	static var pboTarget:Int = 0;
 	static var frameSize:Int = 0;
 	static var dataBuffer:UInt8Array; // Reuse buffer to avoid allocations
+	
+	// Threading components
+	static var writerThread:Thread;
+	static var writeQueue:Array<Bytes> = [];
+	static var queueMutex:Mutex;
+	static var shouldStopThread:Bool = false;
+	static var threadRunning:Bool = false;
 	
 	static function initPBOs() {
 		frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 4;
@@ -86,6 +95,7 @@ class RenderingMode {
 				'-c:v', 'h264_qsv',
 				'-preset', 'veryfast',
 				'-global_quality', '28',
+				'-async_depth', '6',
 				'-look_ahead', '0',
 				'-b:v', '3M'
 			]}
@@ -120,6 +130,44 @@ class RenderingMode {
 			'-tune', 'zerolatency',
 			'-x264-params', 'ref=1:bframes=0:me=dia:subq=1:trellis=0'
 		];
+	}
+	
+	static function writerThreadFunction() {
+		Sys.println('Rendering Mode System - Writer thread started');
+		threadRunning = true;
+		
+		while (true) {
+			var frameToWrite:Bytes = null;
+			
+			// Check if we should stop
+			queueMutex.acquire();
+			if (shouldStopThread && writeQueue.length == 0) {
+				queueMutex.release();
+				break;
+			}
+			
+			// Get next frame from queue
+			if (writeQueue.length > 0) {
+				frameToWrite = writeQueue.shift();
+			}
+			queueMutex.release();
+			
+			// Write frame outside of mutex lock
+			if (frameToWrite != null) {
+				try {
+					process.stdin.write(frameToWrite);
+				} catch (e:Dynamic) {
+					Sys.println('Rendering Mode System - Error writing frame: $e');
+					break;
+				}
+			} else {
+				// No frames to write, sleep briefly to avoid busy-waiting
+				Sys.sleep(0.001);
+			}
+		}
+		
+		threadRunning = false;
+		Sys.println('Rendering Mode System - Writer thread stopped');
 	}
 
 	static function initRender()
@@ -188,15 +236,25 @@ class RenderingMode {
 		Sys.println("Rendering Mode System - Done.");
 
 		initPBOs();
+		
+		// Initialize threading components
+		queueMutex = new Mutex();
+		writeQueue = [];
+		shouldStopThread = false;
+		
+		// Start writer thread
+		writerThread = Thread.create(writerThreadFunction);
 
 		renderTime = haxe.Timer.stamp();
 		started = true;
-		Sys.println("Rendering Mode System - Started!");
+		Sys.println("Rendering Mode System - Started with multithreaded writing!");
 	}
 
 	static function pipeFrame() {
 		if (!enabled || !started || !ffmpegExists || process == null)
 			return;
+		
+		var frameBytes:Bytes = null;
 		
 		if (pboTarget != 0 && pbos.length == PBO_BUFFERS) {
 			// Triple-buffered PBO readback for maximum throughput
@@ -220,9 +278,8 @@ class RenderingMode {
 				// Reuse pre-allocated buffer to avoid GC pressure
 				GL.getBufferSubData(pboTarget, 0, frameSize, dataBuffer);
 				
-				// Write directly without creating intermediate Bytes object if possible
-				var bytes = dataBuffer.toBytes();
-				process.stdin.write(bytes);
+				// Convert to Bytes for queuing
+				frameBytes = dataBuffer.toBytes();
 			} catch (e:Dynamic) {
 				Sys.println('Rendering Mode System - Warning: getBufferSubData failed, disabling PBOs');
 				pboTarget = 0;
@@ -240,7 +297,14 @@ class RenderingMode {
 			// Fallback: direct synchronous readPixels (blocks GPU pipeline)
 			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT,
 						 GL.RGBA, GL.UNSIGNED_BYTE, dataBuffer);
-			process.stdin.write(dataBuffer.toBytes());
+			frameBytes = dataBuffer.toBytes();
+		}
+		
+		// Queue frame for writing by worker thread
+		if (frameBytes != null) {
+			queueMutex.acquire();
+			writeQueue.push(frameBytes);
+			queueMutex.release();
 		}
 	}
 
@@ -250,6 +314,24 @@ class RenderingMode {
 			return;
 
 		started = false;
+		
+		Sys.println('Rendering Mode System - Stopping writer thread...');
+		
+		// Signal thread to stop
+		queueMutex.acquire();
+		shouldStopThread = true;
+		queueMutex.release();
+		
+		// Wait for thread to finish processing queue
+		var timeout = 30.0; // 30 second timeout
+		var startTime = haxe.Timer.stamp();
+		while (threadRunning && (haxe.Timer.stamp() - startTime) < timeout) {
+			Sys.sleep(0.1);
+		}
+		
+		if (threadRunning) {
+			Sys.println('Rendering Mode System - Warning: Writer thread did not stop gracefully');
+		}
 
 		if (process != null) {
 			try {
@@ -271,8 +353,9 @@ class RenderingMode {
 			pbos = [];
 		}
 		
-		// Clear reusable buffer
+		// Clear resources
 		dataBuffer = null;
+		writeQueue = [];
 
 		#if FV_LIME_FORK
 		Application.current.window.uncappedFrameRate = false;
