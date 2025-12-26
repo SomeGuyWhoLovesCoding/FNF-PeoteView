@@ -149,27 +149,25 @@ class Mixer {
 	private static var ogLatencyForImmediateChange(default, null):Int = 100;
 	inline static public function updateSmoothMusicTime(deltaTime:Float, playfield:PlayField, window:Window):Void {
 		if (isPlaying()) {
-			var ogSongPos = playfield.songPosition + deltaTime;
+			var ogSongPos = playfield.songPosition + (deltaTime * speed);
 			var rawPlaybackPosition = MiniAudio.getPlaybackPosition() + (playfield.latencyCompensation - Mixer.latency());
-			playfield.songPosition += deltaTime;
+			playfield.songPosition += deltaTime * speed;
 
 			#if FV_LIME_FORK
-			var smoothedTimeMult:Float = deltaTime / (1000 / window.renderFrameRate);
+			var smoothedTimeMult:Float = (deltaTime / (1000 / window.renderFrameRate)) * speed;
 			#else
 			var refreshRate = window.displayMode.refreshRate; // integer version if you're on vanilla lime
-			var smoothedTimeMult:Float = (1000 / window.frameRate) / (1000 / refreshRate);
+			var smoothedTimeMult:Float = ((1000 / window.frameRate) / (1000 / refreshRate)) * speed;
 			#end
 
 			var diff = ogSongPos - rawPlaybackPosition;
 			var absDiff = Math.abs(diff);
 			//Sys.println(absDiff);
 
-			// Thresholds scaled by speed to maintain consistent correction behavior
-			var speedFactor = speed;
-			var smallest:Float = 3.75 * speedFactor;
-			var small:Float = 8.5 * speedFactor;
-			var big:Float = 17.5 * speedFactor;
-			var biggest:Float = 40 * speedFactor;
+			var smallest:Float = 3.75 * speed;
+			var small:Float = 8.5 * speed;
+			var big:Float = 17.5 * speed;
+			var biggest:Float = 40 * speed;
 
 			// Determine correction strength based on drift magnitude
 			var multiply:Float = 0.05;
