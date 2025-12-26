@@ -26,12 +26,11 @@ sudo sed -i 's|<drm.h>|<libdrm/drm.h>|' /usr/include/xf86drm.h && \
 sudo ln -sf /usr/include/libdrm/drm_mode.h /usr/include/drm_mode.h && \
 sudo ln -sf /usr/include/libdrm/drm.h /usr/include/drm.h
 
-# Continue with your haxe setup
 haxelib setup ~/haxelib
 haxelib install format --quiet
 haxelib install hxp --quiet
-haxelib install hxcpp --quiet
+haxelib install hxcpp > /dev/null --quiet
 haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet
 haxelib install peote-view --quiet
 haxelib install input2action --quiet
-haxelib install customtitlebar --quiet
+haxelib git customtitlebar https://github.com/SomeGuyWhoLovesCoding/customtitlebar.git --quiet

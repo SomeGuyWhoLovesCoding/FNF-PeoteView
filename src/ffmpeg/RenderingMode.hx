@@ -26,27 +26,27 @@ class RenderingMode {
 				'-c:v', 'h264_nvenc',
 				'-preset', 'p1',           // p1 = fastest (was p4)
 				'-tune', 'ull',            // ultra-low latency
-				'-b:v', '12M',             // reduced bitrate for speed
-				'-maxrate', '12M',
-				'-bufsize', '30M'
+				'-b:v', '3M',             // reduced bitrate for speed
+				'-maxrate', '4M',
+				'-bufsize', '1M'
 			]},
 			
 			// AMD AMF - fastest preset
 			{name: 'h264_amf', args: [
 				'-c:v', 'h264_amf',
 				'-quality', 'speed',       // speed mode (was balanced)
-				'-b:v', '12M',
-				'-maxrate', '12M',
+				'-b:v', '3M',
+				'-maxrate', '4M',
 				'-rc', 'vbr_latency'       // variable bitrate low latency
 			]},
 			
 			// Intel QSV - fastest preset
 			{name: 'h264_qsv', args: [
 				'-c:v', 'h264_qsv',
-				'-preset', 'veryfast',     // veryfast (was medium)
-				'-global_quality', '25',   // lower quality = faster
-				'-look_ahead', '0',        // disable lookahead for speed
-				'-b:v', '12M'
+				'-preset', 'veryfast',
+				'-global_quality', '25',
+				'-look_ahead', '0',
+				'-b:v', '3M'
 			]}
 		];
 
@@ -80,6 +80,7 @@ class RenderingMode {
 			'-tune', 'zerolatency',    // optimize for speed
 			'-x264-params', 'ref=1:bframes=0:me=dia:subq=1:trellis=0' // minimal CPU processing
 		];
+		// Did you know that the old version of the encoder was fast but outputted really huge files? Yes, 
 	}
 
 	static function initRender()
@@ -123,15 +124,20 @@ class RenderingMode {
 			'-s', Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
 			'-r', Std.string(frameRate),
 			'-i', '-',
-			'-vf', 'vflip',
-			'-flush_packets', '0'
+			'-vf', 'vflip,format=nv12',
+			'-fflags', 'nobuffer',
+			'-flags', 'low_delay',
+			'-flush_packets', '1',
+			'-max_delay', '0',
+			'-muxdelay', '0',
+			'-muxpreload', '0'
 		];
 
 		args = args.concat(encoderSettings);
 
 		args = args.concat([
 			'-colorspace', 'bt709',
-			'-pix_fmt', 'yuv420p',
+			//'-pix_fmt', 'yuv420p', no need for this, too redundant anyway
 			'assets/videos/rendered/' + songName + '.mp4'
 		]);
 
@@ -165,6 +171,7 @@ class RenderingMode {
 			stopRender();
 		}
 	}
+	
 
 	static function stopRender()
 	{
