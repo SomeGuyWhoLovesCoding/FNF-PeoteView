@@ -14,7 +14,7 @@ class RenderingMode {
 	/*static inline var GL_MAP_READ_BIT = 0x0001;
 	static inline var GL_MAP_UNSYNCHRONIZED_BIT = 0x0020;*/
 
-	static final PBO_BUFFERS:Int = 4; // Triple buffering for better pipeline utilization
+	static final PBO_BUFFERS:Int = 5; // Triple buffering for better pipeline utilization
 	
 	static var pbos:Array<GLBuffer> = [];
 	static var pboIndex:Int = 0;
@@ -173,7 +173,7 @@ class RenderingMode {
 			'-flags', 'low_delay',
 			'-bufsize', '8M',  // Larger buffer
 			'-threads', '0',    // Use all CPU cores
-			'-thread_queue_size', '4096'
+			'-thread_queue_size', '8192'
 		];
 
 		args = args.concat(encoderSettings);
