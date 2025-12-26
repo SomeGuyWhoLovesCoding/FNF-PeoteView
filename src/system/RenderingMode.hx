@@ -11,7 +11,7 @@ class RenderingMode {
 	private static var ffmpegExists(default, null):Bool;
 
 	static var process:Process;
-	static var enabled:Bool = false;
+	static var enabled:Bool = true;
 	static var started:Bool = false;
 
 	static var songName:String;
@@ -28,16 +28,20 @@ class RenderingMode {
 		for (encoder in encoders) {
 			var testProcess = new Process('ffmpeg', [
 				'-f', 'lavfi',
+				'-v', 'quiet',
 				'-i', 'color=black:s=64x64:d=0.1',
 				'-c:v', encoder.name,
 				'-f', 'null',
 				'-'
 			]);
 
-			var exitCode = testProcess.exitCode();
-			if (exitCode != 0) {
-				testProcess.kill();
-				testProcess.close();
+            var stderr = testProcess.stderr.readAll().toString();
+            var exitCode = testProcess.exitCode();
+            
+            // If encoder is not available, FFmpeg will error out
+            // Check for common error messages
+            if (stderr.indexOf('Conversion failed!') > -1 ||
+                exitCode != 0) {
 				continue;
 			} else {
 				Sys.println('Rendering Mode System - Using encoder: ${encoder.name}');
