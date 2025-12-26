@@ -159,6 +159,7 @@ class Mixer {
 			var refreshRate = window.displayMode.refreshRate; // integer version if you're on vanilla lime
 			var smoothedTimeMult:Float = ((1000 / window.frameRate) / (1000 / refreshRate)) * speed;
 			#end
+			if (RenderingMode.enabled) smoothedTimeMult = 1;
 
 			var diff = ogSongPos - rawPlaybackPosition;
 			var absDiff = Math.abs(diff);
@@ -204,7 +205,7 @@ class Mixer {
 		if (lastTimestamp1s == 0) lastTimestamp1s = timestamp;
 		var deltaTime:Float = Tools.int64ToFloat(timestamp - lastTimestamp) / 100000;
 		if (deltaTime < 0.0001) deltaTime = 0.0001;
-		if (RenderingMode.enabled) deltaTime = 1000 / 60;
+		if (RenderingMode.enabled) deltaTime = 1000 / RenderingMode.frameRate;
 		if (playField != null) {
 			var field = playField.field;
 			if (field != null) {
@@ -221,7 +222,7 @@ class Mixer {
 					}
 					if (!playField.paused) {
 						if (!playField.songStarted || playField.songEnded || RenderingMode.enabled) {
-							if (deltaTime > renderDelta) deltaTime = renderDelta;
+							if (deltaTime > renderDelta && !RenderingMode.enabled) deltaTime = renderDelta;
 							playField.songPosition += deltaTime * Mixer.speed;
 						} else {
 							updateSmoothMusicTime(deltaTime, playField, window);

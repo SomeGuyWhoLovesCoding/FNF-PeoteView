@@ -322,7 +322,7 @@ class Main extends Application
 		if (playField != null) {
 			var renderingModeEnabled = RenderingMode.enabled;
 			if (!playField.paused) {
-				if (renderingModeEnabled) playField.update(1000 / 60);
+				if (renderingModeEnabled) playField.update(1000 / RenderingMode.frameRate);
 				var noteSystem = playField?.noteSystem;
 				if (noteSystem != null) {
 					var pos = MetaNote.floatToMetaNotePosition(playField.songPosition);
@@ -336,7 +336,7 @@ class Main extends Application
 
 				var hud = playField?.hud;
 				if (hud != null) {
-					hud.render(renderingModeEnabled ? (1000 / 60) : renderRate);
+					hud.render(renderingModeEnabled ? (1000 / RenderingMode.frameRate) : renderRate);
 
 					var scoreTxt = HUD.scoreTxt;
 					var noteSpawner = noteSystem.noteSpawner;

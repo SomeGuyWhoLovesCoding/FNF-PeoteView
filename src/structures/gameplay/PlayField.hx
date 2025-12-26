@@ -218,10 +218,6 @@ class PlayField implements State {
 			return;
 		}
 
-		if (RenderingMode.enabled) {
-			deltaTime = 1000 / 60;
-		}
-
 		display.update();
 		view.update();
 
