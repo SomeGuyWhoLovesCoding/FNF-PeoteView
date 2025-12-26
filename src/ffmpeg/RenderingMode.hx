@@ -10,44 +10,44 @@ import lime.app.Application;
 
 @:publicFields
 class RenderingMode {
-    static final PBO_BUFFERS:Int = 3; // Triple buffering for better pipeline utilization
-    
-    static var pbos:Array<GLBuffer> = [];
-    static var pboIndex:Int = 0;
-    static var pboTarget:Int = 0;
-    static var frameSize:Int = 0;
-    static var dataBuffer:UInt8Array; // Reuse buffer to avoid allocations
-    
-    static function initPBOs() {
-        frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 4;
-        
-        // Pre-allocate reusable buffer
-        dataBuffer = new UInt8Array(frameSize);
-        
-        // Determine the correct PBO target based on OpenGL version
-        #if (lime >= "8.0.0")
-        var glVersion = GL.getParameter(GL.VERSION);
-        pboTarget = 0x88EB; // GL_PIXEL_PACK_BUFFER
-        #else
-        pboTarget = 0x88EB;
-        #end
-        
-        if (pboTarget != 0) {
-            Sys.println('Rendering Mode System - Initializing ${PBO_BUFFERS} PBOs for triple buffering...');
-            
-            for (i in 0...PBO_BUFFERS) {
-                pbos[i] = GL.createBuffer();
-                GL.bindBuffer(pboTarget, pbos[i]);
-                // Use STREAM_READ for CPU reads, consider STREAM_COPY if staying on GPU
-                GL.bufferData(pboTarget, frameSize, cast null, GL.STREAM_READ);
-            }
-            
-            GL.bindBuffer(pboTarget, null);
-            Sys.println('Rendering Mode System - PBOs initialized successfully');
-        } else {
-            Sys.println('Rendering Mode System - PBOs not supported, using direct readPixels');
-        }
-    }
+	static final PBO_BUFFERS:Int = 3; // Triple buffering for better pipeline utilization
+	
+	static var pbos:Array<GLBuffer> = [];
+	static var pboIndex:Int = 0;
+	static var pboTarget:Int = 0;
+	static var frameSize:Int = 0;
+	static var dataBuffer:UInt8Array; // Reuse buffer to avoid allocations
+	
+	static function initPBOs() {
+		frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 4;
+		
+		// Pre-allocate reusable buffer
+		dataBuffer = new UInt8Array(frameSize);
+		
+		// Determine the correct PBO target based on OpenGL version
+		#if (lime >= "8.0.0")
+		var glVersion = GL.getParameter(GL.VERSION);
+		pboTarget = 0x88EB; // GL_PIXEL_PACK_BUFFER
+		#else
+		pboTarget = 0x88EB;
+		#end
+		
+		if (pboTarget != 0) {
+			Sys.println('Rendering Mode System - Initializing ${PBO_BUFFERS} PBOs for triple buffering...');
+			
+			for (i in 0...PBO_BUFFERS) {
+				pbos[i] = GL.createBuffer();
+				GL.bindBuffer(pboTarget, pbos[i]);
+				// Use STREAM_READ for CPU reads, consider STREAM_COPY if staying on GPU
+				GL.bufferData(pboTarget, frameSize, cast null, GL.STREAM_COPY);
+			}
+			
+			GL.bindBuffer(pboTarget, null);
+			Sys.println('Rendering Mode System - PBOs initialized successfully');
+		} else {
+			Sys.println('Rendering Mode System - PBOs not supported, using direct readPixels');
+		}
+	}
 
 	private static var ffmpegExists(default, null):Bool;
 
@@ -159,7 +159,7 @@ class RenderingMode {
 		var args = [
 			'-y',
 			'-f', 'rawvideo',
-			'-pix_fmt', 'rgb24',
+			'-pix_fmt', 'rgba',
 			'-s', Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
 			'-r', Std.string(frameRate),
 			'-i', '-',
@@ -194,55 +194,55 @@ class RenderingMode {
 		Sys.println("Rendering Mode System - Started!");
 	}
 
-    static function pipeFrame() {
-        if (!enabled || !started || !ffmpegExists || process == null)
-            return;
-        
-        if (pboTarget != 0 && pbos.length == PBO_BUFFERS) {
-            // Triple-buffered PBO readback for maximum throughput
-            // Buffer 0: Currently being read by CPU
-            // Buffer 1: Being filled by GPU (this frame)
-            // Buffer 2: Ready to read (from 2 frames ago)
-            
-            var readPBO = pbos[pboIndex];
-            var writePBO = pbos[(pboIndex + 2) % PBO_BUFFERS];
-            
-            // Start async GPU read into writePBO for this frame
-            GL.bindBuffer(pboTarget, writePBO);
-            GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 
-                         GL.RGBA, GL.UNSIGNED_BYTE, cast 0);
-            
-            // Read from readPBO (data from 2 frames ago, should be ready now)
-            GL.bindBuffer(pboTarget, readPBO);
-            
-            #if (cpp || hl)
-            try {
-                // Reuse pre-allocated buffer to avoid GC pressure
-                GL.getBufferSubData(pboTarget, 0, frameSize, dataBuffer);
-                
-                // Write directly without creating intermediate Bytes object if possible
-                var bytes = dataBuffer.toBytes();
-                process.stdin.write(bytes);
-            } catch (e:Dynamic) {
-                Sys.println('Rendering Mode System - Warning: getBufferSubData failed, disabling PBOs');
-                pboTarget = 0;
-            }
-            #else
-            Sys.println('Rendering Mode System - Warning: PBO readback not implemented for this platform');
-            pboTarget = 0;
-            #end
-            
-            GL.bindBuffer(pboTarget, null);
-            
-            // Advance to next buffer in ring
-            pboIndex = (pboIndex + 1) % PBO_BUFFERS;
-        } else {
-            // Fallback: direct synchronous readPixels (blocks GPU pipeline)
-            GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT,
-                         GL.RGBA, GL.UNSIGNED_BYTE, dataBuffer);
-            process.stdin.write(dataBuffer.toBytes());
-        }
-    }
+	static function pipeFrame() {
+		if (!enabled || !started || !ffmpegExists || process == null)
+			return;
+		
+		if (pboTarget != 0 && pbos.length == PBO_BUFFERS) {
+			// Triple-buffered PBO readback for maximum throughput
+			// Buffer 0: Currently being read by CPU
+			// Buffer 1: Being filled by GPU (this frame)
+			// Buffer 2: Ready to read (from 2 frames ago)
+			
+			var readPBO = pbos[pboIndex];
+			var writePBO = pbos[(pboIndex + 2) % PBO_BUFFERS];
+			
+			// Start async GPU read into writePBO for this frame
+			GL.bindBuffer(pboTarget, writePBO);
+			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 
+						 GL.RGBA, GL.UNSIGNED_BYTE, cast 0);
+			
+			// Read from readPBO (data from 2 frames ago, should be ready now)
+			GL.bindBuffer(pboTarget, readPBO);
+			
+			#if (cpp || hl)
+			try {
+				// Reuse pre-allocated buffer to avoid GC pressure
+				GL.getBufferSubData(pboTarget, 0, frameSize, dataBuffer);
+				
+				// Write directly without creating intermediate Bytes object if possible
+				var bytes = dataBuffer.toBytes();
+				process.stdin.write(bytes);
+			} catch (e:Dynamic) {
+				Sys.println('Rendering Mode System - Warning: getBufferSubData failed, disabling PBOs');
+				pboTarget = 0;
+			}
+			#else
+			Sys.println('Rendering Mode System - Warning: PBO readback not implemented for this platform');
+			pboTarget = 0;
+			#end
+			
+			GL.bindBuffer(pboTarget, null);
+			
+			// Advance to next buffer in ring
+			pboIndex = (pboIndex + 1) % PBO_BUFFERS;
+		} else {
+			// Fallback: direct synchronous readPixels (blocks GPU pipeline)
+			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT,
+						 GL.RGBA, GL.UNSIGNED_BYTE, dataBuffer);
+			process.stdin.write(dataBuffer.toBytes());
+		}
+	}
 
 	static function stopRender()
 	{
