@@ -10,6 +10,10 @@ import lime.app.Application;
 
 @:publicFields
 class RenderingMode {
+	// Define missing GL constants
+	/*static inline var GL_MAP_READ_BIT = 0x0001;
+	static inline var GL_MAP_UNSYNCHRONIZED_BIT = 0x0020;*/
+
 	static final PBO_BUFFERS:Int = 4; // Triple buffering for better pipeline utilization
 	
 	static var pbos:Array<GLBuffer> = [];
@@ -147,6 +151,7 @@ class RenderingMode {
 		#else
 		Application.current.window.frameRate = 1000;
 		#end
+		Application.current.window.resizable = false;
 
 		songName = Chart.header.title;
 
@@ -163,12 +168,12 @@ class RenderingMode {
 			'-s', Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
 			'-r', Std.string(frameRate),
 			'-i', '-',
-			'-vf', 'vflip,format=nv12',
+			'-vf', 'vflip',
 			'-fflags', 'nobuffer',
 			'-flags', 'low_delay',
 			'-bufsize', '8M',  // Larger buffer
 			'-threads', '0',    // Use all CPU cores
-			'-thread_queue_size', '512'
+			'-thread_queue_size', '4096'
 		];
 
 		args = args.concat(encoderSettings);
@@ -186,6 +191,16 @@ class RenderingMode {
 
 		initPBOs();
 
+		/*var countOnMe:Int = 0;
+		var user = Main.VARIABLE_HEIGHT > Main.VARIABLE_WIDTH ? Main.VARIABLE_WIDTH : Main.VARIABLE_HEIGHT;
+		while(user / (1 << countOnMe) % 1 == 0) {
+			++countOnMe;
+		}
+		trace('CHOSE PACK_ALIGNMENT: ' + (1 << countOnMe));*/
+		GL.pixelStorei(GL.PACK_ALIGNMENT, 16);
+
+		Sys.println("Rendering Mode System - Let ffmpeg prepare.");
+		Sys.sleep(1);
 		renderTime = haxe.Timer.stamp();
 		started = true;
 		Sys.println("Rendering Mode System - Started!");
@@ -215,11 +230,7 @@ class RenderingMode {
 			try {
 				// Reuse pre-allocated buffer to avoid GC pressure
 				GL.getBufferSubData(pboTarget, 0, frameSize, dataBuffer);
-				
-				// Write directly without creating intermediate Bytes object if possible
-				var bytes:haxe.io.Bytes = dataBuffer;
-				//Sys.println(bytes);
-				if (bytes != null) process.stdin.write(bytes);
+				process.stdin.write(dataBuffer); // write directly
 			} catch (e:Dynamic) {
 				Sys.println('Rendering Mode System - Warning: getBufferSubData failed, disabling PBOs\nVideo is now corrupted');
 				pboTarget = 0;
@@ -270,13 +281,16 @@ class RenderingMode {
 		// Clear reusable buffer
 		dataBuffer = null;
 
+		GL.pixelStorei(GL.PACK_ALIGNMENT, 4);
+
 		#if FV_LIME_FORK
 		Application.current.window.uncappedFrameRate = false;
 		#else
 		Application.current.window.frameRate = SaveData.graphics.frameRate;
 		#end
+		Application.current.window.resizable = true;
 
 		renderTime = haxe.Timer.stamp() - renderTime;
-		Sys.println('Rendering Mode System - Finished Rendering in just ${Tools.formatTime(renderTime * 1000)}.');
+		Sys.println('Rendering Mode System - Finished Rendering in just ${Tools.formatTime(renderTime * 1000, true)}.');
 	}
 }
