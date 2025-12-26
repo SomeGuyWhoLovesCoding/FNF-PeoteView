@@ -3,11 +3,52 @@ package ffmpeg;
 import sys.io.Process;
 import sys.FileSystem;
 import haxe.io.Bytes;
+import lime.utils.UInt8Array;
 import lime.graphics.opengl.GL;
+import lime.graphics.opengl.GLBuffer;
 import lime.app.Application;
 
 @:publicFields
 class RenderingMode {
+    static final PBO_BUFFERS:Int = 3; // Triple buffering for better pipeline utilization
+    
+    static var pbos:Array<GLBuffer> = [];
+    static var pboIndex:Int = 0;
+    static var pboTarget:Int = 0;
+    static var frameSize:Int = 0;
+    static var dataBuffer:UInt8Array; // Reuse buffer to avoid allocations
+    
+    static function initPBOs() {
+        frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 4;
+        
+        // Pre-allocate reusable buffer
+        dataBuffer = new UInt8Array(frameSize);
+        
+        // Determine the correct PBO target based on OpenGL version
+        #if (lime >= "8.0.0")
+        var glVersion = GL.getParameter(GL.VERSION);
+        pboTarget = 0x88EB; // GL_PIXEL_PACK_BUFFER
+        #else
+        pboTarget = 0x88EB;
+        #end
+        
+        if (pboTarget != 0) {
+            Sys.println('Rendering Mode System - Initializing ${PBO_BUFFERS} PBOs for triple buffering...');
+            
+            for (i in 0...PBO_BUFFERS) {
+                pbos[i] = GL.createBuffer();
+                GL.bindBuffer(pboTarget, pbos[i]);
+                // Use STREAM_READ for CPU reads, consider STREAM_COPY if staying on GPU
+                GL.bufferData(pboTarget, frameSize, cast null, GL.STREAM_READ);
+            }
+            
+            GL.bindBuffer(pboTarget, null);
+            Sys.println('Rendering Mode System - PBOs initialized successfully');
+        } else {
+            Sys.println('Rendering Mode System - PBOs not supported, using direct readPixels');
+        }
+    }
+
 	private static var ffmpegExists(default, null):Bool;
 
 	static var process:Process;
@@ -24,9 +65,9 @@ class RenderingMode {
 			// NVIDIA NVENC - fastest preset
 			{name: 'h264_nvenc', args: [
 				'-c:v', 'h264_nvenc',
-				'-preset', 'p1',           // p1 = fastest (was p4)
-				'-tune', 'ull',            // ultra-low latency
-				'-b:v', '3M',             // reduced bitrate for speed
+				'-preset', 'p1',
+				'-tune', 'ull',
+				'-b:v', '3M',
 				'-maxrate', '4M',
 				'-bufsize', '1M'
 			]},
@@ -34,10 +75,10 @@ class RenderingMode {
 			// AMD AMF - fastest preset
 			{name: 'h264_amf', args: [
 				'-c:v', 'h264_amf',
-				'-quality', 'speed',       // speed mode (was balanced)
+				'-quality', 'speed',
 				'-b:v', '3M',
 				'-maxrate', '4M',
-				'-rc', 'vbr_latency'       // variable bitrate low latency
+				'-rc', 'vbr_latency'
 			]},
 			
 			// Intel QSV - fastest preset
@@ -71,16 +112,14 @@ class RenderingMode {
 			}
 		}
 
-		// Software fallback - optimized for speed on low-end systems
 		Sys.println('Rendering Mode System - Using encoder: libx264 (software fallback)');
 		return [
 			'-c:v', 'libx264',
-			'-preset', 'ultrafast',    // fastest CPU preset (was veryfast)
-			'-crf', '27',              // slightly lower quality for speed (was 18)
-			'-tune', 'zerolatency',    // optimize for speed
-			'-x264-params', 'ref=1:bframes=0:me=dia:subq=1:trellis=0' // minimal CPU processing
+			'-preset', 'ultrafast',
+			'-crf', '27',
+			'-tune', 'zerolatency',
+			'-x264-params', 'ref=1:bframes=0:me=dia:subq=1:trellis=0'
 		];
-		// Did you know that the old version of the encoder was fast but outputted really huge files? Yes, really. It did that as a tradeoff for speed. That's fucking insane.
 	}
 
 	static function initRender()
@@ -120,7 +159,7 @@ class RenderingMode {
 		var args = [
 			'-y',
 			'-f', 'rawvideo',
-			'-pix_fmt', 'rgba',
+			'-pix_fmt', 'rgb24',
 			'-s', Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
 			'-r', Std.string(frameRate),
 			'-i', '-',
@@ -130,14 +169,15 @@ class RenderingMode {
 			'-flush_packets', '1',
 			'-max_delay', '0',
 			'-muxdelay', '0',
-			'-muxpreload', '0'
+			'-muxpreload', '0',
+			'-bufsize', '8M',  // Larger buffer
+			'-threads', '0',    // Use all CPU cores
 		];
 
 		args = args.concat(encoderSettings);
 
 		args = args.concat([
 			'-colorspace', 'bt709',
-			//'-pix_fmt', 'yuv420p', no need for this, too redundant anyway
 			'assets/videos/rendered/' + songName + '.mp4'
 		]);
 
@@ -147,31 +187,62 @@ class RenderingMode {
 
 		Sys.println("Rendering Mode System - Done.");
 
+		initPBOs();
+
 		renderTime = haxe.Timer.stamp();
 		started = true;
 		Sys.println("Rendering Mode System - Started!");
 	}
 
-	static var bytes:haxe.io.UInt8Array;
-	static function pipeFrame()
-	{
-		if (!enabled || !started || !ffmpegExists || process == null)
-			return;
-
-		try {
-			if (bytes == null) {
-				bytes = new haxe.io.UInt8Array(Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 4);
-			}
-
-			// Read directly - this is synchronous but the most reliable method
-			Main.current.peoteView.gl.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, GL.RGBA, GL.UNSIGNED_BYTE, bytes);
-			process.stdin.write(untyped bytes.bytes);
-		} catch (e:Dynamic) {
-			Sys.println('Rendering Mode System - Error writing frame: $e');
-			stopRender();
-		}
-	}
-	
+    static function pipeFrame() {
+        if (!enabled || !started || !ffmpegExists || process == null)
+            return;
+        
+        if (pboTarget != 0 && pbos.length == PBO_BUFFERS) {
+            // Triple-buffered PBO readback for maximum throughput
+            // Buffer 0: Currently being read by CPU
+            // Buffer 1: Being filled by GPU (this frame)
+            // Buffer 2: Ready to read (from 2 frames ago)
+            
+            var readPBO = pbos[pboIndex];
+            var writePBO = pbos[(pboIndex + 2) % PBO_BUFFERS];
+            
+            // Start async GPU read into writePBO for this frame
+            GL.bindBuffer(pboTarget, writePBO);
+            GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 
+                         GL.RGBA, GL.UNSIGNED_BYTE, cast 0);
+            
+            // Read from readPBO (data from 2 frames ago, should be ready now)
+            GL.bindBuffer(pboTarget, readPBO);
+            
+            #if (cpp || hl)
+            try {
+                // Reuse pre-allocated buffer to avoid GC pressure
+                GL.getBufferSubData(pboTarget, 0, frameSize, dataBuffer);
+                
+                // Write directly without creating intermediate Bytes object if possible
+                var bytes = dataBuffer.toBytes();
+                process.stdin.write(bytes);
+            } catch (e:Dynamic) {
+                Sys.println('Rendering Mode System - Warning: getBufferSubData failed, disabling PBOs');
+                pboTarget = 0;
+            }
+            #else
+            Sys.println('Rendering Mode System - Warning: PBO readback not implemented for this platform');
+            pboTarget = 0;
+            #end
+            
+            GL.bindBuffer(pboTarget, null);
+            
+            // Advance to next buffer in ring
+            pboIndex = (pboIndex + 1) % PBO_BUFFERS;
+        } else {
+            // Fallback: direct synchronous readPixels (blocks GPU pipeline)
+            GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT,
+                         GL.RGBA, GL.UNSIGNED_BYTE, dataBuffer);
+            process.stdin.write(dataBuffer.toBytes());
+        }
+    }
 
 	static function stopRender()
 	{
@@ -191,6 +262,17 @@ class RenderingMode {
 			process.close();
 			process.kill();
 		}
+		
+		// Clean up PBOs
+		if (pbos.length > 0) {
+			for (pbo in pbos) {
+				GL.deleteBuffer(pbo);
+			}
+			pbos = [];
+		}
+		
+		// Clear reusable buffer
+		dataBuffer = null;
 
 		#if FV_LIME_FORK
 		Application.current.window.uncappedFrameRate = false;
