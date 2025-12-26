@@ -10,19 +10,19 @@ import lime.app.Application;
 
 @:publicFields
 class RenderingMode {
-	static final PBO_BUFFERS:Int = 3; // Triple buffering for better pipeline utilization
+	static final PBO_BUFFERS:Int = 4; // Triple buffering for better pipeline utilization
 	
 	static var pbos:Array<GLBuffer> = [];
 	static var pboIndex:Int = 0;
 	static var pboTarget:Int = 0;
 	static var frameSize:Int = 0;
-	static var dataBuffer:UInt8Array; // Reuse buffer to avoid allocations
+	static var dataBuffer:Bytes; // Reuse buffer to avoid allocations
 	
 	static function initPBOs() {
 		frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 4;
 		
 		// Pre-allocate reusable buffer
-		dataBuffer = new UInt8Array(frameSize);
+		dataBuffer = Bytes.alloc(frameSize);
 		
 		// Determine the correct PBO target based on OpenGL version
 		#if (lime >= "8.0.0")
@@ -166,12 +166,9 @@ class RenderingMode {
 			'-vf', 'vflip,format=nv12',
 			'-fflags', 'nobuffer',
 			'-flags', 'low_delay',
-			'-flush_packets', '1',
-			'-max_delay', '0',
-			'-muxdelay', '0',
-			'-muxpreload', '0',
 			'-bufsize', '8M',  // Larger buffer
 			'-threads', '0',    // Use all CPU cores
+			'-thread_queue_size', '512'
 		];
 
 		args = args.concat(encoderSettings);
@@ -220,11 +217,11 @@ class RenderingMode {
 				GL.getBufferSubData(pboTarget, 0, frameSize, dataBuffer);
 				
 				// Write directly without creating intermediate Bytes object if possible
-				//var bytes = Bytes.ofData(untyped dataBuffer.bytes); // This was dataBuffer.toBytes() but chatgpt suggested I change it to this which is faster so yeah
-				// actually why bother when you already go ahead and write it? That is SO good anyway.
-				process.stdin.write(untyped dataBuffer.bytes);
+				var bytes:haxe.io.Bytes = dataBuffer;
+				//Sys.println(bytes);
+				if (bytes != null) process.stdin.write(bytes);
 			} catch (e:Dynamic) {
-				Sys.println('Rendering Mode System - Warning: getBufferSubData failed, disabling PBOs');
+				Sys.println('Rendering Mode System - Warning: getBufferSubData failed, disabling PBOs\nVideo is now corrupted');
 				pboTarget = 0;
 			}
 			#else
@@ -239,7 +236,7 @@ class RenderingMode {
 		} else {
 			// Fallback: direct synchronous readPixels (blocks GPU pipeline)
 			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 0x80E1, GL.UNSIGNED_BYTE, dataBuffer);
-			process.stdin.write(dataBuffer.toBytes());
+			process.stdin.write(dataBuffer);
 		}
 	}
 
