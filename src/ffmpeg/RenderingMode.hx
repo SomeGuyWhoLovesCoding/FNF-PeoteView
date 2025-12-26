@@ -44,7 +44,7 @@ class RenderingMode {
 			{name: 'h264_qsv', args: [
 				'-c:v', 'h264_qsv',
 				'-preset', 'veryfast',
-				'-global_quality', '25',
+				'-global_quality', '28',
 				'-look_ahead', '0',
 				'-b:v', '3M'
 			]}
@@ -76,11 +76,11 @@ class RenderingMode {
 		return [
 			'-c:v', 'libx264',
 			'-preset', 'ultrafast',    // fastest CPU preset (was veryfast)
-			'-crf', '23',              // slightly lower quality for speed (was 18)
+			'-crf', '27',              // slightly lower quality for speed (was 18)
 			'-tune', 'zerolatency',    // optimize for speed
 			'-x264-params', 'ref=1:bframes=0:me=dia:subq=1:trellis=0' // minimal CPU processing
 		];
-		// Did you know that the old version of the encoder was fast but outputted really huge files? Yes, 
+		// Did you know that the old version of the encoder was fast but outputted really huge files? Yes, really. It did that as a tradeoff for speed. That's fucking insane.
 	}
 
 	static function initRender()
