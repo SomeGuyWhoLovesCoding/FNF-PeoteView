@@ -13,11 +13,75 @@ class RenderingMode {
 	static var process:Process;
 	static var enabled:Bool = true;
 	static var started:Bool = false;
-	static var frameRate:Float = 60;
 
 	static var songName:String;
 
 	static var renderTime(default, null):Float;
+	static var frameRate:Float = 60;
+
+	static function getBestEncoder():Array<String> {
+		var encoders = [
+			// NVIDIA NVENC - fastest preset
+			{name: 'h264_nvenc', args: [
+				'-c:v', 'h264_nvenc',
+				'-preset', 'p1',           // p1 = fastest (was p4)
+				'-tune', 'ull',            // ultra-low latency
+				'-b:v', '3M',             // reduced bitrate for speed
+				'-maxrate', '4M',
+				'-bufsize', '1M'
+			]},
+			
+			// AMD AMF - fastest preset
+			{name: 'h264_amf', args: [
+				'-c:v', 'h264_amf',
+				'-quality', 'speed',       // speed mode (was balanced)
+				'-b:v', '3M',
+				'-maxrate', '4M',
+				'-rc', 'vbr_latency'       // variable bitrate low latency
+			]},
+			
+			// Intel QSV - fastest preset
+			{name: 'h264_qsv', args: [
+				'-c:v', 'h264_qsv',
+				'-preset', 'veryfast',
+				'-global_quality', '28',
+				'-look_ahead', '0',
+				'-b:v', '3M'
+			]}
+		];
+
+		for (encoder in encoders) {
+			var testProcess = new Process('ffmpeg', [
+				'-f', 'lavfi',
+				'-v', 'quiet',
+				'-i', 'color=black:s=64x64:d=0.1',
+				'-c:v', encoder.name,
+				'-f', 'null',
+				'-'
+			]);
+
+			var stderr = testProcess.stderr.readAll().toString();
+			var exitCode = testProcess.exitCode();
+			
+			if (stderr.indexOf('Conversion failed!') > -1 || exitCode != 0) {
+				continue;
+			} else {
+				Sys.println('Rendering Mode System - Using encoder: ${encoder.name}');
+				return encoder.args;
+			}
+		}
+
+		// Software fallback - optimized for speed on low-end systems
+		Sys.println('Rendering Mode System - Using encoder: libx264 (software fallback)');
+		return [
+			'-c:v', 'libx264',
+			'-preset', 'ultrafast',    // fastest CPU preset (was veryfast)
+			'-crf', '27',              // slightly lower quality for speed (was 18)
+			'-tune', 'zerolatency',    // optimize for speed
+			'-x264-params', 'ref=1:bframes=0:me=dia:subq=1:trellis=0' // minimal CPU processing
+		];
+		// Did you know that the old version of the encoder was fast but outputted really huge files? Yes, really. It did that as a tradeoff for speed. That's fucking insane.
+	}
 
 	static function initRender()
 	{
@@ -39,49 +103,49 @@ class RenderingMode {
 
 		Sys.println("Rendering Mode System - Initializing...");
 
-		songName = Chart.header.title;
-
-		#if windows
-		// Intel Quick Sync (QSV) for Windows
-		process = new Process('ffmpeg', [
-			'-v', 'quiet', '-y',
-			'-f', 'rawvideo',
-			'-pix_fmt', 'rgba',
-			'-s', Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
-			'-r', Std.string(frameRate),
-			'-i', '-',
-			'-vf', 'vflip', // Convert to NV12
-			'-c:v', 'h264_qsv', // Intel Quick Sync encoder
-			'-global_quality', '27', // Quality (lower = better, range 1-51)
-			'-b:v', '2M',
-			'-preset', 'veryfast',
-			'-colorspace', 'bt709',
-			'assets/videos/rendered/' + songName + '.mp4'
-		]);
-		#else
-		// VAAPI for Linux
-		process = new Process('ffmpeg', [
-			'-v', 'quiet', '-y',
-			'-init_hw_device', 'vaapi=va:/dev/dri/renderD128',
-			'-f', 'rawvideo',
-			'-pix_fmt', 'rgba',
-			'-s', Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
-			'-r', Std.string(frameRate),
-			'-i', '-',
-			'-vf', 'format=nv12,hwupload',
-			'-c:v', 'h264_vaapi',
-			'-qp', '18',
-			'-c:a', 'copy',
-			'-colorspace', 'bt709',
-			'assets/videos/rendered/' + songName + '.mp4'
-		]);
-		#end
-
 		#if FV_LIME_FORK
 		Application.current.window.uncappedFrameRate = true;
 		#else
 		Application.current.window.frameRate = 1000;
 		#end
+
+		songName = Chart.header.title;
+
+		Sys.println("Rendering Mode System - Deciding on what encoder to use for your system...");
+
+		var encoderSettings = getBestEncoder();
+
+		Sys.println("Rendering Mode System - Done. Now let's initialize the real stuff!");
+
+		var args = [
+			'-y',
+			'-f', 'rawvideo',
+			'-pix_fmt', 'rgba',
+			'-s', Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
+			'-r', Std.string(frameRate),
+			'-i', '-',
+			'-vf', 'vflip,format=nv12',
+			'-fflags', 'nobuffer',
+			'-flags', 'low_delay',
+			'-flush_packets', '1',
+			'-max_delay', '0',
+			'-muxdelay', '0',
+			'-muxpreload', '0'
+		];
+
+		args = args.concat(encoderSettings);
+
+		args = args.concat([
+			'-colorspace', 'bt709',
+			//'-pix_fmt', 'yuv420p', no need for this, too redundant anyway
+			'assets/videos/rendered/' + songName + '.mp4'
+		]);
+
+		Sys.println("Rendering Mode System - Almost there. Just need to execute the process just like that...");
+
+		process = new Process('ffmpeg', args);
+
+		Sys.println("Rendering Mode System - Done.");
 
 		renderTime = haxe.Timer.stamp();
 		started = true;
@@ -94,13 +158,20 @@ class RenderingMode {
 		if (!enabled || !started || !ffmpegExists || process == null)
 			return;
 
-		if (bytes == null) {
-			bytes = new haxe.io.UInt8Array(Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 4);
-		}
+		try {
+			if (bytes == null) {
+				bytes = new haxe.io.UInt8Array(Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 4);
+			}
 
-		Main.current.peoteView.gl.readPixels(1, 1, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, GL.RGBA, GL.UNSIGNED_BYTE, bytes);
-		process.stdin.write(untyped bytes.bytes);
+			// Read directly - this is synchronous but the most reliable method
+			Main.current.peoteView.gl.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, GL.RGBA, GL.UNSIGNED_BYTE, bytes);
+			process.stdin.write(untyped bytes.bytes);
+		} catch (e:Dynamic) {
+			Sys.println('Rendering Mode System - Error writing frame: $e');
+			stopRender();
+		}
 	}
+	
 
 	static function stopRender()
 	{
@@ -110,8 +181,12 @@ class RenderingMode {
 		started = false;
 
 		if (process != null) {
-			if (process.stdin != null)
-				process.stdin.close();
+			try {
+				if (process.stdin != null)
+					process.stdin.close();
+			} catch (e:Dynamic) {
+				// Ignore close errors
+			}
 
 			process.close();
 			process.kill();
