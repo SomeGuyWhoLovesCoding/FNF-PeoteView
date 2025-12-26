@@ -220,8 +220,9 @@ class RenderingMode {
 				GL.getBufferSubData(pboTarget, 0, frameSize, dataBuffer);
 				
 				// Write directly without creating intermediate Bytes object if possible
-				var bytes = dataBuffer.toBytes();
-				process.stdin.write(bytes);
+				//var bytes = Bytes.ofData(untyped dataBuffer.bytes); // This was dataBuffer.toBytes() but chatgpt suggested I change it to this which is faster so yeah
+				// actually why bother when you already go ahead and write it? That is SO good anyway.
+				process.stdin.write(untyped dataBuffer.bytes);
 			} catch (e:Dynamic) {
 				Sys.println('Rendering Mode System - Warning: getBufferSubData failed, disabling PBOs');
 				pboTarget = 0;
