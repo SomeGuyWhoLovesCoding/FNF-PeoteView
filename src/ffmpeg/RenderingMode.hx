@@ -4,6 +4,7 @@ import sys.io.Process;
 import sys.FileSystem;
 import haxe.io.Bytes;
 import lime.graphics.opengl.GL;
+import lime.app.Application;
 
 @:publicFields
 class RenderingMode {
@@ -49,12 +50,11 @@ class RenderingMode {
 			'-s', Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
 			'-r', Std.string(frameRate),
 			'-i', '-',
-			'-vf', 'vflip,format=nv12', // Convert to NV12
+			'-vf', 'vflip', // Convert to NV12
 			'-c:v', 'h264_qsv', // Intel Quick Sync encoder
 			'-global_quality', '27', // Quality (lower = better, range 1-51)
 			'-b:v', '2M',
-			'-preset', 'fast',
-			'-c:a', 'copy',
+			'-preset', 'veryfast',
 			'-colorspace', 'bt709',
 			'assets/videos/rendered/' + songName + '.mp4'
 		]);
@@ -75,6 +75,12 @@ class RenderingMode {
 			'-colorspace', 'bt709',
 			'assets/videos/rendered/' + songName + '.mp4'
 		]);
+		#end
+
+		#if FV_LIME_FORK
+		Application.current.window.uncappedFrameRate = true;
+		#else
+		Application.current.window.frameRate = 1000;
 		#end
 
 		renderTime = haxe.Timer.stamp();
@@ -110,6 +116,12 @@ class RenderingMode {
 			process.close();
 			process.kill();
 		}
+
+		#if FV_LIME_FORK
+		Application.current.window.uncappedFrameRate = false;
+		#else
+		Application.current.window.frameRate = SaveData.graphics.frameRate;
+		#end
 
 		renderTime = haxe.Timer.stamp() - renderTime;
 		Sys.println('Rendering Mode System - Finished Rendering in just ${Tools.formatTime(renderTime * 1000)}.');
