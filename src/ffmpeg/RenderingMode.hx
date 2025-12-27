@@ -7,6 +7,11 @@ import lime.graphics.opengl.GL;
 import lime.graphics.opengl.GLBuffer;
 import lime.app.Application;
 import sys.thread.Thread;
+#if cpp
+import cpp.Pointer;
+import cpp.RawPointer;
+import cpp.NativeProcess;
+#end
 
 @:publicFields
 class RenderingMode {
@@ -33,7 +38,11 @@ class RenderingMode {
 
 	private static var writerThread:Thread;
 	private static var stopRequested:Bool = false;
-	private static var cleanupLock:Bool = false; // ADD: Prevent concurrent cleanup
+	private static var cleanupLock:Bool = false;
+
+	#if cpp
+	private static var nativeProcessHandle:Dynamic = null;
+	#end
 
 	// ------------------ PBOs ------------------
 	static function initPBOs() {
@@ -51,7 +60,10 @@ class RenderingMode {
 		pboTarget = 0x88EB;
 		
 		useBufferStorage = false;
-		#if FV_LIME_FORK
+
+		// This was a bit slower anyway so why bother doing it in the first place.
+		// wasting so much time on something that I found only used more computational power. god damnit.
+		/*#if FV_LIME_FORK
 		#if (cpp || hl)
 		try {
 			var testBuf = GL.createBuffer();
@@ -64,7 +76,7 @@ class RenderingMode {
 			Sys.println("Rendering Mode System - Using traditional bufferData");
 		}
 		#end
-		#end
+		#end*/
 		
 		for (i in 0...PBO_BUFFERS) {
 			var buf = GL.createBuffer();
@@ -108,19 +120,58 @@ class RenderingMode {
 	static function acquireWriter() {
 		if (writerThread != null) return;
 		writerThread = Thread.create(function() {
-			var threadId = 0;
-			Sys.println('Writer thread started (ID: $threadId)');
+			Sys.println('Writer thread started');
+			
+			#if cpp
+			// Get native process handle
+			if (nativeProcessHandle != null) {
+				Sys.println("Using direct NativeProcess.process_stdin_write() for maximum speed!");
+			}
+			#end
+			
+			var batchSize = 8; // Write 8 frames at once
+			var batch:Array<Bytes> = [];
 			
 			while (!stopRequested) {
-				var frame = dequeueFrame();
-				if (frame == null) {
+				// Collect batch
+				while (batch.length < batchSize) {
+					var frame = dequeueFrame();
+					if (frame == null) break;
+					batch.push(frame);
+				}
+				
+				if (batch.length == 0) {
 					if (stopRequested) break;
-					Sys.sleep(0.001);
+					Sys.sleep(0.0003);
 					continue;
 				}
+				
+				// Write entire batch directly
 				try {
-					if (process != null && process.stdin != null) {
-						process.stdin.write(frame);
+					#if cpp
+					if (nativeProcessHandle != null) {
+						// Direct native write - FASTEST!
+						for (frame in batch) {
+							var written = NativeProcess.process_stdin_write(
+								nativeProcessHandle, 
+								frame.getData(), 
+								0, 
+								frame.length
+							);
+							if (written != frame.length) {
+								Sys.println("Incomplete write: " + written + "/" + frame.length);
+							}
+						}
+					} else
+					#end
+					{
+						// Fallback to normal write
+						if (process != null && process.stdin != null) {
+							for (frame in batch) {
+								process.stdin.write(frame);
+							}
+							process.stdin.flush();
+						}
 					}
 				} catch (e:Dynamic) {
 					var err = Std.string(e);
@@ -129,16 +180,13 @@ class RenderingMode {
 						break;
 					}
 				}
-				returnFrame(frame);
+				
+				// Return frames
+				for (frame in batch) returnFrame(frame);
+				batch = [];
 			}
 			
-			// Drain remaining frames if any
-			while (frameQueue.length > 0 && !cleanupLock) {
-				var frame = dequeueFrame();
-				if (frame != null) returnFrame(frame);
-			}
-			
-			Sys.println('Writer thread exiting (ID: $threadId)');
+			Sys.println('Writer thread exiting');
 		});
 	}
 
@@ -150,7 +198,6 @@ class RenderingMode {
 		if (buffer == null) return;
 
 		if (pbos.length == PBO_BUFFERS) {
-			// Read from previous frame (1 frame latency instead of 3)
 			var readIndex = (pboIndex + 1) % PBO_BUFFERS;
 			var writePBO = pbos[pboIndex];
 
@@ -182,37 +229,33 @@ class RenderingMode {
 	// ------------------ Encoder ------------------
 	static function getBestEncoder():Array<String> {
 		var encoders = [
-			// NVENC - Absolute fastest settings
 			{name:'h264_nvenc', args:[
 				'-c:v','h264_nvenc',
-				'-preset','p1',           // Fastest preset
-				'-tune','ull',            // Ultra low latency
-				'-rc','constqp',          // Constant QP (faster than VBR)
-				'-qp','28',               // Quality level
-				'-2pass','0',             // Disable 2-pass
-				'-spatial-aq','0',        // Disable spatial AQ
-				'-temporal-aq','0',       // Disable temporal AQ
-				'-b_ref_mode','disabled', // Disable B-frame references
-				'-multipass','disabled'   // Disable multipass
+				'-preset','p1',
+				'-tune','ull',
+				'-rc','constqp',
+				'-qp','32',
+				'-2pass','0',
+				'-spatial-aq','0',
+				'-temporal-aq','0',
+				'-b_ref_mode','disabled',
+				'-multipass','disabled'
 			]},
 			
-			// AMF - Speed priority
 			{name:'h264_amf', args:[
 				'-c:v','h264_amf',
 				'-quality','speed',
 				'-rc','cqp',
-				'-qp_i','28',
-				'-qp_p','28',
+				'-qp_i','32',
+				'-qp_p','32',
 				'-preanalysis','false'
 			]},
 			
-			// QSV - Fastest
 			{name:'h264_qsv', args:[
 				'-c:v','h264_qsv',
 				'-preset','veryfast',
-				'-global_quality','28',
-				'-look_ahead','0',
-				'-async_depth','2'  // Reduced from 7
+				'-global_quality','32',
+				'-async_depth','4'
 			]}
 		];
 
@@ -262,8 +305,11 @@ class RenderingMode {
 			'-s',Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
 			'-r',Std.string(frameRate),'-i','-',
 			'-vf','vflip',
-			'-bufsize','2M','-threads','0','-thread_queue_size','512'
+			'-bufsize','1M','-thread_queue_size','256',
+			'-max_muxing_queue_size','1024',
+			'-fflags','+genpts+flush_packets',
 		].concat(encoderSettings).concat([
+			'-an',
 			'-colorspace','bt709',
 			'assets/videos/rendered/' + songName + '.mp4'
 		]);
@@ -286,28 +332,23 @@ class RenderingMode {
 		
 		Sys.println("StopRender called - beginning cleanup...");
 		
-		// Step 1: Signal stop
 		stopRequested = true;
 		started = false;
 		
 		renderTime = haxe.Timer.stamp() - renderTime;
 		Sys.println('Rendering Mode System - Finished Rendering in ${Tools.formatTime(renderTime*1000,true)}.');
 
-		// Step 2: Wait for writer thread to finish
 		if (writerThread != null) {
 			Sys.println("Waiting for writer thread to finish...");
 			var startWait = haxe.Timer.stamp();
-			// Give it a reasonable timeout (5 seconds)
 			while (frameQueue.length > 0 && (haxe.Timer.stamp() - startWait) < 5.0) {
 				Sys.sleep(0.01);
 			}
 			Sys.println("Writer thread queue drained");
-			// Small delay to ensure thread exits cleanly
 			Sys.sleep(0.1);
 			writerThread = null;
 		}
 
-		// Step 3: Close ffmpeg stdin
 		Sys.println("Closing ffmpeg stdin...");
 		if (process != null) {
 			try {
@@ -327,7 +368,6 @@ class RenderingMode {
 			process = null;
 		}
 
-		// Rest of cleanup...
 		Sys.println("Cleaning up GL resources...");
 		for (pbo in pbos) {
 			try {
