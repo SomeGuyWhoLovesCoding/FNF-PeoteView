@@ -11,7 +11,7 @@ import sys.thread.Thread;
 @:publicFields
 class RenderingMode {
     static final PBO_BUFFERS:Int = 32;
-    static final QUEUE_SIZE:Int = 8;
+    static final QUEUE_SIZE:Int = 12;
 
     static var pbos:Array<GLBuffer> = [];
     static var pboIndex:Int = 0;
@@ -27,7 +27,6 @@ class RenderingMode {
     static var frameRate:Float = 60;
 
     // ---------------- Frame Pool & Queue ----------------
-    private static var framePool:Array<Bytes> = [];
     private static var freeList:Array<Bytes> = [];
     private static var frameQueue:Array<Bytes> = [];
 
@@ -37,13 +36,11 @@ class RenderingMode {
     static function initPBOs() {
         frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 4;
 
-        framePool = [];
         freeList = [];
         frameQueue = [];
 
         for (i in 0...QUEUE_SIZE) {
             var b = Bytes.alloc(frameSize);
-            framePool.push(b);
             freeList.push(b);
         }
 
@@ -106,7 +103,7 @@ class RenderingMode {
         var buffer = getFreeFrame();
 
         if (pbos.length == PBO_BUFFERS) {
-            var readIndex = (pboIndex + PBO_BUFFERS - 2) % PBO_BUFFERS; // read PBO written 2 frames ago
+            var readIndex = (pboIndex + PBO_BUFFERS - 3) % PBO_BUFFERS; // read PBO written 3 frames ago
             var writePBO = pbos[pboIndex];
 
             // write pixels into current PBO
@@ -223,7 +220,6 @@ class RenderingMode {
 
         for (pbo in pbos) GL.deleteBuffer(pbo);
         pbos = [];
-        framePool = [];
         freeList = [];
         frameQueue = [];
         GL.pixelStorei(GL.PACK_ALIGNMENT,4);
