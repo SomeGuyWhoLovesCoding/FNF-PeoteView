@@ -3,294 +3,236 @@ package ffmpeg;
 import sys.io.Process;
 import sys.FileSystem;
 import haxe.io.Bytes;
-import lime.utils.UInt8Array;
 import lime.graphics.opengl.GL;
 import lime.graphics.opengl.GLBuffer;
 import lime.app.Application;
+import sys.thread.Thread;
 
 @:publicFields
 class RenderingMode {
-	// Define missing GL constants
-	/*static inline var GL_MAP_READ_BIT = 0x0001;
-	static inline var GL_MAP_UNSYNCHRONIZED_BIT = 0x0020;*/
+    static final PBO_BUFFERS:Int = 32;
+    static final QUEUE_SIZE:Int = 8;
 
-	static final PBO_BUFFERS:Int = 5; // Triple buffering for better pipeline utilization
-	
-	static var pbos:Array<GLBuffer> = [];
-	static var pboIndex:Int = 0;
-	static var pboTarget:Int = 0;
-	static var frameSize:Int = 0;
-	static var dataBuffer:Bytes; // Reuse buffer to avoid allocations
-	
-	static function initPBOs() {
-		frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 4;
-		
-		// Pre-allocate reusable buffer
-		dataBuffer = Bytes.alloc(frameSize);
-		
-		// Determine the correct PBO target based on OpenGL version
-		#if (lime >= "8.0.0")
-		var glVersion = GL.getParameter(GL.VERSION);
-		pboTarget = 0x88EB; // GL_PIXEL_PACK_BUFFER
-		#else
-		pboTarget = 0x88EB;
-		#end
-		
-		if (pboTarget != 0) {
-			Sys.println('Rendering Mode System - Initializing ${PBO_BUFFERS} PBOs for triple buffering...');
-			
-			for (i in 0...PBO_BUFFERS) {
-				pbos[i] = GL.createBuffer();
-				GL.bindBuffer(pboTarget, pbos[i]);
-				// Use STREAM_READ for CPU reads, consider STREAM_COPY if staying on GPU
-				GL.bufferData(pboTarget, frameSize, cast null, GL.STREAM_COPY);
-			}
-			
-			GL.bindBuffer(pboTarget, null);
-			Sys.println('Rendering Mode System - PBOs initialized successfully');
-		} else {
-			Sys.println('Rendering Mode System - PBOs not supported, using direct readPixels');
-		}
-	}
+    static var pbos:Array<GLBuffer> = [];
+    static var pboIndex:Int = 0;
+    static var pboTarget:Int = 0;
+    static var frameSize:Int = 0;
 
-	private static var ffmpegExists(default, null):Bool;
+    private static var ffmpegExists(default, null):Bool;
+    static var process:Process;
+    static var enabled:Bool = true;
+    static var started:Bool = false;
+    static var songName:String;
+    static var renderTime(default, null):Float;
+    static var frameRate:Float = 60;
 
-	static var process:Process;
-	static var enabled:Bool = true;
-	static var started:Bool = false;
+    // ---------------- Frame Pool & Queue ----------------
+    private static var framePool:Array<Bytes> = [];
+    private static var freeList:Array<Bytes> = [];
+    private static var frameQueue:Array<Bytes> = [];
 
-	static var songName:String;
+    private static var writerThread:Thread;
 
-	static var renderTime(default, null):Float;
-	static var frameRate:Float = 60;
+    // ------------------ PBOs ------------------
+    static function initPBOs() {
+        frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 4;
 
-	static function getBestEncoder():Array<String> {
-		var encoders = [
-			// NVIDIA NVENC - fastest preset
-			{name: 'h264_nvenc', args: [
-				'-c:v', 'h264_nvenc',
-				'-preset', 'p1',
-				'-tune', 'ull',
-				'-b:v', '3M',
-				'-maxrate', '4M',
-				'-bufsize', '1M'
-			]},
-			
-			// AMD AMF - fastest preset
-			{name: 'h264_amf', args: [
-				'-c:v', 'h264_amf',
-				'-quality', 'speed',
-				'-b:v', '3M',
-				'-maxrate', '4M',
-				'-rc', 'vbr_latency'
-			]},
-			
-			// Intel QSV - fastest preset
-			{name: 'h264_qsv', args: [
-				'-c:v', 'h264_qsv',
-				'-preset', 'veryfast',
-				'-global_quality', '28',
-				'-look_ahead', '0',
-				'-b:v', '3M'
-			]}
-		];
+        framePool = [];
+        freeList = [];
+        frameQueue = [];
 
-		for (encoder in encoders) {
-			var testProcess = new Process('ffmpeg', [
-				'-f', 'lavfi',
-				'-v', 'quiet',
-				'-i', 'color=black:s=64x64:d=0.1',
-				'-c:v', encoder.name,
-				'-f', 'null',
-				'-'
-			]);
+        for (i in 0...QUEUE_SIZE) {
+            var b = Bytes.alloc(frameSize);
+            framePool.push(b);
+            freeList.push(b);
+        }
 
-			var stderr = testProcess.stderr.readAll().toString();
-			var exitCode = testProcess.exitCode();
-			
-			if (stderr.indexOf('Conversion failed!') > -1 || exitCode != 0) {
-				continue;
-			} else {
-				Sys.println('Rendering Mode System - Using encoder: ${encoder.name}');
-				return encoder.args;
-			}
-		}
+        pbos = [];
+        pboTarget = 0x88EB; // GL_PIXEL_PACK_BUFFER
+        for (i in 0...PBO_BUFFERS) {
+            var buf = GL.createBuffer();
+            GL.bindBuffer(pboTarget, buf);
+            GL.bufferData(pboTarget, frameSize, cast null, GL.STREAM_COPY);
+            pbos.push(buf);
+        }
+        GL.bindBuffer(pboTarget, null);
+        Sys.println("Rendering Mode System - PBOs initialized successfully.");
+    }
 
-		Sys.println('Rendering Mode System - Using encoder: libx264 (software fallback)');
-		return [
-			'-c:v', 'libx264',
-			'-preset', 'ultrafast',
-			'-crf', '27',
-			'-tune', 'zerolatency',
-			'-x264-params', 'ref=1:bframes=0:me=dia:subq=1:trellis=0'
-		];
-	}
+    // ---------------- Frame Pool ----------------
+    static function getFreeFrame():Bytes {
+        if (freeList.length > 0) return freeList.pop();
+        return Bytes.alloc(frameSize); // fallback
+    }
 
-	static function initRender()
-	{
-		var ffmpeg = "ffmpeg";
-		#if windows
-		ffmpeg += ".exe";
-		#end
-		if (!FileSystem.exists(ffmpeg)) {
-			throw 'Rendering Mode System - $ffmpeg not found! Is it located at the current working directory?';
-			return;
-		}
+    static function returnFrame(frame:Bytes) {
+        freeList.push(frame);
+    }
 
-		if (!FileSystem.exists('assets/videos/rendered/')) {
-			Sys.println('Rendering Mode System - "assets/videos/rendered" folder not found! Recreating it...');
-			FileSystem.createDirectory('assets/videos/rendered');
-		}
+    // ---------------- Queue ----------------
+    static function enqueueFrame(frame:Bytes) {
+        frameQueue.push(frame);
+    }
 
-		ffmpegExists = true;
+    static function dequeueFrame():Bytes {
+        if (frameQueue.length > 0) return frameQueue.shift();
+        return null;
+    }
 
-		Sys.println("Rendering Mode System - Initializing...");
+    // ---------------- Writer Thread ----------------
+    static function acquireWriter() {
+		if (writerThread != null) return;
+        writerThread = Thread.create(function() {
+            while (started || frameQueue.length > 0) {
+                var frame = dequeueFrame();
+                if (frame == null) {
+                    Sys.sleep(0);
+                    continue;
+                }
+                try {
+                    process.stdin.write(frame);
+                } catch (e:Dynamic) {
+                    Sys.println("Writer blocked, dropping frame: " + e);
+                }
+                returnFrame(frame);
+            }
+        });
+    }
 
-		#if FV_LIME_FORK
-		Application.current.window.uncappedFrameRate = true;
-		#else
-		Application.current.window.frameRate = 1000;
-		#end
-		Application.current.window.resizable = false;
+    // ---------------- Pipe Frame (MAIN THREAD ONLY) ----------------
+    static function pipeFrame() {
+        if (!enabled || !started || !ffmpegExists || process == null) return;
 
-		songName = Chart.header.title;
+        var buffer = getFreeFrame();
 
-		Sys.println("Rendering Mode System - Deciding on what encoder to use for your system...");
+        if (pbos.length == PBO_BUFFERS) {
+            var readIndex = (pboIndex + PBO_BUFFERS - 2) % PBO_BUFFERS; // read PBO written 2 frames ago
+            var writePBO = pbos[pboIndex];
 
-		var encoderSettings = getBestEncoder();
+            // write pixels into current PBO
+            GL.bindBuffer(pboTarget, writePBO);
+            GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 0x80E1, GL.UNSIGNED_BYTE, cast 0);
+            GL.bindBuffer(pboTarget, null);
 
-		Sys.println("Rendering Mode System - Done. Now let's initialize the real stuff!");
+            // read old PBO into CPU memory
+            var readPBO = pbos[readIndex];
+            GL.bindBuffer(pboTarget, readPBO);
+            #if (cpp || hl)
+            try {
+                GL.getBufferSubData(pboTarget, 0, frameSize, buffer);
+            } catch (e:Dynamic) {
+                Sys.println("Warning: getBufferSubData failed, disabling PBOs");
+                pbos = [];
+                pboTarget = 0;
+            }
+            #end
+            GL.bindBuffer(pboTarget, null);
 
-		var args = [
-			'-y',
-			'-f', 'rawvideo',
-			'-pix_fmt', 'bgra',
-			'-s', Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
-			'-r', Std.string(frameRate),
-			'-i', '-',
-			'-vf', 'vflip',
-			'-fflags', 'nobuffer',
-			'-flags', 'low_delay',
-			'-bufsize', '8M',  // Larger buffer
-			'-threads', '0',    // Use all CPU cores
-			'-thread_queue_size', '8192'
-		];
+            enqueueFrame(buffer);
+            pboIndex = (pboIndex + 1) % PBO_BUFFERS;
 
-		args = args.concat(encoderSettings);
+        } else {
+            // fallback without PBO
+            GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 0x80E1, GL.UNSIGNED_BYTE, buffer);
+            enqueueFrame(buffer);
+        }
 
-		args = args.concat([
-			'-colorspace', 'bt709',
-			'assets/videos/rendered/' + songName + '.mp4'
-		]);
+        haxe.Timer.delay(acquireWriter, 500);
+    }
 
-		Sys.println("Rendering Mode System - Almost there. Just need to execute the process just like that...");
+    // ------------------ Encoder ------------------
+    static function getBestEncoder():Array<String> {
+        var encoders = [
+            {name:'h264_nvenc', args:['-c:v','h264_nvenc','-preset','p1','-tune','ull','-b:v','3M','-maxrate','4M','-bufsize','1M']},
+            {name:'h264_amf', args:['-c:v','h264_amf','-quality','speed','-b:v','3M','-maxrate','4M','-rc','vbr_latency']},
+            {name:'h264_qsv', args:['-c:v','h264_qsv','-preset','veryfast','-global_quality','28','-look_ahead','0','-async_depth','7','-b:v','3M']}
+        ];
 
-		process = new Process('ffmpeg', args);
+        for (encoder in encoders) {
+            var testProcess = new Process('ffmpeg', [
+                '-f','lavfi','-v','quiet','-i','color=black:s=64x64:d=0.1',
+                '-c:v',encoder.name,'-f','null','-'
+            ]);
+            var stderr = testProcess.stderr.readAll().toString();
+            var exitCode = testProcess.exitCode();
+            if (stderr.indexOf('Conversion failed!') == -1 && exitCode == 0) {
+                Sys.println('Rendering Mode System - Using encoder: ${encoder.name}');
+                return encoder.args;
+            }
+        }
 
-		Sys.println("Rendering Mode System - Done.");
+        Sys.println('Rendering Mode System - Using encoder: libx264 (software fallback)');
+        return ['-c:v','libx264','-preset','ultrafast','-crf','27','-tune','zerolatency','-x264-params','ref=1:bframes=0:me=dia:subq=1:trellis=0'];
+    }
 
-		initPBOs();
+    // ------------------ Init Render ------------------
+    static function initRender() {
+        var ffmpeg = "ffmpeg";
+        #if windows ffmpeg += ".exe"; #end
+        if (!FileSystem.exists(ffmpeg)) throw '$ffmpeg not found!';
+        if (!FileSystem.exists('assets/videos/rendered/')) FileSystem.createDirectory('assets/videos/rendered');
 
-		/*var countOnMe:Int = 0;
-		var user = Main.VARIABLE_HEIGHT > Main.VARIABLE_WIDTH ? Main.VARIABLE_WIDTH : Main.VARIABLE_HEIGHT;
-		while(user / (1 << countOnMe) % 1 == 0) {
-			++countOnMe;
-		}
-		trace('CHOSE PACK_ALIGNMENT: ' + (1 << countOnMe));*/
-		GL.pixelStorei(GL.PACK_ALIGNMENT, 16);
+        ffmpegExists = true;
+        songName = Chart.header.title;
 
-		Sys.println("Rendering Mode System - Let ffmpeg prepare.");
-		Sys.sleep(1);
-		renderTime = haxe.Timer.stamp();
-		started = true;
-		Sys.println("Rendering Mode System - Started!");
-	}
+        Application.current.window.resizable = false;
+        #if FV_LIME_FORK
+        Application.current.window.uncappedFrameRate = true;
+        #else
+        Application.current.window.frameRate = 1000;
+        #end
 
-	static function pipeFrame() {
-		if (!enabled || !started || !ffmpegExists || process == null)
-			return;
-		
-		if (pboTarget != 0 && pbos.length == PBO_BUFFERS) {
-			// Triple-buffered PBO readback for maximum throughput
-			// Buffer 0: Currently being read by CPU
-			// Buffer 1: Being filled by GPU (this frame)
-			// Buffer 2: Ready to read (from 2 frames ago)
-			
-			var readPBO = pbos[pboIndex];
-			var writePBO = pbos[(pboIndex + 2) % PBO_BUFFERS];
-			
-			// Start async GPU read into writePBO for this frame
-			GL.bindBuffer(pboTarget, writePBO);
-			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 0x80E1, GL.UNSIGNED_BYTE, cast 0);
-			
-			// Read from readPBO (data from 2 frames ago, should be ready now)
-			GL.bindBuffer(pboTarget, readPBO);
-			
-			#if (cpp || hl)
-			try {
-				// Reuse pre-allocated buffer to avoid GC pressure
-				GL.getBufferSubData(pboTarget, 0, frameSize, dataBuffer);
-				process.stdin.write(dataBuffer); // write directly
-			} catch (e:Dynamic) {
-				Sys.println('Rendering Mode System - Warning: getBufferSubData failed, disabling PBOs\nVideo is now corrupted');
-				pboTarget = 0;
-			}
-			#else
-			Sys.println('Rendering Mode System - Warning: PBO readback not implemented for this platform');
-			pboTarget = 0;
-			#end
-			
-			GL.bindBuffer(pboTarget, null);
-			
-			// Advance to next buffer in ring
-			pboIndex = (pboIndex + 1) % PBO_BUFFERS;
-		} else {
-			// Fallback: direct synchronous readPixels (blocks GPU pipeline)
-			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 0x80E1, GL.UNSIGNED_BYTE, dataBuffer);
-			process.stdin.write(dataBuffer);
-		}
-	}
+        var encoderSettings = getBestEncoder();
+        var args = [
+            '-y','-f','rawvideo','-pix_fmt','bgra',
+            '-s',Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
+            '-r',Std.string(frameRate),'-i','-',
+            '-vf','vflip','-fflags','nobuffer','-flags','low_delay',
+            '-bufsize','8M','-threads','0','-thread_queue_size','8192'
+        ].concat(encoderSettings).concat([
+            '-colorspace','bt709',
+            'assets/videos/rendered/' + songName + '.mp4'
+        ]);
 
-	static function stopRender()
-	{
-		if (!enabled && !started)
-			return;
+        process = new Process('ffmpeg', args);
 
-		started = false;
+        initPBOs();
+        GL.pixelStorei(GL.PACK_ALIGNMENT, 16);
 
-		if (process != null) {
-			try {
-				if (process.stdin != null)
-					process.stdin.close();
-			} catch (e:Dynamic) {
-				// Ignore close errors
-			}
+        started = true;
+        renderTime = haxe.Timer.stamp();
+        Sys.println("Rendering Mode System - Started!");
+    }
 
-			process.close();
-			process.kill();
-		}
-		
-		// Clean up PBOs
-		if (pbos.length > 0) {
-			for (pbo in pbos) {
-				GL.deleteBuffer(pbo);
-			}
-			pbos = [];
-		}
-		
-		// Clear reusable buffer
-		dataBuffer = null;
+    // ------------------ Stop Render ------------------
+    static function stopRender() {
+        if (!started) return;
+        started = false;
 
-		GL.pixelStorei(GL.PACK_ALIGNMENT, 4);
+        renderTime = haxe.Timer.stamp() - renderTime;
+        Sys.println('Rendering Mode System - Finished Rendering in ${Tools.formatTime(renderTime*1000,true)}.');
 
-		#if FV_LIME_FORK
-		Application.current.window.uncappedFrameRate = false;
-		#else
-		Application.current.window.frameRate = SaveData.graphics.frameRate;
-		#end
-		Application.current.window.resizable = true;
+        while(frameQueue.length > 0) Sys.sleep(0.003);
+        writerThread = null;
 
-		renderTime = haxe.Timer.stamp() - renderTime;
-		Sys.println('Rendering Mode System - Finished Rendering in just ${Tools.formatTime(renderTime * 1000, true)}.');
-	}
+        if (process != null) {
+            try { if(process.stdin != null) process.stdin.close(); } catch(_) {}
+            process.close();
+            process.kill();
+        }
+
+        for (pbo in pbos) GL.deleteBuffer(pbo);
+        pbos = [];
+        framePool = [];
+        freeList = [];
+        frameQueue = [];
+        GL.pixelStorei(GL.PACK_ALIGNMENT,4);
+
+        #if FV_LIME_FORK
+        Application.current.window.uncappedFrameRate = false;
+        #else
+        Application.current.window.frameRate = SaveData.graphics.frameRate;
+        #end
+        Application.current.window.resizable = true;
+    }
 }
