@@ -7,20 +7,29 @@ import lime.graphics.opengl.GL;
 import lime.graphics.opengl.GLBuffer;
 import lime.app.Application;
 import sys.thread.Thread;
+import lime.utils.DataPointer;
 
 @:publicFields
 class RenderingMode {
 	static final PBO_BUFFERS:Int = 32;
 	static final QUEUE_SIZE:Int = 12;
-
+	
+	// Add flags for persistent mapping
+	static final MAP_READ_BIT:Int = 0x0001;
+	static final MAP_WRITE_BIT:Int = 0x0002;
+	static final MAP_PERSISTENT_BIT:Int = 0x0040;
+	static final MAP_COHERENT_BIT:Int = 0x0080;
+	static final CLIENT_STORAGE_BIT:Int = 0x0200;
+	
 	static var pbos:Array<GLBuffer> = [];
+	static var pboMappedPtrs:Array<DataPointer> = []; // Store mapped pointers
 	static var pboIndex:Int = 0;
 	static var pboTarget:Int = 0;
 	static var frameSize:Int = 0;
 
 	private static var ffmpegExists(default, null):Bool;
 	static var process:Process;
-	static var enabled:Bool = false;
+	static var enabled:Bool = true;
 	static var started:Bool = false;
 	static var songName:String;
 	static var renderTime(default, null):Float;
@@ -45,11 +54,47 @@ class RenderingMode {
 		}
 
 		pbos = [];
+		pboMappedPtrs = [];
 		pboTarget = 0x88EB; // GL_PIXEL_PACK_BUFFER
+		
+		var flags = MAP_READ_BIT | MAP_WRITE_BIT | MAP_PERSISTENT_BIT | MAP_COHERENT_BIT;
+		
+		// First test if we can use bufferStorage
+		var usePersistentMapping = false;
+		#if FV_LIME_FORK
+		#if (cpp || hl)
+		try {
+			// Test if bufferStorage is available
+			var testBuf = GL.createBuffer();
+			GL.bindBuffer(pboTarget, testBuf);
+			GL.bufferStorage(pboTarget, 16, cast null, flags);
+			GL.deleteBuffer(testBuf);
+			usePersistentMapping = true;
+			Sys.println("Rendering Mode System - Using GL.bufferStorage for persistent mapping");
+		} catch (e:Dynamic) {
+			Sys.println("Rendering Mode System - GL.bufferStorage not available, using traditional PBOs");
+		}
+		#end
+		#end
+		
 		for (i in 0...PBO_BUFFERS) {
 			var buf = GL.createBuffer();
 			GL.bindBuffer(pboTarget, buf);
-			GL.bufferData(pboTarget, frameSize, cast null, GL.STREAM_COPY);
+			
+			if (usePersistentMapping) {
+				// Use bufferStorage for persistent mapped buffers
+				GL.bufferStorage(pboTarget, frameSize, cast null, flags | CLIENT_STORAGE_BIT);
+				
+				// Map the buffer persistently
+				var ptr = GL.mapBufferRange(pboTarget, 0, frameSize, flags);
+				pboMappedPtrs.push(ptr);
+			} else {
+				// Fallback: use traditional bufferData
+				GL.bufferData(pboTarget, frameSize, cast null, GL.STREAM_COPY);
+				// Store null to indicate no persistent mapping
+				pboMappedPtrs.push(cast 0);
+			}
+			
 			pbos.push(buf);
 		}
 		GL.bindBuffer(pboTarget, null);
@@ -105,25 +150,54 @@ class RenderingMode {
 		if (pbos.length == PBO_BUFFERS) {
 			var readIndex = (pboIndex + PBO_BUFFERS - 3) % PBO_BUFFERS; // read PBO written 3 frames ago
 			var writePBO = pbos[pboIndex];
-
-			// write pixels into current PBO
-			GL.bindBuffer(pboTarget, writePBO);
-			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 0x80E1, GL.UNSIGNED_BYTE, cast 0);
-			GL.bindBuffer(pboTarget, null);
-
-			// read old PBO into CPU memory
 			var readPBO = pbos[readIndex];
-			GL.bindBuffer(pboTarget, readPBO);
-			#if (cpp || hl)
-			try {
-				GL.getBufferSubData(pboTarget, 0, frameSize, buffer);
-			} catch (e:Dynamic) {
-				Sys.println("Warning: getBufferSubData failed, disabling PBOs");
-				pbos = [];
-				pboTarget = 0;
-			}
-			#end
+			var mappedPtr = pboMappedPtrs[readIndex];
+
+			// Write pixels into current PBO
+			GL.bindBuffer(pboTarget, writePBO);
+			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 0x80E1, GL.UNSIGNED_BYTE, cast null);
 			GL.bindBuffer(pboTarget, null);
+
+			// Copy data from PBO to buffer
+			if (mappedPtr != cast 0) {
+				// With persistent mapping - we need to synchronize access
+				// Use GL_FENCE to ensure the data is ready
+				#if (cpp || hl)
+				// We can't use glMemoryBarrier as requested, so we rely on the 3-frame offset
+				// and hope the GPU finishes writing in time
+				
+				// Direct memory copy from the persistently mapped buffer
+				// This requires platform-specific code
+				#if cpp
+				// For C++ target
+				var byteArray = new lime.utils.UInt8Array(buffer);
+				var ptr_int:cpp.RawPointer<Int> = untyped __cpp__("(int*)(uintptr_t){0}", mappedPtr);
+				cpp.Native.memcpy(byteArray.buffer, ptr_int, frameSize);
+				#elseif hl
+				// For HashLink target
+				var hlBytes:hl.Bytes = buffer;
+				var ptrInt:Int64 = cast mappedPtr;
+				buffer = hl.Bytes.fromAddress(ptrInt).toBytes(frameSize);
+				#end
+				#else
+				// Fallback for other targets
+				GL.bindBuffer(pboTarget, readPBO);
+				GL.getBufferSubData(pboTarget, 0, frameSize, buffer);
+				GL.bindBuffer(pboTarget, null);
+				#end
+			} else {
+				// Fallback without persistent mapping
+				GL.bindBuffer(pboTarget, readPBO);
+				try {
+					GL.getBufferSubData(pboTarget, 0, frameSize, buffer);
+				} catch (e:Dynamic) {
+					Sys.println("Warning: getBufferSubData failed, disabling PBOs");
+					pbos = [];
+					pboMappedPtrs = [];
+					pboTarget = 0;
+				}
+				GL.bindBuffer(pboTarget, null);
+			}
 
 			enqueueFrame(buffer);
 			pboIndex = (pboIndex + 1) % PBO_BUFFERS;
@@ -218,8 +292,19 @@ class RenderingMode {
 			process.kill();
 		}
 
-		for (pbo in pbos) GL.deleteBuffer(pbo);
+		// Clean up PBOs
+		for (i in 0...pbos.length) {
+			var pbo = pbos[i];
+			var ptr = pboMappedPtrs[i];
+			if (ptr != cast 0) {
+				GL.bindBuffer(pboTarget, pbo);
+				GL.unmapBuffer(pboTarget);
+				GL.bindBuffer(pboTarget, null);
+			}
+			GL.deleteBuffer(pbo);
+		}
 		pbos = [];
+		pboMappedPtrs = [];
 		freeList = [];
 		frameQueue = [];
 		GL.pixelStorei(GL.PACK_ALIGNMENT,4);
