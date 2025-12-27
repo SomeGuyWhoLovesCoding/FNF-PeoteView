@@ -15,8 +15,8 @@ import cpp.NativeProcess;
 
 @:publicFields
 class RenderingMode {
-	static final PBO_BUFFERS:Int = 2;
-	static final QUEUE_SIZE:Int = 3;
+	static final PBO_BUFFERS:Int = 3;
+	static final QUEUE_SIZE:Int = 8;
 
 	static var pbos:Array<GLBuffer> = [];
 	static var pboIndex:Int = 0;
@@ -129,7 +129,7 @@ class RenderingMode {
 			}
 			#end
 			
-			var batchSize = 8; // Write 8 frames at once
+			var batchSize = 16; // Write 16 frames at once
 			var batch:Array<Bytes> = [];
 			
 			while (!stopRequested) {
@@ -305,9 +305,18 @@ class RenderingMode {
 			'-s',Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
 			'-r',Std.string(frameRate),'-i','-',
 			'-vf','vflip',
-			'-bufsize','1M','-thread_queue_size','256',
+			'-bufsize','1M','-thread_queue_size','512',
 			'-max_muxing_queue_size','1024',
 			'-fflags','+genpts+flush_packets',
+			//'-probesize', '32', '-analyzeduration', '0',
+			// the rest of this is the big win but it beaks the process waaaaaaaaaa
+			'-nostats',
+			'-loglevel', 'quiet',
+			'-hide_banner',
+			'-xerror',
+			'-avoid_negative_ts','make_zero',
+			'-flags','+low_delay',
+			'-strict','experimental'
 		].concat(encoderSettings).concat([
 			'-an',
 			'-colorspace','bt709',
@@ -317,6 +326,10 @@ class RenderingMode {
 		process = new Process('ffmpeg', args);
 		stopRequested = false;
 		cleanupLock = false;
+
+		#if cpp
+		nativeProcessHandle = untyped process.stdin.p;
+		#end
 
 		initPBOs();
 
