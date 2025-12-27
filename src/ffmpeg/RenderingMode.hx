@@ -103,7 +103,7 @@ class RenderingMode {
         var buffer = getFreeFrame();
 
         if (pbos.length == PBO_BUFFERS) {
-            var readIndex = (pboIndex + PBO_BUFFERS - 3) % PBO_BUFFERS; // read PBO written 3 frames ago
+            var readIndex = (pboIndex + PBO_BUFFERS - 1) % PBO_BUFFERS; // read PBO written 1 frame ago
             var writePBO = pbos[pboIndex];
 
             // write pixels into current PBO
