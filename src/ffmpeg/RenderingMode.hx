@@ -12,7 +12,7 @@ import cpp.Pointer;
 import cpp.RawPointer;
 import cpp.NativeProcess;
 #end
-import ffmpeg.NamedPipeWriter;
+import ffmpeg.NetworkStreamer;
 
 @:publicFields
 class RenderingMode {
@@ -44,8 +44,9 @@ class RenderingMode {
 	private static var nativeProcessHandle:Dynamic = null;
 	#end
 
-	// ---------------- EXPERIMENTAL! ----------------
-	static var useNamedPipe:Bool = true; 
+	static var useNetworkStreaming:Bool = false; // Toggle for network vs local
+	static var networkHost:String = "192.168.1.100"; // Your encoding machine IP
+	static var networkPort:Int = 8888;
 
 	// ------------------ PBOs ------------------
 	static function initPBOs() {
@@ -170,18 +171,23 @@ class RenderingMode {
 
 	// ---------------- Pipe Frame (MAIN THREAD ONLY) ----------------
 	static function pipeFrame() {
-		if (!enabled || !started || !ffmpegExists || process == null || stopRequested) return;
-
-		var buffer:Bytes;
+		if (!enabled || !started || !ffmpegExists || stopRequested) return;
 		
-		if (useNamedPipe) {
-			buffer = NamedPipeWriter.getFreeFrame();
-			if (buffer == null) return; // Queue full
+		// Check if we can get a buffer
+		var buffer:Bytes;
+		if (useNetworkStreaming) {
+			buffer = NetworkStreamer.getFreeFrame();
+			if (buffer == null) {
+				// Network queue full - this is actually good info
+				// Means network is saturated, skip this frame
+				return;
+			}
 		} else {
 			buffer = getFreeFrame();
 			if (buffer == null) return;
 		}
 
+		// PBO readback (unchanged)
 		if (pbos.length == PBO_BUFFERS) {
 			var readIndex = (pboIndex + 1) % PBO_BUFFERS;
 			var writePBO = pbos[pboIndex];
@@ -195,8 +201,9 @@ class RenderingMode {
 				GL.getBufferSubData(pboTarget, 0, frameSize, buffer);
 				GL.bindBuffer(pboTarget, null);
 				
-				if (useNamedPipe) {
-					NamedPipeWriter.enqueueFrame(buffer);
+				// Enqueue to appropriate output
+				if (useNetworkStreaming) {
+					NetworkStreamer.enqueueFrame(buffer);
 				} else {
 					enqueueFrame(buffer);
 				}
@@ -204,8 +211,8 @@ class RenderingMode {
 				Sys.println("PBO read failed: " + e);
 				GL.bindBuffer(pboTarget, null);
 				
-				if (useNamedPipe) {
-					NamedPipeWriter.returnFrame(buffer);
+				if (useNetworkStreaming) {
+					NetworkStreamer.returnFrame(buffer);
 				} else {
 					returnFrame(buffer);
 				}
@@ -216,15 +223,15 @@ class RenderingMode {
 		} else {
 			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, GL.RGB, GL.UNSIGNED_SHORT_5_6_5, buffer);
 			
-			if (useNamedPipe) {
-				NamedPipeWriter.enqueueFrame(buffer);
+			if (useNetworkStreaming) {
+				NetworkStreamer.enqueueFrame(buffer);
 			} else {
 				enqueueFrame(buffer);
 			}
 		}
 
-		// Only start stdin writer thread if not using named pipe
-		if (!useNamedPipe && writerThread == null) {
+		// Start stdin writer if needed
+		if (!useNetworkStreaming && writerThread == null) {
 			acquireWriter();
 		}
 	}
@@ -242,7 +249,10 @@ class RenderingMode {
 				'-spatial-aq','0',
 				'-temporal-aq','0',
 				'-b_ref_mode','disabled',
-				'-multipass','disabled'
+				'-multipass','disabled',
+				'-rc-lookahead', '0',
+				'-surfaces', '1',
+				'-bf', '0',  // No B-frames
 			]},
 			
 			{name:'h264_amf', args:[
@@ -258,6 +268,8 @@ class RenderingMode {
 				'-c:v','h264_qsv',
 				'-preset','veryfast',
 				'-global_quality','31',
+				'-look_ahead', '0',
+				'-look_ahead_depth', '0',
 				'-async_depth','4'
 			]}
 		];
@@ -289,11 +301,9 @@ class RenderingMode {
 	static function initRender() {
 		var ffmpeg = "ffmpeg";
 		#if windows ffmpeg += ".exe"; #end
-		if (!FileSystem.exists(ffmpeg)) throw '$ffmpeg not found!';
-		if (!FileSystem.exists('assets/videos/rendered/')) FileSystem.createDirectory('assets/videos/rendered');
-
-		ffmpegExists = true;
+		
 		songName = Chart.header.title;
+		frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 2;
 
 		Application.current.window.resizable = false;
 		#if FV_LIME_FORK
@@ -302,53 +312,71 @@ class RenderingMode {
 		Application.current.window.frameRate = 1000;
 		#end
 
-		var encoderSettings = getBestEncoder();
-		var inputSource:String;
-		
-		// Initialize named pipe if enabled
-		if (useNamedPipe) {
-			frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 2;
-			inputSource = NamedPipeWriter.init("ffmpeg_render", frameSize, QUEUE_SIZE);
-			Sys.println('Using named pipe: $inputSource');
+		if (useNetworkStreaming) {
+			// Network streaming mode
+			Sys.println("=== NETWORK STREAMING MODE ===");
+			
+			// Show local IPs for user reference
+			NetworkStreamer.printLocalIPInfo();
+			networkHost = NetworkStreamer.getLocalIPs()[1];
+			
+			Sys.println('Connecting to: $networkHost:$networkPort');
+			
+			if (!NetworkStreamer.init(networkHost, networkPort, frameSize, QUEUE_SIZE)) {
+				Sys.println("Failed to connect to remote encoder!");
+				Sys.println("Start FFmpeg on the remote machine first:");
+				Sys.println(NetworkStreamer.getRemoteFFmpegCommand(
+					Main.VARIABLE_WIDTH, 
+					Main.VARIABLE_HEIGHT, 
+					frameRate, 
+					'output.mp4'
+				));
+				throw "Network streaming initialization failed";
+			}
+			
+			ffmpegExists = true;
+			process = null; // No local FFmpeg process
 		} else {
-			inputSource = '-'; // stdin
-		}
-		
-		var args = [
-			'-y','-f','rawvideo','-pix_fmt','rgb565',
-			'-s',Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
-			'-r',Std.string(frameRate),'-i',inputSource,
-			'-vf','vflip',
-			'-bufsize','1M','-thread_queue_size','1024',
-			'-max_muxing_queue_size','4096',
-			'-nostats',
-			'-loglevel', 'quiet',
-			'-hide_banner',
-			'-xerror',
-			'-avoid_negative_ts','make_zero',
-			'-flags','+low_delay',
-			'-strict','experimental'
-		].concat(encoderSettings).concat([
-			'-an',
-			'-colorspace','bt709',
-			'assets/videos/rendered/' + songName + '.mp4'
-		]);
+			// Local encoding mode (original)
+			if (!FileSystem.exists(ffmpeg)) throw '$ffmpeg not found!';
+			if (!FileSystem.exists('assets/videos/rendered/')) 
+				FileSystem.createDirectory('assets/videos/rendered');
 
-		process = new Process('ffmpeg', args);
-		stopRequested = false;
-		cleanupLock = false;
+			ffmpegExists = true;
 
-		if (!useNamedPipe) {
+			var encoderSettings = getBestEncoder();
+			var inputSource = '-';
+			
+			var args = [
+				'-y','-f','rawvideo','-pix_fmt','rgb565',
+				'-s',Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
+				'-r',Std.string(frameRate),'-i',inputSource,
+				'-vf','vflip',
+				'-bufsize','1M','-thread_queue_size','1024',
+				'-max_muxing_queue_size','4096',
+				'-nostats','-loglevel', 'quiet','-hide_banner',
+				'-xerror','-avoid_negative_ts','make_zero',
+				'-flags','+low_delay','-strict','experimental'
+			].concat(encoderSettings).concat([
+				'-an','-colorspace','bt709',
+				'assets/videos/rendered/' + songName + '.mp4'
+			]);
+
+			process = new Process('ffmpeg', args);
+			
 			#if cpp
 			nativeProcessHandle = untyped process.stdin.p;
 			#end
 		}
 
+		stopRequested = false;
+		cleanupLock = false;
+
 		initPBOs();
 		
-		// Start named pipe writer after FFmpeg process is running
-		if (useNamedPipe) {
-			NamedPipeWriter.startWriter();
+		// Start network writer if using network streaming
+		if (useNetworkStreaming) {
+			NetworkStreamer.startWriter();
 		}
 
 		started = true;
@@ -369,9 +397,8 @@ class RenderingMode {
 		renderTime = haxe.Timer.stamp() - renderTime;
 		Sys.println('Rendering Mode System - Finished Rendering in ${Tools.formatTime(renderTime*1000,true)}.');
 
-		// Stop named pipe writer if enabled
-		if (useNamedPipe) {
-			NamedPipeWriter.stop();
+		if (useNetworkStreaming) {
+			NetworkStreamer.stop();
 		} else {
 			// Original stdin writer cleanup
 			if (writerThread != null) {
@@ -398,8 +425,8 @@ class RenderingMode {
 			}
 		}
 
-		Sys.println("FFmpeg close...");
 		if (process != null) {
+			Sys.println("FFmpeg close...");
 			process.close();
 			process.kill();
 			Sys.println("FFmpeg exited with code: " + process.exitCode());
@@ -414,7 +441,7 @@ class RenderingMode {
 		}
 		pbos = [];
 		
-		if (!useNamedPipe) {
+		if (!useNetworkStreaming) {
 			freeList = [];
 			frameQueue = [];
 		}
