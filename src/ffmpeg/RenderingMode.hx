@@ -402,7 +402,8 @@ class RenderingMode {
 				'-c:v','h264_vaapi',
 				'-qp','28',
 				'-global_quality','28',
-				'-low_power','1'
+				'-vaapi_device', '/dev/dri/renderD128',
+				'-vf', 'format=rgb565le,hwupload',
 			]},
 
 			// AMD AMF on Linux
@@ -461,7 +462,7 @@ class RenderingMode {
 				'-global_quality','28',
 				'-look_ahead', '0',
 				'-look_ahead_depth', '0',
-				'-async_depth','4'
+				'-async_depth','8'
 			]}
 		];
 
@@ -559,7 +560,7 @@ class RenderingMode {
 			process = new Process('ffmpeg', args);
 
 			#if cpp
-			nativeProcessHandle = untyped process.stdin.p;
+			nativeProcessHandle = untyped process?.stdin?.p;
 			#end
 		}
 
