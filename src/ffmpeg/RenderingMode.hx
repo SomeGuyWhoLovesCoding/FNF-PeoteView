@@ -15,6 +15,7 @@ import cpp.RawPointer;
 import cpp.NativeProcess;
 #end
 import ffmpeg.NetworkStreamer;
+import lime.utils.DataPointer;
 
 @:publicFields
 class RenderingMode {
@@ -93,17 +94,31 @@ class RenderingMode {
 
 		pbos = [];
 		pboTarget = 0x88EB; // GL_PIXEL_PACK_BUFFER
-		
+
+		// Check if buffer mapping is available
+		#if FV_LIME_FORK
+		var extensions = GL.getSupportedExtensions();
+		var hasMapBuffer = (extensions != null && extensions.indexOf("GL_ARB_pixel_buffer_object") != -1);
+
+		if (hasMapBuffer) {
+			Sys.println("Using PBO with buffer mapping (fast path)");
+		} else {
+			Sys.println("Using PBO with getBufferSubData (slow path)");
+		}
+		#end
+
 		for (i in 0...PBO_BUFFERS) {
 			var buf = GL.createBuffer();
 			GL.bindBuffer(pboTarget, buf);
-			
-			// Use streaming read for better performance with PBO
+
+
+			// Allocate PBO memory
 			GL.bufferData(pboTarget, frameSize, cast null, 0x88E2); // GL_STREAM_READ
+
 			pbos.push(buf);
 		}
 		GL.bindBuffer(pboTarget, null);
-		
+
 		Sys.println("Rendering Mode System - PBOs initialized successfully.");
 		Sys.println('Frame size: ${frameSize} bytes, Batch buffer: ${batchBufferSize} bytes');
 		Sys.println('Queue capacity: ${QUEUE_SIZE} frames');
@@ -114,7 +129,7 @@ class RenderingMode {
 		queueMutex.acquire();
 		var frame = if (freeList.length > 0) freeList.pop() else null;
 		queueMutex.release();
-		
+
 		if (frame == null) {
 			// Allocate new frame if pool is empty (should be rare with proper QUEUE_SIZE)
 			frame = Bytes.alloc(frameSize);
@@ -135,7 +150,7 @@ class RenderingMode {
 		bufferPoolMutex.acquire();
 		var buffer = if (batchBufferPool.length > 0) batchBufferPool.pop() else null;
 		bufferPoolMutex.release();
-		
+
 		if (buffer == null) {
 			// Allocate new buffer if pool is empty
 			buffer = Bytes.alloc(batchBufferSize);
@@ -154,12 +169,12 @@ class RenderingMode {
 	// ---------------- Queue (Thread-safe with condition variable) ----------------
 	static inline function enqueueFrame(frame:Bytes) {
 		queueMutex.acquire();
-		
+
 		// Prevent queue from growing too large
 		if (frameQueue.length < MAX_QUEUE_LENGTH) {
 			frameQueue.push(frame);
 			framesCaptured++;
-			
+
 			// Signal writer thread if it's waiting
 			if (frameQueue.length == 1) {
 				queueLock.release();
@@ -168,7 +183,7 @@ class RenderingMode {
 			// Queue full, drop frame
 			returnFrame(frame);
 		}
-		
+
 		queueMutex.release();
 	}
 
@@ -186,21 +201,21 @@ class RenderingMode {
 	// ---------------- Writer Thread with Optimized Batch Processing ----------------
 	static function acquireWriter() {
 		if (writerThread != null) return;
-		
+
 		writerThread = Thread.create(function() {
 			Sys.println('Writer thread started');
-			
+
 			#if cpp
 			if (nativeProcessHandle != null) {
 				Sys.println("Using direct NativeProcess with batch optimization");
 			}
 			#end
-			
+
 			var batch:Array<Bytes> = [];
 			var batchBuffer:Bytes = null;
 			var lastStatsTime = haxe.Timer.stamp();
 			var framesInBatch:Int = 0;
-			
+
 			while (!stopRequested) {
 				// Wait for frames with timeout
 				if (batch.length == 0) {
@@ -209,7 +224,7 @@ class RenderingMode {
 						continue;
 					}
 				}
-				
+
 				// Collect frames into batch
 				queueMutex.acquire();
 				while (batch.length < BATCH_SIZE && frameQueue.length > 0) {
@@ -220,16 +235,16 @@ class RenderingMode {
 					}
 				}
 				queueMutex.release();
-				
+
 				if (batch.length == 0) {
 					if (stopRequested) break;
 					continue;
 				}
-				
+
 				// Get batch buffer from pool
 				batchBuffer = getFreeBatchBuffer();
 				var framesToWrite = batch.length;
-				
+
 				// Blit all frames into batch buffer
 				var offset:Int = 0;
 				for (i in 0...framesToWrite) {
@@ -237,7 +252,7 @@ class RenderingMode {
 					batchBuffer.blit(offset, frame, 0, frameSize);
 					offset += frameSize;
 				}
-				
+
 				// Write batch
 				try {
 					#if cpp
@@ -245,9 +260,9 @@ class RenderingMode {
 						// Direct native write - single system call for entire batch
 						var totalBytes = frameSize * framesToWrite;
 						var written = NativeProcess.process_stdin_write(
-							nativeProcessHandle, 
-							batchBuffer.getData(), 
-							0, 
+							nativeProcessHandle,
+							batchBuffer.getData(),
+							0,
 							totalBytes
 						);
 						if (written != totalBytes) {
@@ -274,14 +289,14 @@ class RenderingMode {
 						Sys.println("Write error: " + err);
 					}
 				}
-				
+
 				// Return resources to pools
 				returnBatchBuffer(batchBuffer);
 				batchBuffer = null;
-				
+
 				for (frame in batch) returnFrame(frame);
 				batch = [];
-				
+
 				// Log performance stats periodically
 				var now = haxe.Timer.stamp();
 				if (now - lastStatsTime >= logInterval) {
@@ -292,7 +307,7 @@ class RenderingMode {
 					framesInBatch = 0;
 				}
 			}
-			
+
 			// Final flush if we have remaining frames
 			if (batch.length > 0) {
 				try {
@@ -309,17 +324,17 @@ class RenderingMode {
 						framesWritten += batch.length;
 					}
 				} catch (e:Dynamic) {}
-				
+
 				for (frame in batch) returnFrame(frame);
 			}
-			
+
 			if (batchBuffer != null) returnBatchBuffer(batchBuffer);
-			
+
 			Sys.println('Writer thread exiting. Frames written: ${framesWritten}');
 		});
 	}
 
-	// ---------------- Pipe Frame (MAIN THREAD ONLY) ----------------
+	// ---------------- Pipe Frame with Correct PBO Mapping ----------------
 	static function pipeFrame() {
 		if (!enabled || !started || !ffmpegExists || stopRequested) return;
 		
@@ -327,9 +342,7 @@ class RenderingMode {
 		var buffer:Bytes;
 		if (useNetworkStreaming) {
 			buffer = NetworkStreamer.getFreeFrame();
-			if (buffer == null) {
-				return;
-			}
+			if (buffer == null) return;
 		} else {
 			buffer = getFreeFrame();
 			if (buffer == null) return;
@@ -337,45 +350,59 @@ class RenderingMode {
 
 		// PBO readback with double buffering
 		if (pbos.length == PBO_BUFFERS) {
-			// Previous frame should be ready in the "read" PBO
-			var readIndex = (pboIndex + 1) % PBO_BUFFERS;
+			var readIndex = (pboIndex + 3) % PBO_BUFFERS;
 			var writeIndex = pboIndex;
 			
-			// Bind write PBO and start async readback
+			// Start async readback to write PBO
 			GL.bindBuffer(pboTarget, pbos[writeIndex]);
 			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 
 				GL.RGB, GL.UNSIGNED_SHORT_5_6_5, cast null);
 			
-			// Read from the previously filled PBO
+			// Try buffer mapping (fastest)
 			GL.bindBuffer(pboTarget, pbos[readIndex]);
 			
-			// Map buffer for faster access (optional optimization)
-			try {
-				// Use getBufferSubData for compatibility
-				GL.getBufferSubData(pboTarget, 0, frameSize, buffer);
-				GL.bindBuffer(pboTarget, null);
-				
-				// Enqueue frame
+			/*#if FV_LIME_FORK
+			var mappedPtr#if cpp :cpp.RawPointer<cpp.UInt8> #else :hl.NativeArray<hl.UI8> #end = @:privateAccess lime._internal.backend.native.NativeCFFI.fv_gl_map_buffer_range_pbo(frameSize);
+			if (mappedPtr != null) {
 				if (useNetworkStreaming) {
 					NetworkStreamer.enqueueFrame(buffer);
 				} else {
 					enqueueFrame(buffer);
 				}
-			} catch (e:Dynamic) {
-				Sys.println("PBO read failed: " + e);
 				GL.bindBuffer(pboTarget, null);
-				
-				if (useNetworkStreaming) {
-					NetworkStreamer.returnFrame(buffer);
-				} else {
-					returnFrame(buffer);
+				pboIndex = (pboIndex + 1) % PBO_BUFFERS;
+			} else
+			#end
+			{*/
+				// Fallback: Use getBufferSubData
+				try {
+					GL.getBufferSubData(pboTarget, 0, frameSize, buffer);
+					
+					if (useNetworkStreaming) {
+						NetworkStreamer.enqueueFrame(buffer);
+					} else {
+						enqueueFrame(buffer);
+					}
+				} catch (e:Dynamic) {
+					Sys.println("getBufferSubData failed: " + e);
+					
+					// Ultimate fallback: direct readPixels
+					GL.bindBuffer(pboTarget, null);
+					GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 
+						GL.RGB, GL.UNSIGNED_SHORT_5_6_5, buffer);
+						
+					if (useNetworkStreaming) {
+						NetworkStreamer.enqueueFrame(buffer);
+					} else {
+						enqueueFrame(buffer);
+					}
 				}
-				return;
-			}
-
-			pboIndex = (pboIndex + 1) % PBO_BUFFERS;
+				
+				GL.bindBuffer(pboTarget, null);
+				pboIndex = (pboIndex + 1) % PBO_BUFFERS;
+			//}
 		} else {
-			// Fallback to synchronous read
+			// Direct synchronous read
 			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 
 				GL.RGB, GL.UNSIGNED_SHORT_5_6_5, buffer);
 			
@@ -389,13 +416,6 @@ class RenderingMode {
 		// Start writer thread if needed
 		if (!useNetworkStreaming && writerThread == null) {
 			acquireWriter();
-		}
-		
-		// Log performance periodically
-		var now = haxe.Timer.stamp();
-		if (now - lastLogTime >= logInterval) {
-			Sys.println('Capture: ${framesCaptured}frames, Queue: ${frameQueue.length}');
-			lastLogTime = now;
 		}
 	}
 
@@ -411,7 +431,7 @@ class RenderingMode {
 				'-num_capture_buffers','64',
 				'-qp','28'
 			]},
-			
+
 			// Intel VAAPI
 			{name:'h264_vaapi', args:[
 				'-c:v','h264_vaapi',
@@ -419,7 +439,7 @@ class RenderingMode {
 				'-global_quality','28',
 				'-low_power','1'
 			]},
-			
+
 			// AMD AMF on Linux
 			{name:'h264_amf', args:[
 				'-c:v','h264_amf',
@@ -430,7 +450,7 @@ class RenderingMode {
 				'-usage','ultralowlatency'
 			]}
 		];
-		
+
 		for (encoder in linuxEncoders) {
 			var testProcess = new Process('ffmpeg', [
 				'-f','lavfi','-v','quiet','-i','color=black:s=64x64:d=0.1',
@@ -460,7 +480,7 @@ class RenderingMode {
 				'-surfaces', '1',
 				'-bf', '0',
 			]},
-			
+
 			{name:'h264_amf', args:[
 				'-c:v','h264_amf',
 				'-quality','speed',
@@ -469,7 +489,7 @@ class RenderingMode {
 				'-qp_p','28',
 				'-preanalysis','false'
 			]},
-			
+
 			{name:'h264_qsv', args:[
 				'-c:v','h264_qsv',
 				'-preset','veryfast',
@@ -493,7 +513,7 @@ class RenderingMode {
 			}
 		}
 		#end
-		
+
 		// Fallback to libx264
 		Sys.println('Rendering Mode System - Using encoder: libx264 (software fallback)');
 		return [
@@ -509,10 +529,10 @@ class RenderingMode {
 	static function initRender() {
 		var ffmpeg = "ffmpeg";
 		#if windows ffmpeg += ".exe"; #end
-		
+
 		songName = Chart.header.title;
 		frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 2;
-		
+
 		// Reset performance counters
 		framesCaptured = 0;
 		framesWritten = 0;
@@ -527,36 +547,36 @@ class RenderingMode {
 
 		if (useNetworkStreaming) {
 			Sys.println("=== NETWORK STREAMING MODE ===");
-			
+
 			NetworkStreamer.printLocalIPInfo();
 			networkHost = NetworkStreamer.getLocalIPs()[1];
-			
+
 			Sys.println('Connecting to: $networkHost:$networkPort');
-			
+
 			if (!NetworkStreamer.init(networkHost, networkPort, frameSize, QUEUE_SIZE)) {
 				Sys.println("Failed to connect to remote encoder!");
 				Sys.println("Start FFmpeg on the remote machine first:");
 				Sys.println(NetworkStreamer.getRemoteFFmpegCommand(
-					Main.VARIABLE_WIDTH, 
-					Main.VARIABLE_HEIGHT, 
-					frameRate, 
+					Main.VARIABLE_WIDTH,
+					Main.VARIABLE_HEIGHT,
+					frameRate,
 					'output.mp4'
 				));
 				throw "Network streaming initialization failed";
 			}
-			
+
 			ffmpegExists = true;
 			process = null;
 		} else {
 			if (!FileSystem.exists(ffmpeg)) throw '$ffmpeg not found!';
-			if (!FileSystem.exists('assets/videos/rendered/')) 
+			if (!FileSystem.exists('assets/videos/rendered/'))
 				FileSystem.createDirectory('assets/videos/rendered');
 
 			ffmpegExists = true;
 
 			var encoderSettings = getBestEncoder();
 			var inputSource = '-';
-			
+
 			var args = [
 				'-y','-f','rawvideo','-pix_fmt','rgb565le',
 				'-s',Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
@@ -572,7 +592,7 @@ class RenderingMode {
 			]);
 
 			process = new Process('ffmpeg', args);
-			
+
 			#if cpp
 			nativeProcessHandle = untyped process.stdin.p;
 			#end
@@ -583,7 +603,7 @@ class RenderingMode {
 		writerThread = null;
 
 		initPBOs();
-		
+
 		if (useNetworkStreaming) {
 			NetworkStreamer.startWriter();
 		}
@@ -597,12 +617,12 @@ class RenderingMode {
 	static function stopRender() {
 		if (!started || cleanupLock) return;
 		cleanupLock = true;
-		
+
 		Sys.println("StopRender called - beginning cleanup...");
-		
+
 		stopRequested = true;
 		started = false;
-		
+
 		renderTime = haxe.Timer.stamp() - renderTime;
 		Sys.println('Rendering Mode System - Finished Rendering in ${Tools.formatTime(renderTime*1000,true)}.');
 		Sys.println('Performance: ${framesCaptured} captured, ${framesWritten} written');
@@ -612,21 +632,21 @@ class RenderingMode {
 		} else {
 			// Signal writer thread to wake up and exit
 			queueLock.release();
-			
+
 			if (writerThread != null) {
 				Sys.println("Waiting for writer thread to finish...");
 				var startWait = haxe.Timer.stamp();
 				var maxWaitTime = 10.0; // Maximum 10 seconds
-				
+
 				while ((haxe.Timer.stamp() - startWait) < maxWaitTime) {
 					queueMutex.acquire();
 					var queueEmpty = frameQueue.length == 0;
 					queueMutex.release();
-					
+
 					if (queueEmpty) break;
 					Sys.sleep(0.002);
 				}
-				
+
 				Sys.println("Writer thread cleanup complete");
 			}
 
@@ -662,7 +682,7 @@ class RenderingMode {
 			} catch (e:Dynamic) {}
 		}
 		pbos = [];
-		
+
 		if (!useNetworkStreaming) {
 			freeList = [];
 			frameQueue = [];
@@ -675,9 +695,9 @@ class RenderingMode {
 		Application.current.window.frameRate = SaveData.graphics.frameRate;
 		#end
 		Application.current.window.resizable = true;
-		
+
 		cleanupLock = false;
-		
+
 		Sys.println("Rendering Mode System - Cleanup complete!");
 	}
 }
