@@ -324,41 +324,72 @@ class RenderingMode {
 
 	// ---------------- Pipe Frame with Correct PBO Mapping ----------------
 	static function pipeFrame() {
-		if (!enabled || !started) return;
+		if (!enabled || !started || !ffmpegExists || stopRequested) return;
 		
-		var buffer = getFreeFrame();
-		if (buffer == null) return;
-		
-		var pixelCount = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT;
-		var tempR = Bytes.alloc(pixelCount);
-		var tempG = Bytes.alloc(pixelCount);
-		var tempB = Bytes.alloc(pixelCount);
-    
-		// OpenGL constants (Lime doesn't expose these)
-		var GL_GREEN:Int = 0x1904;
-		var GL_BLUE:Int = 0x1905;
-		
-		// Read each channel separately
-		GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 
-			GL.RED, GL.UNSIGNED_BYTE, tempR);
-		
-		GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 
-			GL_GREEN, GL.UNSIGNED_BYTE, tempG);
-		
-		GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 
-			GL_BLUE, GL.UNSIGNED_BYTE, tempB);
-		
-		// Pack into RGB565 in buffer
-		for (i in 0...pixelCount) {
-			var r = tempR.get(i) >> 3;  // 8-bit to 5-bit
-			var g = tempG.get(i) >> 2;  // 8-bit to 6-bit
-			var b = tempB.get(i) >> 3;  // 8-bit to 5-bit
-			
-			var rgb565 = (r << 11) | (g << 5) | b;
-			buffer.setUInt16(i * 2, rgb565);
+		// Get buffer from appropriate source
+		var buffer:Bytes;
+		if (useNetworkStreaming) {
+			buffer = NetworkStreamer.getFreeFrame();
+			if (buffer == null) return;
+		} else {
+			buffer = getFreeFrame();
+			if (buffer == null) return;
 		}
-		
-		enqueueFrame(buffer);
+
+		// PBO readback with double buffering
+		if (pbos.length == PBO_BUFFERS) {
+			var readIndex = (pboIndex + 4) % PBO_BUFFERS;
+			var writeIndex = pboIndex;
+			
+			// Start async readback to write PBO
+			GL.bindBuffer(pboTarget, pbos[writeIndex]);
+			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 
+				GL.RGB, GL.UNSIGNED_SHORT_5_6_5, cast null);
+			
+			// Try buffer mapping (fastest)
+			GL.bindBuffer(pboTarget, pbos[readIndex]);
+			
+			try {
+				GL.getBufferSubData(pboTarget, 0, frameSize, buffer);
+				
+				if (useNetworkStreaming) {
+					NetworkStreamer.enqueueFrame(buffer);
+				} else {
+					enqueueFrame(buffer);
+				}
+			} catch (e:Dynamic) {
+				Sys.println("getBufferSubData failed: " + e);
+				
+				// Ultimate fallback: direct readPixels
+				GL.bindBuffer(pboTarget, null);
+				GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 
+					GL.RGB, GL.UNSIGNED_SHORT_5_6_5, buffer);
+					
+				if (useNetworkStreaming) {
+					NetworkStreamer.enqueueFrame(buffer);
+				} else {
+					enqueueFrame(buffer);
+				}
+			}
+			
+			GL.bindBuffer(pboTarget, null);
+			pboIndex = (pboIndex + 4) % PBO_BUFFERS;
+		} else {
+			// Direct synchronous read
+			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 
+				GL.RGB, GL.UNSIGNED_SHORT_5_6_5, buffer);
+			
+			if (useNetworkStreaming) {
+				NetworkStreamer.enqueueFrame(buffer);
+			} else {
+				enqueueFrame(buffer);
+			}
+		}
+
+		// Start writer thread if needed
+		if (!useNetworkStreaming && writerThread == null) {
+			acquireWriter();
+		}
 	}
 
 	// ------------------ Encoder ------------------
