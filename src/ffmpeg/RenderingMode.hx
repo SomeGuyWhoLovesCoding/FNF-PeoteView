@@ -15,7 +15,7 @@ import cpp.NativeProcess;
 
 @:publicFields
 class RenderingMode {
-	static final PBO_BUFFERS:Int = 3;
+	static final PBO_BUFFERS:Int = 5;
 	static final QUEUE_SIZE:Int = 8;
 
 	static var pbos:Array<GLBuffer> = [];
@@ -45,7 +45,7 @@ class RenderingMode {
 
 	// ------------------ PBOs ------------------
 	static function initPBOs() {
-		frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 4;
+		frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 2;
 
 		freeList = [];
 		frameQueue = [];
@@ -176,7 +176,7 @@ class RenderingMode {
 			var writePBO = pbos[pboIndex];
 
 			GL.bindBuffer(pboTarget, writePBO);
-			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 0x80E1, GL.UNSIGNED_BYTE, cast 0);
+			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, GL.RGB, GL.UNSIGNED_SHORT_5_6_5, cast null);
 
 			var readPBO = pbos[readIndex];
 			GL.bindBuffer(pboTarget, readPBO);
@@ -193,7 +193,7 @@ class RenderingMode {
 
 			pboIndex = (pboIndex + 1) % PBO_BUFFERS;
 		} else {
-			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 0x80E1, GL.UNSIGNED_BYTE, buffer);
+			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, GL.RGB, GL.UNSIGNED_SHORT_5_6_5, buffer);
 			enqueueFrame(buffer);
 		}
 
@@ -208,7 +208,7 @@ class RenderingMode {
 				'-preset','p1',
 				'-tune','ull',
 				'-rc','constqp',
-				'-qp','32',
+				'-qp','31',
 				'-2pass','0',
 				'-spatial-aq','0',
 				'-temporal-aq','0',
@@ -220,15 +220,15 @@ class RenderingMode {
 				'-c:v','h264_amf',
 				'-quality','speed',
 				'-rc','cqp',
-				'-qp_i','32',
-				'-qp_p','32',
+				'-qp_i','31',
+				'-qp_p','31',
 				'-preanalysis','false'
 			]},
 			
 			{name:'h264_qsv', args:[
 				'-c:v','h264_qsv',
 				'-preset','veryfast',
-				'-global_quality','32',
+				'-global_quality','31',
 				'-async_depth','4'
 			]}
 		];
@@ -275,15 +275,12 @@ class RenderingMode {
 
 		var encoderSettings = getBestEncoder();
 		var args = [
-			'-y','-f','rawvideo','-pix_fmt','bgra',
+			'-y','-f','rawvideo','-pix_fmt','rgb565',
 			'-s',Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
 			'-r',Std.string(frameRate),'-i','-',
 			'-vf','vflip',
-			'-bufsize','1M','-thread_queue_size','512',
-			'-max_muxing_queue_size','2048',
-			'-fflags','+genpts+flush_packets',
-			//'-probesize', '32', '-analyzeduration', '0',
-			// the rest of this is the big win but it beaks the process waaaaaaaaaa
+			'-bufsize','1M','-thread_queue_size','1024',
+			'-max_muxing_queue_size','4096',
 			'-nostats',
 			'-loglevel', 'quiet',
 			'-hide_banner',
