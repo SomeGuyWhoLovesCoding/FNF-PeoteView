@@ -397,14 +397,6 @@ class RenderingMode {
 		#if linux
 		// Test for Linux hardware encoders first
 		var linuxEncoders = [
-			// Raspberry Pi (v4l2_m2m)
-			{name:'h264_v4l2m2m', args:[
-				'-c:v','h264_v4l2m2m',
-				'-num_output_buffers','64',
-				'-num_capture_buffers','64',
-				'-qp','28'
-			]},
-
 			// Intel VAAPI
 			{name:'h264_vaapi', args:[
 				'-c:v','h264_vaapi',
