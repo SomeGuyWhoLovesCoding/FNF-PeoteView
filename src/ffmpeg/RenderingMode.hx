@@ -49,7 +49,7 @@ class RenderingMode {
 
 	#if cpp
 	private static var nativeProcessHandle:Dynamic = null;
-	#encoder
+	#end
 
 	// ---------------- Batch Buffer Pool ----------------
 	private static var batchBufferPool:Array<Bytes> = [];
