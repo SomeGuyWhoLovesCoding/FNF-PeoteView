@@ -354,6 +354,9 @@ class Main extends Application
 				freeplayMenu.render(renderRate);
 			}
 		}
+
+		Sys.println('Uncapped framerate: ${Application.current.window.uncappedFrameRate}');
+		Sys.println('Delta time: $deltaTime');
 	}
 
 	function popupOptionsMenu() {
