@@ -16,8 +16,8 @@ import ffmpeg.NetworkStreamer;
 
 @:publicFields
 class RenderingMode {
-	static final PBO_BUFFERS:Int = 5;
-	static final QUEUE_SIZE:Int = 4;
+	static final PBO_BUFFERS:Int = 6;
+	static final QUEUE_SIZE:Int = 16;
 	static final BATCH_SIZE:Int = 128; // Number of frames to batch together
 
 	static var pbos:Array<GLBuffer> = [];
