@@ -45,7 +45,7 @@ class RenderingMode {
 
 	// ------------------ PBOs ------------------
 	static function initPBOs() {
-		frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 3;
+		frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 4;
 
 		freeList = [];
 		frameQueue = [];
@@ -66,8 +66,6 @@ class RenderingMode {
 			pbos.push(buf);
 		}
 		GL.bindBuffer(pboTarget, null);
-		
-		GL.pixelStorei(GL.PACK_ALIGNMENT, 16);
 		
 		Sys.println("Rendering Mode System - PBOs initialized successfully.");
 	}
@@ -178,7 +176,7 @@ class RenderingMode {
 			var writePBO = pbos[pboIndex];
 
 			GL.bindBuffer(pboTarget, writePBO);
-			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, GL.RGB, GL.UNSIGNED_BYTE, cast 0);
+			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 0x80E1, GL.UNSIGNED_BYTE, cast 0);
 
 			var readPBO = pbos[readIndex];
 			GL.bindBuffer(pboTarget, readPBO);
@@ -195,7 +193,7 @@ class RenderingMode {
 
 			pboIndex = (pboIndex + 1) % PBO_BUFFERS;
 		} else {
-			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, GL.RGB, GL.UNSIGNED_BYTE, buffer);
+			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 0x80E1, GL.UNSIGNED_BYTE, buffer);
 			enqueueFrame(buffer);
 		}
 
@@ -367,8 +365,6 @@ class RenderingMode {
 		
 		freeList = [];
 		frameQueue = [];
-		
-		GL.pixelStorei(GL.PACK_ALIGNMENT, 4);
 
 		#if FV_LIME_FORK
 		Application.current.window.uncappedFrameRate = false;
