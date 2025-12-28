@@ -56,6 +56,45 @@ class RenderingMode {
 	// ------------------ PBOs ------------------
 	static function initPBOs() {
 		frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 2;
+		
+		#if android
+		// Android-specific GLES setup
+		Sys.println("Android: Initializing GLES-optimized PBOs");
+		
+		// Check for GLES extensions
+		var extensions = GL.getSupportedExtensions();
+		var hasPBO = extensions.indexOf("GL_NV_pixel_buffer_object") != -1 ||
+					extensions.indexOf("GL_EXT_pixel_buffer_object") != -1;
+		
+		if (hasPBO) {
+			pboTarget = 0x88EB; // GL_PIXEL_PACK_BUFFER
+			
+			// Android devices vary greatly - use conservative sizes
+			var maxBufferSize = GL.getParameter(0x8765); // GL_MAX_PIXEL_PACK_BUFFER_SIZE
+			if (frameSize * PBO_BUFFERS > maxBufferSize) {
+				PBO_BUFFERS = Std.int(maxBufferSize / frameSize);
+				if (PBO_BUFFERS < 2) PBO_BUFFERS = 2;
+				Sys.println("Android: Reduced PBO count to " + PBO_BUFFERS);
+			}
+			
+			pbos = [];
+			for (i in 0...PBO_BUFFERS) {
+				var buf = GL.createBuffer();
+				GL.bindBuffer(pboTarget, buf);
+				GL.bufferData(pboTarget, frameSize, cast null, 0x88E8); // GL_STREAM_READ for Android
+				pbos.push(buf);
+			}
+			GL.bindBuffer(pboTarget, null);
+		} else {
+			Sys.println("Android: PBOs not supported, using direct read");
+			pbos = [];
+		}
+		
+		// Android memory management - be more conservative
+		QUEUE_SIZE = 4; // Reduce queue size for mobile
+		BATCH_SIZE = 8; // Smaller batches for mobile
+		#else
+		frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 2;
 		batchBufferSize = frameSize * BATCH_SIZE;
 
 		freeList = [];
@@ -283,6 +322,97 @@ class RenderingMode {
 
 	// ------------------ Encoder ------------------
 	static function getBestEncoder():Array<String> {
+		#if android
+		Sys.println("Android: Detecting hardware encoder");
+		
+		// Test Android MediaCodec encoders first
+		var androidEncoders = [
+			// H.264 via MediaCodec (API 21+)
+			{name: 'h264_mediacodec', testArgs: [], encodeArgs: [
+				'-c:v', 'h264_mediacodec',
+				'-profile', 'baseline',
+				'-level', '3.1',
+				'-bitrate', '2000k',
+				'-vendor', 'google'  // Important for some devices
+			]},
+			
+			// HEVC via MediaCodec (API 21+)
+			{name: 'hevc_mediacodec', testArgs: [], encodeArgs: [
+				'-c:v', 'hevc_mediacodec',
+				'-profile', 'main',
+				'-level', '3.1',
+				'-bitrate', '1500k'
+			]},
+			
+			// H.263 (older devices)
+			{name: 'h263_mediacodec', testArgs: [], encodeArgs: [
+				'-c:v', 'h263_mediacodec',
+				'-bitrate', '1000k'
+			]},
+			
+			// VP8/VP9 (some devices)
+			{name: 'vp8_mediacodec', testArgs: [], encodeArgs: [
+				'-c:v', 'vp8_mediacodec',
+				'-bitrate', '1500k'
+			]}
+		];
+		
+		for (encoder in androidEncoders) {
+			try {
+				var testArgs = ['-f', 'lavfi', '-v', 'quiet', '-i', 'color=black:s=64x64:d=0.1',
+							'-c:v', encoder.name, '-f', 'null', '-'];
+				var testProcess = new Process('ffmpeg', testArgs);
+				var exitCode = testProcess.exitCode();
+				testProcess.close();
+				
+				if (exitCode == 0) {
+					Sys.println('Android: Using hardware encoder: ${encoder.name}');
+					return encoder.encodeArgs;
+				}
+			} catch (e:Dynamic) {}
+		}
+		#elseif linux
+		// Test for Linux hardware encoders first
+		var linuxEncoders = [
+			// Raspberry Pi (v4l2_m2m)
+			{name:'h264_v4l2m2m', args:[
+				'-c:v','h264_v4l2m2m',
+				'-num_output_buffers','64',
+				'-num_capture_buffers','64',
+				'-qp','28'
+			]},
+			
+			// Intel VAAPI
+			{name:'h264_vaapi', args:[
+				'-c:v','h264_vaapi',
+				'-qp','28',
+				'-global_quality','28',
+				'-low_power','1'
+			]},
+			
+			// AMD AMF on Linux
+			{name:'h264_amf', args:[
+				'-c:v','h264_amf',
+				'-quality','speed',
+				'-rc','cqp',
+				'-qp_i','28',
+				'-qp_p','28',
+				'-usage','ultralowlatency'
+			]}
+		];
+		
+		for (encoder in linuxEncoders) {
+			var testProcess = new Process('ffmpeg', [
+				'-f','lavfi','-v','quiet','-i','color=black:s=64x64:d=0.1',
+				'-c:v',encoder.name,'-f','null','-'
+			]);
+			var exitCode = testProcess.exitCode();
+			if (exitCode == 0) {
+				Sys.println('Rendering Mode System - Using Linux encoder: ${encoder.name}');
+				return encoder.args;
+			}
+		}
+
 		var encoders = [
 			{name:'h264_nvenc', args:[
 				'-c:v','h264_nvenc',

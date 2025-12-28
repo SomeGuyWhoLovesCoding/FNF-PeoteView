@@ -355,8 +355,8 @@ class Main extends Application
 			}
 		}
 
-		Sys.println('Uncapped framerate: ${Application.current.window.uncappedFrameRate}');
-		Sys.println('Delta time: $newDeltaTime');
+		//Sys.println('Uncapped framerate: ${Application.current.window.uncappedFrameRate}');
+		//Sys.println('Delta time: $newDeltaTime');
 	}
 
 	function popupOptionsMenu() {
