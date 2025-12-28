@@ -412,7 +412,7 @@ class RenderingMode {
 				return encoder.args;
 			}
 		}
-
+		#else
 		var encoders = [
 			{name:'h264_nvenc', args:[
 				'-c:v','h264_nvenc',
@@ -448,6 +448,7 @@ class RenderingMode {
 				'-async_depth','4'
 			]}
 		];
+		#end
 
 		for (encoder in encoders) {
 			var testProcess = new Process('ffmpeg', [
