@@ -558,6 +558,42 @@ class RenderingMode {
 
 	// ------------------ Stop Render ------------------
 	static function stopRender() {
+		#if android
+		if (!started || cleanupLock) return;
+		cleanupLock = true;
+		
+		Sys.println("Android: Stopping render with cleanup");
+		
+		// Important: Unbind GL objects before context loss
+		GL.bindBuffer(pboTarget, null);
+		for (pbo in pbos) {
+			try {
+				GL.deleteBuffer(pbo);
+			} catch (e:Dynamic) {}
+		}
+		pbos = [];
+		
+		// Force GC to reclaim memory
+		neash.vm.Gc.run(true);
+		
+		// Move file from tmpfs if used
+		try {
+			var tmpFile = "/dev/shm/ffmpeg/" + songName + ".mp4";
+			var destFile = lime.system.System.applicationStorageDirectory + "/rendered/" + songName + ".mp4";
+			
+			if (FileSystem.exists(tmpFile) && FileSystem.exists(destFile)) {
+				// Copy with progress
+				var src = sys.io.File.read(tmpFile, true);
+				var dst = sys.io.File.write(destFile, true);
+				dst.writeInput(src);
+				src.close();
+				dst.close();
+				
+				// Delete tmp file
+				FileSystem.deleteFile(tmpFile);
+			}
+		} catch (e:Dynamic) {}
+		#else
 		if (!started || cleanupLock) return;
 		cleanupLock = true;
 		
@@ -628,5 +664,6 @@ class RenderingMode {
 		cleanupLock = false;
 		
 		Sys.println("Rendering Mode System - Cleanup complete!");
+		#end
 	}
 }
