@@ -18,7 +18,7 @@ import lime.utils.DataPointer;
 
 @:publicFields
 class RenderingMode {
-	static final PBO_BUFFERS:Int = 3; // Triple buffering is optimal
+	static final PBO_BUFFERS:Int = 5; // Triple buffering is optimal
 	static final QUEUE_SIZE:Int = 32; // Balanced queue size
 	static final BATCH_SIZE:Int = 128; // Larger batches = fewer system calls
 	static final MAX_QUEUE_LENGTH:Int = 48;
