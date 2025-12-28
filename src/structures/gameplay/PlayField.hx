@@ -497,6 +497,9 @@ class PlayField implements State {
 	}
 
 	function gameOver(header:Header, lane:Int) {
+		inputSystem.removeEvents();
+		haxe.Timer.delay(inputSystem.addEvents, 2000); // prevent instant end gameover
+
 		onDeath.remove(gameOver);
 
 		died = true;
