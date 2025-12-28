@@ -95,18 +95,6 @@ class RenderingMode {
 		pbos = [];
 		pboTarget = 0x88EB; // GL_PIXEL_PACK_BUFFER
 
-		// Check if buffer mapping is available
-		#if FV_LIME_FORK
-		var extensions = GL.getSupportedExtensions();
-		var hasMapBuffer = (extensions != null && extensions.indexOf("GL_ARB_pixel_buffer_object") != -1);
-
-		if (hasMapBuffer) {
-			Sys.println("Using PBO with buffer mapping (fast path)");
-		} else {
-			Sys.println("Using PBO with getBufferSubData (slow path)");
-		}
-		#end
-
 		for (i in 0...PBO_BUFFERS) {
 			var buf = GL.createBuffer();
 			GL.bindBuffer(pboTarget, buf);
@@ -350,7 +338,7 @@ class RenderingMode {
 
 		// PBO readback with double buffering
 		if (pbos.length == PBO_BUFFERS) {
-			var readIndex = (pboIndex + 3) % PBO_BUFFERS;
+			var readIndex = (pboIndex + 4) % PBO_BUFFERS;
 			var writeIndex = pboIndex;
 			
 			// Start async readback to write PBO
@@ -361,46 +349,31 @@ class RenderingMode {
 			// Try buffer mapping (fastest)
 			GL.bindBuffer(pboTarget, pbos[readIndex]);
 			
-			/*#if FV_LIME_FORK
-			var mappedPtr#if cpp :cpp.RawPointer<cpp.UInt8> #else :hl.NativeArray<hl.UI8> #end = @:privateAccess lime._internal.backend.native.NativeCFFI.fv_gl_map_buffer_range_pbo(frameSize);
-			if (mappedPtr != null) {
+			try {
+				GL.getBufferSubData(pboTarget, 0, frameSize, buffer);
+				
 				if (useNetworkStreaming) {
 					NetworkStreamer.enqueueFrame(buffer);
 				} else {
 					enqueueFrame(buffer);
 				}
-				GL.bindBuffer(pboTarget, null);
-				pboIndex = (pboIndex + 1) % PBO_BUFFERS;
-			} else
-			#end
-			{*/
-				// Fallback: Use getBufferSubData
-				try {
-					GL.getBufferSubData(pboTarget, 0, frameSize, buffer);
-					
-					if (useNetworkStreaming) {
-						NetworkStreamer.enqueueFrame(buffer);
-					} else {
-						enqueueFrame(buffer);
-					}
-				} catch (e:Dynamic) {
-					Sys.println("getBufferSubData failed: " + e);
-					
-					// Ultimate fallback: direct readPixels
-					GL.bindBuffer(pboTarget, null);
-					GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 
-						GL.RGB, GL.UNSIGNED_SHORT_5_6_5, buffer);
-						
-					if (useNetworkStreaming) {
-						NetworkStreamer.enqueueFrame(buffer);
-					} else {
-						enqueueFrame(buffer);
-					}
-				}
+			} catch (e:Dynamic) {
+				Sys.println("getBufferSubData failed: " + e);
 				
+				// Ultimate fallback: direct readPixels
 				GL.bindBuffer(pboTarget, null);
-				pboIndex = (pboIndex + 1) % PBO_BUFFERS;
-			//}
+				GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 
+					GL.RGB, GL.UNSIGNED_SHORT_5_6_5, buffer);
+					
+				if (useNetworkStreaming) {
+					NetworkStreamer.enqueueFrame(buffer);
+				} else {
+					enqueueFrame(buffer);
+				}
+			}
+			
+			GL.bindBuffer(pboTarget, null);
+			pboIndex = (pboIndex + 4) % PBO_BUFFERS;
 		} else {
 			// Direct synchronous read
 			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 
