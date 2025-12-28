@@ -14,7 +14,6 @@ import cpp.Pointer;
 import cpp.RawPointer;
 import cpp.NativeProcess;
 #end
-import ffmpeg.NetworkStreamer;
 import lime.utils.DataPointer;
 
 @:publicFields
@@ -50,11 +49,7 @@ class RenderingMode {
 
 	#if cpp
 	private static var nativeProcessHandle:Dynamic = null;
-	#end
-
-	static var useNetworkStreaming:Bool = false;
-	static var networkHost:String = "192.168.1.100";
-	static var networkPort:Int = 8888;
+	#encoder
 
 	// ---------------- Batch Buffer Pool ----------------
 	private static var batchBufferPool:Array<Bytes> = [];
@@ -328,13 +323,8 @@ class RenderingMode {
 		
 		// Get buffer from appropriate source
 		var buffer:Bytes;
-		if (useNetworkStreaming) {
-			buffer = NetworkStreamer.getFreeFrame();
-			if (buffer == null) return;
-		} else {
-			buffer = getFreeFrame();
-			if (buffer == null) return;
-		}
+		buffer = getFreeFrame();
+		if (buffer == null) return;
 
 		// PBO readback with double buffering
 		if (pbos.length == PBO_BUFFERS) {
@@ -352,11 +342,7 @@ class RenderingMode {
 			try {
 				GL.getBufferSubData(pboTarget, 0, frameSize, buffer);
 				
-				if (useNetworkStreaming) {
-					NetworkStreamer.enqueueFrame(buffer);
-				} else {
-					enqueueFrame(buffer);
-				}
+				enqueueFrame(buffer);
 			} catch (e:Dynamic) {
 				Sys.println("getBufferSubData failed: " + e);
 				
@@ -365,11 +351,7 @@ class RenderingMode {
 				GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 
 					GL.RGB, GL.UNSIGNED_SHORT_5_6_5, buffer);
 					
-				if (useNetworkStreaming) {
-					NetworkStreamer.enqueueFrame(buffer);
-				} else {
-					enqueueFrame(buffer);
-				}
+				enqueueFrame(buffer);
 			}
 			
 			GL.bindBuffer(pboTarget, null);
@@ -379,15 +361,11 @@ class RenderingMode {
 			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 
 				GL.RGB, GL.UNSIGNED_SHORT_5_6_5, buffer);
 			
-			if (useNetworkStreaming) {
-				NetworkStreamer.enqueueFrame(buffer);
-			} else {
-				enqueueFrame(buffer);
-			}
+			enqueueFrame(buffer);
 		}
 
 		// Start writer thread if needed
-		if (!useNetworkStreaming && writerThread == null) {
+		if (writerThread == null) {
 			acquireWriter();
 		}
 	}
@@ -511,68 +489,40 @@ class RenderingMode {
 		Application.current.window.frameRate = 1000;
 		#end
 
-		if (useNetworkStreaming) {
-			Sys.println("=== NETWORK STREAMING MODE ===");
+		if (!FileSystem.exists(ffmpeg)) throw '$ffmpeg not found!';
+		if (!FileSystem.exists('assets/videos/rendered/'))
+			FileSystem.createDirectory('assets/videos/rendered');
 
-			NetworkStreamer.printLocalIPInfo();
-			networkHost = NetworkStreamer.getLocalIPs()[1];
+		ffmpegExists = true;
 
-			Sys.println('Connecting to: $networkHost:$networkPort');
+		var encoderSettings = getBestEncoder();
+		var inputSource = '-';
 
-			if (!NetworkStreamer.init(networkHost, networkPort, frameSize, QUEUE_SIZE)) {
-				Sys.println("Failed to connect to remote encoder!");
-				Sys.println("Start FFmpeg on the remote machine first:");
-				Sys.println(NetworkStreamer.getRemoteFFmpegCommand(
-					Main.VARIABLE_WIDTH,
-					Main.VARIABLE_HEIGHT,
-					frameRate,
-					'output.mp4'
-				));
-				throw "Network streaming initialization failed";
-			}
+		var args = [
+			'-y','-f','rawvideo','-pix_fmt','rgb565le',
+			'-s',Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
+			'-r',Std.string(frameRate),'-i',inputSource,
+			'-vf','vflip',
+			'-bufsize','1M','-thread_queue_size','1024',
+			'-max_muxing_queue_size','4096',
+			'-nostats','-loglevel', 'quiet','-hide_banner',
+			'-xerror','-avoid_negative_ts','make_zero'
+		].concat(encoderSettings).concat([
+			'-an','-colorspace','bt709',
+			'assets/videos/rendered/' + songName + '.mp4'
+		]);
 
-			ffmpegExists = true;
-			process = null;
-		} else {
-			if (!FileSystem.exists(ffmpeg)) throw '$ffmpeg not found!';
-			if (!FileSystem.exists('assets/videos/rendered/'))
-				FileSystem.createDirectory('assets/videos/rendered');
+		process = new Process('ffmpeg', args);
 
-			ffmpegExists = true;
-
-			var encoderSettings = getBestEncoder();
-			var inputSource = '-';
-
-			var args = [
-				'-y','-f','rawvideo','-pix_fmt','rgb565le',
-				'-s',Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
-				'-r',Std.string(frameRate),'-i',inputSource,
-				'-vf','vflip',
-				'-bufsize','1M','-thread_queue_size','1024',
-				'-max_muxing_queue_size','4096',
-				'-nostats','-loglevel', 'quiet','-hide_banner',
-				'-xerror','-avoid_negative_ts','make_zero'
-			].concat(encoderSettings).concat([
-				'-an','-colorspace','bt709',
-				'assets/videos/rendered/' + songName + '.mp4'
-			]);
-
-			process = new Process('ffmpeg', args);
-
-			#if cpp
-			nativeProcessHandle = untyped process?.stdin?.p;
-			#end
-		}
+		#if cpp
+		nativeProcessHandle = untyped process?.stdin?.p;
+		#end
 
 		stopRequested = false;
 		cleanupLock = false;
 		writerThread = null;
 
 		initPBOs();
-
-		if (useNetworkStreaming) {
-			NetworkStreamer.startWriter();
-		}
 
 		started = true;
 		renderTime = haxe.Timer.stamp();
@@ -593,39 +543,35 @@ class RenderingMode {
 		Sys.println('Rendering Mode System - Finished Rendering in ${Tools.formatTime(renderTime*1000,true)}.');
 		Sys.println('Performance: ${framesCaptured} captured, ${framesWritten} written');
 
-		if (useNetworkStreaming) {
-			NetworkStreamer.stop();
-		} else {
-			// Signal writer thread to wake up and exit
-			queueLock.release();
+		// Signal writer thread to wake up and exit
+		queueLock.release();
 
-			if (writerThread != null) {
-				Sys.println("Waiting for writer thread to finish...");
-				var startWait = haxe.Timer.stamp();
-				var maxWaitTime = 10.0; // Maximum 10 seconds
+		if (writerThread != null) {
+			Sys.println("Waiting for writer thread to finish...");
+			var startWait = haxe.Timer.stamp();
+			var maxWaitTime = 10.0; // Maximum 10 seconds
 
-				while ((haxe.Timer.stamp() - startWait) < maxWaitTime) {
-					queueMutex.acquire();
-					var queueEmpty = frameQueue.length == 0;
-					queueMutex.release();
+			while ((haxe.Timer.stamp() - startWait) < maxWaitTime) {
+				queueMutex.acquire();
+				var queueEmpty = frameQueue.length == 0;
+				queueMutex.release();
 
-					if (queueEmpty) break;
-					Sys.sleep(0.002);
-				}
-
-				Sys.println("Writer thread cleanup complete");
+				if (queueEmpty) break;
+				Sys.sleep(0.002);
 			}
 
-			Sys.println("Closing ffmpeg stdin...");
-			if (process != null) {
-				try {
-					if (process.stdin != null) {
-						process.stdin.close();
-						Sys.println("stdin closed");
-					}
-				} catch (e:Dynamic) {
-					Sys.println("Error closing stdin: " + e);
+			Sys.println("Writer thread cleanup complete");
+		}
+
+		Sys.println("Closing ffmpeg stdin...");
+		if (process != null) {
+			try {
+				if (process.stdin != null) {
+					process.stdin.close();
+					Sys.println("stdin closed");
 				}
+			} catch (e:Dynamic) {
+				Sys.println("Error closing stdin: " + e);
 			}
 		}
 
@@ -649,11 +595,9 @@ class RenderingMode {
 		}
 		pbos = [];
 
-		if (!useNetworkStreaming) {
-			freeList = [];
-			frameQueue = [];
-			batchBufferPool = [];
-		}
+		freeList = [];
+		frameQueue = [];
+		batchBufferPool = [];
 
 		#if FV_LIME_FORK
 		Application.current.window.uncappedFrameRate = false;
