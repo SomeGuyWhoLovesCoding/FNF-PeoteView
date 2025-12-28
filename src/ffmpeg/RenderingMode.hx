@@ -127,6 +127,7 @@ class RenderingMode {
 		
 		Sys.println("Rendering Mode System - PBOs initialized successfully.");
 		Sys.println('Batch buffer size: ${batchBufferSize} bytes (${BATCH_SIZE} frames)');
+		#end
 	}
 
 	// ---------------- Frame Pool ----------------
