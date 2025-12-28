@@ -2,114 +2,205 @@ package ffmpeg;
 
 import sys.io.Process;
 import sys.FileSystem;
+import haxe.io.Bytes;
 import lime.graphics.opengl.GL;
 import lime.graphics.opengl.GLBuffer;
 import lime.app.Application;
-import haxe.io.Bytes;
-
+import sys.thread.Thread;
 #if cpp
+import cpp.Pointer;
+import cpp.RawPointer;
 import cpp.NativeProcess;
 #end
 
 @:publicFields
 class RenderingMode {
-
-	// ---------- CONFIG ----------
 	static final PBO_BUFFERS:Int = 3;
+	static final QUEUE_SIZE:Int = 8;
 
-	// ---------- STATE ----------
 	static var pbos:Array<GLBuffer> = [];
 	static var pboIndex:Int = 0;
-	static var pboTarget:Int = GL.PIXEL_PACK_BUFFER;
+	static var pboTarget:Int = 0;
 	static var frameSize:Int = 0;
 
+	private static var ffmpegExists(default, null):Bool;
 	static var process:Process;
-	static var started:Bool = false;
 	static var enabled:Bool = true;
-
-	static var renderTime:Float;
+	static var started:Bool = false;
+	static var songName:String;
+	static var renderTime(default, null):Float;
 	static var frameRate:Float = 60;
 
+	// ---------------- Frame Pool & Queue ----------------
+	private static var freeList:Array<Bytes> = [];
+	private static var frameQueue:Array<Bytes> = [];
+
+	private static var writerThread:Thread;
+	private static var stopRequested:Bool = false;
+	private static var cleanupLock:Bool = false;
+
 	#if cpp
-	static var nativeProcessHandle:Dynamic = null;
+	private static var nativeProcessHandle:Dynamic = null;
 	#end
 
-	// ---------- INIT PBO ----------
+	// ------------------ PBOs ------------------
 	static function initPBOs() {
-		frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 3;
+		frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 4;
 
-		#if !cpp
-		buffer = Bytes.alloc(frameSize);
-		#end
+		freeList = [];
+		frameQueue = [];
+
+		for (i in 0...QUEUE_SIZE) {
+			var b = Bytes.alloc(frameSize);
+			freeList.push(b);
+		}
 
 		pbos = [];
-
+		pboTarget = 0x88EB;
+		
 		for (i in 0...PBO_BUFFERS) {
-			var pbo = GL.createBuffer();
-			GL.bindBuffer(pboTarget, pbo);
-			GL.bufferData(
-				pboTarget,
-				frameSize,
-				cast null,
-				GL.STREAM_READ
-			);
-			pbos.push(pbo);
+			var buf = GL.createBuffer();
+			GL.bindBuffer(pboTarget, buf);
+			
+			GL.bufferData(pboTarget, frameSize, cast null, 0x88E2);
+			pbos.push(buf);
 		}
-
 		GL.bindBuffer(pboTarget, null);
+		
+		Sys.println("Rendering Mode System - PBOs initialized successfully.");
 	}
 
-	// ---------- PIPE FRAME ----------
-	static var buffer:Bytes;
+	// ---------------- Frame Pool ----------------
+	static inline function getFreeFrame():Bytes {
+		if (freeList.length > 0) return freeList.pop();
+		return Bytes.alloc(frameSize);
+	}
+
+	static inline function returnFrame(frame:Bytes) {
+		if (frame != null) freeList.push(frame);
+	}
+
+	// ---------------- Queue ----------------
+	static inline function enqueueFrame(frame:Bytes) {
+		frameQueue.push(frame);
+	}
+
+	static inline function dequeueFrame():Bytes {
+		if (frameQueue.length > 0) return frameQueue.shift();
+		return null;
+	}
+
+	// ---------------- Writer Thread ----------------
+	static function acquireWriter() {
+		if (writerThread != null) return;
+		writerThread = Thread.create(function() {
+			Sys.println('Writer thread started');
+			
+			#if cpp
+			// Get native process handle
+			if (nativeProcessHandle != null) {
+				Sys.println("Using direct NativeProcess.process_stdin_write() for maximum speed!");
+			}
+			#end
+			
+			var batchSize = 16; // Write 16 frames at once
+			var batch:Array<Bytes> = [];
+			
+			while (!stopRequested) {
+				// Collect batch
+				while (batch.length < batchSize) {
+					var frame = dequeueFrame();
+					if (frame == null) break;
+					batch.push(frame);
+				}
+				
+				if (batch.length == 0) {
+					if (stopRequested) break;
+					Sys.sleep(0.0003);
+					continue;
+				}
+				
+				// Write entire batch directly
+				try {
+					#if cpp
+					if (nativeProcessHandle != null) {
+						// Direct native write - FASTEST!
+						for (frame in batch) {
+							var written = NativeProcess.process_stdin_write(
+								nativeProcessHandle, 
+								frame.getData(), 
+								0, 
+								frame.length
+							);
+							if (written != frame.length) {
+								Sys.println("Incomplete write: " + written + "/" + frame.length);
+							}
+						}
+					} else
+					#end
+					{
+						// Fallback to normal write
+						if (process != null && process.stdin != null) {
+							for (frame in batch) {
+								process.stdin.write(frame);
+							}
+							process.stdin.flush();
+						}
+					}
+				} catch (e:Dynamic) {
+					var err = Std.string(e);
+					if (err.indexOf("EOF") != -1 || err.indexOf("Broken pipe") != -1) {
+						Sys.println("FFmpeg pipe closed, stopping writer");
+						break;
+					}
+				}
+				
+				// Return frames
+				for (frame in batch) returnFrame(frame);
+				batch = [];
+			}
+			
+			Sys.println('Writer thread exiting');
+		});
+	}
+
+	// ---------------- Pipe Frame (MAIN THREAD ONLY) ----------------
 	static function pipeFrame() {
-		if (!started || !enabled || process == null) return;
+		if (!enabled || !started || !ffmpegExists || process == null || stopRequested) return;
 
-		var writePBO = pbos[pboIndex];
-		var readPBO  = pbos[(pboIndex + 1) % PBO_BUFFERS];
+		var buffer = getFreeFrame();
+		if (buffer == null) return;
 
-		// Issue GPU read
-		GL.bindBuffer(pboTarget, writePBO);
-		GL.readPixels(
-			0, 0,
-			Main.VARIABLE_WIDTH,
-			Main.VARIABLE_HEIGHT,
-			GL.RGB,
-			GL.UNSIGNED_BYTE,
-			cast null
-		);
+		if (pbos.length == PBO_BUFFERS) {
+			var readIndex = (pboIndex + 1) % PBO_BUFFERS;
+			var writePBO = pbos[pboIndex];
 
-		// Read previous frame
-		GL.bindBuffer(pboTarget, readPBO);
+			GL.bindBuffer(pboTarget, writePBO);
+			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 0x80E1, GL.UNSIGNED_BYTE, cast 0);
 
-		#if cpp
-		var ptr = GL.mapBufferRange(
-			pboTarget,
-			0,
-			frameSize,
-			0x0001 | 0x0020
-		);
+			var readPBO = pbos[readIndex];
+			GL.bindBuffer(pboTarget, readPBO);
+			try {
+				GL.getBufferSubData(pboTarget, 0, frameSize, buffer);
+				GL.bindBuffer(pboTarget, null);
+				enqueueFrame(buffer);
+			} catch (e:Dynamic) {
+				Sys.println("PBO read failed: " + e);
+				GL.bindBuffer(pboTarget, null);
+				returnFrame(buffer);
+				return;
+			}
 
-		if (ptr != cast null) {
-			var ptrInt:cpp.RawPointer<cpp.UInt8> = untyped __cpp__("(unsigned char*)(uintptr_t){0}", ptr);
-			var arr:Array<cpp.UInt8> = cpp.Pointer.fromRaw(ptrInt).toUnmanagedArray(frameSize);
-			NativeProcess.process_stdin_write(
-				nativeProcessHandle,
-				arr,
-				0,
-				frameSize
-			);
-			GL.unmapBuffer(pboTarget);
+			pboIndex = (pboIndex + 1) % PBO_BUFFERS;
+		} else {
+			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 0x80E1, GL.UNSIGNED_BYTE, buffer);
+			enqueueFrame(buffer);
 		}
-		#else
-		GL.getBufferSubData(pboTarget, 0, frameSize, buffer);
-		process.stdin.write(buffer);
-		#end
 
-		GL.bindBuffer(pboTarget, null);
-		pboIndex = (pboIndex + 1) % PBO_BUFFERS;
+		if (writerThread == null) acquireWriter();
 	}
 
-	// ---------- ENCODER ----------
+	// ------------------ Encoder ------------------
 	static function getBestEncoder():Array<String> {
 		var encoders = [
 			{name:'h264_nvenc', args:[
@@ -165,40 +256,15 @@ class RenderingMode {
 		];
 	}
 
-	// ---------- START ----------
+	// ------------------ Init Render ------------------
 	static function initRender() {
 		var ffmpeg = "ffmpeg";
 		#if windows ffmpeg += ".exe"; #end
+		if (!FileSystem.exists(ffmpeg)) throw '$ffmpeg not found!';
+		if (!FileSystem.exists('assets/videos/rendered/')) FileSystem.createDirectory('assets/videos/rendered');
 
-		if (!FileSystem.exists(ffmpeg))
-			throw "ffmpeg not found";
-
-		if (!FileSystem.exists("assets/videos/rendered"))
-			FileSystem.createDirectory("assets/videos/rendered");
-
-		var args = [
-			'-y',
-			'-f','rawvideo',
-			'-pix_fmt','rgb24',
-			'-s', Main.VARIABLE_WIDTH + "x" + Main.VARIABLE_HEIGHT,
-			'-r', Std.string(frameRate),
-			'-i','-',
-			'-vf','vflip',
-			'-fflags','nobuffer',
-			'-flags','low_delay',
-			'-an'
-		].concat(getBestEncoder()).concat([
-			'-colorspace', 'bt709',
-			'assets/videos/rendered/${Chart.header.title}.mp4'
-		]);
-
-		process = new Process("ffmpeg", args);
-
-		#if cpp
-		nativeProcessHandle = untyped process.stdin.p;
-		#end
-
-		initPBOs();
+		ffmpegExists = true;
+		songName = Chart.header.title;
 
 		Application.current.window.resizable = false;
 		#if FV_LIME_FORK
@@ -207,37 +273,108 @@ class RenderingMode {
 		Application.current.window.frameRate = 1000;
 		#end
 
+		var encoderSettings = getBestEncoder();
+		var args = [
+			'-y','-f','rawvideo','-pix_fmt','bgra',
+			'-s',Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
+			'-r',Std.string(frameRate),'-i','-',
+			'-vf','vflip',
+			'-bufsize','1M','-thread_queue_size','512',
+			'-max_muxing_queue_size','2048',
+			'-fflags','+genpts+flush_packets',
+			//'-probesize', '32', '-analyzeduration', '0',
+			// the rest of this is the big win but it beaks the process waaaaaaaaaa
+			'-nostats',
+			'-loglevel', 'quiet',
+			'-hide_banner',
+			'-xerror',
+			'-avoid_negative_ts','make_zero',
+			'-flags','+low_delay',
+			'-strict','experimental'
+		].concat(encoderSettings).concat([
+			'-an',
+			'-colorspace','bt709',
+			'assets/videos/rendered/' + songName + '.mp4'
+		]);
+
+		process = new Process('ffmpeg', args);
+		stopRequested = false;
+		cleanupLock = false;
+
+		#if cpp
+		nativeProcessHandle = untyped process.stdin.p;
+		#end
+
+		initPBOs();
+
 		started = true;
 		renderTime = haxe.Timer.stamp();
+		Sys.println("Rendering Mode System - Started!");
 	}
 
-	// ---------- STOP ----------
+	// ------------------ Stop Render ------------------
 	static function stopRender() {
-		if (!started) return;
-
+		if (!started || cleanupLock) return;
+		cleanupLock = true;
+		
+		Sys.println("StopRender called - beginning cleanup...");
+		
+		stopRequested = true;
 		started = false;
+		
+		renderTime = haxe.Timer.stamp() - renderTime;
+		Sys.println('Rendering Mode System - Finished Rendering in ${Tools.formatTime(renderTime*1000,true)}.');
 
+		if (writerThread != null) {
+			Sys.println("Waiting for writer thread to finish...");
+			var startWait = haxe.Timer.stamp();
+			while (frameQueue.length > 0 && (haxe.Timer.stamp() - startWait) < 5.0) {
+				Sys.sleep(0.01);
+			}
+			Sys.println("Writer thread queue drained");
+			Sys.sleep(0.1);
+			writerThread = null;
+		}
+
+		Sys.println("Closing ffmpeg stdin...");
 		if (process != null) {
-			try process.stdin.close() catch (_){}
+			try {
+				if (process.stdin != null) {
+					process.stdin.close();
+					Sys.println("stdin closed");
+				}
+			} catch (e:Dynamic) {
+				Sys.println("Error closing stdin: " + e);
+			}
+
+			Sys.println("FFmpeg close...");
 			process.close();
+			process.kill();
+			Sys.println("FFmpeg exited with code: " + process.exitCode());
+			
 			process = null;
 		}
 
+		Sys.println("Cleaning up GL resources...");
 		for (pbo in pbos) {
-			try GL.deleteBuffer(pbo) catch (_){}
+			try {
+				GL.deleteBuffer(pbo);
+			} catch (e:Dynamic) {}
 		}
-
 		pbos = [];
+		
+		freeList = [];
+		frameQueue = [];
 
-		Application.current.window.resizable = true;
 		#if FV_LIME_FORK
 		Application.current.window.uncappedFrameRate = false;
 		#else
-		Application.current.window.frameRate = SaveData.state.graphics.frameRate;
+		Application.current.window.frameRate = SaveData.graphics.frameRate;
 		#end
-
-		var total = haxe.Timer.stamp() - renderTime;
-		Sys.println("Render finished in " + total + "s");
+		Application.current.window.resizable = true;
+		
+		cleanupLock = false;
+		
+		Sys.println("Rendering Mode System - Cleanup complete!");
 	}
-
 }
