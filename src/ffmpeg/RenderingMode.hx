@@ -105,6 +105,7 @@ class RenderingMode {
 			
 			var batchSize = 16; // Write 16 frames at once
 			var batch:Array<Bytes> = [];
+			var batchBuffer:Bytes = null; // Reusable buffer for batch writes
 			
 			while (!stopRequested) {
 				// Collect batch
@@ -120,30 +121,41 @@ class RenderingMode {
 					continue;
 				}
 				
-				// Write entire batch directly
+				// Calculate total size and allocate/reuse buffer
+				var totalSize = 0;
+				for (frame in batch) totalSize += frame.length;
+				
+				if (batchBuffer == null || batchBuffer.length < totalSize) {
+					batchBuffer = Bytes.alloc(totalSize);
+				}
+				
+				// Blit all frames into single buffer
+				var offset = 0;
+				for (frame in batch) {
+					batchBuffer.blit(offset, frame, 0, frame.length);
+					offset += frame.length;
+				}
+				
+				// Write entire batch as single operation
 				try {
 					#if cpp
 					if (nativeProcessHandle != null) {
 						// Direct native write - FASTEST!
-						for (frame in batch) {
-							var written = NativeProcess.process_stdin_write(
-								nativeProcessHandle, 
-								frame.getData(), 
-								0, 
-								frame.length
-							);
-							if (written != frame.length) {
-								Sys.println("Incomplete write: " + written + "/" + frame.length);
-							}
+						var written = NativeProcess.process_stdin_write(
+							nativeProcessHandle, 
+							batchBuffer.getData(), 
+							0, 
+							totalSize
+						);
+						if (written != totalSize) {
+							Sys.println("Incomplete write: " + written + "/" + totalSize);
 						}
 					} else
 					#end
 					{
-						// Fallback to normal write
+						// Fallback to normal write (single operation)
 						if (process != null && process.stdin != null) {
-							for (frame in batch) {
-								process.stdin.write(frame);
-							}
+							process.stdin.writeBytes(batchBuffer, 0, totalSize);
 							process.stdin.flush();
 						}
 					}
