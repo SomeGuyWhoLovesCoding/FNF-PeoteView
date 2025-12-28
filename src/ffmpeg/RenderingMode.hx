@@ -352,7 +352,7 @@ class RenderingMode {
 			// Map buffer for faster access (optional optimization)
 			try {
 				// Use getBufferSubData for compatibility
-				GL.getBufferData(pboTarget, buffer);
+				GL.bufferData(pboTarget, frameSize, buffer, GL_STREAM_READ);
 				GL.bindBuffer(pboTarget, null);
 				
 				// Enqueue frame
