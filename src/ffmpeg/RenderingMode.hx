@@ -18,10 +18,10 @@ import lime.utils.DataPointer;
 
 @:publicFields
 class RenderingMode {
-	static final PBO_BUFFERS:Int = 5;
-	static final QUEUE_SIZE:Int = 16; // Increased for better buffering
-	static final BATCH_SIZE:Int = 64; // Number of frames to batch together
-	static final MAX_QUEUE_LENGTH:Int = 64; // Prevent excessive memory usage
+	static final PBO_BUFFERS:Int = 3; // Triple buffering is optimal
+	static final QUEUE_SIZE:Int = 32; // Balanced queue size
+	static final BATCH_SIZE:Int = 128; // Larger batches = fewer system calls
+	static final MAX_QUEUE_LENGTH:Int = 48;
 
 	static var pbos:Array<GLBuffer> = [];
 	static var pboIndex:Int = 0;
@@ -59,8 +59,9 @@ class RenderingMode {
 	// ---------------- Performance Monitoring ----------------
 	static var framesCaptured:Int = 0;
 	static var framesWritten:Int = 0;
+	static var framesDropped:Int = 0;
 	static var lastLogTime:Float = 0;
-	static var logInterval:Float = 5.0; // Log every 5 seconds
+	static var logInterval:Float = 5.0;
 
 	// ------------------ PBOs ------------------
 	static function initPBOs() {
@@ -74,324 +75,315 @@ class RenderingMode {
 		freeList = [];
 		frameQueue = [];
 
-		// Allocate frame pool
+		// Pre-allocate frame pool
 		for (i in 0...QUEUE_SIZE) {
-			var b = Bytes.alloc(frameSize);
-			freeList.push(b);
+			freeList.push(Bytes.alloc(frameSize));
 		}
 
-		// Allocate batch buffer pool (3 buffers for triple buffering)
+		// Pre-allocate batch buffers (4 for better pipelining)
 		batchBufferPool = [];
-		for (i in 0...3) {
-			var b = Bytes.alloc(batchBufferSize);
-			batchBufferPool.push(b);
+		for (i in 0...4) {
+			batchBufferPool.push(Bytes.alloc(batchBufferSize));
 		}
 
 		pbos = [];
 		pboTarget = 0x88EB; // GL_PIXEL_PACK_BUFFER
 
+		// Create PBO ring buffer
 		for (i in 0...PBO_BUFFERS) {
 			var buf = GL.createBuffer();
 			GL.bindBuffer(pboTarget, buf);
-
-
-			// Allocate PBO memory
-			GL.bufferData(pboTarget, frameSize, cast null, 0x88E2); // GL_STREAM_READ
-
+			GL.bufferData(pboTarget, frameSize, cast null, 0x88E8); // GL_STREAM_COPY (better for GPU->CPU)
 			pbos.push(buf);
 		}
 		GL.bindBuffer(pboTarget, null);
 
 		Sys.println("Rendering Mode System - PBOs initialized successfully.");
-		Sys.println('Frame size: ${frameSize} bytes, Batch buffer: ${batchBufferSize} bytes');
-		Sys.println('Queue capacity: ${QUEUE_SIZE} frames');
+		Sys.println('Frame size: ${frameSize} bytes, Batch size: ${BATCH_SIZE} frames (${Math.round(batchBufferSize/1024/1024)}MB)');
+		Sys.println('Queue capacity: ${QUEUE_SIZE} frames, Max queue: ${MAX_QUEUE_LENGTH}');
 	}
 
-	// ---------------- Frame Pool (Thread-safe) ----------------
+	// ---------------- Frame Pool (Lock-free where possible) ----------------
 	static inline function getFreeFrame():Bytes {
 		queueMutex.acquire();
-		var frame = if (freeList.length > 0) freeList.pop() else null;
+		var frame = freeList.length > 0 ? freeList.pop() : null;
 		queueMutex.release();
 
-		if (frame == null) {
-			// Allocate new frame if pool is empty (should be rare with proper QUEUE_SIZE)
-			frame = Bytes.alloc(frameSize);
-		}
-		return frame;
+		// Emergency allocation (should rarely happen)
+		return frame != null ? frame : Bytes.alloc(frameSize);
 	}
 
 	static inline function returnFrame(frame:Bytes) {
-		if (frame != null) {
+		if (frame != null && frame.length == frameSize) {
 			queueMutex.acquire();
-			freeList.push(frame);
+			if (freeList.length < QUEUE_SIZE * 2) { // Prevent unbounded growth
+				freeList.push(frame);
+			}
 			queueMutex.release();
 		}
 	}
 
-	// ---------------- Batch Buffer Pool (Thread-safe) ----------------
+	// ---------------- Batch Buffer Pool ----------------
 	static inline function getFreeBatchBuffer():Bytes {
 		bufferPoolMutex.acquire();
-		var buffer = if (batchBufferPool.length > 0) batchBufferPool.pop() else null;
+		var buffer = batchBufferPool.length > 0 ? batchBufferPool.pop() : null;
 		bufferPoolMutex.release();
 
-		if (buffer == null) {
-			// Allocate new buffer if pool is empty
-			buffer = Bytes.alloc(batchBufferSize);
-		}
-		return buffer;
+		return buffer != null ? buffer : Bytes.alloc(batchBufferSize);
 	}
 
 	static inline function returnBatchBuffer(buffer:Bytes) {
-		if (buffer != null) {
+		if (buffer != null && buffer.length == batchBufferSize) {
 			bufferPoolMutex.acquire();
-			batchBufferPool.push(buffer);
+			if (batchBufferPool.length < 8) {
+				batchBufferPool.push(buffer);
+			}
 			bufferPoolMutex.release();
 		}
 	}
 
-	// ---------------- Queue (Thread-safe with condition variable) ----------------
+	// ---------------- Queue with Backpressure ----------------
 	static inline function enqueueFrame(frame:Bytes) {
+		var shouldRelease = false;
+		
 		queueMutex.acquire();
-
-		// Prevent queue from growing too large
 		if (frameQueue.length < MAX_QUEUE_LENGTH) {
 			frameQueue.push(frame);
 			framesCaptured++;
-
-			// Signal writer thread if it's waiting
+			
+			// Signal writer only when it was empty
 			if (frameQueue.length == 1) {
-				queueLock.release();
+				shouldRelease = true;
 			}
 		} else {
-			// Queue full, drop frame
-			returnFrame(frame);
+			// Backpressure: drop oldest frame to make room
+			var dropped = frameQueue.shift();
+			if (dropped != null) {
+				returnFrame(dropped);
+				framesDropped++;
+			}
+			frameQueue.push(frame);
+			framesCaptured++;
 		}
-
 		queueMutex.release();
+		
+		if (shouldRelease) {
+			queueLock.release();
+		}
 	}
 
-	static inline function dequeueFrame():Bytes {
+	static inline function dequeueBatch(maxFrames:Int):Array<Bytes> {
 		queueMutex.acquire();
-		var frame = if (frameQueue.length > 0) frameQueue.shift() else null;
+		var batch = [];
+		var count = Std.int(Math.min(maxFrames, frameQueue.length));
+		
+		for (i in 0...count) {
+			var frame = frameQueue.shift();
+			if (frame != null) batch.push(frame);
+		}
 		queueMutex.release();
-		return frame;
+		
+		return batch;
 	}
 
 	static inline function waitForFrames(timeout:Float):Bool {
 		return queueLock.wait(timeout);
 	}
 
-	// ---------------- Writer Thread with Optimized Batch Processing ----------------
+	// ---------------- Optimized Writer Thread ----------------
 	static function acquireWriter() {
 		if (writerThread != null) return;
 
 		writerThread = Thread.create(function() {
-			Sys.println('Writer thread started');
+			Sys.println('Writer thread started with batch size: ${BATCH_SIZE}');
 
-			#if cpp
-			if (nativeProcessHandle != null) {
-				Sys.println("Using direct NativeProcess with batch optimization");
-			}
-			#end
-
-			var batch:Array<Bytes> = [];
 			var batchBuffer:Bytes = null;
 			var lastStatsTime = haxe.Timer.stamp();
-			var framesInBatch:Int = 0;
+			var statsFrames = 0;
 
 			while (!stopRequested) {
-				// Wait for frames with timeout
-				if (batch.length == 0) {
-					if (!waitForFrames(0.002)) {
+				// Wait for work (with timeout to check stopRequested)
+				queueMutex.acquire();
+				var hasFrames = frameQueue.length > 0;
+				queueMutex.release();
+				
+				if (!hasFrames) {
+					if (!waitForFrames(0.001)) { // ~60fps check
 						if (stopRequested) break;
 						continue;
 					}
 				}
 
-				// Collect frames into batch
-				queueMutex.acquire();
-				while (batch.length < BATCH_SIZE && frameQueue.length > 0) {
-					var frame = frameQueue.shift();
-					if (frame != null) {
-						batch.push(frame);
-						framesInBatch++;
-					}
-				}
-				queueMutex.release();
-
+				// Dequeue batch
+				var batch = dequeueBatch(BATCH_SIZE);
 				if (batch.length == 0) {
 					if (stopRequested) break;
 					continue;
 				}
 
-				// Get batch buffer from pool
+				// Get batch buffer
 				batchBuffer = getFreeBatchBuffer();
 				var framesToWrite = batch.length;
 
-				// Blit all frames into batch buffer
-				var offset:Int = 0;
-				for (i in 0...framesToWrite) {
-					var frame = batch[i];
+				// Fast memory copy: blit all frames
+				var offset = 0;
+				for (frame in batch) {
 					batchBuffer.blit(offset, frame, 0, frameSize);
 					offset += frameSize;
 				}
 
-				// Write batch
+				// Single write operation
+				var totalBytes = frameSize * framesToWrite;
+				var writeSuccess = false;
+
 				try {
 					#if cpp
 					if (nativeProcessHandle != null) {
-						// Direct native write - single system call for entire batch
-						var totalBytes = frameSize * framesToWrite;
+						// Direct write (fastest path)
 						var written = NativeProcess.process_stdin_write(
 							nativeProcessHandle,
 							batchBuffer.getData(),
 							0,
 							totalBytes
 						);
-						if (written != totalBytes) {
-							Sys.println("Warning: Incomplete batch write: " + written + "/" + totalBytes);
+						writeSuccess = (written == totalBytes);
+						if (!writeSuccess) {
+							Sys.println('Warning: Partial write ${written}/${totalBytes}');
 						}
-						framesWritten += framesToWrite;
 					} else
 					#end
 					{
-						// Fallback to normal write
+						// Fallback
 						if (process != null && process.stdin != null) {
-							var totalBytes = frameSize * framesToWrite;
-							process.stdin.write(batchBuffer.sub(0, totalBytes));
-							process.stdin.flush();
-							framesWritten += framesToWrite;
+							process.stdin.writeBytes(batchBuffer, 0, totalBytes);
+							writeSuccess = true;
 						}
+					}
+
+					if (writeSuccess) {
+						framesWritten += framesToWrite;
+						statsFrames += framesToWrite;
 					}
 				} catch (e:Dynamic) {
 					var err = Std.string(e);
 					if (err.indexOf("EOF") != -1 || err.indexOf("Broken pipe") != -1) {
-						Sys.println("FFmpeg pipe closed, stopping writer");
+						Sys.println("FFmpeg pipe closed");
 						break;
-					} else {
-						Sys.println("Write error: " + err);
 					}
+					Sys.println("Write error: " + err);
 				}
 
-				// Return resources to pools
+				// Return resources
 				returnBatchBuffer(batchBuffer);
 				batchBuffer = null;
-
 				for (frame in batch) returnFrame(frame);
-				batch = [];
 
-				// Log performance stats periodically
+				// Periodic stats
 				var now = haxe.Timer.stamp();
 				if (now - lastStatsTime >= logInterval) {
 					var elapsed = now - lastStatsTime;
-					var fps = framesInBatch / elapsed;
-					Sys.println('Writer: ${fps}fps, Queue: ${frameQueue.length}/${QUEUE_SIZE}');
+					var fps = statsFrames / elapsed;
+					queueMutex.acquire();
+					var queueLen = frameQueue.length;
+					queueMutex.release();
+					
+					Sys.println('Writer: ${Math.round(fps)}fps | Queue: ${queueLen}/${MAX_QUEUE_LENGTH} | Dropped: ${framesDropped}');
 					lastStatsTime = now;
-					framesInBatch = 0;
+					statsFrames = 0;
 				}
 			}
 
-			// Final flush if we have remaining frames
-			if (batch.length > 0) {
+			// Final flush
+			var remaining = dequeueBatch(QUEUE_SIZE);
+			if (remaining.length > 0) {
 				try {
-					var totalBytes = frameSize * batch.length;
-					if (process != null && process.stdin != null) {
-						var tempBuffer = Bytes.alloc(totalBytes);
-						var offset = 0;
-						for (frame in batch) {
-							tempBuffer.blit(offset, frame, 0, frameSize);
-							offset += frameSize;
-						}
-						process.stdin.write(tempBuffer);
-						process.stdin.flush();
-						framesWritten += batch.length;
+					var tempBuffer = getFreeBatchBuffer();
+					var offset = 0;
+					for (frame in remaining) {
+						tempBuffer.blit(offset, frame, 0, frameSize);
+						offset += frameSize;
 					}
-				} catch (e:Dynamic) {}
-
-				for (frame in batch) returnFrame(frame);
+					
+					if (process != null && process.stdin != null) {
+						process.stdin.writeBytes(tempBuffer, 0, frameSize * remaining.length);
+						framesWritten += remaining.length;
+					}
+					
+					returnBatchBuffer(tempBuffer);
+					for (frame in remaining) returnFrame(frame);
+				} catch (e:Dynamic) {
+					Sys.println("Final flush error: " + e);
+				}
 			}
 
 			if (batchBuffer != null) returnBatchBuffer(batchBuffer);
-
-			Sys.println('Writer thread exiting. Frames written: ${framesWritten}');
+			Sys.println('Writer thread exiting. Total written: ${framesWritten}');
 		});
 	}
 
-	// ---------------- Pipe Frame with Correct PBO Mapping ----------------
+	// ---------------- Optimized PBO Pipelining ----------------
 	static function pipeFrame() {
 		if (!enabled || !started || !ffmpegExists || stopRequested) return;
-		
-		// Get buffer from appropriate source
-		var buffer:Bytes;
-		buffer = getFreeFrame();
+
+		var buffer = getFreeFrame();
 		if (buffer == null) return;
 
-		// PBO readback with double buffering
 		if (pbos.length == PBO_BUFFERS) {
-			var readIndex = (pboIndex + 4) % PBO_BUFFERS;
+			// Proper ring buffer indexing
 			var writeIndex = pboIndex;
+			var readIndex = (pboIndex + 1) % PBO_BUFFERS; // Read from next buffer (completed async transfer)
 			
-			// Start async readback to write PBO
+			// Initiate async GPU->PBO transfer for current frame
 			GL.bindBuffer(pboTarget, pbos[writeIndex]);
 			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 
 				GL.RGB, GL.UNSIGNED_SHORT_5_6_5, cast null);
 			
-			// Try buffer mapping (fastest)
+			// Read from previously filled PBO (should be ready now)
 			GL.bindBuffer(pboTarget, pbos[readIndex]);
 			
 			try {
+				// Fast path: direct buffer read
 				GL.getBufferSubData(pboTarget, 0, frameSize, buffer);
-				
 				enqueueFrame(buffer);
 			} catch (e:Dynamic) {
-				Sys.println("getBufferSubData failed: " + e);
-				
-				// Ultimate fallback: direct readPixels
+				// Fallback: synchronous read (slower but works)
 				GL.bindBuffer(pboTarget, null);
 				GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 
 					GL.RGB, GL.UNSIGNED_SHORT_5_6_5, buffer);
-					
 				enqueueFrame(buffer);
 			}
 			
 			GL.bindBuffer(pboTarget, null);
-			pboIndex = (pboIndex + 4) % PBO_BUFFERS;
+			pboIndex = (pboIndex + 1) % PBO_BUFFERS; // Fixed: was +4
 		} else {
-			// Direct synchronous read
+			// No PBOs: direct synchronous read
 			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 
 				GL.RGB, GL.UNSIGNED_SHORT_5_6_5, buffer);
-			
 			enqueueFrame(buffer);
 		}
 
-		// Start writer thread if needed
+		// Lazy writer thread start
 		if (writerThread == null) {
 			acquireWriter();
 		}
 	}
 
-	// ------------------ Encoder ------------------
+	// ------------------ Encoder Selection ------------------
 	static function getBestEncoder():Array<String> {
 		#if linux
-		// Test for Linux hardware encoders first
 		var linuxEncoders = [
-			// Intel VAAPI
 			{name:'h264_vaapi', args:[
 				'-c:v','h264_vaapi',
 				'-qp','28',
-				'-global_quality','28',
-				'-vaapi_device', '/dev/dri/renderD128',
-				'-vf', 'format=rgb565le,hwupload',
+				'-vaapi_device','/dev/dri/renderD128',
+				'-vf','format=rgb565le,hwupload',
 			]},
-
-			// AMD AMF on Linux
 			{name:'h264_amf', args:[
 				'-c:v','h264_amf',
 				'-quality','speed',
 				'-rc','cqp',
 				'-qp_i','28',
 				'-qp_p','28',
-				'-usage','ultralowlatency'
 			]}
 		];
 
@@ -400,14 +392,12 @@ class RenderingMode {
 				'-f','lavfi','-v','quiet','-i','color=black:s=64x64:d=0.1',
 				'-c:v',encoder.name,'-f','null','-'
 			]);
-			var exitCode = testProcess.exitCode();
-			if (exitCode == 0) {
-				Sys.println('Rendering Mode System - Using Linux encoder: ${encoder.name}');
+			if (testProcess.exitCode() == 0) {
+				Sys.println('Using Linux encoder: ${encoder.name}');
 				return encoder.args;
 			}
 		}
 		#else
-
 		var encoders = [
 			{name:'h264_nvenc', args:[
 				'-c:v','h264_nvenc',
@@ -420,27 +410,21 @@ class RenderingMode {
 				'-temporal-aq','0',
 				'-b_ref_mode','disabled',
 				'-multipass','disabled',
-				'-rc-lookahead', '0',
-				'-surfaces', '1',
-				'-bf', '0',
+				'-rc-lookahead','0',
+				'-bf','0',
 			]},
-
 			{name:'h264_amf', args:[
 				'-c:v','h264_amf',
 				'-quality','speed',
 				'-rc','cqp',
 				'-qp_i','28',
 				'-qp_p','28',
-				'-preanalysis','false'
 			]},
-
 			{name:'h264_qsv', args:[
 				'-c:v','h264_qsv',
 				'-preset','veryfast',
 				'-global_quality','28',
-				'-look_ahead', '0',
-				'-look_ahead_depth', '0',
-				'-async_depth','8'
+				'-look_ahead','0',
 			]}
 		];
 
@@ -449,23 +433,19 @@ class RenderingMode {
 				'-f','lavfi','-v','quiet','-i','color=black:s=64x64:d=0.1',
 				'-c:v',encoder.name,'-f','null','-'
 			]);
-			var stderr = testProcess.stderr.readAll().toString();
-			var exitCode = testProcess.exitCode();
-			if (stderr.indexOf('Conversion failed!') == -1 && exitCode == 0) {
-				Sys.println('Rendering Mode System - Using encoder: ${encoder.name}');
+			if (testProcess.exitCode() == 0) {
+				Sys.println('Using encoder: ${encoder.name}');
 				return encoder.args;
 			}
 		}
 		#end
 
-		// Fallback to libx264
-		Sys.println('Rendering Mode System - Using encoder: libx264 (software fallback)');
+		Sys.println('Using encoder: libx264 (software)');
 		return [
 			'-c:v','libx264',
 			'-preset','ultrafast',
-			'-crf','28',
+			'-crf','23',
 			'-tune','zerolatency',
-			'-x264-params','rc-lookahead=0:ref=1:bframes=0:me=dia:subq=0:trellis=0:weightp=0'
 		];
 	}
 
@@ -477,9 +457,9 @@ class RenderingMode {
 		songName = Chart.header.title;
 		frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 2;
 
-		// Reset performance counters
 		framesCaptured = 0;
 		framesWritten = 0;
+		framesDropped = 0;
 		lastLogTime = haxe.Timer.stamp();
 
 		Application.current.window.resizable = false;
@@ -496,20 +476,19 @@ class RenderingMode {
 		ffmpegExists = true;
 
 		var encoderSettings = getBestEncoder();
-		var inputSource = '-';
-
 		var args = [
 			'-y','-f','rawvideo','-pix_fmt','rgb565le',
-			'-s',Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
-			'-r',Std.string(frameRate),'-i',inputSource,
+			'-s','${Main.VARIABLE_WIDTH}x${Main.VARIABLE_HEIGHT}',
+			'-r',Std.string(frameRate),'-i','-',
 			'-vf','vflip',
-			'-bufsize','1M','-thread_queue_size','1024',
-			'-max_muxing_queue_size','4096',
-			'-nostats','-loglevel', 'quiet','-hide_banner',
-			'-xerror','-avoid_negative_ts','make_zero'
+			'-bufsize','4M',
+			'-thread_queue_size','2048',
+			'-max_muxing_queue_size','8192',
+			'-nostats','-loglevel','warning','-hide_banner',
 		].concat(encoderSettings).concat([
-			'-an','-colorspace','bt709',
-			'assets/videos/rendered/' + songName + '.mp4'
+			'-an','-movflags','+faststart',
+			'-colorspace','bt709',
+			'assets/videos/rendered/${songName}.mp4'
 		]);
 
 		process = new Process('ffmpeg', args);
@@ -526,7 +505,7 @@ class RenderingMode {
 
 		started = true;
 		renderTime = haxe.Timer.stamp();
-		Sys.println("Rendering Mode System - Started with optimized threading!");
+		Sys.println("Rendering started!");
 	}
 
 	// ------------------ Stop Render ------------------
@@ -534,67 +513,44 @@ class RenderingMode {
 		if (!started || cleanupLock) return;
 		cleanupLock = true;
 
-		Sys.println("StopRender called - beginning cleanup...");
-
+		Sys.println("Stopping render...");
 		stopRequested = true;
 		started = false;
 
 		renderTime = haxe.Timer.stamp() - renderTime;
-		Sys.println('Rendering Mode System - Finished Rendering in ${Tools.formatTime(renderTime*1000,true)}.');
-		Sys.println('Performance: ${framesCaptured} captured, ${framesWritten} written');
+		Sys.println('Finished in ${Tools.formatTime(renderTime*1000,true)}');
+		Sys.println('Stats: ${framesCaptured} captured, ${framesWritten} written, ${framesDropped} dropped');
 
-		// Signal writer thread to wake up and exit
+		// Wake writer thread
 		queueLock.release();
 
+		// Wait for queue drain (max 10 seconds)
 		if (writerThread != null) {
-			Sys.println("Waiting for writer thread to finish...");
-			var startWait = haxe.Timer.stamp();
-			var maxWaitTime = 10.0; // Maximum 10 seconds
-
-			while ((haxe.Timer.stamp() - startWait) < maxWaitTime) {
+			var waitStart = haxe.Timer.stamp();
+			while ((haxe.Timer.stamp() - waitStart) < 10.0) {
 				queueMutex.acquire();
-				var queueEmpty = frameQueue.length == 0;
+				var empty = frameQueue.length == 0;
 				queueMutex.release();
-
-				if (queueEmpty) break;
-				Sys.sleep(0.002);
-			}
-
-			Sys.println("Writer thread cleanup complete");
-		}
-
-		Sys.println("Closing ffmpeg stdin...");
-		if (process != null) {
-			try {
-				if (process.stdin != null) {
-					process.stdin.close();
-					Sys.println("stdin closed");
-				}
-			} catch (e:Dynamic) {
-				Sys.println("Error closing stdin: " + e);
+				if (empty) break;
+				Sys.sleep(0.01);
 			}
 		}
 
+		// Close FFmpeg
 		if (process != null) {
-			Sys.println("FFmpeg close...");
-			try {
-				process.close();
-			} catch (e:Dynamic) {}
-			try {
-				process.kill();
-			} catch (e:Dynamic) {}
-			Sys.println("FFmpeg process terminated");
+			try { process.stdin.close(); } catch (_:Dynamic) {}
+			try { process.close(); } catch (_:Dynamic) {}
+			try { process.kill(); } catch (_:Dynamic) {}
 			process = null;
 		}
 
-		Sys.println("Cleaning up GL resources...");
+		// Cleanup GL
 		for (pbo in pbos) {
-			try {
-				GL.deleteBuffer(pbo);
-			} catch (e:Dynamic) {}
+			try { GL.deleteBuffer(pbo); } catch (_:Dynamic) {}
 		}
 		pbos = [];
 
+		// Clear pools
 		freeList = [];
 		frameQueue = [];
 		batchBufferPool = [];
@@ -607,7 +563,6 @@ class RenderingMode {
 		Application.current.window.resizable = true;
 
 		cleanupLock = false;
-
-		Sys.println("Rendering Mode System - Cleanup complete!");
+		Sys.println("Cleanup complete!");
 	}
 }
