@@ -56,45 +56,6 @@ class RenderingMode {
 	// ------------------ PBOs ------------------
 	static function initPBOs() {
 		frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 2;
-		
-		#if android
-		// Android-specific GLES setup
-		Sys.println("Android: Initializing GLES-optimized PBOs");
-		
-		// Check for GLES extensions
-		var extensions = GL.getSupportedExtensions();
-		var hasPBO = extensions.indexOf("GL_NV_pixel_buffer_object") != -1 ||
-					extensions.indexOf("GL_EXT_pixel_buffer_object") != -1;
-		
-		if (hasPBO) {
-			pboTarget = 0x88EB; // GL_PIXEL_PACK_BUFFER
-			
-			// Android devices vary greatly - use conservative sizes
-			var maxBufferSize = GL.getParameter(0x8765); // GL_MAX_PIXEL_PACK_BUFFER_SIZE
-			if (frameSize * PBO_BUFFERS > maxBufferSize) {
-				PBO_BUFFERS = Std.int(maxBufferSize / frameSize);
-				if (PBO_BUFFERS < 2) PBO_BUFFERS = 2;
-				Sys.println("Android: Reduced PBO count to " + PBO_BUFFERS);
-			}
-			
-			pbos = [];
-			for (i in 0...PBO_BUFFERS) {
-				var buf = GL.createBuffer();
-				GL.bindBuffer(pboTarget, buf);
-				GL.bufferData(pboTarget, frameSize, cast null, 0x88E8); // GL_STREAM_READ for Android
-				pbos.push(buf);
-			}
-			GL.bindBuffer(pboTarget, null);
-		} else {
-			Sys.println("Android: PBOs not supported, using direct read");
-			pbos = [];
-		}
-		
-		// Android memory management - be more conservative
-		QUEUE_SIZE = 4; // Reduce queue size for mobile
-		BATCH_SIZE = 8; // Smaller batches for mobile
-		#else
-		frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 2;
 		batchBufferSize = frameSize * BATCH_SIZE;
 
 		freeList = [];
@@ -127,7 +88,6 @@ class RenderingMode {
 		
 		Sys.println("Rendering Mode System - PBOs initialized successfully.");
 		Sys.println('Batch buffer size: ${batchBufferSize} bytes (${BATCH_SIZE} frames)');
-		#end
 	}
 
 	// ---------------- Frame Pool ----------------
@@ -323,56 +283,7 @@ class RenderingMode {
 
 	// ------------------ Encoder ------------------
 	static function getBestEncoder():Array<String> {
-		#if android
-		Sys.println("Android: Detecting hardware encoder");
-		
-		// Test Android MediaCodec encoders first
-		var androidEncoders = [
-			// H.264 via MediaCodec (API 21+)
-			{name: 'h264_mediacodec', testArgs: [], encodeArgs: [
-				'-c:v', 'h264_mediacodec',
-				'-profile', 'baseline',
-				'-level', '3.1',
-				'-bitrate', '2000k',
-				'-vendor', 'google'  // Important for some devices
-			]},
-			
-			// HEVC via MediaCodec (API 21+)
-			{name: 'hevc_mediacodec', testArgs: [], encodeArgs: [
-				'-c:v', 'hevc_mediacodec',
-				'-profile', 'main',
-				'-level', '3.1',
-				'-bitrate', '1500k'
-			]},
-			
-			// H.263 (older devices)
-			{name: 'h263_mediacodec', testArgs: [], encodeArgs: [
-				'-c:v', 'h263_mediacodec',
-				'-bitrate', '1000k'
-			]},
-			
-			// VP8/VP9 (some devices)
-			{name: 'vp8_mediacodec', testArgs: [], encodeArgs: [
-				'-c:v', 'vp8_mediacodec',
-				'-bitrate', '1500k'
-			]}
-		];
-		
-		for (encoder in androidEncoders) {
-			try {
-				var testArgs = ['-f', 'lavfi', '-v', 'quiet', '-i', 'color=black:s=64x64:d=0.1',
-							'-c:v', encoder.name, '-f', 'null', '-'];
-				var testProcess = new Process('ffmpeg', testArgs);
-				var exitCode = testProcess.exitCode();
-				testProcess.close();
-				
-				if (exitCode == 0) {
-					Sys.println('Android: Using hardware encoder: ${encoder.name}');
-					return encoder.encodeArgs;
-				}
-			} catch (e:Dynamic) {}
-		}
-		#elseif linux
+		#if linux
 		// Test for Linux hardware encoders first
 		var linuxEncoders = [
 			// Raspberry Pi (v4l2_m2m)
@@ -414,6 +325,7 @@ class RenderingMode {
 			}
 		}
 		#else
+
 		var encoders = [
 			{name:'h264_nvenc', args:[
 				'-c:v','h264_nvenc',
@@ -449,7 +361,6 @@ class RenderingMode {
 				'-async_depth','4'
 			]}
 		];
-		#end
 
 		for (encoder in encoders) {
 			var testProcess = new Process('ffmpeg', [
@@ -463,6 +374,7 @@ class RenderingMode {
 				return encoder.args;
 			}
 		}
+		#end
 
 		Sys.println('Rendering Mode System - Using encoder: libx264 (software fallback)');
 		return [
@@ -558,42 +470,6 @@ class RenderingMode {
 
 	// ------------------ Stop Render ------------------
 	static function stopRender() {
-		#if android
-		if (!started || cleanupLock) return;
-		cleanupLock = true;
-		
-		Sys.println("Android: Stopping render with cleanup");
-		
-		// Important: Unbind GL objects before context loss
-		GL.bindBuffer(pboTarget, null);
-		for (pbo in pbos) {
-			try {
-				GL.deleteBuffer(pbo);
-			} catch (e:Dynamic) {}
-		}
-		pbos = [];
-		
-		// Force GC to reclaim memory
-		neash.vm.Gc.run(true);
-		
-		// Move file from tmpfs if used
-		try {
-			var tmpFile = "/dev/shm/ffmpeg/" + songName + ".mp4";
-			var destFile = lime.system.System.applicationStorageDirectory + "/rendered/" + songName + ".mp4";
-			
-			if (FileSystem.exists(tmpFile) && FileSystem.exists(destFile)) {
-				// Copy with progress
-				var src = sys.io.File.read(tmpFile, true);
-				var dst = sys.io.File.write(destFile, true);
-				dst.writeInput(src);
-				src.close();
-				dst.close();
-				
-				// Delete tmp file
-				FileSystem.deleteFile(tmpFile);
-			}
-		} catch (e:Dynamic) {}
-		#else
 		if (!started || cleanupLock) return;
 		cleanupLock = true;
 		
@@ -664,6 +540,5 @@ class RenderingMode {
 		cleanupLock = false;
 		
 		Sys.println("Rendering Mode System - Cleanup complete!");
-		#end
 	}
 }
