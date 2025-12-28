@@ -12,6 +12,7 @@ import cpp.Pointer;
 import cpp.RawPointer;
 import cpp.NativeProcess;
 #end
+import ffmpeg.NamedPipeWriter;
 
 @:publicFields
 class RenderingMode {
@@ -42,6 +43,9 @@ class RenderingMode {
 	#if cpp
 	private static var nativeProcessHandle:Dynamic = null;
 	#end
+
+	// ---------------- EXPERIMENTAL! ----------------
+	static var useNamedPipe:Bool = true; 
 
 	// ------------------ PBOs ------------------
 	static function initPBOs() {
@@ -168,8 +172,15 @@ class RenderingMode {
 	static function pipeFrame() {
 		if (!enabled || !started || !ffmpegExists || process == null || stopRequested) return;
 
-		var buffer = getFreeFrame();
-		if (buffer == null) return;
+		var buffer:Bytes;
+		
+		if (useNamedPipe) {
+			buffer = NamedPipeWriter.getFreeFrame();
+			if (buffer == null) return; // Queue full
+		} else {
+			buffer = getFreeFrame();
+			if (buffer == null) return;
+		}
 
 		if (pbos.length == PBO_BUFFERS) {
 			var readIndex = (pboIndex + 1) % PBO_BUFFERS;
@@ -183,21 +194,39 @@ class RenderingMode {
 			try {
 				GL.getBufferSubData(pboTarget, 0, frameSize, buffer);
 				GL.bindBuffer(pboTarget, null);
-				enqueueFrame(buffer);
+				
+				if (useNamedPipe) {
+					NamedPipeWriter.enqueueFrame(buffer);
+				} else {
+					enqueueFrame(buffer);
+				}
 			} catch (e:Dynamic) {
 				Sys.println("PBO read failed: " + e);
 				GL.bindBuffer(pboTarget, null);
-				returnFrame(buffer);
+				
+				if (useNamedPipe) {
+					NamedPipeWriter.returnFrame(buffer);
+				} else {
+					returnFrame(buffer);
+				}
 				return;
 			}
 
 			pboIndex = (pboIndex + 1) % PBO_BUFFERS;
 		} else {
 			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, GL.RGB, GL.UNSIGNED_SHORT_5_6_5, buffer);
-			enqueueFrame(buffer);
+			
+			if (useNamedPipe) {
+				NamedPipeWriter.enqueueFrame(buffer);
+			} else {
+				enqueueFrame(buffer);
+			}
 		}
 
-		if (writerThread == null) acquireWriter();
+		// Only start stdin writer thread if not using named pipe
+		if (!useNamedPipe && writerThread == null) {
+			acquireWriter();
+		}
 	}
 
 	// ------------------ Encoder ------------------
@@ -274,10 +303,21 @@ class RenderingMode {
 		#end
 
 		var encoderSettings = getBestEncoder();
+		var inputSource:String;
+		
+		// Initialize named pipe if enabled
+		if (useNamedPipe) {
+			frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 2;
+			inputSource = NamedPipeWriter.init("ffmpeg_render", frameSize, QUEUE_SIZE);
+			Sys.println('Using named pipe: $inputSource');
+		} else {
+			inputSource = '-'; // stdin
+		}
+		
 		var args = [
 			'-y','-f','rawvideo','-pix_fmt','rgb565',
 			'-s',Main.VARIABLE_WIDTH + 'x' + Main.VARIABLE_HEIGHT,
-			'-r',Std.string(frameRate),'-i','-',
+			'-r',Std.string(frameRate),'-i',inputSource,
 			'-vf','vflip',
 			'-bufsize','1M','-thread_queue_size','1024',
 			'-max_muxing_queue_size','4096',
@@ -298,11 +338,18 @@ class RenderingMode {
 		stopRequested = false;
 		cleanupLock = false;
 
-		#if cpp
-		nativeProcessHandle = untyped process.stdin.p;
-		#end
+		if (!useNamedPipe) {
+			#if cpp
+			nativeProcessHandle = untyped process.stdin.p;
+			#end
+		}
 
 		initPBOs();
+		
+		// Start named pipe writer after FFmpeg process is running
+		if (useNamedPipe) {
+			NamedPipeWriter.startWriter();
+		}
 
 		started = true;
 		renderTime = haxe.Timer.stamp();
@@ -322,33 +369,40 @@ class RenderingMode {
 		renderTime = haxe.Timer.stamp() - renderTime;
 		Sys.println('Rendering Mode System - Finished Rendering in ${Tools.formatTime(renderTime*1000,true)}.');
 
-		if (writerThread != null) {
-			Sys.println("Waiting for writer thread to finish...");
-			var startWait = haxe.Timer.stamp();
-			while (frameQueue.length > 0 && (haxe.Timer.stamp() - startWait) < 5.0) {
-				Sys.sleep(0.01);
+		// Stop named pipe writer if enabled
+		if (useNamedPipe) {
+			NamedPipeWriter.stop();
+		} else {
+			// Original stdin writer cleanup
+			if (writerThread != null) {
+				Sys.println("Waiting for writer thread to finish...");
+				var startWait = haxe.Timer.stamp();
+				while (frameQueue.length > 0 && (haxe.Timer.stamp() - startWait) < 5.0) {
+					Sys.sleep(0.01);
+				}
+				Sys.println("Writer thread queue drained");
+				Sys.sleep(0.1);
+				writerThread = null;
 			}
-			Sys.println("Writer thread queue drained");
-			Sys.sleep(0.1);
-			writerThread = null;
+
+			Sys.println("Closing ffmpeg stdin...");
+			if (process != null) {
+				try {
+					if (process.stdin != null) {
+						process.stdin.close();
+						Sys.println("stdin closed");
+					}
+				} catch (e:Dynamic) {
+					Sys.println("Error closing stdin: " + e);
+				}
+			}
 		}
 
-		Sys.println("Closing ffmpeg stdin...");
+		Sys.println("FFmpeg close...");
 		if (process != null) {
-			try {
-				if (process.stdin != null) {
-					process.stdin.close();
-					Sys.println("stdin closed");
-				}
-			} catch (e:Dynamic) {
-				Sys.println("Error closing stdin: " + e);
-			}
-
-			Sys.println("FFmpeg close...");
 			process.close();
 			process.kill();
 			Sys.println("FFmpeg exited with code: " + process.exitCode());
-			
 			process = null;
 		}
 
@@ -360,8 +414,10 @@ class RenderingMode {
 		}
 		pbos = [];
 		
-		freeList = [];
-		frameQueue = [];
+		if (!useNamedPipe) {
+			freeList = [];
+			frameQueue = [];
+		}
 
 		#if FV_LIME_FORK
 		Application.current.window.uncappedFrameRate = false;
