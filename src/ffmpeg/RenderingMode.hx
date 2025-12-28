@@ -22,7 +22,6 @@ class RenderingMode {
 	static var pboIndex:Int = 0;
 	static var pboTarget:Int = 0;
 	static var frameSize:Int = 0;
-	static var useBufferStorage:Bool = false;
 
 	private static var ffmpegExists(default, null):Bool;
 	static var process:Process;
@@ -46,7 +45,7 @@ class RenderingMode {
 
 	// ------------------ PBOs ------------------
 	static function initPBOs() {
-		frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 4;
+		frameSize = Main.VARIABLE_WIDTH * Main.VARIABLE_HEIGHT * 3;
 
 		freeList = [];
 		frameQueue = [];
@@ -59,39 +58,16 @@ class RenderingMode {
 		pbos = [];
 		pboTarget = 0x88EB;
 		
-		useBufferStorage = false;
-
-		// This was a bit slower anyway so why bother doing it in the first place.
-		// wasting so much time on something that I found only used more computational power. god damnit.
-		/*#if FV_LIME_FORK
-		#if (cpp || hl)
-		try {
-			var testBuf = GL.createBuffer();
-			GL.bindBuffer(pboTarget, testBuf);
-			GL.bufferStorage(pboTarget, 16, cast null, 0x0001 | 0x0002 | 0x0040 | 0x0080);
-			GL.deleteBuffer(testBuf);
-			useBufferStorage = true;
-			Sys.println("Rendering Mode System - Using GL.bufferStorage");
-		} catch (e:Dynamic) {
-			Sys.println("Rendering Mode System - Using traditional bufferData");
-		}
-		#end
-		#end*/
-		
 		for (i in 0...PBO_BUFFERS) {
 			var buf = GL.createBuffer();
 			GL.bindBuffer(pboTarget, buf);
 			
-			if (useBufferStorage) {
-				GL.bufferStorage(pboTarget, frameSize, cast null, 0x0001 | 0x0002 | 0x0040 | 0x0080);
-			} else {
-				GL.bufferData(pboTarget, frameSize, cast null, 0x88E2);
-			}
+			GL.bufferData(pboTarget, frameSize, cast null, 0x88E2);
 			pbos.push(buf);
 		}
 		GL.bindBuffer(pboTarget, null);
 		
-		GL.pixelStorei(GL.PACK_ALIGNMENT, 4);
+		GL.pixelStorei(GL.PACK_ALIGNMENT, 16);
 		
 		Sys.println("Rendering Mode System - PBOs initialized successfully.");
 	}
@@ -202,7 +178,7 @@ class RenderingMode {
 			var writePBO = pbos[pboIndex];
 
 			GL.bindBuffer(pboTarget, writePBO);
-			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 0x80E1, GL.UNSIGNED_BYTE, cast 0);
+			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, GL.RGB, GL.UNSIGNED_BYTE, cast 0);
 
 			var readPBO = pbos[readIndex];
 			GL.bindBuffer(pboTarget, readPBO);
@@ -219,7 +195,7 @@ class RenderingMode {
 
 			pboIndex = (pboIndex + 1) % PBO_BUFFERS;
 		} else {
-			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, 0x80E1, GL.UNSIGNED_BYTE, buffer);
+			GL.readPixels(0, 0, Main.VARIABLE_WIDTH, Main.VARIABLE_HEIGHT, GL.RGB, GL.UNSIGNED_BYTE, buffer);
 			enqueueFrame(buffer);
 		}
 
@@ -306,7 +282,7 @@ class RenderingMode {
 			'-r',Std.string(frameRate),'-i','-',
 			'-vf','vflip',
 			'-bufsize','1M','-thread_queue_size','512',
-			'-max_muxing_queue_size','1024',
+			'-max_muxing_queue_size','2048',
 			'-fflags','+genpts+flush_packets',
 			//'-probesize', '32', '-analyzeduration', '0',
 			// the rest of this is the big win but it beaks the process waaaaaaaaaa
