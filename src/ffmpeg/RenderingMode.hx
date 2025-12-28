@@ -147,7 +147,7 @@ class RenderingMode {
 				// If no frames, wait or exit
 				if (batch.length == 0) {
 					if (stopRequested) break;
-					Sys.sleep(0.0003);
+					Sys.sleep(0.002);
 					continue;
 				}
 				
