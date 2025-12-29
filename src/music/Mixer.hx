@@ -177,7 +177,7 @@ class Mixer {
 					ogSongPos -= (ogLatencyForImmediateChange - __cachedLatency); // please do this or your song position will take forever to return back to where it was before
 				} else {
 					if (absDiff > 4 * speed) multiply = Math.min(0.1 * smoothedTimeMult, 1);
-					if (absDiff > 12) multiply = 1;
+					if (absDiff > 9 * speed) multiply = 1;
 				}
 
 				var subtract = diff * multiply;
