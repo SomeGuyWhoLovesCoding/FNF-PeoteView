@@ -25,7 +25,7 @@ class RenderingMode {
 
 	private static var ffmpegExists(default, null):Bool;
 	static var process:Process;
-	static var enabled:Bool = true;
+	static var enabled:Bool = false;
 	static var started:Bool = false;
 	static var songName:String;
 	static var renderTime(default, null):Float;
@@ -311,7 +311,7 @@ class RenderingMode {
 		cleanupLock = false;
 
 		#if cpp
-		nativeProcessHandle = untyped process.stdin.p;
+		nativeProcessHandle = untyped process?.stdin?.p;
 		#end
 
 		initPBOs();
