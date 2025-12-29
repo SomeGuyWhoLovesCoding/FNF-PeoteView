@@ -144,6 +144,7 @@ class OptionsMenu {
 	function back(isDown:Bool, param:Int) {
 		if (!isDown) return;
 		close();
+		Main.current.playCancelSound();
 	}
 
 	function down(isDown:Bool, param:Int) {
@@ -152,6 +153,7 @@ class OptionsMenu {
 		if (optionSelected >= optionsDisplay.options.length) {
 			optionSelected = 0;
 		}
+		Main.current.playScrollSound();
 	}
 
 	function up(isDown:Bool, param:Int) {
@@ -160,6 +162,7 @@ class OptionsMenu {
 		if (optionSelected < 0) {
 			optionSelected = optionsDisplay.options.length - 1;
 		}
+		Main.current.playScrollSound();
 	}
 
 	function left(isDown:Bool, param:Int) {
@@ -170,6 +173,7 @@ class OptionsMenu {
 			categorySelected = categorySprites.length - 1;
 		}
 		optionsDisplay.reload(cast categorySelected);
+		Main.current.playScrollSound();
 	}
 
 	function right(isDown:Bool, param:Int) {
@@ -180,17 +184,20 @@ class OptionsMenu {
 			categorySelected = 0;
 		}
 		optionsDisplay.reload(cast categorySelected);
+		Main.current.playScrollSound();
 	}
 
 	function enter(isDown:Bool, param:Int) {
 		if (!isDown) return;
 		optionsDisplay.enter();
+		Main.current.playCancelSound();
 	}
 
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
 		if (button == LEFT) enter(true, 0);
 		if (button != RIGHT) return;
 		close();
+		Main.current.playScrollSound();
 	}
 
 	function moveCategory_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
@@ -204,6 +211,7 @@ class OptionsMenu {
 		}
 
 		optionsDisplay.reload(cast categorySelected);
+		Main.current.playScrollSound();
 	}
 
 	function shutDown() {

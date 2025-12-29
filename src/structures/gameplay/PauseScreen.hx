@@ -118,6 +118,7 @@ class PauseScreen {
 		if (pauseOptionSelected >= pauseOptions.length) {
 			pauseOptionSelected = 0;
 		}
+		Main.current.playScrollSound();
 	}
 
 	function up(isDown:Bool, param:Int) {
@@ -125,6 +126,7 @@ class PauseScreen {
 		if (pauseOptionSelected < 0) {
 			pauseOptionSelected = pauseOptions.length - 1;
 		}
+		Main.current.playScrollSound();
 	}
 
 	function accept(isDown:Bool, param:Int) {
@@ -146,6 +148,7 @@ class PauseScreen {
 				atOptionsMenu = true;
 				removeEvents();
 			case 3: // EXIT
+				Main.current.playCancelSound();
 				Main.switchState(MAIN_MENU);
 		}
 	}
@@ -153,6 +156,7 @@ class PauseScreen {
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
 		if (button == LEFT) doIt();
 		else back(true, 0);
+		//Main.current.playScrollSound();
 	}
 
 	function moveOption_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
@@ -164,6 +168,7 @@ class PauseScreen {
 		if (pauseOptionSelected < 0) {
 			pauseOptionSelected = pauseBuf.length - 2;
 		}
+		Main.current.playScrollSound();
 	}
 
 	function open() {

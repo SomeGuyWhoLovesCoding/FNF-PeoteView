@@ -304,6 +304,8 @@ class PlayField implements State {
 		if (inputSystem != null) inputSystem.removeEvents();
 
 		paused = true;
+
+		Main.current.playScrollSound();
 	}
 
 	/**

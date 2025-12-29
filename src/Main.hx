@@ -142,6 +142,23 @@ class Main extends Application
 	// This is a replacement for Application.current.window.onMouseDown as it's a rogue piece a shit I've noticed was especially targetable on hashlink where the freeplay mouse click bug arose
 	var mouseDown:(Float, Float, MouseButton)->Void;
 
+	// NOW FOR THE SOUND EFFECTS
+	var sound_scrollIdx:Int;
+	var sound_confIdx:Int;
+	var sound_cancelIdx:Int;
+
+	public function playScrollSound() {
+		MiniAudio.playSoundEffect(sound_scrollIdx, 0.7);
+	}
+
+	public function playConfirmSound() {
+		MiniAudio.playSoundEffect(sound_confIdx, 0.7);
+	}
+
+	public function playCancelSound() {
+		MiniAudio.playSoundEffect(sound_cancelIdx, 0.7);
+	}
+
 	public function startSample(window:Window)
 	{
 		current = this;
@@ -150,6 +167,10 @@ class Main extends Application
 		Tools.getIconGridMap('assets/images/ui');
 
 		peoteView = new PeoteView(window);
+
+		sound_scrollIdx = MiniAudio.loadSoundEffect(Paths.asset("assets/conductor/measure.wav"));
+		sound_confIdx = MiniAudio.loadSoundEffect(Paths.asset("assets/conductor/beat.wav"));
+		sound_cancelIdx = MiniAudio.loadSoundEffect(Paths.asset("assets/conductor/beat.wav"));
 
 		haxe.Timer.delay(function() {
 			createTextures();

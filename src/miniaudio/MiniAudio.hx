@@ -1,10 +1,13 @@
 package miniaudio;
 
 #if cpp
+import cpp.ConstCharStar;
 @:buildXml('<include name="../../../miniaudioBuild.xml" />')
 @:unreflective @:keep
 @:include("./include/ma_thing.h")
 extern class MiniAudio {
+	// THE MAIN STUFF
+
 	@:native("destroy") static function destroy():Void;
 	@:native("start") static function start():Void;
 	@:native("stop") static function stop():Void;
@@ -33,9 +36,29 @@ extern class MiniAudio {
 
 	@:native("wearingHeadphones") static function wearingHeadphones():Bool;
 	@:native("wearingPlugNPlay") static function wearingPlugNPlay():Bool;
+
+	// AND NOW THE BACKGROUND AND SOUND STUFF
+
+	@:native("loadBackgroundTrack") static function _loadBackgroundTrack(path:ConstCharStar):Int;
+	inline static function loadBackgroundTrack(path:String):Int {
+		return _loadBackgroundTrack(ConstCharStar.fromString(path));
+	}
+	@:native("playBackgroundTrack") static function playBackgroundTrack(index:Int):Void;
+	@:native("stopBackgroundTrack") static function stopBackgroundTrack(index:Int):Void;
+	@:native("setBackgroundTrackVolume") static function setBackgroundTrackVolume(index:Int, volume:cpp.Float32):Void;
+	@:native("setBackgroundTrackLooping") static function setBackgroundTrackLooping(index:Int, looping:Bool):Void;
+	@:native("isBackgroundTrackPlaying") static function isBackgroundTrackPlaying(index:Int):Void;
+
+	@:native("loadSoundEffect") static function _loadSoundEffect(path:ConstCharStar):Int;
+	inline static function loadSoundEffect(path:String):Int {
+		return _loadSoundEffect(ConstCharStar.fromString(path));
+	}
+	@:native("playSoundEffect") static function playSoundEffect(index:Int, volume:cpp.Float32):Void;
 }
 #elseif hl
 class MiniAudio {
+	// THE MAIN STUFF
+
 	@:hlNative("ma_thing", "destroy") public static function destroy():Void {}
 	@:hlNative("ma_thing", "start") public static function start():Void {}
 	@:hlNative("ma_thing", "stop") public static function stop():Void {}
@@ -84,6 +107,24 @@ class MiniAudio {
 	@:hlNative("ma_thing", "wearingPlugNPlay") public static function wearingPlugNPlay():Bool {
 		return false;
 	}
+
+	// AND NOW THE BACKGROUND AND SOUND STUFF
+
+	@:hlNative("ma_thing", "loadBackgroundTrack") static function _loadBackgroundTrack(path:hl.Bytes):Int;
+	inline static function loadBackgroundTrack(path:String):Int {
+		return _loadBackgroundTrack(ConstCharStar.fromString(path.toUtf8()));
+	}
+	@:hlNative("ma_thing", "playBackgroundTrack") static function playBackgroundTrack(index:Int):Void;
+	@:hlNative("ma_thing", "stopBackgroundTrack") static function stopBackgroundTrack(index:Int):Void;
+	@:hlNative("ma_thing", "setBackgroundTrackVolume") static function setBackgroundTrackVolume(index:Int, volume:hl.F32):Void;
+	@:hlNative("ma_thing", "setBackgroundTrackLooping") static function setBackgroundTrackLooping(index:Int, looping:Bool):Void;
+	@:hlNative("ma_thing", "isBackgroundTrackPlaying") static function isBackgroundTrackPlaying(index:Int):Void;
+
+	@:hlNative("ma_thing", "loadSoundEffect") static function _loadSoundEffect(path:hl.Bytes):Int;
+	inline static function loadSoundEffect(path:String):Int {
+		return _loadSoundEffect(ConstCharStar.fromString(path.toUtf8()));
+	}
+	@:hlNative("ma_thing", "playSoundEffect") static function playSoundEffect(index:Int, volume:hl.F32):Void;
 }
 #else
 class MiniAudio {

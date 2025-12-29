@@ -60,8 +60,11 @@ bool checkWindowsHeadphoneStatus() {
 					if (SUCCEEDED(pProps->GetValue(*keys[i], &varName)) && varName.vt==VT_LPWSTR && varName.pwszVal) {
 						std::string name = wstring_to_string(varName.pwszVal);
 						std::transform(name.begin(), name.end(), name.begin(), ::tolower);
-						const char* kws[] = { "headphone","headset","earphone","earbud","airpod","bluetooth","bt","wireless","ear piece","usb audio speakers" };
-						for (const char* kw : kws) if (name.find(kw)!=std::string::npos) { isHeadphones=true; break; }
+						const char* kws[] = { "headphone","headset","earphone","earbud","airpod",
+							"bluetooth","bt","wireless","ear piece","usb audio speakers" };
+						for (const char* kw : kws) if (name.find(kw)!=std::string::npos) {
+							isHeadphones=true; break;
+						}
 					}
 					PropVariantClear(&varName);
 				}
@@ -93,23 +96,41 @@ bool checkIfPnPDevice() {
 	if (SUCCEEDED(pDevice->GetId(&pwszDeviceId)) && pwszDeviceId) {
 		std::string id = wstring_to_string(std::wstring(pwszDeviceId));
 		std::transform(id.begin(), id.end(), id.begin(), ::tolower);
-		const char* pnpPatterns[] = { "usb#","bth#","bthenum#","swd#mmdevapi#","bluetooth","hid#","uefi" };
-		const char* internalPatterns[] = { "hdaudio#","intel","realtek","amd","nvidia","high definition audio","hd audio" };
-		for (const char* pat:pnpPatterns) if(id.find(pat)!=std::string::npos) { isPnP=true; break; }
-		if(!isPnP) for (const char* pat:internalPatterns) if(id.find(pat)!=std::string::npos) { isPnP=false; break; }
+		const char* pnpPatterns[] = { "usb#","bth#","bthenum#",
+			/**/"swd#mmdevapi#","bluetooth","hid#","uefi" };
+		const char* internalPatterns[] = { "hdaudio#","intel","realtek",
+			/**/"amd","nvidia","high definition audio","hd audio" };
+		for (const char* pat:pnpPatterns) if(id.find(pat)!=std::string::npos) {
+			isPnP=true; break;
+		}
+		if(!isPnP) for (const char* pat:internalPatterns) if(id.find(pat)!=std::string::npos) {
+			isPnP=false; break;
+		}
 		CoTaskMemFree(pwszDeviceId);
 	}
 
 	if (!isPnP && SUCCEEDED(pDevice->OpenPropertyStore(STGM_READ, &pProps))) {
 		PROPVARIANT var; PropVariantInit(&var);
-		const PROPERTYKEY* keys[] = { &PKEY_Device_FriendlyName, &PKEY_Device_DeviceDesc, &PKEY_DeviceInterface_FriendlyName };
+		const PROPERTYKEY* keys[] = { &PKEY_Device_FriendlyName, &PKEY_Device_DeviceDesc,
+			&PKEY_DeviceInterface_FriendlyName };
 		for(int i=0;i<3 && !isPnP;i++){
 			if(SUCCEEDED(pProps->GetValue(*keys[i],&var)) && var.vt==VT_LPWSTR && var.pwszVal){
-				std::string s = wstring_to_string(var.pwszVal); std::transform(s.begin(),s.end(),s.begin(),::tolower);
-				const char* kws[]={"usb","bluetooth","bt","wireless","external","headset","airpod","bose","sony","jbl","logitech","hdmi","displayport","digital audio","digital output","soundblaster","audio interface","dac","amplifier"};
-				const char* internalKws[]={"speakers","internal","built-in","default","primary","main","system","laptop","desktop","monitor","display"};
-				bool foundInternal=false; for(const char* k:internalKws) if(s.find(k)!=std::string::npos){foundInternal=true;break;} 
-				if(!foundInternal) for(const char* k:kws) if(s.find(k)!=std::string::npos){isPnP=true; break;}
+				std::string s = wstring_to_string(var.pwszVal);
+				std::transform(s.begin(),s.end(),s.begin(),::tolower);
+				const char* kws[]={"usb","bluetooth","bt","wireless",
+					"external","headset","airpod","bose","sony","jbl",
+					"logitech","hdmi","displayport","digital audio",
+					"digital output","soundblaster","audio interface",
+					"dac","amplifier"};
+				const char* internalKws[]={"speakers","internal","built-in",
+					"default","primary","main","system","laptop",
+					"desktop","monitor","display"};
+				bool foundInternal=false; for(const char* k:internalKws) if(s.find(k)!=std::string::npos){
+					foundInternal=true;break;
+				} 
+				if(!foundInternal) for(const char* k:kws) if(s.find(k)!=std::string::npos){
+					isPnP=true; break;
+				}
 			}
 		}
 		PropVariantClear(&var); pProps->Release();
@@ -127,10 +148,20 @@ cleanup:
 #define CHANNEL_COUNT 2
 #define SAMPLE_RATE 44100
 
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+																				//////***
+																				//	- MUSIC TRACK -	//
+																							/***//////
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
 // Buffer constants (exactly as specified)
 #define PADDING_MS 100
 #define BUFFER_MS 2000
-#define HALF_BUFFER_MS 900 // to reduce underrun, I set it to 900 instead of 1000 for certain codecs just being slow in general to decode to raw pcm
+#define HALF_BUFFER_MS 900
+// to reduce underrun, I set HALF_BUFFER_MS to 900 instead of 1000 for certain codecs just being slow in general to decode to raw pcm.
+// This is also the sweet spot inbetween it because if you go mildly lower than that then you'll end up with early buffer termination.
 
 #define PADDING_FRAMES ((SAMPLE_RATE * PADDING_MS) / 1000)        // 4410 frames
 #define BUFFER_FRAMES ((SAMPLE_RATE * BUFFER_MS) / 1000)          // 88200 frames
@@ -1258,4 +1289,576 @@ int detectLatency() {
 		if(wearingHeadphones()) osMs += 20;
 	}
 	return osMs;
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+																				//////***
+																				//	- BG TRACK -	//
+																							/***//////
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Background track structure - streams audio in real-time with looping support
+struct BackgroundTrack {
+	ma_decoder decoder;
+	ma_uint64 length;
+	float volume;
+	std::atomic<bool> active;
+	std::atomic<bool> looping;
+	std::string filePath;
+	bool initialized;
+	
+	BackgroundTrack() : length(0), volume(1.0f), active(false), looping(true), initialized(false) {
+		memset(&decoder, 0, sizeof(ma_decoder));
+	}
+	
+	~BackgroundTrack() {
+		cleanup();
+	}
+	
+	// Move constructor
+	BackgroundTrack(BackgroundTrack&& other) noexcept 
+		: length(other.length), 
+		  volume(other.volume), 
+		  active(other.active.load()), 
+		  looping(other.looping.load()),
+		  filePath(std::move(other.filePath)),
+		  initialized(other.initialized) {
+		memcpy(&decoder, &other.decoder, sizeof(ma_decoder));
+		memset(&other.decoder, 0, sizeof(ma_decoder));
+		other.initialized = false;
+		other.length = 0;
+		other.volume = 1.0f;
+		other.active = false;
+		other.looping = true;
+	}
+	
+	// Move assignment
+	BackgroundTrack& operator=(BackgroundTrack&& other) noexcept {
+		if (this != &other) {
+			cleanup();
+			memcpy(&decoder, &other.decoder, sizeof(ma_decoder));
+			length = other.length;
+			volume = other.volume;
+			active.store(other.active.load());
+			looping.store(other.looping.load());
+			filePath = std::move(other.filePath);
+			initialized = other.initialized;
+			
+			memset(&other.decoder, 0, sizeof(ma_decoder));
+			other.initialized = false;
+			other.length = 0;
+			other.volume = 1.0f;
+			other.active = false;
+			other.looping = true;
+		}
+		return *this;
+	}
+	
+	// Delete copy operations
+	BackgroundTrack(const BackgroundTrack&) = delete;
+	BackgroundTrack& operator=(const BackgroundTrack&) = delete;
+	
+	void cleanup() {
+		if (initialized) {
+			ma_decoder_uninit(&decoder);
+			initialized = false;
+		}
+		memset(&decoder, 0, sizeof(ma_decoder));
+		length = 0;
+		volume = 1.0f;
+		active = false;
+		looping = true;
+		filePath.clear();
+	}
+	
+	bool load(const char* path, bool startPlaying = false) {
+		cleanup();
+		
+		ma_decoder_config config = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
+		if (ma_decoder_init_file(path, &config, &decoder) != MA_SUCCESS) {
+			printf("Failed to load background track: %s\n", path);
+			return false;
+		}
+		
+		initialized = true;
+		filePath = path;
+		ma_data_source_set_looping(&decoder, MA_TRUE);
+		ma_decoder_get_length_in_pcm_frames(&decoder, &length);
+		active = startPlaying;
+		looping = true;
+		
+		return true;
+	}
+	
+	void play() {
+		if (initialized) {
+			active = true;
+		}
+	}
+	
+	void stop() {
+		active = false;
+		if (initialized) {
+			ma_decoder_seek_to_pcm_frame(&decoder, 0);
+		}
+	}
+	
+	void setVolume(float vol) {
+		volume = vol;
+	}
+	
+	void setLooping(bool loop) {
+		looping = loop;
+		if (initialized) {
+			ma_data_source_set_looping(&decoder, loop ? MA_TRUE : MA_FALSE);
+		}
+	}
+	
+	// Read frames with volume applied
+	ma_uint64 readFrames(float* output, ma_uint32 frameCount, float masterVolume) {
+		if (!initialized || !active) return 0;
+		
+		float tempBuffer[4096 * CHANNEL_COUNT];
+		ma_uint32 toRead = frameCount;
+		if (toRead > 4096) toRead = 4096;
+		
+		memset(tempBuffer, 0, sizeof(float) * toRead * CHANNEL_COUNT);
+		
+		ma_uint64 framesRead = 0;
+		ma_decoder_read_pcm_frames(&decoder, tempBuffer, toRead, &framesRead);
+		
+		// Mix into output with volume
+		float vol = volume * masterVolume;
+		for (ma_uint64 i = 0; i < framesRead * CHANNEL_COUNT; i++) {
+			output[i] += tempBuffer[i] * vol;
+		}
+		
+		// If not looping and we hit the end, stop
+		if (!looping && framesRead < toRead) {
+			active = false;
+		}
+		
+		return framesRead;
+	}
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+																				//////***
+																				//	- SHORT SOUND -	//
+																							/***//////
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Sound effect structure - fully loaded in memory for instant playback
+struct SoundEffect {
+	float* pcmData;
+	ma_uint64 frameCount;
+	std::atomic<ma_uint64> playbackPosition;
+	float volume;
+	std::atomic<bool> playing;
+	std::string name;
+	
+	SoundEffect() : pcmData(nullptr), frameCount(0), playbackPosition(0), volume(1.0f), playing(false) {}
+	
+	~SoundEffect() {
+		cleanup();
+	}
+	
+	// Move constructor
+	SoundEffect(SoundEffect&& other) noexcept 
+		: pcmData(other.pcmData),
+		  frameCount(other.frameCount),
+		  playbackPosition(other.playbackPosition.load()),
+		  volume(other.volume),
+		  playing(other.playing.load()),
+		  name(std::move(other.name)) {
+		other.pcmData = nullptr;
+		other.frameCount = 0;
+		other.playbackPosition = 0;
+		other.volume = 1.0f;
+		other.playing = false;
+	}
+	
+	// Move assignment
+	SoundEffect& operator=(SoundEffect&& other) noexcept {
+		if (this != &other) {
+			cleanup();
+			pcmData = other.pcmData;
+			frameCount = other.frameCount;
+			playbackPosition.store(other.playbackPosition.load());
+			volume = other.volume;
+			playing.store(other.playing.load());
+			name = std::move(other.name);
+			
+			other.pcmData = nullptr;
+			other.frameCount = 0;
+			other.playbackPosition = 0;
+			other.volume = 1.0f;
+			other.playing = false;
+		}
+		return *this;
+	}
+	
+	// Delete copy operations
+	SoundEffect(const SoundEffect&) = delete;
+	SoundEffect& operator=(const SoundEffect&) = delete;
+	
+	void cleanup() {
+		if (pcmData) {
+			free(pcmData);
+			pcmData = nullptr;
+		}
+		frameCount = 0;
+		playbackPosition = 0;
+		volume = 1.0f;
+		playing = false;
+		name.clear();
+	}
+	
+	bool load(const char* path) {
+		cleanup();
+		
+		// Decode entire file into memory
+		ma_decoder decoder;
+		ma_decoder_config config = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
+		
+		if (ma_decoder_init_file(path, &config, &decoder) != MA_SUCCESS) {
+			printf("Failed to load sound effect: %s\n", path);
+			return false;
+		}
+		
+		ma_uint64 length = 0;
+		ma_decoder_get_length_in_pcm_frames(&decoder, &length);
+		
+		if (length == 0) {
+			ma_decoder_uninit(&decoder);
+			printf("Sound effect has zero length: %s\n", path);
+			return false;
+		}
+		
+		// Allocate memory for entire sound
+		pcmData = (float*)malloc(sizeof(float) * length * CHANNEL_COUNT);
+		if (!pcmData) {
+			ma_decoder_uninit(&decoder);
+			printf("Failed to allocate memory for sound effect: %s\n", path);
+			return false;
+		}
+		
+		// Read entire file into memory
+		ma_uint64 framesRead = 0;
+		ma_decoder_read_pcm_frames(&decoder, pcmData, length, &framesRead);
+		ma_decoder_uninit(&decoder);
+		
+		if (framesRead == 0) {
+			cleanup();
+			printf("Failed to read sound effect: %s\n", path);
+			return false;
+		}
+		
+		frameCount = framesRead;
+		name = path;
+		
+		return true;
+	}
+	
+	void play(float vol = 1.0f) {
+		if (pcmData && frameCount > 0) {
+			playbackPosition = 0;
+			volume = vol;
+			playing = true;
+		}
+	}
+	
+	void stop() {
+		playing = false;
+		playbackPosition = 0;
+	}
+	
+	bool isPlaying() const {
+		return playing;
+	}
+	
+	// Read frames with volume applied
+	ma_uint64 readFrames(float* output, ma_uint32 frameCount, float masterVolume) {
+		if (!playing || !pcmData) return 0;
+		
+		ma_uint64 pos = playbackPosition.load();
+		ma_uint64 remaining = this->frameCount - pos;
+		
+		if (remaining == 0) {
+			playing = false;
+			return 0;
+		}
+		
+		ma_uint32 toRead = (ma_uint32)remaining;
+		if (toRead > frameCount) toRead = frameCount;
+		
+		// Mix into output with volume
+		float* src = pcmData + (pos * CHANNEL_COUNT);
+		float vol = volume * masterVolume;
+		
+		for (ma_uint32 i = 0; i < toRead * CHANNEL_COUNT; i++) {
+			output[i] += src[i] * vol;
+		}
+		
+		playbackPosition = pos + toRead;
+		
+		// Stop if finished
+		if (playbackPosition >= this->frameCount) {
+			playing = false;
+		}
+		
+		return toRead;
+	}
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+																				//////***
+																				//	- MIXER MANAGER -	//
+																							/***//////
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+class AudioMixerManager {
+private:
+	std::vector<BackgroundTrack> backgroundTracks;
+	std::vector<SoundEffect> soundEffects;
+	std::mutex mixerMutex;
+	
+	ma_device device;
+	bool deviceInitialized;
+	float masterVolume;
+	
+public:
+	AudioMixerManager() : deviceInitialized(false), masterVolume(1.0f) {
+		memset(&device, 0, sizeof(ma_device));
+	}
+	
+	~AudioMixerManager() {
+		destroy();
+	}
+	
+	bool initialize() {
+		if (deviceInitialized) return true;
+		
+		ma_device_config config = ma_device_config_init(ma_device_type_playback);
+		config.playback.format = SAMPLE_FORMAT;
+		config.playback.channels = CHANNEL_COUNT;
+		config.sampleRate = SAMPLE_RATE;
+		config.dataCallback = audioCallback;
+		config.pUserData = this;
+		config.periodSizeInMilliseconds = 40; // we don't really utilize it for demanding stuff such as precise music time work anyway so might as well do this then
+		
+		if (ma_device_init(nullptr, &config, &device) != MA_SUCCESS) {
+			printf("Failed to initialize audio mixer device\n");
+			return false;
+		}
+		
+		deviceInitialized = true;
+		
+		// Start device immediately
+		ma_device_start(&device);
+		
+		return true;
+	}
+	
+	void destroy() {
+		if (deviceInitialized) {
+			ma_device_stop(&device);
+			ma_device_uninit(&device);
+			deviceInitialized = false;
+		}
+		
+		std::lock_guard<std::mutex> lock(mixerMutex);
+		backgroundTracks.clear();
+		soundEffects.clear();
+	}
+	
+	////////////////////////////////////////////////////////////////
+	// Background Track API
+	////////////////////////////////////////////////////////////////
+	
+	int loadBackgroundTrack(const char* path, bool startPlaying = false) {
+		if (!deviceInitialized) {
+			if (!initialize()) return -1;
+		}
+		
+		BackgroundTrack track;
+		if (!track.load(path, startPlaying)) {
+			return -1;
+		}
+		
+		std::lock_guard<std::mutex> lock(mixerMutex);
+		backgroundTracks.push_back(std::move(track));
+		return (int)backgroundTracks.size() - 1;
+	}
+	
+	void playBackgroundTrack(int index) {
+		if (index < 0 || index >= (int)backgroundTracks.size()) return;
+		backgroundTracks[index].play();
+	}
+	
+	void stopBackgroundTrack(int index) {
+		if (index < 0 || index >= (int)backgroundTracks.size()) return;
+		backgroundTracks[index].stop();
+	}
+	
+	void setBackgroundTrackVolume(int index, float volume) {
+		if (index < 0 || index >= (int)backgroundTracks.size()) return;
+		backgroundTracks[index].setVolume(volume);
+	}
+	
+	void setBackgroundTrackLooping(int index, bool looping) {
+		if (index < 0 || index >= (int)backgroundTracks.size()) return;
+		backgroundTracks[index].setLooping(looping);
+	}
+	
+	bool isBackgroundTrackPlaying(int index) {
+		if (index < 0 || index >= (int)backgroundTracks.size()) return false;
+		return backgroundTracks[index].active;
+	}
+	
+	////////////////////////////////////////////////////////////////
+	// Sound Effect API
+	////////////////////////////////////////////////////////////////
+	
+	int loadSoundEffect(const char* path) {
+		if (!deviceInitialized) {
+			if (!initialize()) return -1;
+		}
+		
+		SoundEffect sfx;
+		if (!sfx.load(path)) {
+			return -1;
+		}
+		
+		std::lock_guard<std::mutex> lock(mixerMutex);
+		soundEffects.push_back(std::move(sfx));
+		return (int)soundEffects.size() - 1;
+	}
+	
+	void playSoundEffect(int index, float volume = 1.0f) {
+		if (index < 0 || index >= (int)soundEffects.size()) return;
+		soundEffects[index].play(volume);
+	}
+	
+	void stopSoundEffect(int index) {
+		if (index < 0 || index >= (int)soundEffects.size()) return;
+		soundEffects[index].stop();
+	}
+	
+	bool isSoundEffectPlaying(int index) {
+		if (index < 0 || index >= (int)soundEffects.size()) return false;
+		return soundEffects[index].isPlaying();
+	}
+	
+	////////////////////////////////////////////////////////////////
+	// Volume Control
+	////////////////////////////////////////////////////////////////
+	
+	void setMasterVolume(float volume) {
+		masterVolume = volume;
+	}
+	
+	float getMasterVolume() const {
+		return masterVolume;
+	}
+	
+private:
+	static void audioCallback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
+		AudioMixerManager* mixer = static_cast<AudioMixerManager*>(pDevice->pUserData);
+		if (!mixer) return;
+		
+		float* output = (float*)pOutput;
+		memset(output, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
+		
+		std::lock_guard<std::mutex> lock(mixer->mixerMutex);
+		
+		// Mix background tracks
+		for (auto& track : mixer->backgroundTracks) {
+			if (track.active) {
+				track.readFrames(output, frameCount, mixer->masterVolume);
+			}
+		}
+		
+		// Mix sound effects
+		for (auto& sfx : mixer->soundEffects) {
+			if (sfx.playing) {
+				sfx.readFrames(output, frameCount, mixer->masterVolume);
+			}
+		}
+		
+		(void)pInput;
+	}
+};
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+																				//////***
+																				//	- GLOBAL INTERFACE -	//
+																							/***//////
+
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+namespace {
+	AudioMixerManager g_mixer;
+}
+
+// Background track functions
+int loadBackgroundTrack(const char* path, bool startPlaying) {
+	return g_mixer.loadBackgroundTrack(path, startPlaying);
+}
+
+void playBackgroundTrack(int index) {
+	g_mixer.playBackgroundTrack(index);
+}
+
+void stopBackgroundTrack(int index) {
+	g_mixer.stopBackgroundTrack(index);
+}
+
+void setBackgroundTrackVolume(int index, float volume) {
+	g_mixer.setBackgroundTrackVolume(index, volume);
+}
+
+void setBackgroundTrackLooping(int index, bool looping) {
+	g_mixer.setBackgroundTrackLooping(index, looping);
+}
+
+bool isBackgroundTrackPlaying(int index) {
+	return g_mixer.isBackgroundTrackPlaying(index);
+}
+
+// Sound effect functions
+int loadSoundEffect(const char* path) {
+	return g_mixer.loadSoundEffect(path);
+}
+
+void playSoundEffect(int index, float volume) {
+	g_mixer.playSoundEffect(index, volume);
+}
+
+void stopSoundEffect(int index) {
+	g_mixer.stopSoundEffect(index);
+}
+
+bool isSoundEffectPlaying(int index) {
+	return g_mixer.isSoundEffectPlaying(index);
+}
+
+// Volume control
+void setMixerMasterVolume(float volume) {
+	g_mixer.setMasterVolume(volume);
+}
+
+float getMixerMasterVolume() {
+	return g_mixer.getMasterVolume();
+}
+
+void destroyMixer() {
+	g_mixer.destroy();
 }

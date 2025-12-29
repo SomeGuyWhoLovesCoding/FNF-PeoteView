@@ -176,6 +176,7 @@ class MainMenu implements State {
 		if (optionSelected < 0) {
 			optionSelected = optionBuf.length - 1;
 		}
+		Main.current.playScrollSound();
 	}
 
 	function down(isDown:Bool, param:Int) {
@@ -184,16 +185,19 @@ class MainMenu implements State {
 		if (optionSelected >= optionBuf.length) {
 			optionSelected = 0;
 		}
+		Main.current.playScrollSound();
 	}
 
 	function left(isDown:Bool, param:Int) {
 		if (!isDown || disposed) return;
 		optionSelected = optionBuf.length - 1;
+		Main.current.playScrollSound();
 	}
 
 	function right(isDown:Bool, param:Int) {
 		if (!isDown || disposed) return;
 		optionSelected = optionBuf.length - 2;
+		Main.current.playScrollSound();
 	}
 
 	function accept(isDown:Bool, param:Int) {
@@ -210,6 +214,7 @@ class MainMenu implements State {
 		if (optionSelected < 0) {
 			optionSelected = optionBuf.length - 1;
 		}
+		Main.current.playScrollSound();
 	}
 
 	function doIt() {
@@ -217,18 +222,23 @@ class MainMenu implements State {
 		switch (optionString) {
 			case 'story mode': // STORY MODE
 				// TODO
+				Main.current.playConfirmSound();
 			case 'freeplay': // FREEPLAY
 				selectedAlpha = 0.0;
 				Main.current.freeplayMenu.open();
 				removeEvents();
+				Main.current.playScrollSound();
 			case 'awards': // AWARDS
 				// TODO
+				Main.current.playConfirmSound();
 			case 'credits': // CREDITS
 				// TODO
+				Main.current.playConfirmSound();
 			case 'options': // OPTIONS
 				selectedAlpha = 0.0;
 				Main.current.optionsMenu.open();
 				removeEvents();
+				Main.current.playScrollSound();
 			case 'backspace to exit':
 				// TODO: ONCE TITLE SCREEN IS DONE ENOUGH, I WILL REPLACE THIS
 				Sys.exit(0);

@@ -55,7 +55,7 @@ class FreeplayMenu {
 			Main.current.controls.bindTo(actions);
 
 			Main.current.mouseDown = mousePress;
-			window.onMouseWheel.add(moveCategory_mouse);
+			window.onMouseWheel.add(moveMouse);
 		}, 1);
 
 		if (freeplayScreen.disposed) {
@@ -73,7 +73,7 @@ class FreeplayMenu {
 		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
 		Main.current.mouseDown = null;
-		window.onMouseWheel.remove(moveCategory_mouse);
+		window.onMouseWheel.remove(moveMouse);
 
 		opened = false;
 
@@ -89,6 +89,7 @@ class FreeplayMenu {
 	function back(isDown:Bool, param:Int) {
 		if (!isDown) return;
 		close();
+		Main.current.playCancelSound();
 	}
 
 	function down(isDown:Bool, param:Int) {
@@ -97,6 +98,7 @@ class FreeplayMenu {
 		if (curSelected >= freeplayScreen.songsAvailable.length) {
 			curSelected = 0;
 		}
+		Main.current.playScrollSound();
 	}
 
 	function up(isDown:Bool, param:Int) {
@@ -105,6 +107,7 @@ class FreeplayMenu {
 		if (curSelected < 0) {
 			curSelected = freeplayScreen.songsAvailable.length - 1;
 		}
+		Main.current.playScrollSound();
 	}
 
 	function enter(isDown:Bool, param:Int) {
@@ -121,7 +124,7 @@ class FreeplayMenu {
 		close();
 	}
 
-	function moveCategory_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
+	function moveMouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
 		curSelected -= Math.floor(y);
 
 		if (curSelected >= freeplayScreen.songsAvailable.length) {
@@ -130,6 +133,7 @@ class FreeplayMenu {
 		if (curSelected < 0) {
 			curSelected = freeplayScreen.songsAvailable.length - 1;
 		}
+		Main.current.playScrollSound();
 	}
 
 	function shutDown() {
