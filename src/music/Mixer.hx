@@ -151,9 +151,10 @@ class Mixer {
 	inline static public function updateSmoothMusicTime(deltaTime:Float, playfield:PlayField, window:Window):Void {
 		if (isPlaying()) {
 			var ogSongPos = playfield.songPosition + (deltaTime * speed);
-			var rawPlaybackPosition = MiniAudio.getPlaybackPosition() + (playfield.latencyCompensation - Mixer.latency());
-			if (rawPlaybackPosition < 40) {
-				playfield.songPosition = ogSongPos;
+			var latency = playfield.latencyCompensation - Mixer.latency();
+			var rawPlaybackPosition = MiniAudio.getPlaybackPosition() + latency;
+			if (playfield.songPosition - rawPlaybackPosition > 10) {
+				playfield.songPosition = ogSongPos + latency;
 			} else {
 				playfield.songPosition += deltaTime * speed;
 
