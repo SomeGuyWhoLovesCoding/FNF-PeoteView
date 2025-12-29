@@ -67,7 +67,7 @@ class RenderingMode {
 		}
 		GL.bindBuffer(pboTarget, null);
 		
-		Sys.println("Rendering Mode System - PBOs initialized successfully.");
+		Sys.println("            vvvvvvvvv\n  [ Rendering Mode System ]   PBOs initialized successfully.");
 	}
 
 	// ---------------- Frame Pool ----------------
@@ -253,12 +253,12 @@ class RenderingMode {
 			var stderr = testProcess.stderr.readAll().toString();
 			var exitCode = testProcess.exitCode();
 			if (stderr.indexOf('Conversion failed!') == -1 && exitCode == 0) {
-				Sys.println('Rendering Mode System - Using encoder: ${encoder.name}');
+				Sys.println('            vvvvvvvvv\n  [ Rendering Mode System ]   Using encoder: ${encoder.name}\n');
 				return encoder.args;
 			}
 		}
 
-		Sys.println('Rendering Mode System - Using encoder: libx264 (software fallback)');
+		Sys.println('            vvvvvvvvv\n  [ Rendering Mode System ]   Using encoder: libx264 (software fallback)\n');
 		return [
 			'-c:v','libx264',
 			'-preset','ultrafast',
@@ -318,10 +318,10 @@ class RenderingMode {
 
 		started = true;
 		renderTime = haxe.Timer.stamp();
-		Sys.println("Rendering Mode System - Started!");
+		Sys.println("            vvvvvvvvv\n  [ Rendering Mode System ]   Started!");
 	}
 
-	// ------------------ Stop Render ------------------
+	// ------------------ S\ntop Render ------------------
 	static function stopRender() {
 		if (!started || cleanupLock) return;
 		cleanupLock = true;
@@ -332,7 +332,7 @@ class RenderingMode {
 		started = false;
 		
 		renderTime = haxe.Timer.stamp() - renderTime;
-		Sys.println('Rendering Mode System - Finished Rendering in ${Tools.formatTime(renderTime*1000,true)}.');
+		Sys.println('            vvvvvvvvv\n  [ Rendering Mode System ]   Finished Rendering in ${Tools.formatTime(renderTime*1000,true)}.');
 
 		if (writerThread != null) {
 			Sys.println("Waiting for writer thread to finish...");
@@ -384,6 +384,6 @@ class RenderingMode {
 		
 		cleanupLock = false;
 		
-		Sys.println("Rendering Mode System - Cleanup complete!");
+		Sys.println("            vvvvvvvvv\n  [ Rendering Mode System ]   Cleanup complete!");
 	}
 }

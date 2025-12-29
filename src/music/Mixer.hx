@@ -101,6 +101,7 @@ class Mixer {
 		MiniAudio.loadFiles(files);
 		trackCount = files.length;
 		length = MiniAudio.getDuration();
+		Sys.println("     vvvvvvv\n  [ Audio Pipeline ]   Song initialized. (Length: " + Tools.formatTime(length, true) + ")");
 		enableSubLoop();
 	}
 
@@ -151,40 +152,44 @@ class Mixer {
 		if (isPlaying()) {
 			var ogSongPos = playfield.songPosition + (deltaTime * speed);
 			var rawPlaybackPosition = MiniAudio.getPlaybackPosition() + (playfield.latencyCompensation - Mixer.latency());
-			playfield.songPosition += deltaTime * speed;
-
-			#if FV_LIME_FORK
-			var smoothedTimeMult:Float = (deltaTime / (1000 / window.renderFrameRate)) * speed;
-			#else
-			var refreshRate = window.displayMode.refreshRate; // integer version if you're on vanilla lime
-			var smoothedTimeMult:Float = ((1000 / window.frameRate) / (1000 / refreshRate)) * speed;
-			#end
-			if (RenderingMode.enabled) smoothedTimeMult = 1;
-
-			var diff = ogSongPos - rawPlaybackPosition;
-			var absDiff = Math.abs(diff);
-			//Sys.println(absDiff);
-
-			var smallest:Float = 3.75 * speed;
-			var small:Float = 8.5 * speed;
-			var big:Float = 17.5 * speed;
-			var biggest:Float = 40 * speed;
-
-			// Determine correction strength based on drift magnitude
-			var multiply:Float = 0.05;
-			if (ogLatencyForImmediateChange != __cachedLatency) {
-				multiply = 1.0; // immediately change if latency has changed
-				ogSongPos -= (ogLatencyForImmediateChange - __cachedLatency); // please do this or your song position will take forever to return back to where it was before
+			if (rawPlaybackPosition < 40) {
+				playfield.songPosition = ogSongPos;
 			} else {
-				if (absDiff > smallest) multiply = 0.1 * smoothedTimeMult;
-				if (absDiff > small) multiply = 0.325 * smoothedTimeMult;
-				if (absDiff > big) multiply = 0.975 * smoothedTimeMult;
-				if (absDiff > biggest) multiply = 1.0;
-			}
+				playfield.songPosition += deltaTime * speed;
 
-			var subtract = diff * multiply;
-			ogSongPos -= Math.min(subtract, biggest); // Math.min here to prevent supernova from gc
-			playfield.songPosition = ogSongPos;
+				#if FV_LIME_FORK
+				var smoothedTimeMult:Float = (deltaTime / (1000 / window.renderFrameRate)) * speed;
+				#else
+				var refreshRate = window.displayMode.refreshRate; // integer version if you're on vanilla lime
+				var smoothedTimeMult:Float = ((1000 / window.frameRate) / (1000 / refreshRate)) * speed;
+				#end
+				if (RenderingMode.enabled) smoothedTimeMult = 1;
+
+				var diff = ogSongPos - rawPlaybackPosition;
+				var absDiff = Math.abs(diff);
+				//Sys.println(absDiff);
+
+				var smallest:Float = 3.75 * speed;
+				var small:Float = 8.5 * speed;
+				var big:Float = 17.5 * speed;
+				var biggest:Float = 40 * speed;
+
+				// Determine correction strength based on drift magnitude
+				var multiply:Float = 0.05;
+				if (ogLatencyForImmediateChange != __cachedLatency) {
+					multiply = 1.0; // immediately change if latency has changed
+					ogSongPos -= (ogLatencyForImmediateChange - __cachedLatency); // please do this or your song position will take forever to return back to where it was before
+				} else {
+					if (absDiff > smallest) multiply = 0.1 * smoothedTimeMult;
+					if (absDiff > small) multiply = 0.325 * smoothedTimeMult;
+					if (absDiff > big) multiply = 0.975 * smoothedTimeMult;
+					if (absDiff > biggest) multiply = 1.0;
+				}
+
+				var subtract = diff * multiply;
+				ogSongPos -= Math.min(subtract, biggest); // Math.min here to prevent supernova from gc
+				playfield.songPosition = ogSongPos;
+			}
 
 			if (ogLatencyForImmediateChange != __cachedLatency) {
 				playfield.songPosition = rawPlaybackPosition + deltaTime;
@@ -265,10 +270,10 @@ class Mixer {
 		if (playField != null) {
 			if (!playField.songEnded) {
 				if (RenderingMode.enabled && playField.songPosition > length) {
-					Sys.println('Stopping song playback due to rendering mode.');
+					Sys.println('     vvvvvvv\n  [ Audio Pipeline ]   Stopping song playback due to rendering mode.\n');
 					playField.onStopSong.dispatch(Chart.header);
 				} else if (playField.songStarted && isStopped() && !playField.songEnded && !RenderingMode.enabled) {
-					Sys.println('Stopping song playback due to stop condition.');
+					Sys.println('     vvvvvvv\n  [ Audio Pipeline ]   Stopping song playback due to stop condition.\n');
 					playField.onStopSong.dispatch(Chart.header);
 				}
 			}
