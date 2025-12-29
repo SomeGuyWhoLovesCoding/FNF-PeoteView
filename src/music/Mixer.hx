@@ -170,15 +170,14 @@ class Mixer {
 				var absDiff = Math.abs(diff);
 				//Sys.println(absDiff);
 
-				var change:Float = 4 * speed;
-
 				// Determine correction strength based on drift magnitude
 				var multiply:Float = 0.05;
 				if (ogLatencyForImmediateChange != __cachedLatency) {
 					multiply = 1.0; // immediately change if latency has changed
 					ogSongPos -= (ogLatencyForImmediateChange - __cachedLatency); // please do this or your song position will take forever to return back to where it was before
 				} else {
-					if (absDiff > change) multiply = 0.1 * smoothedTimeMult;
+					if (absDiff > 4 * speed) multiply = Math.min(0.1 * smoothedTimeMult, 1);
+					if (absDiff > 12) multiply = 1;
 				}
 
 				var subtract = diff * multiply;
