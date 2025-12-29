@@ -170,10 +170,7 @@ class Mixer {
 				var absDiff = Math.abs(diff);
 				//Sys.println(absDiff);
 
-				var smallest:Float = 3.75 * speed;
-				var small:Float = 8.5 * speed;
-				var big:Float = 17.5 * speed;
-				var biggest:Float = 40 * speed;
+				var change:Float = 4 * speed;
 
 				// Determine correction strength based on drift magnitude
 				var multiply:Float = 0.05;
@@ -181,14 +178,11 @@ class Mixer {
 					multiply = 1.0; // immediately change if latency has changed
 					ogSongPos -= (ogLatencyForImmediateChange - __cachedLatency); // please do this or your song position will take forever to return back to where it was before
 				} else {
-					if (absDiff > smallest) multiply = 0.1 * smoothedTimeMult;
-					if (absDiff > small) multiply = 0.325 * smoothedTimeMult;
-					if (absDiff > big) multiply = 0.975 * smoothedTimeMult;
-					if (absDiff > biggest) multiply = 1.0;
+					if (absDiff > change) multiply = 0.1 * smoothedTimeMult;
 				}
 
 				var subtract = diff * multiply;
-				ogSongPos -= Math.min(subtract, biggest); // Math.min here to prevent supernova from gc
+				ogSongPos -= Math.min(subtract, 1.0); // Math.min here to prevent supernova from gc
 				playfield.songPosition = ogSongPos;
 			}
 
