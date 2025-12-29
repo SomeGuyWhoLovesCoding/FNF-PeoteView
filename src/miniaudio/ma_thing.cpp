@@ -1252,7 +1252,7 @@ bool wearingPlugNPlay() {
 }
 
 int detectLatency() {
-	int osMs = 44;
+	int osMs = 47;
 	if (g_audioSystem.exists) {
 		if(!wearingPlugNPlay()) osMs += 50;
 		if(wearingHeadphones()) osMs += 20;
