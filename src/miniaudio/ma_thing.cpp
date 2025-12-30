@@ -687,7 +687,7 @@ public:
         printf("[AudioSystem] Waiting for callbacks to finish...\n");
         auto start = std::chrono::steady_clock::now();
         while (callback_active.load() && 
-               std::chrono::steady_clock::now() - start < std::chrono::milliseconds(500)) {
+               std::chrono::steady_clock::now() - start < std::chrono::milliseconds(10)) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         
@@ -1082,7 +1082,7 @@ public:
 			if (refillThread.get_id() != std::this_thread::get_id()) {
 				auto start = std::chrono::steady_clock::now();
 				while (refillThread.joinable() &&
-					std::chrono::steady_clock::now() - start < std::chrono::milliseconds(500)) {
+					std::chrono::steady_clock::now() - start < std::chrono::milliseconds(10)) {
 					refillCV.notify_all();  // Keep notifying
 					std::this_thread::sleep_for(std::chrono::milliseconds(10));
 				}
@@ -1245,7 +1245,6 @@ public:
 		system->mixerState = system->any_active() ? 1 : 3;
 		system->audioMutex.unlock();
 
-		system->audioMutex.unlock();
         system->callback_active = false;
         (void)pInput;
     }

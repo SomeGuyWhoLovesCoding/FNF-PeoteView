@@ -36,7 +36,6 @@ extern "C" {
 
 #include <stdio.h>
 #include <stdint.h>
-#include <iostream>
 #include <vector>
 #include <string>
 #include <algorithm>
@@ -558,7 +557,6 @@ public:
 	AudioSystem() = default;
 
 	~AudioSystem() {
-		std::cout << "Fuck you bitch it can't shut down on hashlink" << std::endl;
 		destroy();
 	}
 
@@ -674,43 +672,42 @@ public:
 	}
 
     void destroy() {
-        //printf("....");
-        if (!exists) return;
-        
-        printf("[AudioSystem] Starting shutdown...\n");
-        
-        // 1. Set flags to prevent new work
-        shutting_down = true;
-        exists = false;
-        
-        // 2. Stop device first - this should stop callbacks
-        printf("[AudioSystem] Stopping device...\n");
-        device.stop();
-        
-        // 3. Stop refill thread (forceful but safe)
-        printf("[AudioSystem] Stopping refill thread...\n");
-        stopRefillThread();
-        
-        // 4. Wait for any in-progress callback to finish
-        printf("[AudioSystem] Waiting for callbacks to finish...\n");
-        auto start = std::chrono::steady_clock::now();
-        while (callback_active.load() && 
-               std::chrono::steady_clock::now() - start < std::chrono::milliseconds(500)) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-        
-        // 5. Force uninit device even if callback might be running
-        printf("[AudioSystem] Uninitializing device...\n");
-        device.uninit();
-        
-        // 6. Clear all data structures (they're RAII, so should clean up)
-        printf("[AudioSystem] Clearing streams...\n");
-        streams.clear();
-        decoderVolumes.clear();
-        filePaths.clear();
-        
-        printf("[AudioSystem] Shutdown complete.\n");
-    }
+		if (!exists) return;
+		
+		printf("[AudioSystem] Starting shutdown...\n");
+		
+		// 1. Set shutdown flag
+		shutting_down = true;
+		exists = false;
+		
+		// 2. Stop refill thread FIRST (before device)
+		printf("[AudioSystem] Stopping refill thread...\n");
+		stopRefillThread();
+		
+		// 3. Stop device
+		printf("[AudioSystem] Stopping device...\n");
+		device.stop();
+		
+		// 4. Wait briefly for any lingering callback
+		printf("[AudioSystem] Waiting for callbacks to finish...\n");
+		auto start = std::chrono::steady_clock::now();
+		while (callback_active.load() && 
+			std::chrono::steady_clock::now() - start < std::chrono::milliseconds(100)) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
+		
+		// 5. Uninit device
+		printf("[AudioSystem] Uninitializing device...\n");
+		device.uninit();
+		
+		// 6. Clear data structures
+		printf("[AudioSystem] Clearing streams...\n");
+		streams.clear();
+		decoderVolumes.clear();
+		filePaths.clear();
+		
+		printf("[AudioSystem] Shutdown complete.\n");
+	}
 
 	void start() {
 		if(!exists) return;
@@ -721,11 +718,15 @@ public:
 
 	void stop() {
 		if(!exists) return;
-		device.stop();
-		mixerState = 2;
+		
+		// 1. Stop refill thread FIRST (before stopping device)
 		stopRefillThread();
+		
+		// 2. Then stop the device
+		device.stop();
+		
+		mixerState = 2;
 	}
-
 	bool stopped() const {
 		return /*mixerState == 2 || */mixerState == 3;
 	}
@@ -1090,7 +1091,7 @@ public:
 			if (refillThread.get_id() != std::this_thread::get_id()) {
 				auto start = std::chrono::steady_clock::now();
 				while (refillThread.joinable() &&
-					std::chrono::steady_clock::now() - start < std::chrono::milliseconds(500)) {
+					std::chrono::steady_clock::now() - start < std::chrono::milliseconds(10)) {
 					refillCV.notify_all();  // Keep notifying
 					std::this_thread::sleep_for(std::chrono::milliseconds(10));
 				}
@@ -1251,8 +1252,6 @@ public:
 		}
 
 		system->mixerState = system->any_active() ? 1 : 3;
-		system->audioMutex.unlock();
-
 		system->audioMutex.unlock();
         system->callback_active = false;
         (void)pInput;
