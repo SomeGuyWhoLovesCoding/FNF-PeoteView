@@ -154,9 +154,13 @@ class PauseScreen {
 	}
 
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
-		if (button == LEFT) doIt();
-		else back(true, 0);
-		//Main.current.playScrollSound();
+		switch (button) {
+			case LEFT:
+				doIt();
+			case RIGHT:
+				back(true, 0);
+			default:
+		}
 	}
 
 	function moveOption_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
