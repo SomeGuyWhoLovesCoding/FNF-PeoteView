@@ -5,6 +5,7 @@ import haxe.Json;
 import sys.FileSystem;
 import sys.io.FileOutput;
 import sys.io.FileInput;
+using StringTools;
 
 #if !debug
 @:noDebug
@@ -180,10 +181,26 @@ class ChartConverter
 
 	// Write header file
 	private static function writeHeaderString(path:String, song:Dynamic, stage:String, gfVersion:String, mania:Int) {
-		var instPath:String = '$path/Inst.flac';
+		var instPath:String = '$path/Inst.ogg';
 		if (!FileSystem.exists(instPath)) throw 'No inst path! $instPath not found.';
-		var voicesPath:String = '$path/Voices.flac';
-		if (!FileSystem.exists(voicesPath)) voicesPath = '';
+		//var voicesPaths:Array<String> = ['$path/Voices-Opponent.ogg','$path/Voices-Player.ogg'];
+		var searchingForMultiVoicePaths = true;
+		var voicesPaths:Array<String> = [];
+		var read = FileSystem.readDirectory(path);
+		var voicesPath_header:StringBuf = new StringBuf();
+		if (read.length > 1) {
+			for (voicePath in read) {
+				//Sys.println(voicePath);
+				var fullVoicePath = '$path/$voicePath';
+				if (voicePath.contains("Voices-") && FileSystem.exists(fullVoicePath)) {
+					//Sys.println(voicePath);
+					voicesPath_header.add(', $fullVoicePath');
+				}
+			}
+		} else {
+			if (!FileSystem.exists(read[0]))
+				voicesPaths.push('');
+		}
 
 		header.writeString('Title: ${song.song}
 Artist: N/A
@@ -193,7 +210,7 @@ BPM: ${song.bpm}
 Time Signature: 4/4
 Stage: $stage
 Instrumental: $instPath
-Voices: $voicesPath
+Voices: ${voicesPath_header.toString()}
 Mania: $mania
 Difficulty: #8
 Game Over:
