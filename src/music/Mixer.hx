@@ -177,19 +177,20 @@ class Mixer {
 
 				// Determine correction strength based on drift magnitude
 				var multiply:Float = 0.05;
-				if (ogLatencyForImmediateChange != __cachedLatency) {
+				var delayIsDifferent = ogLatencyForImmediateChange != __cachedLatency;
+				if (delayIsDifferent) {
 					multiply = 1.0; // immediately change if latency has changed
-					ogSongPos -= (ogLatencyForImmediateChange - __cachedLatency); // please do this or your song position will take forever to return back to where it was before
+					playfield.songPosition = rawPlaybackPosition;
 				} else {
 					if (absDiff > smallest) multiply = 0.1 * smoothedTimeMult;
 					if (absDiff > small) multiply = 0.325 * smoothedTimeMult;
 					if (absDiff > big) multiply = 0.975 * smoothedTimeMult;
 					if (absDiff > biggest) multiply = 1.0;
-				}
 
-				var subtract = diff * multiply;
-				ogSongPos -= Math.min(subtract, biggest); // Math.min here to prevent supernova from gc
-				playfield.songPosition = ogSongPos;
+					var subtract = diff * multiply;
+					ogSongPos -= Math.min(subtract, biggest); // Math.min here to prevent supernova from gc
+					playfield.songPosition = ogSongPos;
+				}
 			}
 
 			if (ogLatencyForImmediateChange != __cachedLatency) {
