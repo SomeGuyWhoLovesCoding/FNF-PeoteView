@@ -1,0 +1,24 @@
+Title: Bopeebo
+Artist: N/A
+Genre: N/A
+Speed: 0.585
+BPM: 100
+Time Signature: 4/4
+Stage: stage
+Instrumental: assets/songs/bopeebo/Inst.ogg
+Voices: , assets/songs/bopeebo/Voices-Opponent.ogg, assets/songs/bopeebo/Voices-Player.ogg
+Mania: 4
+Difficulty: #8
+Game Over:
+Theme: vanilla
+BPM: 100
+Characters:
+dad, enemy
+pos -700 300
+cam 0 45
+gf, other
+pos -100 300
+cam 0 45
+bf, player
+pos 200 300
+cam 0 45
