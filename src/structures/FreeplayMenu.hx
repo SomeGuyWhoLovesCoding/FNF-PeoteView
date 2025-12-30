@@ -117,11 +117,13 @@ class FreeplayMenu {
 	}
 
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
-		if (button == LEFT) {
-			enter(true, 0);
-			return;
+		switch (button) {
+			case LEFT:
+				enter(true, 0);
+			case RIGHT:
+				close();
+			default:
 		}
-		close();
 	}
 
 	function moveMouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {

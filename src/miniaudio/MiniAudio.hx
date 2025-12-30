@@ -89,8 +89,8 @@ class MiniAudio {
 
 	@:hlNative("ma_thing", "setPlaybackRate") public static function setPlaybackRate(playbackRate:hl.F32):Void {}
 	@:hlNative("ma_thing", "seek_to_pcm_frame") public static function seekToPCMFrame(pos:hl.I64):Void {}
-	@:hlNative("ma_thing", "deactivate_decoder_hl") public static function deactivate_decoder(index:Int):Void {}
-	@:hlNative("ma_thing", "amplify_decoder_hl") public static function amplify_decoder(index:Int, volume:Float):Void {}
+	@:hlNative("ma_thing", "deactivate_decoder") public static function deactivate_decoder(index:Int):Void {}
+	@:hlNative("ma_thing", "amplify_decoder") public static function amplify_decoder(index:Int, volume:Float):Void {}
 	@:hlNative("ma_thing", "detectLatency") public static function detectLatency():Int {
 		return 0;
 	}
@@ -111,10 +111,6 @@ class MiniAudio {
 
 	// AND NOW THE BACKGROUND AND SOUND STUFF
 
-	/*inline public static function loadBackgroundTrack(path:String):Int {
-		var pathStr:hl.Bytes = @:privateAccess path.toUtf8();
-		return _loadBackgroundTrack(pathStr);
-	}*/
 	@:hlNative("ma_thing", "loadBackgroundTrack") public static function loadBackgroundTrack(path:String):Int {
 		return 0;
 	}
@@ -127,10 +123,6 @@ class MiniAudio {
 		return false;
 	}
 
-	/*inline public static function loadSoundEffect(path:String):Int {
-		var pathStr:hl.Bytes = @:privateAccess path.toUtf8();
-		return _loadSoundEffect(pathStr);
-	}*/
 	@:hlNative("ma_thing", "loadSoundEffect") public static function loadSoundEffect(path:String):Int {
 		return 0;
 	}

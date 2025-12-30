@@ -149,7 +149,7 @@ bool checkIfPnPDevice() {
 					"desktop","monitor","display"};
 				bool foundInternal=false; for(const char* k:internalKws) if(s.find(k)!=std::string::npos){
 					foundInternal=true;break;
-				} 
+				}
 				if(!foundInternal) for(const char* k:kws) if(s.find(k)!=std::string::npos){
 					isPnP=true; break;
 				}
@@ -209,42 +209,42 @@ struct RefillRequest {
 // Double-buffered decoder stream with RAII
 struct DecoderStream {
 	float* pcmBufferA = nullptr;     // First buffer
-	float* pcmBufferB = nullptr;     // Second buffer  
+	float* pcmBufferB = nullptr;     // Second buffer
 	float* activeBuffer = nullptr;   // Currently playing buffer
-	
+
 	ma_uint64 filePosition = 0;      // Current position in the source file (in frames)
 	ma_uint64 bufferStartPos = 0;    // File position that maps to start of active buffer
 	ma_uint64 localReadPos = 0;      // Read position within active buffer (0 to TOTAL_BUFFER_FRAMES)
 	ma_uint64 validFrames = 0;       // How many frames in active buffer are valid
-	
+
 	bool active = false;
-	
+
 	ma_decoder decoder;
 	ma_uint64 decoderLength = 0;
-	
+
 	// Async loading
 	std::atomic<bool> asyncLoading{false};
 	std::atomic<bool> asyncReady{false};
 	float* asyncBuffer = nullptr;
 	ma_uint64 asyncStartPos = 0;
 	ma_uint64 asyncValidFrames = 0;
-	
+
 	// Constructor
 	DecoderStream() {
 		// Initialize decoder to a known state
 		memset(&decoder, 0, sizeof(ma_decoder));
 	}
-	
+
 	// Destructor - RAII cleanup
 	~DecoderStream() {
 		cleanup();
 	}
-	
+
 	// Move constructor
 	DecoderStream(DecoderStream&& other) noexcept {
 		moveFrom(std::move(other));
 	}
-	
+
 	// Move assignment
 	DecoderStream& operator=(DecoderStream&& other) noexcept {
 		if (this != &other) {
@@ -253,18 +253,18 @@ struct DecoderStream {
 		}
 		return *this;
 	}
-	
+
 	// Delete copy operations
 	DecoderStream(const DecoderStream&) = delete;
 	DecoderStream& operator=(const DecoderStream&) = delete;
-	
+
 private:
 	void cleanup() {
 		// Uninitialize decoder if it was initialized
 		if (decoder.onRead != nullptr || decoder.onSeek != nullptr) {
 			ma_decoder_uninit(&decoder);
 		}
-		
+
 		// Free buffers
 		if (pcmBufferA) {
 			free(pcmBufferA);
@@ -274,7 +274,7 @@ private:
 			free(pcmBufferB);
 			pcmBufferB = nullptr;
 		}
-		
+
 		// Reset state
 		activeBuffer = nullptr;
 		asyncBuffer = nullptr;
@@ -289,17 +289,17 @@ private:
 		asyncLoading = false;
 		asyncReady = false;
 	}
-	
+
 	void moveFrom(DecoderStream&& other) noexcept {
 		// Move resources
 		pcmBufferA = other.pcmBufferA;
 		pcmBufferB = other.pcmBufferB;
 		activeBuffer = other.activeBuffer;
 		asyncBuffer = other.asyncBuffer;
-		
+
 		// Move decoder
 		memcpy(&decoder, &other.decoder, sizeof(ma_decoder));
-		
+
 		// Move scalar values
 		filePosition = other.filePosition;
 		bufferStartPos = other.bufferStartPos;
@@ -309,11 +309,11 @@ private:
 		decoderLength = other.decoderLength;
 		asyncStartPos = other.asyncStartPos;
 		asyncValidFrames = other.asyncValidFrames;
-		
+
 		// Move atomic values
 		asyncLoading.store(other.asyncLoading.load());
 		asyncReady.store(other.asyncReady.load());
-		
+
 		// Clear source to prevent double-free
 		other.pcmBufferA = nullptr;
 		other.pcmBufferB = nullptr;
@@ -337,19 +337,19 @@ private:
 class SignalsmithStretchWrapper {
 public:
 	signalsmith::stretch::SignalsmithStretch* ptr = nullptr;
-	
+
 	SignalsmithStretchWrapper() = default;
-	
+
 	~SignalsmithStretchWrapper() {
 		cleanup();
 	}
-	
+
 	// Move operations
 	SignalsmithStretchWrapper(SignalsmithStretchWrapper&& other) noexcept {
 		ptr = other.ptr;
 		other.ptr = nullptr;
 	}
-	
+
 	SignalsmithStretchWrapper& operator=(SignalsmithStretchWrapper&& other) noexcept {
 		if (this != &other) {
 			cleanup();
@@ -358,24 +358,24 @@ public:
 		}
 		return *this;
 	}
-	
+
 	// Delete copy operations
 	SignalsmithStretchWrapper(const SignalsmithStretchWrapper&) = delete;
 	SignalsmithStretchWrapper& operator=(const SignalsmithStretchWrapper&) = delete;
-	
+
 	// Operator overloads for convenience
 	signalsmith::stretch::SignalsmithStretch* operator->() { return ptr; }
 	const signalsmith::stretch::SignalsmithStretch* operator->() const { return ptr; }
 	signalsmith::stretch::SignalsmithStretch& operator*() { return *ptr; }
 	const signalsmith::stretch::SignalsmithStretch& operator*() const { return *ptr; }
 	operator bool() const { return ptr != nullptr; }
-	
+
 	void create() {
 		if (!ptr) {
 			ptr = new signalsmith::stretch::SignalsmithStretch();
 		}
 	}
-	
+
 private:
 	void cleanup() {
 		if (ptr) {
@@ -390,15 +390,15 @@ class AudioDevice {
 public:
 	ma_device device;
 	bool initialized = false;
-	
+
 	AudioDevice() {
 		memset(&device, 0, sizeof(ma_device));
 	}
-	
+
 	~AudioDevice() {
 		cleanup();
 	}
-	
+
 	// Move operations
 	AudioDevice(AudioDevice&& other) noexcept {
 		memcpy(&device, &other.device, sizeof(ma_device));
@@ -406,7 +406,7 @@ public:
 		memset(&other.device, 0, sizeof(ma_device));
 		other.initialized = false;
 	}
-	
+
 	AudioDevice& operator=(AudioDevice&& other) noexcept {
 		if (this != &other) {
 			cleanup();
@@ -417,18 +417,18 @@ public:
 		}
 		return *this;
 	}
-	
+
 	// Delete copy operations
 	AudioDevice(const AudioDevice&) = delete;
 	AudioDevice& operator=(const AudioDevice&) = delete;
-	
+
 	bool init(const ma_device_config* pConfig) {
 		cleanup();
 		ma_result result = ma_device_init(nullptr, pConfig, &device);
 		initialized = (result == MA_SUCCESS);
 		return initialized;
 	}
-	
+
 	void uninit() {
 		if (initialized) {
 			ma_device_uninit(&device);
@@ -436,19 +436,19 @@ public:
 			initialized = false;
 		}
 	}
-	
+
 	ma_result start() {
 		return ma_device_start(&device);
 	}
-	
+
 	void stop() {
 		if (initialized) {
 			ma_device_stop(&device);
 		}
 	}
-	
+
 	operator bool() const { return initialized; }
-	
+
 private:
 	void cleanup() {
 		uninit();
@@ -460,15 +460,15 @@ class AudioMutex {
 public:
 	ma_mutex mutex;
 	bool initialized = false;
-	
+
 	AudioMutex() {
 		memset(&mutex, 0, sizeof(ma_mutex));
 	}
-	
+
 	~AudioMutex() {
 		cleanup();
 	}
-	
+
 	// Move operations
 	AudioMutex(AudioMutex&& other) noexcept {
 		memcpy(&mutex, &other.mutex, sizeof(ma_mutex));
@@ -476,7 +476,7 @@ public:
 		memset(&other.mutex, 0, sizeof(ma_mutex));
 		other.initialized = false;
 	}
-	
+
 	AudioMutex& operator=(AudioMutex&& other) noexcept {
 		if (this != &other) {
 			cleanup();
@@ -487,11 +487,11 @@ public:
 		}
 		return *this;
 	}
-	
+
 	// Delete copy operations
 	AudioMutex(const AudioMutex&) = delete;
 	AudioMutex& operator=(const AudioMutex&) = delete;
-	
+
 	bool init() {
 		if (!initialized) {
 			ma_result result = ma_mutex_init(&mutex);
@@ -499,17 +499,17 @@ public:
 		}
 		return initialized;
 	}
-	
+
 	void lock() {
 		if (initialized) ma_mutex_lock(&mutex);
 	}
-	
+
 	void unlock() {
 		if (initialized) ma_mutex_unlock(&mutex);
 	}
-	
+
 	operator bool() const { return initialized; }
-	
+
 private:
 	void cleanup() {
 		if (initialized) {
@@ -526,11 +526,11 @@ public:
 	std::vector<DecoderStream> streams;
 	std::vector<float> decoderVolumes;
 	std::vector<std::string> filePaths;
-	
+
 	AudioDevice device;
 	AudioMutex audioMutex;
 	SignalsmithStretchWrapper stretch;
-	
+
 	// Refill thread management
 	std::thread refillThread;
 	std::atomic<bool> refillThreadRunning{false};
@@ -538,25 +538,25 @@ public:
 	std::condition_variable refillCV;
 	std::queue<RefillRequest> refillQueue;
 	std::atomic<int> activeRefillJobs{0};
-	
+
 	// State variables
 	int longestDecoderIndex = 0;
 	float playbackRate = 1.0f;
 	double masterVolume = 1.0;
 	int mixerState = 3;
 	bool exists = false;
-	
+
 	AudioSystem() = default;
-	
+
 	~AudioSystem() {
 		destroy();
 	}
-	
+
 	// Move operations
 	AudioSystem(AudioSystem&& other) noexcept {
 		moveFrom(std::move(other));
 	}
-	
+
 	AudioSystem& operator=(AudioSystem&& other) noexcept {
 		if (this != &other) {
 			destroy();
@@ -564,43 +564,43 @@ public:
 		}
 		return *this;
 	}
-	
+
 	// Delete copy operations
 	AudioSystem(const AudioSystem&) = delete;
 	AudioSystem& operator=(const AudioSystem&) = delete;
-	
+
 	// Public interface methods
 	void loadFiles(std::vector<const char*> argv) {
 		if(argv.empty()){
 			printf("No input files.\n");
 			return;
 		}
-		
+
 		// Clean up existing resources
 		destroy();
 
 		// Add this at the very beginning
 		//addOggAndOpusSupport();
-		
+
 		// Store file paths
 		filePaths.clear();
 		for (size_t i = 0; i < argv.size(); i++) {
 			filePaths.push_back(argv[i]);
 		}
-		
+
 		// Initialize streams
 		streams.resize(argv.size());
 		decoderVolumes.resize(argv.size(), 1.0f);
-		
+
 		ma_uint64 absoluteLengthOfSong = 0;
 		ma_decoder_config decoderConfig = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
 		//decoderConfig.ppCustomBackendVTables = pCustomBackendVTables;
 		//decoderConfig.customBackendCount     = sizeof(pCustomBackendVTables) / sizeof(pCustomBackendVTables[0]);
-		
+
 		for(size_t i = 0; i < argv.size(); i++) {
 			const char* path = argv[i];
 			DecoderStream& s = streams[i];
-			
+
 			// Initialize decoder
 			ma_result result = ma_decoder_init_file(path, &decoderConfig, &s.decoder);
 			if(result != MA_SUCCESS){
@@ -615,29 +615,29 @@ public:
 				exists = false;
 				return;
 			}
-			
+
 			ma_data_source_set_looping(&s.decoder, MA_FALSE);
 			ma_decoder_get_length_in_pcm_frames(&s.decoder, &s.decoderLength);
-			
+
 			// Allocate double buffers
 			s.pcmBufferA = (float*)malloc(sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
 			s.pcmBufferB = (float*)malloc(sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
 			memset(s.pcmBufferA, 0, sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
 			memset(s.pcmBufferB, 0, sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
-			
+
 			// Initialize atomic flags
 			s.asyncLoading = false;
 			s.asyncReady = false;
-			
+
 			// Fill initial buffer (starts at 0)
 			fillInitialBuffer(i, 0);
-			
+
 			if(s.decoderLength > absoluteLengthOfSong){
 				absoluteLengthOfSong = s.decoderLength;
 				longestDecoderIndex = (int)i;
 			}
 		}
-		
+
 		// Initialize audio device
 		ma_device_config deviceConfig = ma_device_config_init(ma_device_type_playback);
 		deviceConfig.playback.format = SAMPLE_FORMAT;
@@ -647,7 +647,7 @@ public:
 		deviceConfig.pUserData = this;
 		deviceConfig.periodSizeInFrames = 256;
 		deviceConfig.periods = 2;
-		
+
 		if(!device.init(&deviceConfig)){
 			streams.clear();
 			decoderVolumes.clear();
@@ -655,140 +655,140 @@ public:
 			printf("Failed to open playback device.\n");
 			return;
 		}
-		
+
 		// Initialize mutex
 		audioMutex.init();
-		
+
 		exists = true;
 		mixerState = 3;
 	}
-	
+
 	void destroy() {
 		if(!exists) return;
 		exists = false;
-		
+
 		// Stop audio device first
 		device.stop();
-		
+
 		// Stop refill thread
 		stopRefillThread();
-		
+
 		// Uninitialize device
 		device.uninit();
 
 		//cleanupOggOpusSupport();
-		
+
 		// Clean up decoders and buffers (handled by RAII destructors)
 		streams.clear();
 		decoderVolumes.clear();
 		filePaths.clear();
-		
+
 		// Reset state
 		longestDecoderIndex = 0;
 		playbackRate = 1.0f;
 		masterVolume = 1.0;
 		mixerState = 3;
 	}
-	
+
 	void start() {
 		if(!exists) return;
 		if(mixerState == 3) seekToPCMFrame(0);
 		device.start();
 		startRefillThread();
 	}
-	
+
 	void stop() {
 		if(!exists) return;
 		device.stop();
 		mixerState = 2;
 		stopRefillThread();
 	}
-	
+
 	bool stopped() const {
 		return /*mixerState == 2 || */mixerState == 3;
 	}
-	
+
 	void seekToPCMFrame(int64_t pos) {
 		if(!exists) return;
-		
+
 		audioMutex.lock();
-		
+
 		// Clear refill queue
 		{
 			std::lock_guard<std::mutex> lock(refillMutex);
 			while (!refillQueue.empty()) refillQueue.pop();
 		}
-		
+
 		for(size_t i = 0; i < streams.size(); i++) {
 			DecoderStream& s = streams[i];
 			ma_uint64 target = 0;
 			if(pos <= 0) target = 0;
 			else if((ma_uint64)pos >= s.decoderLength) target = s.decoderLength;
 			else target = (ma_uint64)pos;
-			
+
 			s.asyncLoading = false;
 			s.asyncReady = false;
-			
+
 			fillInitialBuffer(i, target);
 		}
-		
+
 		audioMutex.unlock();
 		mixerState = (pos < (int64_t)streams[longestDecoderIndex].decoderLength) ? 2 : 3;
 	}
-	
+
 	// Helper methods
 	void deactivate_decoder(int index) {
 		if(index >= 0 && index < (int)streams.size()) {
 			streams[index].active = false;
 		}
 	}
-	
+
 	void amplify_decoder(int index, double volume) {
 		if(index >= 0 && index < (int)decoderVolumes.size()) {
 			decoderVolumes[index] = (float)volume;
 		}
 	}
-	
+
 	void setPlaybackRate(float value) {
 		playbackRate = value;
 	}
-	
+
 	double getGlobalVolume() const {
 		return masterVolume;
 	}
-	
+
 	double setGlobalVolume(double value) {
 		masterVolume = value;
 		return masterVolume;
 	}
-	
+
 	int getMixerState() const {
 		return mixerState;
 	}
-	
+
 	double getPlaybackPosition() const {
 		if(!audioMutex.initialized) return 0.0;
-		
+
 		// Create a local non-const reference for mutex operations
 		AudioMutex& mutexRef = const_cast<AudioMutex&>(audioMutex);
 		mutexRef.lock();
-		
+
 		ma_uint64 pos = 0;
 		if(!streams.empty() && streams[longestDecoderIndex].active) {
 			pos = streams[longestDecoderIndex].filePosition;
 		} else if(!streams.empty()) {
 			pos = streams[longestDecoderIndex].decoderLength;
 		}
-		
+
 		mutexRef.unlock();
 		return ((double)pos / (SAMPLE_RATE * 0.001));
 	}
-	
-	double getDuration() const { 
+
+	double getDuration() const {
 		if(streams.empty()) return 0.0;
-		return (double)streams[longestDecoderIndex].decoderLength / (SAMPLE_RATE * 0.001); 
+		return (double)streams[longestDecoderIndex].decoderLength / (SAMPLE_RATE * 0.001);
 	}
-	
+
 	// Fill buffer with data starting at decodeStart
 	void fillBuffer(DecoderStream* s, float* buffer, ma_uint64 decodeStart, ma_uint64* framesRead) {
 		// Don't decode past end of file
@@ -796,34 +796,34 @@ public:
 		if(decodeStart + TOTAL_BUFFER_FRAMES > s->decoderLength) {
 			maxDecodeFrames = s->decoderLength - decodeStart;
 		}
-		
+
 		// Clear buffer
 		memset(buffer, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
-		
+
 		// Seek and decode
 		ma_decoder_seek_to_pcm_frame(&s->decoder, decodeStart);
-		
+
 		if(maxDecodeFrames > 0) {
 			ma_decoder_read_pcm_frames(&s->decoder, buffer, maxDecodeFrames, framesRead);
 		} else {
 			*framesRead = 0;
 		}
 	}
-	
+
 	// Initial buffer fill - starts at position 0
 	void fillInitialBuffer(size_t index, ma_uint64 startFrame) {
 		DecoderStream* s = &streams[index];
-		
+
 		// Calculate where to start decoding (centered around startFrame)
 		ma_uint64 decodeStart = 0;
 		if(startFrame > PADDING_FRAMES) {
 			decodeStart = startFrame - PADDING_FRAMES;
 		}
-		
+
 		// Fill buffer A (active buffer)
 		ma_uint64 framesRead = 0;
 		fillBuffer(s, s->pcmBufferA, decodeStart, &framesRead);
-		
+
 		// Setup active buffer
 		s->activeBuffer = s->pcmBufferA;
 		s->bufferStartPos = decodeStart;
@@ -831,22 +831,22 @@ public:
 		s->asyncLoading = false;
 		s->asyncReady = false;
 		s->asyncBuffer = s->pcmBufferB;
-		
+
 		// Calculate where startFrame is in this buffer
 		if(startFrame >= decodeStart) {
 			s->localReadPos = startFrame - decodeStart;
 		} else {
 			s->localReadPos = 0;
 		}
-		
+
 		// Safety check
 		if(s->localReadPos >= TOTAL_BUFFER_FRAMES) {
 			s->localReadPos = TOTAL_BUFFER_FRAMES - 1;
 		}
-		
+
 		s->filePosition = startFrame;
 		s->active = (startFrame < s->decoderLength && framesRead > 0);
-		
+
 		// Start loading next buffer asynchronously - centered around where we'll be in 1 second
 		if (s->active) {
 			ma_uint64 futurePosition = startFrame + HALF_BUFFER_FRAMES; // Where we'll be in 1 second
@@ -854,17 +854,17 @@ public:
 			if (futurePosition > PADDING_FRAMES) {
 				nextBufferStart = futurePosition - PADDING_FRAMES;
 			}
-			
+
 			// Don't load past end of file
 			if (nextBufferStart < s->decoderLength) {
 				s->asyncLoading = true;
-				
+
 				// Queue for async loading
 				RefillRequest request;
 				request.decoderIndex = (int)index;
 				request.targetPosition = nextBufferStart;
 				request.bufferToFill = s->asyncBuffer;
-				
+
 				{
 					std::lock_guard<std::mutex> lock(refillMutex);
 					refillQueue.push(request);
@@ -873,14 +873,14 @@ public:
 			}
 		}
 	}
-	
+
 	// Check if we should switch to async buffer
 	bool shouldSwitchBuffer(const DecoderStream* s) {
 		// Switch when we're 1.5 seconds into the 2-second audio portion
 		ma_uint64 audioProgress = s->localReadPos;
 		return audioProgress >= (PADDING_FRAMES + (BUFFER_FRAMES * 3 / 4));
 	}
-	
+
 	// Switch to async buffer if ready
 	bool trySwitchBuffer(DecoderStream* s, size_t index) {
 		if (s->asyncReady && s->asyncValidFrames > 0) {
@@ -890,7 +890,7 @@ public:
 			if (currentPos > PADDING_FRAMES) {
 				expectedBufferStart = currentPos - PADDING_FRAMES;
 			}
-			
+
 			// Check if async buffer is centered close to where we need it
 			// Allow some tolerance (up to 0.5 seconds off)
 			ma_int64 positionDiff = (ma_int64)s->asyncStartPos - (ma_int64)expectedBufferStart;
@@ -900,23 +900,23 @@ public:
 				s->asyncValidFrames = 0;
 				return false;
 			}
-			
+
 			// Swap buffers
 			float* temp = s->activeBuffer;
 			s->activeBuffer = s->asyncBuffer;
 			s->asyncBuffer = temp;
-			
+
 			// Update positions
 			s->bufferStartPos = s->asyncStartPos;
 			s->validFrames = s->asyncValidFrames;
-			
+
 			// Recalculate local read position based on current file position
 			if (s->filePosition >= s->asyncStartPos) {
 				s->localReadPos = s->filePosition - s->asyncStartPos;
 			} else {
 				s->localReadPos = 0;
 			}
-			
+
 			// Safety checks
 			if(s->localReadPos >= TOTAL_BUFFER_FRAMES) {
 				s->localReadPos = TOTAL_BUFFER_FRAMES - 1;
@@ -924,11 +924,11 @@ public:
 			if(s->localReadPos > s->validFrames) {
 				s->localReadPos = s->validFrames;
 			}
-			
+
 			// Reset async state
 			s->asyncReady = false;
 			s->asyncValidFrames = 0;
-			
+
 			// Start loading next buffer if we have more data
 			// Next buffer should be centered around where we'll be in 1 second
 			ma_uint64 futurePosition = s->filePosition + HALF_BUFFER_FRAMES;
@@ -936,235 +936,231 @@ public:
 			if (futurePosition > PADDING_FRAMES) {
 				nextBufferStart = futurePosition - PADDING_FRAMES;
 			}
-			
+
 			if (nextBufferStart < s->decoderLength) {
 				s->asyncLoading = true;
-				
+
 				RefillRequest request;
 				request.decoderIndex = (int)index;
 				request.targetPosition = nextBufferStart;
 				request.bufferToFill = s->asyncBuffer;
-				
+
 				{
 					std::lock_guard<std::mutex> lock(refillMutex);
 					refillQueue.push(request);
 					refillCV.notify_one();
 				}
 			}
-			
+
 			return true;
 		}
 		return false;
 	}
-	
+
 	// Async refill worker - actually loads data
 	void refillWorkerThread() {
 		while (refillThreadRunning) {
 			RefillRequest request;
-			
+
 			{
 				std::unique_lock<std::mutex> lock(refillMutex);
 				// Use wait_for with timeout to check shutdown flag regularly
 				refillCV.wait_for(lock, std::chrono::milliseconds(10), [this]() {
 					return !refillQueue.empty() || !refillThreadRunning;
 				});
-				
+
 				if (!refillThreadRunning) break;
 				if (refillQueue.empty()) continue;
-				
+
 				request = refillQueue.front();
 				refillQueue.pop();
 				activeRefillJobs++;
 			}
-			
+
 			if (request.decoderIndex < 0 || request.decoderIndex >= (int)streams.size()) {
 				activeRefillJobs--;
 				continue;
 			}
-			
+
 			DecoderStream* stream = &streams[request.decoderIndex];
-			
+
 			// Don't load if we're past the end
 			if (request.targetPosition >= stream->decoderLength) {
 				stream->asyncLoading = false;
 				activeRefillJobs--;
 				continue;
 			}
-			
+
 			// Calculate how many frames we can load
 			ma_uint64 maxFrames = TOTAL_BUFFER_FRAMES;
 			if (request.targetPosition + TOTAL_BUFFER_FRAMES > stream->decoderLength) {
 				maxFrames = stream->decoderLength - request.targetPosition;
 			}
-			
+
 			if (maxFrames == 0) {
 				stream->asyncLoading = false;
 				activeRefillJobs--;
 				continue;
 			}
-			
+
 			// Clear the buffer we're going to fill
 			memset(request.bufferToFill, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
-			
+
 			// Create a temporary decoder for this load
 			ma_decoder tempDecoder;
 			ma_decoder_config decoderConfig = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
 			//decoderConfig.ppCustomBackendVTables = pCustomBackendVTables;
 			//decoderConfig.customBackendCount     = sizeof(pCustomBackendVTables) / sizeof(pCustomBackendVTables[0]);
-			
+
 			// Use the stored file path
 			const char* path = filePaths[request.decoderIndex].c_str();
-			
+
 			if (ma_decoder_init_file(path, &decoderConfig, &tempDecoder) == MA_SUCCESS) {
 				// Seek and decode
 				ma_decoder_seek_to_pcm_frame(&tempDecoder, request.targetPosition);
-				
+
 				ma_uint64 framesRead = 0;
 				ma_decoder_read_pcm_frames(&tempDecoder, request.bufferToFill, maxFrames, &framesRead);
-				
+
 				// Update stream state
 				stream->asyncStartPos = request.targetPosition;
 				stream->asyncValidFrames = framesRead;
 				stream->asyncReady = true;
 				stream->asyncLoading = false;
-				
+
 				ma_decoder_uninit(&tempDecoder);
 			} else {
 				stream->asyncLoading = false;
 			}
-			
+
 			activeRefillJobs--;
 		}
 	}
-	
+
 	void startRefillThread() {
 		if (refillThreadRunning) return;
 		refillThreadRunning = true;
 		refillThread = std::thread(&AudioSystem::refillWorkerThread, this);
-		
-#ifdef _WIN32
-		SetThreadPriority(refillThread.native_handle(), THREAD_PRIORITY_BELOW_NORMAL);
-#endif
 	}
-	
+
 	void stopRefillThread() {
 		if (!refillThreadRunning) return;
-		
+
 		// Signal thread to stop
 		refillThreadRunning = false;
-		
+
 		// Clear queue to prevent new jobs
 		{
 			std::lock_guard<std::mutex> lock(refillMutex);
 			while (!refillQueue.empty()) refillQueue.pop();
 		}
-		
+
 		// Notify thread to wake up and exit
 		refillCV.notify_all();
-		
+
 		// Give thread a moment to finish current job
 		if (refillThread.joinable()) {
 			// Wait for any active jobs to complete (max 100ms)
 			auto start = std::chrono::steady_clock::now();
-			while (activeRefillJobs > 0 && 
+			while (activeRefillJobs > 0 &&
 				   std::chrono::steady_clock::now() - start < std::chrono::milliseconds(100)) {
 				std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			}
-			
+
 			// Now join the thread
 			refillThread.join();
 		}
 	}
-	
+
 	// Read frames with async buffer switching
 	ma_uint32 readFromBufferAsync(size_t index, float* output, ma_uint32 frameCount) {
 		DecoderStream* s = &streams[index];
-		
+
 		if(!s->active) return 0;
-		
+
 		// Try to switch buffers if async buffer is ready
 		if (shouldSwitchBuffer(s)) {
 			trySwitchBuffer(s, index);
 		}
-		
+
 		ma_uint32 framesRead = 0;
-		
+
 		while(framesRead < frameCount && s->active) {
 			// Safety check
 			if(s->localReadPos >= s->validFrames) {
 				s->active = false;
 				break;
 			}
-			
+
 			// Calculate how much we can read
 			ma_uint64 available = s->validFrames - s->localReadPos;
 			if(available == 0) {
 				s->active = false;
 				break;
 			}
-			
+
 			// Don't read past end of file
 			ma_uint64 remainingInFile = s->decoderLength - s->filePosition;
 			if(remainingInFile < available) {
 				available = remainingInFile;
 			}
-			
+
 			// Read chunk
 			ma_uint32 toRead = (ma_uint32)available;
 			if(toRead > (frameCount - framesRead)) {
 				toRead = frameCount - framesRead;
 			}
-			
+
 			// Safety: don't read past buffer
 			if(s->localReadPos + toRead > s->validFrames) {
 				toRead = (ma_uint32)(s->validFrames - s->localReadPos);
 			}
-			
+
 			if(toRead == 0) {
 				s->active = false;
 				break;
 			}
-			
+
 			// Copy data
 			float* src = s->activeBuffer + (s->localReadPos * CHANNEL_COUNT);
 			float vol = decoderVolumes[index] * masterVolume;
-			
+
 			for(ma_uint32 i = 0; i < toRead * CHANNEL_COUNT; i++) {
 				output[framesRead * CHANNEL_COUNT + i] += src[i] * vol;
 			}
-			
+
 			// Update positions
 			s->localReadPos += toRead;
 			s->filePosition += toRead;
 			framesRead += toRead;
-			
+
 			// Check if we've reached end of file
 			if(s->filePosition >= s->decoderLength) {
 				s->active = false;
 				break;
 			}
 		}
-		
+
 		return framesRead;
 	}
-	
+
 	bool any_active() const {
 		for(const auto& stream : streams) {
 			if(stream.active) return true;
 		}
 		return false;
 	}
-	
+
 	// Data callback
 	static void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
 		AudioSystem* system = static_cast<AudioSystem*>(pDevice->pUserData);
 		if (!system) return;
-		
+
 		float* pOutputF32 = (float*)pOutput;
 		MA_ASSERT(pDevice->playback.format == SAMPLE_FORMAT);
-		
+
 		system->audioMutex.lock();
-		
+
 		if(!system->any_active()){
 			memset(pOutputF32, 0, sizeof(float)*frameCount*CHANNEL_COUNT);
 			system->mixerState = 3;
@@ -1185,13 +1181,13 @@ public:
 			float stretchedOutput[4096*CHANNEL_COUNT] = {0};
 			ma_uint32 maxFramesToRead = (ma_uint32)(frameCount * system->playbackRate);
 			if(maxFramesToRead > 4096) maxFramesToRead = 4096;
-			
+
 			for(size_t i = 0; i < system->streams.size(); i++){
 				if(!system->streams[i].active) continue;
 				ma_uint32 read = system->readFromBufferAsync(i, inputMix, maxFramesToRead);
 				if(read == 0) system->streams[i].active = false;
 			}
-			
+
 			if(system->any_active()){
 				if(!system->stretch){
 					system->stretch.create();
@@ -1203,12 +1199,12 @@ public:
 				memset(pOutputF32, 0, sizeof(float)*frameCount*CHANNEL_COUNT);
 			}
 		}
-		
+
 		system->mixerState = system->any_active() ? 1 : 3;
 		system->audioMutex.unlock();
 		(void)pInput;
 	}
-	
+
 private:
 	void moveFrom(AudioSystem&& other) noexcept {
 		// Move RAII resources
@@ -1218,21 +1214,21 @@ private:
 		device = std::move(other.device);
 		audioMutex = std::move(other.audioMutex);
 		stretch = std::move(other.stretch);
-		
+
 		// Move thread-related resources
 		refillThread = std::move(other.refillThread);
 		refillThreadRunning.store(other.refillThreadRunning.load());
 		// Note: mutex and condition_variable are not movable, so we keep our own
 		refillQueue = std::move(other.refillQueue);
 		activeRefillJobs.store(other.activeRefillJobs.load());
-		
+
 		// Move state
 		longestDecoderIndex = other.longestDecoderIndex;
 		playbackRate = other.playbackRate;
 		masterVolume = other.masterVolume;
 		mixerState = other.mixerState;
 		exists = other.exists;
-		
+
 		// Reset source
 		other.longestDecoderIndex = 0;
 		other.playbackRate = 1.0f;
@@ -1348,20 +1344,20 @@ struct BackgroundTrack {
 	std::atomic<bool> looping;
 	std::string filePath;
 	bool initialized;
-	
+
 	BackgroundTrack() : length(0), volume(1.0f), active(false), looping(true), initialized(false) {
 		memset(&decoder, 0, sizeof(ma_decoder));
 	}
-	
+
 	~BackgroundTrack() {
 		cleanup();
 	}
-	
+
 	// Move constructor
-	BackgroundTrack(BackgroundTrack&& other) noexcept 
-		: length(other.length), 
-		  volume(other.volume), 
-		  active(other.active.load()), 
+	BackgroundTrack(BackgroundTrack&& other) noexcept
+		: length(other.length),
+		  volume(other.volume),
+		  active(other.active.load()),
 		  looping(other.looping.load()),
 		  filePath(std::move(other.filePath)),
 		  initialized(other.initialized) {
@@ -1373,7 +1369,7 @@ struct BackgroundTrack {
 		other.active = false;
 		other.looping = true;
 	}
-	
+
 	// Move assignment
 	BackgroundTrack& operator=(BackgroundTrack&& other) noexcept {
 		if (this != &other) {
@@ -1385,7 +1381,7 @@ struct BackgroundTrack {
 			looping.store(other.looping.load());
 			filePath = std::move(other.filePath);
 			initialized = other.initialized;
-			
+
 			memset(&other.decoder, 0, sizeof(ma_decoder));
 			other.initialized = false;
 			other.length = 0;
@@ -1395,11 +1391,11 @@ struct BackgroundTrack {
 		}
 		return *this;
 	}
-	
+
 	// Delete copy operations
 	BackgroundTrack(const BackgroundTrack&) = delete;
 	BackgroundTrack& operator=(const BackgroundTrack&) = delete;
-	
+
 	void cleanup() {
 		if (initialized) {
 			ma_decoder_uninit(&decoder);
@@ -1412,10 +1408,10 @@ struct BackgroundTrack {
 		looping = true;
 		filePath.clear();
 	}
-	
+
 	bool load(const char* path) {
 		cleanup();
-		
+
 		ma_decoder_config config = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
 		//config.ppCustomBackendVTables = pCustomBackendVTables;
 		//config.customBackendCount     = sizeof(pCustomBackendVTables) / sizeof(pCustomBackendVTables[0]);
@@ -1424,62 +1420,62 @@ struct BackgroundTrack {
 			printf("Failed to load background track: %s\n", path);
 			return false;
 		}
-		
+
 		initialized = true;
 		filePath = path;
 		ma_decoder_get_length_in_pcm_frames(&decoder, &length);
 		active = false;
 		looping = true;
-		
+
 		return true;
 	}
-	
+
 	void play() {
 		if (initialized) {
 			active = true;
 		}
 	}
-	
+
 	void stop() {
 		active = false;
 		if (initialized) {
 			ma_decoder_seek_to_pcm_frame(&decoder, 0);
 		}
 	}
-	
+
 	void setVolume(float vol) {
 		volume = vol;
 	}
-	
+
 	void setLooping(bool loop) {
 		looping = loop;
 	}
-	
+
 	// Read frames with volume applied
 	ma_uint64 readFrames(float* output, ma_uint32 frameCount, float masterVolume) {
 		if (!initialized || !active) return 0;
-		
+
 		float tempBuffer[4096 * CHANNEL_COUNT];
 		ma_uint32 toRead = frameCount;
 		if (toRead > 4096) toRead = 4096;
-		
+
 		memset(tempBuffer, 0, sizeof(float) * toRead * CHANNEL_COUNT);
-		
+
 		ma_uint64 framesRead = 0;
 		ma_decoder_read_pcm_frames(&decoder, tempBuffer, toRead, &framesRead);
-		
+
 		// Mix into output with volume
 		float vol = volume * masterVolume;
 		for (ma_uint64 i = 0; i < framesRead * CHANNEL_COUNT; i++) {
 			output[i] += tempBuffer[i] * vol;
 		}
-		
+
 		// Check if we hit the end
 		if (framesRead < toRead) {
 			// If looping is enabled, seek back to start
 			if (looping) {
 				ma_decoder_seek_to_pcm_frame(&decoder, 0);
-				
+
 				// Try to read the remaining frames from the beginning
 				ma_uint64 remainingFrames = toRead - framesRead;
 				if (remainingFrames > 0) {
@@ -1487,12 +1483,12 @@ struct BackgroundTrack {
 					ma_uint64 framesRead2 = 0;
 					memset(tempBuffer2, 0, sizeof(float) * remainingFrames * CHANNEL_COUNT);
 					ma_decoder_read_pcm_frames(&decoder, tempBuffer2, remainingFrames, &framesRead2);
-					
+
 					// Mix the rest of the frames
 					for (ma_uint64 i = 0; i < framesRead2 * CHANNEL_COUNT; i++) {
 						output[framesRead * CHANNEL_COUNT + i] += tempBuffer2[i] * vol;
 					}
-					
+
 					framesRead += framesRead2;
 				}
 			} else {
@@ -1500,7 +1496,7 @@ struct BackgroundTrack {
 				active = false;
 			}
 		}
-		
+
 		return framesRead;
 	}
 };
@@ -1521,15 +1517,15 @@ struct SoundEffect {
 	float volume;
 	std::atomic<bool> playing;
 	std::string name;
-	
+
 	SoundEffect() : pcmData(nullptr), frameCount(0), playbackPosition(0), volume(1.0f), playing(false) {}
-	
+
 	~SoundEffect() {
 		cleanup();
 	}
-	
+
 	// Move constructor
-	SoundEffect(SoundEffect&& other) noexcept 
+	SoundEffect(SoundEffect&& other) noexcept
 		: pcmData(other.pcmData),
 		  frameCount(other.frameCount),
 		  playbackPosition(other.playbackPosition.load()),
@@ -1542,7 +1538,7 @@ struct SoundEffect {
 		other.volume = 1.0f;
 		other.playing = false;
 	}
-	
+
 	// Move assignment
 	SoundEffect& operator=(SoundEffect&& other) noexcept {
 		if (this != &other) {
@@ -1553,7 +1549,7 @@ struct SoundEffect {
 			volume = other.volume;
 			playing.store(other.playing.load());
 			name = std::move(other.name);
-			
+
 			other.pcmData = nullptr;
 			other.frameCount = 0;
 			other.playbackPosition = 0;
@@ -1562,11 +1558,11 @@ struct SoundEffect {
 		}
 		return *this;
 	}
-	
+
 	// Delete copy operations
 	SoundEffect(const SoundEffect&) = delete;
 	SoundEffect& operator=(const SoundEffect&) = delete;
-	
+
 	void cleanup() {
 		if (pcmData) {
 			free(pcmData);
@@ -1578,28 +1574,28 @@ struct SoundEffect {
 		playing = false;
 		name.clear();
 	}
-	
+
 	bool load(const char* path) {
 		cleanup();
-		
+
 		// Decode entire file into memory
 		ma_decoder decoder;
 		ma_decoder_config config = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
-		
+
 		if (ma_decoder_init_file(path, &config, &decoder) != MA_SUCCESS) {
 			printf("Failed to load sound effect: %s\n", path);
 			return false;
 		}
-		
+
 		ma_uint64 length = 0;
 		ma_decoder_get_length_in_pcm_frames(&decoder, &length);
-		
+
 		if (length == 0) {
 			ma_decoder_uninit(&decoder);
 			printf("Sound effect has zero length: %s\n", path);
 			return false;
 		}
-		
+
 		// Allocate memory for entire sound
 		pcmData = (float*)malloc(sizeof(float) * length * CHANNEL_COUNT);
 		if (!pcmData) {
@@ -1607,24 +1603,24 @@ struct SoundEffect {
 			printf("Failed to allocate memory for sound effect: %s\n", path);
 			return false;
 		}
-		
+
 		// Read entire file into memory
 		ma_uint64 framesRead = 0;
 		ma_decoder_read_pcm_frames(&decoder, pcmData, length, &framesRead);
 		ma_decoder_uninit(&decoder);
-		
+
 		if (framesRead == 0) {
 			cleanup();
 			printf("Failed to read sound effect: %s\n", path);
 			return false;
 		}
-		
+
 		frameCount = framesRead;
 		name = path;
-		
+
 		return true;
 	}
-	
+
 	void play(float vol = 1.0f) {
 		if (pcmData && frameCount > 0) {
 			playbackPosition = 0;
@@ -1632,46 +1628,46 @@ struct SoundEffect {
 			playing = true;
 		}
 	}
-	
+
 	void stop() {
 		playing = false;
 		playbackPosition = 0;
 	}
-	
+
 	bool isPlaying() const {
 		return playing;
 	}
-	
+
 	// Read frames with volume applied
 	ma_uint64 readFrames(float* output, ma_uint32 frameCount, float masterVolume) {
 		if (!playing || !pcmData) return 0;
-		
+
 		ma_uint64 pos = playbackPosition.load();
 		ma_uint64 remaining = this->frameCount - pos;
-		
+
 		if (remaining == 0) {
 			playing = false;
 			return 0;
 		}
-		
+
 		ma_uint32 toRead = (ma_uint32)remaining;
 		if (toRead > frameCount) toRead = frameCount;
-		
+
 		// Mix into output with volume
 		float* src = pcmData + (pos * CHANNEL_COUNT);
 		float vol = volume * masterVolume;
-		
+
 		for (ma_uint32 i = 0; i < toRead * CHANNEL_COUNT; i++) {
 			output[i] += src[i] * vol;
 		}
-		
+
 		playbackPosition = pos + toRead;
-		
+
 		// Stop if finished
 		if (playbackPosition >= this->frameCount) {
 			playing = false;
 		}
-		
+
 		return toRead;
 	}
 };
@@ -1689,27 +1685,27 @@ private:
     std::vector<BackgroundTrack> backgroundTracks;
     std::vector<SoundEffect> soundEffects;
     std::mutex mixerMutex;
-    
+
     // Maps to track loaded files
     std::unordered_map<std::string, int> backgroundTrackMap;
     std::unordered_map<std::string, int> soundEffectMap;
-    
+
     ma_device device;
     bool deviceInitialized;
     float masterVolume;
-    
+
 public:
     AudioMixerManager() : deviceInitialized(false), masterVolume(1.0f) {
         memset(&device, 0, sizeof(ma_device));
     }
-    
+
     ~AudioMixerManager() {
         destroy();
     }
-    
+
     bool initialize() {
         if (deviceInitialized) return true;
-        
+
         ma_device_config config = ma_device_config_init(ma_device_type_playback);
         config.playback.format = SAMPLE_FORMAT;
         config.playback.channels = CHANNEL_COUNT;
@@ -1717,45 +1713,45 @@ public:
         config.dataCallback = audioCallback;
         config.pUserData = this;
         config.periodSizeInMilliseconds = 40;
-        
+
         if (ma_device_init(nullptr, &config, &device) != MA_SUCCESS) {
             printf("Failed to initialize audio mixer device\n");
             return false;
         }
-        
+
         deviceInitialized = true;
-        
+
         // Start device immediately
         ma_device_start(&device);
-        
+
         return true;
     }
-    
+
     void destroy() {
         if (deviceInitialized) {
             ma_device_stop(&device);
             ma_device_uninit(&device);
             deviceInitialized = false;
         }
-        
+
         std::lock_guard<std::mutex> lock(mixerMutex);
         backgroundTracks.clear();
         soundEffects.clear();
         backgroundTrackMap.clear();
         soundEffectMap.clear();
     }
-    
+
     ////////////////////////////////////////////////////////////////
     // Background Track API
     ////////////////////////////////////////////////////////////////
-    
+
     int loadBackgroundTrack(const char* path) {
         if (!deviceInitialized) {
             if (!initialize()) return -1;
         }
-        
+
         std::lock_guard<std::mutex> lock(mixerMutex);
-        
+
         // Check if already loaded
         std::string key = path;
         auto it = backgroundTrackMap.find(key);
@@ -1763,18 +1759,18 @@ public:
             // Already loaded, return existing index
             return it->second;
         }
-        
+
         BackgroundTrack track;
         if (!track.load(path)) {
             return -1;
         }
-        
+
         int index = (int)backgroundTracks.size();
         backgroundTracks.push_back(std::move(track));
         backgroundTrackMap[key] = index;
         return index;
     }
-    
+
     int findBackgroundTrack(const char* path) {
         std::lock_guard<std::mutex> lock(mixerMutex);
         std::string key = path;
@@ -1784,47 +1780,47 @@ public:
         }
         return -1; // Not found
     }
-    
+
     bool isBackgroundTrackLoaded(const char* path) {
         return findBackgroundTrack(path) >= 0;
     }
-    
+
     void playBackgroundTrack(int index) {
         if (index < 0 || index >= (int)backgroundTracks.size()) return;
         backgroundTracks[index].play();
     }
-    
+
     void stopBackgroundTrack(int index) {
         if (index < 0 || index >= (int)backgroundTracks.size()) return;
         backgroundTracks[index].stop();
     }
-    
+
     void setBackgroundTrackVolume(int index, float volume) {
         if (index < 0 || index >= (int)backgroundTracks.size()) return;
         backgroundTracks[index].setVolume(volume);
     }
-    
+
     void setBackgroundTrackLooping(int index, bool looping) {
         if (index < 0 || index >= (int)backgroundTracks.size()) return;
         backgroundTracks[index].setLooping(looping);
     }
-    
+
     bool isBackgroundTrackPlaying(int index) {
         if (index < 0 || index >= (int)backgroundTracks.size()) return false;
         return backgroundTracks[index].active;
     }
-    
+
     ////////////////////////////////////////////////////////////////
     // Sound Effect API
     ////////////////////////////////////////////////////////////////
-    
+
     int loadSoundEffect(const char* path) {
         if (!deviceInitialized) {
             if (!initialize()) return -1;
         }
-        
+
         std::lock_guard<std::mutex> lock(mixerMutex);
-        
+
         // Check if already loaded
         std::string key = path;
         auto it = soundEffectMap.find(key);
@@ -1832,18 +1828,18 @@ public:
             // Already loaded, return existing index
             return it->second;
         }
-        
+
         SoundEffect sfx;
         if (!sfx.load(path)) {
             return -1;
         }
-        
+
         int index = (int)soundEffects.size();
         soundEffects.push_back(std::move(sfx));
         soundEffectMap[key] = index;
         return index;
     }
-    
+
     int findSoundEffect(const char* path) {
         std::lock_guard<std::mutex> lock(mixerMutex);
         std::string key = path;
@@ -1853,16 +1849,16 @@ public:
         }
         return -1; // Not found
     }
-    
+
     bool isSoundEffectLoaded(const char* path) {
         return findSoundEffect(path) >= 0;
     }
-    
+
     void playSoundEffect(int index, float volume = 1.0f) {
         if (index < 0 || index >= (int)soundEffects.size()) return;
         soundEffects[index].play(volume);
     }
-    
+
     // Convenience method to play sound effect by path
     void playSoundEffect(const char* path, float volume = 1.0f) {
         int index = findSoundEffect(path);
@@ -1872,25 +1868,25 @@ public:
         }
         playSoundEffect(index, volume);
     }
-    
+
     void stopSoundEffect(int index) {
         if (index < 0 || index >= (int)soundEffects.size()) return;
         soundEffects[index].stop();
     }
-    
+
     bool isSoundEffectPlaying(int index) {
         if (index < 0 || index >= (int)soundEffects.size()) return false;
         return soundEffects[index].isPlaying();
     }
-    
+
     ////////////////////////////////////////////////////////////////
     // Cleanup and Management
     ////////////////////////////////////////////////////////////////
-    
+
     void unloadBackgroundTrack(int index) {
         std::lock_guard<std::mutex> lock(mixerMutex);
         if (index < 0 || index >= (int)backgroundTracks.size()) return;
-        
+
         // Remove from map
         for (auto it = backgroundTrackMap.begin(); it != backgroundTrackMap.end(); ) {
             if (it->second == index) {
@@ -1903,15 +1899,15 @@ public:
                 ++it;
             }
         }
-        
+
         // Remove from vector
         backgroundTracks.erase(backgroundTracks.begin() + index);
     }
-    
+
     void unloadSoundEffect(int index) {
         std::lock_guard<std::mutex> lock(mixerMutex);
         if (index < 0 || index >= (int)soundEffects.size()) return;
-        
+
         // Remove from map
         for (auto it = soundEffectMap.begin(); it != soundEffectMap.end(); ) {
             if (it->second == index) {
@@ -1924,47 +1920,47 @@ public:
                 ++it;
             }
         }
-        
+
         // Remove from vector
         soundEffects.erase(soundEffects.begin() + index);
     }
-    
+
     ////////////////////////////////////////////////////////////////
     // Volume Control
     ////////////////////////////////////////////////////////////////
-    
+
     void setMasterVolume(float volume) {
         masterVolume = volume;
     }
-    
+
     float getMasterVolume() const {
         return masterVolume;
     }
-    
+
 private:
     static void audioCallback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
         AudioMixerManager* mixer = static_cast<AudioMixerManager*>(pDevice->pUserData);
         if (!mixer) return;
-        
+
         float* output = (float*)pOutput;
         memset(output, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
-        
+
         std::lock_guard<std::mutex> lock(mixer->mixerMutex);
-        
+
         // Mix background tracks
         for (auto& track : mixer->backgroundTracks) {
             if (track.active) {
                 track.readFrames(output, frameCount, mixer->masterVolume);
             }
         }
-        
+
         // Mix sound effects
         for (auto& sfx : mixer->soundEffects) {
             if (sfx.playing) {
                 sfx.readFrames(output, frameCount, mixer->masterVolume);
             }
         }
-        
+
         (void)pInput;
     }
 };
