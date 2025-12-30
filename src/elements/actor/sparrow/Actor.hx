@@ -12,12 +12,15 @@ import elements.actor.*;
 class Actor extends ActorElement
 {
 	// Stuff for initialization and shit
-	var buffer:Buffer<ActorElement>;
-	var program:Program;
+	static var buffers:Map<String, Buffer<ActorElement>> = [];
+	var buffer(default, null):Buffer<ActorElement>;
+	static var programs:Map<String, Program> = [];
+	var program(default, null):Program;
 	static var cachedActorDatas:Map<String, ActorData> = [];
 	static var cachedAtlases:Map<String, SparrowAtlas> = [];
 
 	var name(default, null):String;
+	var tag(default, null):Null<String>;
 	var atlas(default, null):SparrowAtlas;
 	var data(default, null):ActorData;
 
@@ -28,7 +31,7 @@ class Actor extends ActorElement
 
 	var display(default, null):CustomDisplay;
 
-	function new(display:CustomDisplay, name:String, x:Int = 0, y:Int = 0, fps:Int = 24, folder:String = "images/characters/", addBufferAndProgram:Bool = true, dontCopy:Bool = false) {
+	function new(display:CustomDisplay, tag:Null<String>, name:String, x:Int = 0, y:Int = 0, fps:Int = 24, folder:String = "images/characters/", addBufferAndProgram:Bool = true, dontCopy:Bool = false) {
 		this.display = display;
 
 		super(Math.ffloor(x), Math.ffloor(y));
@@ -36,6 +39,7 @@ class Actor extends ActorElement
 		this.folder = folder;
 
 		this.name = name;
+		this.tag = tag;
 
 		var spritesheetDataPath = "";
 		var atlasKey = '$name/$folder';
@@ -56,28 +60,42 @@ class Actor extends ActorElement
 		}
 
 		if (atlas.imagePath != "" && addBufferAndProgram) {
-			if (buffer == null) {
-				buffer = new Buffer<ActorElement>(1);
+			// Validate that tag is not null when using buffers/programs
+			if (tag == null) {
+				throw "Tag cannot be null when addBufferAndProgram is true";
+				// OR provide a default:
+				// tag = "__unnamed__";
 			}
 
-			if (program == null) {
-				program = new Program(buffer);
+			if (buffers[tag] == null) {
+				buffers[tag] = new Buffer<ActorElement>(1);
+			}
+			buffer = buffers[tag];
+
+			if (programs[tag] == null) {
+				programs[tag] = new Program(buffer);
+				program = programs[tag];
 				program.blendEnabled = true;
 				program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
 				program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
-				display.addProgram(program);
-
 				var texName = name + "Char";
 				TextureSystem.createTexture(texName, StringTools.replace(spritesheetDataPath, "data.xml", atlas.imagePath), false, true);
 				TextureSystem.setTexture(program, texName, texName);
-			}
+			} else
+				program = programs[tag];
+
+			display.addProgram(program);
 		}
 
 		setFps(fps);
 
 		mirror = !data.flip;
 		scale = data.scale;
+
+		//trace("prog is not null:" + program != null);
+		//trace("buf is not null:" + buffer != null);
+		//trace("buf length:" + buffer.length);
 	}
 
 	inline function addToBuffer() {

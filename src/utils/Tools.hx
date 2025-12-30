@@ -67,6 +67,10 @@ class Tools {
 			}
 		}
 
+		// these two lines were there because I forgot for all this time that I SPECIFICALLY needed to include it inside here before the sustain note texture.
+		TextureSystem.disposeTexture("noteTex");
+		TextureSystem.createTexture("noteTex", '$path/noteSheet.png', false, true);
+
 		var data = File.read('$path/sustainProperties.txt');
 
 		TextureSystem.disposeTexture("sustainTex");

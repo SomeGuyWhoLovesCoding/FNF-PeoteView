@@ -17,6 +17,7 @@ import elements.window.*;
 import ffmpeg.*;
 import interfaces.*;
 #if FV_DEBUG import debug.*; #end
+import miniaudio.*;
 import music.*;
 import structures.*;
 import structures.gameplay.*;

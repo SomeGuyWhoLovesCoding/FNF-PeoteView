@@ -237,7 +237,7 @@ class Mixer {
 
 					Main.conductor.time = playField.songPosition + (playField.latencyCompensation - Mixer.latency());
 				} else {
-					field.updateGameOver();
+					field.updateGameOver(deltaTime);
 				}
 			}
 		}

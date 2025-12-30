@@ -39,9 +39,9 @@ extern class MiniAudio {
 
 	// AND NOW THE BACKGROUND AND SOUND STUFF
 
-	@:native("loadBackgroundTrack") static function _loadBackgroundTrack(path:ConstCharStar):Int;
-	inline static function loadBackgroundTrack(path:String):Int {
-		return _loadBackgroundTrack(ConstCharStar.fromString(path));
+	@:native("loadBackgroundTrack") static function _loadBackgroundTrack(path:ConstCharStar, startPlaying:Bool):Int;
+	inline static function loadBackgroundTrack(path:String, startPlaying:Bool = false):Int {
+		return _loadBackgroundTrack(ConstCharStar.fromString(path), startPlaying);
 	}
 	@:native("playBackgroundTrack") static function playBackgroundTrack(index:Int):Void;
 	@:native("stopBackgroundTrack") static function stopBackgroundTrack(index:Int):Void;
@@ -54,6 +54,7 @@ extern class MiniAudio {
 		return _loadSoundEffect(ConstCharStar.fromString(path));
 	}
 	@:native("playSoundEffect") static function playSoundEffect(index:Int, volume:cpp.Float32):Void;
+	@:native("stopSoundEffect") static function stopSoundEffect(index:Int):Void;
 }
 #elseif hl
 class MiniAudio {
@@ -125,6 +126,7 @@ class MiniAudio {
 		return _loadSoundEffect(ConstCharStar.fromString(path.toUtf8()));
 	}
 	@:hlNative("ma_thing", "playSoundEffect") static function playSoundEffect(index:Int, volume:hl.F32):Void;
+	@:hlNative("ma_thing", "stopSoundEffect") static function stopSoundEffect(index:Int):Void;
 }
 #else
 class MiniAudio {

@@ -667,7 +667,7 @@ public:
 	}
 	
 	bool stopped() const {
-		return mixerState == 3;
+		return /*mixerState == 2 || */mixerState == 3;
 	}
 	
 	void seekToPCMFrame(int64_t pos) {
@@ -1623,177 +1623,294 @@ struct SoundEffect {
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
+#include <unordered_map>
+#include <string>
+#include <mutex>
+#include <vector>
+
 class AudioMixerManager {
 private:
-	std::vector<BackgroundTrack> backgroundTracks;
-	std::vector<SoundEffect> soundEffects;
-	std::mutex mixerMutex;
-	
-	ma_device device;
-	bool deviceInitialized;
-	float masterVolume;
-	
+    std::vector<BackgroundTrack> backgroundTracks;
+    std::vector<SoundEffect> soundEffects;
+    std::mutex mixerMutex;
+    
+    // Maps to track loaded files
+    std::unordered_map<std::string, int> backgroundTrackMap;
+    std::unordered_map<std::string, int> soundEffectMap;
+    
+    ma_device device;
+    bool deviceInitialized;
+    float masterVolume;
+    
 public:
-	AudioMixerManager() : deviceInitialized(false), masterVolume(1.0f) {
-		memset(&device, 0, sizeof(ma_device));
-	}
-	
-	~AudioMixerManager() {
-		destroy();
-	}
-	
-	bool initialize() {
-		if (deviceInitialized) return true;
-		
-		ma_device_config config = ma_device_config_init(ma_device_type_playback);
-		config.playback.format = SAMPLE_FORMAT;
-		config.playback.channels = CHANNEL_COUNT;
-		config.sampleRate = SAMPLE_RATE;
-		config.dataCallback = audioCallback;
-		config.pUserData = this;
-		config.periodSizeInMilliseconds = 40; // we don't really utilize it for demanding stuff such as precise music time work anyway so might as well do this then
-		
-		if (ma_device_init(nullptr, &config, &device) != MA_SUCCESS) {
-			printf("Failed to initialize audio mixer device\n");
-			return false;
-		}
-		
-		deviceInitialized = true;
-		
-		// Start device immediately
-		ma_device_start(&device);
-		
-		return true;
-	}
-	
-	void destroy() {
-		if (deviceInitialized) {
-			ma_device_stop(&device);
-			ma_device_uninit(&device);
-			deviceInitialized = false;
-		}
-		
-		std::lock_guard<std::mutex> lock(mixerMutex);
-		backgroundTracks.clear();
-		soundEffects.clear();
-	}
-	
-	////////////////////////////////////////////////////////////////
-	// Background Track API
-	////////////////////////////////////////////////////////////////
-	
-	int loadBackgroundTrack(const char* path, bool startPlaying = false) {
-		if (!deviceInitialized) {
-			if (!initialize()) return -1;
-		}
-		
-		BackgroundTrack track;
-		if (!track.load(path, startPlaying)) {
-			return -1;
-		}
-		
-		std::lock_guard<std::mutex> lock(mixerMutex);
-		backgroundTracks.push_back(std::move(track));
-		return (int)backgroundTracks.size() - 1;
-	}
-	
-	void playBackgroundTrack(int index) {
-		if (index < 0 || index >= (int)backgroundTracks.size()) return;
-		backgroundTracks[index].play();
-	}
-	
-	void stopBackgroundTrack(int index) {
-		if (index < 0 || index >= (int)backgroundTracks.size()) return;
-		backgroundTracks[index].stop();
-	}
-	
-	void setBackgroundTrackVolume(int index, float volume) {
-		if (index < 0 || index >= (int)backgroundTracks.size()) return;
-		backgroundTracks[index].setVolume(volume);
-	}
-	
-	void setBackgroundTrackLooping(int index, bool looping) {
-		if (index < 0 || index >= (int)backgroundTracks.size()) return;
-		backgroundTracks[index].setLooping(looping);
-	}
-	
-	bool isBackgroundTrackPlaying(int index) {
-		if (index < 0 || index >= (int)backgroundTracks.size()) return false;
-		return backgroundTracks[index].active;
-	}
-	
-	////////////////////////////////////////////////////////////////
-	// Sound Effect API
-	////////////////////////////////////////////////////////////////
-	
-	int loadSoundEffect(const char* path) {
-		if (!deviceInitialized) {
-			if (!initialize()) return -1;
-		}
-		
-		SoundEffect sfx;
-		if (!sfx.load(path)) {
-			return -1;
-		}
-		
-		std::lock_guard<std::mutex> lock(mixerMutex);
-		soundEffects.push_back(std::move(sfx));
-		return (int)soundEffects.size() - 1;
-	}
-	
-	void playSoundEffect(int index, float volume = 1.0f) {
-		if (index < 0 || index >= (int)soundEffects.size()) return;
-		soundEffects[index].play(volume);
-	}
-	
-	void stopSoundEffect(int index) {
-		if (index < 0 || index >= (int)soundEffects.size()) return;
-		soundEffects[index].stop();
-	}
-	
-	bool isSoundEffectPlaying(int index) {
-		if (index < 0 || index >= (int)soundEffects.size()) return false;
-		return soundEffects[index].isPlaying();
-	}
-	
-	////////////////////////////////////////////////////////////////
-	// Volume Control
-	////////////////////////////////////////////////////////////////
-	
-	void setMasterVolume(float volume) {
-		masterVolume = volume;
-	}
-	
-	float getMasterVolume() const {
-		return masterVolume;
-	}
-	
+    AudioMixerManager() : deviceInitialized(false), masterVolume(1.0f) {
+        memset(&device, 0, sizeof(ma_device));
+    }
+    
+    ~AudioMixerManager() {
+        destroy();
+    }
+    
+    bool initialize() {
+        if (deviceInitialized) return true;
+        
+        ma_device_config config = ma_device_config_init(ma_device_type_playback);
+        config.playback.format = SAMPLE_FORMAT;
+        config.playback.channels = CHANNEL_COUNT;
+        config.sampleRate = SAMPLE_RATE;
+        config.dataCallback = audioCallback;
+        config.pUserData = this;
+        config.periodSizeInMilliseconds = 40;
+        
+        if (ma_device_init(nullptr, &config, &device) != MA_SUCCESS) {
+            printf("Failed to initialize audio mixer device\n");
+            return false;
+        }
+        
+        deviceInitialized = true;
+        
+        // Start device immediately
+        ma_device_start(&device);
+        
+        return true;
+    }
+    
+    void destroy() {
+        if (deviceInitialized) {
+            ma_device_stop(&device);
+            ma_device_uninit(&device);
+            deviceInitialized = false;
+        }
+        
+        std::lock_guard<std::mutex> lock(mixerMutex);
+        backgroundTracks.clear();
+        soundEffects.clear();
+        backgroundTrackMap.clear();
+        soundEffectMap.clear();
+    }
+    
+    ////////////////////////////////////////////////////////////////
+    // Background Track API
+    ////////////////////////////////////////////////////////////////
+    
+    int loadBackgroundTrack(const char* path, bool startPlaying = false) {
+        if (!deviceInitialized) {
+            if (!initialize()) return -1;
+        }
+        
+        std::lock_guard<std::mutex> lock(mixerMutex);
+        
+        // Check if already loaded
+        std::string key = path;
+        auto it = backgroundTrackMap.find(key);
+        if (it != backgroundTrackMap.end()) {
+            // Already loaded, return existing index
+            return it->second;
+        }
+        
+        BackgroundTrack track;
+        if (!track.load(path, startPlaying)) {
+            return -1;
+        }
+        
+        int index = (int)backgroundTracks.size();
+        backgroundTracks.push_back(std::move(track));
+        backgroundTrackMap[key] = index;
+        return index;
+    }
+    
+    int findBackgroundTrack(const char* path) {
+        std::lock_guard<std::mutex> lock(mixerMutex);
+        std::string key = path;
+        auto it = backgroundTrackMap.find(key);
+        if (it != backgroundTrackMap.end()) {
+            return it->second;
+        }
+        return -1; // Not found
+    }
+    
+    bool isBackgroundTrackLoaded(const char* path) {
+        return findBackgroundTrack(path) >= 0;
+    }
+    
+    void playBackgroundTrack(int index) {
+        if (index < 0 || index >= (int)backgroundTracks.size()) return;
+        backgroundTracks[index].play();
+    }
+    
+    void stopBackgroundTrack(int index) {
+        if (index < 0 || index >= (int)backgroundTracks.size()) return;
+        backgroundTracks[index].stop();
+    }
+    
+    void setBackgroundTrackVolume(int index, float volume) {
+        if (index < 0 || index >= (int)backgroundTracks.size()) return;
+        backgroundTracks[index].setVolume(volume);
+    }
+    
+    void setBackgroundTrackLooping(int index, bool looping) {
+        if (index < 0 || index >= (int)backgroundTracks.size()) return;
+        backgroundTracks[index].setLooping(looping);
+    }
+    
+    bool isBackgroundTrackPlaying(int index) {
+        if (index < 0 || index >= (int)backgroundTracks.size()) return false;
+        return backgroundTracks[index].active;
+    }
+    
+    ////////////////////////////////////////////////////////////////
+    // Sound Effect API
+    ////////////////////////////////////////////////////////////////
+    
+    int loadSoundEffect(const char* path) {
+        if (!deviceInitialized) {
+            if (!initialize()) return -1;
+        }
+        
+        std::lock_guard<std::mutex> lock(mixerMutex);
+        
+        // Check if already loaded
+        std::string key = path;
+        auto it = soundEffectMap.find(key);
+        if (it != soundEffectMap.end()) {
+            // Already loaded, return existing index
+            return it->second;
+        }
+        
+        SoundEffect sfx;
+        if (!sfx.load(path)) {
+            return -1;
+        }
+        
+        int index = (int)soundEffects.size();
+        soundEffects.push_back(std::move(sfx));
+        soundEffectMap[key] = index;
+        return index;
+    }
+    
+    int findSoundEffect(const char* path) {
+        std::lock_guard<std::mutex> lock(mixerMutex);
+        std::string key = path;
+        auto it = soundEffectMap.find(key);
+        if (it != soundEffectMap.end()) {
+            return it->second;
+        }
+        return -1; // Not found
+    }
+    
+    bool isSoundEffectLoaded(const char* path) {
+        return findSoundEffect(path) >= 0;
+    }
+    
+    void playSoundEffect(int index, float volume = 1.0f) {
+        if (index < 0 || index >= (int)soundEffects.size()) return;
+        soundEffects[index].play(volume);
+    }
+    
+    // Convenience method to play sound effect by path
+    void playSoundEffect(const char* path, float volume = 1.0f) {
+        int index = findSoundEffect(path);
+        if (index < 0) {
+            index = loadSoundEffect(path);
+            if (index < 0) return;
+        }
+        playSoundEffect(index, volume);
+    }
+    
+    void stopSoundEffect(int index) {
+        if (index < 0 || index >= (int)soundEffects.size()) return;
+        soundEffects[index].stop();
+    }
+    
+    bool isSoundEffectPlaying(int index) {
+        if (index < 0 || index >= (int)soundEffects.size()) return false;
+        return soundEffects[index].isPlaying();
+    }
+    
+    ////////////////////////////////////////////////////////////////
+    // Cleanup and Management
+    ////////////////////////////////////////////////////////////////
+    
+    void unloadBackgroundTrack(int index) {
+        std::lock_guard<std::mutex> lock(mixerMutex);
+        if (index < 0 || index >= (int)backgroundTracks.size()) return;
+        
+        // Remove from map
+        for (auto it = backgroundTrackMap.begin(); it != backgroundTrackMap.end(); ) {
+            if (it->second == index) {
+                it = backgroundTrackMap.erase(it);
+            } else {
+                // Adjust indices for entries after the removed one
+                if (it->second > index) {
+                    it->second--;
+                }
+                ++it;
+            }
+        }
+        
+        // Remove from vector
+        backgroundTracks.erase(backgroundTracks.begin() + index);
+    }
+    
+    void unloadSoundEffect(int index) {
+        std::lock_guard<std::mutex> lock(mixerMutex);
+        if (index < 0 || index >= (int)soundEffects.size()) return;
+        
+        // Remove from map
+        for (auto it = soundEffectMap.begin(); it != soundEffectMap.end(); ) {
+            if (it->second == index) {
+                it = soundEffectMap.erase(it);
+            } else {
+                // Adjust indices for entries after the removed one
+                if (it->second > index) {
+                    it->second--;
+                }
+                ++it;
+            }
+        }
+        
+        // Remove from vector
+        soundEffects.erase(soundEffects.begin() + index);
+    }
+    
+    ////////////////////////////////////////////////////////////////
+    // Volume Control
+    ////////////////////////////////////////////////////////////////
+    
+    void setMasterVolume(float volume) {
+        masterVolume = volume;
+    }
+    
+    float getMasterVolume() const {
+        return masterVolume;
+    }
+    
 private:
-	static void audioCallback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
-		AudioMixerManager* mixer = static_cast<AudioMixerManager*>(pDevice->pUserData);
-		if (!mixer) return;
-		
-		float* output = (float*)pOutput;
-		memset(output, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
-		
-		std::lock_guard<std::mutex> lock(mixer->mixerMutex);
-		
-		// Mix background tracks
-		for (auto& track : mixer->backgroundTracks) {
-			if (track.active) {
-				track.readFrames(output, frameCount, mixer->masterVolume);
-			}
-		}
-		
-		// Mix sound effects
-		for (auto& sfx : mixer->soundEffects) {
-			if (sfx.playing) {
-				sfx.readFrames(output, frameCount, mixer->masterVolume);
-			}
-		}
-		
-		(void)pInput;
-	}
+    static void audioCallback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
+        AudioMixerManager* mixer = static_cast<AudioMixerManager*>(pDevice->pUserData);
+        if (!mixer) return;
+        
+        float* output = (float*)pOutput;
+        memset(output, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
+        
+        std::lock_guard<std::mutex> lock(mixer->mixerMutex);
+        
+        // Mix background tracks
+        for (auto& track : mixer->backgroundTracks) {
+            if (track.active) {
+                track.readFrames(output, frameCount, mixer->masterVolume);
+            }
+        }
+        
+        // Mix sound effects
+        for (auto& sfx : mixer->soundEffects) {
+            if (sfx.playing) {
+                sfx.readFrames(output, frameCount, mixer->masterVolume);
+            }
+        }
+        
+        (void)pInput;
+    }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////

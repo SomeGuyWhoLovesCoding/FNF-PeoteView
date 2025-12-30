@@ -71,7 +71,7 @@ class FreeplayScreen {
 		songTextCharGroup = [
 			for (i in 0...7) [
 				for (i in 0...20) {
-					var spr = new Actor(display, "alphabetText", 0, 0, 24, "", false);
+					var spr = new Actor(display, null, "alphabetText", 0, 0, 24, "", false);
 					spr.c.aF = 0.0;
 					spr.c.luminanceF = 0.0;
 					songTextsBuf.addElement(spr);

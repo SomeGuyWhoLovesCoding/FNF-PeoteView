@@ -59,12 +59,12 @@ class Field {
 		actors = [];
 		actors.resize(3);
 
-		spectator = new Actor(parent.view, "gf", 250, -100, 24, true, true);
+		spectator = new Actor(parent.view, "spectator", "gf", 250, -100, 24, true, true);
 		spectator.mirror = !spectator.mirror;
 		spectator.playAnimation("danceLeft");
 		spectator.addToBuffer();
 
-		opponent = new Actor(parent.view, "dad", 250, -100, 24, true, true);
+		opponent = new Actor(parent.view, "opponent", "dad", 250, -100, 24, true, true);
 		opponent.mirror = !opponent.mirror;
 		opponent.preComputeSingPosesOfAnimations(singPoses);
 		opponent.preComputeMissPosesOfAnimations(missPoses);
@@ -74,7 +74,7 @@ class Field {
 		opponent.finishAnim = "idle";
 		opponent.addToBuffer();
 
-		player = new Actor(parent.view, "bf", 625, 250, 24, true, true);
+		player = new Actor(parent.view, "player", "bf", 625, 250, 24, true, true);
 		player.preComputeSingPosesOfAnimations(singPoses);
 		player.preComputeMissPosesOfAnimations(missPoses);
 		player.playAnimation("idle");
@@ -158,11 +158,13 @@ class Field {
 	}
 
 	inline function sing(index:Int, char:Actor, miss:Bool = false, shake:Bool = false, skipAnimation:Bool = false) {
-		if (!skipAnimation) {
-			if (miss) char.playAnimationFromMissId(index);
-			else char.playAnimationFromSingId(index);
-		}
 		char.shake = shake;
+		if (skipAnimation) return;
+		if (miss) {
+			char.playAnimationFromMissId(index);
+			return;
+		}
+		char.playAnimationFromSingId(index);
 	}
 
 	inline function hitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
@@ -191,48 +193,30 @@ class Field {
 		parent.view.fov = 1.0;
 
 		Main.conductor.onBeat.remove(beatHit);
-
-		if (gameOverSound != null) {
-			gameOverSound.dispose();
-			gameOverSound = null;
-		}
-
-		if (gameOverMusic != null) {
-			gameOverMusic.dispose();
-			gameOverMusic = null;
-		}
-
-		if (gameOverConfirm != null) {
-			gameOverConfirm.dispose();
-			gameOverConfirm = null;
-		}
 	}
 
 	// GAME OVER IMPL
 
 	var isInGameOver:Bool;
-	var gameOverSound:AudioSource;
-	var gameOverMusic:AudioSource;
-	var gameOverConfirm:AudioSource;
+	var gameOverSound:Int = -1;
+	var gameOverMusic:Int = -1;
+	var gameOverConfirm:Int = -1;
 	var actorOnGameOver:Actor;
     var gameOverConfirmed:Bool;
 
-
 	function gameOver() {
 		_gameover_end_call = (x:Float, y:Float, button:MouseButton) -> {
-			endGameOver(false);
+			endGameOver(button == MouseButton.RIGHT);
 		};
 
 		var gameOverMeta = Chart.header.gameOver;
 		var theme = gameOverMeta.theme;
 		var bpm = gameOverMeta.bpm;
 
-		gameOverMusic = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_music-${theme}.ogg'));
+		gameOverSound = MiniAudio.loadSoundEffect('assets/death/fnf_loss_sfx-${theme}.flac');
+		MiniAudio.playSoundEffect(gameOverSound, 0.7);
 
-		gameOverSound = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_sfx-${theme}.ogg'));
-		gameOverSound.play();
-
-		gameOverConfirm = new AudioSource(AudioBuffer.fromFile('assets/death/fnf_loss_end-${theme}.ogg'));
+		gameOverConfirm = MiniAudio.loadSoundEffect('assets/death/fnf_loss_end-${theme}.flac');
 
 		Main.conductor.reset();
 		Main.conductor.changeBpmAt(0, bpm);
@@ -241,17 +225,17 @@ class Field {
 		actorOnGameOver.finishAnim = "deathLoop";
 		actorOnGameOver.shake = false;
 
-		actorOnGameOver.finishCallback = gameOverMusic.play;
+		actorOnGameOver.finishCallback = () -> {
+			gameOverMusic = MiniAudio.loadBackgroundTrack('assets/death/fnf_loss_music-${theme}.flac');
+			MiniAudio.playBackgroundTrack(gameOverMusic);
+			MiniAudio.setBackgroundTrackVolume(gameOverMusic, 0.7);
+			MiniAudio.setBackgroundTrackLooping(gameOverMusic, true);
+		}
 
 		isInGameOver = true;
 	}
 
 	function endGameOver(goBack:Bool = false) {
-		if (gameOverMusic != null) {
-			gameOverMusic.dispose();
-			gameOverMusic = null;
-		}
-
 		if (goBack) {
 			isInGameOver = false;
 			Main.switchState(MAIN_MENU);
@@ -261,7 +245,8 @@ class Field {
 		var gameOverMeta = Chart.header.gameOver;
 		var theme = gameOverMeta.theme;
 
-		gameOverConfirm.play();
+		MiniAudio.stopBackgroundTrack(gameOverMusic);
+		MiniAudio.playSoundEffect(gameOverConfirm, 0.7);
 
 		actorOnGameOver.finishAnim = "";
 		actorOnGameOver.playAnimation("deathConfirm");
@@ -269,32 +254,21 @@ class Field {
 		Main.current.controls.unBind();
 		parent.inputSystem.removeEvents();
 		gameOverConfirmed = true;
+
+		haxe.Timer.delay(() -> {
+			MiniAudio.stopSoundEffect(gameOverConfirm);
+			gameOverConfirm = -1;
+			isInGameOver = gameOverConfirmed = false;
+			Main.switchState(GAMEPLAY);
+			parent.display.show();
+		}, 6000); // was 5 sec
 	}
 
-	function updateGameOver() {
+	function updateGameOver(deltaTime:Float) {
 		Main.current.mouseDown = gameOverConfirmed ? null : _gameover_end_call;
 
-		if (gameOverMusic != null) {
-			if (@:privateAccess gameOverMusic.__backend.playing) {
-				Main.conductor.time = gameOverMusic.currentTime;
-			}
-
-			try {
-				if (gameOverMusic.currentTime == gameOverMusic.length) {
-					endGameOver();
-				}
-			} catch(e) {
-				trace('No such game over audio files exist by the theme "${Chart.header.gameOver.theme}".');
-			}
-		}
-
-		if (gameOverConfirm != null) {
-			if (gameOverConfirm.currentTime == gameOverConfirm.length) {
-				gameOverConfirm = null;
-				isInGameOver = gameOverConfirmed = false;
-				Main.switchState(GAMEPLAY);
-				parent.display.show();
-			}
+		if (gameOverMusic != -1) {
+			Main.conductor.time += deltaTime;
 		}
 	}
 

@@ -42,7 +42,7 @@ class CountdownDisplay {
 	/**
 		The countdown display's sound cache.
 	**/
-	var sounds:Array<AudioSource> = [];
+	var sounds:Array<Int> = [];
 
 	/**
 		The countdown display's conductor (for actual decoupled countdown logic).
@@ -52,7 +52,7 @@ class CountdownDisplay {
 	function setupSounds(suffix:String = "") {
 		CountdownDisplay.suffix = suffix;
 		for (i in 0...4) {
-			sounds.push(new AudioSource(AudioBuffer.fromFile('assets/countdown/${3 - i}${suffix != "" ? '-$suffix' : ''}.ogg')));
+			sounds.push(MiniAudio.loadSoundEffect('assets/countdown/${3 - i}${suffix != "" ? '-$suffix' : ''}.wav'));
 		}
 	}
 
@@ -100,10 +100,8 @@ class CountdownDisplay {
 	**/
 	function countdownTick(id:Int) {
 		if (id != -1) {
-			var snd = sounds[id];
-			if (snd != null) {
-				snd.play();
-			}
+			var sound = sounds[id];
+			MiniAudio.playSoundEffect(sound, 0.7);
 		}
 
 		if (id != 0) {
@@ -135,7 +133,6 @@ class CountdownDisplay {
 		buffer.clear();
 		display.removeProgram(program);
 		sprite = null;
-		while (sounds.pop() != null) {}
 		conductor = null;
 	}
 

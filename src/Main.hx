@@ -9,7 +9,6 @@ import lime.app.Application;
 import lime.ui.Window;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
-import miniaudio.MiniAudio;
 
 private enum abstract StateSelection(Int) {
 	var NONE;
@@ -147,18 +146,6 @@ class Main extends Application
 	var sound_confIdx:Int;
 	var sound_cancelIdx:Int;
 
-	public function playScrollSound() {
-		MiniAudio.playSoundEffect(sound_scrollIdx, 0.7);
-	}
-
-	public function playConfirmSound() {
-		MiniAudio.playSoundEffect(sound_confIdx, 0.7);
-	}
-
-	public function playCancelSound() {
-		MiniAudio.playSoundEffect(sound_cancelIdx, 0.7);
-	}
-
 	public function startSample(window:Window)
 	{
 		current = this;
@@ -168,11 +155,8 @@ class Main extends Application
 
 		peoteView = new PeoteView(window);
 
-		sound_scrollIdx = MiniAudio.loadSoundEffect(Paths.asset("assets/conductor/measure.wav"));
-		sound_confIdx = MiniAudio.loadSoundEffect(Paths.asset("assets/conductor/beat.wav"));
-		sound_cancelIdx = MiniAudio.loadSoundEffect(Paths.asset("assets/conductor/beat.wav"));
-
 		haxe.Timer.delay(function() {
+			createSounds();
 			createTextures();
 			createDisplays();
 
@@ -215,23 +199,34 @@ class Main extends Application
 
 	private function prepareGameplayState() {
 		controls = new Controls();
-
-		HealthBarSprite.healthBarProperties = Tools.parseHealthBarConfig('assets/images/ui');
-		UISprite.timeBarProperties = Tools.parseTimeBarConfig('assets/images/ui');
-		Tools.parseNoteskinData('assets/images/notes');
 	}
+
+	private function createSounds() {
+		sound_scrollIdx = MiniAudio.loadSoundEffect(Paths.asset("assets/conductor/measure.wav"));
+		sound_confIdx = MiniAudio.loadSoundEffect(Paths.asset("assets/conductor/beat.wav"));
+		sound_cancelIdx = MiniAudio.loadSoundEffect(Paths.asset("assets/conductor/beat.wav"));
+	}
+
+	public function playScrollSound() {MiniAudio.playSoundEffect(sound_scrollIdx, 0.7);}
+	public function playConfirmSound() {MiniAudio.playSoundEffect(sound_confIdx, 0.7);}
+	public function playCancelSound() {MiniAudio.playSoundEffect(sound_cancelIdx, 0.7);}
 
 	private function createTextures() {
 		var stamp = haxe.Timer.stamp();
 		Sys.println("Preloading textures...");
+
+		HealthBarSprite.healthBarProperties = Tools.parseHealthBarConfig('assets/images/ui');
+		UISprite.timeBarProperties = Tools.parseTimeBarConfig('assets/images/ui');
+		Tools.parseNoteskinData('assets/images/notes');
+
 		TextureSystem.createTexture("mainMenuBGTex", "assets/images/mainMenu/menuBG.png", false, true);
 		TextureSystem.createTexture("mainMenuSheet", "assets/images/mainMenu/sheet.png", false, true);
-		TextureSystem.createTexture("noteTex", "assets/images/notes/noteSheet.png", false, true);
 		TextureSystem.createTexture("uiTex", "assets/images/ui/uiSheet.png", false, true);
 		TextureSystem.createTexture("hbTex", "assets/images/ui/hbSheet.png", false, true);
 		TextureSystem.createTexture("storyModeSheet", "assets/images/ui/storyModeSheet.png", false, true);
 		TextureSystem.createTexture("optionsMenuSheet", "assets/images/ui/optionsMenuSheet.png", false, true);
-		TextureSystem.createTexture("alphabetSheet", "assets/alphabetText/sheet.png", false, true); // Can't be moved to images folder otherwise the game craps itself.
+		TextureSystem.createTexture("alphabetSheet", "assets/alphabetText/sheet.png", false, true);
+
 		Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 	}
 
