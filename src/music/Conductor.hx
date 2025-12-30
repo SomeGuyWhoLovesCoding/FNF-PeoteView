@@ -26,6 +26,11 @@ class Conductor
 	var onBeat:Event<Float->Void> = new Event<Float->Void>();
 
 	/**
+		A signal that dispatches every beat, without an offset (specifically for certain things like countdown to work right).
+	**/
+	var onBeatUnoffsetted:Event<Float->Void> = new Event<Float->Void>();
+
+	/**
 		A signal that dispatches every measure.
 	**/
 	var onMeasure:Event<Float->Void> = new Event<Float->Void>();
@@ -70,9 +75,11 @@ class Conductor
 		time -= Mixer.latency();
 		#end*/
 
-		var calc = (time - offsetTime);
+		var calc = (time + offset) - offsetTime;
+		var calcUnoffsetted = time - offsetTime;
 		_stepTracker = Math.ffloor(stepOffset + calc / stepCrochet);
 		_beatTracker = Math.ffloor(beatOffset + calc / crochet);
+		_beatTrackerUnoffsetted = Math.ffloor(beatOffset + calcUnoffsetted / crochet);
 		_measureTracker = Math.ffloor(measureOffset + calc / measureCrochet);
 
 		if (active) {
@@ -88,6 +95,11 @@ class Conductor
 				onBeat.dispatch(curBeat);
 			}
 
+			if (curBeatUnoffsetted != _beatTrackerUnoffsetted) {
+				curBeatUnoffsetted = _beatTrackerUnoffsetted;
+				onBeatUnoffsetted.dispatch(curBeatUnoffsetted);
+			}
+
 			if (curMeasure != _measureTracker)
 			{
 				curMeasure = _measureTracker;
@@ -96,6 +108,7 @@ class Conductor
 		} else {
 			curStep = _stepTracker;
 			curBeat = _beatTracker;
+			curBeatUnoffsetted = _beatTrackerUnoffsetted;
 			curMeasure = _measureTracker;
 		}
 
@@ -113,6 +126,11 @@ class Conductor
 	var curBeat(default, null):Float = 0;
 
 	/**
+		The unoffsetted beat counter.
+	**/
+	var curBeatUnoffsetted(default, null):Float = 0;
+
+	/**
 		The measure counter.
 	**/
 	var curMeasure(default, null):Float = 0;
@@ -124,6 +142,7 @@ class Conductor
 
 	private var _stepTracker(default, null):Float = 0;
 	private var _beatTracker(default, null):Float = 0;
+	private var _beatTrackerUnoffsetted(default, null):Float = 0;
 	private var _measureTracker(default, null):Float = 0;
 
 	private var stepOffset(default, null):Float = 0;

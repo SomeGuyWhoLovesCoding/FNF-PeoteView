@@ -28,6 +28,13 @@ class PlayField implements State {
 		create(roof, display, Chart.header.mania);
 	}
 
+	function changeBpmAt(time:Float, value:Float, timeNum:Float, timeDen:Float) {
+		if (Main.conductor != null)
+			Main.conductor.changeBpmAt(time, value, timeNum, timeDen);
+		/*if (field.gfConductor != null)
+			field.gfConductor.changeBpmAt(time, value);*/
+	}
+
 	var score:Int128 = 0;
 	var misses:Int128 = 0;
 	var combo:Int128 = 0;
@@ -146,14 +153,14 @@ class PlayField implements State {
 		onKeyPress = new Event<KeyCode->Void>();
 		onKeyRelease = new Event<KeyCode->Void>();
 
-		var conductor = Main.conductor;
 		var timeSig = Chart.header.timeSig;
-		conductor.changeBpmAt(0, Chart.header.bpm, timeSig[0], timeSig[1]);
+		changeBpmAt(0, Chart.header.bpm, timeSig[0], timeSig[1]);
 
 		onStartSong.add(startSong);
 		onStopSong.add(stopSong);
 		onDeath.add(gameOver);
 
+		var conductor = Main.conductor;
 		conductor.offset = latencyCompensation - Mixer.latency();
 		songPosition = (-conductor.crochet * 4.5) - conductor.offset;
 
@@ -176,7 +183,7 @@ class PlayField implements State {
 		countdownDisp.setupSounds();
 
 		// Attach countdown-specific handler (drives countdownDisp and triggers onStartSong)
-		countdownDisp.conductor.onBeat.add(countdownBeatHit);
+		countdownDisp.conductor.onBeatUnoffsetted.add(countdownBeatHit);
 
 		PauseScreen.init(roof);
 		pauseScreen = new PauseScreen(Chart.header.difficulty);
@@ -325,16 +332,13 @@ class PlayField implements State {
 		paused = false;
 	}
 
-	inline function countdownBeatHit(beat:Float) {
-		// This handler belongs to the separate countdownDisp.conductor.
-		// It drives the visual/audio countdown and triggers the start event at beat 0.
+	function countdownBeatHit(beat:Float) {
 		if (beat == 0 && !songStarted) {
-			// Dispatch the same onStartSong event as before.
 			onStartSong.dispatch(Chart.header);
 
 			// When the game actually begins, remove countdown listener immediately
 			// to avoid duplicate triggers and let Main.conductor take over.
-			if (countdownDisp.conductor != null) countdownDisp.conductor.onBeat.remove(countdownBeatHit);
+			if (countdownDisp.conductor != null) countdownDisp.conductor.onBeatUnoffsetted.remove(countdownBeatHit);
 			Main.conductor.onMeasure.add(measureHit);
 		}
 
@@ -351,7 +355,7 @@ class PlayField implements State {
 		}
 	}
 
-	inline function hitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
+	function hitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
 		var lane = note.type;
 
 		if (noteSystem.noteTypeFunctionalityPre[note.type] != null) lane = 1;
@@ -367,52 +371,53 @@ class PlayField implements State {
 			if (health < 0.05) {
 				health = 0.05;
 			}
-		} else {
-			combo += notesInOne;
-
-			health += healthGain[lane] * Tools.int64ToFloat(notesInOne);
-			if (health > 1) {
-				health = 1;
-			}
-
-			var preferences = SaveData.state.preferences;
-			var scoreTxt = HUD.scoreTxt;
-
-			if (scoreTxt != null && preferences.scoreTxtBopping) {
-				scoreTxt.scale = 1.1;
-			}
-
-			var absTiming = timing < 0 ? -timing : timing;
-			var notesInOne_accuracy = notesInOne * 10000;
-
-			if (absTiming > 60) {
-				if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(3);
-				accuracy.increment(5000, false, notesInOne_accuracy);
-				score += shitScore * notesInOne;
-				return;
-			}
-
-			if (absTiming > 45) {
-				if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(2);
-				accuracy.increment(7500, false, notesInOne_accuracy);
-				score += badScore * notesInOne;
-				return;
-			}
-
-			if (absTiming > 30) {
-				if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(1);
-				accuracy.increment(8000, false, notesInOne_accuracy);
-				score += goodScore * notesInOne;
-				return;
-			}
-
-			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(0);
-			accuracy.increment(10000, false, notesInOne_accuracy);
-			score += sickScore * notesInOne;
+			return;
 		}
+
+		combo += notesInOne;
+
+		health += healthGain[lane] * Tools.int64ToFloat(notesInOne);
+		if (health > 1) {
+			health = 1;
+		}
+
+		var preferences = SaveData.state.preferences;
+		var scoreTxt = HUD.scoreTxt;
+
+		if (scoreTxt != null && preferences.scoreTxtBopping) {
+			scoreTxt.scale = 1.1;
+		}
+
+		var absTiming = timing < 0 ? -timing : timing;
+		var notesInOne_accuracy = notesInOne * 10000;
+
+		if (absTiming > 60) {
+			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(3);
+			accuracy.increment(5000, false, notesInOne_accuracy);
+			score += shitScore * notesInOne;
+			return;
+		}
+
+		if (absTiming > 45) {
+			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(2);
+			accuracy.increment(7500, false, notesInOne_accuracy);
+			score += badScore * notesInOne;
+			return;
+		}
+
+		if (absTiming > 30) {
+			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(1);
+			accuracy.increment(8000, false, notesInOne_accuracy);
+			score += goodScore * notesInOne;
+			return;
+		}
+
+		if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(0);
+		accuracy.increment(10000, false, notesInOne_accuracy);
+		score += sickScore * notesInOne;
 	}
 
-	inline function missNote(note:MetaNote, notesInOne:Int64) {
+	function missNote(note:MetaNote, notesInOne:Int64) {
 		if (practiceMode && health < 0.05) {
 			health = 0.05;
 		}
