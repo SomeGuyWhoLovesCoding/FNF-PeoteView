@@ -1384,7 +1384,6 @@ struct BackgroundTrack {
 		
 		initialized = true;
 		filePath = path;
-		ma_data_source_set_looping(&decoder, MA_TRUE);
 		ma_decoder_get_length_in_pcm_frames(&decoder, &length);
 		active = startPlaying;
 		looping = true;
@@ -1411,9 +1410,6 @@ struct BackgroundTrack {
 	
 	void setLooping(bool loop) {
 		looping = loop;
-		if (initialized) {
-			ma_data_source_set_looping(&decoder, loop ? MA_TRUE : MA_FALSE);
-		}
 	}
 	
 	// Read frames with volume applied
@@ -1435,9 +1431,31 @@ struct BackgroundTrack {
 			output[i] += tempBuffer[i] * vol;
 		}
 		
-		// If not looping and we hit the end, stop
-		if (!looping && framesRead < toRead) {
-			active = false;
+		// Check if we hit the end
+		if (framesRead < toRead) {
+			// If looping is enabled, seek back to start
+			if (looping) {
+				ma_decoder_seek_to_pcm_frame(&decoder, 0);
+				
+				// Try to read the remaining frames from the beginning
+				ma_uint64 remainingFrames = toRead - framesRead;
+				if (remainingFrames > 0) {
+					float tempBuffer2[4096 * CHANNEL_COUNT];
+					ma_uint64 framesRead2 = 0;
+					memset(tempBuffer2, 0, sizeof(float) * remainingFrames * CHANNEL_COUNT);
+					ma_decoder_read_pcm_frames(&decoder, tempBuffer2, remainingFrames, &framesRead2);
+					
+					// Mix the rest of the frames
+					for (ma_uint64 i = 0; i < framesRead2 * CHANNEL_COUNT; i++) {
+						output[framesRead * CHANNEL_COUNT + i] += tempBuffer2[i] * vol;
+					}
+					
+					framesRead += framesRead2;
+				}
+			} else {
+				// Not looping, so stop
+				active = false;
+			}
 		}
 		
 		return framesRead;
