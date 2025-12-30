@@ -154,7 +154,7 @@ class PlayField implements State {
 		onStopSong.add(stopSong);
 		onDeath.add(gameOver);
 
-		conductor.offset = -latencyCompensation - Mixer.latency();
+		conductor.offset = latencyCompensation - Mixer.latency();
 		songPosition = (-conductor.crochet * 4.5) - conductor.offset;
 
 		var pos = MetaNote.floatToMetaNotePosition(songPosition);
@@ -471,11 +471,6 @@ class PlayField implements State {
 
 		songStarted = true;
 		songEnded = false;
-
-		// Ensure the main conductor is perfectly synced to the current songPosition.
-		// The update cycle will apply latency compensation each frame during gameplay,
-		// but set the main conductor time here as a baseline.
-		Main.conductor.time = songPosition;
 
 		// Remove countdown handler if still present (defensive)
 		if (countdownDisp.conductor != null) countdownDisp.conductor.onBeat.remove(countdownBeatHit);

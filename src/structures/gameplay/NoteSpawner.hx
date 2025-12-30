@@ -171,6 +171,11 @@ class NoteSpawner {
 	}
 
 	function processNotes(pos:Int64) {
+		var latency = Main.conductor.offset;
+		var latencyI64 = MetaNote.floatToMetaNotePosition(latency);
+
+		pos += latencyI64;
+
 		var i = bottom;
 		var scrollSpeed = parent.parent.scrollSpeed;
 		var prev:MetaNote = -1;
@@ -187,7 +192,7 @@ class NoteSpawner {
 			var receptor = parent.strumlines[lane].buffer[n.index];
 			var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
 
-			var diff = MetaNote.metaNotePositionToSongTime((n.position - pos)) * scrollSpeed;
+			var diff = (MetaNote.metaNotePositionToSongTime(n.position - pos)) * scrollSpeed;
 			var newY = receptor.y + Math.floor(diff);
 
 			var ghost = isGhostNote(prev, n);
@@ -210,6 +215,8 @@ class NoteSpawner {
 			++i;
 		}
 		timeSpentOnIt = haxe.Timer.stamp() - time;
+
+		pos -= latencyI64;
 	}
 
 	function cullTop(pos:Int64) {

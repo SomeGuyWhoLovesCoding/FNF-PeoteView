@@ -152,9 +152,13 @@ class Mixer {
 		if (isPlaying()) {
 			var ogSongPos = playfield.songPosition + (deltaTime * speed);
 			var latency = playfield.latencyCompensation - Mixer.latency();
-			var rawPlaybackPosition = MiniAudio.getPlaybackPosition() + latency;
+			// note: do not add latency to rawPlaybackPosition.
+			// and for the part where you set songPosition to ogSongPos, do not add latency to it as well.
+			// That was the cause of the "glitch" halfwheat wanted fixed desperately
+			// so instead I just set it on the note system class where everything processes.
+			var rawPlaybackPosition = MiniAudio.getPlaybackPosition();
 			if (playfield.songPosition - rawPlaybackPosition > 10 && rawPlaybackPosition < 50) {
-				playfield.songPosition = ogSongPos + latency;
+				playfield.songPosition = ogSongPos;
 			} else {
 				playfield.songPosition += deltaTime * speed;
 
@@ -227,8 +231,9 @@ class Mixer {
 								playField.countdownDisp.conductor.time = playField.songPosition;
 						}
 					}
+					var songNotActive = !playField.songStarted || playField.songEnded || RenderingMode.enabled;
 					if (!playField.paused) {
-						if (!playField.songStarted || playField.songEnded || RenderingMode.enabled) {
+						if (songNotActive) {
 							if (deltaTime > renderDelta && !RenderingMode.enabled) deltaTime = renderDelta;
 							playField.songPosition += deltaTime * Mixer.speed;
 						} else {

@@ -1330,10 +1330,14 @@ HL_PRIM bool HL_NAME(wearingPlugNPlay)(_NO_ARG) {
 }
 
 HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
-    int osMs = 47;
+	#if HX_WINDOWS
+    int osMs = 50;
+	#else
+	int osMs = 1;
+	#endif
     if (g_audioSystem.exists) {
         if(!HL_NAME(wearingPlugNPlay)()) osMs += 50;
-        if(HL_NAME(wearingHeadphones)()) osMs += 20;
+        if(HL_NAME(wearingHeadphones)()) osMs += 25;
     }
     return osMs;
 }

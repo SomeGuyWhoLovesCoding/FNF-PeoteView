@@ -227,6 +227,7 @@ class NoteSystem {
 				var noteToHit = strumline.notesToHit[index];
 				var noteToHitExists = noteToHit != null;
 				var hitPos = noteToHitExists ? noteToHit.position : 0;
+				diff += Main.conductor.offset;
 
 				if ((!isMissed && diff < parent.hitbox && !noteToHitExists) ||
 					(noteToHitExists && pos - hitPos > (position - hitPos) >> 1)) {
@@ -269,6 +270,8 @@ class NoteSystem {
 						hud.hideRatingPopup();
 					}
 				}
+
+				diff -= Main.conductor.offset;
 			}
 		}
 
