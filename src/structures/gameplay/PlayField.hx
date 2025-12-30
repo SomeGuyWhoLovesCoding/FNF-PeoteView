@@ -154,7 +154,8 @@ class PlayField implements State {
 		onStopSong.add(stopSong);
 		onDeath.add(gameOver);
 
-		songPosition = (-conductor.crochet * 4.5) - (latencyCompensation - Mixer.latency());
+		conductor.offset = -latencyCompensation - Mixer.latency();
+		songPosition = (-conductor.crochet * 4.5) - conductor.offset;
 
 		var pos = MetaNote.floatToMetaNotePosition(songPosition);
 
@@ -174,11 +175,8 @@ class PlayField implements State {
 		countdownDisp = new CountdownDisplay();
 		countdownDisp.setupSounds();
 
-		// Ensure the listener is attached (even on restart)
-		if (countdownDisp.conductor != null) {
-			countdownDisp.conductor.onBeat.remove(countdownBeatHit); // Remove first to avoid duplicates
-			countdownDisp.conductor.onBeat.add(countdownBeatHit);
-		}
+		// Attach countdown-specific handler (drives countdownDisp and triggers onStartSong)
+		countdownDisp.conductor.onBeat.add(countdownBeatHit);
 
 		PauseScreen.init(roof);
 		pauseScreen = new PauseScreen(Chart.header.difficulty);
@@ -344,7 +342,6 @@ class PlayField implements State {
 			// Countdown visuals: maps beats -4..-1 to 3..0
 			countdownDisp.countdownTick(Math.floor(4 + beat));
 		}
-		trace('a$beat');
 	}
 
 	inline function measureHit(measure:Float) {
