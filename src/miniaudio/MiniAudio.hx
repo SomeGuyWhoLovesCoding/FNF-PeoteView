@@ -39,15 +39,15 @@ extern class MiniAudio {
 
 	// AND NOW THE BACKGROUND AND SOUND STUFF
 
-	@:native("loadBackgroundTrack") static function _loadBackgroundTrack(path:ConstCharStar, startPlaying:Bool):Int;
-	inline static function loadBackgroundTrack(path:String, startPlaying:Bool = false):Int {
-		return _loadBackgroundTrack(ConstCharStar.fromString(path), startPlaying);
+	@:native("loadBackgroundTrack") static function _loadBackgroundTrack(path:ConstCharStar):Int;
+	inline static function loadBackgroundTrack(path:String):Int {
+		return _loadBackgroundTrack(ConstCharStar.fromString(path));
 	}
 	@:native("playBackgroundTrack") static function playBackgroundTrack(index:Int):Void;
 	@:native("stopBackgroundTrack") static function stopBackgroundTrack(index:Int):Void;
 	@:native("setBackgroundTrackVolume") static function setBackgroundTrackVolume(index:Int, volume:cpp.Float32):Void;
 	@:native("setBackgroundTrackLooping") static function setBackgroundTrackLooping(index:Int, looping:Bool):Void;
-	@:native("isBackgroundTrackPlaying") static function isBackgroundTrackPlaying(index:Int):Void;
+	@:native("isBackgroundTrackPlaying") static function isBackgroundTrackPlaying(index:Int):Bool;
 
 	@:native("loadSoundEffect") static function _loadSoundEffect(path:ConstCharStar):Int;
 	inline static function loadSoundEffect(path:String):Int {
@@ -111,22 +111,32 @@ class MiniAudio {
 
 	// AND NOW THE BACKGROUND AND SOUND STUFF
 
-	@:hlNative("ma_thing", "loadBackgroundTrack") static function _loadBackgroundTrack(path:hl.Bytes):Int;
-	inline static function loadBackgroundTrack(path:String):Int {
-		return _loadBackgroundTrack(ConstCharStar.fromString(path.toUtf8()));
+	/*inline public static function loadBackgroundTrack(path:String):Int {
+		var pathStr:hl.Bytes = @:privateAccess path.toUtf8();
+		return _loadBackgroundTrack(pathStr);
+	}*/
+	@:hlNative("ma_thing", "loadBackgroundTrack") public static function loadBackgroundTrack(path:String):Int {
+		return 0;
 	}
-	@:hlNative("ma_thing", "playBackgroundTrack") static function playBackgroundTrack(index:Int):Void;
-	@:hlNative("ma_thing", "stopBackgroundTrack") static function stopBackgroundTrack(index:Int):Void;
-	@:hlNative("ma_thing", "setBackgroundTrackVolume") static function setBackgroundTrackVolume(index:Int, volume:hl.F32):Void;
-	@:hlNative("ma_thing", "setBackgroundTrackLooping") static function setBackgroundTrackLooping(index:Int, looping:Bool):Void;
-	@:hlNative("ma_thing", "isBackgroundTrackPlaying") static function isBackgroundTrackPlaying(index:Int):Void;
 
-	@:hlNative("ma_thing", "loadSoundEffect") static function _loadSoundEffect(path:hl.Bytes):Int;
-	inline static function loadSoundEffect(path:String):Int {
-		return _loadSoundEffect(ConstCharStar.fromString(path.toUtf8()));
+	@:hlNative("ma_thing", "playBackgroundTrack") public static function playBackgroundTrack(index:Int):Void {}
+	@:hlNative("ma_thing", "stopBackgroundTrack") public static function stopBackgroundTrack(index:Int):Void {}
+	@:hlNative("ma_thing", "setBackgroundTrackVolume") public static function setBackgroundTrackVolume(index:Int, volume:hl.F32):Void {}
+	@:hlNative("ma_thing", "setBackgroundTrackLooping") public static function setBackgroundTrackLooping(index:Int, looping:Bool):Void {}
+	@:hlNative("ma_thing", "isBackgroundTrackPlaying") public static function isBackgroundTrackPlaying(index:Int):Bool {
+		return false;
 	}
-	@:hlNative("ma_thing", "playSoundEffect") static function playSoundEffect(index:Int, volume:hl.F32):Void;
-	@:hlNative("ma_thing", "stopSoundEffect") static function stopSoundEffect(index:Int):Void;
+
+	/*inline public static function loadSoundEffect(path:String):Int {
+		var pathStr:hl.Bytes = @:privateAccess path.toUtf8();
+		return _loadSoundEffect(pathStr);
+	}*/
+	@:hlNative("ma_thing", "loadSoundEffect") public static function loadSoundEffect(path:String):Int {
+		return 0;
+	}
+
+	@:hlNative("ma_thing", "playSoundEffect") public static function playSoundEffect(index:Int, volume:hl.F32):Void {}
+	@:hlNative("ma_thing", "stopSoundEffect") public static function stopSoundEffect(index:Int):Void {}
 }
 #else
 class MiniAudio {

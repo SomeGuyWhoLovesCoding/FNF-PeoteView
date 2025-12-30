@@ -1413,7 +1413,7 @@ struct BackgroundTrack {
 		filePath.clear();
 	}
 	
-	bool load(const char* path, bool startPlaying = false) {
+	bool load(const char* path) {
 		cleanup();
 		
 		ma_decoder_config config = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
@@ -1428,7 +1428,7 @@ struct BackgroundTrack {
 		initialized = true;
 		filePath = path;
 		ma_decoder_get_length_in_pcm_frames(&decoder, &length);
-		active = startPlaying;
+		active = false;
 		looping = true;
 		
 		return true;
@@ -1749,7 +1749,7 @@ public:
     // Background Track API
     ////////////////////////////////////////////////////////////////
     
-    int loadBackgroundTrack(const char* path, bool startPlaying = false) {
+    int loadBackgroundTrack(const char* path) {
         if (!deviceInitialized) {
             if (!initialize()) return -1;
         }
@@ -1765,7 +1765,7 @@ public:
         }
         
         BackgroundTrack track;
-        if (!track.load(path, startPlaying)) {
+        if (!track.load(path)) {
             return -1;
         }
         
@@ -1982,8 +1982,8 @@ namespace {
 }
 
 // Background track functions
-int loadBackgroundTrack(const char* path, bool startPlaying) {
-	return g_mixer.loadBackgroundTrack(path, startPlaying);
+int loadBackgroundTrack(const char* path) {
+	return g_mixer.loadBackgroundTrack(path);
 }
 
 void playBackgroundTrack(int index) {

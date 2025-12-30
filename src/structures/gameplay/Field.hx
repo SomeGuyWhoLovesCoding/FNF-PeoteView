@@ -213,6 +213,8 @@ class Field {
 		var theme = gameOverMeta.theme;
 		var bpm = gameOverMeta.bpm;
 
+		gameOverMusic = MiniAudio.loadBackgroundTrack('assets/death/fnf_loss_music-${theme}.ogg');
+
 		gameOverSound = MiniAudio.loadSoundEffect('assets/death/fnf_loss_sfx-${theme}.ogg');
 		MiniAudio.playSoundEffect(gameOverSound, 0.7);
 
@@ -226,7 +228,6 @@ class Field {
 		actorOnGameOver.shake = false;
 
 		actorOnGameOver.finishCallback = () -> {
-			gameOverMusic = MiniAudio.loadBackgroundTrack('assets/death/fnf_loss_music-${theme}.ogg');
 			MiniAudio.playBackgroundTrack(gameOverMusic);
 			MiniAudio.setBackgroundTrackVolume(gameOverMusic, 0.7);
 			MiniAudio.setBackgroundTrackLooping(gameOverMusic, true);
@@ -267,7 +268,7 @@ class Field {
 	function updateGameOver(deltaTime:Float) {
 		Main.current.mouseDown = gameOverConfirmed ? null : _gameover_end_call;
 
-		if (gameOverMusic != -1) {
+		if (MiniAudio.isBackgroundTrackPlaying(gameOverMusic)) {
 			Main.conductor.time += deltaTime;
 		}
 	}

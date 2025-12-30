@@ -25,7 +25,7 @@ bool wearingHeadphones();
 bool wearingPlugNPlay();
 
 // And now the rest
-int loadBackgroundTrack(const char* path, bool startPlaying);
+int loadBackgroundTrack(const char* path);
 void playBackgroundTrack(int index);
 void stopBackgroundTrack(int index);
 void setBackgroundTrackVolume(int index, float volume);
