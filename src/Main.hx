@@ -63,12 +63,6 @@ class Main extends Application
 				startSample(window);
 			default: throw("Sorry, only works with OpenGL.");
 		}
-
-		/*Chart.load("assets/songs/traumatism");
-		haxe.Timer.delay(function() {
-			Sys.println('DESTROY THAT SHIT BRO RAAAAAAAAAAAAAH');
-			Chart.destroy();
-		}, 8000);*/
 	}
 
 	static var songChosen:String = "";
@@ -184,6 +178,12 @@ class Main extends Application
 			window.onResize.add(resize);
 			window.onKeyDown.add(controlVolume);
 			window.onClose.add(Chart.destroy);
+			/*#if hl // HL doesn't even call any ~'s on the cpp side. That's so weird.
+			window.onClose.add(() -> {
+				trace("IM SORRY, BUT FUCK YOU!!!!!!!!");
+				MiniAudio.destroy();
+			});
+			#end*/
 
 			#if FV_DEBUG
 			DeveloperStuff.init(window, this);

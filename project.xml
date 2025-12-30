@@ -57,7 +57,7 @@
 
 	<!-- Copy HDLL's over to cwd on hl -->
 	<postbuild cmd='robocopy hdlls\windows bin\hl\bin *.hdll /NFL /NDL /NJH /NJS /NC /NS' if="hl windows" />
-	<postbuild cmd='cp hdlls/linux/*.hdll bin/hl/bin' if="hl Elinux"/>
+	<postbuild cmd='cp -r hdlls/linux/. bin/hl/bin' if="hl linux"/>
 
 	<haxedef name="HXCPP_CPP17" />
 

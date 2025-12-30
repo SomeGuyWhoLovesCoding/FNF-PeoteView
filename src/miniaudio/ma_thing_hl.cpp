@@ -36,6 +36,7 @@ extern "C" {
 
 #include <stdio.h>
 #include <stdint.h>
+#include <iostream>
 #include <vector>
 #include <string>
 #include <algorithm>
@@ -543,6 +544,8 @@ public:
 	std::condition_variable refillCV;
 	std::queue<RefillRequest> refillQueue;
 	std::atomic<int> activeRefillJobs{0};
+    std::atomic<bool> callback_active{false};
+    std::atomic<int> callback_lock_attempts{0};
 
 	// State variables
 	int longestDecoderIndex = 0;
@@ -550,10 +553,12 @@ public:
 	double masterVolume = 1.0;
 	int mixerState = 3;
 	bool exists = false;
+	bool shutting_down = false;
 
 	AudioSystem() = default;
 
 	~AudioSystem() {
+		std::cout << "Fuck you bitch it can't shut down on hashlink" << std::endl;
 		destroy();
 	}
 
@@ -668,52 +673,44 @@ public:
 		mixerState = 3;
 	}
 
-	void destroy() {
-		if(!exists) return;
-		exists = false;
-
-		// 1. Stop audio device first (this stops callbacks)
-		device.stop();
-
-		// 2. Stop refill thread (before acquiring audioMutex)
-		stopRefillThread();
-
-		// 3. Now acquire audioMutex for cleanup
-		if (audioMutex.initialized) {
-			audioMutex.lock();
-		}
-
-		// 4. Clear refill queue while holding mutex
-		{
-			std::lock_guard<std::mutex> lock(refillMutex);
-			while (!refillQueue.empty()) refillQueue.pop();
-		}
-
-		// 5. Wait for any active refill jobs to complete
-		auto start = std::chrono::steady_clock::now();
-		while (activeRefillJobs > 0 &&
-			std::chrono::steady_clock::now() - start < std::chrono::milliseconds(100)) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		}
-
-		// 6. Uninitialize device
-		device.uninit();
-
-		// 7. Clean up decoders and buffers
-		streams.clear();
-		decoderVolumes.clear();
-		filePaths.clear();
-
-		// 8. Reset state
-		longestDecoderIndex = 0;
-		playbackRate = 1.0f;
-		masterVolume = 1.0;
-		mixerState = 3;
-
-		if (audioMutex.initialized) {
-			audioMutex.unlock();
-		}
-	}
+    void destroy() {
+        //printf("....");
+        if (!exists) return;
+        
+        printf("[AudioSystem] Starting shutdown...\n");
+        
+        // 1. Set flags to prevent new work
+        shutting_down = true;
+        exists = false;
+        
+        // 2. Stop device first - this should stop callbacks
+        printf("[AudioSystem] Stopping device...\n");
+        device.stop();
+        
+        // 3. Stop refill thread (forceful but safe)
+        printf("[AudioSystem] Stopping refill thread...\n");
+        stopRefillThread();
+        
+        // 4. Wait for any in-progress callback to finish
+        printf("[AudioSystem] Waiting for callbacks to finish...\n");
+        auto start = std::chrono::steady_clock::now();
+        while (callback_active.load() && 
+               std::chrono::steady_clock::now() - start < std::chrono::milliseconds(500)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        
+        // 5. Force uninit device even if callback might be running
+        printf("[AudioSystem] Uninitializing device...\n");
+        device.uninit();
+        
+        // 6. Clear all data structures (they're RAII, so should clean up)
+        printf("[AudioSystem] Clearing streams...\n");
+        streams.clear();
+        decoderVolumes.clear();
+        filePaths.clear();
+        
+        printf("[AudioSystem] Shutdown complete.\n");
+    }
 
 	void start() {
 		if(!exists) return;
@@ -1185,9 +1182,29 @@ public:
 	}
 
 	// Data callback
-	static void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
-		AudioSystem* system = static_cast<AudioSystem*>(pDevice->pUserData);
-		if (!system) return;
+    static void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
+        AudioSystem* system = static_cast<AudioSystem*>(pDevice->pUserData);
+        if (!system || system->shutting_down) {
+            memset(pOutput, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
+            return;
+        }
+        
+        system->callback_active = true;
+        
+        // Quick check - if shutdown started during this callback, bail out
+        if (system->shutting_down) {
+            memset(pOutput, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
+            system->callback_active = false;
+            return;
+        }
+        
+        // Check again after getting lock
+        if (system->shutting_down) {
+            memset(pOutput, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
+            system->audioMutex.unlock();
+            system->callback_active = false;
+            return;
+        }
 
 		float* pOutputF32 = (float*)pOutput;
 		MA_ASSERT(pDevice->playback.format == SAMPLE_FORMAT);
@@ -1235,8 +1252,11 @@ public:
 
 		system->mixerState = system->any_active() ? 1 : 3;
 		system->audioMutex.unlock();
-		(void)pInput;
-	}
+
+		system->audioMutex.unlock();
+        system->callback_active = false;
+        (void)pInput;
+    }
 
 private:
 	void moveFrom(AudioSystem&& other) noexcept {
@@ -1358,7 +1378,11 @@ HL_PRIM bool HL_NAME(wearingPlugNPlay)(_NO_ARG) {
 }
 
 HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
-    int osMs = 47;
+	#if HX_WINDOWS
+	int osMs = 47;
+	#else
+	int osMs = 1;
+	#endif
     if (g_audioSystem.exists) {
         if(!HL_NAME(wearingPlugNPlay)()) osMs += 50;
         if(HL_NAME(wearingHeadphones)()) osMs += 20;
