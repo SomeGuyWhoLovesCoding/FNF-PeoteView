@@ -23266,7 +23266,9 @@ static ma_result ma_context_get_IAudioClient__wasapi(ma_context* pContext, ma_de
         pActivationParams = &activationParams;
 
         /* When requesting a specific device ID we need to use a special device ID. */
-        MA_COPY_MEMORY(virtualDeviceID.wasapi, MA_VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK, (wcslen(MA_VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK) + 1) * sizeof(wchar_t)); /* +1 for the null terminator. */
+        // SomeGuyWhoLikesFNF is now going to say this, what the fuck is this function even for, anyway?
+        // if it doesn't work then it doesn't matter cuz it isn't needed
+        //MA_COPY_MEMORY(virtualDeviceID.wasapi, MA_VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK, (wcslen(MA_VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK) + 1) * sizeof(wchar_t)); /* +1 for the null terminator. */
         pDeviceID = &virtualDeviceID;
     } else {
         pActivationParams = NULL;   /* No activation parameters required. */

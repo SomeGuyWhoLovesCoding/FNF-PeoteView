@@ -91,8 +91,8 @@
 #    endif
 #  endif
 
-#elif (defined(__APPLE__) && defined(__MACH__)) /* Macos X Framework build */
-#  include <stdint.h>
+#elif (defined(__APPLE__) && defined(__MACH__)) /* MacOS X Framework build */
+
 #  include <sys/types.h>
    typedef int16_t ogg_int16_t;
    typedef uint16_t ogg_uint16_t;
@@ -210,14 +210,6 @@ extern "C" {
 
 #include <stddef.h>
 /*#include <ogg/os_types.h>*/
-
-/* Disable warning on MSVC target */
-#ifdef _MSC_VER
-#pragma warning( disable : 4244 )
-#pragma warning( disable : 4018 )
-#pragma warning( disable : 4305 )
-#pragma warning( disable : 4267 )
-#endif
 
 typedef struct {
   void *iov_base;
@@ -1762,7 +1754,7 @@ int main(void){
   cliptest(testbuffer2,test2size,17,five,fivesize);
   fprintf(stderr,"ok.");
 
-  fprintf(stderr,"\nsingle bit unclipped packing (LSb): ");
+  fprintf(stderr,"\nSingle bit unclipped packing (LSb): ");
   cliptest(testbuffer3,test3size,1,six,sixsize);
   fprintf(stderr,"ok.");
 
@@ -1872,7 +1864,7 @@ int main(void){
   cliptestB(testbuffer2,test2size,17,fiveB,fivesize);
   fprintf(stderr,"ok.");
 
-  fprintf(stderr,"\nsingle bit unclipped packing (MSb): ");
+  fprintf(stderr,"\nSingle bit unclipped packing (MSb): ");
   cliptestB(testbuffer3,test3size,1,sixB,sixsize);
   fprintf(stderr,"ok.");
 
@@ -4441,7 +4433,7 @@ extern void _VDBG_free(void *ptr,char *file,long line);
 
 #if defined(_WIN32) && !defined(__SYMBIAN32__)
 #  include <malloc.h>
-#  define rint(x)   (int)(floor((x)+0.5f))
+#  define rint(x)   (floor((x)+0.5f))
 #  define NO_FLOAT_MATH_LIB
 #  define FAST_HYPOT(a, b) sqrt((a)*(a) + (b)*(b))
 #endif
@@ -4629,7 +4621,7 @@ STIN int vorbis_ftoi(double f){
 #define cPI2_8 .70710678118654752441F
 #define cPI1_8 .92387953251128675613F
 
-#define FLOAT_CONV(x) (float)(x)
+#define FLOAT_CONV(x) (x)
 #define MULT_NORM(x) (x)
 #define HALVE(x) ((x)*.5f)
 
@@ -5477,8 +5469,8 @@ extern int floor1_encode(oggpack_buffer *opb,vorbis_block *vb,
 #ifndef _V_LOOKUP_DATA_H_
 
 #ifdef FLOAT_LOOKUP
-#define cos_LOOKUP_SZ 128
-static const float cos_LOOKUP[cos_LOOKUP_SZ+1]={
+#define COS_LOOKUP_SZ 128
+static const float COS_LOOKUP[COS_LOOKUP_SZ+1]={
         +1.0000000000000f,+0.9996988186962f,+0.9987954562052f,+0.9972904566787f,
         +0.9951847266722f,+0.9924795345987f,+0.9891765099648f,+0.9852776423889f,
         +0.9807852804032f,+0.9757021300385f,+0.9700312531945f,+0.9637760657954f,
@@ -5607,10 +5599,10 @@ static const long INVSQ_LOOKUP_I[64+1]={
            65536l,
 };
 
-#define cos_LOOKUP_I_SHIFT 9
-#define cos_LOOKUP_I_MASK 511
-#define cos_LOOKUP_I_SZ 128
-static const long cos_LOOKUP_I[cos_LOOKUP_I_SZ+1]={
+#define COS_LOOKUP_I_SHIFT 9
+#define COS_LOOKUP_I_MASK 511
+#define COS_LOOKUP_I_SZ 128
+static const long COS_LOOKUP_I[COS_LOOKUP_I_SZ+1]={
            16384l,   16379l,   16364l,   16340l,
            16305l,   16261l,   16207l,   16143l,
            16069l,   15986l,   15893l,   15791l,
@@ -18202,7 +18194,7 @@ STIN long decode_packed_entry_number(codebook *book, oggpack_buffer *b){
     hi=book->used_entries;
   }
 
-  /* single entry codebooks use a firsttablen of 1 and a
+  /* Single entry codebooks use a firsttablen of 1 and a
      dec_maxlength of 1.  If a single-entry codebook gets here (due to
      failure to read one bit above), the next look attempt will also
      fail and we'll correctly kick out instead of trying to walk the
@@ -18484,7 +18476,7 @@ ogg_uint32_t *_make_words(char *l,long n,long sparsecount){
   }
 
   /* any underpopulated tree must be rejected. */
-  /* single-entry codebooks are a retconned extension to the spec.
+  /* Single-entry codebooks are a retconned extension to the spec.
      They have a single codeword '0' of length 1 that results in an
      underpopulated tree.  Shield that case from the underformed tree check. */
   if(!(count==1 && marker[2]==2)){
@@ -18980,10 +18972,10 @@ int main(){
 
 /* interpolated lookup based cos function, domain 0 to PI only */
 float vorbis_coslook(float a){
-  double d=a*(.31830989*(float)cos_LOOKUP_SZ);
+  double d=a*(.31830989*(float)COS_LOOKUP_SZ);
   int i=vorbis_ftoi(d-.5);
 
-  return cos_LOOKUP[i]+ (d-i)*(cos_LOOKUP[i+1]-cos_LOOKUP[i]);
+  return COS_LOOKUP[i]+ (d-i)*(COS_LOOKUP[i+1]-COS_LOOKUP[i]);
 }
 
 /* interpolated 1./sqrt(p) where .5 <= p < 1. */
@@ -19040,10 +19032,10 @@ float vorbis_fromdBlook_i(long a){
 /* interpolated lookup based cos function, domain 0 to PI only */
 /* a is in 0.16 format, where 0==0, 2^^16-1==PI, return 0.14 */
 long vorbis_coslook_i(long a){
-  int i=a>>cos_LOOKUP_I_SHIFT;
-  int d=a&cos_LOOKUP_I_MASK;
-  return cos_LOOKUP_I[i]- ((d*(cos_LOOKUP_I[i]-cos_LOOKUP_I[i+1]))>>
-                           cos_LOOKUP_I_SHIFT);
+  int i=a>>COS_LOOKUP_I_SHIFT;
+  int d=a&COS_LOOKUP_I_MASK;
+  return COS_LOOKUP_I[i]- ((d*(COS_LOOKUP_I[i]-COS_LOOKUP_I[i+1]))>>
+                           COS_LOOKUP_I_SHIFT);
 }
 
 #endif
@@ -21756,8 +21748,8 @@ A PARTICULAR PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE FOUNDATION
 OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
 SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
 LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUsinESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
 THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARIsinG IN ANY WAY OUT OF THE USE
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */

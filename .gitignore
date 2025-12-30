@@ -12,3 +12,9 @@ bin/
 .vscode/
 
 hdll/
+
+# bullshit from when I was trying to get stb_vorbis up again but actually did for some reason
+# ig it was from deepseek pulling something up its ass and not expecting it to feel good
+src/miniaudio/extras/a/
+src/miniaudio/extras/__old
+src/miniaudio/extras/old

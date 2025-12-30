@@ -5,12 +5,29 @@
 #include "include/ma_thing.h"
 #include "signalsmith-stretch/signalsmith-stretch.h"
 
-#define OGG_IMPL
-#define VORBIS_IMPL
-#include "minivorbis.h"
+#if _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
+
+// Then include stb_vorbis as C code
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+#define STB_VORBIS_IMPLEMENTATION
+#include "extras/stb_vorbis.c"
+
+#ifdef __cplusplus
+}
+#endif
 
 #define MINIAUDIO_IMPLEMENTATION
-#include "../miniaudio.h"
+#include "miniaudio.h"
+
+/*// Use stb_vorbis instead of libvorbis - it's header-only!
+//#define STB_VORBIS_HEADER_ONLY
+#include "extras/stb_vorbis.c"    // miniaudio includes this*/
 
 #include <stdio.h>
 #include <stdint.h>
@@ -156,75 +173,11 @@ cleanup:
 #define CHANNEL_COUNT 2
 #define SAMPLE_RATE 44100
 
-// Include custom codec implementations
-//#include "extras/decoders/libvorbis/miniaudio_libvorbis.h"
-//#include "extras/decoders/libopus/miniaudio_libopus.h"
-
-//#include "extras/miniaudio_vorbis.h"
-
-// Global custom backend configuration
-/*namespace {
-    ma_decoding_backend_vtable* g_customBackendVTables[] = {
-        &ma_decoding_backend_vtable_libvorbis,
-        // Uncomment when you have opus:
-        // &ma_decoding_backend_vtable_libopus
-    };
-    
-    const ma_uint32 g_customBackendCount = sizeof(g_customBackendVTables) / sizeof(g_customBackendVTables[0]);
-    bool g_customBackendsInitialized = false;
-}
-
-void addOggAndOpusSupport() {
-    if (g_customBackendsInitialized) {
-        return; // Already initialized
-    }
-    
-    g_customBackendsInitialized = true;
-    printf("Ogg Vorbis codec support enabled\n");
-}
-
-// Helper function to initialize decoder with custom backend support
-ma_result ma_decoder_init_file_with_custom_backend(const char* pFilePath, 
-                                                    const ma_decoder_config* pConfig, 
-                                                    ma_decoder* pDecoder) {
-    ma_result result;
-    
-    // Try standard decoder first (supports MP3, WAV, FLAC built-in)
-    result = ma_decoder_init_file(pFilePath, pConfig, pDecoder);
-    if (result == MA_SUCCESS) {
-        return MA_SUCCESS;
-    }
-    
-    // If standard decoder fails and custom backends are enabled, try them
-    if (g_customBackendsInitialized) {
-        // Try each custom backend
-        for (ma_uint32 i = 0; i < g_customBackendCount; i++) {
-            ma_decoding_backend_vtable* pVTable = g_customBackendVTables[i];
-            
-            // Initialize using the custom backend
-            result = ma_decoder_init_file_w(
-                pFilePath,
-                pConfig,
-                &pVTable,
-                1,  // Only pass one backend at a time
-                NULL,
-                pDecoder
-            );
-            
-            if (result == MA_SUCCESS) {
-                return MA_SUCCESS;
-            }
-        }
-    }
-    
-    // All attempts failed, return error
-    return MA_INVALID_FILE;
-}
-
-// Cleanup function (currently a no-op since we're using static vtables)
-void cleanupOggOpusSupport() {
-    g_customBackendsInitialized = false;
-}*/
+/*ma_decoding_backend_vtable* pCustomBackendVTables[] =
+{
+	ma_decoding_backend_libvorbis,
+	ma_decoding_backend_libopus
+};*/
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -641,6 +594,8 @@ public:
 		
 		ma_uint64 absoluteLengthOfSong = 0;
 		ma_decoder_config decoderConfig = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
+		//decoderConfig.ppCustomBackendVTables = pCustomBackendVTables;
+		//decoderConfig.customBackendCount     = sizeof(pCustomBackendVTables) / sizeof(pCustomBackendVTables[0]);
 		
 		for(size_t i = 0; i < argv.size(); i++) {
 			const char* path = argv[i];
@@ -1054,6 +1009,8 @@ public:
 			// Create a temporary decoder for this load
 			ma_decoder tempDecoder;
 			ma_decoder_config decoderConfig = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
+			//decoderConfig.ppCustomBackendVTables = pCustomBackendVTables;
+			//decoderConfig.customBackendCount     = sizeof(pCustomBackendVTables) / sizeof(pCustomBackendVTables[0]);
 			
 			// Use the stored file path
 			const char* path = filePaths[request.decoderIndex].c_str();
@@ -1460,6 +1417,9 @@ struct BackgroundTrack {
 		cleanup();
 		
 		ma_decoder_config config = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
+		//config.ppCustomBackendVTables = pCustomBackendVTables;
+		//config.customBackendCount     = sizeof(pCustomBackendVTables) / sizeof(pCustomBackendVTables[0]);
+
 		if (ma_decoder_init_file(path, &config, &decoder) != MA_SUCCESS) {
 			printf("Failed to load background track: %s\n", path);
 			return false;
