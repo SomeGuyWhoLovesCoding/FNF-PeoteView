@@ -213,10 +213,10 @@ class Field {
 		var theme = gameOverMeta.theme;
 		var bpm = gameOverMeta.bpm;
 
-		gameOverSound = MiniAudio.loadSoundEffect('assets/death/fnf_loss_sfx-${theme}.flac');
+		gameOverSound = MiniAudio.loadSoundEffect('assets/death/fnf_loss_sfx-${theme}.ogg');
 		MiniAudio.playSoundEffect(gameOverSound, 0.7);
 
-		gameOverConfirm = MiniAudio.loadSoundEffect('assets/death/fnf_loss_end-${theme}.flac');
+		gameOverConfirm = MiniAudio.loadSoundEffect('assets/death/fnf_loss_end-${theme}.ogg');
 
 		Main.conductor.reset();
 		Main.conductor.changeBpmAt(0, bpm);
@@ -226,7 +226,7 @@ class Field {
 		actorOnGameOver.shake = false;
 
 		actorOnGameOver.finishCallback = () -> {
-			gameOverMusic = MiniAudio.loadBackgroundTrack('assets/death/fnf_loss_music-${theme}.flac');
+			gameOverMusic = MiniAudio.loadBackgroundTrack('assets/death/fnf_loss_music-${theme}.ogg');
 			MiniAudio.playBackgroundTrack(gameOverMusic);
 			MiniAudio.setBackgroundTrackVolume(gameOverMusic, 0.7);
 			MiniAudio.setBackgroundTrackLooping(gameOverMusic, true);

@@ -5,13 +5,17 @@
 #include "include/ma_thing.h"
 #include "signalsmith-stretch/signalsmith-stretch.h"
 
+#define OGG_IMPL
+#define VORBIS_IMPL
+#include "minivorbis.h"
+
 #define MINIAUDIO_IMPLEMENTATION
-#include "miniaudio.h"
+#include "../miniaudio.h"
 
 #include <stdio.h>
-#include <vector>
 #include <stdint.h>
-#include <string.h>
+#include <vector>
+#include <string>
 #include <algorithm>
 #include <array>
 #include <thread>
@@ -19,6 +23,7 @@
 #include <mutex>
 #include <condition_variable>
 #include <queue>
+#include <unordered_map>
 
 #ifdef HX_WINDOWS
 #include <mmdeviceapi.h>
@@ -144,9 +149,82 @@ cleanup:
 }
 #endif
 
+//#include "extras/miniaudio_libvorbis.h"
+//#include "extras/decoders/libopus/miniaudio_libopus.c"
+
 #define SAMPLE_FORMAT ma_format_f32
 #define CHANNEL_COUNT 2
 #define SAMPLE_RATE 44100
+
+// Include custom codec implementations
+//#include "extras/decoders/libvorbis/miniaudio_libvorbis.h"
+//#include "extras/decoders/libopus/miniaudio_libopus.h"
+
+//#include "extras/miniaudio_vorbis.h"
+
+// Global custom backend configuration
+/*namespace {
+    ma_decoding_backend_vtable* g_customBackendVTables[] = {
+        &ma_decoding_backend_vtable_libvorbis,
+        // Uncomment when you have opus:
+        // &ma_decoding_backend_vtable_libopus
+    };
+    
+    const ma_uint32 g_customBackendCount = sizeof(g_customBackendVTables) / sizeof(g_customBackendVTables[0]);
+    bool g_customBackendsInitialized = false;
+}
+
+void addOggAndOpusSupport() {
+    if (g_customBackendsInitialized) {
+        return; // Already initialized
+    }
+    
+    g_customBackendsInitialized = true;
+    printf("Ogg Vorbis codec support enabled\n");
+}
+
+// Helper function to initialize decoder with custom backend support
+ma_result ma_decoder_init_file_with_custom_backend(const char* pFilePath, 
+                                                    const ma_decoder_config* pConfig, 
+                                                    ma_decoder* pDecoder) {
+    ma_result result;
+    
+    // Try standard decoder first (supports MP3, WAV, FLAC built-in)
+    result = ma_decoder_init_file(pFilePath, pConfig, pDecoder);
+    if (result == MA_SUCCESS) {
+        return MA_SUCCESS;
+    }
+    
+    // If standard decoder fails and custom backends are enabled, try them
+    if (g_customBackendsInitialized) {
+        // Try each custom backend
+        for (ma_uint32 i = 0; i < g_customBackendCount; i++) {
+            ma_decoding_backend_vtable* pVTable = g_customBackendVTables[i];
+            
+            // Initialize using the custom backend
+            result = ma_decoder_init_file_w(
+                pFilePath,
+                pConfig,
+                &pVTable,
+                1,  // Only pass one backend at a time
+                NULL,
+                pDecoder
+            );
+            
+            if (result == MA_SUCCESS) {
+                return MA_SUCCESS;
+            }
+        }
+    }
+    
+    // All attempts failed, return error
+    return MA_INVALID_FILE;
+}
+
+// Cleanup function (currently a no-op since we're using static vtables)
+void cleanupOggOpusSupport() {
+    g_customBackendsInitialized = false;
+}*/
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -547,6 +625,9 @@ public:
 		
 		// Clean up existing resources
 		destroy();
+
+		// Add this at the very beginning
+		//addOggAndOpusSupport();
 		
 		// Store file paths
 		filePaths.clear();
@@ -639,6 +720,8 @@ public:
 		
 		// Uninitialize device
 		device.uninit();
+
+		//cleanupOggOpusSupport();
 		
 		// Clean up decoders and buffers (handled by RAII destructors)
 		streams.clear();
@@ -1640,11 +1723,6 @@ struct SoundEffect {
 																							/***//////
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-#include <unordered_map>
-#include <string>
-#include <mutex>
-#include <vector>
 
 class AudioMixerManager {
 private:
