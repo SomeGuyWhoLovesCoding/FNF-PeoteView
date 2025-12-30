@@ -53,6 +53,8 @@ class Field {
 	static var singPoses:Array<String> = ["singLEFT", "singDOWN", "singUP", "singRIGHT"];
 	static var missPoses:Array<String> = ["singLEFTmiss", "singDOWNmiss", "singUPmiss", "singRIGHTmiss"];
 
+	static var gfConductor(default, null):Conductor = new Conductor();
+
 	function new(parent:PlayField) {
 		this.parent = parent;
 
@@ -83,7 +85,8 @@ class Field {
 		player.finishAnim = "idle";
 		player.addToBuffer();
 
-		Main.conductor.onBeat.add(beatHit);
+		gfConductor.changeBpmAt(0, Main.conductor.bpm);
+		gfConductor.onBeat.add(beatHit);
 
 		parent.view.scroll.y = -100;
 		targetCamera.x = 0;
@@ -138,6 +141,7 @@ class Field {
 			gameOver();
 		}
 
+		gfConductor.time = parent.songPosition - (parent.latencyCompensation - Mixer.latency());
 	}
 
 	function render() {
@@ -192,7 +196,7 @@ class Field {
 		parent.view.scroll.x = parent.view.scroll.y = 0;
 		parent.view.fov = 1.0;
 
-		Main.conductor.onBeat.remove(beatHit);
+		gfConductor.onBeat.remove(beatHit);
 	}
 
 	// GAME OVER IMPL
