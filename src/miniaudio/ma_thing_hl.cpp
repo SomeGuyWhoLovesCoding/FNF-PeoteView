@@ -672,27 +672,47 @@ public:
 		if(!exists) return;
 		exists = false;
 
-		// Stop audio device first
+		// 1. Stop audio device first (this stops callbacks)
 		device.stop();
 
-		// Stop refill thread
+		// 2. Stop refill thread (before acquiring audioMutex)
 		stopRefillThread();
 
-		// Uninitialize device
+		// 3. Now acquire audioMutex for cleanup
+		if (audioMutex.initialized) {
+			audioMutex.lock();
+		}
+
+		// 4. Clear refill queue while holding mutex
+		{
+			std::lock_guard<std::mutex> lock(refillMutex);
+			while (!refillQueue.empty()) refillQueue.pop();
+		}
+
+		// 5. Wait for any active refill jobs to complete
+		auto start = std::chrono::steady_clock::now();
+		while (activeRefillJobs > 0 &&
+			std::chrono::steady_clock::now() - start < std::chrono::milliseconds(100)) {
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
+
+		// 6. Uninitialize device
 		device.uninit();
 
-		//cleanupOggOpusSupport();
-
-		// Clean up decoders and buffers (handled by RAII destructors)
+		// 7. Clean up decoders and buffers
 		streams.clear();
 		decoderVolumes.clear();
 		filePaths.clear();
 
-		// Reset state
+		// 8. Reset state
 		longestDecoderIndex = 0;
 		playbackRate = 1.0f;
 		masterVolume = 1.0;
 		mixerState = 3;
+
+		if (audioMutex.initialized) {
+			audioMutex.unlock();
+		}
 	}
 
 	void start() {
@@ -966,21 +986,27 @@ public:
 	void refillWorkerThread() {
 		while (refillThreadRunning) {
 			RefillRequest request;
+			bool hasWork = false;
 
 			{
 				std::unique_lock<std::mutex> lock(refillMutex);
-				// Use wait_for with timeout to check shutdown flag regularly
-				refillCV.wait_for(lock, std::chrono::milliseconds(10), [this]() {
+				
+				// Use wait with predicate to check shutdown flag
+				refillCV.wait(lock, [this]() {
 					return !refillQueue.empty() || !refillThreadRunning;
 				});
 
 				if (!refillThreadRunning) break;
-				if (refillQueue.empty()) continue;
-
-				request = refillQueue.front();
-				refillQueue.pop();
-				activeRefillJobs++;
+				
+				if (!refillQueue.empty()) {
+					request = refillQueue.front();
+					refillQueue.pop();
+					activeRefillJobs++;
+					hasWork = true;
+				}
 			}
+
+			if (!hasWork) continue;
 
 			if (request.decoderIndex < 0 || request.decoderIndex >= (int)streams.size()) {
 				activeRefillJobs--;
@@ -1051,29 +1077,31 @@ public:
 	void stopRefillThread() {
 		if (!refillThreadRunning) return;
 
-		// Signal thread to stop
+		// Signal thread to stop FIRST
 		refillThreadRunning = false;
 
-		// Clear queue to prevent new jobs
+		// Clear queue and notify
 		{
 			std::lock_guard<std::mutex> lock(refillMutex);
 			while (!refillQueue.empty()) refillQueue.pop();
+			refillCV.notify_all();  // Wake up thread to check flag
 		}
 
-		// Notify thread to wake up and exit
-		refillCV.notify_all();
-
-		// Give thread a moment to finish current job
+		// Wait for thread to exit
 		if (refillThread.joinable()) {
-			// Wait for any active jobs to complete (max 100ms)
-			auto start = std::chrono::steady_clock::now();
-			while (activeRefillJobs > 0 &&
-				   std::chrono::steady_clock::now() - start < std::chrono::milliseconds(100)) {
-				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			// Don't wait indefinitely - use timeout
+			if (refillThread.get_id() != std::this_thread::get_id()) {
+				auto start = std::chrono::steady_clock::now();
+				while (refillThread.joinable() &&
+					std::chrono::steady_clock::now() - start < std::chrono::milliseconds(500)) {
+					refillCV.notify_all();  // Keep notifying
+					std::this_thread::sleep_for(std::chrono::milliseconds(10));
+				}
+				
+				if (refillThread.joinable()) {
+					refillThread.detach();  // Last resort - detach if can't join
+				}
 			}
-
-			// Now join the thread
-			refillThread.join();
 		}
 	}
 
