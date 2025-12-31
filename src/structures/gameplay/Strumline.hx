@@ -160,14 +160,14 @@ class Strumline {
 			}
 
 			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + (Main.conductor.offset * 2.0));
-			var finalPosition = MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency);
-			///Sys.println(finalPosition);
+			var timing = MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency);
+			//Sys.println('${noteToHit.index},$timing');
 
 			if (@:privateAccess pf.onNoteHit.__listeners.length != 0)
-				pf.onNoteHit.dispatch(noteToHit, finalPosition, 1);
+				pf.onNoteHit.dispatch(noteToHit, timing, 1);
 			if (pf.field != null)
-				pf.field.hitNote(noteToHit, finalPosition, 1);
-			pf.hitNote(noteToHit, finalPosition, 1);
+				pf.field.hitNote(noteToHit, timing, 1);
+			pf.hitNote(noteToHit, timing, 1);
 
 			notesToHit[index] = null;
 

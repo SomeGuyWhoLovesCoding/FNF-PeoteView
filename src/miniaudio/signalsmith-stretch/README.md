@@ -2,15 +2,14 @@
 
 This is a C++11 library for pitch and time stretching, using the final approach from the ADC22 presentation [Four Ways To Write A Pitch-Shifter](https://www.youtube.com/watch?v=fJUmmcGKZMI).
 
-It can handle a wide-range of pitch-shifts (multiple octaves) but time-stretching sounds best for more modest changes (between 0.75x and 1.5x).  There are some audio examples and an interactive web demo on the [main project page](https://signalsmith-audio.co.uk/code/stretch/).
+It can handle a wide-range of pitch-shifts (multiple octaves) but time-stretching sounds best for more modest changes (between 0.75x and 1.5x).
 
-----------
+There are some audio examples and an interactive web demo on the [main project page](https://signalsmith-audio.co.uk/code/stretch/).
 
-This fork made to support Visual C++ compiler and refactor the code to into standard C++ header only module. It is not tested on other compilers.
-
-Also made into proper single library while removing `Sample` template to use `float` datatype only with meant to able use it on miniaudio.
-
-This also make suppression some MSVC warning on DSP library.
+> ![NOTE]
+> This signalsmith-stretch fork fixes Visual Studio C++ compiler support and refactors the code to into the standard C++ header only module. It has actually been tested on other compilers (in courtesy to @halfwheat).
+> Also made into a proper single library while removing the `Sample` template to use `float` datatype only meant to be used on the miniaudio, as of the simple mixer example.
+> This also supresses some MSVC warning on the DSP library and fixes errors on std::min/max.
 
 ----------
 
@@ -124,7 +123,7 @@ What you do with this extra start/end output is up to you. Personally, I'd try
 
 ## Compiling
 
-⚠️ This fork is tested in MSVC only at the moment (Clang might can still compile)
+This fork is tested in both MSVC and g++.
 
 It's much slower (about 10x) if optimisation is disabled though, so you might want to enable optimisation where it's used, even in debug builds.
 
@@ -139,3 +138,7 @@ For convenience, a copy of the library is included (with its own `LICENSE.txt`) 
 ## License
 
 [MIT License](LICENSE.txt) for now - get in touch if you need anything else.
+
+## Source
+
+https://github.com/Estrol/signalsmith-stretch

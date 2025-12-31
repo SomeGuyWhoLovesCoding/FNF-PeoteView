@@ -23237,7 +23237,8 @@ typedef struct
     #pragma GCC diagnostic pop
 #endif
 
-#define MA_VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK L"VAD\\Process_Loopback"
+// This define treats it as an int instead of a string, internally, if you have stb_vorbis included in an exotic way that actually revives it.
+//#define MA_VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK L"VAD\\Process_Loopback"
 
 static ma_result ma_context_get_IAudioClient__wasapi(ma_context* pContext, ma_device_type deviceType, const ma_device_id* pDeviceID, ma_uint32 loopbackProcessID, ma_bool32 loopbackProcessExclude, ma_IAudioClient** ppAudioClient, ma_WASAPIDeviceInterface** ppDeviceInterface)
 {
@@ -23268,7 +23269,11 @@ static ma_result ma_context_get_IAudioClient__wasapi(ma_context* pContext, ma_de
         /* When requesting a specific device ID we need to use a special device ID. */
         // SomeGuyWhoLikesFNF is now going to say this, what the fuck is this function even for, anyway?
         // if it doesn't work then it doesn't matter cuz it isn't needed
-        //MA_COPY_MEMORY(virtualDeviceID.wasapi, MA_VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK, (wcslen(MA_VIRTUAL_AUDIO_DEVICE_PROCESS_LOOPBACK) + 1) * sizeof(wchar_t)); /* +1 for the null terminator. */
+        // Actually, I want to maintain this code anyway.
+        // claude.ai finally found one way to fix it and I just realized how wide string literals are being treated by macros this whole time
+        // yeah take that you fuckin bitch
+        const wchar_t* loopbackString = L"VAD\\Process_Loopback";
+        MA_COPY_MEMORY(virtualDeviceID.wasapi, loopbackString, (wcslen(loopbackString) + 1) * sizeof(wchar_t));
         pDeviceID = &virtualDeviceID;
     } else {
         pActivationParams = NULL;   /* No activation parameters required. */

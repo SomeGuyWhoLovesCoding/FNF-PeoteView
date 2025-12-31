@@ -1,8 +1,12 @@
 ﻿/*
  * Fixed double-buffered sliding window with clean shutdown.
  * RAII implementation - Resources manage their own lifetimes
+
+ * Originally done as a small and isolated c++ test project.
  */
 #include "include/ma_thing.h"
+
+#define SIGNALSMITH_STRETCH_IMPLEMENTATION
 #include "signalsmith-stretch/signalsmith-stretch.h"
 
 #if _WIN32
@@ -571,6 +575,7 @@ public:
 
 	// Public interface methods
 	void loadFiles(std::vector<const char*> argv) {
+		//printf("Hello world\n"); this was here to brute force the compiler to rebuild the file
 		if(argv.empty()){
 			printf("No input files.\n");
 			return;

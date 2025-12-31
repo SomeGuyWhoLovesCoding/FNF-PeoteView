@@ -3,6 +3,8 @@
  * RAII implementation - Resources manage their own lifetimes
  */
 #include "include/ma_thing.h"
+
+#define SIGNALSMITH_STRETCH_IMPLEMENTATION // yes I imported this according to finally reading the readme of signalsmith-stretch
 #include "signalsmith-stretch/signalsmith-stretch.h" // note: do not put this import anywhere else or it'll throw a fuck tonna errors (big mistake)
 
 // If you put these two things before the std_vorbis code import (which was fixed with defining windows lean_and_mean), the game will crash whenever you load an ogg.

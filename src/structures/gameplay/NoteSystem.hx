@@ -221,21 +221,24 @@ class NoteSystem {
 
 		var playable = strumline.playable && !(parent.botplay || RenderingMode.enabled);
 
+		var latency = Main.conductor.offset;
+
 		// --- Player side ---
 		if (playable) {
 			if (!isHit) {
 				var noteToHit = strumline.notesToHit[index];
 				var noteToHitExists = noteToHit != null;
-				var hitPos = noteToHitExists ? noteToHit.position : 0;
-				//diff += Main.conductor.offset;
+				var diffOffsetted = diff + latency; // This is important
 
-				if ((!isMissed && diff < parent.hitbox && !noteToHitExists) ||
-					(noteToHitExists && pos - hitPos > (position - hitPos) >> 1)) {
-					strumline.notesToHit[index] = note;
-					strumline.notesToHit_indexes[index] = _id;
+				if (!isMissed && diffOffsetted < parent.hitbox) {
+					var pos = MetaNote.metaNotePositionToSongTime(noteToHit.position - pos);
+					if (!noteToHitExists || Math.abs(diff) < Math.abs(pos)) {
+						strumline.notesToHit[index] = note;
+						strumline.notesToHit_indexes[index] = _id;
+					}
 				}
 
-				if (diff < -parent.hitbox && !isMissed) {
+				if (diffOffsetted < -parent.hitbox && !isMissed) {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
 					var n:Int64 = note.toNumber();
 					(n:MetaNote).missed = true;
@@ -270,8 +273,6 @@ class NoteSystem {
 						hud.hideRatingPopup();
 					}
 				}
-
-				//diff -= Main.conductor.offset;
 			}
 		}
 

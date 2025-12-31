@@ -1,3 +1,5 @@
 # Dependencies used
 
-- [minivorbis](https://github.com/edubart/minivorbis/tree/main)
+- [signalsmith-stretch](https://github.com/Estrol/signalsmith-stretch) (modified version for funkin' view)
+
+- stb_vorbis (built into miniaudio. barely got it to work in courtesy of deepseek.)
