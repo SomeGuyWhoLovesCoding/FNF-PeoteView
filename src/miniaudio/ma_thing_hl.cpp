@@ -674,7 +674,7 @@ public:
 		exists = false;
 
 		// Stop audio device first
-		device.stop();
+		device.stop(); // this doesn't deadlock considering data_callback is already protected
 
 		// Stop refill thread
 		stopRefillThread();
@@ -1647,23 +1647,17 @@ public:
     }
 
     void destroy() {
-	//	printf(".1");
         if (deviceInitialized) {
-		//printf(".12c");
-            //ma_device_stop(&device); // fuckin' asshole made my whole hashlink app like deadlock itself and I sorta don't know why it did that.
-		//printf(".13fc");
+            //ma_device_stop(&device); // fuckin' fuckhead line that made my whole hashlink app like deadlock itself and I sorta don't know why it did that.
             ma_device_uninit(&device);
-		//printf(".14");
             deviceInitialized = false;
         }
 
-		printf(".2");
+        std::lock_guard<std::mutex> lock(mixerMutex);
+
         backgroundTracks.clear();
-		printf(".3");
         soundEffects.clear();
-		printf(".4");
         backgroundTrackMap.clear();
-		printf(".5");
         soundEffectMap.clear();
     }
 

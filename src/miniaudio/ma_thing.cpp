@@ -1642,7 +1642,7 @@ public:
 
     void destroy() {
         if (deviceInitialized) {
-            ma_device_stop(&device);
+            //ma_device_stop(&device);
             ma_device_uninit(&device);
             deviceInitialized = false;
         }
