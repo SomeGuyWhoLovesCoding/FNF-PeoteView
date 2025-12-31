@@ -67,17 +67,11 @@ static std::string wstring_to_string(const std::wstring& wstr) {
 	return strTo;
 }
 
-// Add a flag to prevent COM calls during shutdown
-static std::atomic<bool> g_allowComCalls{true};
-
 bool checkWindowsHeadphoneStatus() {
-    if (!g_allowComCalls) return false; // Don't call COM during shutdown
-    
-    HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-    if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) return false;
-    
-    bool comInitialized = (hr != RPC_E_CHANGED_MODE);
-    bool isHeadphones = false;
+	HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+	if (FAILED(hr)) return false;
+
+	bool isHeadphones = false;
 	IMMDeviceEnumerator* pEnumerator = nullptr;
 	IMMDevice* pDevice = nullptr;
 	IPropertyStore* pProps = nullptr;
@@ -108,18 +102,16 @@ bool checkWindowsHeadphoneStatus() {
 		}
 		pEnumerator->Release();
 	}
-    if (comInitialized) CoUninitialize();
+	CoUninitialize();
 	return isHeadphones;
 }
 
 bool checkIfPnPDevice() {
-    if (!g_allowComCalls) return false; // Don't call COM during shutdown
-    
-    HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-    bool comInitialized = SUCCEEDED(hr);
-    if (hr == RPC_E_CHANGED_MODE) comInitialized = false;
+	HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+	bool comInitialized = SUCCEEDED(hr);
+	if (hr == RPC_E_CHANGED_MODE) comInitialized = false;
 
-    bool isPnP = false;
+	bool isPnP = false;
 	IMMDeviceEnumerator* pEnumerator = nullptr;
 	IMMDevice* pDevice = nullptr;
 	IPropertyStore* pProps = nullptr;
@@ -173,10 +165,10 @@ bool checkIfPnPDevice() {
 	}
 
 cleanup:
-    if(pDevice) pDevice->Release();
-    if(pEnumerator) pEnumerator->Release();
-    if(comInitialized) CoUninitialize();
-    return isPnP;
+	if(pDevice)pDevice->Release();
+	if(pEnumerator)pEnumerator->Release();
+	if(comInitialized) CoUninitialize();
+	return isPnP;
 }
 #endif
 
@@ -563,7 +555,6 @@ public:
 	AudioSystem() = default;
 
 	~AudioSystem() {
-		std::cout << "This won't trace" << std::endl;
 		destroy();
 	}
 
@@ -678,24 +669,20 @@ public:
 		mixerState = 3;
 	}
 
-    void destroy() {
+	void destroy() {
 		if(!exists) return;
 		exists = false;
-    
-		#ifdef HX_WINDOWS
-		g_allowComCalls = false; // Prevent any new COM calls
-		#endif
 
-		// Stop audio device FIRST - this stops callbacks immediately
-		if (device.initialized) {
-			device.stop();
-		}
+		// Stop audio device first
+		device.stop();
 
-		// Stop refill thread BEFORE uninitializing device
+		// Stop refill thread
 		stopRefillThread();
 
-		// NOW uninitialize device
+		// Uninitialize device
 		device.uninit();
+
+		//cleanupOggOpusSupport();
 
 		// Clean up decoders and buffers (handled by RAII destructors)
 		streams.clear();
@@ -1065,35 +1052,29 @@ public:
 	void stopRefillThread() {
 		if (!refillThreadRunning) return;
 
-		// Signal thread to stop FIRST
+		// Signal thread to stop
 		refillThreadRunning = false;
-		
+
 		// Clear queue to prevent new jobs
 		{
 			std::lock_guard<std::mutex> lock(refillMutex);
 			while (!refillQueue.empty()) refillQueue.pop();
 		}
-		
-		// Wake up thread MULTIPLE times to ensure it sees the flag
+
+		// Notify thread to wake up and exit
 		refillCV.notify_all();
-		
-		// Try to join with timeout
+
+		// Give thread a moment to finish current job
 		if (refillThread.joinable()) {
-			// Don't wait for active jobs in HashLink - just force exit
-			// The thread should exit immediately when it sees refillThreadRunning = false
-			
-			// Give it a very short time (10ms max)
+			// Wait for any active jobs to complete (max 100ms)
 			auto start = std::chrono::steady_clock::now();
-			while (refillThread.joinable() && 
-				std::chrono::steady_clock::now() - start < std::chrono::milliseconds(10)) {
-				refillCV.notify_all(); // Keep waking it up
-				std::this_thread::yield();
+			while (activeRefillJobs > 0 &&
+				   std::chrono::steady_clock::now() - start < std::chrono::milliseconds(100)) {
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
 			}
-			
-			// If still joinable, detach instead of waiting forever
-			if (refillThread.joinable()) {
-				refillThread.detach(); // Let it die on its own
-			}
+
+			// Now join the thread
+			refillThread.join();
 		}
 	}
 
@@ -1259,7 +1240,7 @@ private:
 		other.playbackRate = 1.0f;
 		other.masterVolume = 1.0;
 		other.mixerState = 3;
-		other.exists = false;
+		other.exists = true;
 		other.refillThreadRunning = false;
 		other.activeRefillJobs = 0;
 	}
@@ -1638,7 +1619,6 @@ public:
     }
 
     ~AudioMixerManager() {
-		std::cout << "never calls" << std::endl;
         destroy();
     }
 
@@ -1651,7 +1631,7 @@ public:
         config.sampleRate = SAMPLE_RATE;
         config.dataCallback = audioCallback;
         config.pUserData = this;
-        config.periodSizeInMilliseconds = 4;
+        config.periodSizeInMilliseconds = 40;
 
         if (ma_device_init(nullptr, &config, &device) != MA_SUCCESS) {
             printf("Failed to initialize audio mixer device\n");
@@ -1667,7 +1647,6 @@ public:
     }
 
     void destroy() {
-		std::cout << "FUCK YOU" << std::endl;
         if (deviceInitialized) {
             ma_device_stop(&device);
             ma_device_uninit(&device);
