@@ -22,7 +22,8 @@ class Paths {
 				return str;
 			}
 			if (isAFontPath) {
-				sys.io.File.copy(str, oldPath); // make sure you automatically copy your custom font back to the main thing so fontbm can do the work there and not your custom folder
+				if (sys.FileSystem.exists(oldPath)) // make sure you automatically copy your custom font back to the main thing so fontbm can do the work there and not your custom folder
+					sys.io.File.copy(str, oldPath);
 				str = oldPath;
 			}
 		}
