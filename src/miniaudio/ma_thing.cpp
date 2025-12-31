@@ -1234,102 +1234,11 @@ private:
 		other.playbackRate = 1.0f;
 		other.masterVolume = 1.0;
 		other.mixerState = 3;
-		other.exists = false;
+		other.exists = true;
 		other.refillThreadRunning = false;
 		other.activeRefillJobs = 0;
 	}
 };
-
-// Global instance for backward compatibility
-namespace {
-	AudioSystem g_audioSystem;
-}
-
-// Original global function interfaces (delegate to AudioSystem)
-void loadFiles(std::vector<const char*> argv) {
-	g_audioSystem.loadFiles(argv);
-}
-
-void start() {
-	g_audioSystem.start();
-}
-
-void stop() {
-	g_audioSystem.stop();
-}
-
-bool stopped() {
-	return g_audioSystem.stopped();
-}
-
-void destroy() {
-	g_audioSystem.destroy();
-}
-
-void seekToPCMFrame(int64_t pos) {
-	g_audioSystem.seekToPCMFrame(pos);
-}
-
-int getMixerState() {
-	return g_audioSystem.getMixerState();
-}
-
-double getPlaybackPosition() {
-	return g_audioSystem.getPlaybackPosition();
-}
-
-double getDuration() {
-	return g_audioSystem.getDuration();
-}
-
-void deactivate_decoder(int index) {
-	g_audioSystem.deactivate_decoder(index);
-}
-
-void amplify_decoder(int index, double volume) {
-	g_audioSystem.amplify_decoder(index, volume);
-}
-
-void setPlaybackRate(float value) {
-	g_audioSystem.setPlaybackRate(value);
-}
-
-double getGlobalVolume() {
-	return g_audioSystem.getGlobalVolume();
-}
-
-double setGlobalVolume(double value) {
-	return g_audioSystem.setGlobalVolume(value);
-}
-
-bool wearingHeadphones() {
-#if HX_WINDOWS
-	return checkWindowsHeadphoneStatus();
-#else
-	return false;
-#endif
-}
-
-bool wearingPlugNPlay() {
-#if HX_WINDOWS
-	return checkIfPnPDevice();
-#else
-	return false;
-#endif
-}
-
-int detectLatency() {
-	#if HX_WINDOWS
-    int osMs = 50;
-	#else
-	int osMs = 1;
-	#endif
-	if (g_audioSystem.exists) {
-		if(!wearingPlugNPlay()) osMs += 50;
-		if(wearingHeadphones()) osMs += 25;
-	}
-	return osMs;
-}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1978,7 +1887,94 @@ private:
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace {
+	AudioSystem g_audioSystem;
 	AudioMixerManager g_mixer;
+}
+
+// Original global function interfaces (delegate to AudioSystem)
+void loadFiles(std::vector<const char*> argv) {
+	g_audioSystem.loadFiles(argv);
+}
+
+void start() {
+	g_audioSystem.start();
+}
+
+void stop() {
+	g_audioSystem.stop();
+}
+
+bool stopped() {
+	return g_audioSystem.stopped();
+}
+
+void destroy() {
+	g_audioSystem.destroy();
+}
+
+void seekToPCMFrame(int64_t pos) {
+	g_audioSystem.seekToPCMFrame(pos);
+}
+
+int getMixerState() {
+	return g_audioSystem.getMixerState();
+}
+
+double getPlaybackPosition() {
+	return g_audioSystem.getPlaybackPosition();
+}
+
+double getDuration() {
+	return g_audioSystem.getDuration();
+}
+
+void deactivate_decoder(int index) {
+	g_audioSystem.deactivate_decoder(index);
+}
+
+void amplify_decoder(int index, double volume) {
+	g_audioSystem.amplify_decoder(index, volume);
+}
+
+void setPlaybackRate(float value) {
+	g_audioSystem.setPlaybackRate(value);
+}
+
+double getGlobalVolume() {
+	return g_audioSystem.getGlobalVolume();
+}
+
+double setGlobalVolume(double value) {
+	return g_audioSystem.setGlobalVolume(value);
+}
+
+bool wearingHeadphones() {
+#if HX_WINDOWS
+	return checkWindowsHeadphoneStatus();
+#else
+	return false;
+#endif
+}
+
+bool wearingPlugNPlay() {
+#if HX_WINDOWS
+	return checkIfPnPDevice();
+#else
+	return false;
+#endif
+}
+
+int detectLatency() {
+	#if HX_WINDOWS
+    int osMs = 50;
+	#else
+	int osMs = 1;
+	#endif
+	if (g_audioSystem.exists) {
+		if(!wearingPlugNPlay()) osMs += 50;
+		if(wearingHeadphones()) osMs += 25;
+	}
+	return osMs;
 }
 
 // Background track functions

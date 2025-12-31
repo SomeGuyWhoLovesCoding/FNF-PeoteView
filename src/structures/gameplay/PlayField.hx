@@ -253,6 +253,9 @@ class PlayField implements State {
 			songPosition -= latencyCompensation;
 			songPosition -= Mixer.latency();
 
+			if (field != null) field.update(deltaTime);
+			if (countdownDisp != null) countdownDisp.update(deltaTime);
+
 			#if !FV_LIME_FORK
 			Main.conductor.time = songPosition;
 			#end
@@ -266,33 +269,32 @@ class PlayField implements State {
 				//if (HUD.scoreTxt != null) HUD.scoreTxt.text = ((noteSpawner.timeSpentOnIt * 1000000000) / Tools.int64ToFloat(noteSpawner.top - noteSpawner.bottom)) + "ns";
 				//if (HUD.scoreTxt != null) HUD.scoreTxt.text = (noteSpawner.timeSpentOnIt * 1000) + "ms";
 			}
-		} else {
-			if (noteSystem != null) {
-				noteSystem.dispose();
-				noteSystem = null;
-			}
 
-			if (countdownDisp != null) {
-				countdownDisp.dispose();
-				countdownDisp = null;
-			}
+			songPosition += latencyCompensation;
+			songPosition += Mixer.latency();
 
-			if (pauseScreen != null) {
-				pauseScreen.dispose();
-				pauseScreen = null;
-			}
-
-			if (hud != null) {
-				hud.dispose();
-				hud = null;
-			}
+			return;
 		}
 
-		if (field != null) field.update(deltaTime);
-		if (countdownDisp != null) countdownDisp.update(deltaTime);
+		if (noteSystem != null) {
+			noteSystem.dispose();
+			noteSystem = null;
+		}
 
-		songPosition += latencyCompensation;
-		songPosition += Mixer.latency();
+		if (countdownDisp != null) {
+			countdownDisp.dispose();
+			countdownDisp = null;
+		}
+
+		if (pauseScreen != null) {
+			pauseScreen.dispose();
+			pauseScreen = null;
+		}
+
+		if (hud != null) {
+			hud.dispose();
+			hud = null;
+		}
 	}
 
 	/**

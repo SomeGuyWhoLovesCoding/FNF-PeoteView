@@ -35,6 +35,7 @@ extern "C" {
 #include "extras/stb_vorbis.c"    // miniaudio includes this*/
 
 #include <stdio.h>
+#include <iostream>
 #include <stdint.h>
 #include <vector>
 #include <string>
@@ -66,11 +67,17 @@ static std::string wstring_to_string(const std::wstring& wstr) {
 	return strTo;
 }
 
-bool checkWindowsHeadphoneStatus() {
-	HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-	if (FAILED(hr)) return false;
+// Add a flag to prevent COM calls during shutdown
+static std::atomic<bool> g_allowComCalls{true};
 
-	bool isHeadphones = false;
+bool checkWindowsHeadphoneStatus() {
+    if (!g_allowComCalls) return false; // Don't call COM during shutdown
+    
+    HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+    if (FAILED(hr) && hr != RPC_E_CHANGED_MODE) return false;
+    
+    bool comInitialized = (hr != RPC_E_CHANGED_MODE);
+    bool isHeadphones = false;
 	IMMDeviceEnumerator* pEnumerator = nullptr;
 	IMMDevice* pDevice = nullptr;
 	IPropertyStore* pProps = nullptr;
@@ -101,16 +108,18 @@ bool checkWindowsHeadphoneStatus() {
 		}
 		pEnumerator->Release();
 	}
-	CoUninitialize();
+    if (comInitialized) CoUninitialize();
 	return isHeadphones;
 }
 
 bool checkIfPnPDevice() {
-	HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-	bool comInitialized = SUCCEEDED(hr);
-	if (hr == RPC_E_CHANGED_MODE) comInitialized = false;
+    if (!g_allowComCalls) return false; // Don't call COM during shutdown
+    
+    HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+    bool comInitialized = SUCCEEDED(hr);
+    if (hr == RPC_E_CHANGED_MODE) comInitialized = false;
 
-	bool isPnP = false;
+    bool isPnP = false;
 	IMMDeviceEnumerator* pEnumerator = nullptr;
 	IMMDevice* pDevice = nullptr;
 	IPropertyStore* pProps = nullptr;
@@ -164,10 +173,10 @@ bool checkIfPnPDevice() {
 	}
 
 cleanup:
-	if(pDevice)pDevice->Release();
-	if(pEnumerator)pEnumerator->Release();
-	if(comInitialized) CoUninitialize();
-	return isPnP;
+    if(pDevice) pDevice->Release();
+    if(pEnumerator) pEnumerator->Release();
+    if(comInitialized) CoUninitialize();
+    return isPnP;
 }
 #endif
 
@@ -554,6 +563,7 @@ public:
 	AudioSystem() = default;
 
 	~AudioSystem() {
+		std::cout << "This won't trace" << std::endl;
 		destroy();
 	}
 
@@ -668,20 +678,24 @@ public:
 		mixerState = 3;
 	}
 
-	void destroy() {
+    void destroy() {
 		if(!exists) return;
 		exists = false;
+    
+		#ifdef HX_WINDOWS
+		g_allowComCalls = false; // Prevent any new COM calls
+		#endif
 
-		// Stop audio device first
-		device.stop();
+		// Stop audio device FIRST - this stops callbacks immediately
+		if (device.initialized) {
+			device.stop();
+		}
 
-		// Stop refill thread
+		// Stop refill thread BEFORE uninitializing device
 		stopRefillThread();
 
-		// Uninitialize device
+		// NOW uninitialize device
 		device.uninit();
-
-		//cleanupOggOpusSupport();
 
 		// Clean up decoders and buffers (handled by RAII destructors)
 		streams.clear();
@@ -1051,29 +1065,35 @@ public:
 	void stopRefillThread() {
 		if (!refillThreadRunning) return;
 
-		// Signal thread to stop
+		// Signal thread to stop FIRST
 		refillThreadRunning = false;
-
+		
 		// Clear queue to prevent new jobs
 		{
 			std::lock_guard<std::mutex> lock(refillMutex);
 			while (!refillQueue.empty()) refillQueue.pop();
 		}
-
-		// Notify thread to wake up and exit
+		
+		// Wake up thread MULTIPLE times to ensure it sees the flag
 		refillCV.notify_all();
-
-		// Give thread a moment to finish current job
+		
+		// Try to join with timeout
 		if (refillThread.joinable()) {
-			// Wait for any active jobs to complete (max 100ms)
+			// Don't wait for active jobs in HashLink - just force exit
+			// The thread should exit immediately when it sees refillThreadRunning = false
+			
+			// Give it a very short time (10ms max)
 			auto start = std::chrono::steady_clock::now();
-			while (activeRefillJobs > 0 &&
-				   std::chrono::steady_clock::now() - start < std::chrono::milliseconds(100)) {
-				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+			while (refillThread.joinable() && 
+				std::chrono::steady_clock::now() - start < std::chrono::milliseconds(10)) {
+				refillCV.notify_all(); // Keep waking it up
+				std::this_thread::yield();
 			}
-
-			// Now join the thread
-			refillThread.join();
+			
+			// If still joinable, detach instead of waiting forever
+			if (refillThread.joinable()) {
+				refillThread.detach(); // Let it die on its own
+			}
 		}
 	}
 
@@ -1244,103 +1264,6 @@ private:
 		other.activeRefillJobs = 0;
 	}
 };
-
-// Global instance for backward compatibility
-namespace {
-	AudioSystem g_audioSystem;
-}
-
-// Original global function interfaces (delegate to AudioSystem)
-// Audio System Functions
-HL_PRIM void HL_NAME(loadFiles)(varray* argv) {
-    std::vector<const char*> paths;
-    for(int i = 0; i < argv->size; i++) {
-        paths.push_back(hl_aptr(argv, const char*)[i]);
-    }
-    g_audioSystem.loadFiles(paths);
-}
-
-HL_PRIM void HL_NAME(start)(_NO_ARG) {
-    g_audioSystem.start();
-}
-
-HL_PRIM void HL_NAME(stop)(_NO_ARG) {
-    g_audioSystem.stop();
-}
-
-HL_PRIM bool HL_NAME(stopped)(_NO_ARG) {
-    return g_audioSystem.stopped();
-}
-
-HL_PRIM void HL_NAME(destroy)(_NO_ARG) {
-    g_audioSystem.destroy();
-}
-
-// Alternative with explicit int64 parameter
-HL_PRIM void HL_NAME(seek_to_pcm_frame)(int64_t pos) {
-    g_audioSystem.seekToPCMFrame(pos);
-}
-
-HL_PRIM int HL_NAME(get_mixer_state)(_NO_ARG) {
-    return g_audioSystem.getMixerState();
-}
-
-HL_PRIM double HL_NAME(get_playback_position)(_NO_ARG) {
-    return g_audioSystem.getPlaybackPosition();
-}
-
-HL_PRIM double HL_NAME(get_duration)(_NO_ARG) {
-    return g_audioSystem.getDuration();
-}
-
-HL_PRIM void HL_NAME(deactivate_decoder)(int index) {
-    g_audioSystem.deactivate_decoder(index);
-}
-
-HL_PRIM void HL_NAME(amplify_decoder)(int index, double volume) {
-    g_audioSystem.amplify_decoder(index, volume);
-}
-
-HL_PRIM void HL_NAME(setPlaybackRate)(float value) {
-    g_audioSystem.setPlaybackRate(value);
-}
-
-HL_PRIM double HL_NAME(getGlobalVolume)(_NO_ARG) {
-    return g_audioSystem.getGlobalVolume();
-}
-
-HL_PRIM double HL_NAME(setGlobalVolume)(double value) {
-    return g_audioSystem.setGlobalVolume(value);
-}
-
-HL_PRIM bool HL_NAME(wearingHeadphones)(_NO_ARG) {
-#if HX_WINDOWS
-    return checkWindowsHeadphoneStatus();
-#else
-    return false;
-#endif
-}
-
-HL_PRIM bool HL_NAME(wearingPlugNPlay)(_NO_ARG) {
-#if HX_WINDOWS
-    return checkIfPnPDevice();
-#else
-    return false;
-#endif
-}
-
-HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
-	#if HX_WINDOWS
-    int osMs = 50;
-	#else
-	int osMs = 1;
-	#endif
-    if (g_audioSystem.exists) {
-        if(!HL_NAME(wearingPlugNPlay)()) osMs += 50;
-        if(HL_NAME(wearingHeadphones)()) osMs += 25;
-    }
-    return osMs;
-}
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -1715,6 +1638,7 @@ public:
     }
 
     ~AudioMixerManager() {
+		std::cout << "never calls" << std::endl;
         destroy();
     }
 
@@ -1727,7 +1651,7 @@ public:
         config.sampleRate = SAMPLE_RATE;
         config.dataCallback = audioCallback;
         config.pUserData = this;
-        config.periodSizeInMilliseconds = 40;
+        config.periodSizeInMilliseconds = 4;
 
         if (ma_device_init(nullptr, &config, &device) != MA_SUCCESS) {
             printf("Failed to initialize audio mixer device\n");
@@ -1743,6 +1667,7 @@ public:
     }
 
     void destroy() {
+		std::cout << "FUCK YOU" << std::endl;
         if (deviceInitialized) {
             ma_device_stop(&device);
             ma_device_uninit(&device);
@@ -1989,7 +1914,100 @@ private:
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 namespace {
+	AudioSystem g_audioSystem;
 	AudioMixerManager g_mixer;
+}
+
+// Original global function interfaces (delegate to AudioSystem)
+// Audio System Functions
+HL_PRIM void HL_NAME(loadFiles)(varray* argv) {
+    std::vector<const char*> paths;
+    for(int i = 0; i < argv->size; i++) {
+        paths.push_back(hl_aptr(argv, const char*)[i]);
+    }
+    g_audioSystem.loadFiles(paths);
+}
+
+HL_PRIM void HL_NAME(start)(_NO_ARG) {
+    g_audioSystem.start();
+}
+
+HL_PRIM void HL_NAME(stop)(_NO_ARG) {
+    g_audioSystem.stop();
+}
+
+HL_PRIM bool HL_NAME(stopped)(_NO_ARG) {
+    return g_audioSystem.stopped();
+}
+
+HL_PRIM void HL_NAME(destroy)(_NO_ARG) {
+    g_audioSystem.destroy();
+}
+
+// Alternative with explicit int64 parameter
+HL_PRIM void HL_NAME(seek_to_pcm_frame)(int64_t pos) {
+    g_audioSystem.seekToPCMFrame(pos);
+}
+
+HL_PRIM int HL_NAME(get_mixer_state)(_NO_ARG) {
+    return g_audioSystem.getMixerState();
+}
+
+HL_PRIM double HL_NAME(get_playback_position)(_NO_ARG) {
+    return g_audioSystem.getPlaybackPosition();
+}
+
+HL_PRIM double HL_NAME(get_duration)(_NO_ARG) {
+    return g_audioSystem.getDuration();
+}
+
+HL_PRIM void HL_NAME(deactivate_decoder)(int index) {
+    g_audioSystem.deactivate_decoder(index);
+}
+
+HL_PRIM void HL_NAME(amplify_decoder)(int index, double volume) {
+    g_audioSystem.amplify_decoder(index, volume);
+}
+
+HL_PRIM void HL_NAME(setPlaybackRate)(float value) {
+    g_audioSystem.setPlaybackRate(value);
+}
+
+HL_PRIM double HL_NAME(getGlobalVolume)(_NO_ARG) {
+    return g_audioSystem.getGlobalVolume();
+}
+
+HL_PRIM double HL_NAME(setGlobalVolume)(double value) {
+    return g_audioSystem.setGlobalVolume(value);
+}
+
+HL_PRIM bool HL_NAME(wearingHeadphones)(_NO_ARG) {
+#if HX_WINDOWS
+    return checkWindowsHeadphoneStatus();
+#else
+    return false;
+#endif
+}
+
+HL_PRIM bool HL_NAME(wearingPlugNPlay)(_NO_ARG) {
+#if HX_WINDOWS
+    return checkIfPnPDevice();
+#else
+    return false;
+#endif
+}
+
+HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
+	#if HX_WINDOWS
+    int osMs = 50;
+	#else
+	int osMs = 1;
+	#endif
+    if (g_audioSystem.exists) {
+        if(!HL_NAME(wearingPlugNPlay)()) osMs += 50;
+        if(HL_NAME(wearingHeadphones)()) osMs += 25;
+    }
+    return osMs;
 }
 
 // Background track functions
