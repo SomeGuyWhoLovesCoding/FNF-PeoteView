@@ -263,10 +263,12 @@ class Main extends Application
 		switch (keyCode) {
 			case KeyCode.EQUALS:
 				Mixer.globalVolume = Math.min(Mixer.globalVolume + 0.1, 1);
+				MiniAudio.setMixerMasterVolume(Mixer.globalVolume);
 				Sys.println('NEW VOLUME: ${Mixer.globalVolume}');
 			case KeyCode.MINUS:
 				Mixer.globalVolume = Math.max(Mixer.globalVolume - 0.1, 0);
 				Sys.println('NEW VOLUME: ${Mixer.globalVolume}');
+				MiniAudio.setMixerMasterVolume(Mixer.globalVolume);
 			default:
 		}
 	}

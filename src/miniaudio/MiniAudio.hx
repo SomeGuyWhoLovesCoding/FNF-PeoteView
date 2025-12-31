@@ -55,6 +55,8 @@ extern class MiniAudio {
 	}
 	@:native("playSoundEffect") static function playSoundEffect(index:Int, volume:cpp.Float32):Void;
 	@:native("stopSoundEffect") static function stopSoundEffect(index:Int):Void;
+
+	@:native("setMixerMasterVolume") static function setMixerMasterVolume(volume:cpp.Float32):Void;
 }
 #elseif hl
 class MiniAudio {
@@ -129,6 +131,8 @@ class MiniAudio {
 
 	@:hlNative("ma_thing", "playSoundEffect") public static function playSoundEffect(index:Int, volume:hl.F32):Void {}
 	@:hlNative("ma_thing", "stopSoundEffect") public static function stopSoundEffect(index:Int):Void {}
+
+	@:hlNative("ma_thing", "setMixerMasterVolume") static function setMixerMasterVolume(volume:hl.F32):Void {}
 }
 #else
 class MiniAudio {
