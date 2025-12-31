@@ -16,7 +16,7 @@ class Tools {
 		while (Sustain.offsets.length != 0) Sustain.offsets.pop();
 		while (Sustain.tailPoints.length != 0) Sustain.tailPoints.pop();
 
-		var contents = File.getContent('$path/noteData.xml');
+		var contents = File.getContent(Paths.asset('$path/noteData.xml'));
 		var xml = Xml.parse(contents);
 		var root = xml.firstElement();
 
@@ -41,10 +41,10 @@ class Tools {
 		if (floatKeys != Std.int(floatKeys)) throw "Noteskin not supported! KEYS is not integral!";
 		Note.KEYS = Std.int(floatKeys);
 
-		Note.enableGM = FileSystem.exists('$path/noteData_gm.xml');
+		Note.enableGM = FileSystem.exists(Paths.asset('$path/noteData_gm.xml'));
 
 		if (Note.enableGM) {
-			var contents = File.getContent('$path/noteData_gm.xml');
+			var contents = File.getContent(Paths.asset('$path/noteData_gm.xml'));
 			var xml = Xml.parse(contents);
 			var root = xml.firstElement();
 
@@ -71,7 +71,7 @@ class Tools {
 		TextureSystem.disposeTexture("noteTex");
 		TextureSystem.createTexture("noteTex", '$path/noteSheet.png', false, true);
 
-		var data = File.read('$path/sustainProperties.txt');
+		var data = File.read(Paths.asset('$path/sustainProperties.txt'));
 
 		TextureSystem.disposeTexture("sustainTex");
 		TextureSystem.createTiledTexture("sustainTex", '$path/sustainSheet.png', 1, Std.parseInt(data.readLine()), false, true);
@@ -95,7 +95,7 @@ class Tools {
 	static function parseHealthBarConfig(path:String) {
 		var finalData:Array<Float> = [];
 
-		var line = File.getContent('$path/healthBarConfig.txt');
+		var line = File.getContent(Paths.asset('$path/healthBarConfig.txt'));
 
 		var split = line.split(", ");
 		if (split.length != 6) throw "ARGUMENTS ARE NOT EQUAL TO SIX!";
@@ -120,7 +120,7 @@ class Tools {
 	static function parseTimeBarConfig(path:String) {
 		var finalData:Array<Float> = [];
 
-		var line = File.getContent('$path/timeBarConfig.txt');
+		var line = File.getContent(Paths.asset('$path/timeBarConfig.txt'));
 
 		var split = line.split(", ");
 		if (split.length != 6) throw "ARGUMENTS ARE NOT EQUAL TO SIX!";
@@ -149,7 +149,7 @@ class Tools {
 		if (_fontsCached.exists(name))
 			return _fontsCached[name];
 
-		var path = 'assets/fonts/$name';
+		var path = Paths.asset('assets/fonts/$name');
 		var fontPathSub = '$path/$name';
 		var fontPath = '$fontPathSub.fnt';
 		var fontPNGPath = '${fontPathSub}_0.png';
