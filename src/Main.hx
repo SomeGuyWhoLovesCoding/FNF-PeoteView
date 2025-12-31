@@ -204,9 +204,15 @@ class Main extends Application
 		sound_cancelIdx = MiniAudio.loadSoundEffect(Paths.asset("assets/conductor/beat.wav"));
 	}
 
-	public function playScrollSound() {MiniAudio.playSoundEffect(sound_scrollIdx, 0.7);}
-	public function playConfirmSound() {MiniAudio.playSoundEffect(sound_confIdx, 0.7);}
-	public function playCancelSound() {MiniAudio.playSoundEffect(sound_cancelIdx, 0.7);}
+	public function playScrollSound() {
+		MiniAudio.playSoundEffect(sound_scrollIdx, 0.7);
+	}
+	public function playConfirmSound() {
+		MiniAudio.playSoundEffect(sound_confIdx, 0.7);
+	}
+	public function playCancelSound() {
+		MiniAudio.playSoundEffect(sound_cancelIdx, 0.7);
+	}
 
 	private function createTextures() {
 		var stamp = haxe.Timer.stamp();
