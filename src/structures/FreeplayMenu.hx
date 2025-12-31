@@ -121,7 +121,7 @@ class FreeplayMenu {
 			case LEFT:
 				enter(true, 0);
 			case RIGHT:
-				close();
+				back(true, 0);
 			default:
 		}
 	}
