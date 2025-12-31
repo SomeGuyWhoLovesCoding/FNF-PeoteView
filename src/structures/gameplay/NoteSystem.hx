@@ -47,7 +47,7 @@ class NoteSystem {
 	var strumlines(default, null):Array<Strumline>;
 	var noteSpawner(default, null):NoteSpawner;
 	var notePool(default, null):NotePool;
-	var virtualNoteBuffer(default, null):NoteVB;
+	var virtualNoteBuffers(default, null):Array<NoteVB>;
 
 	var noteTypeFunctionalityPre(default, null):Array<Int->Int->Bool->Void>;
 
@@ -85,7 +85,9 @@ class NoteSystem {
 			strumlines.push(strumline);
 		}
 
-		virtualNoteBuffer = new NoteVB(strumlines.length, strumlines[0].buffer.length);
+		virtualNoteBuffers = [];
+		for (i in 0...4) 
+			virtualNoteBuffers[i] = new NoteVB(strumlines.length, strumlines[0].buffer.length);
 
 		setScrollSpeed(Chart.header.speed);
 
@@ -104,7 +106,8 @@ class NoteSystem {
 		if (delta < 0 || MetaNote.metaNotePositionToSongTime(delta) > 200)
 			_lastPos = pos;
 
-		virtualNoteBuffer.clear();
+		for (virtualNoteBuffer in virtualNoteBuffers)
+			virtualNoteBuffer.clear();
 
 		if (noteSpawner != null)
 			noteSpawner.update(pos);
@@ -177,7 +180,7 @@ class NoteSystem {
 	 * @param id The index the note belongs to.
 	 * @returns The virtual note that was successfully drawn.
 	**/
-	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64):VirtualNote {
+	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64, THREAD_ID:Int = 0):VirtualNote {
 		var index = note.index;
 		var lane = 0;
 		var duration = note.duration;
@@ -243,7 +246,6 @@ class NoteSystem {
 					var n:Int64 = note.toNumber();
 					(n:MetaNote).missed = true;
 					isMissed = true;
-					noteSpawner.setCachedNote(_id, n);
 
 					var type = note.type;
 					if (noteTypeCallExists) {
@@ -261,7 +263,6 @@ class NoteSystem {
 						var n:Int64 = note.toNumber();
 						(n:MetaNote).held = true;
 						isHeld = true;
-						noteSpawner.setCachedNote(_id, n);
 						parent.onSustainRelease.dispatch(note);
 					}
 
@@ -272,6 +273,8 @@ class NoteSystem {
 					if (SaveData.state.preferences.ratingPopup && hud != null) {
 						hud.hideRatingPopup();
 					}
+
+					File.setNote(_id, n);
 				}
 			}
 		}
@@ -282,7 +285,6 @@ class NoteSystem {
 			if (!isHit && diff < 0) {
 				var n:Int64 = note.toNumber();
 				(n:MetaNote).flag = isHit = true;
-				noteSpawner.setCachedNote(_id, n);
 
 				// Confirm the receptor
 				if (!rec.confirmed()) rec.confirm();
@@ -306,6 +308,8 @@ class NoteSystem {
 				if (parent.field != null)
 					parent.field.hitNote(note, 0, noteSpr.notesInOne);
 				parent.hitNote(note, 0, noteSpr.notesInOne);
+
+				File.setNote(_id, n);
 			}
 		}
 
@@ -332,7 +336,6 @@ class NoteSystem {
 					var n:Int64 = note.toNumber();
 					(n:MetaNote).held = true;
 					isHeld = true;
-					noteSpawner.setCachedNote(_id, n);
 
 					if (playable && rec.confirmed()) rec.press();
 
@@ -344,6 +347,8 @@ class NoteSystem {
 					if (parent.field != null)
 						parent.field.completeSustain(note);
 					parent.completeSustain(note);
+
+					File.setNote(_id, n);
 				}
 			}
 
@@ -352,12 +357,12 @@ class NoteSystem {
 				strumline.sustainsActive[index] = !isHeld;
 
 			if (noteSpr != null)
-				virtualNoteBuffer.addSustain(sustainSpr, noteSpr);
+				virtualNoteBuffers[THREAD_ID].addSustain(sustainSpr, noteSpr);
 		}
 
 		// --- Buffer note ---
 		if (!isHit)
-			virtualNoteBuffer.addNote(noteSpr);
+			virtualNoteBuffers[THREAD_ID].addNote(noteSpr);
 
 		return noteSpr;
 	}
@@ -370,8 +375,8 @@ class NoteSystem {
 	// Update them when scroll speed changes
 	function setScrollSpeed(value:Float) {
 		noteSpawner.spawnDist = MetaNote.floatToMetaNotePosition(1600 / value);
-		noteSpawner.despawnDist = MetaNote.floatToMetaNotePosition(300 / Math.min(Math.max(value, 0.0001), 1.0));
-		parent.hitbox = 200 * value;
+		noteSpawner.despawnDist = MetaNote.floatToMetaNotePosition(360 / Math.min(Math.max(value, 0.0001), 1.0));
+		parent.hitbox = 250 * value;
 		_cachedScrollSpeed = value;
 		_cachedHitbox = parent.hitbox;
 		_cachedDownScroll = parent.downScroll;
@@ -418,7 +423,8 @@ class NoteSystem {
 	**/
 	function dispose() {
 		// Clear up the virtual note buffer for the funnies
-		virtualNoteBuffer.clear();
+		for (virtualNoteBuffer in virtualNoteBuffers)
+			virtualNoteBuffer.clear();
 
 		// Clear note & sustain buffers to refresh for new window
 		notesBuf.clear();

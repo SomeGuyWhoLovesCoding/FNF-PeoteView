@@ -16,143 +16,13 @@ class NoteSpawner {
 
 	var parent(default, null):NoteSystem;
 
-	// --- Fixed-size sliding cache ---
-	var noteCache:Array<MetaNote> = [];
-	var cacheStart:Int64 = 0;
-	var cacheSize:Int64 = 1048576; // ~1MB cache (assuming ~4 bytes per MetaNote)
-	var maxCacheSize:Int64 = 1048576; // Hard limit
+	var THREAD_ID = 0;
 
 	function new(parent:NoteSystem) {
 		this.parent = parent;
 
 		bottom = 0;
 		top = 0;
-
-		loadCache(0, cacheSize);
-		curTopNote = noteCache[0];
-		curBottomNote = noteCache[0];
-	}
-
-	// --- Load cache with fixed size window ---
-	function loadCache(startIdx:Int64, size:Int64) {
-		var len = File.getLength();
-		if (startIdx >= len) {
-			noteCache = [];
-			cacheStart = startIdx;
-			return;
-		}
-
-		cacheStart = startIdx;
-		
-		var newNotes:Array<MetaNote> = [];
-		var maxLoad = len - startIdx;
-		if (maxLoad > size) maxLoad = size;
-		if (maxLoad < 0) maxLoad = 0;
-
-		var i:Int64 = 0;
-		while (i < maxLoad) {
-			newNotes.push(File.getNote(startIdx + i));
-			i++;
-		}
-
-		noteCache = newNotes;
-	}
-
-	// --- Get note from cache; slide window if needed ---
-	function getCachedNote(idx:Int64):MetaNote {
-		var cacheIdx = idx - cacheStart;
-		
-		// Check if index is within current cache bounds
-		if (cacheIdx >= 0 && cacheIdx < noteCache.length) {
-			return noteCache[Int64.toInt(cacheIdx)];
-		}
-
-		var len = File.getLength();
-		if (idx >= len) return -1;
-
-		// If index is outside cache, slide the window
-		var newStart = idx;
-		var newSize = cacheSize;
-		
-		// If we're looking far ahead, center the cache around the requested index
-		if (idx > cacheStart + noteCache.length) {
-			newStart = idx;
-		} 
-		// If we're looking behind, center the cache to include both old and new areas
-		else if (idx < cacheStart) {
-			newStart = idx;
-		}
-		
-		// Ensure we don't go beyond file bounds
-		if (newStart < 0) newStart = 0;
-		if (newStart + newSize > len) {
-			newSize = len - newStart;
-		}
-		
-		loadCache(newStart, newSize);
-		
-		// Now get from new cache
-		cacheIdx = idx - cacheStart;
-		if (cacheIdx >= 0 && cacheIdx < noteCache.length) {
-			return noteCache[Int64.toInt(cacheIdx)];
-		}
-		
-		return -1;
-	}
-
-	// --- Set note in cache ---
-	function setCachedNote(idx:Int64, value:MetaNote):MetaNote {
-		var cacheIdx = idx - cacheStart;
-		
-		if (cacheIdx >= 0 && cacheIdx < noteCache.length) {
-			noteCache[Int64.toInt(cacheIdx)] = value;
-			return value;
-		}
-
-		// If outside cache, ensure it's loaded then set
-		getCachedNote(idx);
-		cacheIdx = idx - cacheStart;
-		if (cacheIdx >= 0 && cacheIdx < noteCache.length) {
-			noteCache[Int64.toInt(cacheIdx)] = value;
-		}
-		return value;
-	}
-
-	// --- Smart cache management ---
-	function manageCache() {
-		var len = File.getLength();
-		
-		// Calculate ideal cache window centered around current play area
-		var center = (bottom + top) >> 1;
-		var cachePadding = cacheSize >> 2; // Keep some padding on both sides
-		
-		var idealStart = center - cachePadding;
-		if (idealStart < 0) idealStart = 0;
-		
-		var idealEnd = idealStart + cacheSize;
-		if (idealEnd > len) {
-			idealEnd = len;
-			idealStart = idealEnd - cacheSize;
-			if (idealStart < 0) idealStart = 0;
-		}
-		
-		// Only reload cache if we've moved significantly from current window
-		var currentEnd = cacheStart + noteCache.length;
-		var overlapStart = cacheStart;
-		if (overlapStart < idealStart) overlapStart = idealStart;
-		var overlapEnd = currentEnd;
-		if (overlapEnd < idealEnd) overlapEnd = idealEnd;
-		
-		// If less than 50% overlap, reload the cache
-		if (overlapEnd - overlapStart < (idealEnd - idealStart) >> 1) {
-			loadCache(idealStart, idealEnd - idealStart);
-		}
-	}
-
-	// Remove the old pruneCache function and replace with:
-	function pruneCache() {
-		// Let manageCache handle the sliding window
-		manageCache();
 	}
 
 	var timeSpentOnIt:Float = 0;
@@ -166,108 +36,54 @@ class NoteSpawner {
 		cullBottom(pos);
 
 		processNotes(pos);
-
-		pruneCache(); // manage cache sliding window
 	}
 
 	function processNotes(pos:Int64) {
 		var latency = Main.conductor.offset;
 		var latencyI64 = MetaNote.floatToMetaNotePosition(latency);
+
 		pos += latencyI64;
-		
+
 		var i = bottom;
 		var scrollSpeed = parent.parent.scrollSpeed;
 		var prev:MetaNote = -1;
 		var noteSpr:VirtualNote = null;
-		
-		// Cache expensive lookups
-		var parentStrumlines = parent.strumlines;
-		var parentNoteTypeFunctionalityPre = parent.noteTypeFunctionalityPre;
-		var numStrumlines = parentStrumlines.length;
-		
-		// Pre-calculate constants
-		var SCALE_FACTOR = Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT;
-		var OVERLAP_PIXEL_THRESHOLD = 0;
-		
-		// Use local variables for cache
-		var currentCacheStart = cacheStart;
-		var currentNoteCache = noteCache;
-		var currentCacheLength = noteCache.length;
-		
+		var j:Int = 0;
+
+		var time = haxe.Timer.stamp();
 		while (i < top) {
-			// Direct cache access without function call when possible
-			var cacheIdx = i - currentCacheStart;
-			var n:MetaNote;
-			
-			if (cacheIdx >= 0 && cacheIdx < currentCacheLength) {
-				n = currentNoteCache[Int64.toInt(cacheIdx)];
-			} else {
-				n = getCachedNote(i);
-				// Update cache references if they changed
-				if (cacheStart != currentCacheStart) {
-					currentCacheStart = cacheStart;
-					currentNoteCache = noteCache;
-					currentCacheLength = noteCache.length;
-				}
-			}
-			
-			// Fast lane calculation using bit operations
-			var laneType = n.type & 0x1F; // Mask for 5 bits
-			var lane = (parentNoteTypeFunctionalityPre[laneType] != null) ? 1 : (laneType % numStrumlines);
-			
-			var strumline = parentStrumlines[lane];
-			var receptor = strumline.buffer[n.index];
-			var fakeOverlapStorage = strumline.fakeOverlapStorage;
-			
-			// Optimize position calculation
-			var positionDiff = n.position - pos;
-			var diff = MetaNote.metaNotePositionToSongTime(positionDiff) * scrollSpeed;
-			var newY = receptor.y + Std.int(diff);
-			
-			// Fast ghost check using direct field access
-			var ghost = false;
-			if (prev != -1) {
-				ghost = (prev.position == n.position && 
-						prev.index == n.index && 
-						prev.type == n.type);
-			}
-			
-			var shouldOverlap = false;
-			if (!ghost && noteSpr != null && prev != -1) {
-				var prevY = fakeOverlapStorage[prev.index];
-				// Fast pixel diff calculation
-				var pixelDiff = Std.int(Math.abs(
-					Std.int(newY / SCALE_FACTOR) -
-					Std.int(prevY / SCALE_FACTOR)
-				));
-				
-				shouldOverlap = (pixelDiff <= OVERLAP_PIXEL_THRESHOLD &&
-								prev.type == n.type &&
-								noteSpr.scale == receptor.scale &&
-								prev.duration == n.duration &&
-								noteSpr.x == receptor.x);
-			}
-			
+			var n = File.getNote(i);
+
+			var lane = parent.noteTypeFunctionalityPre[n.type] != null
+				? 1
+				: (n.type % parent.strumlines.length);
+			var receptor = parent.strumlines[lane].buffer[n.index];
+			var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
+
+			var diff = (MetaNote.metaNotePositionToSongTime(n.position - pos)) * scrollSpeed;
+			var newY = receptor.y + Math.floor(diff);
+
+			var ghost = isGhostNote(prev, n);
+
+			var shouldOverlap = noteSpr != null && shouldNotesOverlap(prev, n, noteSpr, receptor, newY,
+				fakeOverlapStorage[prev != -1 ? prev.index : -1]) && !ghost;
+
 			fakeOverlapStorage[n.index] = newY;
-			
+
 			if (shouldOverlap) {
-				// Inlined merge - avoid function call
-				var alphaToAdd = n.missed ? Note.defaultMissAlpha : Note.defaultAlpha;
-				noteSpr.addedAlpha = (noteSpr.addedAlpha + alphaToAdd) > 256 ? 256 : noteSpr.addedAlpha + alphaToAdd;
-				noteSpr.notesInOne++;
+				mergeNoteIntoSprite(noteSpr, n);
 			} else {
 				if (!ghost) {
-					noteSpr = parent.drawNote(pos, n, diff, i);
+					++j;
+					noteSpr = parent.drawNote(pos, n, diff, i, THREAD_ID);
 				}
 			}
-			
+
 			prev = n;
-			i++;
+			++i;
 		}
-		
-		timeSpentOnItIncrement = haxe.Timer.stamp() - timeSpentOnItIncrement;
-		timeSpentOnIt += timeSpentOnItIncrement;
-		
+		timeSpentOnIt = haxe.Timer.stamp() - time;
+
 		pos -= latencyI64;
 	}
 
@@ -275,26 +91,26 @@ class NoteSpawner {
 		var len = File.getLength();
 		while (top != len) {
 			// Only fetch once
-			var n = getCachedNote(top);
+			var n = File.getNote(top);
 			if (n.position - pos >= spawnDist) break;
 
 			// Initialize the note once
 			n.flag = false;
 			n.missed = false;
 			n.held = false;
-			setCachedNote(top, n);
+			File.setNote(top, n);
 
 			++top;
 		}
 
 		// Cache the top note once
-		if (top < len) curTopNote = getCachedNote(top);
+		if (top < len) curTopNote = File.getNote(top);
 	}
 
 	function cullBottom(pos:Int64) {
 		var len = File.getLength();
 		while (bottom != len) {
-			var n = getCachedNote(bottom);
+			var n = File.getNote(bottom);
 
 			// Only calculate once
 			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - n.position;
@@ -309,7 +125,7 @@ class NoteSpawner {
 		}
 
 		// Cache the bottom note once
-		if (bottom < len) curBottomNote = getCachedNote(bottom);
+		if (bottom < len) curBottomNote = File.getNote(bottom);
 	}
 
 	function resetNotes(songPosition:Float) {
@@ -329,7 +145,7 @@ class NoteSpawner {
 			var hi:Int64 = len;
 			while (lo < hi) {
 				var mid = (lo + hi) >> 1;
-				if (getCachedNote(mid).position < target)
+				if (File.getNote(mid).position < target)
 					lo = mid + 1;
 				else
 					hi = mid;
@@ -342,7 +158,7 @@ class NoteSpawner {
 			var hi:Int64 = len;
 			while (lo < hi) {
 				var mid = (lo + hi) >> 1;
-				if (getCachedNote(mid).position <= target)
+				if (File.getNote(mid).position <= target)
 					lo = mid + 1;
 				else
 					hi = mid;
@@ -359,11 +175,8 @@ class NoteSpawner {
 		if (top < 0) top = 0;
 		else if (top >= len) top = len - 1;
 
-		curBottomNote = getCachedNote(bottom);
-		curTopNote = getCachedNote(top);
-
-		// Slide cache to cover current bottom/top
-		loadCache(bottom, cacheSize);
+		curBottomNote = File.getNote(bottom);
+		curTopNote = File.getNote(top);
 
 		parent.resetStrumlines();
 	}
@@ -375,10 +188,12 @@ class NoteSpawner {
 	 * @param pos The current song position in note format.
 	 */
 	function renderNotes(pos:Int64) {
-		var notes = parent.virtualNoteBuffer;
+		var notesThreaded = parent.virtualNoteBuffers;
 
-		renderVirtualNotes(notes, pos);
-		renderVirtualSustains(notes);
+		for (notes in notesThreaded) {
+			renderVirtualNotes(notes, pos);
+			renderVirtualSustains(notes);
+		}
 	}
 
 	// both of these arrays are used to easily render notes in the opposite order.

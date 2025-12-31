@@ -151,7 +151,7 @@ class Strumline {
 
 			var n:Int64 = noteToHit.toNumber();
 			(n:MetaNote).flag = true;
-			parent.noteSpawner.setCachedNote(notesToHit_indexes[index], n);
+			File.setNote(notesToHit_indexes[index], n);
 			sustainsToHold_duration[index] = noteToHit.duration;
 
 			if (noteToHit.duration > 20) {
@@ -190,7 +190,7 @@ class Strumline {
 
 			var n:Int64 = sustainToRelease.toNumber();
 			(n:MetaNote).held = true;
-			parent.noteSpawner.setCachedNote(sustainsToHold_indexes[index], n);
+			File.setNote(sustainsToHold_indexes[index], n);
 
 			if (@:privateAccess pf.onSustainRelease.__listeners.length != 0)
 				pf.onSustainRelease.dispatch(sustainToRelease);

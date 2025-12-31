@@ -1,9 +1,7 @@
 #include <iostream>
 #include <cstdint>
-#include <vector>
 #include <stdexcept>
 #include <cstring>
-#include <string>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -15,57 +13,53 @@
 #endif
 
 // ============================================================================
-// MappedFile class - encapsulates mmap / CreateFileMapping
+// MappedFile
 // ============================================================================
 class MappedFile {
-    static constexpr int64_t BUFFER_SIZE = 1048576LL; // 1MB buffer
-    static constexpr int64_t ELEMENTS_PER_BUFFER = BUFFER_SIZE / sizeof(int64_t);
-    
+    static constexpr int64_t BUFFER_SIZE = 1024 * 1024; // 1 MB
+    static constexpr int64_t ELEMENTS_PER_BUFFER =
+        BUFFER_SIZE / sizeof(int64_t);
+
 public:
     MappedFile() = default;
     ~MappedFile() { close(); }
 
     bool open(const char* path) {
 #ifdef _WIN32
-        hFile = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ,
-                            NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-        if (hFile == INVALID_HANDLE_VALUE) return false;
-
-        LARGE_INTEGER fileSize;
-        if (!GetFileSizeEx(hFile, &fileSize)) {
-            CloseHandle(hFile);
-            hFile = INVALID_HANDLE_VALUE;
+        hFile = CreateFileA(
+            path,
+            GENERIC_READ | GENERIC_WRITE,
+            FILE_SHARE_READ,
+            NULL,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            NULL
+        );
+        if (hFile == INVALID_HANDLE_VALUE)
             return false;
-        }
 
-        if (fileSize.QuadPart % sizeof(int64_t) != 0) {
-            CloseHandle(hFile);
-            hFile = INVALID_HANDLE_VALUE;
+        LARGE_INTEGER size;
+        if (!GetFileSizeEx(hFile, &size))
             return false;
-        }
 
-        file_length = fileSize.QuadPart / sizeof(int64_t);
-        current_offset = 0;
+        if (size.QuadPart % sizeof(int64_t) != 0)
+            return false;
+
+        file_length = size.QuadPart / sizeof(int64_t);
         return remap(0);
 #else
-        fd = ::open(path, O_RDONLY);
-        if (fd == -1) return false;
+        fd = ::open(path, O_RDWR);
+        if (fd == -1)
+            return false;
 
         struct stat st;
-        if (fstat(fd, &st) == -1) {
-            ::close(fd);
-            fd = -1;
+        if (fstat(fd, &st) == -1)
             return false;
-        }
 
-        if (st.st_size % sizeof(int64_t) != 0) {
-            ::close(fd);
-            fd = -1;
+        if (st.st_size % sizeof(int64_t) != 0)
             return false;
-        }
 
         file_length = st.st_size / sizeof(int64_t);
-        current_offset = 0;
         return remap(0);
 #endif
     }
@@ -78,7 +72,7 @@ public:
         }
         if (hMap) {
             CloseHandle(hMap);
-            hMap = NULL;
+            hMap = nullptr;
         }
         if (hFile != INVALID_HANDLE_VALUE) {
             CloseHandle(hFile);
@@ -95,81 +89,100 @@ public:
         }
 #endif
         file_length = 0;
-        current_offset = 0;
         mapped_size = 0;
+        current_offset = 0;
     }
 
     int64_t get(int64_t index) {
-        if (index < 0 || index >= file_length) {
-            throw std::out_of_range("Index out of range");
-        }
-
-        // Check if we need to remap for this index
-        if (index < current_offset || index >= current_offset + mapped_size) {
-            // Calculate new offset centered around the requested index
-            int64_t new_offset = (index / ELEMENTS_PER_BUFFER) * ELEMENTS_PER_BUFFER;
-            new_offset = std::max<int64_t>(0LL, new_offset);
-            new_offset = std::min<int64_t>(new_offset, file_length - 1);
-            
-            if (!remap(new_offset)) {
-                throw std::runtime_error("Failed to remap file region");
-            }
-        }
-
+        ensureMapped(index);
         return data[index - current_offset];
     }
 
-    int64_t* raw() { return data; }
-    const int64_t* raw() const { return data; }
-    int64_t size() const { return file_length; }
-    int64_t currentOffset() const { return current_offset; }
-    int64_t currentSize() const { return mapped_size; }
-
-private:
-    bool remap(int64_t offset) {
-        // Calculate how much we can map from this offset
-        mapped_size = std::min<int64_t>(ELEMENTS_PER_BUFFER, file_length - offset);
-        if (mapped_size <= 0) return false;
+    void set(int64_t index, int64_t value) {
+        ensureMapped(index);
+        data[index - current_offset] = value;
 
 #ifdef _WIN32
-        if (data) {
-            UnmapViewOfFile(data);
-            data = nullptr;
-        }
-        if (hMap) {
-            CloseHandle(hMap);
-            hMap = NULL;
-        }
-
-        hMap = CreateFileMapping(hFile, NULL, PAGE_READONLY, 0, 0, NULL);
-        if (!hMap) return false;
-
-        // Calculate the file offset in bytes
-        LARGE_INTEGER file_offset;
-        file_offset.QuadPart = offset * sizeof(int64_t);
-        
-        DWORD size_high = (mapped_size * sizeof(int64_t)) >> 32;
-        DWORD size_low = (mapped_size * sizeof(int64_t)) & 0xFFFFFFFF;
-
-        data = (int64_t*)MapViewOfFile(hMap, FILE_MAP_READ, 
-                                      file_offset.HighPart, file_offset.LowPart,
-                                      mapped_size * sizeof(int64_t));
-        if (!data) {
-            CloseHandle(hMap);
-            hMap = NULL;
-            return false;
-        }
+        FlushViewOfFile(
+            &data[index - current_offset],
+            sizeof(int64_t)
+        );
 #else
-        if (data) {
-            munmap(data, mapped_size * sizeof(int64_t));
-            data = nullptr;
+        msync(
+            &data[index - current_offset],
+            sizeof(int64_t),
+            MS_SYNC
+        );
+#endif
+    }
+
+    int64_t size() const { return file_length; }
+
+private:
+    void ensureMapped(int64_t index) {
+        if (index < 0 || index >= file_length)
+            throw std::out_of_range("Index out of range");
+
+        if (index < current_offset ||
+            index >= current_offset + mapped_size) {
+
+            int64_t newOffset =
+                (index / ELEMENTS_PER_BUFFER) * ELEMENTS_PER_BUFFER;
+
+            if (!remap(newOffset))
+                throw std::runtime_error("Remap failed");
         }
+    }
 
-        off_t file_offset = offset * sizeof(int64_t);
-        size_t map_size = mapped_size * sizeof(int64_t);
+    bool remap(int64_t offset) {
+        mapped_size = std::min<int64_t>(
+            ELEMENTS_PER_BUFFER,
+            file_length - offset
+        );
 
-        data = (int64_t*)mmap(nullptr, map_size,
-                              PROT_READ, MAP_SHARED, fd, file_offset);
+#ifdef _WIN32
+        if (data) UnmapViewOfFile(data);
+        if (hMap) CloseHandle(hMap);
+
+        hMap = CreateFileMapping(
+            hFile,
+            NULL,
+            PAGE_READWRITE,
+            0,
+            0,
+            NULL
+        );
+        if (!hMap)
+            return false;
+
+        LARGE_INTEGER off;
+        off.QuadPart = offset * sizeof(int64_t);
+
+        data = (int64_t*)MapViewOfFile(
+            hMap,
+            FILE_MAP_READ | FILE_MAP_WRITE,
+            off.HighPart,
+            off.LowPart,
+            mapped_size * sizeof(int64_t)
+        );
+        if (!data)
+            return false;
+#else
+        if (data)
+            munmap(data, mapped_size * sizeof(int64_t));
+
+        off_t off = offset * sizeof(int64_t);
+        size_t size = mapped_size * sizeof(int64_t);
+
+        data = (int64_t*)mmap(
+            nullptr,
+            size,
+            PROT_READ | PROT_WRITE,
+            MAP_SHARED,
+            fd,
+            off
+        );
+
         if (data == MAP_FAILED) {
             data = nullptr;
             return false;
@@ -180,40 +193,45 @@ private:
         return true;
     }
 
+private:
     int64_t* data = nullptr;
     int64_t file_length = 0;
-    int64_t current_offset = 0;
     int64_t mapped_size = 0;
+    int64_t current_offset = 0;
 
 #ifdef _WIN32
     HANDLE hFile = INVALID_HANDLE_VALUE;
-    HANDLE hMap  = NULL;
+    HANDLE hMap  = nullptr;
 #else
     int fd = -1;
 #endif
 };
 
 // ============================================================================
-// Global state + API
+// Global API
 // ============================================================================
 static MappedFile gFile;
-int64_t length = 0;
+static int64_t gLength = 0;
 
-void loadChart(const char* inFile) {
-    if (!gFile.open(inFile))
+void loadChart(const char* path) {
+    if (!gFile.open(path))
         throw std::runtime_error("Failed to open chart file");
-    length = gFile.size();
+    gLength = gFile.size();
 }
 
 void destroyChart() {
     gFile.close();
-    length = 0;
+    gLength = 0;
 }
 
-int64_t getNote(int64_t atIndex) { 
-    return gFile.get(atIndex);
+int64_t getNote(int64_t index) {
+    return gFile.get(index);
 }
 
-int64_t getLength() { 
-    return length; 
+void setNote(int64_t index, int64_t value) {
+    gFile.set(index, value);
+}
+
+int64_t getLength() {
+    return gLength;
 }

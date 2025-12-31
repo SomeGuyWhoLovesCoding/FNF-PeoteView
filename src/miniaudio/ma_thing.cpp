@@ -575,7 +575,6 @@ public:
 
 	// Public interface methods
 	void loadFiles(std::vector<const char*> argv) {
-		//printf("Hello world\n"); this was here to brute force the compiler to rebuild the file
 		if(argv.empty()){
 			printf("No input files.\n");
 			return;
@@ -1630,7 +1629,7 @@ public:
         config.sampleRate = SAMPLE_RATE;
         config.dataCallback = audioCallback;
         config.pUserData = this;
-        config.periodSizeInMilliseconds = 40;
+        config.periodSizeInMilliseconds = 2;
 
         if (ma_device_init(nullptr, &config, &device) != MA_SUCCESS) {
             printf("Failed to initialize audio mixer device\n");

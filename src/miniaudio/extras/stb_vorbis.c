@@ -5128,7 +5128,7 @@ stb_vorbis * stb_vorbis_open_memory(const unsigned char *data, int len, int *err
 #define PLAYBACK_LEFT     2
 #define PLAYBACK_RIGHT    4
 
-#define L  (PLAYBACK_LEFT  | PLAYBACK_MONO)
+#define _L  (PLAYBACK_LEFT  | PLAYBACK_MONO) // renamed from L because that's how you got that error.
 #define C  (PLAYBACK_LEFT  | PLAYBACK_RIGHT | PLAYBACK_MONO)
 #define R  (PLAYBACK_RIGHT | PLAYBACK_MONO)
 
@@ -5136,11 +5136,11 @@ static int8 channel_position[7][6] =
 {
    { 0 },
    { C },
-   { L, R },
-   { L, C, R },
-   { L, R, L, R },
-   { L, C, R, L, R },
-   { L, C, R, L, R, C },
+   { _L, R },
+   { _L, C, R },
+   { _L, R, _L, R },
+   { _L, C, R, _L, R },
+   { _L, C, R, _L, R, C },
 };
 
 

@@ -91,7 +91,6 @@ class NotePool {
 
 
 		return allocated;
-		//return null;
 	}
 
 	/**
@@ -114,7 +113,7 @@ class NotePool {
 		n.flag = false;
 		n.missed = false;
 		n.held = false;
-		parent.noteSpawner.setCachedNote(index, n);
+		File.setNote(index, n);
 	}
 
 	/**
