@@ -230,7 +230,7 @@ class NoteSystem {
 				var noteToHitExists = noteToHit != null;
 				var diffOffsetted = diff + latency; // This is important
 
-				if (!isMissed && diffOffsetted < parent.hitbox) {
+				if (!isMissed && diffOffsetted < _cachedHitbox) {
 					var pos = MetaNote.metaNotePositionToSongTime(noteToHit.position - pos);
 					if (!noteToHitExists || Math.abs(diff) < Math.abs(pos)) {
 						strumline.notesToHit[index] = note;
@@ -238,7 +238,7 @@ class NoteSystem {
 					}
 				}
 
-				if (diffOffsetted < -parent.hitbox && !isMissed) {
+				if (diffOffsetted < -_cachedHitbox && !isMissed) {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
 					var n:Int64 = note.toNumber();
 					(n:MetaNote).missed = true;
@@ -362,13 +362,19 @@ class NoteSystem {
 		return noteSpr;
 	}
 
-	/**
-	 * Change the scroll speed of this note system.
-	**/
+	// Add these cache variables at the class level
+	var _cachedScrollSpeed:Float = 0;
+	var _cachedHitbox:Float = 0;
+	var _cachedDownScroll:Bool = false;
+
+	// Update them when scroll speed changes
 	function setScrollSpeed(value:Float) {
 		noteSpawner.spawnDist = MetaNote.floatToMetaNotePosition(1600 / value);
 		noteSpawner.despawnDist = MetaNote.floatToMetaNotePosition(300 / Math.min(Math.max(value, 0.0001), 1.0));
 		parent.hitbox = 200 * value;
+		_cachedScrollSpeed = value;
+		_cachedHitbox = parent.hitbox;
+		_cachedDownScroll = parent.downScroll;
 		return value;
 	}
 

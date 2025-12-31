@@ -6,7 +6,7 @@ It can handle a wide-range of pitch-shifts (multiple octaves) but time-stretchin
 
 There are some audio examples and an interactive web demo on the [main project page](https://signalsmith-audio.co.uk/code/stretch/).
 
-> ![NOTE]
+> [!NOTE]
 > This signalsmith-stretch fork fixes Visual Studio C++ compiler support and refactors the code to into the standard C++ header only module. It has actually been tested on other compilers (in courtesy to @halfwheat).
 > Also made into a proper single library while removing the `Sample` template to use `float` datatype only meant to be used on the miniaudio, as of the simple mixer example.
 > This also supresses some MSVC warning on the DSP library and fixes errors on std::min/max.

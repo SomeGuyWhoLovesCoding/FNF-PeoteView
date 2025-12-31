@@ -173,49 +173,101 @@ class NoteSpawner {
 	function processNotes(pos:Int64) {
 		var latency = Main.conductor.offset;
 		var latencyI64 = MetaNote.floatToMetaNotePosition(latency);
-
 		pos += latencyI64;
-
+		
 		var i = bottom;
 		var scrollSpeed = parent.parent.scrollSpeed;
 		var prev:MetaNote = -1;
 		var noteSpr:VirtualNote = null;
-		var j:Int = 0;
-
-		var time = haxe.Timer.stamp();
+		
+		// Cache expensive lookups
+		var parentStrumlines = parent.strumlines;
+		var parentNoteTypeFunctionalityPre = parent.noteTypeFunctionalityPre;
+		var numStrumlines = parentStrumlines.length;
+		
+		// Pre-calculate constants
+		var SCALE_FACTOR = Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT;
+		var OVERLAP_PIXEL_THRESHOLD = 0;
+		
+		// Use local variables for cache
+		var currentCacheStart = cacheStart;
+		var currentNoteCache = noteCache;
+		var currentCacheLength = noteCache.length;
+		
 		while (i < top) {
-			var n = getCachedNote(i); // use sliding cache
-
-			var lane = parent.noteTypeFunctionalityPre[n.type] != null
-				? 1
-				: (n.type % parent.strumlines.length);
-			var receptor = parent.strumlines[lane].buffer[n.index];
-			var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
-
-			var diff = (MetaNote.metaNotePositionToSongTime(n.position - pos)) * scrollSpeed;
-			var newY = receptor.y + Math.floor(diff);
-
-			var ghost = isGhostNote(prev, n);
-
-			var shouldOverlap = noteSpr != null && shouldNotesOverlap(prev, n, noteSpr, receptor, newY,
-				fakeOverlapStorage[prev != -1 ? prev.index : -1]) && !ghost;
-
+			// Direct cache access without function call when possible
+			var cacheIdx = i - currentCacheStart;
+			var n:MetaNote;
+			
+			if (cacheIdx >= 0 && cacheIdx < currentCacheLength) {
+				n = currentNoteCache[Int64.toInt(cacheIdx)];
+			} else {
+				n = getCachedNote(i);
+				// Update cache references if they changed
+				if (cacheStart != currentCacheStart) {
+					currentCacheStart = cacheStart;
+					currentNoteCache = noteCache;
+					currentCacheLength = noteCache.length;
+				}
+			}
+			
+			// Fast lane calculation using bit operations
+			var laneType = n.type & 0x1F; // Mask for 5 bits
+			var lane = (parentNoteTypeFunctionalityPre[laneType] != null) ? 1 : (laneType % numStrumlines);
+			
+			var strumline = parentStrumlines[lane];
+			var receptor = strumline.buffer[n.index];
+			var fakeOverlapStorage = strumline.fakeOverlapStorage;
+			
+			// Optimize position calculation
+			var positionDiff = n.position - pos;
+			var diff = MetaNote.metaNotePositionToSongTime(positionDiff) * scrollSpeed;
+			var newY = receptor.y + Std.int(diff);
+			
+			// Fast ghost check using direct field access
+			var ghost = false;
+			if (prev != -1) {
+				ghost = (prev.position == n.position && 
+						prev.index == n.index && 
+						prev.type == n.type);
+			}
+			
+			var shouldOverlap = false;
+			if (!ghost && noteSpr != null && prev != -1) {
+				var prevY = fakeOverlapStorage[prev.index];
+				// Fast pixel diff calculation
+				var pixelDiff = Std.int(Math.abs(
+					Std.int(newY / SCALE_FACTOR) -
+					Std.int(prevY / SCALE_FACTOR)
+				));
+				
+				shouldOverlap = (pixelDiff <= OVERLAP_PIXEL_THRESHOLD &&
+								prev.type == n.type &&
+								noteSpr.scale == receptor.scale &&
+								prev.duration == n.duration &&
+								noteSpr.x == receptor.x);
+			}
+			
 			fakeOverlapStorage[n.index] = newY;
-
+			
 			if (shouldOverlap) {
-				mergeNoteIntoSprite(noteSpr, n);
+				// Inlined merge - avoid function call
+				var alphaToAdd = n.missed ? Note.defaultMissAlpha : Note.defaultAlpha;
+				noteSpr.addedAlpha = (noteSpr.addedAlpha + alphaToAdd) > 256 ? 256 : noteSpr.addedAlpha + alphaToAdd;
+				noteSpr.notesInOne++;
 			} else {
 				if (!ghost) {
-					++j;
 					noteSpr = parent.drawNote(pos, n, diff, i);
 				}
 			}
-
+			
 			prev = n;
-			++i;
+			i++;
 		}
-		timeSpentOnIt = haxe.Timer.stamp() - time;
-
+		
+		timeSpentOnItIncrement = haxe.Timer.stamp() - timeSpentOnItIncrement;
+		timeSpentOnIt += timeSpentOnItIncrement;
+		
 		pos -= latencyI64;
 	}
 
