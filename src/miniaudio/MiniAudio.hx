@@ -132,7 +132,7 @@ class MiniAudio {
 	@:hlNative("ma_thing", "playSoundEffect") public static function playSoundEffect(index:Int, volume:hl.F32):Void {}
 	@:hlNative("ma_thing", "stopSoundEffect") public static function stopSoundEffect(index:Int):Void {}
 
-	@:hlNative("ma_thing", "setMixerMasterVolume") static function setMixerMasterVolume(volume:hl.F32):Void {}
+	@:hlNative("ma_thing", "setMixerMasterVolume") public static function setMixerMasterVolume(volume:hl.F32):Void {}
 }
 #else
 class MiniAudio {
