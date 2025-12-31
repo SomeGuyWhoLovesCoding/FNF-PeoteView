@@ -38,14 +38,11 @@ class PlayField implements State {
 	var score:Int128 = 0;
 	var misses:Int128 = 0;
 	var combo:Int128 = 0;
-	var sickScore:Int128 = 400;
-	var goodScore:Int128 = 200;
-	var badScore:Int128 = 100;
-	var shitScore:Int128 = 50;
 	var accuracy(default, null):Accuracy = new Accuracy();
 	var health:Float = 0.5;
 	var healthGain:Array<Float>;
 	var healthLoss:Array<Float>;
+
 	var latencyCompensation:Int;
 
 	var dispShake:Point = {x: 0, y: 0};
@@ -109,7 +106,7 @@ class PlayField implements State {
 	var onKeyRelease:Event<KeyCode->Void>;
 
 	var flipHealthBar:Bool;
-	var hitbox:Float = 200;
+	var hitbox:Float = 250;
 	var ready:Bool = false;
 
 	function setTime(value:Float, playAgain:Bool = false) {
@@ -357,6 +354,33 @@ class PlayField implements State {
 		}
 	}
 
+	var ratingJudgementList:Array<Judgement> = [
+		[
+			0.2, // target
+			0, // id
+			1, // accuracy
+			400 // score
+		],
+		[
+			0.4,
+			1,
+			0.8,
+			200
+		],
+		[
+			0.6,
+			2,
+			0.675,
+			100
+		],
+		[
+			0.8,
+			3,
+			0.5,
+			50
+		]
+	]; // how this new modifiable system works: you simply just set this array to a new selection of ratings, however you want.
+
 	function hitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
 		var lane = note.type;
 
@@ -390,33 +414,40 @@ class PlayField implements State {
 			scoreTxt.scale = 1.1;
 		}
 
-		var absTiming = timing < 0 ? -timing : timing;
+		var absTiming = Math.abs(timing);
 		var notesInOne_accuracy = notesInOne * 10000;
+		//static var ratingList = [];
 
-		if (absTiming > 60) {
-			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(3);
-			accuracy.increment(5000, false, notesInOne_accuracy);
-			score += shitScore * notesInOne;
+		// determine rating list based on 0%..100%
+		/*if (handleJudgement(absTiming, ratingJudgementList[0], notesInOne, preferences))
+			return;*/
+
+		// Handle edge cases first
+		// If timing is worse than the worst threshold, return worst rating
+		if (absTiming >= ratingJudgementList[ratingJudgementList.length - 1][0]) {
+			var worstJudgement = ratingJudgementList[ratingJudgementList.length - 1];
+			var judgementID = Std.int(worstJudgement[1]);
+			var judgementAcc = haxe.Int64Helper.fromFloat(worstJudgement[2] * 10000);
+			var judgementScore = Std.int(worstJudgement[3]);
+			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(judgementID);
+			accuracy.increment(judgementAcc, false, notesInOne * 10000);
+			score += judgementScore * notesInOne;
 			return;
 		}
 
-		if (absTiming > 45) {
-			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(2);
-			accuracy.increment(7500, false, notesInOne_accuracy);
-			score += badScore * notesInOne;
-			return;
+		// Check from best to worst thresholds
+		for (i in 0...ratingJudgementList.length) {
+			if (absTiming < ratingJudgementList[i][0]) {
+				var judgement = ratingJudgementList[i];
+				var judgementID = Std.int(judgement[1]);
+				var judgementAcc = haxe.Int64Helper.fromFloat(judgement[2] * 10000);
+				var judgementScore = Std.int(judgement[3]);
+				if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(judgementID);
+				accuracy.increment(judgementAcc, false, notesInOne * 10000);
+				score += judgementScore * notesInOne;
+				return;
+			}
 		}
-
-		if (absTiming > 30) {
-			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(1);
-			accuracy.increment(8000, false, notesInOne_accuracy);
-			score += goodScore * notesInOne;
-			return;
-		}
-
-		if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(0);
-		accuracy.increment(10000, false, notesInOne_accuracy);
-		score += sickScore * notesInOne;
 	}
 
 	function missNote(note:MetaNote, notesInOne:Int64) {

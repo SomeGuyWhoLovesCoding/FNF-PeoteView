@@ -103,7 +103,6 @@ class NoteSpawner {
 			++top;
 		}
 
-		// Cache the top note once
 		if (top < len) curTopNote = File.getNote(top);
 	}
 

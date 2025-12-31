@@ -104,19 +104,6 @@ public:
     void set(int64_t index, int64_t value) {
         ensureMapped(index);
         data[index - current_offset] = value;
-
-#ifdef _WIN32
-        FlushViewOfFile(
-            &data[index - current_offset],
-            sizeof(int64_t)
-        );
-#else
-        msync(
-            &data[index - current_offset],
-            sizeof(int64_t),
-            MS_SYNC
-        );
-#endif
     }
 
     int64_t size() const { return file_length; }

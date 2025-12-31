@@ -369,16 +369,15 @@ class NoteSystem {
 
 	// Add these cache variables at the class level
 	var _cachedScrollSpeed:Float = 0;
-	var _cachedHitbox:Float = 0;
+	var _cachedHitbox:Float = 250;
 	var _cachedDownScroll:Bool = false;
 
 	// Update them when scroll speed changes
 	function setScrollSpeed(value:Float) {
 		noteSpawner.spawnDist = MetaNote.floatToMetaNotePosition(1600 / value);
 		noteSpawner.despawnDist = MetaNote.floatToMetaNotePosition(360 / Math.min(Math.max(value, 0.0001), 1.0));
-		parent.hitbox = 250 * value;
 		_cachedScrollSpeed = value;
-		_cachedHitbox = parent.hitbox;
+		_cachedHitbox = 250 / value;
 		_cachedDownScroll = parent.downScroll;
 		return value;
 	}
