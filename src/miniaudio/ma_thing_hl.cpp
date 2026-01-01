@@ -859,6 +859,8 @@ public:
             maxFramesToScan = s.decoderLength;
         }
         
+        const float VOLUME_THRESHOLD = 0.2f; // 20% volume
+        
         while (totalFramesScanned < maxFramesToScan && !foundSignal) {
             ma_uint64 framesToRead = SCAN_CHUNK_SIZE;
             if (totalFramesScanned + framesToRead > maxFramesToScan) {
@@ -871,13 +873,19 @@ public:
             if (framesRead == 0) break;
             
             for (ma_uint64 frame = 0; frame < framesRead && !foundSignal; frame++) {
+                bool bothChannelsAboveThreshold = true;
+                
                 for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
                     float sample = scanBuffer[frame * CHANNEL_COUNT + ch];
-                    if (fabs(sample) > SILENCE_THRESHOLD) {
-                        latencyFrames = totalFramesScanned + frame;
-                        foundSignal = true;
+                    if (fabs(sample) <= VOLUME_THRESHOLD) {
+                        bothChannelsAboveThreshold = false;
                         break;
                     }
+                }
+                
+                if (bothChannelsAboveThreshold) {
+                    latencyFrames = totalFramesScanned + frame;
+                    foundSignal = true;
                 }
             }
             
@@ -2127,13 +2135,13 @@ HL_PRIM bool HL_NAME(wearingPlugNPlay)(_NO_ARG) {
 
 HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
 	#if HX_WINDOWS
-	int osMs = 68;
+	int osMs = 56;
 	#else
 	int osMs = 1;
 	#endif
 	if (g_audioSystem.exists) {
 		if(!HL_NAME(wearingPlugNPlay)()) osMs += 50;
-		if(HL_NAME(wearingHeadphones)()) osMs += 27;
+		if(HL_NAME(wearingHeadphones)()) osMs += 40;
 		osMs -= g_audioSystem.getLatencyMs();
 	}
 	return osMs;

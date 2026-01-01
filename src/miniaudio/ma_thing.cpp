@@ -833,6 +833,7 @@ public:
         mixerState = 3;
     }
     
+    // actually check for both channels because if certain instruments like ample metal hellrazer are played at the beginning, each of the channels can be offsetted. 
     ma_uint64 detectLatency(size_t index) {
         DecoderStream& s = streams[index];
         
@@ -852,6 +853,8 @@ public:
             maxFramesToScan = s.decoderLength;
         }
         
+        const float VOLUME_THRESHOLD = 0.2f; // 20% volume
+        
         while (totalFramesScanned < maxFramesToScan && !foundSignal) {
             ma_uint64 framesToRead = SCAN_CHUNK_SIZE;
             if (totalFramesScanned + framesToRead > maxFramesToScan) {
@@ -864,13 +867,19 @@ public:
             if (framesRead == 0) break;
             
             for (ma_uint64 frame = 0; frame < framesRead && !foundSignal; frame++) {
+                bool bothChannelsAboveThreshold = true;
+                
                 for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
                     float sample = scanBuffer[frame * CHANNEL_COUNT + ch];
-                    if (fabs(sample) > SILENCE_THRESHOLD) {
-                        latencyFrames = totalFramesScanned + frame;
-                        foundSignal = true;
+                    if (fabs(sample) <= VOLUME_THRESHOLD) {
+                        bothChannelsAboveThreshold = false;
                         break;
                     }
+                }
+                
+                if (bothChannelsAboveThreshold) {
+                    latencyFrames = totalFramesScanned + frame;
+                    foundSignal = true;
                 }
             }
             
@@ -2114,13 +2123,13 @@ bool wearingPlugNPlay() {
 
 int detectLatency() {
 	#if HX_WINDOWS
-	int osMs = 68;
+	int osMs = 56;
 	#else
 	int osMs = 1;
 	#endif
 	if (g_audioSystem.exists) {
 		if(!wearingPlugNPlay()) osMs += 50;
-		if(wearingHeadphones()) osMs += 27;
+		if(wearingHeadphones()) osMs += 40;
 		osMs -= g_audioSystem.getLatencyMs();
 	}
 	return osMs;
