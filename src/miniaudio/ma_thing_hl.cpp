@@ -2133,7 +2133,7 @@ HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
 	#endif
 	if (g_audioSystem.exists) {
 		if(!HL_NAME(wearingPlugNPlay)()) osMs += 50;
-		if(HL_NAME(wearingHeadphones)()) osMs += 25;
+		if(HL_NAME(wearingHeadphones)()) osMs += 27;
 		osMs -= g_audioSystem.getLatencyMs();
 	}
 	return osMs;

@@ -2120,7 +2120,7 @@ int detectLatency() {
 	#endif
 	if (g_audioSystem.exists) {
 		if(!wearingPlugNPlay()) osMs += 50;
-		if(wearingHeadphones()) osMs += 25;
+		if(wearingHeadphones()) osMs += 27;
 		osMs -= g_audioSystem.getLatencyMs();
 	}
 	return osMs;
