@@ -662,8 +662,6 @@ public:
 		deviceConfig.sampleRate = SAMPLE_RATE;
 		deviceConfig.dataCallback = data_callback;
 		deviceConfig.pUserData = this;
-		deviceConfig.periodSizeInFrames = 256;
-		deviceConfig.periods = 2;
 
 		if(!device.init(&deviceConfig)){
 			streams.clear();
@@ -698,7 +696,7 @@ public:
 		bool foundSignal = false;
 		
 		// Scan up to 1 second of audio (or end of file)
-		ma_uint64 maxFramesToScan = SAMPLE_RATE * 1;
+		ma_uint64 maxFramesToScan = SAMPLE_RATE * 0.1;
 		if (maxFramesToScan > s.decoderLength) {
 			maxFramesToScan = s.decoderLength;
 		}
@@ -2023,7 +2021,7 @@ HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
 	#endif
     if (g_audioSystem.exists) {
         if(!HL_NAME(wearingPlugNPlay)()) osMs += 50;
-        if(HL_NAME(wearingHeadphones)()) osMs += 60;
+        if(HL_NAME(wearingHeadphones)()) osMs += 25;
 		osMs -= g_audioSystem.getLatencyMs();
     }
     return osMs;
