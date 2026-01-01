@@ -186,9 +186,9 @@ cleanup:
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Buffer constants
-#define PADDING_MS 100
-#define BUFFER_MS 2000
-#define HALF_BUFFER_MS 900
+#define PADDING_MS 25
+#define BUFFER_MS 500
+#define HALF_BUFFER_MS 225
 
 #define PADDING_FRAMES ((SAMPLE_RATE * PADDING_MS) / 1000)        // 4410 frames
 #define BUFFER_FRAMES ((SAMPLE_RATE * BUFFER_MS) / 1000)          // 88200 frames
