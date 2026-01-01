@@ -179,9 +179,9 @@ cleanup:
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Buffer constants with padding
-#define PADDING_MS 25         // Minimal padding for seeking
+#define PADDING_MS 50         // Minimal padding for seeking
 #define BUFFER_MS 500         // Main buffer size
-#define HALF_BUFFER_MS 225    // When to start refilling
+#define HALF_BUFFER_MS 200    // When to start refilling
 
 #define PADDING_FRAMES ((SAMPLE_RATE * PADDING_MS) / 1000)
 #define BUFFER_FRAMES ((SAMPLE_RATE * BUFFER_MS) / 1000)
