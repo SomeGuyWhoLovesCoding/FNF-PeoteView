@@ -37,13 +37,13 @@ class PlayField implements State {
 
 	var ratingJudgementList:Array<Judgement> = [
 		[
-			0.25, // target (was 0.35)
+			0.3, // target
 			0, // id
 			1, // accuracy
 			400 // score
 		],
 		[
-			0.5, // (was 0.65)
+			0.6,
 			1,
 			0.8,
 			200
