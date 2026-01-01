@@ -199,9 +199,9 @@ class Main extends Application
 	}
 
 	private function createSounds() {
-		sound_scrollIdx = MiniAudio.loadSoundEffect(Paths.asset("assets/conductor/measure.wav"));
-		sound_confIdx = MiniAudio.loadSoundEffect(Paths.asset("assets/conductor/beat.wav"));
-		sound_cancelIdx = MiniAudio.loadSoundEffect(Paths.asset("assets/conductor/beat.wav"));
+		sound_scrollIdx = MiniAudio.loadSoundEffect(Paths.asset("assets/sounds/scrollMenu.ogg"));
+		sound_confIdx = MiniAudio.loadSoundEffect(Paths.asset("assets/sounds/confirmMenu.ogg"));
+		sound_cancelIdx = MiniAudio.loadSoundEffect(Paths.asset("assets/sounds/cancelMenu.ogg"));
 	}
 
 	public function playScrollSound() {
