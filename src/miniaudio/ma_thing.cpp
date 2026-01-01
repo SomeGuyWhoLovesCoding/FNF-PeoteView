@@ -179,14 +179,14 @@ cleanup:
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 // Buffer constants
-#define PADDING_MS 100
-#define BUFFER_MS 2000
-#define HALF_BUFFER_MS 900
+#define PADDING_MS 25         // Minimal padding
+#define BUFFER_MS 500         // Half next buffer
+#define HALF_BUFFER_MS 225    
 
-#define PADDING_FRAMES ((SAMPLE_RATE * PADDING_MS) / 1000)        // 4410 frames
-#define BUFFER_FRAMES ((SAMPLE_RATE * BUFFER_MS) / 1000)          // 88200 frames
-#define HALF_BUFFER_FRAMES ((SAMPLE_RATE * HALF_BUFFER_MS) / 1000) // 44100 frames
-#define TOTAL_BUFFER_FRAMES (PADDING_FRAMES + BUFFER_FRAMES + PADDING_FRAMES) // 96620 frames
+#define PADDING_FRAMES ((SAMPLE_RATE * PADDING_MS) / 1000)
+#define BUFFER_FRAMES ((SAMPLE_RATE * BUFFER_MS) / 1000)
+#define HALF_BUFFER_FRAMES ((SAMPLE_RATE * HALF_BUFFER_MS) / 1000)
+#define TOTAL_BUFFER_FRAMES (PADDING_FRAMES + BUFFER_FRAMES + PADDING_FRAMES)
 
 // Triple-buffered decoder stream with RAII
 struct DecoderStream {
