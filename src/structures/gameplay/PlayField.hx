@@ -133,7 +133,7 @@ class PlayField implements State {
 	var onKeyRelease:Event<KeyCode->Void>;
 
 	var flipHealthBar:Bool;
-	var hitbox:Float = 200;
+	var hitbox:Float = 220;
 	var ready:Bool = false;
 
 	function setTime(value:Float, playAgain:Bool = false) {
