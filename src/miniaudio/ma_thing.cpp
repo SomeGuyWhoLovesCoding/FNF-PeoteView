@@ -178,1319 +178,644 @@ cleanup:
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// Buffer constants
-#define PADDING_MS 25         // Minimal padding
-#define BUFFER_MS 500         // Half next buffer
-#define HALF_BUFFER_MS 225
+// Buffer constants with padding
+#define PADDING_MS 25         // Minimal padding for seeking
+#define BUFFER_MS 500         // Main buffer size
+#define HALF_BUFFER_MS 225    // When to start refilling
 
 #define PADDING_FRAMES ((SAMPLE_RATE * PADDING_MS) / 1000)
 #define BUFFER_FRAMES ((SAMPLE_RATE * BUFFER_MS) / 1000)
 #define HALF_BUFFER_FRAMES ((SAMPLE_RATE * HALF_BUFFER_MS) / 1000)
 #define TOTAL_BUFFER_FRAMES (PADDING_FRAMES + BUFFER_FRAMES + PADDING_FRAMES)
 
-// Triple-buffered decoder stream with RAII
+// Single-buffered decoder stream with padding
 struct DecoderStream {
-	float* pcmBufferA = nullptr;     // First buffer
-	float* pcmBufferB = nullptr;     // Second buffer
-	float* pcmBufferC = nullptr;     // Third buffer (new for triple buffering)
-	float* activeBuffer = nullptr;   // Currently playing buffer
-	float* nextBuffer = nullptr;     // Next buffer (pre-loaded)
-	float* loadingBuffer = nullptr;  // Buffer being loaded
-
-	ma_uint64 filePosition = 0;      // Current position in the source file (in frames)
-	ma_uint64 bufferStartPos = 0;    // File position that maps to start of active buffer
-	ma_uint64 localReadPos = 0;      // Read position within active buffer (0 to TOTAL_BUFFER_FRAMES)
-	ma_uint64 validFrames = 0;       // How many frames in active buffer are valid
-
-	ma_uint64 nextBufferStartPos = 0; // File position that maps to start of next buffer
-	ma_uint64 nextBufferValidFrames = 0; // How many frames in next buffer are valid
-	ma_uint64 loadingBufferStartPos = 0; // File position for loading buffer
-	ma_uint64 loadingBufferValidFrames = 0; // Valid frames in loading buffer
-
-	bool active = false;
-
-	ma_decoder decoder;
-	ma_uint64 decoderLength = 0;
-
-	// Async loading states
-	std::atomic<bool> nextBufferReady{false};
-	std::atomic<bool> loadingBufferReady{false};
-	std::atomic<bool> loadingInProgress{false};
-
-	// Constructor
-	DecoderStream() {
-		memset(&decoder, 0, sizeof(ma_decoder));
-	}
-
-	// Destructor - RAII cleanup
-	~DecoderStream() {
-		cleanup();
-	}
-
-	// Move constructor
-	DecoderStream(DecoderStream&& other) noexcept {
-		moveFrom(std::move(other));
-	}
-
-	// Move assignment
-	DecoderStream& operator=(DecoderStream&& other) noexcept {
-		if (this != &other) {
-			cleanup();
-			moveFrom(std::move(other));
-		}
-		return *this;
-	}
-
-	// Delete copy operations
-	DecoderStream(const DecoderStream&) = delete;
-	DecoderStream& operator=(const DecoderStream&) = delete;
-
+    float* pcmBuffer = nullptr;
+    ma_uint64 bufferStartPos = 0;
+    ma_uint64 localReadPos = 0;
+    ma_uint64 validFrames = 0;
+    ma_uint64 filePosition = 0;
+    bool active = false;
+    ma_decoder decoder;
+    ma_uint64 decoderLength = 0;
+    
+    DecoderStream() {
+        memset(&decoder, 0, sizeof(ma_decoder));
+    }
+    
+    ~DecoderStream() {
+        cleanup();
+    }
+    
+    // Move constructor
+    DecoderStream(DecoderStream&& other) noexcept {
+        moveFrom(std::move(other));
+    }
+    
+    // Move assignment
+    DecoderStream& operator=(DecoderStream&& other) noexcept {
+        if (this != &other) {
+            cleanup();
+            moveFrom(std::move(other));
+        }
+        return *this;
+    }
+    
+    // Delete copy operations
+    DecoderStream(const DecoderStream&) = delete;
+    DecoderStream& operator=(const DecoderStream&) = delete;
+    
 private:
-	void cleanup() {
-		// Uninitialize decoder if it was initialized
-		if (decoder.onRead != nullptr || decoder.onSeek != nullptr) {
-			ma_decoder_uninit(&decoder);
-		}
-
-		// Free buffers
-		if (pcmBufferA) {
-			free(pcmBufferA);
-			pcmBufferA = nullptr;
-		}
-		if (pcmBufferB) {
-			free(pcmBufferB);
-			pcmBufferB = nullptr;
-		}
-		if (pcmBufferC) {
-			free(pcmBufferC);
-			pcmBufferC = nullptr;
-		}
-
-		// Reset state
-		activeBuffer = nullptr;
-		nextBuffer = nullptr;
-		loadingBuffer = nullptr;
-		filePosition = 0;
-		bufferStartPos = 0;
-		localReadPos = 0;
-		validFrames = 0;
-		active = false;
-		decoderLength = 0;
-		nextBufferStartPos = 0;
-		nextBufferValidFrames = 0;
-		loadingBufferStartPos = 0;
-		loadingBufferValidFrames = 0;
-		nextBufferReady = false;
-		loadingBufferReady = false;
-		loadingInProgress = false;
-	}
-
-	void moveFrom(DecoderStream&& other) noexcept {
-		// Move resources
-		pcmBufferA = other.pcmBufferA;
-		pcmBufferB = other.pcmBufferB;
-		pcmBufferC = other.pcmBufferC;
-		activeBuffer = other.activeBuffer;
-		nextBuffer = other.nextBuffer;
-		loadingBuffer = other.loadingBuffer;
-
-		// Move decoder
-		memcpy(&decoder, &other.decoder, sizeof(ma_decoder));
-
-		// Move scalar values
-		filePosition = other.filePosition;
-		bufferStartPos = other.bufferStartPos;
-		localReadPos = other.localReadPos;
-		validFrames = other.validFrames;
-		active = other.active;
-		decoderLength = other.decoderLength;
-		nextBufferStartPos = other.nextBufferStartPos;
-		nextBufferValidFrames = other.nextBufferValidFrames;
-		loadingBufferStartPos = other.loadingBufferStartPos;
-		loadingBufferValidFrames = other.loadingBufferValidFrames;
-
-		// Move atomic values
-		nextBufferReady.store(other.nextBufferReady.load());
-		loadingBufferReady.store(other.loadingBufferReady.load());
-		loadingInProgress.store(other.loadingInProgress.load());
-
-		// Clear source to prevent double-free
-		other.pcmBufferA = nullptr;
-		other.pcmBufferB = nullptr;
-		other.pcmBufferC = nullptr;
-		other.activeBuffer = nullptr;
-		other.nextBuffer = nullptr;
-		other.loadingBuffer = nullptr;
-		memset(&other.decoder, 0, sizeof(ma_decoder));
-		other.filePosition = 0;
-		other.bufferStartPos = 0;
-		other.localReadPos = 0;
-		other.validFrames = 0;
-		other.active = false;
-		other.decoderLength = 0;
-		other.nextBufferStartPos = 0;
-		other.nextBufferValidFrames = 0;
-		other.loadingBufferStartPos = 0;
-		other.loadingBufferValidFrames = 0;
-		other.nextBufferReady = false;
-		other.loadingBufferReady = false;
-		other.loadingInProgress = false;
-	}
+    void cleanup() {
+        if (decoder.onRead != nullptr || decoder.onSeek != nullptr) {
+            ma_decoder_uninit(&decoder);
+        }
+        
+        if (pcmBuffer) {
+            free(pcmBuffer);
+            pcmBuffer = nullptr;
+        }
+        
+        bufferStartPos = 0;
+        localReadPos = 0;
+        validFrames = 0;
+        filePosition = 0;
+        active = false;
+        decoderLength = 0;
+    }
+    
+    void moveFrom(DecoderStream&& other) noexcept {
+        pcmBuffer = other.pcmBuffer;
+        bufferStartPos = other.bufferStartPos;
+        localReadPos = other.localReadPos;
+        validFrames = other.validFrames;
+        filePosition = other.filePosition;
+        active = other.active;
+        decoderLength = other.decoderLength;
+        
+        memcpy(&decoder, &other.decoder, sizeof(ma_decoder));
+        
+        other.pcmBuffer = nullptr;
+        memset(&other.decoder, 0, sizeof(ma_decoder));
+        other.bufferStartPos = 0;
+        other.localReadPos = 0;
+        other.validFrames = 0;
+        other.filePosition = 0;
+        other.active = false;
+        other.decoderLength = 0;
+    }
 };
 
-// Async refill request
-struct RefillRequest {
-	int decoderIndex;
-	ma_uint64 targetPosition;
-	float* bufferToFill;
-	bool isNextBuffer; // true for next buffer, false for loading buffer
-};
-
-// RAII wrapper for signalsmith stretch
-class SignalsmithStretchWrapper {
-public:
-	signalsmith::stretch::SignalsmithStretch* ptr = nullptr;
-
-	SignalsmithStretchWrapper() = default;
-
-	~SignalsmithStretchWrapper() {
-		cleanup();
-	}
-
-	// Move operations
-	SignalsmithStretchWrapper(SignalsmithStretchWrapper&& other) noexcept {
-		ptr = other.ptr;
-		other.ptr = nullptr;
-	}
-
-	SignalsmithStretchWrapper& operator=(SignalsmithStretchWrapper&& other) noexcept {
-		if (this != &other) {
-			cleanup();
-			ptr = other.ptr;
-			other.ptr = nullptr;
-		}
-		return *this;
-	}
-
-	// Delete copy operations
-	SignalsmithStretchWrapper(const SignalsmithStretchWrapper&) = delete;
-	SignalsmithStretchWrapper& operator=(const SignalsmithStretchWrapper&) = delete;
-
-	// Operator overloads for convenience
-	signalsmith::stretch::SignalsmithStretch* operator->() { return ptr; }
-	const signalsmith::stretch::SignalsmithStretch* operator->() const { return ptr; }
-	signalsmith::stretch::SignalsmithStretch& operator*() { return *ptr; }
-	const signalsmith::stretch::SignalsmithStretch& operator*() const { return *ptr; }
-	operator bool() const { return ptr != nullptr; }
-
-	void create() {
-		if (!ptr) {
-			ptr = new signalsmith::stretch::SignalsmithStretch();
-		}
-	}
-
-private:
-	void cleanup() {
-		if (ptr) {
-			delete ptr;
-			ptr = nullptr;
-		}
-	}
-};
-
-// RAII wrapper for miniaudio device
-class AudioDevice {
-public:
-	ma_device device;
-	bool initialized = false;
-
-	AudioDevice() {
-		memset(&device, 0, sizeof(ma_device));
-	}
-
-	~AudioDevice() {
-		cleanup();
-	}
-
-	// Move operations
-	AudioDevice(AudioDevice&& other) noexcept {
-		memcpy(&device, &other.device, sizeof(ma_device));
-		initialized = other.initialized;
-		memset(&other.device, 0, sizeof(ma_device));
-		other.initialized = false;
-	}
-
-	AudioDevice& operator=(AudioDevice&& other) noexcept {
-		if (this != &other) {
-			cleanup();
-			memcpy(&device, &other.device, sizeof(ma_device));
-			initialized = other.initialized;
-			memset(&other.device, 0, sizeof(ma_device));
-			other.initialized = false;
-		}
-		return *this;
-	}
-
-	// Delete copy operations
-	AudioDevice(const AudioDevice&) = delete;
-	AudioDevice& operator=(const AudioDevice&) = delete;
-
-	bool init(const ma_device_config* pConfig) {
-		cleanup();
-		ma_result result = ma_device_init(nullptr, pConfig, &device);
-		initialized = (result == MA_SUCCESS);
-		return initialized;
-	}
-
-	void uninit() {
-		if (initialized) {
-			ma_device_uninit(&device);
-			memset(&device, 0, sizeof(ma_device));
-			initialized = false;
-		}
-	}
-
-	ma_result start() {
-		return ma_device_start(&device);
-	}
-
-	void stop() {
-		if (initialized) {
-			ma_device_stop(&device);
-		}
-	}
-
-	operator bool() const { return initialized; }
-
-private:
-	void cleanup() {
-		uninit();
-	}
-};
-
-// RAII wrapper for mutex
-class AudioMutex {
-public:
-	ma_mutex mutex;
-	bool initialized = false;
-
-	AudioMutex() {
-		memset(&mutex, 0, sizeof(ma_mutex));
-	}
-
-	~AudioMutex() {
-		cleanup();
-	}
-
-	// Move operations
-	AudioMutex(AudioMutex&& other) noexcept {
-		memcpy(&mutex, &other.mutex, sizeof(ma_mutex));
-		initialized = other.initialized;
-		memset(&other.mutex, 0, sizeof(ma_mutex));
-		other.initialized = false;
-	}
-
-	AudioMutex& operator=(AudioMutex&& other) noexcept {
-		if (this != &other) {
-			cleanup();
-			memcpy(&mutex, &other.mutex, sizeof(ma_mutex));
-			initialized = other.initialized;
-			memset(&other.mutex, 0, sizeof(ma_mutex));
-			other.initialized = false;
-		}
-		return *this;
-	}
-
-	// Delete copy operations
-	AudioMutex(const AudioMutex&) = delete;
-	AudioMutex& operator=(const AudioMutex&) = delete;
-
-	bool init() {
-		if (!initialized) {
-			ma_result result = ma_mutex_init(&mutex);
-			initialized = (result == MA_SUCCESS);
-		}
-		return initialized;
-	}
-
-	void lock() {
-		if (initialized) ma_mutex_lock(&mutex);
-	}
-
-	void unlock() {
-		if (initialized) ma_mutex_unlock(&mutex);
-	}
-
-	operator bool() const { return initialized; }
-
-private:
-	void cleanup() {
-		if (initialized) {
-			ma_mutex_uninit(&mutex);
-			initialized = false;
-		}
-	}
-};
-
-// Main audio system manager with RAII
+// Main audio system manager
 class AudioSystem {
 public:
-	// RAII-managed resources
-	std::vector<DecoderStream> streams;
-	std::vector<float> decoderVolumes;
-	std::vector<std::string> filePaths;
-
-	AudioDevice device;
-	AudioMutex audioMutex;
-	SignalsmithStretchWrapper stretch;
-
-	// Refill thread management
-	std::thread refillThread;
-	std::atomic<bool> refillThreadRunning{false};
-	std::mutex refillMutex;
-	std::condition_variable refillCV;
-	std::queue<RefillRequest> refillQueue;
-	std::atomic<int> activeRefillJobs{0};
-
-	// State variables
-	int longestDecoderIndex = 0;
-	float playbackRate = 1.0f;
-	double masterVolume = 1.0;
-	int mixerState = 3; // 1 = playing, 2 = paused, 3 = stopped
-	bool exists = false;
-	std::atomic<bool> deviceChanging{false};
-	std::atomic<bool> pausing{false}; // New flag to indicate pausing
-
-	// Latency detection
-	ma_uint64 detectedLatency = 0;
-	bool latenciesDetected = false;
-	static constexpr float SILENCE_THRESHOLD = 0.1f;
-
-	AudioSystem() = default;
-
-	~AudioSystem() {
-		destroy();
-	}
-
-	// Move operations
-	AudioSystem(AudioSystem&& other) noexcept {
-		moveFrom(std::move(other));
-	}
-
-	AudioSystem& operator=(AudioSystem&& other) noexcept {
-		if (this != &other) {
-			destroy();
-			moveFrom(std::move(other));
-		}
-		return *this;
-	}
-
-	// Delete copy operations
-	AudioSystem(const AudioSystem&) = delete;
-	AudioSystem& operator=(const AudioSystem&) = delete;
-
-	// Public interface methods
-	void loadFiles(std::vector<const char*> argv) {
-		if(argv.empty()){
-			printf("No input files.\n");
-			return;
-		}
-
-		// Clean up existing resources
-		destroy();
-
-		// Store file paths
-		filePaths.clear();
-		for (size_t i = 0; i < argv.size(); i++) {
-			filePaths.push_back(argv[i]);
-		}
-
-		// Initialize streams
-		streams.resize(argv.size());
-		decoderVolumes.resize(argv.size(), 1.0f);
-
-		ma_uint64 absoluteLengthOfSong = 0;
-		ma_decoder_config decoderConfig = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
-
-		for(size_t i = 0; i < argv.size(); i++) {
-			const char* path = argv[i];
-			DecoderStream& s = streams[i];
-
-			// Initialize decoder
-			ma_result result = ma_decoder_init_file(path, &decoderConfig, &s.decoder);
-			if(result != MA_SUCCESS){
-				// Cleanup already initialized decoders
-				for(size_t j = 0; j < i; j++) {
-					ma_decoder_uninit(&streams[j].decoder);
-				}
-				streams.clear();
-				decoderVolumes.clear();
-				filePaths.clear();
-				printf("Failed to load %s.\n", argv[i]);
-				exists = false;
-				return;
-			}
-
-			ma_data_source_set_looping(&s.decoder, MA_FALSE);
-			ma_decoder_get_length_in_pcm_frames(&s.decoder, &s.decoderLength);
-
-			// Allocate triple buffers
-			s.pcmBufferA = (float*)malloc(sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
-			s.pcmBufferB = (float*)malloc(sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
-			s.pcmBufferC = (float*)malloc(sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
-			memset(s.pcmBufferA, 0, sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
-			memset(s.pcmBufferB, 0, sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
-			memset(s.pcmBufferC, 0, sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
-
-			// Initialize atomic flags
-			s.nextBufferReady = false;
-			s.loadingBufferReady = false;
-			s.loadingInProgress = false;
-
-			// Detect latency for this decoder and keep track of maximum
-			ma_uint64 thisLatency = detectLatency(i);
-			if (thisLatency > detectedLatency) {
-				detectedLatency = thisLatency;
-			}
-
-			// Fill initial buffer (starts at 0)
-			fillInitialBuffer(i, 0);
-
-			if(s.decoderLength > absoluteLengthOfSong){
-				absoluteLengthOfSong = s.decoderLength;
-				longestDecoderIndex = (int)i;
-			}
-		}
-
-		latenciesDetected = true;
-
-		// Initialize audio device
-		ma_device_config deviceConfig = ma_device_config_init(ma_device_type_playback);
-		deviceConfig.playback.format = SAMPLE_FORMAT;
-		deviceConfig.playback.channels = CHANNEL_COUNT;
-		deviceConfig.sampleRate = SAMPLE_RATE;
-		deviceConfig.dataCallback = data_callback;
-		deviceConfig.pUserData = this;
-
-		if(!device.init(&deviceConfig)){
-			streams.clear();
-			decoderVolumes.clear();
-			filePaths.clear();
-			printf("Failed to open playback device.\n");
-			return;
-		}
-
-		// Initialize mutex
-		audioMutex.init();
-
-		exists = true;
-		mixerState = 3;
-	}
-
-	// Detect latency by scanning for first sample above threshold
-	ma_uint64 detectLatency(size_t index) {
-		DecoderStream& s = streams[index];
-
-		// Create temporary buffer for scanning
-		const ma_uint64 SCAN_CHUNK_SIZE = 4096;
-		float* scanBuffer = (float*)malloc(sizeof(float) * SCAN_CHUNK_SIZE * CHANNEL_COUNT);
-
-		if (!scanBuffer) return 0;
-
-		// Reset decoder to start
-		ma_decoder_seek_to_pcm_frame(&s.decoder, 0);
-
-		ma_uint64 totalFramesScanned = 0;
-		ma_uint64 latencyFrames = 0;
-		bool foundSignal = false;
-
-		// Scan up to 1 second of audio (or end of file)
-		ma_uint64 maxFramesToScan = SAMPLE_RATE * 0.1;
-		if (maxFramesToScan > s.decoderLength) {
-			maxFramesToScan = s.decoderLength;
-		}
-
-		while (totalFramesScanned < maxFramesToScan && !foundSignal) {
-			ma_uint64 framesToRead = SCAN_CHUNK_SIZE;
-			if (totalFramesScanned + framesToRead > maxFramesToScan) {
-				framesToRead = maxFramesToScan - totalFramesScanned;
-			}
-
-			ma_uint64 framesRead = 0;
-			ma_decoder_read_pcm_frames(&s.decoder, scanBuffer, framesToRead, &framesRead);
-
-			if (framesRead == 0) break;
-
-			// Check each frame for signal above threshold
-			for (ma_uint64 frame = 0; frame < framesRead && !foundSignal; frame++) {
-				for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
-					float sample = scanBuffer[frame * CHANNEL_COUNT + ch];
-					if (fabs(sample) > SILENCE_THRESHOLD) {
-						latencyFrames = totalFramesScanned + frame;
-						foundSignal = true;
-						break;
-					}
-				}
-			}
-
-			totalFramesScanned += framesRead;
-		}
-
-		free(scanBuffer);
-
-		// Reset decoder back to start
-		ma_decoder_seek_to_pcm_frame(&s.decoder, 0);
-
-		return latencyFrames;
-	}
-
-	// Get detected latency in milliseconds (max across all decoders)
-	double getLatencyMs() const {
-		return (double)detectedLatency / (SAMPLE_RATE * 0.001);
-	}
-
-	// Get detected latency in frames (max across all decoders)
-	ma_uint64 getLatencyFrames() const {
-		return detectedLatency;
-	}
-
-	void destroy() {
-		if(!exists) return;
-		exists = false;
-		deviceChanging = true;
-
-		// Stop audio device first
-		device.stop();
-
-		// Stop refill thread
-		stopRefillThread();
-
-		// Uninitialize device
-		device.uninit();
-
-		// Clean up decoders and buffers (handled by RAII destructors)
-		streams.clear();
-		decoderVolumes.clear();
-		filePaths.clear();
-
-		// Reset state
-		longestDecoderIndex = 0;
-		playbackRate = 1.0f;
-		masterVolume = 1.0;
-		mixerState = 3;
-		latenciesDetected = false;
-		detectedLatency = 0;
-		deviceChanging = false;
-		pausing = false;
-	}
-
-	void start() {
-		if(!exists) return;
-
-		// If we're resuming from pause (mixerState == 2), don't seek
-		if(mixerState == 3) {
-			seekToPCMFrame(0);
-		}
-
-		// Make sure refill thread is running
-		if (!refillThreadRunning) {
-			startRefillThread();
-		}
-
-		device.start();
-		mixerState = 1;
-
-		// After starting, ensure buffers are loaded for current position
-		audioMutex.lock();
-		for(size_t i = 0; i < streams.size(); i++) {
-			DecoderStream& s = streams[i];
-			if(s.active && s.filePosition < s.decoderLength) {
-				// Check if we need to load next buffer
-				if(!s.nextBufferReady.load() && !s.loadingInProgress.load()) {
-					scheduleNextBufferLoad(i);
-				}
-			}
-		}
-		audioMutex.unlock();
-	}
-
-	void stop() {
-		if(!exists) return;
-
-		pausing.store(true);
-		bool wasPlaying = (mixerState == 1);
-
-		// Stop audio device first
-		device.stop();
-
-		// Wait for active refill jobs to complete
-		auto start = std::chrono::steady_clock::now();
-		while (activeRefillJobs.load() > 0 &&
-			std::chrono::steady_clock::now() - start < std::chrono::milliseconds(50)) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		}
-
-		// Now clear the queue (jobs are done)
-		{
-			std::lock_guard<std::mutex> lock(refillMutex);
-			std::queue<RefillRequest> empty;
-			std::swap(refillQueue, empty);
-		}
-
-		if(wasPlaying) {
-			mixerState = 2;
-		}
-		pausing.store(false);
-	}
-
-	bool stopped() const {
-		return mixerState == 3;
-	}
-
-	void seekToPCMFrame(int64_t pos) {
-		if(!exists) return;
-
-		// CRITICAL: Wait for any ongoing refill operations
-		while (activeRefillJobs.load() > 0) {
-			std::this_thread::sleep_for(std::chrono::milliseconds(1));
-		}
-
-		audioMutex.lock();
-
-		// Clear refill queue
-		{
-			std::lock_guard<std::mutex> lock(refillMutex);
-			std::queue<RefillRequest> empty;
-			std::swap(refillQueue, empty);
-		}
-
-		for(size_t i = 0; i < streams.size(); i++) {
-			DecoderStream& s = streams[i];
-			ma_uint64 target = 0;
-			if(pos <= 0) target = 0;
-			else if((ma_uint64)pos >= s.decoderLength) target = s.decoderLength;
-			else target = (ma_uint64)pos;
-
-			// RESET EVERYTHING
-			s.nextBufferReady = false;
-			s.loadingBufferReady = false;
-			s.loadingInProgress = false;
-			s.nextBufferValidFrames = 0;      // ← MISSING!
-			s.loadingBufferValidFrames = 0;   // ← MISSING!
-			s.nextBufferStartPos = 0;         // ← MISSING!
-			s.loadingBufferStartPos = 0;      // ← MISSING!
-
-			fillInitialBuffer(i, target);
-		}
-
-		audioMutex.unlock();
-		mixerState = (pos < (int64_t)streams[longestDecoderIndex].decoderLength) ? 2 : 3;
-	}
-
-	// Helper methods
-	void deactivate_decoder(int index) {
-		if(index >= 0 && index < (int)streams.size()) {
-			streams[index].active = false;
-		}
-	}
-
-	void amplify_decoder(int index, double volume) {
-		if(index >= 0 && index < (int)decoderVolumes.size()) {
-			decoderVolumes[index] = (float)volume;
-		}
-	}
-
-	void setPlaybackRate(float value) {
-		playbackRate = value;
-	}
-
-	double getGlobalVolume() const {
-		return masterVolume;
-	}
-
-	double setGlobalVolume(double value) {
-		masterVolume = value;
-		return masterVolume;
-	}
-
-	int getMixerState() const {
-		return mixerState;
-	}
-
-	double getPlaybackPosition() const {
-		if(!audioMutex.initialized) return 0.0;
-
-		AudioMutex& mutexRef = const_cast<AudioMutex&>(audioMutex);
-		mutexRef.lock();
-
-		ma_uint64 pos = 0;
-		if(!streams.empty() && streams[longestDecoderIndex].active) {
-			pos = streams[longestDecoderIndex].filePosition;
-		} else if(!streams.empty()) {
-			pos = streams[longestDecoderIndex].decoderLength;
-		}
-
-		mutexRef.unlock();
-		return ((double)pos / (SAMPLE_RATE * 0.001));
-	}
-
-	double getDuration() const {
-		if(streams.empty()) return 0.0;
-		return (double)streams[longestDecoderIndex].decoderLength / (SAMPLE_RATE * 0.001);
-	}
-
-	// Fill buffer with data starting at decodeStart
-	void fillBuffer(DecoderStream* s, float* buffer, ma_uint64 decodeStart, ma_uint64* framesRead) {
-		ma_uint64 maxDecodeFrames = TOTAL_BUFFER_FRAMES;
-		if(decodeStart + TOTAL_BUFFER_FRAMES > s->decoderLength) {
-			maxDecodeFrames = s->decoderLength - decodeStart;
-		}
-
-		memset(buffer, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
-		ma_decoder_seek_to_pcm_frame(&s->decoder, decodeStart);
-
-		if(maxDecodeFrames > 0) {
-			ma_decoder_read_pcm_frames(&s->decoder, buffer, maxDecodeFrames, framesRead);
-		} else {
-			*framesRead = 0;
-		}
-	}
-
-	void fillInitialBuffer(size_t index, ma_uint64 startFrame) {
-		DecoderStream& s = streams[index];
-
-		ma_uint64 decodeStart = 0;
-		if(startFrame > PADDING_FRAMES) {
-			decodeStart = startFrame - PADDING_FRAMES;
-		}
-
-		ma_uint64 framesRead = 0;
-		fillBuffer(&s, s.pcmBufferA, decodeStart, &framesRead);
-
-		s.activeBuffer = s.pcmBufferA;
-		s.bufferStartPos = decodeStart;
-		s.validFrames = framesRead;
-		s.nextBuffer = s.pcmBufferB;
-		s.nextBufferReady.store(false);
-		s.loadingInProgress.store(false);
-
-		if(startFrame >= decodeStart) {
-			s.localReadPos = startFrame - decodeStart;
-		} else {
-			s.localReadPos = 0;
-			s.filePosition = decodeStart; // Start at buffer beginning
-		}
-
-		if(s.localReadPos >= TOTAL_BUFFER_FRAMES) {
-			s.localReadPos = TOTAL_BUFFER_FRAMES - 1;
-		}
-
-		s.filePosition = startFrame;
-		s.active = (startFrame < s.decoderLength && framesRead > 0);
-
-		// Load next buffer immediately
-		if (s.active) {
-			scheduleNextBufferLoad(index, true);
-		}
-	}
-
-	void scheduleNextBufferLoad(size_t index, bool initialLoad = false) {
-		if (pausing) return; // Don't schedule new loads while pausing
-
-		DecoderStream& s = streams[index];
-
-		// Determine which buffer to load next
-		bool loadNextBuffer = false;
-		ma_uint64 targetPosition = 0;
-		float* targetBuffer = nullptr;
-		bool isNextBuffer = false;
-
-		if (initialLoad || !s.nextBufferReady) {
-			// Need to load the next buffer
-			loadNextBuffer = true;
-			isNextBuffer = true;
-			targetBuffer = s.nextBuffer;
-
-			// Calculate target position for next buffer
-			targetPosition = s.bufferStartPos + HALF_BUFFER_FRAMES;
-			if (targetPosition > PADDING_FRAMES) {
-				targetPosition -= PADDING_FRAMES;
-			}
-		} else if (!s.loadingInProgress && s.nextBufferReady && !s.loadingBufferReady) {
-			// Next buffer is ready, start loading the loading buffer
-			loadNextBuffer = true;
-			isNextBuffer = false;
-			targetBuffer = s.loadingBuffer;
-
-			// Calculate target position for loading buffer (one buffer ahead of next)
-			targetPosition = s.nextBufferStartPos + HALF_BUFFER_FRAMES;
-			if (targetPosition > PADDING_FRAMES) {
-				targetPosition -= PADDING_FRAMES;
-			}
-		}
-
-		if (loadNextBuffer && targetPosition < s.decoderLength) {
-			// Mark as loading
-			if (isNextBuffer) {
-				s.loadingInProgress = true;
-			}
-
-			RefillRequest request;
-			request.decoderIndex = (int)index;
-			request.targetPosition = targetPosition;
-			request.bufferToFill = targetBuffer;
-			request.isNextBuffer = isNextBuffer;
-
-			{
-				std::lock_guard<std::mutex> lock(refillMutex);
-				refillQueue.push(request);
-				refillCV.notify_one();
-			}
-		}
-	}
-
-	bool shouldSwitchBuffer(const DecoderStream* s) {
-		ma_uint64 audioProgress = s->localReadPos;
-		return audioProgress >= (PADDING_FRAMES + (BUFFER_FRAMES * 3 / 4));
-	}
-
-	// Update the trySwitchBuffer to handle pause/resume better
-	bool trySwitchBuffer(DecoderStream* s, size_t index) {
-		if (!s->active) return false;
-
-		if (shouldSwitchBuffer(s) && s->nextBufferReady.load()) {
-			// Double-check we're not pausing
-			if (pausing.load()) {
-				return false;
-			}
-
-			// Calculate expected buffer start position
-			ma_uint64 expectedBufferStart = s->bufferStartPos + HALF_BUFFER_FRAMES;
-			if (expectedBufferStart > PADDING_FRAMES) {
-				expectedBufferStart -= PADDING_FRAMES;
-			}
-
-			// Allow some tolerance for timing differences after pause/resume
-			ma_int64 positionDiff = (ma_int64)s->nextBufferStartPos - (ma_int64)expectedBufferStart;
-			ma_int64 maxDiff = (ma_int64)(HALF_BUFFER_FRAMES / 2);
-
-			if (positionDiff > maxDiff || positionDiff < -maxDiff) {
-				// Buffer position mismatch - might be due to pause/resume
-				// Don't switch, but schedule a new load at correct position
-				s->nextBufferReady.store(false);
-				scheduleNextBufferLoad(index, true);
-				return false;
-			}
-
-			// Perform the switch
-			float* temp = s->activeBuffer;
-			s->activeBuffer = s->nextBuffer;
-			s->nextBuffer = temp;
-
-			s->bufferStartPos = s->nextBufferStartPos;
-			s->validFrames = s->nextBufferValidFrames;
-
-			if (s->filePosition < s->bufferStartPos) {
-				// File position is before buffer start - this shouldn't normally happen
-				// Just adjust localReadPos to 0, keep filePosition as-is
-				s->localReadPos = 0;
-				// Don't change s->filePosition!
-			} else if (s->filePosition >= s->bufferStartPos + s->validFrames) {
-				// File position is after buffer end
-				s->localReadPos = s->validFrames;  // Mark as at end of buffer
-				// Don't change s->filePosition!
-			} else {
-				// Normal case
-				s->localReadPos = s->filePosition - s->bufferStartPos;
-			}
-
-			// Clamp to buffer bounds
-			if (s->localReadPos >= TOTAL_BUFFER_FRAMES) {
-				s->localReadPos = TOTAL_BUFFER_FRAMES - 1;
-			}
-			if (s->localReadPos > s->validFrames) {
-				s->localReadPos = s->validFrames;
-			}
-
-			// Reset next buffer
-			s->nextBufferReady.store(false);
-			s->nextBufferValidFrames = 0;
-
-			// Schedule next load
-			if (s->active && !pausing.load()) {
-				scheduleNextBufferLoad(index);
-			}
-
-			return true;
-		}
-
-		// If buffer is running low and next isn't ready, try to load
-		if (shouldSwitchBuffer(s) && !s->nextBufferReady.load() &&
-			!s->loadingInProgress.load() && !pausing.load()) {
-			scheduleNextBufferLoad(index);
-		}
-
-		return false;
-	}
-
-	void refillWorkerThread() {
-		while (refillThreadRunning) {
-			RefillRequest request;
-			int decoderIndex = -1;
-
-			{
-				std::unique_lock<std::mutex> lock(refillMutex);
-				refillCV.wait_for(lock, std::chrono::milliseconds(10), [this]() {
-					return !refillQueue.empty() || !refillThreadRunning;
-				});
-
-				if (!refillThreadRunning) break;
-				if (refillQueue.empty()) continue;
-
-				request = refillQueue.front();
-				decoderIndex = request.decoderIndex;  // Store locally
-				refillQueue.pop();
-				activeRefillJobs++;
-			}
-
-			// CRITICAL: Check bounds AFTER releasing the mutex
-			// But we need to re-check with mutex if accessing streams
-			if (decoderIndex < 0 || decoderIndex >= (int)streams.size()) {
-				activeRefillJobs--;
-				continue;
-			}
-
-			// Need to lock audioMutex to safely access streams
-			// Or store a copy of needed data in the request
-			audioMutex.lock();
-			if (decoderIndex >= (int)streams.size()) {
-				// Vector might have changed size
-				audioMutex.unlock();
-				activeRefillJobs--;
-				continue;
-			}
-
-			DecoderStream& stream = streams[decoderIndex];
-			// Store local copies of needed data
-			ma_uint64 decoderLength = stream.decoderLength;
-			audioMutex.unlock();
-
-			// Use local copies, not stream reference
-			if (pausing) {
-				activeRefillJobs--;
-				continue;
-			}
-
-			if (request.targetPosition >= decoderLength) {
-				if (request.isNextBuffer) {
-					audioMutex.lock();
-					if (decoderIndex < (int)streams.size()) {
-						streams[decoderIndex].loadingInProgress = false;
-					}
-					audioMutex.unlock();
-				}
-				activeRefillJobs--;
-				continue;
-			}
-
-			ma_uint64 maxFrames = TOTAL_BUFFER_FRAMES;
-			if (request.targetPosition + TOTAL_BUFFER_FRAMES > stream.decoderLength) {
-				maxFrames = stream.decoderLength - request.targetPosition;
-			}
-
-			if (maxFrames == 0) {
-				if (request.isNextBuffer) {
-					stream.loadingInProgress = false;
-				}
-				activeRefillJobs--;
-				continue;
-			}
-
-			memset(request.bufferToFill, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
-
-			ma_decoder tempDecoder;
-			ma_decoder_config decoderConfig = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
-
-			const char* path = filePaths[request.decoderIndex].c_str();
-
-			if (ma_decoder_init_file(path, &decoderConfig, &tempDecoder) == MA_SUCCESS) {
-				ma_decoder_seek_to_pcm_frame(&tempDecoder, request.targetPosition);
-
-				ma_uint64 framesRead = 0;
-				ma_decoder_read_pcm_frames(&tempDecoder, request.bufferToFill, maxFrames, &framesRead);
-
-				if (request.isNextBuffer) {
-					stream.nextBufferStartPos = request.targetPosition;
-					stream.nextBufferValidFrames = framesRead;
-					stream.nextBufferReady = true;
-					stream.loadingInProgress = false;
-				} else {
-					stream.loadingBufferStartPos = request.targetPosition;
-					stream.loadingBufferValidFrames = framesRead;
-					stream.loadingBufferReady = true;
-				}
-
-				ma_decoder_uninit(&tempDecoder);
-			} else {
-				if (request.isNextBuffer) {
-					stream.loadingInProgress = false;
-				}
-			}
-
-			activeRefillJobs--;
-		}
-	}
-
-	void startRefillThread() {
-		if (refillThreadRunning) return;
-		refillThreadRunning = true;
-		refillThread = std::thread(&AudioSystem::refillWorkerThread, this);
-	}
-
-	void stopRefillThread() {
-		if (!refillThreadRunning) return;
-
-		refillThreadRunning = false;
-
-		{
-			std::lock_guard<std::mutex> lock(refillMutex);
-			while (!refillQueue.empty()) refillQueue.pop();
-		}
-
-		refillCV.notify_all();
-
-		if (refillThread.joinable()) {
-			auto start = std::chrono::steady_clock::now();
-			while (activeRefillJobs > 0 &&
-				   std::chrono::steady_clock::now() - start < std::chrono::milliseconds(100)) {
-				std::this_thread::sleep_for(std::chrono::milliseconds(1));
-			}
-
-			refillThread.join();
-		}
-	}
-
-	// Add this helper method to check if we're at the end of valid data
-	bool isAtEndOfValidData(const DecoderStream* s) {
-		return s->localReadPos >= s->validFrames || s->filePosition >= s->decoderLength;
-	}
-
-	// Update the readFromBufferAsync method to handle pause/resume better
-	ma_uint32 readFromBufferAsync(size_t index, float* output, ma_uint32 frameCount) {
-		DecoderStream& s = streams[index];
-
-		if(!s.active) {
-			printf("Decoder %zu: NOT ACTIVE. Why? filePos=%llu/%llu\n",
-				index, s.filePosition, s.decoderLength);
-			return 0;
-		}
-
-		// DEBUG: Check position consistency
-		if(s.filePosition < s.bufferStartPos) {
-			printf("CRITICAL: Decoder %zu filePosition=%llu < bufferStartPos=%llu\n",
-				index, s.filePosition, s.bufferStartPos);
-		}
-		if(s.localReadPos >= TOTAL_BUFFER_FRAMES) {
-			printf("CRITICAL: Decoder %zu localReadPos=%llu >= TOTAL_BUFFER_FRAMES=%u\n",
-				index, s.localReadPos, TOTAL_BUFFER_FRAMES);
-		}
-
-		// Try to switch buffer if needed
-		bool switched = trySwitchBuffer(&s, index);
-		if(switched) {
-			//printf("Decoder %zu switched buffers\n", index);
-		} else {
-			// Just in case it fails the first time, do it the second time.
-			//printf("Decoder %zu failed to switch buffer; switch buffer again\n", index);
-			trySwitchBuffer(&s, index);
-		}
-
-		ma_uint32 framesRead = 0;
-
-		while(framesRead < frameCount && s.active) {
-			// Check if we're at the end of valid data
-			if(isAtEndOfValidData(&s)) {
-				// Before marking as inactive, check if we can load more data
-				if(s.filePosition < s.decoderLength) {
-					// We still have more file to read, but buffer is empty
-					// Try to force a buffer reload
-					s.nextBufferReady.store(false);
-					s.loadingInProgress.store(false);
-					scheduleNextBufferLoad(index, true);
-
-					// Give it a small chance to load
-					if(isAtEndOfValidData(&s)) {
-						s.active = false;
-						break;
-					}
-				} else {
-					// Actually at end of file
-					s.active = false;
-					break;
-				}
-			}
-
-			ma_uint64 available = s.validFrames - s.localReadPos;
-			if(available == 0) {
-				// Instead of marking inactive, try to load more data
-				if(s.filePosition < s.decoderLength) {
-					// We have more file but buffer is empty
-					s.nextBufferReady = false;
-					s.loadingInProgress = false;
-					scheduleNextBufferLoad(index, true);
-
-					// Return what we've read so far
-					return framesRead;
-				} else {
-					// Actually at end of file
-					s.active = false;
-				}
-				break;
-			}
-
-			ma_uint64 remainingInFile = s.decoderLength - s.filePosition;
-			if(remainingInFile < available) {
-				available = remainingInFile;
-			}
-
-			ma_uint32 toRead = (ma_uint32)available;
-			if(toRead > (frameCount - framesRead)) {
-				toRead = frameCount - framesRead;
-			}
-
-			if(s.localReadPos + toRead > s.validFrames) {
-				toRead = (ma_uint32)(s.validFrames - s.localReadPos);
-			}
-
-			if(toRead == 0) {
-				s.active = false;
-				break;
-			}
-
-			float* src = s.activeBuffer + (s.localReadPos * CHANNEL_COUNT);
-			float vol = decoderVolumes[index] * masterVolume;
-
-			for(ma_uint32 i = 0; i < toRead * CHANNEL_COUNT; i++) {
-				output[framesRead * CHANNEL_COUNT + i] += src[i] * vol;
-			}
-
-			s.localReadPos += toRead;
-			s.filePosition += toRead;
-			framesRead += toRead;
-
-			if(s.filePosition >= s.decoderLength) {
-				s.active = false;
-				break;
-			}
-		}
-
-		return framesRead;
-	}
-
-	bool any_active() const {
-		for(const auto& stream : streams) {
-			if(stream.active) return true;
-		}
-		return false;
-	}
-
-	static void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
-		AudioSystem* system = static_cast<AudioSystem*>(pDevice->pUserData);
-		if (!system) return;
-
-		float* pOutputF32 = (float*)pOutput;
-		MA_ASSERT(pDevice->playback.format == SAMPLE_FORMAT);
-
-		system->audioMutex.lock();
-
-		// If device is changing or pausing, output silence and don't modify state
-		if(system->deviceChanging || system->pausing) {
-			memset(pOutputF32, 0, sizeof(float)*frameCount*CHANNEL_COUNT);
-			system->audioMutex.unlock();
-			(void)pInput;
-			return;
-		}
-
-		if(!system->any_active()){
-			memset(pOutputF32, 0, sizeof(float)*frameCount*CHANNEL_COUNT);
-			system->mixerState = 3;
-			system->audioMutex.unlock();
-			(void)pInput;
-			return;
-		}
-
-		if(system->playbackRate == 1.0f){
-			memset(pOutputF32, 0, sizeof(float)*frameCount*CHANNEL_COUNT);
-			for(size_t i = 0; i < system->streams.size(); i++){
-				if(!system->streams[i].active) continue;
-				ma_uint32 read = system->readFromBufferAsync(i, pOutputF32, frameCount);
-				if(read == 0) system->streams[i].active = false;
-			}
-		} else {
-			float inputMix[4096*CHANNEL_COUNT] = {0};
-			float stretchedOutput[4096*CHANNEL_COUNT] = {0};
-			ma_uint32 maxFramesToRead = (ma_uint32)(frameCount * system->playbackRate);
-			if(maxFramesToRead > 4096) maxFramesToRead = 4096;
-
-			for(size_t i = 0; i < system->streams.size(); i++){
-				if(!system->streams[i].active) continue;
-				ma_uint32 read = system->readFromBufferAsync(i, inputMix, maxFramesToRead);
-				if(read == 0) system->streams[i].active = false;
-			}
-
-			if(system->any_active()){
-				if(!system->stretch){
-					system->stretch.create();
-					system->stretch->presetCheaper(CHANNEL_COUNT, SAMPLE_RATE);
-				}
-				system->stretch->process(inputMix, maxFramesToRead, stretchedOutput, frameCount);
-				memcpy(pOutputF32, stretchedOutput, sizeof(float)*frameCount*CHANNEL_COUNT);
-			} else {
-				memset(pOutputF32, 0, sizeof(float)*frameCount*CHANNEL_COUNT);
-			}
-		}
-
-		system->mixerState = system->any_active() ? 1 : 3;
-		system->audioMutex.unlock();
-		(void)pInput;
-	}
-
+    std::vector<DecoderStream> streams;
+    std::vector<float> decoderVolumes;
+    std::vector<std::string> filePaths;
+    
+    ma_device device;
+    signalsmith::stretch::SignalsmithStretch* stretch = nullptr;
+    
+    int longestDecoderIndex = 0;
+    float playbackRate = 1.0f;
+    int mixerState = 3; // 1 = playing, 2 = paused, 3 = stopped
+    bool exists = false;
+    double masterVolume = 1.0;
+    
+    ma_uint64 detectedLatency = 0;
+    bool latenciesDetected = false;
+    static constexpr float SILENCE_THRESHOLD = 0.1f;
+    
+    AudioSystem() {
+        memset(&device, 0, sizeof(ma_device));
+    }
+    
+    ~AudioSystem() {
+        destroy();
+    }
+    
+    // Move operations
+    AudioSystem(AudioSystem&& other) noexcept {
+        moveFrom(std::move(other));
+    }
+    
+    AudioSystem& operator=(AudioSystem&& other) noexcept {
+        if (this != &other) {
+            destroy();
+            moveFrom(std::move(other));
+        }
+        return *this;
+    }
+    
+    // Delete copy operations
+    AudioSystem(const AudioSystem&) = delete;
+    AudioSystem& operator=(const AudioSystem&) = delete;
+    
+    // Public interface methods
+    void loadFiles(std::vector<const char*> argv) {
+        if(argv.empty()){
+            printf("No input files.\n");
+            return;
+        }
+        
+        // Clean up existing resources
+        destroy();
+        
+        // Store file paths
+        filePaths.clear();
+        for (size_t i = 0; i < argv.size(); i++) {
+            filePaths.push_back(argv[i]);
+        }
+        
+        // Initialize streams
+        streams.resize(argv.size());
+        decoderVolumes.resize(argv.size(), 1.0f);
+        
+        ma_uint64 absoluteLengthOfSong = 0;
+        ma_decoder_config decoderConfig = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
+        
+        for(size_t i = 0; i < argv.size(); i++) {
+            const char* path = argv[i];
+            DecoderStream& s = streams[i];
+            
+            // Initialize decoder
+            ma_result result = ma_decoder_init_file(path, &decoderConfig, &s.decoder);
+            if(result != MA_SUCCESS){
+                // Cleanup already initialized decoders
+                for(size_t j = 0; j < i; j++) {
+                    ma_decoder_uninit(&streams[j].decoder);
+                }
+                streams.clear();
+                decoderVolumes.clear();
+                filePaths.clear();
+                printf("Failed to load %s.\n", argv[i]);
+                exists = false;
+                return;
+            }
+            
+            ma_data_source_set_looping(&s.decoder, MA_FALSE);
+            ma_decoder_get_length_in_pcm_frames(&s.decoder, &s.decoderLength);
+            
+            // Allocate buffer with padding
+            s.pcmBuffer = (float*)malloc(sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
+            memset(s.pcmBuffer, 0, sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
+            
+            // Detect latency for this decoder and keep track of maximum
+            ma_uint64 thisLatency = detectLatency(i);
+            if (thisLatency > detectedLatency) {
+                detectedLatency = thisLatency;
+            }
+            
+            // Fill initial buffer (starts at 0)
+            fillInitialBuffer(i, 0);
+            
+            if(s.decoderLength > absoluteLengthOfSong){
+                absoluteLengthOfSong = s.decoderLength;
+                longestDecoderIndex = (int)i;
+            }
+        }
+        
+        latenciesDetected = true;
+        
+        // Initialize audio device
+        ma_device_config deviceConfig = ma_device_config_init(ma_device_type_playback);
+        deviceConfig.playback.format = SAMPLE_FORMAT;
+        deviceConfig.playback.channels = CHANNEL_COUNT;
+        deviceConfig.sampleRate = SAMPLE_RATE;
+        deviceConfig.dataCallback = data_callback;
+        deviceConfig.pUserData = this;
+        
+        if(ma_device_init(nullptr, &deviceConfig, &device) != MA_SUCCESS){
+            streams.clear();
+            decoderVolumes.clear();
+            filePaths.clear();
+            printf("Failed to open playback device.\n");
+            return;
+        }
+        
+        exists = true;
+        mixerState = 3;
+    }
+    
+    // Detect latency by scanning for first sample above threshold
+    ma_uint64 detectLatency(size_t index) {
+        DecoderStream& s = streams[index];
+        
+        // Create temporary buffer for scanning
+        const ma_uint64 SCAN_CHUNK_SIZE = 4096;
+        float* scanBuffer = (float*)malloc(sizeof(float) * SCAN_CHUNK_SIZE * CHANNEL_COUNT);
+        
+        if (!scanBuffer) return 0;
+        
+        // Reset decoder to start
+        ma_decoder_seek_to_pcm_frame(&s.decoder, 0);
+        
+        ma_uint64 totalFramesScanned = 0;
+        ma_uint64 latencyFrames = 0;
+        bool foundSignal = false;
+        
+        // Scan up to 1 second of audio (or end of file)
+        ma_uint64 maxFramesToScan = SAMPLE_RATE * 0.1;
+        if (maxFramesToScan > s.decoderLength) {
+            maxFramesToScan = s.decoderLength;
+        }
+        
+        while (totalFramesScanned < maxFramesToScan && !foundSignal) {
+            ma_uint64 framesToRead = SCAN_CHUNK_SIZE;
+            if (totalFramesScanned + framesToRead > maxFramesToScan) {
+                framesToRead = maxFramesToScan - totalFramesScanned;
+            }
+            
+            ma_uint64 framesRead = 0;
+            ma_decoder_read_pcm_frames(&s.decoder, scanBuffer, framesToRead, &framesRead);
+            
+            if (framesRead == 0) break;
+            
+            // Check each frame for signal above threshold
+            for (ma_uint64 frame = 0; frame < framesRead && !foundSignal; frame++) {
+                for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
+                    float sample = scanBuffer[frame * CHANNEL_COUNT + ch];
+                    if (fabs(sample) > SILENCE_THRESHOLD) {
+                        latencyFrames = totalFramesScanned + frame;
+                        foundSignal = true;
+                        break;
+                    }
+                }
+            }
+            
+            totalFramesScanned += framesRead;
+        }
+        
+        free(scanBuffer);
+        
+        // Reset decoder back to start
+        ma_decoder_seek_to_pcm_frame(&s.decoder, 0);
+        
+        return latencyFrames;
+    }
+    
+    // Get detected latency in milliseconds (max across all decoders)
+    double getLatencyMs() const {
+        return (double)detectedLatency / (SAMPLE_RATE * 0.001);
+    }
+    
+    // Get detected latency in frames (max across all decoders)
+    ma_uint64 getLatencyFrames() const {
+        return detectedLatency;
+    }
+    
+    void destroy() {
+        if(!exists) return;
+        exists = false;
+        
+        // Stop audio device first
+        ma_device_stop(&device);
+        
+        // Uninitialize device
+        ma_device_uninit(&device);
+        
+        // Clean up stretch
+        if (stretch) {
+            delete stretch;
+            stretch = nullptr;
+        }
+        
+        // Clean up decoders and buffers
+        streams.clear();
+        decoderVolumes.clear();
+        filePaths.clear();
+        
+        // Reset state
+        longestDecoderIndex = 0;
+        playbackRate = 1.0f;
+        masterVolume = 1.0;
+        mixerState = 3;
+        latenciesDetected = false;
+        detectedLatency = 0;
+    }
+    
+    void start() {
+        if(!exists) return;
+        
+        // If we're resuming from pause (mixerState == 2), don't seek
+        if(mixerState == 3) {
+            seekToPCMFrame(0);
+        }
+        
+        ma_device_start(&device);
+        mixerState = 1;
+    }
+    
+    void stop() {
+        if(!exists) return;
+        
+        ma_device_stop(&device);
+        mixerState = 2; // Paused
+    }
+    
+    bool stopped() const {
+        return mixerState == 3;
+    }
+    
+    void seekToPCMFrame(int64_t pos) {
+        if(!exists) return;
+        
+        // Stop audio temporarily to avoid callback conflicts
+        bool wasPlaying = (mixerState == 1);
+        if (wasPlaying) {
+            ma_device_stop(&device);
+        }
+        
+        for (size_t i = 0; i < streams.size(); i++) {
+            DecoderStream& s = streams[i];
+            ma_uint64 target = std::min<ma_uint64>((ma_uint64)std::max<int64_t>(pos, (int64_t)0), s.decoderLength);
+            
+            // Fill buffer starting from target position with padding
+            fillInitialBuffer(i, target);
+        }
+        
+        mixerState = (pos < (int64_t)streams[longestDecoderIndex].decoderLength) ? 2 : 3;
+        
+        // Restart audio if it was playing
+        if (wasPlaying && mixerState == 2) {
+            ma_device_start(&device);
+            mixerState = 1;
+        }
+    }
+    
+    // Helper methods
+    void deactivate_decoder(int index) {
+        if(index >= 0 && index < (int)streams.size()) {
+            streams[index].active = false;
+        }
+    }
+    
+    void amplify_decoder(int index, double volume) {
+        if(index >= 0 && index < (int)decoderVolumes.size()) {
+            decoderVolumes[index] = (float)volume;
+        }
+    }
+    
+    void setPlaybackRate(float value) {
+        playbackRate = value;
+    }
+    
+    double getGlobalVolume() const {
+        return masterVolume;
+    }
+    
+    double setGlobalVolume(double volume) {
+        masterVolume = volume;
+        return volume;
+    }
+    
+    int getMixerState() const {
+        return mixerState;
+    }
+    
+    double getPlaybackPosition() const {
+        ma_uint64 pos = 0;
+        if(!streams.empty() && streams[longestDecoderIndex].active) {
+            pos = streams[longestDecoderIndex].filePosition;
+        } else if(!streams.empty()) {
+            pos = streams[longestDecoderIndex].decoderLength;
+        }
+        return ((double)pos / (SAMPLE_RATE * 0.001));
+    }
+    
+    double getDuration() const {
+        if(streams.empty()) return 0.0;
+        return (double)streams[longestDecoderIndex].decoderLength / (SAMPLE_RATE * 0.001);
+    }
+    
+    // Fill buffer with data starting at decodeStart
+    void fillBuffer(DecoderStream* s, ma_uint64 decodeStart) {
+        ma_uint64 maxDecodeFrames = TOTAL_BUFFER_FRAMES;
+        if(decodeStart + TOTAL_BUFFER_FRAMES > s->decoderLength) {
+            maxDecodeFrames = s->decoderLength - decodeStart;
+        }
+        
+        memset(s->pcmBuffer, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
+        
+        // Only seek and read if we have frames to read
+        if(maxDecodeFrames > 0) {
+            ma_decoder_seek_to_pcm_frame(&s->decoder, decodeStart);
+            ma_decoder_read_pcm_frames(&s->decoder, s->pcmBuffer, maxDecodeFrames, &s->validFrames);
+        } else {
+            s->validFrames = 0;
+        }
+        
+        s->bufferStartPos = decodeStart;
+        s->localReadPos = 0;
+    }
+    
+    void fillInitialBuffer(size_t index, ma_uint64 startFrame) {
+        DecoderStream& s = streams[index];
+        
+        // Calculate buffer start position with padding before the start frame
+        ma_uint64 decodeStart = 0;
+        if (startFrame > PADDING_FRAMES) {
+            decodeStart = startFrame - PADDING_FRAMES;
+        }
+        
+        // Fill buffer starting from decodeStart
+        fillBuffer(&s, decodeStart);
+        
+        // Set file position to where we want to start reading
+        s.filePosition = startFrame;
+        
+        // Calculate local read position (accounting for padding)
+        if (startFrame >= decodeStart) {
+            s.localReadPos = startFrame - decodeStart;
+        } else {
+            s.localReadPos = 0;
+        }
+        
+        // Ensure localReadPos is within valid bounds
+        if (s.localReadPos >= s.validFrames) {
+            s.localReadPos = s.validFrames > 0 ? s.validFrames - 1 : 0;
+        }
+        
+        // We're active if we have valid frames to read and haven't reached end
+        s.active = (s.validFrames > 0 && startFrame < s.decoderLength);
+    }
+    
+    // Check if we need to refill the buffer
+    bool shouldRefillBuffer(const DecoderStream* s) {
+        // Refill when we're halfway through the main buffer (past padding)
+        return s->localReadPos >= (PADDING_FRAMES + HALF_BUFFER_FRAMES);
+    }
+    
+    // Refill the buffer if needed
+    void refillBufferIfNeeded(size_t index) {
+        DecoderStream& s = streams[index];
+        
+        if (!s.active || s.filePosition >= s.decoderLength) {
+            return;
+        }
+        
+        if (shouldRefillBuffer(&s)) {
+            // Calculate new buffer start position - start from current position minus padding
+            ma_uint64 newStart = 0;
+            if (s.filePosition > PADDING_FRAMES) {
+                newStart = s.filePosition - PADDING_FRAMES;
+            }
+            
+            // Make sure we don't go past the end
+            if (newStart >= s.decoderLength) {
+                s.active = false;
+                return;
+            }
+            
+            // Fill buffer from new start position
+            fillBuffer(&s, newStart);
+            
+            // Update local read position to match current file position
+            if (s.filePosition >= newStart) {
+                s.localReadPos = s.filePosition - newStart;
+            } else {
+                s.localReadPos = 0;
+            }
+            
+            // Ensure localReadPos is within bounds
+            if (s.localReadPos >= s.validFrames) {
+                s.localReadPos = s.validFrames > 0 ? s.validFrames - 1 : 0;
+            }
+        }
+    }
+    
+    // Read from buffer (single-threaded)
+    ma_uint32 readFromBuffer(size_t index, float* output, ma_uint32 frameCount) {
+        DecoderStream& s = streams[index];
+        
+        if (!s.active) {
+            return 0;
+        }
+        
+        ma_uint32 framesRead = 0;
+        
+        while (framesRead < frameCount && s.active) {
+            // Calculate available frames in buffer
+            ma_uint64 available = 0;
+            if (s.localReadPos < s.validFrames) {
+                available = s.validFrames - s.localReadPos;
+            }
+            
+            if (available == 0) {
+                // End of buffer, check if we're at end of file
+                if (s.filePosition < s.decoderLength) {
+                    // Refill buffer
+                    refillBufferIfNeeded(index);
+                    continue;
+                } else {
+                    s.active = false;
+                    break;
+                }
+            }
+            
+            ma_uint32 toRead = std::min<ma_uint32>((ma_uint32)available, frameCount - framesRead);
+            
+            // Read data
+            float* src = s.pcmBuffer + (s.localReadPos * CHANNEL_COUNT);
+            float vol = decoderVolumes[index] * (float)masterVolume;
+            
+            for (ma_uint32 i = 0; i < toRead * CHANNEL_COUNT; i++) {
+                output[framesRead * CHANNEL_COUNT + i] += src[i] * vol;
+            }
+            
+            s.localReadPos += toRead;
+            s.filePosition += toRead;
+            framesRead += toRead;
+            
+            // Check if we've reached the end
+            if (s.filePosition >= s.decoderLength) {
+                s.active = false;
+                break;
+            }
+            
+            // Refill buffer if needed
+            if (shouldRefillBuffer(&s)) {
+                refillBufferIfNeeded(index);
+            }
+        }
+        
+        return framesRead;
+    }
+    
+    static void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
+        AudioSystem* system = static_cast<AudioSystem*>(pDevice->pUserData);
+        if (!system || !system->exists) {
+            return;
+        }
+        
+        float* pOutputF32 = (float*)pOutput;
+        memset(pOutputF32, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
+        
+        // Process audio
+        bool anyActive = false;
+        
+        if (system->playbackRate == 1.0f) {
+            for (size_t i = 0; i < system->streams.size(); i++) {
+                if (system->streams[i].active) {
+                    ma_uint32 read = system->readFromBuffer(i, pOutputF32, frameCount);
+                    if (read > 0) anyActive = true;
+                }
+            }
+        } else {
+            // Time stretching path
+            float inputMix[4096 * CHANNEL_COUNT] = {0};
+            float stretchedOutput[4096 * CHANNEL_COUNT] = {0};
+            ma_uint32 maxFramesToRead = (ma_uint32)(frameCount * system->playbackRate);
+            
+            for (size_t i = 0; i < system->streams.size(); i++) {
+                if (system->streams[i].active) {
+                    ma_uint32 read = system->readFromBuffer(i, inputMix, maxFramesToRead);
+                    if (read > 0) anyActive = true;
+                }
+            }
+            
+            if (anyActive) {
+                if (!system->stretch) {
+                    system->stretch = new signalsmith::stretch::SignalsmithStretch();
+                    system->stretch->presetCheaper(CHANNEL_COUNT, SAMPLE_RATE);
+                }
+                system->stretch->process(inputMix, maxFramesToRead, stretchedOutput, frameCount);
+                memcpy(pOutputF32, stretchedOutput, sizeof(float) * frameCount * CHANNEL_COUNT);
+            }
+        }
+        
+        // Update mixer state
+        system->mixerState = anyActive ? 1 : 3;
+        (void)pInput;
+    }
+    
 private:
-	void moveFrom(AudioSystem&& other) noexcept {
-		streams = std::move(other.streams);
-		decoderVolumes = std::move(other.decoderVolumes);
-		filePaths = std::move(other.filePaths);
-		device = std::move(other.device);
-		audioMutex = std::move(other.audioMutex);
-		stretch = std::move(other.stretch);
-
-		refillThread = std::move(other.refillThread);
-		refillThreadRunning.store(other.refillThreadRunning.load());
-		refillQueue = std::move(other.refillQueue);
-		activeRefillJobs.store(other.activeRefillJobs.load());
-
-		longestDecoderIndex = other.longestDecoderIndex;
-		playbackRate = other.playbackRate;
-		masterVolume = other.masterVolume;
-		mixerState = other.mixerState;
-		exists = other.exists;
-		latenciesDetected = other.latenciesDetected;
-		detectedLatency = other.detectedLatency;
-		deviceChanging.store(other.deviceChanging.load());
-		pausing.store(other.pausing.load());
-
-		other.longestDecoderIndex = 0;
-		other.playbackRate = 1.0f;
-		other.masterVolume = 1.0;
-		other.mixerState = 3;
-		other.exists = false;
-		other.refillThreadRunning = false;
-		other.activeRefillJobs = 0;
-		other.latenciesDetected = false;
-		other.detectedLatency = 0;
-		other.deviceChanging = false;
-		other.pausing = false;
-	}
+    void moveFrom(AudioSystem&& other) noexcept {
+        streams = std::move(other.streams);
+        decoderVolumes = std::move(other.decoderVolumes);
+        filePaths = std::move(other.filePaths);
+        stretch = other.stretch;
+        
+        memcpy(&device, &other.device, sizeof(ma_device));
+        memset(&other.device, 0, sizeof(ma_device));
+        
+        longestDecoderIndex = other.longestDecoderIndex;
+        playbackRate = other.playbackRate;
+        masterVolume = other.masterVolume;
+        mixerState = other.mixerState;
+        exists = other.exists;
+        latenciesDetected = other.latenciesDetected;
+        detectedLatency = other.detectedLatency;
+        
+        other.stretch = nullptr;
+        other.longestDecoderIndex = 0;
+        other.playbackRate = 1.0f;
+        other.masterVolume = 1.0;
+        other.mixerState = 3;
+        other.exists = false;
+        other.latenciesDetected = false;
+        other.detectedLatency = 0;
+    }
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
