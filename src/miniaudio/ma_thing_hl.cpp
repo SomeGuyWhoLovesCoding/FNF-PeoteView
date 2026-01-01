@@ -558,7 +558,7 @@ public:
 	// Latency detection
 	ma_uint64 detectedLatency = 0; // System-wide latency in frames (max across all decoders)
 	bool latenciesDetected = false;
-	static constexpr float SILENCE_THRESHOLD = 0.2f;
+	static constexpr float SILENCE_THRESHOLD = 0.1f;
 
 	AudioSystem() = default;
 
@@ -2023,7 +2023,7 @@ HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
 	#endif
     if (g_audioSystem.exists) {
         if(!HL_NAME(wearingPlugNPlay)()) osMs += 50;
-        if(HL_NAME(wearingHeadphones)()) osMs += 32;
+        if(HL_NAME(wearingHeadphones)()) osMs += 60;
 		osMs -= g_audioSystem.getLatencyMs();
     }
     return osMs;

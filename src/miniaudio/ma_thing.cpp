@@ -554,7 +554,7 @@ public:
 	// Latency detection
 	ma_uint64 detectedLatency = 0; // System-wide latency in frames (max across all decoders)
 	bool latenciesDetected = false;
-	static constexpr float SILENCE_THRESHOLD = 0.2f;
+	static constexpr float SILENCE_THRESHOLD = 0.1f; // This was 20% but I realized it was too much and it would output more delay than expected so I'd say I leave it at 10%.
 
 	AudioSystem() = default;
 
@@ -2012,7 +2012,7 @@ int detectLatency() {
 	#endif
 	if (g_audioSystem.exists) {
 		if(!wearingPlugNPlay()) osMs += 50;
-		if(wearingHeadphones()) osMs += 32;
+		if(wearingHeadphones()) osMs += 60;
 		osMs -= g_audioSystem.getLatencyMs();
 	}
 	return osMs;

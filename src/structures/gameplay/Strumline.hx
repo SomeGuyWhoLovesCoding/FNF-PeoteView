@@ -166,7 +166,8 @@ class Strumline {
 			var timing = (_timing / parent._cachedHitbox) * 1.05;
 			// this trace was there because I was constantly testing the new latency compensation system
 			// specifically implemented inside the note system as I've had to even make an `onBeatHitUnoffsetted` event
-			// just to 
+			// just to make it so that countdown doesn't get affected by the conductor offset in the first place
+			// yk yk
 			//Sys.println('${noteToHit.index},$_timing');
 
 			if (@:privateAccess pf.onNoteHit.__listeners.length != 0)
