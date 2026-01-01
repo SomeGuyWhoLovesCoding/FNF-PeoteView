@@ -224,16 +224,13 @@ class NoteSystem {
 
 		var playable = strumline.playable && !(parent.botplay || RenderingMode.enabled);
 
-		var latency = Main.conductor.offset;
-
 		// --- Player side ---
 		if (playable) {
 			if (!isHit) {
 				var noteToHit = strumline.notesToHit[index];
 				var noteToHitExists = noteToHit != null;
-				var diffOffsetted = diff + latency; // This is important
 
-				if (!isMissed && diffOffsetted < _cachedHitbox) {
+				if (!isMissed && diff < _cachedHitbox) {
 					var pos = MetaNote.metaNotePositionToSongTime(noteToHit.position - pos);
 					if (!noteToHitExists || Math.abs(diff) < Math.abs(pos)) {
 						strumline.notesToHit[index] = note;
@@ -241,7 +238,7 @@ class NoteSystem {
 					}
 				}
 
-				if (diffOffsetted < -_cachedHitbox && !isMissed) {
+				if (diff < -_cachedHitbox && !isMissed) {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
 					var n:Int64 = note.toNumber();
 					(n:MetaNote).missed = true;
@@ -369,7 +366,7 @@ class NoteSystem {
 
 	// Add these cache variables at the class level
 	var _cachedScrollSpeed:Float = 0;
-	var _cachedHitbox:Float = 250;
+	var _cachedHitbox:Float = 200;
 	var _cachedDownScroll:Bool = false;
 
 	// Update them when scroll speed changes
@@ -377,7 +374,7 @@ class NoteSystem {
 		noteSpawner.spawnDist = MetaNote.floatToMetaNotePosition(1600 / value);
 		noteSpawner.despawnDist = MetaNote.floatToMetaNotePosition(360 / Math.min(Math.max(value, 0.0001), 1.0));
 		_cachedScrollSpeed = value;
-		_cachedHitbox = 250 / value;
+		_cachedHitbox = 200;
 		_cachedDownScroll = parent.downScroll;
 		return value;
 	}

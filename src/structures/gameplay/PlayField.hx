@@ -37,25 +37,25 @@ class PlayField implements State {
 
 	var ratingJudgementList:Array<Judgement> = [
 		[
-			0.175, // target
+			0.25, // target (was 0.35)
 			0, // id
 			1, // accuracy
 			400 // score
 		],
 		[
-			0.25,
+			0.5, // (was 0.65)
 			1,
 			0.8,
 			200
 		],
 		[
-			0.375,
+			0.85,
 			2,
 			0.675,
 			100
 		],
 		[
-			0.5,
+			0.95,
 			3,
 			0.5,
 			50
@@ -133,7 +133,7 @@ class PlayField implements State {
 	var onKeyRelease:Event<KeyCode->Void>;
 
 	var flipHealthBar:Bool;
-	var hitbox:Float = 250;
+	var hitbox:Float = 200;
 	var ready:Bool = false;
 
 	function setTime(value:Float, playAgain:Bool = false) {
