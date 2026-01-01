@@ -35,6 +35,33 @@ class PlayField implements State {
 			field.gfConductor.changeBpmAt(time, value);*/
 	}
 
+	var ratingJudgementList:Array<Judgement> = [
+		[
+			0.2, // target
+			0, // id
+			1, // accuracy
+			400 // score
+		],
+		[
+			0.4,
+			1,
+			0.8,
+			200
+		],
+		[
+			0.6,
+			2,
+			0.675,
+			100
+		],
+		[
+			0.8,
+			3,
+			0.5,
+			50
+		]
+	]; // how this new modifiable system works: you simply just set this array to a new selection of ratings, however you want.
+
 	var score:Int128 = 0;
 	var misses:Int128 = 0;
 	var combo:Int128 = 0;
@@ -353,33 +380,6 @@ class PlayField implements State {
 			view.fov += 0.011;
 		}
 	}
-
-	var ratingJudgementList:Array<Judgement> = [
-		[
-			0.2, // target
-			0, // id
-			1, // accuracy
-			400 // score
-		],
-		[
-			0.4,
-			1,
-			0.8,
-			200
-		],
-		[
-			0.6,
-			2,
-			0.675,
-			100
-		],
-		[
-			0.8,
-			3,
-			0.5,
-			50
-		]
-	]; // how this new modifiable system works: you simply just set this array to a new selection of ratings, however you want.
 
 	function hitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
 		var lane = note.type;

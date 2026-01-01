@@ -161,7 +161,7 @@ class Strumline {
 
 			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + (Main.conductor.offset * 2.0));
 			var timing = (MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency) / parent._cachedHitbox) * pf.scrollSpeed; // Now 0..1 instead of -250..250 just in case people don't know what the hitbox actually is
-			Sys.println('${noteToHit.index},$timing');
+			//Sys.println('${noteToHit.index},$timing');
 
 			if (@:privateAccess pf.onNoteHit.__listeners.length != 0)
 				pf.onNoteHit.dispatch(noteToHit, timing, 1);

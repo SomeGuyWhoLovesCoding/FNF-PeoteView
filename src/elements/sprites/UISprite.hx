@@ -135,21 +135,21 @@ class UISprite implements Element {
         if (isComboNumber) {
 			wValue = 60;
 			hValue = 72;
-			yValue = 150;
+			yValue = 300;
 			id %= 10;
 		}
 
 		if (isTimeBar) {
 			wValue = Math.floor(timeBarProperties[0]);
 			hValue = Math.floor(timeBarProperties[1]);
-			yValue = 225;
+			yValue = 375;
 			id = 0;
 		}
 
 		if (isCountdownPopup) {
 			wValue = 600;
 			hValue = 300;
-			yValue = 150 + (150 * id);
+			yValue = 300 + (150 * id);
 
 			switch (id) {
 				case 0:
@@ -164,7 +164,11 @@ class UISprite implements Element {
 		}
 
 		if (!isPauseOption) {
-			xValue += id * wValue;
+			if (isRatingPopup) {
+				xValue += (id % 4) * wValue;
+				yValue += hValue * (id >> 2);
+			} else
+				xValue += id * wValue;
 		} else {
 			var option:Array<Int> = hardcoded_pause_option_values[id];
 			xValue = option[0];
