@@ -178,10 +178,10 @@ cleanup:
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-// Buffer constants with padding
-#define PADDING_MS 50         // Minimal padding for seeking
-#define BUFFER_MS 500         // Main buffer size
-#define HALF_BUFFER_MS 200    // When to start refilling
+// Buffer constants optimized for CPU vs underrun tradeoff
+#define PADDING_MS 75         // Balanced padding
+#define BUFFER_MS 600         // Main buffer size  
+#define HALF_BUFFER_MS 250    // Balanced refill trigger
 
 #define PADDING_FRAMES ((SAMPLE_RATE * PADDING_MS) / 1000)
 #define BUFFER_FRAMES ((SAMPLE_RATE * BUFFER_MS) / 1000)
@@ -198,6 +198,7 @@ struct DecoderStream {
     bool active = false;
     ma_decoder decoder;
     ma_uint64 decoderLength = 0;
+    bool needsRefill = false;  
     
     DecoderStream() {
         memset(&decoder, 0, sizeof(ma_decoder));
@@ -242,6 +243,7 @@ private:
         filePosition = 0;
         active = false;
         decoderLength = 0;
+        needsRefill = false;
     }
     
     void moveFrom(DecoderStream&& other) noexcept {
@@ -252,6 +254,7 @@ private:
         filePosition = other.filePosition;
         active = other.active;
         decoderLength = other.decoderLength;
+        needsRefill = other.needsRefill;
         
         memcpy(&decoder, &other.decoder, sizeof(ma_decoder));
         
@@ -263,6 +266,7 @@ private:
         other.filePosition = 0;
         other.active = false;
         other.decoderLength = 0;
+        other.needsRefill = false;
     }
 };
 
@@ -377,13 +381,15 @@ public:
         
         latenciesDetected = true;
         
-        // Initialize audio device
+        // Initialize audio device with optimized settings
         ma_device_config deviceConfig = ma_device_config_init(ma_device_type_playback);
         deviceConfig.playback.format = SAMPLE_FORMAT;
         deviceConfig.playback.channels = CHANNEL_COUNT;
         deviceConfig.sampleRate = SAMPLE_RATE;
         deviceConfig.dataCallback = data_callback;
         deviceConfig.pUserData = this;
+        deviceConfig.periodSizeInFrames = 512;   // Balanced size for CPU usage
+        deviceConfig.periods = 2;                // Double buffering
         
         if(ma_device_init(nullptr, &deviceConfig, &device) != MA_SUCCESS){
             streams.clear();
@@ -595,7 +601,8 @@ public:
             maxDecodeFrames = s->decoderLength - decodeStart;
         }
         
-        memset(s->pcmBuffer, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
+        // Only clear the portion we're going to fill
+        memset(s->pcmBuffer, 0, maxDecodeFrames * CHANNEL_COUNT * sizeof(float));
         
         // Only seek and read if we have frames to read
         if(maxDecodeFrames > 0) {
@@ -607,6 +614,7 @@ public:
         
         s->bufferStartPos = decodeStart;
         s->localReadPos = 0;
+        s->needsRefill = false;
     }
     
     void fillInitialBuffer(size_t index, ma_uint64 startFrame) {
@@ -640,22 +648,30 @@ public:
         s.active = (s.validFrames > 0 && startFrame < s.decoderLength);
     }
     
-    // Check if we need to refill the buffer
+    // Check if we need to refill the buffer - less frequent checks
     bool shouldRefillBuffer(const DecoderStream* s) {
-        // Refill when we're halfway through the main buffer (past padding)
-        return s->localReadPos >= (PADDING_FRAMES + HALF_BUFFER_FRAMES);
+        // Only check refill when we're well into the buffer
+        // Using bit shift for faster division by 2
+        return s->localReadPos >= (PADDING_FRAMES + (BUFFER_FRAMES >> 1));
     }
     
-    // Refill the buffer if needed
-    void refillBufferIfNeeded(size_t index) {
+    // Check if buffer is critically low
+    bool isBufferCritical(const DecoderStream* s) {
+        // Only check when we're very close to running out
+        return (s->validFrames - s->localReadPos) < 512;
+    }
+    
+    // Refill the buffer if needed - optimized version
+    bool refillBufferIfNeeded(size_t index) {
         DecoderStream& s = streams[index];
         
         if (!s.active || s.filePosition >= s.decoderLength) {
-            return;
+            return false;
         }
         
-        if (shouldRefillBuffer(&s)) {
-            // Calculate new buffer start position - start from current position minus padding
+        // Only refill when really needed or flagged
+        if (s.needsRefill || shouldRefillBuffer(&s) || isBufferCritical(&s)) {
+            // Calculate new buffer start position
             ma_uint64 newStart = 0;
             if (s.filePosition > PADDING_FRAMES) {
                 newStart = s.filePosition - PADDING_FRAMES;
@@ -664,13 +680,13 @@ public:
             // Make sure we don't go past the end
             if (newStart >= s.decoderLength) {
                 s.active = false;
-                return;
+                return false;
             }
             
             // Fill buffer from new start position
             fillBuffer(&s, newStart);
             
-            // Update local read position to match current file position
+            // Update local read position
             if (s.filePosition >= newStart) {
                 s.localReadPos = s.filePosition - newStart;
             } else {
@@ -681,10 +697,15 @@ public:
             if (s.localReadPos >= s.validFrames) {
                 s.localReadPos = s.validFrames > 0 ? s.validFrames - 1 : 0;
             }
+            
+            s.needsRefill = false;
+            return true;
         }
+        
+        return false;
     }
     
-    // Read from buffer (single-threaded)
+    // Read from buffer - CPU optimized version
     ma_uint32 readFromBuffer(size_t index, float* output, ma_uint32 frameCount) {
         DecoderStream& s = streams[index];
         
@@ -692,54 +713,56 @@ public:
             return 0;
         }
         
-        ma_uint32 framesRead = 0;
+        // Check available frames once
+        ma_uint64 available = 0;
+        if (s.localReadPos < s.validFrames) {
+            available = s.validFrames - s.localReadPos;
+        }
         
-        while (framesRead < frameCount && s.active) {
-            // Calculate available frames in buffer
-            ma_uint64 available = 0;
+        // If we don't have enough data, try to refill once
+        if (available < frameCount && s.filePosition < s.decoderLength) {
+            refillBufferIfNeeded(index);
+            
+            // Recalculate available frames
             if (s.localReadPos < s.validFrames) {
                 available = s.validFrames - s.localReadPos;
-            }
-            
-            if (available == 0) {
-                // End of buffer, check if we're at end of file
-                if (s.filePosition < s.decoderLength) {
-                    // Refill buffer
-                    refillBufferIfNeeded(index);
-                    continue;
-                } else {
-                    s.active = false;
-                    break;
-                }
-            }
-            
-            ma_uint32 toRead = std::min<ma_uint32>((ma_uint32)available, frameCount - framesRead);
-            
-            // Read data
-            float* src = s.pcmBuffer + (s.localReadPos * CHANNEL_COUNT);
-            float vol = decoderVolumes[index] * (float)masterVolume;
-            
-            for (ma_uint32 i = 0; i < toRead * CHANNEL_COUNT; i++) {
-                output[framesRead * CHANNEL_COUNT + i] += src[i] * vol;
-            }
-            
-            s.localReadPos += toRead;
-            s.filePosition += toRead;
-            framesRead += toRead;
-            
-            // Check if we've reached the end
-            if (s.filePosition >= s.decoderLength) {
-                s.active = false;
-                break;
-            }
-            
-            // Refill buffer if needed
-            if (shouldRefillBuffer(&s)) {
-                refillBufferIfNeeded(index);
+            } else {
+                available = 0;
             }
         }
         
-        return framesRead;
+        if (available == 0) {
+            s.active = false;
+            return 0;
+        }
+        
+        ma_uint32 toRead = std::min<ma_uint32>((ma_uint32)available, frameCount);
+        
+        // Read data efficiently
+        float* src = s.pcmBuffer + (s.localReadPos * CHANNEL_COUNT);
+        float vol = decoderVolumes[index] * (float)masterVolume;
+        
+        if (vol == 1.0f) {
+            // Fast path: no volume scaling needed
+            for (ma_uint32 i = 0; i < toRead * CHANNEL_COUNT; i++) {
+                output[i] += src[i];
+            }
+        } else {
+            // Volume scaling path
+            for (ma_uint32 i = 0; i < toRead * CHANNEL_COUNT; i++) {
+                output[i] += src[i] * vol;
+            }
+        }
+        
+        s.localReadPos += toRead;
+        s.filePosition += toRead;
+        
+        // Check if we've reached the end
+        if (s.filePosition >= s.decoderLength) {
+            s.active = false;
+        }
+        
+        return toRead;
     }
     
     static void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
@@ -749,16 +772,36 @@ public:
         }
         
         float* pOutputF32 = (float*)pOutput;
+        
+        // Only clear output if we're going to process audio
+        bool anyActive = false;
+        for (size_t i = 0; i < system->streams.size(); i++) {
+            if (system->streams[i].active) {
+                anyActive = true;
+                break;
+            }
+        }
+        
+        if (!anyActive) {
+            memset(pOutputF32, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
+            system->mixerState = 3;
+            return;
+        }
+        
+        // Clear output once
         memset(pOutputF32, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
         
-        // Process audio
-        bool anyActive = false;
-        
         if (system->playbackRate == 1.0f) {
+            // Normal playback - process all streams
             for (size_t i = 0; i < system->streams.size(); i++) {
                 if (system->streams[i].active) {
                     ma_uint32 read = system->readFromBuffer(i, pOutputF32, frameCount);
                     if (read > 0) anyActive = true;
+                    
+                    // Simple underrun detection - only mark for refill if we read significantly less
+                    if (read < frameCount / 2 && system->streams[i].active) {
+                        system->streams[i].needsRefill = true;
+                    }
                 }
             }
         } else {
@@ -771,6 +814,11 @@ public:
                 if (system->streams[i].active) {
                     ma_uint32 read = system->readFromBuffer(i, inputMix, maxFramesToRead);
                     if (read > 0) anyActive = true;
+                    
+                    // Simple underrun detection
+                    if (read < maxFramesToRead / 2 && system->streams[i].active) {
+                        system->streams[i].needsRefill = true;
+                    }
                 }
             }
             
