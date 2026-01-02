@@ -2135,13 +2135,13 @@ HL_PRIM bool HL_NAME(wearingPlugNPlay)(_NO_ARG) {
 
 HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
 	#if HX_WINDOWS
-	int osMs = 61;
+	int osMs = 50;
 	#else
 	int osMs = 1;
 	#endif
 	if (g_audioSystem.exists) {
 		if(!HL_NAME(wearingPlugNPlay)()) osMs += 50;
-		if(HL_NAME(wearingHeadphones)()) osMs += 40;
+		if(HL_NAME(wearingHeadphones)()) osMs += 50;
 		osMs -= g_audioSystem.getLatencyMs();
 	}
 	return osMs;

@@ -262,7 +262,7 @@ class PlayField implements State {
 
 		if (!died) {
 			Mixer.update(this, deltaTime);
-			Sys.println('$songPosition' + (((lastsongpos - songPosition) > 50) ? " (CHANGE ALERT! CHANGE ALERT! CHANGE!)" : ""));
+			//Sys.println('$songPosition' + (((lastsongpos - songPosition) > 50) ? " (CHANGE ALERT! CHANGE ALERT! CHANGE!)" : ""));
 
 			#if !FV_LIME_FORK
 			// If the song hasn't started yet, update the countdown conductor only.

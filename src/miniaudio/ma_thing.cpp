@@ -2126,13 +2126,13 @@ bool wearingPlugNPlay() {
 
 int detectLatency() {
 	#if HX_WINDOWS
-	int osMs = 61;
+	int osMs = 50;
 	#else
 	int osMs = 1;
 	#endif
 	if (g_audioSystem.exists) {
 		if(!wearingPlugNPlay()) osMs += 50;
-		if(wearingHeadphones()) osMs += 40;
+		if(wearingHeadphones()) osMs += 50;
 		osMs -= g_audioSystem.getLatencyMs();
 	}
 	return osMs;
