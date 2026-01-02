@@ -2135,7 +2135,7 @@ HL_PRIM bool HL_NAME(wearingPlugNPlay)(_NO_ARG) {
 
 HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
 	#if HX_WINDOWS
-	int osMs = 56;
+	int osMs = 61;
 	#else
 	int osMs = 1;
 	#endif

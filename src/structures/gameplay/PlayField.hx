@@ -241,6 +241,7 @@ class PlayField implements State {
 	/**
 		Updates the playfield.
 	**/
+	var lastsongpos:Float = 0;
 	function update(deltaTime:Float) {
 		if (disposed || paused) return;
 
@@ -261,7 +262,7 @@ class PlayField implements State {
 
 		if (!died) {
 			Mixer.update(this, deltaTime);
-			Sys.println(songPosition);
+			Sys.println('$songPosition' + (((lastsongpos - songPosition) > 50) ? " (CHANGE ALERT! CHANGE ALERT! CHANGE!)" : ""));
 
 			#if !FV_LIME_FORK
 			// If the song hasn't started yet, update the countdown conductor only.
@@ -297,6 +298,8 @@ class PlayField implements State {
 
 			songPosition += latencyCompensation;
 			songPosition += Mixer.latency();
+
+			lastsongpos = songPosition;
 
 			return;
 		}

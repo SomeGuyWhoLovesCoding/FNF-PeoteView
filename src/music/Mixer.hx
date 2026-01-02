@@ -85,7 +85,9 @@ class Mixer {
 	}
 
 	static function setTime(value:Float, playfield:PlayField) {
-		MiniAudio.seekToPCMFrame(Tools.betterInt64FromFloat(value * 0.001) * sampleRate);
+		var pcmFrame = Tools.betterInt64FromFloat(value * (sampleRate / 1000.0));
+		// Ah HAH! I found it! It's that
+		MiniAudio.seekToPCMFrame(pcmFrame);
 		if (playfield != null) {
 			if (playfield.songEnded) playfield.songPosition = MiniAudio.getPlaybackPosition();
 		}
