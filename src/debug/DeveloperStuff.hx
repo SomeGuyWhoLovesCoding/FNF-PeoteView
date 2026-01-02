@@ -20,9 +20,11 @@ class DeveloperStuff {
 		if (playField == null) return;
 		switch (code) {
 			case KeyCode.PERIOD:
-				playField.setTime(playField.songPosition + 2000);
+				playField.setTime(playField.songPosition + 200);
 			case KeyCode.COMMA:
-				playField.setTime(playField.songPosition - 2000);
+				playField.setTime(playField.songPosition - 200);
+			case KeyCode.S:
+				playField.setTime(2200);
 			case KeyCode.NUMBER_9:
 				if (playField.songStarted)
 					Mixer.speed -= 0.25;

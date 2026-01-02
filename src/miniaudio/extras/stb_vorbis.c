@@ -4879,39 +4879,82 @@ static int peek_decode_initial(vorb *f, int *p_left_start, int *p_left_end, int 
 
 int stb_vorbis_seek_frame(stb_vorbis *f, unsigned int sample_number)
 {
+   //printf("move to %i test\n", sample_number);
    uint32 max_frame_samples;
+   uint32 remaining;
 
    if (IS_PUSH_MODE(f)) return error(f, VORBIS_invalid_api_mixing);
 
-   // fast page-level search
    if (!seek_to_sample_coarse(f, sample_number))
       return 0;
 
    assert(f->current_loc_valid);
    assert(f->current_loc <= sample_number);
 
-   // linear search for the relevant packet
+   // OPTIMIZATION 1: Early exit if already at target
+   if (f->current_loc == sample_number)
+      return 1;
+
    max_frame_samples = (f->blocksize_1*3 - f->blocksize_0) >> 2;
+   remaining = sample_number - f->current_loc;
+
+   // OPTIMIZATION 2: Skip full frames quickly
+   while (remaining > max_frame_samples * 2) {
+      int mode;
+      int left_start, left_end, right_start, right_end;
+      
+      // Save bit reader state
+      int saved_valid_bits = f->valid_bits;
+      uint32 saved_acc = f->acc;
+      int saved_packet_bytes = f->packet_bytes;
+      
+      if (!peek_decode_initial(f, &left_start, &left_end, &right_start, &right_end, &mode)) {
+         // Restore and continue with normal path
+         f->valid_bits = saved_valid_bits;
+         f->acc = saved_acc;
+         f->packet_bytes = saved_packet_bytes;
+         break;
+      }
+      
+      int frame_samples = right_start - left_start;
+      
+      // Check if it's a full frame we can skip
+      if (frame_samples == max_frame_samples) {
+         // Skip this full frame
+         f->current_loc += frame_samples;
+         f->previous_length = 0;
+         maybe_start_packet(f);
+         flush_packet(f);
+         remaining = sample_number - f->current_loc;
+      } else {
+         // Not a full frame, restore and use normal path
+         f->valid_bits = saved_valid_bits;
+         f->acc = saved_acc;
+         f->packet_bytes = saved_packet_bytes;
+         break;
+      }
+   }
+
+   // Original algorithm for remaining frames
    while (f->current_loc < sample_number) {
       int left_start, left_end, right_start, right_end, mode, frame_samples;
       if (!peek_decode_initial(f, &left_start, &left_end, &right_start, &right_end, &mode))
          return error(f, VORBIS_seek_failed);
-      // calculate the number of samples returned by the next frame
+      
       frame_samples = right_start - left_start;
+      
       if (f->current_loc + frame_samples > sample_number) {
-         return 1; // the next frame will contain the sample
+         return 1;
       } else if (f->current_loc + frame_samples + max_frame_samples > sample_number) {
-         // there's a chance the frame after this could contain the sample
          vorbis_pump_first_frame(f);
       } else {
-         // this frame is too early to be relevant
          f->current_loc += frame_samples;
          f->previous_length = 0;
          maybe_start_packet(f);
          flush_packet(f);
       }
    }
-   // the next frame should start with the sample
+   
    if (f->current_loc != sample_number) return error(f, VORBIS_seek_failed);
    return 1;
 }

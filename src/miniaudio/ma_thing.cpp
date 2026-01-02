@@ -204,10 +204,12 @@ struct DecoderStream {
     float* loadingBuffer = nullptr;
     
     // Audio thread state (only touched by audio thread)
-    ma_uint64 filePosition = 0;
+    std::atomic<ma_uint64> filePosition{0};
     ma_uint64 bufferStartPos = 0;
     ma_uint64 localReadPos = 0;
     ma_uint64 validFrames = 0;
+
+    bool justSeeked = false;
     
     // Async loading state (atomic for lock-free access)
     struct AsyncState {
@@ -330,7 +332,7 @@ struct DecoderStream {
     }
     
     // Reset state
-    void resetState() {
+    void resetState(bool seeking = false) {
         // Reset atomic flags
         asyncState.nextBufferReady.store(false, std::memory_order_release);
         asyncState.loadingBufferReady.store(false, std::memory_order_release);
@@ -339,15 +341,17 @@ struct DecoderStream {
         asyncState.requestNextBuffer.store(false, std::memory_order_release);
         asyncState.requestLoadingBuffer.store(false, std::memory_order_release);
         
-        asyncState.nextBufferValidFrames = 0;
-        asyncState.loadingBufferValidFrames = 0;
-        asyncState.nextBufferStartPos = 0;
-        asyncState.loadingBufferStartPos = 0;
-        
-        filePosition = 0;
-        bufferStartPos = 0;
-        localReadPos = 0;
-        validFrames = 0;
+        if (!seeking) {
+            asyncState.nextBufferValidFrames = 0;
+            asyncState.loadingBufferValidFrames = 0;
+            asyncState.nextBufferStartPos = 0;
+            asyncState.loadingBufferStartPos = 0;
+            
+            filePosition.store(0, std::memory_order_relaxed);
+            bufferStartPos = 0;
+            localReadPos = 0;
+            validFrames = 0;
+        }
         
         if (pcmBufferA) memset(pcmBufferA, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
         if (pcmBufferB) memset(pcmBufferB, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
@@ -462,7 +466,7 @@ private:
         memcpy(&decoder, &other.decoder, sizeof(ma_decoder));
         
         // Move regular members
-        filePosition = other.filePosition;
+        filePosition.store(other.filePosition, std::memory_order_relaxed);
         bufferStartPos = other.bufferStartPos;
         localReadPos = other.localReadPos;
         validFrames = other.validFrames;
@@ -965,7 +969,6 @@ public:
     void seekToPCMFrame(int64_t pos) {
         if(!exists) return;
         
-        // Pause async loading during seek
         if (asyncLoader) {
             asyncLoader->pauseLoading();
         }
@@ -978,20 +981,24 @@ public:
         for (size_t i = 0; i < streams.size(); i++) {
             DecoderStream& s = streams[i];
             
-            // Seek to the exact position requested
-            ma_uint64 target = std::min<ma_uint64>(
-                (ma_uint64)std::max<int64_t>(pos, (int64_t)0), 
-                s.decoderLength
-            );
+            ma_uint64 target = pos;
+
+            printf("SEEKING TO TARGET: %lld\n", (long long)target);
+            printf("  Before seek - filePos: %lld, bufferStart: %lld, localRead: %lld\n", 
+                (long long)s.filePosition, (long long)s.bufferStartPos, (long long)s.localReadPos);
             
-            s.resetState();
+            s.resetState(true);
+            s.justSeeked = true;
             fillInitialBuffer(i, target);
             
-            if (s.active && target < s.decoderLength) {
-                s.filePosition = target;
-            }
+            printf("  After seek - filePos: %lld, bufferStart: %lld, localRead: %lld\n",
+                (long long)s.filePosition, (long long)s.bufferStartPos, (long long)s.localReadPos);
             
-            // Aggressively preload both buffers synchronously
+            // Verify the math
+            ma_uint64 calculatedFilePos = s.bufferStartPos + s.localReadPos;
+            printf("  Calculated filePos should be: %lld (matches: %s)\n",
+                (long long)calculatedFilePos, (calculatedFilePos == s.filePosition) ? "YES" : "NO");
+            
             if (s.active) {
                 loadNextBufferSync(i);
                 if (s.asyncState.nextBufferReady.load(std::memory_order_relaxed)) {
@@ -1003,7 +1010,6 @@ public:
         mixerState = (pos < (int64_t)streams[longestDecoderIndex].decoderLength) ? 2 : 3;
         
         if (wasPlaying && mixerState == 2) {
-            // Resume async loading before starting playback
             if (asyncLoader) {
                 asyncLoader->resumeLoading();
             }
@@ -1059,6 +1065,7 @@ public:
     void fillInitialBuffer(size_t index, ma_uint64 startFrame) {
         DecoderStream& s = streams[index];
         
+        // Calculate where to start decoding (with padding before the target)
         ma_uint64 decodeStart = 0;
         if(startFrame > PADDING_FRAMES) {
             decodeStart = startFrame - PADDING_FRAMES;
@@ -1070,18 +1077,28 @@ public:
         s.bufferStartPos = decodeStart;
         s.validFrames = framesRead;
         
-        if(startFrame >= decodeStart) {
+        // Calculate the local read position within this buffer
+        if(startFrame >= decodeStart && startFrame < decodeStart + framesRead) {
             s.localReadPos = startFrame - decodeStart;
-        } else {
+        } else if(startFrame < decodeStart) {
             s.localReadPos = 0;
+        } else {
+            // startFrame is beyond what we loaded
+            s.localReadPos = framesRead;
         }
         
+        // Ensure localReadPos is within bounds
         if(s.localReadPos >= TOTAL_BUFFER_FRAMES) {
             s.localReadPos = TOTAL_BUFFER_FRAMES - 1;
         }
         
-        s.filePosition = startFrame;
-        s.active = (startFrame < s.decoderLength && framesRead > 0);
+        // Set filePosition to the ACTUAL position we'll start reading from
+        // This is critical - it should be bufferStart + localReadPos
+        //printf("before? %lld\n", s.filePosition);
+        s.filePosition.store(s.bufferStartPos + s.localReadPos, std::memory_order_relaxed);
+        //printf("after? %lld\n", s.filePosition);
+        
+        s.active = (s.filePosition < s.decoderLength && framesRead > 0);
         s.asyncState.needsLoad.store(false, std::memory_order_release);
     }
     
@@ -1093,6 +1110,7 @@ public:
             return;
         }
         
+        // Calculate next buffer start from CURRENT buffer position, not file position
         ma_uint64 nextBufferStart = s.bufferStartPos + HALF_BUFFER_FRAMES;
         if (nextBufferStart > PADDING_FRAMES) {
             nextBufferStart -= PADDING_FRAMES;
@@ -1177,8 +1195,11 @@ public:
             return 0;
         }
         
-        if (s.shouldSwapBuffers() || s.isBufferLow()) {
-            s.trySwapBuffers();
+        // Don't swap buffers immediately after seeking
+        if (!s.justSeeked) {
+            if (s.shouldSwapBuffers() || s.isBufferLow()) {
+                s.trySwapBuffers();
+            }
         }
         
         ma_uint32 framesRead = 0;
@@ -1192,6 +1213,7 @@ public:
             if (available == 0) {
                 if (s.filePosition < s.decoderLength) {
                     if (s.asyncState.nextBufferReady.load(std::memory_order_acquire)) {
+                        s.justSeeked = false;  // Clear flag before swapping
                         s.trySwapBuffers();
                         continue;
                     } else {
@@ -1220,8 +1242,13 @@ public:
             }
             
             s.localReadPos += toRead;
-            s.filePosition += toRead;
+            s.filePosition.store(s.filePosition.load(std::memory_order_relaxed) + toRead, std::memory_order_relaxed);
             framesRead += toRead;
+            
+            // Clear the justSeeked flag after first successful read
+            if (framesRead > 0) {
+                s.justSeeked = false;
+            }
             
             if (s.filePosition >= s.decoderLength) {
                 s.active = false;
