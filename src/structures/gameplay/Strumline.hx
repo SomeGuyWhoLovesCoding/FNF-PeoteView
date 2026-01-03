@@ -163,12 +163,12 @@ class Strumline {
 			// Now 0..1 instead of -250..250 just in case people don't know what the hitbox actually is
 			// and it's flexible too considering you want different offsets for certain things yk?
 			var _timing = MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency);
-			var timing = (_timing / parent._cachedHitbox) * 1.05;
+			var timing = (_timing / parent._cachedHitbox) * 0.8;
 			// this trace was there because I was constantly testing the new latency compensation system
 			// specifically implemented inside the note system as I've had to even make an `onBeatHitUnoffsetted` event
 			// just to make it so that countdown doesn't get affected by the conductor offset in the first place
 			// yk yk
-			//Sys.println('${noteToHit.index},$_timing');
+			//Sys.println('${noteToHit.index},$_timing,$timing');
 
 			if (@:privateAccess pf.onNoteHit.__listeners.length != 0)
 				pf.onNoteHit.dispatch(noteToHit, timing, 1);

@@ -224,13 +224,15 @@ class NoteSystem {
 
 		var playable = strumline.playable && !(parent.botplay || RenderingMode.enabled);
 
+		var offset = Main.conductor.offset;
+
 		// --- Player side ---
 		if (playable) {
 			if (!isHit) {
 				var noteToHit = strumline.notesToHit[index];
 				var noteToHitExists = noteToHit != null;
 
-				if (!isMissed && diff < _cachedHitbox) {
+				if (!isMissed && diff < _cachedHitbox - offset) {
 					var pos = MetaNote.metaNotePositionToSongTime(noteToHit.position - pos);
 					if (!noteToHitExists || Math.abs(diff) < Math.abs(pos)) {
 						strumline.notesToHit[index] = note;
@@ -238,7 +240,7 @@ class NoteSystem {
 					}
 				}
 
-				if (diff < -_cachedHitbox && !isMissed) {
+				if (diff < -_cachedHitbox - offset && !isMissed) {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
 					var n:Int64 = note.toNumber();
 					(n:MetaNote).missed = true;
