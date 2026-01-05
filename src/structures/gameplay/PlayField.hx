@@ -256,6 +256,9 @@ class PlayField implements State {
 		display.shake(dispShake.x, dispShake.y);
 		view.shake(viewShake.x, viewShake.y);
 
+		if (field != null) field.update(deltaTime);
+		if (countdownDisp != null) countdownDisp.update(deltaTime);
+
 		var ratio = Math.max(Math.min((deltaTime * 0.01), 1), 0);
 		if (display.fov != 1) display.fov = Tools.lerp(display.fov, 1, ratio);
 		if (view.fov != 1) view.fov = Tools.lerp(view.fov, 1, ratio);
@@ -278,9 +281,6 @@ class PlayField implements State {
 
 			songPosition -= latencyCompensation;
 			songPosition -= Mixer.latency();
-
-			if (field != null) field.update(deltaTime);
-			if (countdownDisp != null) countdownDisp.update(deltaTime);
 
 			#if !FV_LIME_FORK
 			Main.conductor.time = songPosition;

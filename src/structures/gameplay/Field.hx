@@ -137,7 +137,6 @@ class Field {
 		} else #end if (check) {
 			gameOver();
 		}
-
 	}
 
 	function render() {
