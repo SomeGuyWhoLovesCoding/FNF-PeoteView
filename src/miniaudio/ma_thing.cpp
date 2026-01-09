@@ -238,7 +238,6 @@ struct DecoderStream {
     bool active = false;
     ma_decoder decoder;
     ma_uint64 decoderLength = 0;
-    ma_uint64 detectedLatency = 0;
     
     DecoderStream() {
         memset(&decoder, 0, sizeof(ma_decoder));
@@ -468,7 +467,6 @@ private:
         validFrames = other.validFrames;
         active = other.active;
         decoderLength = other.decoderLength;
-        detectedLatency = other.detectedLatency;
         
         // Move async state (non-atomic members)
         asyncState.nextBufferStartPos = other.asyncState.nextBufferStartPos;
@@ -693,10 +691,6 @@ public:
     bool exists = false;
     double masterVolume = 1.0;
     
-    ma_uint64 detectedLatency = 0;  // Max latency across all decoders
-    bool latenciesDetected = false;
-    static constexpr float SILENCE_THRESHOLD = 0.1f;
-    
     ma_uint32 callbackCounter = 0;
     
     AudioSystem() {
@@ -778,15 +772,6 @@ public:
             s.asyncState.asyncNextBuffer = s.pcmBufferB;
             s.asyncState.asyncLoadingBuffer = s.pcmBufferC;
             
-            // Store per-decoder latency
-            // the inst starts first so yeah
-            if (i == 0) {
-                s.detectedLatency = detectLatency(i);
-                if (s.detectedLatency > detectedLatency) {
-                    detectedLatency = s.detectedLatency;
-                }
-            }
-            
             // Fill initial buffer (starts at 0)
             fillInitialBuffer(i, 0);
             
@@ -803,8 +788,6 @@ public:
                 longestDecoderIndex = (int)i;
             }
         }
-        
-        latenciesDetected = true;
         
         // Initialize async loader
         streamPtrs.clear();
@@ -836,73 +819,6 @@ public:
         mixerState = 3;
     }
     
-    // actually check for both channels because if certain instruments like ample metal hellrazer are played at the beginning, each of the channels can be offsetted. 
-    ma_uint64 detectLatency(size_t index) {
-        DecoderStream& s = streams[index];
-        
-        const ma_uint64 SCAN_CHUNK_SIZE = 4096;
-        float* scanBuffer = (float*)malloc(sizeof(float) * SCAN_CHUNK_SIZE * CHANNEL_COUNT);
-        
-        if (!scanBuffer) return 0;
-        
-        ma_decoder_seek_to_pcm_frame(&s.decoder, 0);
-        
-        ma_uint64 totalFramesScanned = 0;
-        ma_uint64 latencyFrames = 0;
-        bool foundSignal = false;
-        
-        ma_uint64 maxFramesToScan = SAMPLE_RATE * 0.1;
-        if (maxFramesToScan > s.decoderLength) {
-            maxFramesToScan = s.decoderLength;
-        }
-        
-        const float VOLUME_THRESHOLD = 0.2f; // 20% volume
-        
-        while (totalFramesScanned < maxFramesToScan && !foundSignal) {
-            ma_uint64 framesToRead = SCAN_CHUNK_SIZE;
-            if (totalFramesScanned + framesToRead > maxFramesToScan) {
-                framesToRead = maxFramesToScan - totalFramesScanned;
-            }
-            
-            ma_uint64 framesRead = 0;
-            ma_decoder_read_pcm_frames(&s.decoder, scanBuffer, framesToRead, &framesRead);
-            
-            if (framesRead == 0) break;
-            
-            for (ma_uint64 frame = 0; frame < framesRead && !foundSignal; frame++) {
-                bool bothChannelsAboveThreshold = true;
-                
-                for (int ch = 0; ch < CHANNEL_COUNT; ch++) {
-                    float sample = scanBuffer[frame * CHANNEL_COUNT + ch];
-                    if (fabs(sample) <= VOLUME_THRESHOLD) {
-                        bothChannelsAboveThreshold = false;
-                        break;
-                    }
-                }
-                
-                if (bothChannelsAboveThreshold) {
-                    latencyFrames = totalFramesScanned + frame;
-                    foundSignal = true;
-                }
-            }
-            
-            totalFramesScanned += framesRead;
-        }
-        
-        free(scanBuffer);
-        ma_decoder_seek_to_pcm_frame(&s.decoder, 0);
-        
-        return latencyFrames;
-    }
-    
-    double getLatencyMs() const {
-        return (double)detectedLatency / (SAMPLE_RATE * 0.001);
-    }
-    
-    ma_uint64 getLatencyFrames() const {
-        return detectedLatency;
-    }
-    
     void destroy() {
         if(!exists) return;
         exists = false;
@@ -930,8 +846,6 @@ public:
         playbackRate = 1.0f;
         masterVolume = 1.0;
         mixerState = 3;
-        latenciesDetected = false;
-        detectedLatency = 0;
         callbackCounter = 0;
     }
     
@@ -1307,8 +1221,6 @@ private:
         masterVolume = other.masterVolume;
         mixerState = other.mixerState;
         exists = other.exists;
-        latenciesDetected = other.latenciesDetected;
-        detectedLatency = other.detectedLatency;
         callbackCounter = other.callbackCounter;
         
         other.stretch = nullptr;
@@ -1318,8 +1230,6 @@ private:
         other.masterVolume = 1.0;
         other.mixerState = 3;
         other.exists = false;
-        other.latenciesDetected = false;
-        other.detectedLatency = 0;
         other.callbackCounter = 0;
     }
 };
@@ -2133,7 +2043,7 @@ int detectLatency() {
 	if (g_audioSystem.exists) {
 		if(!wearingPlugNPlay()) osMs += 50;
 		if(wearingHeadphones()) osMs += 50;
-		osMs -= g_audioSystem.getLatencyMs();
+        ma_device device = g_audioSystem.device;
 	}
 	return osMs;
 }
