@@ -1489,7 +1489,7 @@ private:
 	std::vector<SoundEffectInstance> instances;
 
 	// Maximum number of simultaneous instances
-	static const int MAX_INSTANCES = 16;
+	static const int MAX_INSTANCES = 32;
 
 public:
 	SoundEffectPool() : pcmData(nullptr), frameCount(0) {}
