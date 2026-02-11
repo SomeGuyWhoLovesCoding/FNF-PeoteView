@@ -214,58 +214,52 @@ class RenderingMode {
 
 	// ------------------ Encoder ------------------
 	static function getBestEncoder():Array<String> {
-		var encoders = [
-			{name:'h264_nvenc', args:[
-				'-c:v','h264_nvenc',
-				'-preset','p1',
-				'-tune','ull',
-				'-rc','constqp',
-				'-qp','31',
-				'-2pass','0',
-				'-spatial-aq','0',
-				'-temporal-aq','0',
-				'-b_ref_mode','disabled',
-				'-multipass','disabled'
-			]},
-			
-			{name:'h264_amf', args:[
-				'-c:v','h264_amf',
-				'-quality','speed',
-				'-rc','cqp',
-				'-qp_i','31',
-				'-qp_p','31',
-				'-preanalysis','false'
-			]},
-			
-			{name:'h264_qsv', args:[
-				'-c:v','h264_qsv',
-				'-preset','veryfast',
-				'-global_quality','31',
-				'-async_depth','4'
-			]}
-		];
+	var encoders = [
+		{name:'h264_nvenc', args:[
+			'-c:v','h264_nvenc',
+			'-preset','p1',
+			'-tune','ull',
+			'-rc','constqp',
+			'-qp','31',
+			'-bf','0',
+			'-rc-lookahead','0'
+		]},
+		
+		{name:'h264_amf', args:[
+			'-c:v','h264_amf',
+			'-rc','cqp',
+			'-qp_i','31',
+			'-qp_p','31',
+			'-bf','0'
+		]},
+		
+		{name:'h264_qsv', args:[
+			'-c:v','h264_qsv',
+			'-global_quality','31',
+			'-look_ahead','0',
+			'-bf','0'
+		]}
+	];
 
-		for (encoder in encoders) {
-			var testProcess = new Process('ffmpeg', [
-				'-f','lavfi','-v','quiet','-i','color=black:s=64x64:d=0.1',
-				'-c:v',encoder.name,'-f','null','-'
-			]);
-			var stderr = testProcess.stderr.readAll().toString();
-			var exitCode = testProcess.exitCode();
-			if (stderr.indexOf('Conversion failed!') == -1 && exitCode == 0) {
-				Sys.println('            vvvvvvvvv\n  [ Rendering Mode System ]   Using encoder: ${encoder.name}\n');
-				return encoder.args;
-			}
+	for (encoder in encoders) {
+		var testProcess = new Process('ffmpeg', [
+			'-f','lavfi','-v','quiet','-i','color=black:s=64x64:d=0.1',
+			'-c:v',encoder.name,'-f','null','-'
+		]);
+		var stderr = testProcess.stderr.readAll().toString();
+		var exitCode = testProcess.exitCode();
+		if (stderr.indexOf('Conversion failed!') == -1 && exitCode == 0) {
+			Sys.println('            vvvvvvvvv\n  [ Rendering Mode System ]   Using encoder: ${encoder.name}\n');
+			return encoder.args;
 		}
+	}
 
-		Sys.println('            vvvvvvvvv\n  [ Rendering Mode System ]   Using encoder: libx264 (software fallback)\n');
-		return [
-			'-c:v','libx264',
-			'-preset','ultrafast',
-			'-crf','28',
-			'-tune','zerolatency',
-			'-x264-params','rc-lookahead=0:ref=1:bframes=0:me=dia:subq=0:trellis=0:weightp=0'
-		];
+	Sys.println('            vvvvvvvvv\n  [ Rendering Mode System ]   Using encoder: libx264 (software fallback)\n');
+	return [
+		'-c:v','libx264',
+		'-cq','31',
+		'-x264-params','rc-lookahead=0:bframes=0'
+	];
 	}
 
 	// ------------------ Init Render ------------------
