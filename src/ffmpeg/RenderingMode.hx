@@ -16,7 +16,7 @@ import cpp.NativeProcess;
 @:publicFields
 class RenderingMode {
 	static final PBO_BUFFERS:Int = 5;
-	static final QUEUE_SIZE:Int = 8;
+	static final QUEUE_SIZE:Int = 16;
 
 	static var pbos:Array<GLBuffer> = [];
 	static var pboIndex:Int = 0;
