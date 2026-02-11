@@ -28,7 +28,7 @@ class MainMenu implements State {
 
 	static var watermarkTxt:Text;
 
-	static var optionSelected(default, null):Int = 0;
+	static var nav(default, null):Navigation = new Navigation();
 
 	var disposed:Bool = false;
 	var actions:ActionMap;
@@ -97,7 +97,7 @@ class MainMenu implements State {
 					if (i == 5) {
 						optionYLerps[i] = spr.y = (Main.INITIAL_HEIGHT - 55) - spr.h;
 					} else {
-						optionYLerps[i] = spr.y = optionYFormula(i, optionSelected);
+						optionYLerps[i] = spr.y = optionYFormula(i, nav.value());
 					}
 				}
 				spr.c.aF = 0.0;
@@ -133,7 +133,7 @@ class MainMenu implements State {
 	/**
 	 * This is here to clear up duplicated code.
 	 * @param i `i`.
-	 * @param o `optionSelected`.
+	 * @param o `nav.value()`.
 	 */
 	inline function optionYFormula(i:Int, o:Int) {
 		return (
@@ -154,11 +154,11 @@ class MainMenu implements State {
 			if (t == 1) t = (1/lime.app.Application.current.window.frameRate) * 0.0115;
 
 			var anim = optionAnims[i];
-			if (i == optionSelected) option.playAnimation(anim + ' white', true);
+			if (i == nav.value()) option.playAnimation(anim + ' white', true);
 			else option.playAnimation(anim + ' basic', true);
 
 			if (anim != 'backspace to exit') {
-				optionYLerps[i] = Tools.lerp(optionYLerps[i], optionYFormula(i, optionSelected), t);
+				optionYLerps[i] = Tools.lerp(optionYLerps[i], optionYFormula(i, nav.value()), t);
 				option.y = optionYLerps[i];
 				option.x = (Main.INITIAL_WIDTH - option.w) * 0.5;
 			}
@@ -172,31 +172,27 @@ class MainMenu implements State {
 
 	function up(isDown:Bool, param:Int) {
 		if (!isDown || disposed) return;
-		optionSelected--;
-		if (optionSelected < 0) {
-			optionSelected = optionBuf.length - 1;
-		}
+		nav.scroll(-1);
+		nav.resetIfUnder(optionBuf.length - 1);
 		Main.current.playScrollSound();
 	}
 
 	function down(isDown:Bool, param:Int) {
 		if (!isDown || disposed) return;
-		optionSelected++;
-		if (optionSelected >= optionBuf.length) {
-			optionSelected = 0;
-		}
+		nav.scroll(1);
+		nav.resetIfOver(optionBuf.length);
 		Main.current.playScrollSound();
 	}
 
 	function left(isDown:Bool, param:Int) {
 		if (!isDown || disposed) return;
-		optionSelected = optionBuf.length - 1;
+		nav.setTo(optionBuf.length - 1);
 		Main.current.playScrollSound();
 	}
 
 	function right(isDown:Bool, param:Int) {
 		if (!isDown || disposed) return;
-		optionSelected = optionBuf.length - 2;
+		nav.setTo(optionBuf.length - 2);
 		Main.current.playScrollSound();
 	}
 
@@ -206,19 +202,13 @@ class MainMenu implements State {
 	}
 
 	function updateMenuOptions_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
-		optionSelected -= Math.floor(y);
-
-		if (optionSelected >= optionBuf.length) {
-			optionSelected = 0;
-		}
-		if (optionSelected < 0) {
-			optionSelected = optionBuf.length - 1;
-		}
+		nav.scroll(-Math.floor(y));
+		nav.resetIfBoth(optionBuf.length, optionBuf.length - 1);
 		Main.current.playScrollSound();
 	}
 
 	function doIt() {
-		var optionString = optionAnims[optionSelected];
+		var optionString = optionAnims[nav.value()];
 		switch (optionString) {
 			case 'story mode': // STORY MODE
 				// TODO

@@ -22,7 +22,7 @@ class FreeplayMenu {
 
 	var freeplayScreen(default, null):FreeplayScreen;
 
-	var curSelected(default, null):Int = 0;
+	var nav(default, null):Navigation = new Navigation();
 
 	var actions(default, null):ActionMap;
 
@@ -65,7 +65,7 @@ class FreeplayMenu {
 	}
 
 	function reload(newChapter:String) {
-		curSelected = 0;
+		nav.reset();
 		freeplayScreen.reload(newChapter);
 	}
 
@@ -94,25 +94,21 @@ class FreeplayMenu {
 
 	function down(isDown:Bool, param:Int) {
 		if (!isDown) return;
-		curSelected++;
-		if (curSelected >= freeplayScreen.songsAvailable.length) {
-			curSelected = 0;
-		}
+		nav.scroll(1);
+		nav.resetIfOver(freeplayScreen.songsAvailable.length);
 		Main.current.playScrollSound();
 	}
 
 	function up(isDown:Bool, param:Int) {
 		if (!isDown) return;
-		curSelected--;
-		if (curSelected < 0) {
-			curSelected = freeplayScreen.songsAvailable.length - 1;
-		}
+		nav.scroll(-1);
+		nav.resetIfUnder(freeplayScreen.songsAvailable.length - 1);
 		Main.current.playScrollSound();
 	}
 
 	function enter(isDown:Bool, param:Int) {
 		if (!isDown) return;
-		Main.songChosen = freeplayScreen.songsAvailable[curSelected].dir;
+		Main.songChosen = freeplayScreen.songsAvailable[nav.value()].dir;
 		Main.switchState(GAMEPLAY);
 	}
 
@@ -127,14 +123,8 @@ class FreeplayMenu {
 	}
 
 	function moveMouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
-		curSelected -= Math.floor(y);
-
-		if (curSelected >= freeplayScreen.songsAvailable.length) {
-			curSelected = 0;
-		}
-		if (curSelected < 0) {
-			curSelected = freeplayScreen.songsAvailable.length - 1;
-		}
+		nav.scroll(-Math.floor(y));
+		nav.resetIfBoth(freeplayScreen.songsAvailable.length, freeplayScreen.songsAvailable.length - 1);
 		Main.current.playScrollSound();
 	}
 

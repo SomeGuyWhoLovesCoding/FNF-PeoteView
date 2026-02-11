@@ -17,8 +17,8 @@ class OptionsMenu {
 	static var optionsBuf(default, null):Buffer<OptionsSprite>;
 	static var optionsProg(default, null):Program;
 
-	var categorySelected(default, null):Int;
-	var optionSelected(default, null):Int;
+	var categoryNav(default, null):Navigation = new Navigation();
+	var optionsNav(default, null):Navigation = new Navigation();
 
 	var categorySprites(default, null):Array<OptionsSprite> = [];
 
@@ -57,7 +57,7 @@ class OptionsMenu {
 		if (optionsDisplay == null) {
 			optionsDisplay = new OptionsDisplay(this);
 		}
-		optionsDisplay.reload(cast optionSelected);
+		optionsDisplay.reload(cast optionsNav.value());
 
 		actions = [
 			Controls.Action.UI_LEFT => { action: left },
@@ -85,7 +85,7 @@ class OptionsMenu {
 		for (i in 0...categorySprites.length) {
 			var categorySprite = categorySprites[i];
 			var originalLuminance = categorySprite.c.luminanceF;
-			categorySprite.c.luminanceF = alphaLerp * (i != categorySelected ? 0.5 : 1);
+			categorySprite.c.luminanceF = alphaLerp * (i != categoryNav.value() ? 0.5 : 1);
 			categorySprite.c.aF = alphaLerp;
 			if (originalLuminance != categorySprite.c.luminanceF) optionsBuf.updateElement(categorySprite);
 		}
@@ -100,7 +100,7 @@ class OptionsMenu {
 		try {
 			for (i in 0...categorySprites.length) {
 				var categorySprite = categorySprites[i];
-				categorySprite.c.luminanceF = alphaLerp * (i != categorySelected ? 0.5 : 1);
+				categorySprite.c.luminanceF = alphaLerp * (i != categoryNav.value() ? 0.5 : 1);
 				categorySprite.c.aF = alphaLerp;
 				optionsBuf.addElement(categorySprite);
 			}
@@ -149,41 +149,33 @@ class OptionsMenu {
 
 	function down(isDown:Bool, param:Int) {
 		if (!isDown) return;
-		optionSelected++;
-		if (optionSelected >= optionsDisplay.options.length) {
-			optionSelected = 0;
-		}
+		optionsNav.scroll(1);
+		optionsNav.resetIfOver(optionsDisplay.options.length);
 		Main.current.playScrollSound();
 	}
 
 	function up(isDown:Bool, param:Int) {
 		if (!isDown) return;
-		optionSelected--;
-		if (optionSelected < 0) {
-			optionSelected = optionsDisplay.options.length - 1;
-		}
+		optionsNav.scroll(-1);
+		optionsNav.resetIfUnder(optionsDisplay.options.length - 1);
 		Main.current.playScrollSound();
 	}
 
 	function left(isDown:Bool, param:Int) {
 		if (!isDown) return;
-		optionSelected = 0;
-		categorySelected--;
-		if (categorySelected < 0) {
-			categorySelected = categorySprites.length - 1;
-		}
-		optionsDisplay.reload(cast categorySelected);
+		optionsNav.setTo(0);
+		categoryNav.scroll(-1);
+		categoryNav.resetIfUnder(categorySprites.length - 1);
+		optionsDisplay.reload(cast categoryNav.value());
 		Main.current.playScrollSound();
 	}
 
 	function right(isDown:Bool, param:Int) {
 		if (!isDown) return;
-		optionSelected = 0;
-		categorySelected++;
-		if (categorySelected >= categorySprites.length) {
-			categorySelected = 0;
-		}
-		optionsDisplay.reload(cast categorySelected);
+		optionsNav.setTo(0);
+		categoryNav.scroll(1);
+		categoryNav.resetIfOver(categorySprites.length);
+		optionsDisplay.reload(cast categoryNav.value());
 		Main.current.playScrollSound();
 	}
 
@@ -201,16 +193,9 @@ class OptionsMenu {
 	}
 
 	function moveCategory_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
-		categorySelected -= Math.floor(y);
-
-		if (categorySelected >= categorySprites.length) {
-			categorySelected = 0;
-		}
-		if (categorySelected < 0) {
-			categorySelected = categorySprites.length - 1;
-		}
-
-		optionsDisplay.reload(cast categorySelected);
+		categoryNav.scroll(-Math.floor(y));
+		categoryNav.resetIfBoth(categorySprites.length, categorySprites.length - 1);
+		optionsDisplay.reload(cast categoryNav.value());
 		Main.current.playScrollSound();
 	}
 

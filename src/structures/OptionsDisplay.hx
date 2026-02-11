@@ -73,9 +73,9 @@ class OptionsDisplay {
 	}
 
 	function enter() {
-		switch ((parent.categorySelected:OptionsCategorySelection)) {
+		switch ((parent.categoryNav.value():OptionsCategorySelection)) {
 			case PREFERENCES:
-				var field = prefsStr[parent.optionSelected];
+				var field = prefsStr[parent.optionsNav.value()];
 				var optionChecked = Reflect.getProperty(SaveData.state.preferences, field);
 				Reflect.setProperty(SaveData.state.preferences, field, !optionChecked);
 				var pf = Main.current.playField;
@@ -103,10 +103,10 @@ class OptionsDisplay {
 			var option = options[i];
 			option.c.aF = parent.alphaLerp;
 			option.c.luminanceF = parent.alphaLerp;
-			switch ((parent.categorySelected:OptionsCategorySelection)) {
+			switch ((parent.categoryNav.value():OptionsCategorySelection)) {
 				case PREFERENCES:
 					var optionChecked = Reflect.getProperty(SaveData.state.preferences, prefsStr[i]);
-					if (i == parent.optionSelected) {
+					if (i == parent.optionsNav.value()) {
 						option.c.rF = !optionChecked ? parent.alphaLerp : 0.0;
 						option.c.gF = optionChecked ? parent.alphaLerp : 0.0;
 						option.c.bF = 0.0;

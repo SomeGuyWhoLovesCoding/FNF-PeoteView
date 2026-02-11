@@ -23,7 +23,7 @@ class PauseScreen {
 	var pauseOptions(default, null):Array<StoryModeSprite> = [];
 	var diffText(default, null):StoryModeSprite;
 
-	var pauseOptionSelected(default, null):Int = 0;
+	var pauseNav(default, null):Navigation = new Navigation();
 	var opened(default, null):Bool;
 	var atOptionsMenu(default, null):Bool;
 	var actions:ActionMap;
@@ -92,7 +92,7 @@ class PauseScreen {
 			var pauseOption = pauseOptions[i];
 			var originalC = pauseOption.c;
 			pauseOption.c.aF = alphaLerp;
-			if (i == pauseOptionSelected) {
+			if (i == pauseNav.value()) {
 				pauseOption.c.rF = alphaLerp;
 				pauseOption.c.gF = alphaLerp;
 				pauseOption.c.bF = 0.0;
@@ -114,18 +114,14 @@ class PauseScreen {
 	}
 
 	function down(isDown:Bool, param:Int) {
-		pauseOptionSelected++;
-		if (pauseOptionSelected >= pauseOptions.length) {
-			pauseOptionSelected = 0;
-		}
+		pauseNav.scroll(1);
+		pauseNav.resetIfOver(pauseOptions.length);
 		Main.current.playScrollSound();
 	}
 
 	function up(isDown:Bool, param:Int) {
-		pauseOptionSelected--;
-		if (pauseOptionSelected < 0) {
-			pauseOptionSelected = pauseOptions.length - 1;
-		}
+		pauseNav.scroll(-1);
+		pauseNav.resetIfUnder(pauseOptions.length - 1);
 		Main.current.playScrollSound();
 	}
 
@@ -138,12 +134,13 @@ class PauseScreen {
 	}
 
 	function doIt() {
-		switch (pauseOptionSelected) {
+		switch (pauseNav.value()) {
 			case 0: // RESUME
 				back(true, 0);
 			case 1: // RESTART
 				Main.switchState(GAMEPLAY);
 			case 2: // OPTIONS
+				Main.current.playScrollSound();
 				Main.current.optionsMenu.open();
 				atOptionsMenu = true;
 				removeEvents();
@@ -164,14 +161,8 @@ class PauseScreen {
 	}
 
 	function moveOption_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
-		pauseOptionSelected -= Math.floor(y);
-
-		if (pauseOptionSelected >= pauseBuf.length - 1) {
-			pauseOptionSelected = 0;
-		}
-		if (pauseOptionSelected < 0) {
-			pauseOptionSelected = pauseBuf.length - 2;
-		}
+		pauseNav.scroll(-Math.floor(y));
+		pauseNav.resetIfBoth(pauseBuf.length - 1, pauseBuf.length - 2);
 		Main.current.playScrollSound();
 	}
 
@@ -181,7 +172,7 @@ class PauseScreen {
 		try {
 			for (i in 0...pauseOptions.length) {
 				var pauseOption = pauseOptions[i];
-				if (i == pauseOptionSelected) pauseOption.c = Color.YELLOW;
+				if (i == pauseNav.value()) pauseOption.c = Color.YELLOW;
 				else pauseOption.c = Color.WHITE;
 				pauseOption.c.aF = 0.0;
 				pauseOption.c.luminanceF = 0.0;

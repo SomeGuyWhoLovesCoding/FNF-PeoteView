@@ -13,7 +13,7 @@ class StoryMenu {
 	var active(default, null):Bool;
 	var opened(default, null):Bool;
 
-	var curSelected(default, null):Int = 0;
+	var nav(default, null):Navigation = new Navigation();
 
 	function new() {
 	}
@@ -40,18 +40,14 @@ class StoryMenu {
 
 	function down(isDown:Bool, param:Int) {
 		if (!isDown) return;
-		curSelected++;
-		if (curSelected >= chaptersAvailable.length) {
-			curSelected = 0;
-		}
+		nav.scroll(1);
+		nav.resetIfOver(chaptersAvailable.length);
 	}
 
 	function up(isDown:Bool, param:Int) {
 		if (!isDown) return;
-		curSelected--;
-		if (curSelected < 0) {
-			curSelected = chaptersAvailable.length - 1;
-		}
+		nav.scroll(-1);
+		nav.resetIfUnder(chaptersAvailable.length - 1);
 	}
 
 	function enter(isDown:Bool, param:Int) {

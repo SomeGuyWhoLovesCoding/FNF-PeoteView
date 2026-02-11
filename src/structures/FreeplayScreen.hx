@@ -128,11 +128,13 @@ class FreeplayScreen {
 		var ratio = Math.min(deltaTime * 0.015, 1);
 		if (ratio == 1) ratio = (1/lime.app.Application.current.window.frameRate) * 0.015; // When loading the freeplay menu the first time it gets stuck at 1.0 for a single frame
 
+		var curSelected = parent.nav.value();
+
 		if (!parent.opened && alphaLerp < 0.1/256) {
 			parent.shutDown();
-			curSelectedLerp = parent.curSelected;
+			curSelectedLerp = curSelected;
 			alphaLerp = 0.0;
-			xLerp = 20 - (parent.curSelected * 20);
+			xLerp = 20 - (curSelected * 20);
 			xLerpPrev = xLerp;
 			return;
 		}
@@ -143,8 +145,8 @@ class FreeplayScreen {
 		}
 
 		alphaLerp = Tools.lerp(alphaLerp, parent.opened ? 1.0 : 0.0, ratio);
-		curSelectedLerp = Tools.lerp(curSelectedLerp, parent.curSelected, ratio);
-		xLerp = Tools.lerp(xLerp, 20 - (parent.curSelected * 20), ratio);
+		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelected, ratio);
+		xLerp = Tools.lerp(xLerp, 20 - (curSelected * 20), ratio);
 
 		var incrementBest = songsAvailable.length > 7 ? Math.floor(Math.min(Math.max(curSelectedLerp - 3, 0), songsAvailable.length - 7)) : 0;
 
@@ -154,7 +156,7 @@ class FreeplayScreen {
 			if (k < 0 || k >= songsAvailable.length) continue;
 
 			var k = i + incrementBest;
-			var l = parent.curSelected - incrementBest;
+			var l = curSelected - incrementBest;
 			var kClamped = Math.floor(Math.min(Math.max(k, 0), songsAvailable.length - 1));
 			var song = songsAvailable[kClamped];
 			var title = song.title;

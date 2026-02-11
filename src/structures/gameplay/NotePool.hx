@@ -52,8 +52,6 @@ class NotePool {
 			inactiveObject.initialAlpha = Note.defaultAlpha;
 			inactiveObject.addedAlpha = 0;
 			inactiveObject.notesInOne = 1;
-			inactiveObject.greedyMergeAlphaMultiplier = 0;
-			inactiveObject.greedyMergeType = 0;
 			inactiveObject.ref = n;
 			allocated = inactiveObject;
 			virtualNotes.set(n, inactiveObject);
@@ -103,8 +101,6 @@ class NotePool {
 		if (virtualNotes.remove(n)) {
 			allocated.initialAlpha = Note.defaultAlpha;
 			allocated.addedAlpha = 0;
-			allocated.greedyMergeAlphaMultiplier = 0;
-			allocated.greedyMergeType = 0;
 			allocated.x = -9999;
 			allocated.y = -9999;
 			inactiveVirtualNotes.push(allocated);

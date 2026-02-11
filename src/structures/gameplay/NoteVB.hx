@@ -85,7 +85,7 @@ class NoteVB {
 }
 
 /**
- * This object is the POD of the note element. 52-byte class.
+ * This object is the POD of the note element. 48-byte class.
  * @since Development
 **/
 #if cpp
@@ -169,31 +169,6 @@ class VirtualNote {
 		return value;
 	}
 
-	// once preparation is done, this stuff is used (4 bytes)
-	var tm:Int;
-	var greedyMergeType(get, set):Int;
-	var greedyMergeAlphaMultiplier(get, set):Int;
-
-	inline function get_greedyMergeType():Int {
-		return toSigned16(xy & 0xFFFF);
-	}
-
-	inline function set_greedyMergeType(value:Int):Int {
-		var u = toUint16(value);
-		tm = (tm & 0xFFFF0000) | u;
-		return value;
-	}
-
-	inline function get_greedyMergeAlphaMultiplier():Int {
-		return toSigned16((tm >> 16) & 0xFFFF);
-	}
-
-	inline function set_greedyMergeAlphaMultiplier(value:Int):Int {
-		var u = toUint16(value);
-		tm = (tm & 0x0000FFFF) | (u << 16);
-		return value;
-	}
-
 	inline function new(x:Int, y:Int, w:Int, h:Int) {
 		this.x = x;
 		this.y = y;
@@ -203,7 +178,7 @@ class VirtualNote {
 }
 
 /**
- * This object is a POD of the sustain element. 76-byte class since there's a reference in it.
+ * This object is a POD of the sustain element. 72-byte class since there's a reference in it.
  * @since Development
 **/
 #if cpp
@@ -223,7 +198,7 @@ class VirtualSustain {
 	// the duration of the sustain (4 bytes)
 	var length:Int;
 
-	// the reference to the sustain (40 bytes)
+	// the reference to the sustain (48 bytes)
 	var ref:VirtualNote;
 
 	// the rotation of the sustain (8 bytes)
