@@ -3,6 +3,8 @@
  * RAII implementation - Resources manage their own lifetimes
  *
  * Originally done as a small and isolated c++ test project.
+ * *stb_vorbis is optimized specifically for funkin' view's audio format needs (OGG) whilst leaving WAV, MP3, and FLAC aside.
+    The modified version also fixes waiting on seeking backwards due to new logic that optimizes it on the fly.
  */
 #include "include/ma_thing.h"
 

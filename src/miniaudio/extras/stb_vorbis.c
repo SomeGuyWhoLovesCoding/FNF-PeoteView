@@ -854,6 +854,9 @@ struct stb_vorbis
    float *previous_window[STB_VORBIS_MAX_CHANNELS];
    int previous_length;
 
+   // Cache for reversed windows
+   float **window_reversed;  // Indexed by window size
+
    #ifndef STB_VORBIS_NO_DEFER_FLOOR
    int16 *finalY[STB_VORBIS_MAX_CHANNELS];
    #else
@@ -3453,6 +3456,18 @@ static int vorbis_decode_packet(vorb *f, int *len, int *p_left, int *p_right)
    return vorbis_decode_packet_rest(f, len, f->mode_config + mode, *p_left, left_end, *p_right, right_end, p_left);
 }
 
+static void vorbis_cleanup_reversed_windows(stb_vorbis *f) {
+   if (f->window_reversed) {
+      for (int i = 0; i < 8192; i++) {
+         if (f->window_reversed[i]) {
+            free(f->window_reversed[i]);
+         }
+      }
+      free(f->window_reversed);
+      f->window_reversed = NULL;
+   }
+}
+
 static int vorbis_finish_frame(stb_vorbis *f, int len, int left, int right)
 {
    int prev,i,j;
@@ -3468,12 +3483,42 @@ static int vorbis_finish_frame(stb_vorbis *f, int len, int left, int right)
    if (f->previous_length) {
       int i,j, n = f->previous_length;
       float *w = get_window(f, n);
+      float *w_rev = NULL;
       if (w == NULL) return 0;
+      
+      if (f->window_reversed && f->window_reversed[n]) {
+         w_rev = f->window_reversed[n];
+      } else {
+         w_rev = (float*)malloc(n * sizeof(float));
+         if (!w_rev) return 0;
+         for (int k = 0; k < n; k++) {
+            w_rev[k] = w[n-1-k];
+         }
+         // Cache it for future use
+         if (!f->window_reversed) {
+            f->window_reversed = (float**)calloc(8192, sizeof(float*));
+         }
+         f->window_reversed[n] = w_rev;
+      }
+      
       for (i=0; i < f->channels; ++i) {
+         float *cb = f->channel_buffers[i] + left;
+         float *pw = f->previous_window[i];
+#ifdef STB_VORBIS_SSE2
+         int n4 = n & ~3;
+         for (j = 0; j < n4; j += 4) {
+            __m128 vcb = _mm_loadu_ps(cb + j);
+            __m128 vpw = _mm_loadu_ps(pw + j);
+            __m128 vwf = _mm_loadu_ps(w + j);
+            __m128 vwr = _mm_loadu_ps(w_rev + j);  // Direct load, no shuffle needed
+            _mm_storeu_ps(cb + j, _mm_add_ps(_mm_mul_ps(vcb, vwf), _mm_mul_ps(vpw, vwr)));
+         }
+         for (; j < n; ++j)
+            cb[j] = cb[j]*w[j] + pw[j]*w_rev[j];
+#else
          for (j=0; j < n; ++j)
-            f->channel_buffers[i][left+j] =
-               f->channel_buffers[i][left+j]*w[    j] +
-               f->previous_window[i][     j]*w[n-1-j];
+            cb[j] = cb[j]*w[j] + pw[j]*w_rev[j];
+#endif
       }
    }
 
@@ -3482,15 +3527,23 @@ static int vorbis_finish_frame(stb_vorbis *f, int len, int left, int right)
    // last half of this data becomes previous window
    f->previous_length = len - right;
 
-   // @OPTIMIZE: could avoid this copy by double-buffering the
-   // output (flipping previous_window with channel_buffers), but
-   // then previous_window would have to be 2x as large, and
-   // channel_buffers couldn't be temp mem (although they're NOT
-   // currently temp mem, they could be (unless we want to level
-   // performance by spreading out the computation))
-   for (i=0; i < f->channels; ++i)
-      for (j=0; right+j < len; ++j)
-         f->previous_window[i][j] = f->channel_buffers[i][right+j];
+   for (i=0; i < f->channels; ++i) {
+      float *dst = f->previous_window[i];
+      float *src = f->channel_buffers[i] + right;
+      int count = len - right;
+#ifdef STB_VORBIS_SSE2
+      int n4 = count & ~3;
+      int k;
+      for (k = 0; k < n4; k += 4)
+         _mm_storeu_ps(dst + k, _mm_loadu_ps(src + k));
+      for (; k < count; ++k)
+         dst[k] = src[k];
+#else
+      int k;
+      for (k = 0; k < count; ++k)
+         dst[k] = src[k];
+#endif
+   }
 
    if (!prev)
       // there was no previous packet, so this data isn't valid...
@@ -5205,6 +5258,21 @@ static int8 channel_position[7][6] =
    #define FASTDEF(x)
 #endif
 
+// SSE2/SSE4.1 acceleration for float-to-int16 conversion and overlap-add.
+// Enabled automatically when targeting SSE4.1 or better. Define
+// STB_VORBIS_NO_SIMD to disable. Requires a little-endian platform (already
+// assumed elsewhere in this file).
+#if !defined(STB_VORBIS_NO_SIMD) && \
+    (defined(__SSE4_1__) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2))
+  #include <smmintrin.h>   // SSE4.1 (_mm_cvtps_epi32, _mm_packus_epi32, _mm_blendv_ps)
+  #include <emmintrin.h>   // SSE2
+  #define STB_VORBIS_SSE4
+#elif !defined(STB_VORBIS_NO_SIMD) && \
+    (defined(__SSE2__) || defined(_M_X64) || defined(_M_AMD64))
+  #include <emmintrin.h>
+  #define STB_VORBIS_SSE2
+#endif
+
 static void copy_samples(short *dest, float *src, int len)
 {
    int i;
@@ -5321,11 +5389,52 @@ static void convert_channels_short_interleaved(int buf_c, short *buffer, int dat
    } else {
       int limit = buf_c < data_c ? buf_c : data_c;
       int j;
+#ifdef STB_VORBIS_SSE4
+      // Fast path: stereo interleave using SSE4.1.
+      // _mm_cvtps_epi32 rounds float to int32 with IEEE round-to-nearest,
+      // _mm_packs_epi32 saturates two int32x4 -> int16x8 — giving us
+      // clamped rounding in ~3 instructions per 8 output samples.
+      if (limit == 2) {
+         float *chL = data[0] + d_offset;
+         float *chR = data[1] + d_offset;
+         // scale factor: 2^15 = 32768.0
+         __m128 scale = _mm_set1_ps(32768.0f);
+         // Process 4 stereo pairs (8 shorts) per iteration
+         int n4 = len & ~3;
+         for (j = 0; j < n4; j += 4) {
+            // Load 4 left and 4 right samples, scale to [-32768..32767] range
+            __m128 vl = _mm_mul_ps(_mm_loadu_ps(chL + j), scale);
+            __m128 vr = _mm_mul_ps(_mm_loadu_ps(chR + j), scale);
+            // Convert to int32 with round-to-nearest + saturation semantics
+            __m128i il = _mm_cvtps_epi32(vl);
+            __m128i ir = _mm_cvtps_epi32(vr);
+            // Saturate int32 -> int16 (packs uses signed saturation: clamps to [-32768,32767])
+            // Interleave L0 R0 L1 R1 L2 R2 L3 R3 by interleaving then packing
+            __m128i lo = _mm_unpacklo_epi32(il, ir); // { L0, R0, L1, R1 }
+            __m128i hi = _mm_unpackhi_epi32(il, ir); // { L2, R2, L3, R3 }
+            __m128i out = _mm_packs_epi32(lo, hi);   // saturate to int16x8: L0 R0 L1 R1 L2 R2 L3 R3
+            _mm_storeu_si128((__m128i*)buffer, out);
+            buffer += 8;
+         }
+         // Scalar tail
+         for (; j < len; ++j) {
+            FASTDEF(temp);
+            int v;
+            v = FAST_SCALED_FLOAT_TO_INT(temp, chL[j], 15);
+            if ((unsigned int)(v + 32768) > 65535) v = v < 0 ? -32768 : 32767;
+            *buffer++ = v;
+            v = FAST_SCALED_FLOAT_TO_INT(temp, chR[j], 15);
+            if ((unsigned int)(v + 32768) > 65535) v = v < 0 ? -32768 : 32767;
+            *buffer++ = v;
+         }
+         return;
+      }
+#endif
       for (j=0; j < len; ++j) {
          for (i=0; i < limit; ++i) {
             FASTDEF(temp);
             float f = data[i][d_offset+j];
-            int v = FAST_SCALED_FLOAT_TO_INT(temp, f,15);//data[i][d_offset+j],15);
+            int v = FAST_SCALED_FLOAT_TO_INT(temp, f,15);
             if ((unsigned int) (v + 32768) > 65535)
                v = v < 0 ? -32768 : 32767;
             *buffer++ = v;

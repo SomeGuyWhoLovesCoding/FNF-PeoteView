@@ -1,6 +1,8 @@
 ﻿/*
  * Fixed double-buffered sliding window with clean shutdown.
  * RAII implementation - Resources manage their own lifetimes
+ * *stb_vorbis is optimized specifically for funkin' view's audio format needs (OGG) whilst leaving WAV, MP3, and FLAC aside.
+    The modified version also fixes waiting on seeking backwards due to new logic that optimizes it on the fly.
  */
 #include "include/ma_thing.h"
 
