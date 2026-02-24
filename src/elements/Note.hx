@@ -106,16 +106,6 @@ class Note implements Element
 		program.setColorFormula( 'c * why(${name}_ID, initialAlpha, addedAlpha)' );
 	}
 
-	inline public function toggleGMVariant(/*mult:Int, */g:Int, isCover:Bool) {
-		var granularityValue = g - 1;
-		//var int = (id + (granularityValue * 2)) * (24 - (isCover ? 12 : 0));
-		var int = ((id * (arrayLengthOfNoteSkin_gm())) + (granularityValue * 2) + (isCover ? 1 : 0)) * 6;
-		//Sys.println(toggleGMVariant);
-		//Sys.println(int);
-		//trace(/*mult,*/g,isCover,id,int,ox,oy,px,py);
-		setOffsetAndSizeGM(int);
-	}
-
 	inline public function changeID(id:Int) {
 		this.id = id;
 	}
@@ -167,15 +157,6 @@ class Note implements Element
 		oy = offsetAndSizeFrames[offset + 5];
 	}
 
-	private function setOffsetAndSizeGM(offset:Int) {
-		clipX = offsetAndSizeFramesGM[offset];
-		clipY = offsetAndSizeFramesGM[offset + 1];
-		w = clipWidth = clipSizeX = offsetAndSizeFramesGM[offset + 2];
-		h = clipHeight = clipSizeY = offsetAndSizeFramesGM[offset + 3];
-		ox = offsetAndSizeFramesGM[offset + 4];
-		oy = offsetAndSizeFramesGM[offset + 5];
-	}
-
 	private function isOffsetAndSize(offset:Int) {
 		var X = offsetAndSizeFrames[offset];
 		var Y = offsetAndSizeFrames[offset + 1];
@@ -186,21 +167,7 @@ class Note implements Element
 			ox == offsetAndSizeFrames[offset + 4] && oy == offsetAndSizeFrames[offset + 5];
 	}
 
-	private function isOffsetAndSizeGM(offset:Int) {
-		var X = offsetAndSizeFramesGM[offset];
-		var Y = offsetAndSizeFramesGM[offset + 1];
-		var width = offsetAndSizeFramesGM[offset + 2];
-		var height = offsetAndSizeFramesGM[offset + 3];
-		return clipX == X && clipY == Y &&
-			(clipWidth == width && clipSizeX == width) && (clipHeight == height && clipSizeY == height) &&
-			ox == offsetAndSizeFramesGM[offset + 4] && oy == offsetAndSizeFramesGM[offset + 5];
-	}
-
 	inline static function arrayLengthOfNoteSkin_main() {
 		return Std.int(Math.ffloor(offsetAndSizeFrames.length) / KEYS);
-	}
-
-	inline static function arrayLengthOfNoteSkin_gm() {
-		return Std.int(Math.ffloor(offsetAndSizeFramesGM.length) / (KEYS * 6));
 	}
 }

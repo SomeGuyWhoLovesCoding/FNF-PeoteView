@@ -83,8 +83,6 @@ class HealthBar {
 			part.h = bg.h - healthBarHS;
 			part.y = bg.y + healthBarYA;
 			part.gradientMode = 1.0;
-
-			//part.setAllColors(healthIconColors[i]);
 			part.setAllColors(actors[i].data.colors);
 
 			hbBuf.addElement(part);
@@ -142,7 +140,6 @@ class HealthBar {
 		if (parent.disposed || parent.died) return;
 
 		bg.y = parent.downScroll ? 90 : Main.INITIAL_HEIGHT - 90;
-		//hbBuf.updateElement(bg);
 
 		var actors = parent.field.actors;
 
@@ -160,8 +157,6 @@ class HealthBar {
 
 		if (part1.w < 0) part1.w = 0;
 
-		//hbBuf.updateElement(part1);
-
 		var part2 = parts[1];
 
 		if (part2 == null) return;
@@ -175,8 +170,6 @@ class HealthBar {
 		part2.y = bg.y + healthBarYA;
 
 		if (part2.w < 0) part2.w = 0;
-
-		//hbBuf.updateElement(part2);
 	}
 
 	/**
@@ -212,9 +205,6 @@ class HealthBar {
 
 		if (health < 0.25) plrIco.changeID(ids[1][1]);
 		else plrIco.changeID(ids[1][0]);
-
-		//hbBuf.updateElement(iconP2);
-		//hbBuf.updateElement(iconP1);
 	}
 
 	/**

@@ -103,13 +103,10 @@ class SaveData {
 		trace('Saving data...');
 		try {
 			var result = SaveData_Securer.lock(state);
-			//FileSystem.deleteFile("save.dat");
 			var fo:FileOutput = File.write("save.dat");
 			fo.writeString(result);
 			fo.close();
-		} catch(e) {
-			//trace('Reah');
-		} // for rare cases like actually editing the save file itself
+		} catch(e) {} // for rare cases like actually editing the save file itself
 	}
 
 	var controls:SaveData_Controls;
