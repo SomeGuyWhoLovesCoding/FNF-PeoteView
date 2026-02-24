@@ -100,7 +100,7 @@ class FreeplayScreen {
 	function unload() {
 		songTextsBuf.clear();
 		songIconsBuf.clear();
-		while (songsAvailable.length != 0) songsAvailable.pop();
+		songsAvailable.splice(0, songsAvailable.length);
 		while (songTextCharGroup.length != 0) {
 			var elements = songTextCharGroup.pop();
 			while (elements.length != 0) {
@@ -112,7 +112,7 @@ class FreeplayScreen {
 			}
 			//songTextCharGroup = null; big mistake. do not nullify these. They are persistent across the whole front menu.
 		}
-		while (songIconGroup.length != 0) songIconGroup.pop();
+		songIconGroup.splice(0, songIconGroup.length);
 		//songIconGroup = null;
 		disposed = true;
 	}
@@ -126,6 +126,28 @@ class FreeplayScreen {
 	var framesElapsed:Int64 = 0;
 	var durationRemaining:Float = 0;
 	var canAdvanceFrame:Bool = false;
+
+	// Took this from https://github.com/CCobaltDev/FNF-Horizon-Engine/blob/rewrite/source/horizon/objects/Alphabet.hx#L83 and extended it to work with the vanilla alphabet
+	// edit: deepseek did this same approach as with InputSystem.hx
+	static var charCorrectionMap:Map<String, String> = [
+		"?" => "question",
+		"&" => "ampersand",
+		"<" => "less",
+		'"' => "quote",
+		"'" => "apostrophe",
+		"•" => "bullet",
+		"," => "comma",
+		"!" => "exclamation",
+		"/" => "forward slash",
+		"\\" => "back slash",
+		"¿" => "inverted question",
+		"¡" => "inverted exclamation",
+		"." => "period",
+		"“" => "start quote",
+		"-" => "-",
+		"+" => "+",
+		" " => "_", // Hidden space (This is space for a reason, and it's hidden. If the sprite wasn't even created for it, the pooling won't even run correctly.)
+	];
 
 	function render(deltaTime:Float) {
 		var ratio = Math.min(deltaTime * 0.015, 1);
@@ -158,7 +180,6 @@ class FreeplayScreen {
 			
 			if (k < 0 || k >= songsAvailable.length) continue;
 
-			var k = i + incrementBest;
 			var l = curSelected - incrementBest;
 			var kClamped = Math.floor(Math.min(Math.max(k, 0), songsAvailable.length - 1));
 			var song = songsAvailable[kClamped];
@@ -175,39 +196,8 @@ class FreeplayScreen {
 
 				if (j >= 17) char = '.';
 
-				// Took this from https://github.com/CCobaltDev/FNF-Horizon-Engine/blob/rewrite/source/horizon/objects/Alphabet.hx#L83 and extended it to work with the vanilla alphabet 
-				switch (char)
-				{
-					case '?':
-						char = 'question';
-					case '&':
-						char = 'ampersand';
-					case '<':
-						char = 'less';
-					case '"':
-						char = 'quote';
-					case "'":
-						char = 'apostrophe';
-					case '•':
-						char = 'bullet';
-					case ',':
-						char = 'comma';
-					case '!':
-						char = 'exclamation';
-					case '/':
-						char = 'forward slash';
-					case '\\':
-						char = 'back slash';
-					case '¿':
-						char = 'inverted question';
-					case '¡':
-						char = 'inverted exclamation';
-					case '.':
-						char = 'period';
-					case "“":
-						char = 'start quote';
-					case ' ':
-						char = '_'; // NOTE: This is space for a reason, and it's hidden. If the sprite wasn't even created for it, the pooling won't even run correctly.
+				if (charCorrectionMap.exists(char)) {
+					char = charCorrectionMap[char];
 				}
 
 				var spr = grp[j];
