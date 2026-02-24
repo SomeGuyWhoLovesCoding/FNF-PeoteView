@@ -2043,7 +2043,6 @@ int detectLatency() {
 	if (g_audioSystem.exists) {
 		if(!wearingPlugNPlay()) osMs += 50;
 		if(wearingHeadphones()) osMs += 50;
-        ma_device device = g_audioSystem.device;
 	}
 	return osMs;
 }
