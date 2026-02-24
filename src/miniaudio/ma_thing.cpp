@@ -44,6 +44,11 @@ extern "C" {
 #include <queue>
 #include <unordered_map>
 
+#ifdef __SSE__
+#include <xmmintrin.h>
+#include <emmintrin.h>
+#endif
+
 #ifdef HX_WINDOWS
 #include <mmdeviceapi.h>
 #include <endpointvolume.h>
@@ -1088,7 +1093,73 @@ public:
             }
         }
     }
-    
+
+    #ifdef __SSE__
+    static inline void mix_simd(float* dst, const float* src, int samples, float volume) {
+        int i = 0;
+        
+        if (volume == 1.0f) {
+            // Fast path: just add
+            for (; i < samples - 7; i += 8) {
+                _mm_storeu_ps(dst + i, 
+                    _mm_add_ps(_mm_loadu_ps(dst + i), 
+                            _mm_loadu_ps(src + i)));
+                _mm_storeu_ps(dst + i + 4, 
+                    _mm_add_ps(_mm_loadu_ps(dst + i + 4), 
+                            _mm_loadu_ps(src + i + 4)));
+            }
+            // Handle remaining with SSE if possible
+            if (i < samples - 3) {
+                _mm_storeu_ps(dst + i, 
+                    _mm_add_ps(_mm_loadu_ps(dst + i), 
+                            _mm_loadu_ps(src + i)));
+                i += 4;
+            }
+        } else {
+            __m128 vvol = _mm_set1_ps(volume);
+            for (; i < samples - 7; i += 8) {
+                _mm_storeu_ps(dst + i, 
+                    _mm_add_ps(_mm_loadu_ps(dst + i), 
+                            _mm_mul_ps(_mm_loadu_ps(src + i), vvol)));
+                _mm_storeu_ps(dst + i + 4, 
+                    _mm_add_ps(_mm_loadu_ps(dst + i + 4), 
+                            _mm_mul_ps(_mm_loadu_ps(src + i + 4), vvol)));
+            }
+            for (; i < samples - 3; i += 4) {
+                _mm_storeu_ps(dst + i, 
+                    _mm_add_ps(_mm_loadu_ps(dst + i), 
+                            _mm_mul_ps(_mm_loadu_ps(src + i), vvol)));
+            }
+        }
+        
+        // Handle remaining samples (0-3) with scalar
+        for (; i < samples; i++) {
+            dst[i] += src[i] * volume;
+        }
+    }
+
+    // Specialized for stereo (common case)
+    static inline void mix_simd_stereo(float* dst, const float* src, int frames, float volume) {
+        int samples = frames * 2;
+        mix_simd(dst, src, samples, volume);
+    }
+
+    #else
+    // Fallback for non-SSE builds
+    static inline void mix_scalar(float* dst, const float* src, int samples, float volume) {
+        if (volume == 1.0f) {
+            for (int i = 0; i < samples; i++) {
+                dst[i] += src[i];
+            }
+        } else {
+            for (int i = 0; i < samples; i++) {
+                dst[i] += src[i] * volume;
+            }
+        }
+    }
+    #endif
+
+    // In AudioSystem class, add this optimized version of readFromBuffer
     ma_uint32 readFromBuffer(size_t index, float* output, ma_uint32 frameCount) {
         DecoderStream& s = streams[index];
         
@@ -1101,6 +1172,14 @@ public:
         }
         
         ma_uint32 framesRead = 0;
+        float vol = decoderVolumes[index] * (float)masterVolume;
+        
+        // Prefetch next buffer if we're getting close to the end
+        if (s.localReadPos > (TOTAL_BUFFER_FRAMES * 3 / 4)) {
+            #ifdef __SSE__
+                _mm_prefetch((const char*)s.nextBuffer, _MM_HINT_T0);
+            #endif
+        }
         
         while (framesRead < frameCount && s.active) {
             ma_uint64 available = 0;
@@ -1112,6 +1191,8 @@ public:
                 if (s.filePosition < s.decoderLength) {
                     if (s.asyncState.nextBufferReady.load(std::memory_order_acquire)) {
                         s.trySwapBuffers();
+                        // Prefetch the new active buffer
+                        _mm_prefetch((const char*)s.activeBuffer, _MM_HINT_T0);
                         continue;
                     } else {
                         s.asyncState.needsLoad.store(true, std::memory_order_release);
@@ -1126,17 +1207,23 @@ public:
             ma_uint32 toRead = std::min<ma_uint32>((ma_uint32)available, frameCount - framesRead);
             
             float* src = s.activeBuffer + (s.localReadPos * CHANNEL_COUNT);
-            float vol = decoderVolumes[index] * (float)masterVolume;
+            float* dst = output + (framesRead * CHANNEL_COUNT);
+            int samples = toRead * CHANNEL_COUNT;
             
-            if (vol == 1.0f) {
-                for (ma_uint32 i = 0; i < toRead * CHANNEL_COUNT; i++) {
-                    output[framesRead * CHANNEL_COUNT + i] += src[i];
-                }
+            // Use SIMD mixing
+    #ifdef __SSE__
+            if (CHANNEL_COUNT == 2 && ((uintptr_t)src & 15) == 0 && ((uintptr_t)dst & 15) == 0) {
+                // Aligned stereo fast path
+                mix_simd_stereo(dst, src, toRead, vol);
             } else {
-                for (ma_uint32 i = 0; i < toRead * CHANNEL_COUNT; i++) {
-                    output[framesRead * CHANNEL_COUNT + i] += src[i] * vol;
-                }
+                // General case
+                mix_simd(dst, src, samples, vol);
             }
+    #else
+            if (vol != 0.0f) {
+                mix_scalar(dst, src, samples, vol);
+            }
+    #endif
             
             s.localReadPos += toRead;
             s.filePosition += toRead;
