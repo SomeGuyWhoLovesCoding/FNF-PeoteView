@@ -13,7 +13,7 @@ import lime.ui.MouseWheelMode;
 	@since Development
 **/
 @:publicFields
-class MainMenu implements State {
+class MainMenu {
 	static var optionAnims:Array<String> = ['story mode', 'freeplay', /*'awards', 'credits',*/ 'options', 'backspace to exit'];
 
 	var display:CustomDisplay;

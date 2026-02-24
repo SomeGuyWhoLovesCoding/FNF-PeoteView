@@ -11,7 +11,7 @@ import lime.app.Event;
 	@since Development
 **/
 @:publicFields
-class PlayField implements State {
+class PlayField {
 	var roof(default, null):CustomDisplay;
 	var display(default, null):CustomDisplay;
 	var view(default, null):CustomDisplay;
