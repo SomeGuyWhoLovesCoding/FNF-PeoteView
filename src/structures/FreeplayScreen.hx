@@ -33,6 +33,7 @@ class FreeplayScreen {
 
 	function new(parent:FreeplayMenu, chapterName:String) {
 		this.parent = parent;
+		chapter = chapterName;
 	}
 
 	function reload(chapterName:String) {
@@ -60,7 +61,9 @@ class FreeplayScreen {
 
 		if (!disposed) unload();
 
-		var chapterData:ChapterData = haxe.Json.parse(sys.io.File.getContent("assets/data/chapters/chapter1/data.json"));
+		chapter = chapterName;
+
+		var chapterData:ChapterData = haxe.Json.parse(sys.io.File.getContent(Paths.asset('assets/data/chapters/$chapter/data.json')));
 		var songs:Array<ChapterSong> = chapterData.songs;
 
 		for (i in 0...songs.length) {
@@ -91,8 +94,6 @@ class FreeplayScreen {
 			}
 		];
 
-		chapter = chapterName;
-
 		disposed = false;
 	}
 
@@ -109,8 +110,10 @@ class FreeplayScreen {
 					elem = null;
 				}
 			}
+			//songTextCharGroup = null; big mistake. do not nullify these. They are persistent across the whole front menu.
 		}
 		while (songIconGroup.length != 0) songIconGroup.pop();
+		//songIconGroup = null;
 		disposed = true;
 	}
 

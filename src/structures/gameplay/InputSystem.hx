@@ -12,6 +12,27 @@ import lime.ui.MouseButton;
 **/
 @:publicFields
 class InputSystem {
+	// i just realized that this change absolutely feels good.
+	private static var MANIA_CONFIGS(default, null):Array<Null<{receptorIds:Array<Int>, xOffset:Int, scale:Float}>> = [
+		null,                                                                                                              // 0 - unused
+		{ receptorIds: [0],                                                   xOffset: 0,   scale: 1.05   }, // 1
+		{ receptorIds: [0, 3],                                                xOffset: 111, scale: 1.0    }, // 2
+		{ receptorIds: [0, 2, 3],                                             xOffset: 104, scale: 0.95   }, // 3
+		{ receptorIds: [0, 1, 2, 3],                                          xOffset: 112, scale: 1.0    }, // 4
+		{ receptorIds: [1, 2, 3, 3, 4],                                       xOffset: 97,  scale: 0.9    }, // 5
+		{ receptorIds: [0, 1, 3, 0, 2, 3],                                    xOffset: 83,  scale: 0.83   }, // 6
+		{ receptorIds: [0, 1, 3, 2, 0, 2, 3],                                xOffset: 75,  scale: 0.77   }, // 7
+		{ receptorIds: [0, 1, 2, 3, 0, 1, 2, 3],                             xOffset: 70,  scale: 0.68   }, // 8
+		{ receptorIds: [0, 1, 2, 3, 2, 0, 1, 2, 3],                          xOffset: 56,  scale: 0.64   }, // 9
+		{ receptorIds: [0, 1, 2, 3, 1, 2, 0, 1, 2, 3],                       xOffset: 53,  scale: 0.59   }, // 10
+		{ receptorIds: [0, 1, 2, 3, 0, 1, 3, 0, 1, 2, 3],                    xOffset: 50,  scale: 0.57   }, // 11
+		{ receptorIds: [0, 1, 2, 3, 1, 0, 3, 2, 0, 1, 2, 3],                 xOffset: 47,  scale: 0.4777 }, // 12
+		{ receptorIds: [0, 1, 2, 3, 1, 0, 2, 3, 2, 0, 1, 2, 3],              xOffset: 42,  scale: 0.432  }, // 13
+		{ receptorIds: [0, 1, 2, 3, 0, 1, 3, 0, 2, 3, 0, 1, 2, 3],          xOffset: 41,  scale: 0.42   }, // 14
+		{ receptorIds: [0, 1, 2, 3, 0, 1, 3, 2, 0, 2, 3, 0, 1, 2, 3],       xOffset: 39,  scale: 0.405  }, // 15
+		{ receptorIds: [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3],    xOffset: 37,  scale: 0.375  }, // 16
+	];
+
 	var keyMap:Array<Array<Int>>; // indexed by KeyCode, stores [index, lane]
 	var receptorIds:Array<Int>;
 	var strumline:Array<Float>;
@@ -27,80 +48,11 @@ class InputSystem {
 
 		reloadKeybinds(mania);
 
-		switch (mania) {
-			case 1:
-				receptorIds = [0];
-				strumline = [0, 1.05];
+		var config = (mania >= 1 && mania < MANIA_CONFIGS.length) ? MANIA_CONFIGS[mania] : MANIA_CONFIGS[4];
+		if (config == null) config = MANIA_CONFIGS[4];
 
-			case 2:
-				receptorIds = [0, 3];
-				strumline = [111, 1.0];
-
-			case 3:
-				receptorIds = [0, 2, 3];
-				strumline = [104, 0.95];
-
-			case 5:
-				receptorIds = [1, 2, 3, 3, 4];
-				strumline = [97, 0.9];
-
-			case 6:
-				receptorIds = [0, 1, 3, 0, 2, 3];
-				strumline = [83, 0.83];
-
-			case 7:
-				receptorIds = [0, 1, 3, 2, 0, 2, 3];
-				strumline = [75, 0.77];
-
-			case 8:
-				receptorIds = [0, 1, 2, 3, 0, 1, 2, 3];
-				strumline = [70, 0.68];
-
-			case 9:
-				receptorIds = [0, 1, 2, 3, 2, 0, 1, 2, 3];
-				strumline = [56, 0.64];
-
-			case 10:
-				receptorIds = [0, 1, 2, 3, 1, 2, 0, 1, 2, 3];
-
-				strumline = [53, 0.59];
-
-			case 11:
-				receptorIds = [0, 1, 2, 3, 0, 1, 3, 0, 1, 2, 3];
-
-				strumline = [50, 0.57];
-
-			case 12:
-				receptorIds = [0, 1, 2, 3, 1, 0, 3, 2, 0, 1, 2, 3];
-
-				strumline = [47, 0.4777];
-
-			case 13:
-				receptorIds = [0, 1, 2, 3, 1, 0, 2, 3, 2, 0, 1, 2, 3];
-
-				strumline = [42, 0.432];
-
-			case 14:
-				receptorIds = [0, 1, 2, 3, 0, 1, 3, 0, 2, 3, 0, 1, 2, 3];
-
-				strumline = [41, 0.42];
-
-			case 15:
-				receptorIds = [0, 1, 2, 3, 0, 1, 3, 2, 0, 2, 3, 0, 1, 2, 3];
-
-				strumline = [39, 0.405];
-
-			case 16:
-				receptorIds = [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3];
-
-				strumline = [37, 0.375];
-
-			default:
-				receptorIds = [0, 1, 2, 3];
-
-				strumline = [112, 1.0];
-
-		}
+		receptorIds = config.receptorIds;
+		strumline = [config.xOffset, config.scale];
 
 		strumlinePlayable = [false, true];
 
@@ -148,8 +100,6 @@ class InputSystem {
 		#if FV_LIME_FORK
 		, timestamp:Float
 		#end) {
-		/*var timeStamp:Float = timestamp;
-		Sys.println('Press: $timeStamp, ${timeStamp % (/*100000000/1000 / lime.app.Application.current.window.frameRate)}');*/
 		var field = parent.field;
 		var isInGameOver = field.isInGameOver;
 		var controls = SaveData.state.controls;
@@ -172,7 +122,6 @@ class InputSystem {
 		}
 
 		if (parent.ready && isInGameOver) {
-			// Yoooooo
 			field.endGameOver(code == ui.back);
 			return;
 		}
