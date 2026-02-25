@@ -225,6 +225,7 @@ class AnimateAtlas {
             for (elem in frame.elements) {
                 collectLeaves(elem, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, leaves, [symbolName]);
             }
+            leaves.reverse();
             result.push(leaves);
         }
         return result;

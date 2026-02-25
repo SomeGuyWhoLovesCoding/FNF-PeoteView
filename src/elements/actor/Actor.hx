@@ -480,51 +480,74 @@ class Actor extends ActorElement
 		var sprite = leaf.sprite;
 		var s      = this.scale;
 
-		// Decompose accumulated matrix into rotation + scale
-		// Column 0: (a, b)  Column 1: (c, d)
-		var scaleX   = Math.sqrt(leaf.a * leaf.a + leaf.b * leaf.b);
-		var scaleY   = Math.sqrt(leaf.c * leaf.c + leaf.d * leaf.d);
-		var angleDeg = Math.atan2(leaf.b, leaf.a) * (180.0 / Math.PI);
+		// The matrix components from the resolved leaf
+		var a = leaf.a;
+		var b = leaf.b;
+		var c = leaf.c;
+		var d = leaf.d;
+		var tx = leaf.tx;
+		var ty = leaf.ty;
 
-		// Visual size after atlas-rotation swap + correct scale axis assignment.
-		// For rotated sprites, the matrix col0 (scaleX) runs along atlas-width = visual-height,
-		// and col1 (scaleY) runs along atlas-height = visual-width. So we must scale the
-		// atlas dimensions first, THEN swap — not swap first and then scale.
-		var aws = sprite.width  * scaleX;  // scaled atlas width
-		var ahs = sprite.height * scaleY;  // scaled atlas height
+		// Get atlas sprite dimensions
+		var aw:Float = sprite.width;
+		var ah:Float = sprite.height;
 
-		// After -90° correction: visual width = atlas height, visual height = atlas width
-		var vws:Float = sprite.rotated ? ahs : aws;
-		var vhs:Float = sprite.rotated ? aws : ahs;
+		// Define the four corners of the sprite in its local space (0,0 at top-left)
+		var corners = [
+			{x: 0.0, y: 0.0},          // top-left
+			{x: aw, y: 0.0},           // top-right
+			{x: aw, y: ah},            // bottom-right
+			{x: 0.0, y: ah}            // bottom-left
+		];
 
-		// Full render angle: symbol rotation + atlas-packing correction
-		var renderDeg = sprite.rotated ? angleDeg - 90.0 : angleDeg;
-		var A    = renderDeg * (Math.PI / 180.0);
-		var cosA = Math.cos(A);
-		var sinA = Math.sin(A);
+		// Transform each corner by the matrix
+		var minX = Math.POSITIVE_INFINITY;
+		var minY = Math.POSITIVE_INFINITY;
+		var maxX = Math.NEGATIVE_INFINITY;
+		var maxY = Math.NEGATIVE_INFINITY;
 
-		// Pivot compensation: Animate rotates around the sprite top-left (0,0).
-		// ActorElement rotates around its center. Compute where the center of the
-		// SCALED sprite ends up after rotation around the top-left, so we can feed
-		// that world position to adjust_x/y.
-		//
-		//   cx = (vws/2)*cos(A) - (vhs/2)*sin(A)
-		//   cy = (vws/2)*sin(A) + (vhs/2)*cos(A)
-		//
-		// adjust = tx + cx - vws/2   (the vws/2 cancels with px = el.w/2 in the formula)
-		var cx = (vws * 0.5) * cosA - (vhs * 0.5) * sinA;
-		var cy = (vws * 0.5) * sinA + (vhs * 0.5) * cosA;
+		for (corner in corners) {
+			var transformedX = a * corner.x + c * corner.y + tx;
+			var transformedY = b * corner.x + d * corner.y + ty;
 
-		el.adjust_x = this.adjust_x + (leaf.tx + cx - vws * 0.5);
-		el.adjust_y = this.adjust_y + (leaf.ty + cy - vhs * 0.5);
+			if (transformedX < minX) minX = transformedX;
+			if (transformedX > maxX) maxX = transformedX;
+			if (transformedY < minY) minY = transformedY;
+			if (transformedY > maxY) maxY = transformedY;
+		}
 
-		// Quad size: scaled dimensions (scale baked in, el.scale = actor scale only)
+		// Visual dimensions after transformation
+		var vws = maxX - minX;
+		var vhs = maxY - minY;
+
+		// Center of the transformed sprite
+		var centerX = (minX + maxX) / 2;
+		var centerY = (minY + maxY) / 2;
+
+		// Account for atlas rotation if needed
+		var rotated = sprite.rotated;
+		var renderAngle = 0.0;
+
+		if (rotated) {
+			// If the sprite is rotated in the atlas, we need to adjust
+			// The matrix already includes any rotation from the symbol,
+			// but we need to tell the shader to swap texcoords
+			renderAngle = 0.0; // Let the shader handle the -90° rotation via the rotated flag
+		} else {
+			// Extract rotation from matrix for non-rotated sprites
+			renderAngle = Math.atan2(b, a) * (180.0 / Math.PI);
+		}
+
+		// Set element properties
 		el.w = vws;
 		el.h = vhs;
-		el.off_x = 0;
-		el.off_y = 0;
+		
+		// The adjust_x/y should position the element so that its center
+		// is at the transformed center of the sprite
+		el.adjust_x = this.adjust_x + centerX - vws * 0.5;
+		el.adjust_y = this.adjust_y + centerY - vhs * 0.5;
 
-		// Clip rect: always raw atlas dimensions
+		// Clip rect - always raw atlas dimensions
 		el.clipX      = sprite.x;
 		el.clipY      = sprite.y;
 		el.clipWidth  = sprite.width;
@@ -532,12 +555,11 @@ class Actor extends ActorElement
 		el.flipX      = false;
 		el.flipY      = false;
 
-		// Rotation: rotated=true → shader applies -90° atlas correction.
-		// _angle carries the symbol's own rotation. Formula combines both.
-		el.rotated = sprite.rotated;
-		el._angle  = angleDeg;
+		// Rotation handling
+		el.rotated = rotated;
+		el._angle = renderAngle;
 
-		// Actor-level scale only (leaf scale is baked into w/h)
+		// Actor-level scale
 		el.scale = s;
 
 		el.x = this.x;
