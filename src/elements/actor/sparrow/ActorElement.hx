@@ -31,6 +31,10 @@ class ActorElement implements Element {
 	@varying @custom var _mirror:Float = 0.0;
 	@varying @custom var _rotated:Float = 0.0;
 
+	// Per-leaf symbol rotation angle (degrees). Combined with the atlas-rotation
+	// correction in the @rotation formula below.
+	@varying @custom var _angle:Float = 0.0;
+
 	var flipX(default, set):Bool;
 
 	inline function set_flipX(value:Bool):Bool {
@@ -67,7 +71,9 @@ class ActorElement implements Element {
 	@pivotX @formula("(w < 0.0 ? -w : w) * 0.5") var px:Float;
 	@pivotY @formula("(h < 0.0 ? -h : h) * 0.5") var py:Float;
 
-	@rotation @formula("_rotated == 1.0 ? -90.0 : 0.0") var r:Float;
+	// Atlas-packed sprites use _rotated=1 to apply a -90° correction.
+	// Per-leaf symbol rotation is stored in _angle and added on top.
+	@rotation @formula("(_rotated == 1.0 ? -90.0 : 0.0) + _angle") var r:Float;
 
 	@varying @custom @formula("off_x * scale") var off_x:Float;
 	@varying @custom @formula("off_y * scale") var off_y:Float;

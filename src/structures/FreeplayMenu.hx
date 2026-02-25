@@ -4,7 +4,6 @@ import input2action.ActionMap;
 import lime.ui.KeyCode;
 import lime.ui.MouseButton;
 import lime.ui.MouseWheelMode;
-import elements.actor.sparrow.Actor;
 
 /**
 	The freeplay submenu.

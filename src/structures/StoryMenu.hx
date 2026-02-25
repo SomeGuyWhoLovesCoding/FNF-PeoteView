@@ -2,7 +2,6 @@ package structures;
 
 import input2action.ActionMap;
 import lime.ui.KeyCode;
-import elements.actor.sparrow.Actor;
 
 @:publicFields
 class StoryMenu {

@@ -4,9 +4,10 @@ package elements.actor;
 	Character path type.
 **/
 enum abstract CharacterPathType(Int) {
-	var IMAGE;
+	var SPRITESHEET;
 	var XML;
-	var JSON;
+	var ANIMATION;
+	var SPRITEMAP;
 	var DATA;
 	var NONE;
 }

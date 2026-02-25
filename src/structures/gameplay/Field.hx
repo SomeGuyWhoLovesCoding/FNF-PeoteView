@@ -74,7 +74,7 @@ class Field {
 		opponent.finishAnim = "idle";
 		opponent.addToBuffer();
 
-		player = new Actor(parent.view, "player", "bf", 625, 250, 24, true, true);
+		player = new Actor(parent.view, "player", "bfSgwlfnf", 625, 250, 24, true, true);
 		player.preComputeSingPosesOfAnimations(singPoses);
 		player.preComputeMissPosesOfAnimations(missPoses);
 		player.playAnimation("idle");
