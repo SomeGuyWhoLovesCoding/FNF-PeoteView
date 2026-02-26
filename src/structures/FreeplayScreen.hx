@@ -175,7 +175,7 @@ class FreeplayScreen {
 		var curSelected = parent.nav.value();
 		alphaLerp = Tools.lerp(alphaLerp, parent.opened ? 1.0 : 0.0, ratio);
 		if (!parent.isDragging) {
-        	curSelectedTarget = curSelected;
+			curSelectedTarget = curSelected;
 		}
 		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelectedTarget, ratio);
 		xLerp = 20 - (curSelectedLerp * 20);
@@ -214,7 +214,7 @@ class FreeplayScreen {
 	}
 
 	inline function calcItemAlpha(k:Int):Float { // this was also from claude.ai
-		var dist = Math.abs(k - curSelectedLerp);
+		var dist = Math.abs(k - (curSelectedLerp - 0.1));
 		return 0.5 + (0.5 * Math.max(0.0, 1.0 - dist));
 	}
 
