@@ -235,10 +235,27 @@ class MainMenu {
 		}
 	}
 
-	function doIt_mouse(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
-		//Sys.println("Fuck you game 2");
+	function mouseDown(x:Float, y:Float, button:MouseButton) {
 		if (button != MouseButton.LEFT) return;
-		doIt();
+		for (i in 0...optionBuf.length) {
+			var option = optionBuf.getElement(i);
+			if (x >= option.x && x <= option.x + option.w
+			&& y >= option.y && y <= option.y + option.h) {
+				nav.setTo(i);
+				return;
+			}
+		}
+	}
+
+	function mouseUp(x:Float, y:Float, button:MouseButton) {
+		if (button != MouseButton.LEFT) return;
+		for (i in 0...optionBuf.length) {
+			var option = optionBuf.getElement(i);
+			if (x >= option.x && x <= option.x + option.w
+			&& y >= option.y && y <= option.y + option.h
+			&& i == nav.value())
+				doIt();
+		}
 	}
 
 	function addEvents() {
@@ -246,14 +263,16 @@ class MainMenu {
 
 		Main.current.controls.bindTo(actions);
 		window.onMouseWheel.add(updateMenuOptions_mouse);
-		Main.current.mouseDown = doIt_mouse;
+		window.onMouseUp.add(mouseUp);
+		window.onMouseDown.add(mouseDown);
 	}
 
 	function removeEvents() {
 		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
 		window.onMouseWheel.remove(updateMenuOptions_mouse);
-		Main.current.mouseDown = null;
+		window.onMouseUp.remove(mouseUp);
+		window.onMouseDown.remove(mouseDown);
 	}
 
 	function dispose() {
