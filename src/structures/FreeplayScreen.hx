@@ -143,114 +143,156 @@ class FreeplayScreen {
 		"¿" => "inverted question",
 		"¡" => "inverted exclamation",
 		"." => "period",
-		"“" => "start quote",
+		"\"" => "start quote",
 		"-" => "-",
 		"+" => "+",
 		" " => "_", // Hidden space (This is space for a reason, and it's hidden. If the sprite wasn't even created for it, the pooling won't even run correctly.)
 	];
 
-	function render(deltaTime:Float) {
+	// --- Render helpers ---
+
+	inline function calcRatio(deltaTime:Float):Float {
 		var ratio = Math.min(deltaTime * 0.015, 1);
-		if (ratio == 1) ratio = (1/lime.app.Application.current.window.frameRate) * 0.015; // When loading the freeplay menu the first time it gets stuck at 1.0 for a single frame
+		if (ratio == 1) ratio = (1 / lime.app.Application.current.window.frameRate) * 0.015;
+		return ratio;
+	}
 
-		var curSelected = parent.nav.value();
+	inline function handleShutdown() {
+		parent.shutDown();
+		curSelectedLerp = parent.nav.value();
+		alphaLerp = 0.0;
+		xLerp = 20 - (parent.nav.value() * 20);
+		xLerpPrev = xLerp;
+	}
 
-		if (!parent.opened && alphaLerp < 0.1/256) {
-			parent.shutDown();
-			curSelectedLerp = curSelected;
-			alphaLerp = 0.0;
-			xLerp = 20 - (curSelected * 20);
-			xLerpPrev = xLerp;
-			return;
-		}
-
+	inline function updateTimers(deltaTime:Float) {
 		durationRemaining -= deltaTime;
-		if (durationRemaining < 0) {
-			canAdvanceFrame = true;
-		}
+		if (durationRemaining < 0) canAdvanceFrame = true;
+	}
 
+	inline function updateLerps(ratio:Float) {
+		var curSelected = parent.nav.value();
 		alphaLerp = Tools.lerp(alphaLerp, parent.opened ? 1.0 : 0.0, ratio);
 		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelected, ratio);
 		xLerp = Tools.lerp(xLerp, 20 - (curSelected * 20), ratio);
+	}
 
-		var incrementBest = songsAvailable.length > 7 ? Math.floor(Math.min(Math.max(curSelectedLerp - 3, 0), songsAvailable.length - 7)) : 0;
+	inline function calcIncrementBest():Int {
+		return songsAvailable.length > 7
+			? Math.floor(Math.min(Math.max(curSelectedLerp - 3, 0), songsAvailable.length - 7))
+			: 0;
+	}
 
-		for (i in 0...7) {
-			var k = i + incrementBest;
-			
-			if (k < 0 || k >= songsAvailable.length) continue;
+	inline function resolveChar(title:String, j:Int):String {
+		if (j >= 17) return '.';
+		var char = title.charAt(j).toLowerCase();
+		if (charCorrectionMap.exists(char)) return charCorrectionMap[char];
+		return char;
+	}
 
-			var l = curSelected - incrementBest;
-			var kClamped = Math.floor(Math.min(Math.max(k, 0), songsAvailable.length - 1));
-			var song = songsAvailable[kClamped];
-			var title = song.title;
-			var grp = songTextCharGroup[i];
+	inline function advanceAnimFrame(spr:Actor) {
+		if (!canAdvanceFrame) return;
+		framesElapsed++;
+		canAdvanceFrame = false;
+		durationRemaining = spr.frameDurationMs;
+	}
 
-			var x:Float = 20;
-			var iconX:Float = 0.0;
+	inline function positionCharSprite(spr:Actor, char:String, x:Float, k:Int) {
+		spr.x = (x + 50) + (xLerp + (20 * k));
+		spr.y = (-curSelectedLerp * 156) + (156 * k) + 320;
+		switch (char) {
+			case '-':
+				spr.y += spr.h;
+			case 'comma' | '_' | 'period':
+				spr.y += 47;
+			case '+':
+				spr.y += spr.h * .25;
+		}
+	}
 
-			for (j in 0...20) {
-				var char = title.charAt(j).toLowerCase();
+	// Returns the iconX anchor (x position of the last visible character).
+	function updateSongText(i:Int, incrementBest:Int):Float {
+		var curSelected = parent.nav.value();
+		var k = i + incrementBest;
+		if (k < 0 || k >= songsAvailable.length) return 0.0;
 
-				var isInvalidCharacter = j >= title.length || char == ' ';
+		var l = curSelected - incrementBest;
+		var kClamped = Math.floor(Math.min(Math.max(k, 0), songsAvailable.length - 1));
+		var song = songsAvailable[kClamped];
+		var title = song.title;
+		var grp = songTextCharGroup[i];
 
-				if (j >= 17) char = '.';
+		var x:Float = 20;
+		var iconX:Float = 0.0;
 
-				if (charCorrectionMap.exists(char)) {
-					char = charCorrectionMap[char];
-				}
+		for (j in 0...20) {
+			var char = resolveChar(title, j);
+			var isInvalidCharacter = j >= title.length || title.charAt(j).toLowerCase() == ' ';
 
-				var spr = grp[j];
+			var spr = grp[j];
 
-				if (canAdvanceFrame) {
-					framesElapsed++;
-					canAdvanceFrame = false;
-					durationRemaining = spr.frameDurationMs;
-				}
+			advanceAnimFrame(spr);
+			spr.playAnimation('$char bold instance 1', false);
+			spr.frameIndex = Int64.toInt(framesElapsed % Std.int(Math.max(spr.endingFrameIndex - spr.startingFrameIndex, 1)));
+			spr.changeFrame();
 
-				spr.playAnimation('$char bold instance 1', false);
-				spr.frameIndex = Int64.toInt(framesElapsed % Std.int(Math.max(spr.endingFrameIndex - spr.startingFrameIndex, 1)));
-				spr.changeFrame();
+			positionCharSprite(spr, char, x, k);
 
-				spr.x = (x + 50) + (xLerp + (20 * k));
-				spr.y = (-curSelectedLerp * 156) + (156 * k) + 320;
+			var alpha = isInvalidCharacter ? 0.0 : (i == l ? 1.0 : 0.5) * alphaLerp;
+			spr.c.aF = alpha;
+			spr.c.luminanceF = alpha;
+			songTextsBuf.updateElement(spr);
+			spr.updateBuffer();
 
-				// From https://github.com/CCobaltDev/FNF-Horizon-Engine/blob/rewrite/source/horizon/objects/Alphabet.hx#L123 too
-				switch (char)
-				{
-					case '-':
-						spr.y += spr.h;
-					case 'comma' | '_' | 'period':
-						spr.y += 47;
-					case '+':
-						spr.y += spr.h * .25;
-				}
-
-				var alpha = isInvalidCharacter ? 0.0 : (i == l ? 1.0 : 0.5) * alphaLerp;
-				spr.c.aF = alpha;
-				spr.c.luminanceF = alpha;
-				songTextsBuf.updateElement(spr);
-				spr.updateBuffer();
-
-				if (j == Math.min(title.length - 1, 17)) {
-					iconX = spr.x;
-				}
-
-				if (isInvalidCharacter) {
-					x += 28; // From https://github.com/ShadowMario/FNF-PsychEngine/blob/main/source/objects/Alphabet.hx#L211
-				} else {
-					x += spr.firstFrameWidth + 2;
-				}
+			if (j == Math.min(title.length - 1, 17)) {
+				iconX = spr.x;
 			}
 
-			var icon = songIconGroup[i];
-			icon.changeID(Tools.fromIconGridXMLCharacter(song.icon)[0]);
-			var alpha = (i == l ? 1.0 : 0.5) * alphaLerp;
-			icon.c.aF = alpha;
-			icon.c.luminanceF = alpha;
-			icon.x = iconX + ((icon.w * 0.35) + 12);
-			icon.y = ((-curSelectedLerp * 156) + (156 * k) + 320) - 30; // https://github.com/ShadowMario/FNF-PsychEngine/blob/main/source/objects/HealthIcon.hx#L22
-			songIconsBuf.updateElement(icon);
+			if (isInvalidCharacter) {
+				x += 28; // From https://github.com/ShadowMario/FNF-PsychEngine/blob/main/source/objects/Alphabet.hx#L211
+			} else {
+				x += spr.firstFrameWidth + 2;
+			}
+		}
+
+		return iconX;
+	}
+
+	function updateSongIcon(i:Int, incrementBest:Int, iconX:Float) {
+		var curSelected = parent.nav.value();
+		var k = i + incrementBest;
+		if (k < 0 || k >= songsAvailable.length) return;
+
+		var l = curSelected - incrementBest;
+		var kClamped = Math.floor(Math.min(Math.max(k, 0), songsAvailable.length - 1));
+		var song = songsAvailable[kClamped];
+
+		var icon = songIconGroup[i];
+		icon.changeID(Tools.fromIconGridXMLCharacter(song.icon)[0]);
+		var alpha = (i == l ? 1.0 : 0.5) * alphaLerp;
+		icon.c.aF = alpha;
+		icon.c.luminanceF = alpha;
+		icon.x = iconX + ((icon.w * 0.35) + 12);
+		icon.y = ((-curSelectedLerp * 156) + (156 * k) + 320) - 30; // https://github.com/ShadowMario/FNF-PsychEngine/blob/main/source/objects/HealthIcon.hx#L22
+		songIconsBuf.updateElement(icon);
+	}
+
+	function render(deltaTime:Float) {
+		var ratio = calcRatio(deltaTime);
+
+		if (!parent.opened && alphaLerp < 0.1 / 256) {
+			handleShutdown();
+			return;
+		}
+
+		updateTimers(deltaTime);
+		updateLerps(ratio);
+
+		var incrementBest = calcIncrementBest();
+
+		for (i in 0...7) {
+			var iconX = updateSongText(i, incrementBest);
+			updateSongIcon(i, incrementBest, iconX);
 		}
 
 		xLerpPrev = xLerp;
