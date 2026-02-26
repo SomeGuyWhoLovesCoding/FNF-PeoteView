@@ -188,7 +188,7 @@ cleanup:
 // Buffer constants - slightly increased for stability
 #define PADDING_MS 150  // Increased from 100
 #define BUFFER_MS 750   // Increased from 500
-#define HALF_BUFFER_MS 375  // Increased from 250
+#define HALF_BUFFER_MS 400  // Increased from 250
 
 #define PADDING_FRAMES ((SAMPLE_RATE * PADDING_MS) / 1000)
 #define BUFFER_FRAMES ((SAMPLE_RATE * BUFFER_MS) / 1000)
@@ -197,6 +197,53 @@ cleanup:
 
 // Async loader forward declaration
 class AsyncLoader;
+
+// ---------------------------------------------------------------------------
+// Mix helpers — free functions so both AudioSystem and SoundEffectInstance
+// can use them (SoundEffectInstance is defined before AudioSystem).
+// ---------------------------------------------------------------------------
+#ifdef __SSE__
+static inline void mix_simd(float* dst, const float* src, int samples, float volume) {
+    int i = 0;
+    if (volume == 1.0f) {
+        for (; i < samples - 7; i += 8) {
+            _mm_storeu_ps(dst + i,
+                _mm_add_ps(_mm_loadu_ps(dst + i), _mm_loadu_ps(src + i)));
+            _mm_storeu_ps(dst + i + 4,
+                _mm_add_ps(_mm_loadu_ps(dst + i + 4), _mm_loadu_ps(src + i + 4)));
+        }
+        if (i < samples - 3) {
+            _mm_storeu_ps(dst + i,
+                _mm_add_ps(_mm_loadu_ps(dst + i), _mm_loadu_ps(src + i)));
+            i += 4;
+        }
+    } else {
+        __m128 vvol = _mm_set1_ps(volume);
+        for (; i < samples - 7; i += 8) {
+            _mm_storeu_ps(dst + i,
+                _mm_add_ps(_mm_loadu_ps(dst + i), _mm_mul_ps(_mm_loadu_ps(src + i), vvol)));
+            _mm_storeu_ps(dst + i + 4,
+                _mm_add_ps(_mm_loadu_ps(dst + i + 4), _mm_mul_ps(_mm_loadu_ps(src + i + 4), vvol)));
+        }
+        for (; i < samples - 3; i += 4) {
+            _mm_storeu_ps(dst + i,
+                _mm_add_ps(_mm_loadu_ps(dst + i), _mm_mul_ps(_mm_loadu_ps(src + i), vvol)));
+        }
+    }
+    for (; i < samples; i++) dst[i] += src[i] * volume;
+}
+static inline void mix_simd_stereo(float* dst, const float* src, int frames, float volume) {
+    mix_simd(dst, src, frames * 2, volume);
+}
+#else
+static inline void mix_scalar(float* dst, const float* src, int samples, float volume) {
+    if (volume == 1.0f) {
+        for (int i = 0; i < samples; i++) dst[i] += src[i];
+    } else {
+        for (int i = 0; i < samples; i++) dst[i] += src[i] * volume;
+    }
+}
+#endif
 
 // Triple-buffered decoder stream with async loading
 struct DecoderStream {
@@ -245,6 +292,7 @@ struct DecoderStream {
     bool active = false;
     ma_decoder decoder;
     ma_uint64 decoderLength = 0;
+    std::mutex decoderMutex; // Per-stream; was static (serialized all streams onto one lock)
     
     DecoderStream() {
         memset(&decoder, 0, sizeof(ma_decoder));
@@ -418,8 +466,7 @@ struct DecoderStream {
         memset(buffer, 0, maxDecodeFrames * CHANNEL_COUNT * sizeof(float));
         
         if (maxDecodeFrames > 0) {
-            // Use a mutex for decoder access since miniaudio decoders aren't thread-safe
-            static std::mutex decoderMutex;
+            // Per-stream mutex — previously `static`, which serialized all streams onto one lock
             std::lock_guard<std::mutex> lock(decoderMutex);
             
             ma_decoder_seek_to_pcm_frame(&decoder, decodeStart);
@@ -1094,68 +1141,17 @@ public:
         }
     }
 
+    // Mix helpers — now free functions above; kept as thin wrappers for call-site compatibility
     #ifdef __SSE__
     static inline void mix_simd(float* dst, const float* src, int samples, float volume) {
-        int i = 0;
-        
-        if (volume == 1.0f) {
-            // Fast path: just add
-            for (; i < samples - 7; i += 8) {
-                _mm_storeu_ps(dst + i, 
-                    _mm_add_ps(_mm_loadu_ps(dst + i), 
-                            _mm_loadu_ps(src + i)));
-                _mm_storeu_ps(dst + i + 4, 
-                    _mm_add_ps(_mm_loadu_ps(dst + i + 4), 
-                            _mm_loadu_ps(src + i + 4)));
-            }
-            // Handle remaining with SSE if possible
-            if (i < samples - 3) {
-                _mm_storeu_ps(dst + i, 
-                    _mm_add_ps(_mm_loadu_ps(dst + i), 
-                            _mm_loadu_ps(src + i)));
-                i += 4;
-            }
-        } else {
-            __m128 vvol = _mm_set1_ps(volume);
-            for (; i < samples - 7; i += 8) {
-                _mm_storeu_ps(dst + i, 
-                    _mm_add_ps(_mm_loadu_ps(dst + i), 
-                            _mm_mul_ps(_mm_loadu_ps(src + i), vvol)));
-                _mm_storeu_ps(dst + i + 4, 
-                    _mm_add_ps(_mm_loadu_ps(dst + i + 4), 
-                            _mm_mul_ps(_mm_loadu_ps(src + i + 4), vvol)));
-            }
-            for (; i < samples - 3; i += 4) {
-                _mm_storeu_ps(dst + i, 
-                    _mm_add_ps(_mm_loadu_ps(dst + i), 
-                            _mm_mul_ps(_mm_loadu_ps(src + i), vvol)));
-            }
-        }
-        
-        // Handle remaining samples (0-3) with scalar
-        for (; i < samples; i++) {
-            dst[i] += src[i] * volume;
-        }
+        ::mix_simd(dst, src, samples, volume);
     }
-
-    // Specialized for stereo (common case)
     static inline void mix_simd_stereo(float* dst, const float* src, int frames, float volume) {
-        int samples = frames * 2;
-        mix_simd(dst, src, samples, volume);
+        ::mix_simd_stereo(dst, src, frames, volume);
     }
-
     #else
-    // Fallback for non-SSE builds
     static inline void mix_scalar(float* dst, const float* src, int samples, float volume) {
-        if (volume == 1.0f) {
-            for (int i = 0; i < samples; i++) {
-                dst[i] += src[i];
-            }
-        } else {
-            for (int i = 0; i < samples; i++) {
-                dst[i] += src[i] * volume;
-            }
-        }
+        ::mix_scalar(dst, src, samples, volume);
     }
     #endif
 
@@ -1529,13 +1525,14 @@ struct SoundEffectInstance {
 		ma_uint32 toRead = (ma_uint32)remaining;
 		if (toRead > frameCount) toRead = frameCount;
 
-		// Mix into output with volume
 		float* src = pcmData + (playbackPosition * CHANNEL_COUNT);
 		float vol = volume * masterVolume;
 
-		for (ma_uint32 i = 0; i < toRead * CHANNEL_COUNT; i++) {
-			output[i] += src[i] * vol;
-		}
+#ifdef __SSE__
+		mix_simd(output, src, (int)(toRead * CHANNEL_COUNT), vol);
+#else
+		mix_scalar(output, src, (int)(toRead * CHANNEL_COUNT), vol);
+#endif
 
 		playbackPosition += toRead;
 
