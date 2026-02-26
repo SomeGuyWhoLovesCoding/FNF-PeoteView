@@ -154,12 +154,7 @@ class Actor extends ActorElement
 
             if (programs[tag] == null) {
                 programs[tag] = new Program(buffer);
-
                 program = programs[tag];
-                if (atlasType == ANIMATE) {
-                    VertexShaderInjector.injectSkewIntoVertexShader(program);
-                }
-
                 program.blendEnabled    = true;
                 program.blendSrc        = program.blendSrcAlpha = BlendFactor.ONE;
                 program.blendDst        = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;

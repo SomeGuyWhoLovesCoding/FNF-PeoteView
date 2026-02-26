@@ -116,11 +116,13 @@ class AnimateAtlas {
         }
         if (totalFrames == 0) return;
 
-        // Build a display-frame array: frames[displayIndex] = list of elements
-        // We merge all layers into each display frame, preserving layer order (back-to-front).
+        // Build a display-frame array
         var displayFrames:Array<Array<AnimateFrameElement>> = [for (_ in 0...totalFrames) []];
 
-        for (layer in layers) {
+        // Process layers in REVERSE order to get back-to-front rendering
+        for (i in 0...layers.length) {
+            var layer = layers[layers.length - 1 - i];  // Start from bottom-most layer
+            
             if (layer.FR == null) continue;
             var frameList:Array<Dynamic> = layer.FR;
 
@@ -133,7 +135,11 @@ class AnimateAtlas {
                 // Stamp this keyframe's elements into every display frame it covers
                 for (di in startI...startI + du) {
                     if (di >= totalFrames) break;
-                    for (e in elems) displayFrames[di].push(e);
+                    
+                    // Add elements for this layer to the frame
+                    for (e in elems) {
+                        displayFrames[di].push(e);
+                    }
                 }
             }
         }
@@ -225,7 +231,6 @@ class AnimateAtlas {
             for (elem in frame.elements) {
                 collectLeaves(elem, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, leaves, [symbolName]);
             }
-            leaves.reverse();
             result.push(leaves);
         }
         return result;
