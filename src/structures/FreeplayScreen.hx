@@ -182,9 +182,8 @@ class FreeplayScreen {
 			: 0;
 	}
 
-	inline function resolveChar(title:String, j:Int):String {
-		if (j >= 17) return '.';
-		var char = title.charAt(j).toLowerCase();
+	function resolveChar(title:String, j:Int):String {
+		var char = j >= 17 ? "." : title.charAt(j).toLowerCase();
 		if (charCorrectionMap.exists(char)) return charCorrectionMap[char];
 		return char;
 	}
