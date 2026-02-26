@@ -37,7 +37,7 @@ class PlayField {
 
 	var ratingJudgementList:Array<Judgement> = [
 		[
-			0.25, // target
+			0.33, // target
 			0, // id
 			1, // accuracy
 			400 // score
@@ -49,13 +49,13 @@ class PlayField {
 			200
 		],
 		[
-			0.65,
+			0.66,
 			2,
 			0.675,
 			100
 		],
 		[
-			0.75,
+			0.80,
 			3,
 			0.5,
 			50
@@ -423,8 +423,6 @@ class PlayField {
 		//static var ratingList = [];
 
 		// determine rating list based on 0%..100%
-		/*if (handleJudgement(absTiming, ratingJudgementList[0], notesInOne, preferences))
-			return;*/
 
 		// Handle edge cases first
 		// If timing is worse than the worst threshold, return worst rating
