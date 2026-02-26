@@ -150,13 +150,31 @@ class PauseScreen {
 		}
 	}
 
-	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
+	function mouseDown(x:Float, y:Float, button:MouseButton) {
 		switch (button) {
 			case LEFT:
-				doIt();
+				for (i in 0...pauseOptions.length) {
+					var option = pauseOptions[i];
+					if (x >= option.x && x <= option.x + option.w
+					&& y >= option.y && y <= option.y + option.h) {
+						pauseNav.setTo(i);
+						return;
+					}
+				}
 			case RIGHT:
 				back(true, 0);
 			default:
+		}
+	}
+
+	function mouseUp(x:Float, y:Float, button:MouseButton) {
+		if (button != MouseButton.LEFT) return;
+		for (i in 0...pauseOptions.length) {
+			var option = pauseOptions[i];
+			if (x >= option.x && x <= option.x + option.w
+			&& y >= option.y && y <= option.y + option.h
+			&& i == pauseNav.value())
+				doIt();
 		}
 	}
 
@@ -193,16 +211,18 @@ class PauseScreen {
 	}
 
 	function addEvents() {
-		var window = lime.app.Application.current.window;
+    var window = lime.app.Application.current.window;
 		Main.current.controls.bindTo(actions);
-		Main.current.mouseDown = mousePress;
+		window.onMouseDown.add(mouseDown);
+		window.onMouseUp.add(mouseUp);
 		window.onMouseWheel.add(moveOption_mouse);
 	}
 
 	function removeEvents() {
 		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
-		Main.current.mouseDown = null;
+		window.onMouseDown.remove(mouseDown);
+		window.onMouseUp.remove(mouseUp);
 		window.onMouseWheel.remove(moveOption_mouse);
 	}
 
