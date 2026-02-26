@@ -122,6 +122,8 @@ class FreeplayScreen {
 	var xLerp:Float = 0.0;
 	var xLerpPrev:Float = 0.0;
 
+	var curSelectedTarget:Float = 0.0;
+
 	var firstFrameToAnimate:Bool = true;
 	var framesElapsed:Int64 = 0;
 	var durationRemaining:Float = 0;
@@ -172,8 +174,11 @@ class FreeplayScreen {
 	inline function updateLerps(ratio:Float) {
 		var curSelected = parent.nav.value();
 		alphaLerp = Tools.lerp(alphaLerp, parent.opened ? 1.0 : 0.0, ratio);
-		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelected, ratio);
-		xLerp = Tools.lerp(xLerp, 20 - (curSelected * 20), ratio);
+		if (!parent.isDragging) {
+        	curSelectedTarget = curSelected;
+		}
+		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelectedTarget, ratio);
+		xLerp = 20 - (curSelectedLerp * 20);
 	}
 
 	inline function calcIncrementBest():Int {
@@ -208,13 +213,17 @@ class FreeplayScreen {
 		}
 	}
 
+	inline function calcItemAlpha(k:Int):Float { // this was also from claude.ai
+		var dist = Math.abs(k - curSelectedLerp);
+		return 0.5 + (0.5 * Math.max(0.0, 1.0 - dist));
+	}
+
 	// Returns the iconX anchor (x position of the last visible character).
 	function updateSongText(i:Int, incrementBest:Int):Float {
 		var curSelected = parent.nav.value();
 		var k = i + incrementBest;
 		if (k < 0 || k >= songsAvailable.length) return 0.0;
 
-		var l = curSelected - incrementBest;
 		var kClamped = Math.floor(Math.min(Math.max(k, 0), songsAvailable.length - 1));
 		var song = songsAvailable[kClamped];
 		var title = song.title;
@@ -222,6 +231,7 @@ class FreeplayScreen {
 
 		var x:Float = 20;
 		var iconX:Float = 0.0;
+		var j:Int = 0;
 
 		for (j in 0...20) {
 			var char = resolveChar(title, j);
@@ -236,7 +246,7 @@ class FreeplayScreen {
 
 			positionCharSprite(spr, char, x, k);
 
-			var alpha = isInvalidCharacter ? 0.0 : (i == l ? 1.0 : 0.5) * alphaLerp;
+			var alpha = isInvalidCharacter ? 0.0 : calcItemAlpha(k) * alphaLerp;
 			spr.c.aF = alpha;
 			spr.c.luminanceF = alpha;
 			songTextsBuf.updateElement(spr);
@@ -261,13 +271,12 @@ class FreeplayScreen {
 		var k = i + incrementBest;
 		if (k < 0 || k >= songsAvailable.length) return;
 
-		var l = curSelected - incrementBest;
 		var kClamped = Math.floor(Math.min(Math.max(k, 0), songsAvailable.length - 1));
 		var song = songsAvailable[kClamped];
 
 		var icon = songIconGroup[i];
 		icon.changeID(Tools.fromIconGridXMLCharacter(song.icon)[0]);
-		var alpha = (i == l ? 1.0 : 0.5) * alphaLerp;
+		var alpha = calcItemAlpha(k) * alphaLerp;
 		icon.c.aF = alpha;
 		icon.c.luminanceF = alpha;
 		icon.x = iconX + ((icon.w * 0.35) + 12);

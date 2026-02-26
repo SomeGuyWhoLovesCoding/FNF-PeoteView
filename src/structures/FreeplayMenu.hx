@@ -14,6 +14,8 @@ import lime.ui.MouseWheelMode;
 **/
 @:publicFields
 class FreeplayMenu {
+	//////////////////////// MAIN ////////////////////////
+
 	static var display(default, null):CustomDisplay;
 
 	var active(default, null):Bool;
@@ -23,6 +25,19 @@ class FreeplayMenu {
 
 	var nav(default, null):Navigation = new Navigation();
 
+	//////////////////////// SCROLL (LIKE PHONE) ////////////////////////
+	var isDragging:Bool = false;
+	var dragStartY:Float = 0.0;
+	var lastDragY:Float = 0.0;
+	var dragAccum:Float = 0.0;
+
+	// fling impl
+	var dragVelocity:Float = 0.0;
+	var lastDragTime:Float = 0.0;
+
+	private static inline var DRAG_THRESHOLD:Float = 1.0; // pixels per nav tick
+
+	//////////////////////// THE REST ////////////////////////
 	var actions(default, null):ActionMap;
 
 	function new() {
@@ -41,6 +56,15 @@ class FreeplayMenu {
 	}
 
 	function render(deltaTime:Float) {
+		if (!isDragging && Math.abs(dragVelocity) > 0.01) {
+			freeplayScreen.curSelectedTarget += (dragVelocity * deltaTime) / 156.0;
+			freeplayScreen.curSelectedTarget = Math.max(0, Math.min(freeplayScreen.songsAvailable.length - 1, freeplayScreen.curSelectedTarget));
+			nav.setTo(Math.round(freeplayScreen.curSelectedTarget));
+
+			dragVelocity *= Math.pow(0.92, deltaTime * 0.04); // exponential decay
+			if (Math.abs(dragVelocity) < 0.01) dragVelocity = 0.0;
+		}
+
 		freeplayScreen.render(deltaTime);
 	}
 
@@ -54,7 +78,9 @@ class FreeplayMenu {
 			Main.current.controls.bindTo(actions);
 
 			Main.current.mouseDown = mousePress;
-			window.onMouseWheel.add(moveMouse);
+			window.onMouseUp.add(mouseRelease);
+			window.onMouseMove.add(mouseDrag);
+			window.onMouseWheel.add(mouseWheel);
 		}, 1);
 
 		if (freeplayScreen.disposed) {
@@ -72,7 +98,9 @@ class FreeplayMenu {
 		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
 		Main.current.mouseDown = null;
-		window.onMouseWheel.remove(moveMouse);
+		window.onMouseUp.remove(mouseRelease);
+		window.onMouseMove.remove(mouseDrag);
+		window.onMouseWheel.remove(mouseWheel);
 
 		opened = false;
 
@@ -114,14 +142,52 @@ class FreeplayMenu {
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
 		switch (button) {
 			case LEFT:
-				enter(true, 0);
+				isDragging = true;
+				dragStartY = y;
+				lastDragY = y;
+				dragAccum = 0.0;
+				dragVelocity = 0.0;
+				lastDragTime = haxe.Timer.stamp();
+				freeplayScreen.curSelectedTarget = freeplayScreen.curSelectedLerp;
+				//Main.current.playScrollSound();
 			case RIGHT:
 				back(true, 0);
 			default:
 		}
 	}
 
-	function moveMouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
+	function mouseRelease(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
+		if (button != LEFT) return;
+
+		if (isDragging && Math.abs(dragStartY - y) < 4.0) {
+			enter(true, 0);
+		}
+
+		isDragging = false;
+		dragAccum = 0.0;
+		// velocity carries over into render
+	}
+
+	function mouseDrag(x:Float, y:Float) {
+		if (!isDragging) return;
+
+		var delta = lastDragY - y;
+		lastDragY = y;
+
+		var now = haxe.Timer.stamp();
+		var dt = now - lastDragTime;
+		lastDragTime = now;
+
+		var _delta = (delta / 156.0);
+
+		if (dt > 0) dragVelocity = _delta / 3;
+
+		freeplayScreen.curSelectedTarget += _delta;
+		freeplayScreen.curSelectedTarget = Math.max(0, Math.min(freeplayScreen.songsAvailable.length - 1, freeplayScreen.curSelectedTarget));
+		nav.setTo(Math.round(freeplayScreen.curSelectedTarget));
+	}
+
+	function mouseWheel(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
 		nav.scroll(-Math.floor(y));
 		nav.resetIfBoth(freeplayScreen.songsAvailable.length, freeplayScreen.songsAvailable.length - 1);
 		Main.current.playScrollSound();
