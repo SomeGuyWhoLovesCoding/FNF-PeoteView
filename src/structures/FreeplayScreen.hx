@@ -143,7 +143,6 @@ class FreeplayScreen {
 		"¿" => "inverted question",
 		"¡" => "inverted exclamation",
 		"." => "period",
-		"\"" => "start quote",
 		"-" => "-",
 		"+" => "+",
 		" " => "_", // Hidden space (This is space for a reason, and it's hidden. If the sprite wasn't even created for it, the pooling won't even run correctly.)
