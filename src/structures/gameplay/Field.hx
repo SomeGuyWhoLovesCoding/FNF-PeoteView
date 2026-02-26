@@ -133,7 +133,7 @@ class Field {
 		#if !FV_LIME_FORK
 		check = parent.died;
 		if (isInGameOver) {
-			updateGameOver();
+			updateGameOver(deltaTime);
 		} else #end if (check) {
 			gameOver();
 		}
