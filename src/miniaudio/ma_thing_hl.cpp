@@ -1177,13 +1177,6 @@ public:
         ma_uint32 framesRead = 0;
         float vol = decoderVolumes[index] * (float)masterVolume;
         
-        // Prefetch next buffer if we're getting close to the end
-        if (s.localReadPos > (TOTAL_BUFFER_FRAMES * 3 / 4)) {
-            #ifdef __SSE__
-                _mm_prefetch((const char*)s.nextBuffer, _MM_HINT_T0);
-            #endif
-        }
-        
         while (framesRead < frameCount && s.active) {
             ma_uint64 available = 0;
             if (s.localReadPos < s.validFrames) {
@@ -1194,8 +1187,6 @@ public:
                 if (s.filePosition < s.decoderLength) {
                     if (s.asyncState.nextBufferReady.load(std::memory_order_acquire)) {
                         s.trySwapBuffers();
-                        // Prefetch the new active buffer
-                        _mm_prefetch((const char*)s.activeBuffer, _MM_HINT_T0);
                         continue;
                     } else {
                         s.asyncState.needsLoad.store(true, std::memory_order_release);
