@@ -158,23 +158,13 @@ class PauseScreen {
 					if (x >= option.x && x <= option.x + option.w
 					&& y >= option.y && y <= option.y + option.h) {
 						pauseNav.setTo(i);
+						haxe.Timer.delay(doIt, 20);
 						return;
 					}
 				}
 			case RIGHT:
 				back(true, 0);
 			default:
-		}
-	}
-
-	function mouseUp(x:Float, y:Float, button:MouseButton) {
-		if (button != MouseButton.LEFT) return;
-		for (i in 0...pauseOptions.length) {
-			var option = pauseOptions[i];
-			if (x >= option.x && x <= option.x + option.w
-			&& y >= option.y && y <= option.y + option.h
-			&& i == pauseNav.value())
-				doIt();
 		}
 	}
 
@@ -203,7 +193,15 @@ class PauseScreen {
 			pauseBuf.addElement(diffText);
 		} catch (e) {}
 
-		haxe.Timer.delay(addEvents, 1);
+		haxe.Timer.delay(function() {
+    		var window = lime.app.Application.current.window;
+			window.onKeyUp.add(function(keyCode:KeyCode, keyMod:KeyModifier) {
+				haxe.Timer.delay(addEvents, 1);
+			}, true);
+			window.onMouseUp.add(function(x:Float, y:Float, button:MouseButton) {
+				haxe.Timer.delay(addEvents, 1);
+			}, true);
+		}, 1);
 
 		if (!pauseProg.isIn(display)) {
 			display.addProgram(pauseProg);
@@ -211,10 +209,9 @@ class PauseScreen {
 	}
 
 	function addEvents() {
-    var window = lime.app.Application.current.window;
+    	var window = lime.app.Application.current.window;
 		Main.current.controls.bindTo(actions);
 		window.onMouseDown.add(mouseDown);
-		window.onMouseUp.add(mouseUp);
 		window.onMouseWheel.add(moveOption_mouse);
 	}
 
@@ -222,7 +219,6 @@ class PauseScreen {
 		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
 		window.onMouseDown.remove(mouseDown);
-		window.onMouseUp.remove(mouseUp);
 		window.onMouseWheel.remove(moveOption_mouse);
 	}
 
