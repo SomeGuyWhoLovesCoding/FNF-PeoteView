@@ -130,7 +130,10 @@ class PauseScreen {
 	}
 
 	function back(isDown:Bool, param:Int) {
-		Main.current.playField.resume();
+		if (Main.current.playField != null)
+			Main.current.playField.resume();
+		else
+			removeEvents();
 	}
 
 	function doIt() {
@@ -194,13 +197,7 @@ class PauseScreen {
 		} catch (e) {}
 
 		haxe.Timer.delay(function() {
-    		var window = lime.app.Application.current.window;
-			window.onKeyUp.add(function(keyCode:KeyCode, keyMod:KeyModifier) {
-				haxe.Timer.delay(addEvents, 1);
-			}, true);
-			window.onMouseUp.add(function(x:Float, y:Float, button:MouseButton) {
-				haxe.Timer.delay(addEvents, 1);
-			}, true);
+    		haxe.Timer.delay(addEvents, 1);
 		}, 1);
 
 		if (!pauseProg.isIn(display)) {
@@ -208,14 +205,20 @@ class PauseScreen {
 		}
 	}
 
+	var eventsActive(default, null):Bool = false;
+
 	function addEvents() {
-    	var window = lime.app.Application.current.window;
+		if (eventsActive) return;
+		eventsActive = true;
+		var window = lime.app.Application.current.window;
 		Main.current.controls.bindTo(actions);
 		window.onMouseDown.add(mouseDown);
 		window.onMouseWheel.add(moveOption_mouse);
 	}
 
 	function removeEvents() {
+		if (!eventsActive) return;
+		eventsActive = false;
 		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
 		window.onMouseDown.remove(mouseDown);

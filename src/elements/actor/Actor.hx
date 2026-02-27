@@ -13,6 +13,42 @@ enum AtlasType {
 	AUTO;
 }
 
+class AnimateMatrixFragShader {
+	public static function setup(program:Program, textureIdentifier:String) {
+		program.injectIntoFragmentShader('
+			vec4 getColor(int texId, float _ma, float _mb, float _mc, float _md,
+						float _rotated, float _originU, float _originV)
+			{
+				vec2 uv = vTexCoord; // [0,1] over the AABB quad
+
+				// Map AABB UV → normalized sprite UV using pre-baked matrix
+				// (_ma/_mb/_mc/_md already encode inverse * aabb-to-local scaling)
+				float su = _ma * uv.x + _mc * uv.y;
+				float sv = _mb * uv.x + _md * uv.y;
+
+				// Add the normalized sprite origin offset
+				su += _originU;
+				sv += _originV;
+
+				// If sprite is stored rotated 90° CW in the atlas, swap axes
+				if (_rotated == 1.0) {
+					float tmp = su;
+					su = 1.0 - sv;
+					sv = tmp;
+				}
+
+				if (su < 0.0 || su > 1.0 || sv < 0.0 || sv > 1.0) {
+					return vec4(0.0);
+				}
+
+				return getTextureColor(texId, vec2(su, sv));
+			}
+		');
+
+		program.setColorFormula('getColor(${textureIdentifier}_ID, _ma, _mb, _mc, _md, _rotated, _originU, _originV)');
+	}
+}
+
 /**
 	Actor element object.
 	Works with Sparrow or Animate Atlas.
@@ -165,6 +201,12 @@ class Actor extends ActorElement
 					imagePathToUse);
 				TextureSystem.createTexture(texName, texPath, false, true);
 				TextureSystem.setTexture(program, texName, texName);
+
+				// Set up the matrix-based UV distortion shader for Animate atlas.
+				// For Sparrow the matrix varyings default to identity (a=1,b=0,c=0,d=1)
+				// so the shader is a no-op and Sparrow rendering is unaffected.
+				if (atlasType == ANIMATE)
+					AnimateMatrixFragShader.setup(program, texName);
 			} else {
 				program = programs[tag];
 			}
@@ -475,107 +517,135 @@ class Actor extends ActorElement
 	 *
 	 *   adjust_x = center_world_x - vw/2   (vw/2 cancels with px in the formula)
 	 *   adjust_y = center_world_y - vh/2
+	 *
+	 * MATRIX / UV DISTORTION
+	 * ----------------------
+	 * The quad is sized to the AABB of the transformed sprite corners (w/h).
+	 * The fragment shader receives the raw a/b/c/d matrix components and applies
+	 * the inverse transform to UV coordinates, so skew and non-uniform scale are
+	 * rendered correctly within the axis-aligned quad.
+	 * clipWidth/clipHeight always hold raw atlas pixel dimensions so UV sampling
+	 * is never broken by the visual transform.
 	 */
 	function applyLeafTransform(el:ActorElement, leaf:ResolvedLeaf, leafIndex:Int) {
 		var sprite = leaf.sprite;
 		var s      = this.scale;
 
-		// The matrix components from the resolved leaf
-		var a = leaf.a;
-		var b = leaf.b;
-		var c = leaf.c;
-		var d = leaf.d;
+		var a  = leaf.a;
+		var b  = leaf.b;
+		var c  = leaf.c;
+		var d  = leaf.d;
 		var tx = leaf.tx;
 		var ty = leaf.ty;
 
-		// Get atlas sprite dimensions
+		// Raw atlas dimensions (before any atlas-rotation swap)
 		var aw:Float = sprite.width;
 		var ah:Float = sprite.height;
 
-		// Define the four corners of the sprite in its local space (0,0 at top-left)
+		if (sprite.rotated) {
+			aw = sprite.height;
+			ah = sprite.width;
+		}
+
+		// Four corners in LOCAL sprite content space
 		var corners = [
-			{x: 0.0, y: 0.0},          // top-left
-			{x: aw, y: 0.0},           // top-right
-			{x: aw, y: ah},            // bottom-right
-			{x: 0.0, y: ah}            // bottom-left
+			{x: 0.0, y: 0.0},
+			{x: aw,  y: 0.0},
+			{x: aw,  y: ah},
+			{x: 0.0, y: ah}
 		];
 
-		// Transform each corner by the matrix AND apply actor scale
-		var minX = Math.POSITIVE_INFINITY;
-		var minY = Math.POSITIVE_INFINITY;
-		var maxX = Math.NEGATIVE_INFINITY;
-		var maxY = Math.NEGATIVE_INFINITY;
+		// World-space corners (scaled)
+		var minX =  Math.POSITIVE_INFINITY;
+		var minY =  Math.POSITIVE_INFINITY;
+		var maxX =  Math.NEGATIVE_INFINITY;
+		var maxY =  Math.NEGATIVE_INFINITY;
 
 		for (corner in corners) {
-			// Apply the leaf's transform matrix first
-			var transformedX = a * corner.x + c * corner.y + tx;
-			var transformedY = b * corner.x + d * corner.y + ty;
-			
-			// THEN apply actor scale
-			transformedX *= s;
-			transformedY *= s;
-
-			if (transformedX < minX) minX = transformedX;
-			if (transformedX > maxX) maxX = transformedX;
-			if (transformedY < minY) minY = transformedY;
-			if (transformedY > maxY) maxY = transformedY;
+			var wx = (a * corner.x + c * corner.y + tx) * s;
+			var wy = (b * corner.x + d * corner.y + ty) * s;
+			if (wx < minX) minX = wx;
+			if (wx > maxX) maxX = wx;
+			if (wy < minY) minY = wy;
+			if (wy > maxY) maxY = wy;
 		}
 
-		// Visual dimensions after transformation (already scaled)
 		var vws = maxX - minX;
 		var vhs = maxY - minY;
+		var centerX = (minX + maxX) * 0.5;
+		var centerY = (minY + maxY) * 0.5;
 
-		// Center of the transformed sprite (already scaled)
-		var centerX = (minX + maxX) / 2;
-		var centerY = (minY + maxY) / 2;
-
-		// Account for atlas rotation if needed
-		var rotated = sprite.rotated;
-		var renderAngle = 0.0;
-
-		if (rotated) {
-			// If the sprite is rotated in the atlas, we need to adjust
-			// The matrix already includes any rotation from the symbol,
-			// but we need to tell the shader to swap texcoords
-			renderAngle = 0.0; // Let the shader handle the -90° rotation via the rotated flag
-		} else {
-			// Extract rotation from matrix for non-rotated sprites
-			// Note: The angle doesn't need scaling, but we should apply mirror if needed
-			var effectiveA = a;
-			var effectiveB = b;
-			
-			if (mirror) {
-				effectiveA = -a;
-				effectiveB = -b;
-			}
-			
-			renderAngle = Math.atan2(effectiveB, effectiveA) * (180.0 / Math.PI);
-		}
-
-		// Set element properties
 		el.w = vws;
 		el.h = vhs;
-		
-		// The adjust_x/y should position the element so that its center
-		// is at the transformed center of the sprite (already scaled)
+		el.r = 0; // No quad rotation — AABB approach, shader handles skew
+
 		el.adjust_x = this.adjust_x + centerX - vws * 0.5;
 		el.adjust_y = this.adjust_y + centerY - vhs * 0.5;
 
-		// Clip rect - always raw atlas dimensions (don't scale these!)
+		// Clip rect — raw atlas coords, never transformed
 		el.clipX      = sprite.x;
 		el.clipY      = sprite.y;
+		el.rotated    = sprite.rotated;
 		el.clipWidth  = sprite.width;
 		el.clipHeight = sprite.height;
 		el.flipX      = false;
 		el.flipY      = false;
 
-		// Rotation handling
-		el.rotated = rotated;
-		el._angle = renderAngle;
+		// Normalize the matrix: strip scale and translation so the shader only
+		// sees pure rotation/skew. The shader maps AABB UV → local sprite UV.
+		// 
+		// The sprite occupies [0..aw] x [0..ah] in local space.
+		// In AABB UV space (0..1), a pixel at (u,v) corresponds to world position:
+		//   world = (minX + u*vws, minY + v*vhs)  (unscaled, before actor scale)
+		// We need to invert back to local sprite UV:
+		//   local = M_inv * ((world/s) - t)
+		// Then normalize to [0..1]: (local.x / aw, local.y / ah)
+		//
+		// Pass the AABB→local transform to the shader instead of the raw matrix.
+		// Precompute the 2x2 inverse once here on the CPU.
+		var det = a * d - b * c;
+		if (Math.abs(det) < 1e-8) {
+			// Degenerate matrix — just pass identity, show sprite as-is
+			el._ma = 1.0; el._mb = 0.0; el._mc = 0.0; el._md = 1.0;
+		} else {
+			// Inverse of the 2x2 rotation/skew matrix (without scale baked in yet)
+			var invA =  d / det;
+			var invB = -b / det;
+			var invC = -c / det;
+			var invD =  a / det;
 
-		// Actor-level scale - set to 1 since we already applied it to the transform
+			// The shader's UV (u,v) is in [0,1] over the AABB quad.
+			// Map u -> world-x-unscaled = minX/s + u * vws/s
+			// Map v -> world-y-unscaled = minY/s + v * vhs/s
+			// Then apply inverse matrix and subtract tx/ty to get local coords.
+			// Then divide by aw/ah to get sprite UV.
+			// 
+			// Bake the vws/s and vhs/s scaling into the matrix passed to the shader
+			// so the shader only needs: localUV = invM * (aabbUV * aabbSize - origin)
+			// where aabbSize = (vws/s, vhs/s) and origin = (tx, ty).
+			//
+			// Pass as two vec2 uniforms OR pack into _ma/_mb/_mc/_md as a scaled matrix:
+			//   _ma = invA * (vws/s) / aw    _mc = invC * (vhs/s) / aw
+			//   _mb = invB * (vws/s) / ah    _md = invD * (vhs/s) / ah
+			// And the shader just does: localUV = mat * uv + offset
+			var vwsU = vws / s;
+			var vhsU = vhs / s;
+
+			el._ma = invA * vwsU / aw;
+			el._mb = invB * vwsU / ah;
+			el._mc = invC * vhsU / aw;
+			el._md = invD * vhsU / ah;
+
+			// In applyLeafTransform, after computing invA/B/C/D:
+			// The AABB corner (0,0) in UV space corresponds to world point (minX, minY).
+			// In local sprite space that's: inv * ((minX/s - tx), (minY/s - ty))
+			var originLocalX = invA * (minX/s - tx) + invC * (minY/s - ty);
+			var originLocalY = invB * (minX/s - tx) + invD * (minY/s - ty);
+			el._originU = originLocalX / aw;  // add these as new @varying fields
+			el._originV = originLocalY / ah;
+		}
+
 		el.scale = 1.0;
-
 		el.x = this.x;
 		el.y = this.y;
 
@@ -583,7 +653,8 @@ class Actor extends ActorElement
 	}
 
 	// -------------------------------------------------------------------------
-	// Single-sprite configure (Sparrow path, unchanged)
+	// Single-sprite configure (Sparrow path — unchanged, matrix varyings stay
+	// at their default identity values so the shader is a no-op)
 	// -------------------------------------------------------------------------
 
 	public function configure(subTexture:Dynamic) {
@@ -621,6 +692,9 @@ class Actor extends ActorElement
 			return;
 		}
 
+		// Sparrow sets w/h directly. w/h are not used on the Sparrow path.
+		// _ma/_mb/_mc/_md stay at their default identity values (1,0,0,1) so the
+		// fragment shader inverse is also identity and UVs are passed through unchanged.
 		w           = width;
 		h           = height;
 		this.flipX  = flipX;
@@ -634,16 +708,15 @@ class Actor extends ActorElement
 	// -------------------------------------------------------------------------
 
 	function dispose() {
-		// Hide all leaf elements (zero size so they don't render)
 		for (el in leafPool) {
 			el.w = 0;
 			el.h = 0;
 			if (buffer != null) buffer.updateElement(el);
 		}
-		leafPool     = [];
+		leafPool        = [];
 		activeLeafCount = 0;
 
-		if (buffer != null)  buffer.clear();
+		if (buffer  != null) buffer.clear();
 		if (program != null) display.removeProgram(program);
 	}
 }

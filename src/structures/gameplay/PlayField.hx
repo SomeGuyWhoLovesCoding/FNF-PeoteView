@@ -513,7 +513,7 @@ class PlayField {
 		songEnded = false;
 
 		// Remove countdown handler if still present (defensive)
-		if (countdownDisp.conductor != null) countdownDisp.conductor.onBeat.remove(countdownBeatHit);
+		if (countdownDisp.conductor != null) countdownDisp.conductor.onBeatUnoffsetted.remove(countdownBeatHit);
 	}
 
 	function stopSong(header:Header) {

@@ -114,7 +114,7 @@ class OptionsMenu {
 			
 			Main.current.mouseDown = mousePress;
 			window.onMouseWheel.add(moveCategory_mouse);
-		}, 200);
+		}, 1);
 
 		if (!optionsProg.isIn(display)) {
 			display.addProgram(optionsProg);
