@@ -64,7 +64,7 @@ class Field {
 		spectator.playAnimation("danceLeft");
 		spectator.addToBuffer();
 
-		opponent = new Actor(parent.view, "opponent", "dad", 250, -100, 24, true, true);
+		opponent = new Actor(parent.view, "opponent", "bfSgwlfnf", 250, -100, 24, true, true);
 		opponent.mirror = !opponent.mirror;
 		opponent.preComputeSingPosesOfAnimations(singPoses);
 		opponent.preComputeMissPosesOfAnimations(missPoses);

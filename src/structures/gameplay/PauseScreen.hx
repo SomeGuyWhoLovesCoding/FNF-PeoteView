@@ -227,7 +227,7 @@ class PauseScreen {
 
 	inline function onOptionsMenuClose() {
 		atOptionsMenu = false;
-		addEvents();
+		haxe.Timer.delay(addEvents, 1);
 	}
 
 	function close() {
