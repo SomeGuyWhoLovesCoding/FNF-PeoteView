@@ -13,35 +13,6 @@ enum AtlasType {
 	AUTO;
 }
 
-class AnimateMatrixFragShader {
-	public static function setup(program:Program, textureIdentifier:String) {
-		program.injectIntoFragmentShader('
-			vec4 getColor(int texId, float _ma, float _mb, float _mc, float _md,
-              float _rotated, float _originU, float _originV)
-			{
-				vec2 uv = vTexCoord;
-
-				float su = _ma * uv.x + _mc * uv.y + _originU;
-				float sv = _mb * uv.x + _md * uv.y + _originV;
-
-				if (_rotated == 1.0) {
-					float tmp = su;
-					su = 1.0 - sv;
-					sv = tmp;
-				}
-
-				if (su < 0.0 || su > 1.0 || sv < 0.0 || sv > 1.0) {
-					return vec4(0.0);
-				}
-
-				return getTextureColor(texId, vec2(su, sv));
-			}
-		');
-
-		program.setColorFormula('getColor(${textureIdentifier}_ID, _ma, _mb, _mc, _md, _rotated, _originU, _originV)');
-	}
-}
-
 /**
 	Actor element object.
 	Works with Sparrow or Animate Atlas.
@@ -198,8 +169,32 @@ class Actor extends ActorElement
 				// Set up the matrix-based UV distortion shader for Animate atlas.
 				// For Sparrow the matrix varyings default to identity (a=1,b=0,c=0,d=1)
 				// so the shader is a no-op and Sparrow rendering is unaffected.
-				if (atlasType == ANIMATE)
-					AnimateMatrixFragShader.setup(program, texName);
+				if (atlasType == ANIMATE) {
+					program.injectIntoFragmentShader('
+						vec4 getColor(int texId, float _ma, float _mb, float _mc, float _md,
+						float _rotated, float _originU, float _originV)
+						{
+							vec2 uv = vTexCoord;
+
+							float su = _ma * uv.x + _mc * uv.y + _originU;
+							float sv = _mb * uv.x + _md * uv.y + _originV;
+
+							if (_rotated == 1.0) {
+								float tmp = su;
+								su = 1.0 - sv;
+								sv = tmp;
+							}
+
+							if (su < 0.0 || su > 1.0 || sv < 0.0 || sv > 1.0) {
+								return vec4(0.0);
+							}
+
+							return getTextureColor(texId, vec2(su, sv));
+						}
+					');
+
+					program.setColorFormula('getColor(${texName}_ID, _ma, _mb, _mc, _md, _rotated, _originU, _originV)');
+				}
 			} else {
 				program = programs[tag];
 			}

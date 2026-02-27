@@ -1,7 +1,7 @@
-package elements.actor.sparrow;
+package elements.actor;
 
 /**
-	Basic sparrow actor element with skew support.
+	Basic sparrow actor element with animate atlas matrix support (scaling + matrix).
 	@since Development
 **/
 @:publicFields
