@@ -8,7 +8,10 @@ class FramebufferDisplay extends Display {
     var display:Display;
     var texture:Texture;
     
-    var useFramebuffer:Bool;
+    var useFramebuffer(default, set):Bool;
+    inline function set_useFramebuffer(value:Bool) {
+        return setFramebufferEnabled(value);
+    }
 
 	public function new(x:Int, y:Int, width:Int, height:Int, color:Color = 0x00000000, ?useFramebuffer:Bool = true) {
 		super(x, y, width, height, color);
@@ -75,7 +78,7 @@ class FramebufferDisplay extends Display {
         peoteView.removeDisplay(!useFramebuffer ? display : this);
         peoteView.addDisplay(useFramebuffer ? display : this);
         
-        useFramebuffer = enabled;
+        return useFramebuffer = enabled;
     }
 
     public function addIt(peoteView:PeoteView) {
