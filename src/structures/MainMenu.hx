@@ -240,7 +240,7 @@ class MainMenu {
 		for (i in 0...optionBuf.length) {
 			var option = optionBuf.getElement(i);
 			if (x >= option.x && x <= option.x + option.w
-			&& y >= option.y && y <= option.y + option.h) {
+			&& y >= (option.y - 15) && y <= option.y + (option.h - 15)) {
 				nav.setTo(i);
 				return;
 			}
@@ -252,7 +252,7 @@ class MainMenu {
 		for (i in 0...optionBuf.length) {
 			var option = optionBuf.getElement(i);
 			if (x >= option.x && x <= option.x + option.w
-			&& y >= option.y && y <= option.y + option.h
+			&& y >= (option.y - 15) && y <= option.y + (option.h - 15)
 			&& i == nav.value())
 				doIt();
 		}
