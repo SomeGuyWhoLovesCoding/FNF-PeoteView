@@ -41,12 +41,6 @@ class FramebufferDisplay extends Display {
         }
 
 		frame = buffer.addElement(new PixelElement(0, 0, width, height));
-
-		// set up pivot and offset position so the rotate is around the center
-		frame.pivot_x = 0.5;
-		frame.pivot_y = 0.5;
-		frame.x += (frame.width * 0.5);
-		frame.y += (frame.height * 0.5);
 		
 		program.addToDisplay(display);
 	}
@@ -89,14 +83,20 @@ class FramebufferDisplay extends Display {
         if (useFramebuffer) {
             display.width = w;
             display.height = h;
+
             program.removeTexture(fbTexture);
             texture.dispose();
             texture = null;
+
             texture = new Texture(w, h);
             texture.smoothExpand = texture.smoothShrink = true;
             texture.mipmap = texture.smoothMipmap = true;
             setFramebuffer(texture);
             program.addTexture(fbTexture);
+
+            frame.width = w;
+            frame.height = h;
+            buffer.updateElement(frame);
         }
     }
 

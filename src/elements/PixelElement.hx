@@ -2,10 +2,10 @@ package elements;
 
 class PixelElement implements Element {
 	/** Position of the element on x axis. Relative to top left of Display.**/
-	@posX public var x:Float;
+	@posX @formula("(width * 0.5) + x")  public var x:Float;
 
 	/** Position of the element on y axis. Relative to top left of Display.**/
-	@posY public var y:Float;
+	@posY @formula("(height * 0.5) + y")  public var y:Float;
 
 	/** Size of the element on x axis. **/
 	@sizeX @varying public var width:Int;
@@ -14,10 +14,10 @@ class PixelElement implements Element {
 	@sizeY @varying public var height:Int;
 
 	/** The pivot point around with the element will rotate on the x axis - 0.5 is the center. **/
-	@pivotX @formula("width * pivot_x") public var pivot_x:Float = 0.0;
+	@pivotX @formula("width * 0.5") public var pivot_x:Float;
 
 	/** The pivot point around with the element will rotate on the y axis - 0.5 is the center. **/
-	@pivotY @formula("height * pivot_y") public var pivot_y:Float = 0.0;
+	@pivotY @formula("height * 0.5") public var pivot_y:Float;
 
 	/** Degrees of rotation. **/
 	@rotation public var r:Float = 0.0;
