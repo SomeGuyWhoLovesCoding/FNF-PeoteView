@@ -22,7 +22,7 @@ class FramebufferDisplay extends Display {
 
             texture = new Texture(width, height);
             texture.smoothExpand = texture.smoothShrink = true;
-            texture.mipmap = texture.smoothMipmap = true;
+            //texture.mipmap = texture.smoothMipmap = true;
 
             // set a texture that the framebuffer will be rendered to
             setFramebuffer(texture);
@@ -50,30 +50,44 @@ class FramebufferDisplay extends Display {
         if (enabled == useFramebuffer) return;
         
         if (enabled) {
-            // Enable framebuffer
+            this.hide();
+            
+            // Set up framebuffer
             Main.current.peoteView.addFramebufferDisplay(this);
             texture = new Texture(width, height);
             texture.smoothExpand = texture.smoothShrink = true;
-            texture.mipmap = texture.smoothMipmap = true;
+            //texture.mipmap = texture.smoothMipmap = true;
             setFramebuffer(texture);
             program.addTexture(fbTexture);
+            display.show();
         } else {
-            // Disable framebuffer
+            display.hide();
+            
+            // Clean up framebuffer
             Main.current.peoteView.removeFramebufferDisplay(this);
-            setFramebuffer(null);
+            //setFramebuffer(null); don't do this. it crashes the game.
             program.removeTexture(fbTexture);
             texture.dispose();
             texture = null;
+            
+            // Add the regular display
+            this.show();
         }
-
-        peoteView.removeDisplay(!useFramebuffer ? display : this);
-        peoteView.addDisplay(useFramebuffer ? display : this);
         
         useFramebuffer = enabled;
     }
 
     public function addIt(peoteView:PeoteView) {
-        peoteView.addDisplay(useFramebuffer ? display : this);
+        peoteView.addDisplay(this);
+        peoteView.addDisplay(display);
+        
+        if (useFramebuffer) {
+            this.hide();
+            display.show();
+        } else {
+            this.show();
+            display.hide();
+        }
     }
 
     public function resize(w:Int, h:Int) {
@@ -90,7 +104,7 @@ class FramebufferDisplay extends Display {
 
             texture = new Texture(w, h);
             texture.smoothExpand = texture.smoothShrink = true;
-            texture.mipmap = texture.smoothMipmap = true;
+            //texture.mipmap = texture.smoothMipmap = true;
             setFramebuffer(texture);
             program.addTexture(fbTexture);
 

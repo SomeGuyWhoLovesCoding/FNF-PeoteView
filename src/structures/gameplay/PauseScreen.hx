@@ -154,6 +154,9 @@ class PauseScreen {
 	}
 
 	function mouseDown(x:Float, y:Float, button:MouseButton) {
+		var peoteView = Main.current.peoteView;
+		x = display.localX(x, peoteView);
+		y = display.localY(y, peoteView);
 		switch (button) {
 			case LEFT:
 				for (i in 0...pauseOptions.length) {
@@ -172,6 +175,9 @@ class PauseScreen {
 	}
 
 	function moveOption_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
+		var peoteView = Main.current.peoteView;
+		x = display.localX(x, peoteView);
+		y = display.localY(y, peoteView);
 		pauseNav.scroll(-Math.floor(y));
 		pauseNav.resetIfBoth(pauseBuf.length - 1, pauseBuf.length - 2);
 		Main.current.playScrollSound();

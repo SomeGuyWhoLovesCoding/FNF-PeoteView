@@ -10,11 +10,6 @@ import lime.ui.Window;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 
-// Import the element classes
-import elements.FramebufferDisplay;
-import elements.CustomDisplay;
-import elements.Sprite;
-
 private enum abstract StateSelection(Int) {
 	var NONE;
 	var MAIN_MENU;

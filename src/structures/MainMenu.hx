@@ -236,6 +236,9 @@ class MainMenu {
 	}
 
 	function mouseDown(x:Float, y:Float, button:MouseButton) {
+		var peoteView = Main.current.peoteView;
+		x = view.localX(x, peoteView);
+		y = view.localY(y, peoteView);
 		if (button != MouseButton.LEFT) return;
 		for (i in 0...optionBuf.length) {
 			var option = optionBuf.getElement(i);
@@ -248,6 +251,9 @@ class MainMenu {
 	}
 
 	function mouseUp(x:Float, y:Float, button:MouseButton) {
+		var peoteView = Main.current.peoteView;
+		x = view.localX(x, peoteView);
+		y = view.localY(y, peoteView);
 		if (button != MouseButton.LEFT) return;
 		for (i in 0...optionBuf.length) {
 			var option = optionBuf.getElement(i);
