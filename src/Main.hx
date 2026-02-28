@@ -10,6 +10,11 @@ import lime.ui.Window;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 
+// Import the element classes
+import elements.FramebufferDisplay;
+import elements.CustomDisplay;
+import elements.Sprite;
+
 private enum abstract StateSelection(Int) {
 	var NONE;
 	var MAIN_MENU;
@@ -233,12 +238,15 @@ class Main extends Application
 	private function createDisplays() {
 		var stamp = haxe.Timer.stamp();
 		Sys.println("Creating displays...");
+		
+		// Create CustomDisplay instances which extend FramebufferDisplay
 		bottomDisplay = new CustomDisplay(0, 0, window.width, window.height, 0xFFFFFF33);
 		middleDisplay = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
 		topDisplay = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
 		optionsScreen = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
 		freeplayScreen = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
 		storyScreen = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
+		
 		Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 	}
 
@@ -246,12 +254,14 @@ class Main extends Application
 		var stamp = haxe.Timer.stamp();
 		Sys.println("Adding displays...");
 
-		peoteView.addDisplay(bottomDisplay);
-		peoteView.addDisplay(middleDisplay);
-		peoteView.addDisplay(topDisplay);
-		peoteView.addDisplay(optionsScreen);
-		peoteView.addDisplay(freeplayScreen);
-		peoteView.addDisplay(storyScreen);
+		// Add all displays to peoteView
+		bottomDisplay.addIt(peoteView);
+		middleDisplay.addIt(peoteView);
+		topDisplay.addIt(peoteView);
+		optionsScreen.addIt(peoteView);
+		freeplayScreen.addIt(peoteView);
+		storyScreen.addIt(peoteView);
+		
 		Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 	}
 
@@ -416,8 +426,7 @@ class Main extends Application
 	function centerDisplayOnWindow(display:CustomDisplay, w:Int, h:Int) {
 		var scale = h / INITIAL_HEIGHT;
 
-		display.width = w;
-		display.height = h;
+		display.resize(w, h);
 		display.scale = scale;
 	}
 
