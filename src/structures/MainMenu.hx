@@ -21,10 +21,10 @@ class MainMenu {
 	var roof:CustomDisplay;
 
 	static var optionBuf:Buffer<Actor>;
-	static var optionProg:Program;
+	static var optionProg:CustomProgram;
 
 	static var backgroundBuf:Buffer<Sprite>;
-	static var backgroundProg:Program;
+	static var backgroundProg:CustomProgram;
 
 	static var watermarkTxt:Text;
 
@@ -62,7 +62,7 @@ class MainMenu {
 			backgroundBuf = new Buffer<Sprite>(1);
 
 			if (backgroundProg == null) {
-				backgroundProg = new Program(backgroundBuf);
+				backgroundProg = new CustomProgram(backgroundBuf);
 				backgroundProg.blendEnabled = true;
 				backgroundProg.blendSrc = backgroundProg.blendSrcAlpha = BlendFactor.ONE;
 				backgroundProg.blendDst = backgroundProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
@@ -79,7 +79,7 @@ class MainMenu {
 		}
 
 		if (optionProg == null) {
-			optionProg = new Program(optionBuf);
+			optionProg = new CustomProgram(optionBuf);
 			optionProg.blendEnabled = true;
 			optionProg.blendSrc = optionProg.blendSrcAlpha = BlendFactor.ONE;
 			optionProg.blendDst = optionProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;

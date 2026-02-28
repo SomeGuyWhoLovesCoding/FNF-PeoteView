@@ -15,7 +15,7 @@ import lime.ui.MouseWheelMode;
 class OptionsMenu {
 	static var display(default, null):CustomDisplay;
 	static var optionsBuf(default, null):Buffer<OptionsSprite>;
-	static var optionsProg(default, null):Program;
+	static var optionsProg(default, null):CustomProgram;
 
 	var categoryNav(default, null):Navigation = new Navigation();
 	var optionsNav(default, null):Navigation = new Navigation();
@@ -35,7 +35,7 @@ class OptionsMenu {
 
 		if (optionsBuf == null) {
 			optionsBuf = new Buffer<OptionsSprite>(15);
-			optionsProg = new Program(optionsBuf);
+			optionsProg = new CustomProgram(optionsBuf);
 			optionsProg.blendEnabled = true;
 			optionsProg.blendSrc = optionsProg.blendSrcAlpha = BlendFactor.ONE;
 			optionsProg.blendDst = optionsProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;

@@ -67,8 +67,8 @@ class ActorElement implements Element {
 		return rotated = value;
 	}
 
-	@posX @formula("x + off_x + px + adjust_x + (w * (_mirror == 1.0 ? _flipX : -_flipX))") var x:Float;
-	@posY @formula("y + off_y + py + adjust_y + (h * _flipY)") var y:Float;
+	@posX @formula("uDisplayRotateX(aPos.x + off_x + px + adjust_x + (w * (_mirror == 1.0 ? _flipX : -_flipX)), aPos.y + off_y + py + adjust_y + (h * _flipY))") var x:Float;
+	@posY @formula("uDisplayRotateY(aPos.x + off_x + px + adjust_x + (w * (_mirror == 1.0 ? _flipX : -_flipX)), aPos.y + off_y + py + adjust_y + (h * _flipY))") var y:Float;
 
 	// Replace existing sizeX/sizeY formulas:
 	@sizeX @formula("(w * scale) * (_flipX == 1.0 ? -1.0 : 1.0)") var w:Float;
@@ -77,7 +77,7 @@ class ActorElement implements Element {
 	@pivotX @formula("(w < 0.0 ? -w : w) * 0.5") var px:Float;
 	@pivotY @formula("(h < 0.0 ? -h : h) * 0.5") var py:Float;
 
-	@rotation var r:Float;
+	@rotation @formula("uDisplayRotation(r)") var r:Float;
 
 	@varying @custom @formula("off_x * scale") var off_x:Float;
 	@varying @custom @formula("off_y * scale") var off_y:Float;

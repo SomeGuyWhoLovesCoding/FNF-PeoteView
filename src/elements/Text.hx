@@ -8,7 +8,7 @@ import elements.text.*;
 @:publicFields
 class Text {
 	var buffer:Buffer<TextCharSprite>;
-	var program:Program;
+	var program:CustomProgram;
 
 	var _key:String;
 
@@ -269,7 +269,7 @@ class Text {
 		var noProgram = program == null;
 
 		if (noProgram) {
-			program = new Program(buffer);
+			program = new CustomProgram(buffer);
 			program.blendEnabled = true;
 			program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
 			program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;

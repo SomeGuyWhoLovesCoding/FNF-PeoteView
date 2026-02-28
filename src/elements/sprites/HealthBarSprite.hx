@@ -5,8 +5,8 @@ package elements.sprites;
 @:publicFields
 class HealthBarSprite implements Element {
 	// position in pixel (relative to upper left corner of Display)
-	@posX @formula("(_flip != 0.0 ? x - w : x)") var x:Float = 0.0;
-	@posY var y:Float = 0.0;
+	@posX @formula("uDisplayRotateX((_flip != 0.0 ? aPos.x - w : aPos.x), aPos.y)") var x:Float = 0.0;
+	@posY @formula("uDisplayRotateY((_flip != 0.0 ? aPos.x - w : aPos.x), aPos.y)") var y:Float = 0.0;
 
 	// size in pixel
 	@sizeX @formula("(_flip != 0.0 ? -w : w)") var w:Float = 0.0;
@@ -23,6 +23,8 @@ class HealthBarSprite implements Element {
 	@texPosY  var clipPosY:Int = 0;
 	@texSizeX var clipSizeX:Int = 200;
 	@texSizeY var clipSizeY:Int = 200;
+
+	@rotation @formula("uDisplayRotation(r)") var r:Float;
 
 	@color var c:Color = 0xFFFFFFFF;
 	@color var c1:Color = 0xFFFFFFFF;
@@ -95,7 +97,7 @@ class HealthBarSprite implements Element {
 
 	var OPTIONS = { texRepeatX: false, texRepeatY: false, blend: true };
 
-	static function init(program:Program, name:String, texture:Texture) {
+	static function init(program:CustomProgram, name:String, texture:Texture) {
 		// creates a texture-layer named "name"
 		program.setTexture(texture, name, true);
 		program.blendEnabled = true;

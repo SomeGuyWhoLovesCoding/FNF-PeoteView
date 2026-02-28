@@ -9,12 +9,12 @@ class Sprite implements Element
 	/**
 		The sprite's x position.
 	**/
-	@posX @formula("x + px") var x:Int;
+	@posX @formula("uDisplayRotateX(aPos.x + px, aPos.y + py)") var x:Int;
 
 	/**
 		The sprite's y position.
 	**/
-	@posY @formula("y + py") var y:Int;
+	@posY @formula("uDisplayRotateY(aPos.x + px, aPos.y + py)") var y:Int;
 
 	/**
 		The sprite's width.
@@ -29,7 +29,7 @@ class Sprite implements Element
 	/**
 		The rotation around pivot point of the sprite.
 	**/
-	@rotation var r:Float;
+	@rotation @formula("uDisplayRotation(r)") var r:Float;
 
 	/**
 		The pivot x of the sprite.

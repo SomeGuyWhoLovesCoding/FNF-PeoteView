@@ -12,7 +12,7 @@ package structures.gameplay;
 @:publicFields
 class HealthBar {
 	static var hbBuf(default, null):Buffer<HealthBarSprite>;
-	static var hbProg(default, null):Program;
+	static var hbProg(default, null):CustomProgram;
 
 	var display(default, null):CustomDisplay;
 	var parent(default, null):PlayField;
@@ -41,7 +41,7 @@ class HealthBar {
 	static function init(display:CustomDisplay) {
 		if (hbBuf == null) {
 			hbBuf = new Buffer<HealthBarSprite>(4, 4, true);
-			hbProg = new Program(hbBuf);
+			hbProg = new CustomProgram(hbBuf);
 			hbProg.blendEnabled = true;
 			hbProg.blendSrc = hbProg.blendSrcAlpha = BlendFactor.ONE;
 			hbProg.blendDst = hbProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;

@@ -10,10 +10,10 @@ package structures.gameplay;
 **/
 @:publicFields
 class NoteSystem {
-	static var sustainProg(default, null):Program;
+	static var sustainProg(default, null):CustomProgram;
 	static var sustainsBuf(default, null):Buffer<Sustain>;
 
-	static var notesProg(default, null):Program;
+	static var notesProg(default, null):CustomProgram;
 	static var notesBuf(default, null):Buffer<Note>;
 
 	static var STRUMLINE_X_OFFSET = 50;
@@ -28,7 +28,7 @@ class NoteSystem {
 		if (notesProg == null) {
 			var tex = TextureSystem.getTexture("noteTex");
 
-			notesProg = new Program(notesBuf);
+			notesProg = new CustomProgram(notesBuf);
 			Note.init(notesProg, "noteTex", tex);
 		}
 
@@ -39,7 +39,7 @@ class NoteSystem {
 		if (sustainProg == null) {
 			var tex2 = TextureSystem.getTexture("sustainTex");
 
-			sustainProg = new Program(sustainsBuf);
+			sustainProg = new CustomProgram(sustainsBuf);
 			Sustain.init(sustainProg, "sustainTex", tex2);
 		}
 	}

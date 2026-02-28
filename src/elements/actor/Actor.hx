@@ -26,8 +26,8 @@ class Actor extends ActorElement
 {
 	static var buffers:Map<String, Buffer<ActorElement>> = [];
 	var buffer(default, null):Buffer<ActorElement>;
-	static var programs:Map<String, Program> = [];
-	var program(default, null):Program;
+	static var programs:Map<String, CustomProgram> = [];
+	var program(default, null):CustomProgram;
 	static var cachedActorDatas:Map<String, ActorData> = [];
 	static var cachedAtlases:Map<String, Dynamic> = [];
 
@@ -153,7 +153,7 @@ class Actor extends ActorElement
 			buffer = buffers[tag];
 
 			if (programs[tag] == null) {
-				programs[tag] = new Program(buffer);
+				programs[tag] = new CustomProgram(buffer);
 				program = programs[tag];
 				program.blendEnabled    = true;
 				program.blendSrc        = program.blendSrcAlpha = BlendFactor.ONE;

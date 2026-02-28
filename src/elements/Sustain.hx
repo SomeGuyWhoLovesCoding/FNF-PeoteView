@@ -6,8 +6,8 @@ package elements;
 class Sustain implements Element
 {
 	// position in pixel (relative to upper left corner of Display)
-	@posX @formula("x") public var x:Int;
-	@posY @formula("y + py") public var y:Int;
+	@posX @formula("uDisplayRotateX(aPos.x, aPos.y + py)") public var x:Int;
+	@posY @formula("uDisplayRotateY(aPos.x, aPos.y + py)") public var y:Int;
 
 	// size in pixel
 	@varying @sizeX @formula("w * speed") public var w:Int;
@@ -16,7 +16,7 @@ class Sustain implements Element
 	// at what x position it have to slice (width of the tail in texturedata pixels) (WARNING: COUNT X POSITION FROM PNG BACKWARDS)
 	@varying @custom public var tailPoint:Int = 43;
 
-	@rotation public var r:Float;
+	@rotation @formula("uDisplayRotation(r)") public var r:Float;
 
 	@pivotY @const @formula("h * 0.5") public var py:Int;
 
@@ -41,7 +41,7 @@ class Sustain implements Element
 	static public var offsets:Array<Array<Int>> = [];
 	static public var tailPoints:Array<Int> = [];
 
-	static public function init(program:Program, name:String, texture:Texture)
+	static public function init(program:CustomProgram, name:String, texture:Texture)
 	{
 		// creates a texture-layer named "name"
 		program.setTexture(texture, name);

@@ -21,7 +21,7 @@ class CountdownDisplay {
 	/**
 		The countdown display's underlying program.
 	**/
-	static var program:Program;
+	static var program:CustomProgram;
 
 	/**
 		The countdown display's underlying display reference.
@@ -59,7 +59,7 @@ class CountdownDisplay {
 	static function init(atDisplay:Display) {
 		if (buffer == null) {
 			buffer = new Buffer<UISprite>(1);
-			program = new Program(buffer);
+			program = new CustomProgram(buffer);
 			program.blendEnabled = true;
 
 			var tex = TextureSystem.getTexture("uiTex");

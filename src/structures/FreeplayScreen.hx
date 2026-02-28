@@ -16,10 +16,10 @@ class FreeplayScreen {
 	}
 
 	static var songTextsBuf(default, null):Buffer<Actor>;
-	static var songTextsProg(default, null):Program;
+	static var songTextsProg(default, null):CustomProgram;
 
 	static var songIconsBuf(default, null):Buffer<HealthBarSprite>;
-	static var songIconsProg(default, null):Program;
+	static var songIconsProg(default, null):CustomProgram;
 
 	var songsAvailable(default, null):Array<ChapterSong> = [];
 	static var songTextCharGroup(default, null):Array<Array<Actor>> = [];
@@ -39,7 +39,7 @@ class FreeplayScreen {
 	function reload(chapterName:String) {
 		if (songTextsBuf == null) {
 			songTextsBuf = new Buffer<Actor>(140, 0, false);
-			songTextsProg = new Program(songTextsBuf);
+			songTextsProg = new CustomProgram(songTextsBuf);
 			songTextsProg.blendEnabled = true;
 			songTextsProg.blendSrc = songTextsProg.blendSrcAlpha = BlendFactor.ONE;
 			songTextsProg.blendDst = songTextsProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
@@ -50,7 +50,7 @@ class FreeplayScreen {
 
 		if (songIconsBuf == null) {
 			songIconsBuf = new Buffer<HealthBarSprite>(8, 0, false);
-			songIconsProg = new Program(songIconsBuf);
+			songIconsProg = new CustomProgram(songIconsBuf);
 			songIconsProg.blendEnabled = true;
 			songIconsProg.blendSrc = songIconsProg.blendSrcAlpha = BlendFactor.ONE;
 			songIconsProg.blendDst = songIconsProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;

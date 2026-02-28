@@ -18,7 +18,7 @@ class PauseScreen {
 	var disposed(default, null):Bool = false;
 	private static var display(default, null):CustomDisplay;
 	static var pauseBuf(default, null):Buffer<StoryModeSprite>;
-	static var pauseProg(default, null):Program;
+	static var pauseProg(default, null):CustomProgram;
 
 	var pauseOptions(default, null):Array<StoryModeSprite> = [];
 	var diffText(default, null):StoryModeSprite;
@@ -33,7 +33,7 @@ class PauseScreen {
 
 		if (pauseBuf == null) {
 			pauseBuf = new Buffer<StoryModeSprite>(5);
-			pauseProg = new Program(pauseBuf);
+			pauseProg = new CustomProgram(pauseBuf);
 			pauseProg.blendEnabled = true;
 			pauseProg.blendSrc = pauseProg.blendSrcAlpha = BlendFactor.ONE;
 			pauseProg.blendDst = pauseProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;

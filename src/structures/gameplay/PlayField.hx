@@ -24,7 +24,7 @@ class PlayField {
 		this.roof = roof;
 		this.display = display;
 		this.view = view;
-		view.setFramebufferEnabled(true);
+		//view.setFramebufferEnabled(true);
 
 		create(roof, display, Chart.header.mania);
 	}
@@ -265,6 +265,7 @@ class PlayField {
 		if (view.fov != 1) view.fov = Tools.lerp(view.fov, 1, ratio);
 
 		view.r = Math.sin(songPosition / 600) * 6;
+		//view.r = 15;
 
 		if (!died) {
 			Mixer.update(this, deltaTime);
@@ -627,6 +628,6 @@ class PlayField {
 
 		if (display.fov != 1) display.fov = 1;
 		if (view.fov != 1) view.fov = 1;
-		view.setFramebufferEnabled(false);
+		//view.setFramebufferEnabled(false);
 	}
 }

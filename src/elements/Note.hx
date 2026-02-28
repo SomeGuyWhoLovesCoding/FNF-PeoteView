@@ -11,8 +11,8 @@ class Note implements Element
 	// position in pixel (relative to upper left corner of Display)
 	@varying @custom @formula("ox * scale") public var ox:Int;
 	@varying @custom @formula("oy * scale") public var oy:Int;
-	@posX @formula("x + px + ox") public var x:Int;
-	@posY @formula("y + py + oy") public var y:Int;
+	@posX @formula("uDisplayRotateX(aPos.x + px + ox, aPos.y + py + oy)") public var x:Int;
+	@posY @formula("uDisplayRotateY(aPos.x + px + ox, aPos.y + py + oy)") public var y:Int;
 
 	// size in pixel
 	@varying @sizeX @formula("w * scale") public var w:Int = 100;
@@ -70,7 +70,7 @@ class Note implements Element
 		reset();
 	}
 
-	static public function init(program:Program, name:String, texture:Texture)
+	static public function init(program:CustomProgram, name:String, texture:Texture)
 	{
 		// creates a texture-layer named "name"
 		program.setTexture(texture, name);

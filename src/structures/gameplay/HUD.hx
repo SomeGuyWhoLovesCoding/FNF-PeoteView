@@ -13,7 +13,7 @@ import lime.ui.KeyModifier;
 @:publicFields
 class HUD {
 	static var uiBuf(default, null):Buffer<UISprite>;
-	static var uiProg(default, null):Program;
+	static var uiProg(default, null):CustomProgram;
 
 	static var scoreTxt(default, null):Text;
 	static var watermarkTxt(default, null):Text;
@@ -130,7 +130,7 @@ class HUD {
 	static function init() {
 		if (uiBuf == null) {
 			uiBuf = new Buffer<UISprite>(4, 4, true);
-			uiProg = new Program(uiBuf);
+			uiProg = new CustomProgram(uiBuf);
 			uiProg.blendEnabled = true;
 			uiProg.blendSrc = uiProg.blendSrcAlpha = BlendFactor.ONE;
 			uiProg.blendDst = uiProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;

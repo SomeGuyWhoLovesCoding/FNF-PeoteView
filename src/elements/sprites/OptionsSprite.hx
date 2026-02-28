@@ -6,8 +6,8 @@ package elements.sprites;
 @:publicFields
 class OptionsSprite implements Element {
 	// position in pixel (relative to upper left corner of Display)
-	@posX var x:Float = 0.0;
-	@posY var y:Float = 0.0;
+	@posX @formula("uDisplayRotateX(aPos.x, aPos.y)")  var x:Float = 0.0;
+	@posY @formula("uDisplayRotateY(aPos.x, aPos.y)") var y:Float = 0.0;
 
 	// size in pixel
 	@sizeX var w:Float = 0.0;
@@ -24,6 +24,8 @@ class OptionsSprite implements Element {
 	@texPosY  var clipPosY:Int = 0;
 	@texSizeX var clipSizeX:Int = 200;
 	@texSizeY var clipSizeY:Int = 200;
+
+	@rotation @formula("uDisplayRotation(r)") var r:Float;
 
 	@color var c:Color = 0xFFFFFFFF;
 
@@ -57,7 +59,7 @@ class OptionsSprite implements Element {
 
 	var OPTIONS = { texRepeatX: false, texRepeatY: false, blend: true };
 
-	static function init(program:Program, name:String, texture:Texture) {
+	static function init(program:CustomProgram, name:String, texture:Texture) {
 		// creates a texture-layer named "name"
 		program.setTexture(texture, name, true);
 		program.blendEnabled = true;

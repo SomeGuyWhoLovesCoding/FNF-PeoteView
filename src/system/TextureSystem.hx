@@ -45,7 +45,7 @@ class TextureSystem {
 		@param name The texture's new name.
 	**/
 
-	inline static function setTexture(prgm:Program, key:String, name:String) {
+	inline static function setTexture(prgm:CustomProgram, key:String, name:String) {
 		prgm.setTexture(getTexture(key), name, true);
 	}
 
