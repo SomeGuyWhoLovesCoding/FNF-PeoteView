@@ -2126,9 +2126,9 @@ HL_PRIM bool HL_NAME(wearingPlugNPlay)(_NO_ARG) {
 
 HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
 	#if HX_WINDOWS
-	int osMs = 50;
+	int osMs = 40;
 	#else
-	int osMs = 1;
+	int osMs = 10;
 	#endif
 	if (g_audioSystem.exists) {
 		if(!HL_NAME(wearingPlugNPlay)()) osMs += 50;

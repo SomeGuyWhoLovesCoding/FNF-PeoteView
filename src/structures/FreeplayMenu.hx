@@ -57,7 +57,7 @@ class FreeplayMenu {
 
 	function render(deltaTime:Float) {
 		if (!isDragging && Math.abs(dragVelocity) > 0.01) {
-			freeplayScreen.curSelectedTarget += (dragVelocity * deltaTime) / 156.0;
+			freeplayScreen.curSelectedTarget += (dragVelocity * deltaTime) / (156.0 / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT));
 			freeplayScreen.curSelectedTarget = Math.max(0, Math.min(freeplayScreen.songsAvailable.length - 1, freeplayScreen.curSelectedTarget));
 			nav.setTo(Math.round(freeplayScreen.curSelectedTarget));
 
@@ -178,7 +178,7 @@ class FreeplayMenu {
 		var dt = now - lastDragTime;
 		lastDragTime = now;
 
-		var _delta = (delta / 156.0);
+		var _delta = (delta / (156.0 / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)));
 
 		if (dt > 0) dragVelocity = _delta / 3;
 

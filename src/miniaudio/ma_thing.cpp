@@ -2113,9 +2113,9 @@ bool wearingPlugNPlay() {
 
 int detectLatency() {
 	#if HX_WINDOWS
-	int osMs = 50;
+	int osMs = 40;
 	#else
-	int osMs = 1;
+	int osMs = 10;
 	#endif
 	if (g_audioSystem.exists) {
 		if(!wearingPlugNPlay()) osMs += 50;
