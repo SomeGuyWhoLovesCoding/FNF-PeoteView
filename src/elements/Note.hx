@@ -19,7 +19,7 @@ class Note implements Element
 	@varying @sizeY @formula("h * scale") public var h:Int = 100;
 	@varying @custom public var scale:Float = 1.0;
 
-	@rotation public var r:Float;
+	@rotation @formula("uDisplayRotation(r)") public var r:Float;
 
 	@pivotX @const @formula("w * 0.5") public var px:Int;
 	@pivotY @const @formula("h * 0.5") public var py:Int;

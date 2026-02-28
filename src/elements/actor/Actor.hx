@@ -24,6 +24,17 @@ enum AtlasType {
 @:publicFields
 class Actor extends ActorElement
 {
+	private static inline var ANIMATE_MATRIX_CODE = '
+		vec2 applyMatrix(float cornerX, float cornerY,
+                     float ma, float mb, float mc, float md,
+                     float tx, float ty)
+		{
+			float wx = ma * cornerX + mc * cornerY + tx;
+			float wy = mb * cornerX + md * cornerY + ty;
+			return vec2(wx, wy);
+		}
+	';
+
 	static var buffers:Map<String, Buffer<ActorElement>> = [];
 	var buffer(default, null):Buffer<ActorElement>;
 	static var programs:Map<String, CustomProgram> = [];
@@ -170,30 +181,7 @@ class Actor extends ActorElement
 				// For Sparrow the matrix varyings default to identity (a=1,b=0,c=0,d=1)
 				// so the shader is a no-op and Sparrow rendering is unaffected.
 				if (atlasType == ANIMATE) {
-					program.injectIntoFragmentShader('
-						vec4 getColor(int texId, float _ma, float _mb, float _mc, float _md,
-						float _rotated, float _originU, float _originV)
-						{
-							vec2 uv = vTexCoord;
-
-							float su = _ma * uv.x + _mc * uv.y + _originU;
-							float sv = _mb * uv.x + _md * uv.y + _originV;
-
-							if (_rotated == 1.0) {
-								float tmp = su;
-								su = 1.0 - sv;
-								sv = tmp;
-							}
-
-							if (su < 0.0 || su > 1.0 || sv < 0.0 || sv > 1.0) {
-								return vec4(0.0);
-							}
-
-							return getTextureColor(texId, vec2(su, sv));
-						}
-					');
-
-					program.setColorFormula('getColor(${texName}_ID, _ma, _mb, _mc, _md, _rotated, _originU, _originV)');
+					program.injectIntoVertexShader(ANIMATE_MATRIX_CODE);
 				}
 			} else {
 				program = programs[tag];
@@ -485,78 +473,42 @@ class Actor extends ActorElement
 		}
 	}
 
-	/**
-	 * Configure clip rect, size, and full world transform for one leaf element.
-	 *
-	 * COORDINATE SPACE
-	 * ----------------
-	 * In Adobe Animate, a symbol instance matrix rotates the symbol content
-	 * around its own registration point (0,0 = top-left for ASI leaves), then
-	 * translates that origin to (tx, ty) in the parent space.
-	 *
-	 * ActorElement rotates around its CENTER (px = w/2, py = h/2).
-	 * To reconcile: compute where the CENTER of the rotated sprite lands,
-	 * and feed that to adjust_x/y:
-	 *
-	 *   center_world = (tx + vw/2*cos(A) - vh/2*sin(A),
-	 *                   ty + vw/2*sin(A) + vh/2*cos(A))
-	 *
-	 *   adjust_x = center_world_x - vw/2   (vw/2 cancels with px in the formula)
-	 *   adjust_y = center_world_y - vh/2
-	 *
-	 * MATRIX / UV DISTORTION
-	 * ----------------------
-	 * The quad is sized to the AABB of the transformed sprite corners (w/h).
-	 * The fragment shader receives the raw a/b/c/d matrix components and applies
-	 * the inverse transform to UV coordinates, so skew and non-uniform scale are
-	 * rendered correctly within the axis-aligned quad.
-	 * clipWidth/clipHeight always hold raw atlas pixel dimensions so UV sampling
-	 * is never broken by the visual transform.
-	 */
 	function applyLeafTransform(el:ActorElement, leaf:ResolvedLeaf, leafIndex:Int) {
 		var sprite = leaf.sprite;
-		var s      = this.scale;
+		var s = this.scale;
 
-		var a  = this.mirror ? -leaf.a  : leaf.a;
+		var a  = this.mirror ? -leaf.a : leaf.a;
 		var b  = leaf.b;
-		var c  = this.mirror ? -leaf.c  : leaf.c;
+		var c  = this.mirror ? -leaf.c : leaf.c;
 		var d  = leaf.d;
-		var tx = this.mirror ? -leaf.tx : leaf.tx;
-		var ty = leaf.ty;
-
-		el.mirror  = false;
-		el.flipX   = false;
-		el.flipY   = false;
-		el._mirror = 0.0;
+		var tx = (this.mirror ? -leaf.tx : leaf.tx) * s;
+		var ty = leaf.ty * s;
 
 		var aw:Float = sprite.rotated ? sprite.height : sprite.width;
 		var ah:Float = sprite.rotated ? sprite.width  : sprite.height;
 
-		var minX =  Math.POSITIVE_INFINITY;
-		var minY =  Math.POSITIVE_INFINITY;
-		var maxX =  Math.NEGATIVE_INFINITY;
-		var maxY =  Math.NEGATIVE_INFINITY;
-
-		for (corner in [{x:0.0,y:0.0},{x:aw,y:0.0},{x:aw,y:ah},{x:0.0,y:ah}]) {
-			var wx = (a * corner.x + c * corner.y + tx) * s;
-			var wy = (b * corner.x + d * corner.y + ty) * s;
-			if (wx < minX) minX = wx;
-			if (wx > maxX) maxX = wx;
-			if (wy < minY) minY = wy;
-			if (wy > maxY) maxY = wy;
-		}
-
-		var vws     = maxX - minX;
-		var vhs     = maxY - minY;
-		var centerX = (minX + maxX) * 0.5;
-		var centerY = (minY + maxY) * 0.5;
-
-		el.w = vws;
-		el.h = vhs;
+		// Size to raw atlas dimensions so aPosition * size gives the unscaled corner
+		el.w = aw;
+		el.h = ah;
 		el.r = 0;
+		el.scale = s;
 
-		el.adjust_x = this.adjust_x * s + centerX - vws * 0.5;
-		el.adjust_y = this.adjust_y * s + centerY - vhs * 0.5;
+		// Store the matrix components for the vertex shader
+		el._ma = a;
+		el._mb = b;
+		el._mc = c;
+		el._md = d;
+
+		// World origin = actor position + char offsets + leaf translation
+		el.x = this.x;
+		el.y = this.y;
+		el.adjust_x = tx + this.adjust_x * s;
+		el.adjust_y = ty + this.adjust_y * s;
+		el.off_x = 0;
+		el.off_y = 0;
+		el.mirror = false;
+		el.flipX  = false;
+		el.flipY  = false;
 
 		el.clipX      = sprite.x;
 		el.clipY      = sprite.y;
@@ -564,35 +516,7 @@ class Actor extends ActorElement
 		el.clipWidth  = sprite.width;
 		el.clipHeight = sprite.height;
 
-		var det = a * d - b * c;
-		if (Math.abs(det) < 1e-8) {
-			el._ma = 1.0; el._mb = 0.0; el._mc = 0.0; el._md = 1.0;
-			el._originU = 0.0; el._originV = 0.0;
-		} else {
-			var invA =  d / det;
-			var invB = -b / det;
-			var invC = -c / det;
-			var invD =  a / det;
-
-			var vwsU = vws / s;
-			var vhsU = vhs / s;
-
-			el._ma = invA * vwsU / aw;
-			el._mb = invB * vwsU / ah;
-			el._mc = invC * vhsU / aw;
-			el._md = invD * vhsU / ah;
-
-			var originLocalX = invA * (minX / s - tx) + invC * (minY / s - ty);
-			var originLocalY = invB * (minX / s - tx) + invD * (minY / s - ty);
-			el._originU = originLocalX / aw;
-			el._originV = originLocalY / ah;
-		}
-
-		el.scale = 1.0;
-		el.x = this.x;
-		el.y = this.y;
-
-		if (leafIndex == 0 && frameIndex == 0) firstFrameWidth = vws;
+		if (leafIndex == 0 && frameIndex == 0) firstFrameWidth = aw;
 	}
 
 	// -------------------------------------------------------------------------

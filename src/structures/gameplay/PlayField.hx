@@ -265,6 +265,7 @@ class PlayField {
 		if (view.fov != 1) view.fov = Tools.lerp(view.fov, 1, ratio);
 
 		view.r = Math.sin(songPosition / 600) * 6;
+		display.r = -view.r;
 		//view.r = 15;
 
 		if (!died) {
