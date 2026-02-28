@@ -10,7 +10,7 @@ class FramebufferDisplay extends Display {
     
     var useFramebuffer:Bool;
 
-	public function new(x:Int, y:Int, width:Int, height:Int, color:Color = 0x00000000, ?useFramebuffer:Bool = true) {
+	public function new(x:Int, y:Int, width:Int, height:Int, color:Color = 0x00000000, useFramebuffer:Bool = false) {
 		super(x, y, width, height, color);
         this.useFramebuffer = useFramebuffer;
         
