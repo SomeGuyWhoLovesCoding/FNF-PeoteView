@@ -11,8 +11,8 @@ class Note implements Element
 	// position in pixel (relative to upper left corner of Display)
 	@varying @custom @formula("ox * scale") public var ox:Int;
 	@varying @custom @formula("oy * scale") public var oy:Int;
-	@posX @formula("uDisplayRotateX(aPos.x + px + ox, aPos.y + py + oy)") public var x:Int;
-	@posY @formula("uDisplayRotateY(aPos.x + px + ox, aPos.y + py + oy)") public var y:Int;
+	@posX @formula("uDisplayRotateX(aPos + vec2(px, py) + vec2(ox, oy))") public var x:Int;
+	@posY @formula("uDisplayRotateY(aPos + vec2(px, py) + vec2(ox, oy))") public var y:Int;
 
 	// size in pixel
 	@varying @sizeX @formula("w * scale") public var w:Int = 100;

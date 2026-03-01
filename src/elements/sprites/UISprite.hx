@@ -7,8 +7,8 @@ package elements.sprites;
 @:publicFields
 class UISprite implements Element {
 	// position in pixel (relative to upper left corner of Display)
-	@posX @formula("uDisplayRotateX(aPos.x, aPos.y)")  var x:Float = 0.0;
-	@posY @formula("uDisplayRotateY(aPos.x, aPos.y)") var y:Float = 0.0;
+	@posX @formula("uDisplayRotateX(aPos)")  var x:Float = 0.0;
+	@posY @formula("uDisplayRotateY(aPos)") var y:Float = 0.0;
 
 	// size in pixel
 	@sizeX var w:Float = 0.0;

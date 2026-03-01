@@ -100,7 +100,7 @@ class MainMenu {
 						optionYLerps[i] = spr.y = optionYFormula(i, nav.value());
 					}
 				}
-				spr.c.aF = 0.0;
+				spr.color.aF = 0.0;
 				optionBuf.addElement(spr);
 			}
 		}
@@ -164,8 +164,8 @@ class MainMenu {
 			}
 
 			var alpha = alphaLerps[i] = Tools.lerp(alphaLerps[i], selectedAlpha, t);
-			option.c.aF = alpha;
-			option.c.luminanceF = alpha;
+			option.color.aF = alpha;
+			option.color.luminanceF = alpha;
 			optionBuf.updateElement(option);
 		}
 	}

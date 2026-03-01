@@ -9,12 +9,12 @@ class Sprite implements Element
 	/**
 		The sprite's x position.
 	**/
-	@posX @formula("uDisplayRotateX(aPos.x + px, aPos.y + py)") var x:Int;
+	@posX @formula("uDisplayRotateX(aPos + vec2(px, py))") var x:Int;
 
 	/**
 		The sprite's y position.
 	**/
-	@posY @formula("uDisplayRotateY(aPos.x + px, aPos.y + py)") var y:Int;
+	@posY @formula("uDisplayRotateY(aPos + vec2(px, py))") var y:Int;
 
 	/**
 		The sprite's width.

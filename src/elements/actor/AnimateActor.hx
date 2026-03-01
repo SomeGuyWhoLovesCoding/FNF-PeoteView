@@ -97,13 +97,12 @@ class AnimateActor extends Actor
 				// fragment shader can invert the transform and sample the atlas
 				// correctly even for skewed or non-uniformly scaled sprites.
 				program.injectIntoFragmentShader('
-					vec4 getColor(int texId, float _ma, float _mb, float _mc, float _md,
-								  float _rotated, float _originU, float _originV)
+					vec4 getColor(int texId, vec4 _m, float _rotated, float _originU, float _originV)
 					{
 						vec2 uv = vTexCoord;
 
-						float su = _ma * uv.x + _mc * uv.y + _originU;
-						float sv = _mb * uv.x + _md * uv.y + _originV;
+						float su = _m.x * uv.x + _m.z * uv.y + _originU;
+						float sv = _m.y * uv.x + _m.w * uv.y + _originV;
 
 						if (_rotated == 1.0) {
 							float tmp = su;
@@ -120,7 +119,7 @@ class AnimateActor extends Actor
 				');
 
 				program.setColorFormula(
-					'getColor(${texName}_ID, _ma, _mb, _mc, _md, _rotated, _originU, _originV)'
+					'getColor(${texName}_ID, vec4(_ma, _mb, _mc, _md), _rotated, _originU, _originV)'
 				);
 			} else {
 				program = Actor.programs[tag];
@@ -297,6 +296,8 @@ class AnimateActor extends Actor
 			el._mb = invB * vwsU / ah;
 			el._mc = invC * vhsU / aw;
 			el._md = invD * vhsU / ah;
+			/*if (leafIndex == 0)
+				trace(el._ma, el._mb, el._mc, el._md);*/
 
 			var originLocalX = invA * (minX / s - tx) + invC * (minY / s - ty);
 			var originLocalY = invB * (minX / s - tx) + invD * (minY / s - ty);

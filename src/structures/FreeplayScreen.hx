@@ -75,8 +75,8 @@ class FreeplayScreen {
 			for (i in 0...7) [
 				for (i in 0...20) {
 					var spr = Actor.create(display, null, "alphabetText", 0, 0, 24, "", false);
-					spr.c.aF = 0.0;
-					spr.c.luminanceF = 0.0;
+					spr.color.aF = 0.0;
+					spr.color.luminanceF = 0.0;
 					songTextsBuf.addElement(spr);
 					spr;
 				}
@@ -247,8 +247,8 @@ class FreeplayScreen {
 			positionCharSprite(spr, char, x, k);
 
 			var alpha = isInvalidCharacter ? 0.0 : calcItemAlpha(k) * alphaLerp;
-			spr.c.aF = alpha;
-			spr.c.luminanceF = alpha;
+			spr.color.aF = alpha;
+			spr.color.luminanceF = alpha;
 			songTextsBuf.updateElement(spr);
 			spr.updateBuffer();
 

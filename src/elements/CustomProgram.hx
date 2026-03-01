@@ -1,23 +1,28 @@
 package elements;
 
+import peote.view.PeoteGL.GLUniformLocation;
+import peote.view.Program;
+
 /**
 	CustomProgram is a class that extends Program with added rotation support at the vertex level.
+	But I have a warning though, inside the class's code is overriden code for a new feature called Uniform Vectors.
 **/
 @:publicFields
+@:access(peote.view.Program)
+@:allow(elements.CustomProgram)
+@:privateAccess  // Add this to access PeoteView's privates
 class CustomProgram extends Program
 {
 	private var hasVertexInserted(default, null):Bool;
 	private static inline var ROTATION_VERTEX_CODE = '
-		float uDisplayRotateX(float px, float py) {
-			float rx = px - uDisplayCX;
-			float ry = py - uDisplayCY;
-			return uCos*rx - uSin*ry + uDisplayCX;
+		float uDisplayRotateX(vec2 p) {
+			vec2 r = p - uDisplayC;
+			return uCos*r.x - uSin*r.y + uDisplayC.x;
 		}
 
-		float uDisplayRotateY(float px, float py) {
-			float rx = px - uDisplayCX;
-			float ry = py - uDisplayCY;
-			return uSin*rx + uCos*ry + uDisplayCY;
+		float uDisplayRotateY(vec2 p) {
+			vec2 r = p - uDisplayC;
+			return uSin*r.x + uCos*r.y + uDisplayC.y;
 		}
 
 		float uDisplayRotation(float r) {
@@ -31,7 +36,7 @@ class CustomProgram extends Program
 			var rd = Std.downcast(display, RotatableDisplay);
 			if (rd == null) throw "CustomProgram must be added to a RotatableDisplay";
 
-			injectIntoVertexShader(ROTATION_VERTEX_CODE, false, [rd.uAngle, rd.uSin, rd.uCos, rd.uCenterX, rd.uCenterY]);
+			injectIntoVertexShader(ROTATION_VERTEX_CODE, false, [rd.uAngle, rd.uSin, rd.uCos], false, [rd.uCenter]);
 
 			//setFormula("rotation", "uDisplayRotation(aRot.z)", false);
 

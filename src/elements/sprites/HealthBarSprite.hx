@@ -5,8 +5,8 @@ package elements.sprites;
 @:publicFields
 class HealthBarSprite implements Element {
 	// position in pixel (relative to upper left corner of Display)
-	@posX @formula("uDisplayRotateX((_flip != 0.0 ? aPos.x - w : aPos.x), aPos.y)") var x:Float = 0.0;
-	@posY @formula("uDisplayRotateY((_flip != 0.0 ? aPos.x - w : aPos.x), aPos.y)") var y:Float = 0.0;
+	@posX @formula("uDisplayRotateX(vec2((_flip != 0.0 ? aPos.x - w : aPos.x), aPos.y))") var x:Float = 0.0;
+	@posY @formula("uDisplayRotateY(vec2((_flip != 0.0 ? aPos.x - w : aPos.x), aPos.y))") var y:Float = 0.0;
 
 	// size in pixel
 	@sizeX @formula("(_flip != 0.0 ? -w : w)") var w:Float = 0.0;
@@ -113,19 +113,15 @@ class HealthBarSprite implements Element {
 
 				// Scale to [0..5]
 				float fy = y * 5.0;
-				int segment = int(floor(fy));       // 0..4
-				float t = fract(fy);                // fractional part
+				int segment = int(floor(fy));
+				float t = fract(fy);
 
-				vec4 colors[6];
-				colors[0] = c1;
-				colors[1] = c2;
-				colors[2] = c3;
-				colors[3] = c4;
-				colors[4] = c5;
-				colors[5] = c6;
-
-				// Lerp between current and next color
-				return mix(colors[segment], colors[segment + 1], t);
+				// Manual switch - works on all devices
+				if (segment == 0) return mix(c1, c2, t);
+				if (segment == 1) return mix(c2, c3, t);
+				if (segment == 2) return mix(c3, c4, t);
+				if (segment == 3) return mix(c4, c5, t);
+				return mix(c5, c6, t);  // segment == 4
 			}
 		');
 

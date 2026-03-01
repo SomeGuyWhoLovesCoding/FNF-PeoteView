@@ -67,8 +67,8 @@ class ActorElement implements Element {
 		return rotated = value;
 	}
 
-	@posX @formula("uDisplayRotateX(aPos.x + off_x + px + adjust_x + (w * (_mirror == 1.0 ? _flipX : -_flipX)), aPos.y + off_y + py + adjust_y + (h * _flipY))") var x:Float;
-	@posY @formula("uDisplayRotateY(aPos.x + off_x + px + adjust_x + (w * (_mirror == 1.0 ? _flipX : -_flipX)), aPos.y + off_y + py + adjust_y + (h * _flipY))") var y:Float;
+	@posX @formula("uDisplayRotateX(vec2(aPos.x + off_x + px + adjust_x + (w * (_mirror == 1.0 ? _flipX : -_flipX)), aPos.y + off_y + py + adjust_y + (h * _flipY)))") var x:Float;
+	@posY @formula("uDisplayRotateY(vec2(aPos.x + off_x + px + adjust_x + (w * (_mirror == 1.0 ? _flipX : -_flipX)), aPos.y + off_y + py + adjust_y + (h * _flipY)))") var y:Float;
 
 	// Replace existing sizeX/sizeY formulas:
 	@sizeX @formula("(w * scale) * (_flipX == 1.0 ? -1.0 : 1.0)") var w:Float;
@@ -85,7 +85,7 @@ class ActorElement implements Element {
 	@varying @custom var adjust_y:Float;
 	@varying @custom var scale:Float = 1.0;
 
-	@color var c:Color = 0xFFFFFFFF;
+	@color var color:Color = 0xFFFFFFFF;
 
 	function new(x:Float = 0.0, y:Float = 0.0) {
 		this.x = x;

@@ -6,8 +6,8 @@ package elements;
 class Sustain implements Element
 {
 	// position in pixel (relative to upper left corner of Display)
-	@posX @formula("uDisplayRotateX(aPos.x, aPos.y + py)") public var x:Int;
-	@posY @formula("uDisplayRotateY(aPos.x, aPos.y + py)") public var y:Int;
+	@posX @formula("uDisplayRotateX(aPos + vec2(0.0, py))") public var x:Int;
+	@posY @formula("uDisplayRotateY(aPos + vec2(0.0, py))") public var y:Int;
 
 	// size in pixel
 	@varying @sizeX @formula("w * speed") public var w:Int;
