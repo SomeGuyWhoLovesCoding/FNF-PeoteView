@@ -21,9 +21,9 @@ class SparrowActor extends Actor
 	// ── Construction ─────────────────────────────────────────────────────────
 
 	function new(display:CustomDisplay, tag:Null<String>, name:String,
-	             x:Int = 0, y:Int = 0, fps:Int = 24,
-	             folder:String = "images/characters/",
-	             addBufferAndProgram:Bool = true)
+				 x:Int = 0, y:Int = 0, fps:Int = 24,
+				 folder:String = "images/characters/",
+				 addBufferAndProgram:Bool = true)
 	{
 		super(display, tag, name, x, y, fps, folder, addBufferAndProgram);
 

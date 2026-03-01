@@ -71,8 +71,8 @@ class Actor extends ActorElement
 	// ── Construction ─────────────────────────────────────────────────────────
 
 	function new(display:CustomDisplay, tag:Null<String>, name:String,
-	             x:Int = 0, y:Int = 0, fps:Int = 24,
-	             ?folder:String = "images/characters/", addBufferAndProgram:Bool = true)
+				 x:Int = 0, y:Int = 0, fps:Int = 24,
+				 ?folder:String = "images/characters/", addBufferAndProgram:Bool = true)
 	{
 		this.display = display;
 		super(Math.ffloor(x), Math.ffloor(y));
@@ -166,7 +166,7 @@ class Actor extends ActorElement
 	 * frame-range setup to the subclass via `resolveAnimationRange`.
 	 */
 	function setupAnimation(symbolName:String, animData:ActorAnimationData,
-	                        sparrowRange:Array<Int>) {
+							sparrowRange:Array<Int>) {
 		frameIndex = 0;
 
 		if (animData != null) {

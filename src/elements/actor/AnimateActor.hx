@@ -34,9 +34,9 @@ class AnimateActor extends Actor
 	// ── Construction ─────────────────────────────────────────────────────────
 
 	function new(display:CustomDisplay, tag:Null<String>, name:String,
-	             x:Int = 0, y:Int = 0, fps:Int = 24,
-	             folder:String = "images/characters/",
-	             addBufferAndProgram:Bool = true)
+				 x:Int = 0, y:Int = 0, fps:Int = 24,
+				 folder:String = "images/characters/",
+				 addBufferAndProgram:Bool = true)
 	{
 		super(display, tag, name, x, y, fps, folder, addBufferAndProgram);
 
@@ -80,7 +80,7 @@ class AnimateActor extends Actor
 			buffer = Actor.buffers[tag];
 
 			if (Actor.programs[tag] == null) {
-                
+				
 				Actor.programs[tag] = new CustomProgram(buffer);
 				program = Actor.programs[tag];
 				program.blendEnabled = true;
@@ -98,7 +98,7 @@ class AnimateActor extends Actor
 				// correctly even for skewed or non-uniformly scaled sprites.
 				program.injectIntoFragmentShader('
 					vec4 getColor(int texId, float _ma, float _mb, float _mc, float _md,
-					              float _rotated, float _originU, float _originV)
+								  float _rotated, float _originU, float _originV)
 					{
 						vec2 uv = vTexCoord;
 
@@ -313,7 +313,7 @@ class AnimateActor extends Actor
 
 	// ── Dispose ──────────────────────────────────────────────────────────────
 
-    override function dispose() {
+	override function dispose() {
 		for (el in leafPool) {
 			el.w = 0;
 			el.h = 0;
@@ -321,6 +321,6 @@ class AnimateActor extends Actor
 		}
 		leafPool        = [];
 		activeLeafCount = 0;
-        super.dispose();
-    }
+		super.dispose();
+	}
 }
