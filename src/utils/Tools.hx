@@ -12,7 +12,6 @@ class Tools {
 
 	static function parseNoteskinData(path:String) {
 		while (Note.offsetAndSizeFrames.length != 0) Note.offsetAndSizeFrames.pop();
-		while (Note.offsetAndSizeFramesGM.length != 0) Note.offsetAndSizeFramesGM.pop();
 		while (Sustain.offsets.length != 0) Sustain.offsets.pop();
 		while (Sustain.tailPoints.length != 0) Sustain.tailPoints.pop();
 
@@ -40,32 +39,6 @@ class Tools {
 		var floatKeys = Math.ffloor(Note.offsetAndSizeFrames.length / 4) / 6;
 		if (floatKeys != Std.int(floatKeys)) throw "Noteskin not supported! KEYS is not integral!";
 		Note.KEYS = Std.int(floatKeys);
-
-		Note.enableGM = FileSystem.exists(Paths.asset('$path/noteData_gm.xml'));
-
-		if (Note.enableGM) {
-			var contents = File.getContent(Paths.asset('$path/noteData_gm.xml'));
-			var xml = Xml.parse(contents);
-			var root = xml.firstElement();
-
-			for (element in root.elementsNamed("SubTexture")) {
-				var name = element.get("name");
-				var x = Std.parseInt(element.get("x"));
-				var y = Std.parseInt(element.get("y"));
-				var width = Std.parseInt(element.get("width"));
-				var height = Std.parseInt(element.get("height"));
-				var frameX = element.exists("frameX") ? Std.parseInt(element.get("frameX")) : 0;
-				var frameY = element.exists("frameY") ? Std.parseInt(element.get("frameY")) : 0;
-
-				Note.offsetAndSizeFramesGM.push(x);
-				Note.offsetAndSizeFramesGM.push(y);
-				Note.offsetAndSizeFramesGM.push(width);
-				Note.offsetAndSizeFramesGM.push(height);
-				Note.offsetAndSizeFramesGM.push(frameX);
-				Note.offsetAndSizeFramesGM.push(frameY);
-				//trace(x,y,width,height,frameX,frameY);
-			}
-		}
 
 		// these two lines were there because I forgot for all this time that I SPECIFICALLY needed to include it inside here before the sustain note texture.
 		TextureSystem.disposeTexture("noteTex");

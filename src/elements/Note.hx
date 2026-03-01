@@ -11,13 +11,13 @@ class Note implements Element
 	// position in pixel (relative to upper left corner of Display)
 	@varying @custom @formula("ox * scale") public var ox:Int;
 	@varying @custom @formula("oy * scale") public var oy:Int;
-	@posX @formula("uDisplayRotateX(aPos + vec2(px, py) + vec2(ox, oy))") public var x:Int;
-	@posY @formula("uDisplayRotateY(aPos + vec2(px, py) + vec2(ox, oy))") public var y:Int;
+	@posX @formula("uDisplayRotateX(aPos + vec2(px, py) + vec2(ox, oy))") @set("properties") public var x:Int;
+	@posY @formula("uDisplayRotateY(aPos + vec2(px, py) + vec2(ox, oy))") @set("properties") public var y:Int;
 
 	// size in pixel
-	@varying @sizeX @formula("w * scale") public var w:Int = 100;
-	@varying @sizeY @formula("h * scale") public var h:Int = 100;
-	@varying @custom public var scale:Float = 1.0;
+	@varying @sizeX @formula("w * scale") @set("properties") public var w:Int = 100;
+	@varying @sizeY @formula("h * scale") @set("properties") public var h:Int = 100;
+	@varying @custom @set("properties") public var scale:Float = 1.0;
 
 	@rotation @formula("uDisplayRotation(r)") public var r:Float;
 
@@ -26,7 +26,7 @@ class Note implements Element
 
 	@color public var c:Color = 0xFFFFFFFF;
 
-	@varying @custom public var initialAlpha(default, set):Float = 1.0;
+	@varying @custom @set("properties") public var initialAlpha(default, set):Float = 1.0;
 	inline public function set_initialAlpha(value:Float) {
 		initialAlpha = value;
 
@@ -35,7 +35,7 @@ class Note implements Element
 		return value;
 	}
 
-	@varying @custom public var addedAlpha:Float = 0.0;
+	@varying @custom @set("properties") public var addedAlpha:Float = 0.0;
 
 	// extra tex attributes for clipping
 	@texX var clipX:Int = 0;
@@ -57,17 +57,11 @@ class Note implements Element
 	// this was done to mimic sparrow atlas functionality
 	static public var offsetAndSizeFrames:Array<Int> = [];
 
-	static public var offsetAndSizeFramesGM:Array<Int> = [];
-	static public var enableGM:Bool;
-
 	public var id:Int = 0;
 
-	inline public function new(x:Int, y:Int, w:Int, h:Int) {
-		this.x = x;
-		this.y = y;
-		this.w = w;
-		this.h = h;
+	inline public function new(x:Int, y:Int, w:Int, h:Int, scale:Float = 1.0, initialAlpha:Float = 1.0, addedAlpha:Float = 0.0) {
 		reset();
+		setProperties(x, y, w, h, scale, initialAlpha, addedAlpha);
 	}
 
 	static public function init(program:CustomProgram, name:String, texture:Texture)

@@ -227,13 +227,7 @@ class NoteSpawner {
 						continue;
 					}
 
-					var note = new Note(virtualNote.x, virtualNote.y, 0, 0);
-					note.w = virtualNote.w;
-					note.h = virtualNote.h;
-					note.scale = virtualNote.scale;
-
-					note.initialAlpha = virtualNote.initialAlpha;
-					note.addedAlpha = virtualNote.addedAlpha;
+					var note = new Note(virtualNote.x, virtualNote.y, virtualNote.w, virtualNote.h, virtualNote.scale, virtualNote.initialAlpha, virtualNote.addedAlpha);
 
 					note.changeID(id);
 					note.toNote();
@@ -279,6 +273,7 @@ class NoteSpawner {
 	 */
 	function renderVirtualSustains(notes:NoteVB) {
 		var virtualSustains = notes.sustains;
+		var tailPoints = Sustain.tailPoints;
 		for (i in 0...virtualSustains.length) {
 			var lane = virtualSustains[i];
 			for (j in 0...lane.length) {
@@ -288,15 +283,9 @@ class NoteSpawner {
 				for (k in 0...length) {
 					var virtualSustain:VirtualSustain = index[k];
 					if (virtualSustain == null) continue;
-					var sustain = new Sustain(-99999, -99999, 0, 0);
-					sustain.x = virtualSustain.x;
-					sustain.y = virtualSustain.y;
-					sustain.w = virtualSustain.w;
-					sustain.h = virtualSustain.h;
-					sustain.r = virtualSustain.r;
-					sustain.scale = virtualSustain.scale;
+					var sustain = new Sustain(virtualSustain.x, virtualSustain.y, virtualSustain.w, virtualSustain.h,
+						virtualSustain.r, virtualSustain.speed, virtualSustain.scale, id, tailPoints[id]);
 					sustain.length = virtualSustain.length;
-					sustain.speed = virtualSustain.speed;
 					sustain.c.aF = virtualSustain.alpha;
 					sustain.c.luminanceF = virtualSustain.alpha;
 					sustain.changeID(id);

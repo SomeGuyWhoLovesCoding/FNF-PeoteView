@@ -6,32 +6,32 @@ package elements;
 class Sustain implements Element
 {
 	// position in pixel (relative to upper left corner of Display)
-	@posX @formula("uDisplayRotateX(aPos + vec2(0.0, py))") public var x:Int;
-	@posY @formula("uDisplayRotateY(aPos + vec2(0.0, py))") public var y:Int;
+	@posX @formula("uDisplayRotateX(aPos + vec2(0.0, py))") @set("properties") public var x:Int;
+	@posY @formula("uDisplayRotateY(aPos + vec2(0.0, py))") @set("properties") public var y:Int;
 
 	// size in pixel
-	@varying @sizeX @formula("w * speed") public var w:Int;
-	@varying @sizeY @formula("h * scale") public var h:Int;
+	@varying @sizeX @formula("w * speed") @set("properties") public var w:Int;
+	@varying @sizeY @formula("h * scale") @set("properties") public var h:Int;
 
-	// at what x position it have to slice (width of the tail in texturedata pixels) (WARNING: COUNT X POSITION FROM PNG BACKWARDS)
-	@varying @custom public var tailPoint:Int = 43;
-
-	@rotation @formula("uDisplayRotation(r)") public var r:Float;
+	@rotation @formula("uDisplayRotation(r)") @set("properties") public var r:Float;
 
 	@pivotY @const @formula("h * 0.5") public var py:Int;
 
 	@color public var c:Color = 0xFFFFFFFF;
 
-	@varying @custom public var speed:Float = 1.0;
+	@varying @custom @set("properties") public var speed:Float = 1.0;
 
-	@varying @custom public var scale:Float = 1.0;
+	@varying @custom @set("properties") public var scale:Float = 1.0;
 
 	static public var defaultAlpha:Float = 0.6;
 	static public var defaultMissAlpha:Float = 0.3;
 
 	public var length:Int;
 
-	@texTile var tile:Int = 0;
+	@texTile @set("properties") var tile:Int = 0;
+
+	// at what x position it have to slice (width of the tail in texturedata pixels) (WARNING: COUNT X POSITION FROM PNG BACKWARDS)
+	@varying @custom @set("properties") public var tailPoint:Int = 43;
 
 	/**
 		The parent of this note sprite.
@@ -90,11 +90,8 @@ class Sustain implements Element
 		program.setColorFormula( 'c * slice(${name}_ID, tailPoint)' );
 	}
 
-	inline public function new(x:Int, y:Int, w:Int, h:Int, id:Int = 0) {
-		this.x = x;
-		this.y = y;
-		this.w = w;
-		this.h = h;
+	inline public function new(x:Int, y:Int, w:Int, h:Int, r:Float, s:Float, sc:Float, tile:Int, tailPoint:Int) {
+		setProperties(x, y, w, h, r, s, sc, tile, tailPoint);
 	}
 
 	inline public function changeID(id:Int) {
