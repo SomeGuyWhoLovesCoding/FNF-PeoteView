@@ -9,12 +9,16 @@ import haxe.Json;
  */
 typedef ResolvedLeaf = {
 	var sprite:AnimateSprite;
-	var a:Float;   // 2×2 rotation/scale matrix
+	var symbolName:String;        // the immediate SI parent that owns this leaf
+	var a:Float;                  // 2×2 rotation/scale matrix
 	var b:Float;
 	var c:Float;
 	var d:Float;
-	var tx:Float;  // translation
+	var tx:Float;                 // translation
 	var ty:Float;
+	var color:Null<AnimateColor>; // nearest ancestor tint, null if none
+	var alpha:Float;              // accumulated opacity (multiplicative down hierarchy)
+	var brightness:Float;         // additive brightness offset (CBRT, 0.0 = no change)
 }
 
 /**
@@ -121,8 +125,8 @@ class AnimateAtlas {
 
 		// Process layers in REVERSE order to get back-to-front rendering
 		for (i in 0...layers.length) {
-			var layer = layers[layers.length - 1 - i];  // Start from bottom-most layer
-			
+			var layer = layers[layers.length - 1 - i]; // Start from bottom-most layer
+
 			if (layer.FR == null) continue;
 			var frameList:Array<Dynamic> = layer.FR;
 
@@ -130,13 +134,14 @@ class AnimateAtlas {
 				var startI:Int = keyframe.I != null ? keyframe.I : 0;
 				var du:Int     = keyframe.DU != null ? keyframe.DU : 1;
 				var elems:Array<AnimateFrameElement> = [];
-				if (keyframe.E != null) parseElements(keyframe.E, elems);
+				var kfBrightness:Float = (keyframe.C != null && keyframe.C.M == "CBRT" && keyframe.C.BRT != null)
+					? (keyframe.C.BRT : Float) : 0.0;
+				if (keyframe.E != null) parseElements(keyframe.E, elems, kfBrightness);
 
 				// Stamp this keyframe's elements into every display frame it covers
 				for (di in startI...startI + du) {
 					if (di >= totalFrames) break;
-					
-					// Add elements for this layer to the frame
+
 					for (e in elems) {
 						displayFrames[di].push(e);
 					}
@@ -152,7 +157,7 @@ class AnimateAtlas {
 		animations.set(animName, { name: animName, frames: frames });
 	}
 
-	function parseElements(elementsData:Dynamic, target:Array<AnimateFrameElement>) {
+	function parseElements(elementsData:Dynamic, target:Array<AnimateFrameElement>, brightness:Float = 0.0) {
 		if (elementsData == null) return;
 		var list:Array<Dynamic> = Std.isOfType(elementsData, Array) ? elementsData : [elementsData];
 
@@ -169,7 +174,9 @@ class AnimateAtlas {
 					matrix:       mat,
 					transform:    si.TRP != null ? { x: si.TRP.x != null ? (si.TRP.x : Float) : 0.0,
 													 y: si.TRP.y != null ? (si.TRP.y : Float) : 0.0 } : null,
-					color:        si.C
+					color:        si.C != null ? parseColor(si.C) : null,
+					alpha:        si.A != null ? (si.A : Float) : 1.0,
+					brightness:   brightness
 				});
 			} else if (e.ASI != null) {
 				var asi = e.ASI;
@@ -182,10 +189,60 @@ class AnimateAtlas {
 					loop:         null,
 					matrix:       mat,
 					transform:    null,
-					color:        null
+					color:        null,
+					alpha:        1.0,
+					brightness:   brightness
 				});
 			}
 		}
+	}
+
+	/**
+	 * Parses a Flash color transform object.
+	 * Mode "T" (tint): lerp from original pixel toward TC by TM.
+	 *   TC is a CSS hex string like "#0000FF", TM is 0.0–1.0.
+	 */
+	function parseColor(c:Dynamic):Null<AnimateColor> {
+		if (c == null || c.M == null) return null;
+		var mode:String = c.M;
+
+		if (mode == "T" && c.TC != null) {
+			var hex:String = (c.TC : String);
+			if (hex.charAt(0) == "#") hex = hex.substr(1);
+			var rgb:Int = Std.parseInt("0x" + hex);
+			return {
+				mode:   "T",
+				r:      ((rgb >> 16) & 0xFF) / 255.0,
+				g:      ((rgb >> 8)  & 0xFF) / 255.0,
+				b:      ( rgb        & 0xFF) / 255.0,
+				amount: c.TM != null ? (c.TM : Float) : 1.0,
+				rm: 1.0,
+				gm: 1.0,
+				bm: 1.0,
+				am: 1.0,
+				ro: 0.0,
+				go: 0.0,
+				bo: 0.0,
+				ao: 0.0
+			};
+		}
+
+		if (mode == "AD") {
+			return {
+				mode:   "AD",
+				r: 0.0, g: 0.0, b: 0.0, amount: 0.0, // unused in AD mode
+				rm: c.RM != null ? (c.RM : Float) : 1.0,
+				gm: c.GM != null ? (c.GM : Float) : 1.0,
+				bm: c.BM != null ? (c.BM : Float) : 1.0,
+				am: c.AM != null ? (c.AM : Float) : 1.0,
+				ro: c.RO != null ? (c.RO : Float) / 255.0 : 0.0,
+				go: c.GO != null ? (c.GO : Float) / 255.0 : 0.0,
+				bo: c.BO != null ? (c.BO : Float) / 255.0 : 0.0,
+				ao: c.AO != null ? (c.AO : Float) / 255.0 : 0.0
+			};
+		}
+
+		return null;
 	}
 
 	/**
@@ -209,8 +266,6 @@ class AnimateAtlas {
 	// -------------------------------------------------------------------------
 
 	function resolveAllAnimations() {
-		// Only resolve top-level "anim" symbols (those referenced from charData),
-		// not every leaf symbol — but resolving all is harmless and simpler.
 		for (animName in animations.keys()) {
 			var resolved = buildResolvedFrames(animName);
 			if (resolved != null) resolvedAnimations.set(animName, resolved);
@@ -229,7 +284,7 @@ class AnimateAtlas {
 		for (frame in anim.frames) {
 			var leaves:ResolvedFrame = [];
 			for (elem in frame.elements) {
-				collectLeaves(elem, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, leaves, [symbolName]);
+				collectLeaves(elem, 1.0, 0.0, 0.0, 1.0, 0.0, 0.0, leaves, [symbolName], symbolName, null, 1.0, 0.0);
 			}
 			result.push(leaves);
 		}
@@ -247,14 +302,23 @@ class AnimateAtlas {
 	 *   tx_out = a*etx + c*ety + tx
 	 *   ty_out = b*etx + d*ety + ty
 	 *
-	 * `a,b,c,d,tx,ty` = parent's accumulated transform.
-	 * `visiting`       = cycle guard (symbol names currently on the call stack).
+	 * `a,b,c,d,tx,ty`  = parent's accumulated transform.
+	 * `visiting`        = cycle guard (symbol names currently on the call stack).
+	 * `parentSymbol`    = the nearest SI ancestor's name, stamped onto each leaf.
+	 * `inheritedColor`  = nearest ancestor color transform; overridden by this
+	 *                     element's own color if present.
+	 * `inheritedAlpha`  = accumulated opacity so far; multiplied by this element's
+	 *                     own alpha so fades compound correctly down the hierarchy.
 	 */
 	function collectLeaves(
 		elem:AnimateFrameElement,
 		a:Float, b:Float, c:Float, d:Float, tx:Float, ty:Float,
 		out:ResolvedFrame,
-		visiting:Array<String>
+		visiting:Array<String>,
+		parentSymbol:String,
+		inheritedColor:Null<AnimateColor>,
+		inheritedAlpha:Float,
+		inheritedBrightness:Float
 	) {
 		var em = elem.matrix;
 
@@ -266,14 +330,32 @@ class AnimateAtlas {
 		var ntx = a  * em.tx + c  * em.ty + tx;
 		var nty = b  * em.tx + d  * em.ty + ty;
 
+		// Color: this element's own overrides the inherited one
+		var activeColor:Null<AnimateColor> = elem.color != null ? elem.color : inheritedColor;
+
+		// Alpha: compound multiplicatively so nested fades stack correctly
+		var activeAlpha:Float = inheritedAlpha * elem.alpha;
+
+		// Brightness: additive, so nested adjustments stack
+		var activeBrightness:Float = inheritedBrightness + elem.brightness;
+
 		if (elem.type == "ASI") {
-			// Leaf: look up the actual atlas sprite
+			// Leaf: look up the actual atlas sprite, stamp nearest SI parent, color, alpha, and brightness
 			var sprite = sprites.get(elem.symbolName);
 			if (sprite != null) {
-				out.push({ sprite: sprite, a: na, b: nb, c: nc, d: nd, tx: ntx, ty: nty });
+				out.push({
+					sprite:     sprite,
+					symbolName: parentSymbol,
+					a: na, b: nb, c: nc, d: nd,
+					tx: ntx, ty: nty,
+					color:      activeColor,
+					alpha:      activeAlpha,
+					brightness: activeBrightness
+				});
 			}
 		} else {
-			// SI: recurse into the referenced symbol
+			// SI: recurse into the referenced symbol, passing this SI's name
+			// down as the new parentSymbol so all its leaves are tagged with it
 			var childName = elem.symbolName;
 			if (visiting.indexOf(childName) >= 0) return; // cycle guard
 
@@ -281,20 +363,19 @@ class AnimateAtlas {
 			if (childAnim == null) return;
 
 			// Which display frame of the child to show?
-			// elem.firstFrame is the keyframe index within the child's own timeline.
 			var ff = elem.firstFrame;
 			var childFrame:AnimateFrame = null;
 			for (f in childAnim.frames) {
 				if (f.index == ff) { childFrame = f; break; }
 			}
-			// Fallback: if exact index not found, clamp to last
+			// Fallback: clamp to last frame
 			if (childFrame == null && childAnim.frames.length > 0)
 				childFrame = childAnim.frames[childAnim.frames.length - 1];
 			if (childFrame == null) return;
 
 			var nextVisiting = visiting.concat([childName]);
 			for (childElem in childFrame.elements) {
-				collectLeaves(childElem, na, nb, nc, nd, ntx, nty, out, nextVisiting);
+				collectLeaves(childElem, na, nb, nc, nd, ntx, nty, out, nextVisiting, childName, activeColor, activeAlpha, activeBrightness);
 			}
 		}
 	}
@@ -339,8 +420,7 @@ class AnimateAtlas {
 // Data structures
 // -------------------------------------------------------------------------
 
-@:structInit
-class AnimateSprite {
+typedef AnimateSprite = {
 	public var name:String;
 	public var x:Int;
 	public var y:Int;
@@ -353,21 +433,18 @@ class AnimateSprite {
 	public var frameHeight:Int;
 }
 
-@:structInit
-class AnimateAnimation {
+typedef AnimateAnimation = {
 	public var name:String;
 	public var frames:Array<AnimateFrame>;
 }
 
-@:structInit
-class AnimateFrame {
+typedef AnimateFrame = {
 	public var index:Int;
 	public var duration:Int;
 	public var elements:Array<AnimateFrameElement>;
 }
 
-@:structInit
-class AnimateFrameElement {
+typedef AnimateFrameElement = {
 	public var instanceName:String;
 	public var symbolName:String;
 	public var type:String;
@@ -375,11 +452,35 @@ class AnimateFrameElement {
 	public var loop:String;
 	public var matrix:AnimateMatrix;
 	public var transform:AnimateTransform;
-	public var color:Dynamic;
+	public var color:Null<AnimateColor>;
+	public var alpha:Float;
+	public var brightness:Float; // additive offset from keyframe "C": { "M": "CBRT", "BRT": n }
 }
 
-@:structInit
-class AnimateMatrix {
+/**
+ * Parsed color transform from an SI element's "C" field.
+ * mode "T": lerp each channel from original toward (r,g,b) by `amount`.
+ *   result = mix(original.rgb, vec3(r,g,b), amount)   (alpha unchanged)
+ */
+typedef AnimateColor = {
+	public var mode:String;   // currently always "T"
+	public var r:Float;
+	public var g:Float;
+	public var b:Float;
+	public var amount:Float;  // 0.0–1.0 (TM field)
+
+    // Advanced fields (mode "AD")
+    public var rm:Float;
+	public var gm:Float;
+	public var bm:Float;
+	public var am:Float;
+    public var ro:Float;
+	public var go:Float;
+	public var bo:Float;
+	public var ao:Float;
+}
+
+typedef AnimateMatrix = {
 	public var a:Float;
 	public var b:Float;
 	public var c:Float;
@@ -388,14 +489,12 @@ class AnimateMatrix {
 	public var ty:Float;
 }
 
-@:structInit
-class AnimateTransform {
+typedef AnimateTransform = {
 	public var x:Float;
 	public var y:Float;
 }
 
-@:structInit
-class AnimateMeta {
+typedef AnimateMeta = {
 	public var app:String;
 	public var version:String;
 	public var image:String;

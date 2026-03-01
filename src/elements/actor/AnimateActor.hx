@@ -2,6 +2,7 @@ package elements.actor;
 
 import atlas.AnimateAtlas;
 import atlas.AnimateAtlas.AnimateSprite;
+import atlas.AnimateAtlas.AnimateColor;
 import atlas.AnimateAtlas.ResolvedLeaf;
 import atlas.AnimateAtlas.ResolvedFrame;
 import elements.actor.*;
@@ -13,6 +14,17 @@ import elements.actor.*;
 	so every part of a composite character carries its own accumulated
 	world transform.  The fragment shader uses per-leaf matrix varyings to
 	apply skew and non-uniform scale within each axis-aligned quad.
+
+	Filter types applied via _filterType:
+	  0.0 = none
+	  1.0 = multiply tint  (manual setTint: col.rgb *= filterRGB, col.a *= filterA)
+	  2.0 = lerp tint       (atlas "C" field: col.rgb = mix(col.rgb, filterRGB, filterA))
+
+	Alpha from the atlas "A" field is baked into the element's color attribute (el.c)
+	and compounds multiplicatively down the symbol hierarchy.
+
+	Fully transparent fragments are discarded before blending to prevent
+	visible AABB padding overlap between adjacent leaf quads.
 
 	@since Development
 **/
@@ -80,7 +92,7 @@ class AnimateActor extends Actor
 			buffer = Actor.buffers[tag];
 
 			if (Actor.programs[tag] == null) {
-				
+
 				Actor.programs[tag] = new CustomProgram(buffer);
 				program = Actor.programs[tag];
 				program.blendEnabled = true;
@@ -92,35 +104,67 @@ class AnimateActor extends Actor
 				TextureSystem.createTexture(texName, texPath, false, true);
 				TextureSystem.setTexture(program, texName, texName);
 
-				// ── Matrix-based UV distortion shader ──────────────────────
-				// Each leaf uploads its own a/b/c/d matrix components so the
-				// fragment shader can invert the transform and sample the atlas
-				// correctly even for skewed or non-uniformly scaled sprites.
+				// ── Fragment shader ────────────────────────────────────────
+				//
+				// Transparent fragments are discarded entirely so AABB padding
+				// between leaf quads never contributes to blending.
+				//
+				// _filterType == 0.0  no filter
+				// _filterType == 1.0  multiply tint  (manual setTint)
+				//                       col.rgb *= _filterR/G/B
+				//                       col.a   *= _filterA
+				// _filterType == 2.0  lerp tint  (baked from atlas "C" field)
+				//                       col.rgb  = mix(col.rgb, _filterR/G/B, _filterA)
+				//                       alpha unchanged
+				// _filterType == 3.0  advanced color transform  (atlas "AD" mode)
+				//                       col = clamp(col * multipliers + offsets, 0, 1)
+				//
+				// _filterBrightness   additive brightness offset applied after all
+				//                     other filters (atlas "CBRT" keyframe field)
+				//
+				// Atlas "A" alpha is baked into el.c and applied by the pipeline
+				// automatically — no extra shader branch needed.
 				program.injectIntoFragmentShader('
 					vec4 getColor(int texId, float _ma, float _mb, float _mc, float _md,
-								  float _rotated, float _originU, float _originV)
+								  float _rotated, float _originU, float _originV,
+								  float _filterType, float _filterR, float _filterG, float _filterB, float _filterA,
+								  float _adRM, float _adGM, float _adBM, float _adAM,
+								  float _adRO, float _adGO, float _adBO, float _adAO,
+								  float _filterBrightness)
 					{
 						vec2 uv = vTexCoord;
-
 						float su = _ma * uv.x + _mc * uv.y + _originU;
 						float sv = _mb * uv.x + _md * uv.y + _originV;
 
-						if (_rotated == 1.0) {
-							float tmp = su;
-							su = 1.0 - sv;
-							sv = tmp;
+						if (_rotated == 1.0) { float tmp = su; su = 1.0 - sv; sv = tmp; }
+						if (su < 0.0 || su > 1.0 || sv < 0.0 || sv > 1.0) return vec4(0.0);
+
+						vec4 col = getTextureColor(texId, vec2(su, sv));
+
+						if (col.a < 0.004) discard;
+
+						if (_filterType > 0.5 && _filterType < 1.5) {
+							col = vec4(col.rgb * vec3(_filterR, _filterG, _filterB), col.a * _filterA);
+						} else if (_filterType > 1.5 && _filterType < 2.5) {
+							col = vec4(mix(col.rgb, vec3(_filterR, _filterG, _filterB), _filterA), col.a);
+						} else if (_filterType > 2.5) {
+							col = clamp(vec4(
+								col.r * _adRM + _adRO,
+								col.g * _adGM + _adGO,
+								col.b * _adBM + _adBO,
+								col.a * _adAM + _adAO
+							), 0.0, 1.0);
 						}
 
-						if (su < 0.0 || su > 1.0 || sv < 0.0 || sv > 1.0) {
-							return vec4(0.0);
-						}
+						if (_filterBrightness != 0.0)
+							col = vec4(clamp(col.rgb + _filterBrightness, 0.0, 1.0), col.a);
 
-						return getTextureColor(texId, vec2(su, sv));
+						return col;
 					}
 				');
 
 				program.setColorFormula(
-					'getColor(${texName}_ID, _ma, _mb, _mc, _md, _rotated, _originU, _originV)'
+					'getColor(${texName}_ID, _ma, _mb, _mc, _md, _rotated, _originU, _originV, _filterType, _filterR, _filterG, _filterB, _filterA, _adRM, _adGM, _adBM, _adAM, _adRO, _adGO, _adBO, _adAO, _filterBrightness)'
 				);
 			} else {
 				program = Actor.programs[tag];
@@ -133,7 +177,7 @@ class AnimateActor extends Actor
 		scale  = data.scale;
 	}
 
-	// ── Leaf pool management (used by AnimateActor) ──────────────────────────
+	// ── Leaf pool management ─────────────────────────────────────────────────
 
 	function ensureLeafPool(count:Int) {
 		while (leafPool.length < count) {
@@ -224,6 +268,16 @@ class AnimateActor extends Actor
 	 * scale are rendered correctly within the axis-aligned quad.
 	 * clipWidth/clipHeight always hold raw atlas pixel dimensions so UV
 	 * sampling is never broken by the visual transform.
+	 *
+	 * COLOR & ALPHA
+	 * ─────────────
+	 * Baked tint (atlas "C" field, mode "T") is applied as _filterType = 2.0.
+	 * Manual setTint() overrides this with _filterType = 1.0 (multiply).
+	 * clearTint() restores the baked value if one exists, or clears to 0.0.
+	 *
+	 * Baked alpha (atlas "A" field, compounded down the hierarchy) is written
+	 * into el.c so the blend pipeline applies it for free without an extra
+	 * shader branch.
 	 */
 	function applyLeafTransform(el:ActorElement, leaf:ResolvedLeaf, leafIndex:Int) {
 		var sprite = leaf.sprite;
@@ -304,6 +358,44 @@ class AnimateActor extends Actor
 			el._originV = originLocalY / ah;
 		}
 
+		// ── Baked atlas color (tint) ───────────────────────────────────────
+
+		var col:Null<AnimateColor> = leaf.color;
+		if (col != null && col.mode == "T") {
+			el._filterType = 2.0;
+			el._filterR    = col.r;
+			el._filterG    = col.g;
+			el._filterB    = col.b;
+			el._filterA    = col.amount;
+		} else if (col != null && col.mode == "AD") {
+			el._filterType = 3.0;
+			el._adRM = col.rm;
+			el._adGM = col.gm;
+			el._adBM = col.bm;
+			el._adAM = col.am;
+			el._adRO = col.ro;
+			el._adGO = col.go;
+			el._adBO = col.bo;
+			el._adAO = col.ao;
+		} else {
+			el._filterType = 0.0;
+			el._filterR    = 1.0;
+			el._filterG    = 1.0;
+			el._filterB    = 1.0;
+			el._filterA    = 1.0;
+		}
+
+		// ── Baked atlas alpha ──────────────────────────────────────────────
+		// Written into el.c so the blend pipeline multiplies it automatically.
+		// Full white RGB preserves the sprite's original colors; only alpha varies.
+
+		el.c.aF = leaf.alpha;
+		el.c.luminanceF = leaf.alpha;
+
+		// ── Baked brightness ───────────────────────────────────────────────
+
+		el._filterBrightness = leaf.brightness;
+
 		el.scale = 1.0;
 		el.x = this.x;
 		el.y = this.y;
@@ -322,5 +414,23 @@ class AnimateActor extends Actor
 		leafPool        = [];
 		activeLeafCount = 0;
 		super.dispose();
+	}
+
+	// ── Filters ──────────────────────────────────────────────────────────────
+
+	/**
+	 * Apply a multiply tint to all leaves belonging to `symbolName`.
+	 * Overwrites any baked atlas color for those leaves until clearTint() is called.
+	 */
+	function setTint(symbolName:String, r:Float, g:Float, b:Float, a:Float = 1.0) {
+		var frame = currentResolvedFrames[frameIndex];
+		for (i in 0...activeLeafCount) {
+			if (frame[i].symbolName != symbolName) continue;
+			leafPool[i]._filterType = 1.0;
+			leafPool[i]._filterR    = r;
+			leafPool[i]._filterG    = g;
+			leafPool[i]._filterB    = b;
+			leafPool[i]._filterA    = a;
+		}
 	}
 }

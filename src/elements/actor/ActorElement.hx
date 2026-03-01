@@ -91,4 +91,16 @@ class ActorElement implements Element {
 		this.x = x;
 		this.y = y;
 	}
+
+	// --- Filters -----------------------
+	@varying @custom var _filterType:Float = 0.0;
+	@varying @custom var _filterR:Float    = 1.0;
+	@varying @custom var _filterG:Float    = 1.0;
+	@varying @custom var _filterB:Float    = 1.0;
+	@varying @custom var _filterA:Float    = 1.0;
+	@varying @custom var _filterBrightness:Float    = 0.0;
+	@varying @custom var _adRM:Float = 1.0; @varying @custom var _adGM:Float = 1.0;
+	@varying @custom var _adBM:Float = 1.0; @varying @custom var _adAM:Float = 1.0;
+	@varying @custom var _adRO:Float = 0.0; @varying @custom var _adGO:Float = 0.0;
+	@varying @custom var _adBO:Float = 0.0; @varying @custom var _adAO:Float = 0.0;
 }
