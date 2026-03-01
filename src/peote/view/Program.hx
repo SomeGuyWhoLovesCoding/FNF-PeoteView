@@ -237,7 +237,6 @@ class Program
 		FRAGMENT_INT_PRECISION : null,
 		FRAGMENT_SAMPLER_PRECISION : null,
 		VERTEX_INJECTION : "",
-		VERTEX_POST_CALC: "",
 		FRAGMENT_INJECTION : "",
 		// TODO: headers to share functions between glPrograms
 		//VERTEX_FUNCTION_HEADERS : "",
@@ -275,11 +274,6 @@ class Program
 	var formulaHasChanged:Bool = false;
 
 	var fragmentFloatPrecision:Null<String> = null;
-
-	public function injectAfterVertexCalc(glslCode:String, ?autoUpdate:Null<Bool>):Void {
-		glShaderConfig.VERTEX_POST_CALC = glslCode;
-		checkAutoUpdate(autoUpdate);
-	}
 
 	/**
 		Creates a new `Program` instance.
@@ -1333,8 +1327,9 @@ class Program
 				
 				//gl.bindSampler(textureListItem.value.unit, sampler); // only ES3.0
 				//gl.enable(gl.TEXTURE_2D); // is default ?
+
+				gl.uniform1i (textureListItem.value.uniformLoc, textureListItem.value.unit); // optimizing: later in this.uniformBuffer for isUBO
 			}
-			gl.uniform1i (textureListItem.value.uniformLoc, textureListItem.value.unit); // optimizing: later in this.uniformBuffer for isUBO
 			textureListItem = textureListItem.next;
 		}
 	}

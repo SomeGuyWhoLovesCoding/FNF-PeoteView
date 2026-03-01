@@ -254,18 +254,6 @@ class NoteSpawner {
 		}
 	}
 
-	public static function clampColorInt(x:Int):Int {
-        if (x >= 255) {
-            return 255;
-        }
-        if (x <= 0) {
-            return 0;
-        }
-        
-        var diff = x - 255;
-        return Math.round(-0.00392 * diff * diff + 255);
-	}
-
 	/**
 	 * Renders virtual sustains into actual sustain instances for rendering.
 	 * This function is separate for profiling.
