@@ -87,7 +87,7 @@ class MainMenu {
 			TextureSystem.setTexture(optionProg, "mainMenuSheet", "mainMenuSheet");
 
 			for (i in 0...optionAnims.length) {
-				var spr = new Actor(view, null, "images/mainMenu", 0, 0, 24, "", false);
+				var spr = Actor.create(view, null, "images/mainMenu", 0, 0, 24, "", false);
 				spr.playAnimation(optionAnims[i] + ' basic', true);
 				if (optionAnims[i] == 'backspace to exit') {
 					spr.x = 20;

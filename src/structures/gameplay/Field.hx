@@ -59,12 +59,12 @@ class Field {
 		actors = [];
 		actors.resize(3);
 
-		spectator = new Actor(parent.view, "spectator", "gf", 250, -100, 24, true, true);
+		spectator = Actor.create(parent.view, "spectator", "gf", 250, -100, 24, true);
 		spectator.mirror = !spectator.mirror;
 		spectator.playAnimation("danceLeft");
 		spectator.addToBuffer();
 
-		opponent = new Actor(parent.view, "opponent", "dad", 250, -100, 24, true, true);
+		opponent = Actor.create(parent.view, "opponent", "dad", 250, -100, 24, true);
 		opponent.mirror = !opponent.mirror;
 		opponent.preComputeSingPosesOfAnimations(singPoses);
 		opponent.preComputeMissPosesOfAnimations(missPoses);
@@ -74,7 +74,7 @@ class Field {
 		opponent.finishAnim = "idle";
 		opponent.addToBuffer();
 
-		player = new Actor(parent.view, "player", "bfSgwlfnf", 625, 250, 24, true, true);
+		player = Actor.create(parent.view, "player", "bfSgwlfnf", 625, 250, 24, true);
 		player.preComputeSingPosesOfAnimations(singPoses);
 		player.preComputeMissPosesOfAnimations(missPoses);
 		player.playAnimation("idle");
