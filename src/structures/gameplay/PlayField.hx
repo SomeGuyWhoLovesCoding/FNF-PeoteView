@@ -38,25 +38,25 @@ class PlayField {
 
 	var ratingJudgementList:Array<Judgement> = [
 		[
-			0.196, // target
+			0.2, // target
 			0, // id
 			1, // accuracy
 			400 // score
 		],
 		[
-			0.33,
+			0.4,
 			1,
 			0.8,
 			200
 		],
 		[
-			0.46,
+			0.54,
 			2,
 			0.675,
 			100
 		],
 		[
-			0.59,
+			0.67,
 			3,
 			0.5,
 			50

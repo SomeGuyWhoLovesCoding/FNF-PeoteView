@@ -164,7 +164,7 @@ class Strumline {
 			// and it's flexible too considering you want different offsets for certain things yk?
 			// also adjust for scroll speed like psych does
 			var _timing = MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency);
-			var timing = (_timing / parent._cachedHitbox) * 0.8 / ((pf.scrollSpeed * 0.5) + 0.5);
+			var timing = (_timing / parent._cachedHitbox) * 0.8;
 			// this trace was there because I was constantly testing the new latency compensation system
 			// specifically implemented inside the note system as I've had to even make an `onBeatHitUnoffsetted` event
 			// just to make it so that countdown doesn't get affected by the conductor offset in the first place

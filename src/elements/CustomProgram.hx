@@ -8,9 +8,6 @@ import peote.view.Program;
 	But I have a warning though, inside the class's code is overriden code for a new feature called Uniform Vectors.
 **/
 @:publicFields
-@:access(peote.view.Program)
-@:allow(elements.CustomProgram)
-@:privateAccess  // Add this to access PeoteView's privates
 class CustomProgram extends Program
 {
 	private var hasVertexInserted(default, null):Bool;
