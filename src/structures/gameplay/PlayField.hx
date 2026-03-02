@@ -50,13 +50,13 @@ class PlayField {
 			200
 		],
 		[
-			1.0-0.16,
+			1.0,
 			2,
 			0.675,
 			100
 		],
 		[
-			1.0,
+			Math.POSITIVE_INFINITY,
 			3,
 			0.5,
 			50
