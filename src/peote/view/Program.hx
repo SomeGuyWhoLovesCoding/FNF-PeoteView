@@ -256,8 +256,8 @@ class Program
 	var textureListPicking = new RenderList<ActiveTexture>(new Map<ActiveTexture,RenderListItem<ActiveTexture>>());
 
 	var textureLayers = new IntMap<Array<Texture>>();
-	var activeTextures = new Vector<Texture>(0);
-	var activeUnits = new Vector<Int>(0);
+	var activeTextures:Vector<Texture> = Vector.fromArrayCopy([]);
+	var activeUnits:Vector<Int> = Vector.fromArrayCopy([]);
 
 	var colorIdentifiers:Array<String>;
 	var customIdentifiers:Array<String>;
@@ -563,14 +563,14 @@ class Program
 	var uniformFloatsVertex:Array<UniformFloat> = null;
 	var uniformFloatsFragment:Array<UniformFloat> = null;
 	// TODO: target-optimization for faster access
-	var uniformFloats:Vector<UniformFloat>;
+	var uniformFloats:Vector<UniformFloat> = Vector.fromArrayCopy([]);
 	var uniformFloatLocations:Vector<GLUniformLocation>;
 	var uniformFloatPickLocations:Vector<GLUniformLocation>;
 
 	var uniformVec2sVertex:Array<UniformVec2> = null;
 	var uniformVec2sFragment:Array<UniformVec2> = null;
 	// TODO: target-optimization for faster access
-	var uniformVec2s:Vector<UniformVec2>;
+	var uniformVec2s:Vector<UniformVec2> = Vector.fromArrayCopy([]);
 	var uniformVec2Locations:Vector<GLUniformLocation>;
 	var uniformVec2PickLocations:Vector<GLUniformLocation>;
 
