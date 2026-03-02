@@ -24,7 +24,6 @@ class PlayField {
 		this.roof = roof;
 		this.display = display;
 		this.view = view;
-		//view.setFramebufferEnabled(true);
 
 		create(roof, display, Chart.header.mania);
 	}
@@ -36,6 +35,7 @@ class PlayField {
 			field.gfConductor.changeBpmAt(time, value);*/
 	}
 
+	// https://github.com/ShadowMario/FNF-PsychEngine/blob/main/source/backend/Rating.hx#L29
 	var ratingJudgementList:Array<Judgement> = [
 		[
 			1.0-0.67, // target
@@ -629,6 +629,5 @@ class PlayField {
 
 		if (display.fov != 1) display.fov = 1;
 		if (view.fov != 1) view.fov = 1;
-		//view.setFramebufferEnabled(false);
 	}
 }

@@ -4,7 +4,6 @@ package elements;
 	RotatableDisplay is a custom class that extends Display with added rotation support at the vertex level.
 **/
 @:publicFields
-@:access(people.view.Program)
 class RotatableDisplay extends Display
 {
 	private var rotation(default, set):Float = 0.0;
@@ -12,14 +11,14 @@ class RotatableDisplay extends Display
 	var uAngle:UniformFloat;
 	var uCos:UniformFloat;
 	var uSin:UniformFloat;
-	var uCenter:UniformVec2;
+	var uCenter:UniformVector;
 
 	public function new(x:Int, y:Int, width:Int, height:Int, color = 0x00000000) {
 		super(x, y, width, height, color);
 		uAngle   = new UniformFloat("uDisplayAngle", 0.0);
 		uSin     = new UniformFloat("uSin", 0.0);
 		uCos     = new UniformFloat("uCos", 1.0); // this has to be 1.0. cosine is just sine but inverted.
-		uCenter = new UniformVec2("uDisplayC", [x + width * 0.5, y + height * 0.5]);
+		uCenter = new UniformVector("uDisplayC", [x + width * 0.5, y + height * 0.5]);
 	}
 
 	private function set_rotation(deg:Float):Float {
