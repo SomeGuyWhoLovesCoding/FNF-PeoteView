@@ -254,8 +254,8 @@ class Program
 	var textureListPicking = new RenderList<ActiveTexture>(new Map<ActiveTexture,RenderListItem<ActiveTexture>>());
 
 	var textureLayers = new IntMap<Array<Texture>>();
-	var activeTextures = new Array<Texture>();
-	var activeUnits = new Array<Int>();
+	var activeTextures = new Vector<Texture>(0);
+	var activeUnits = new Vector<Int>(0);
 
 	var colorIdentifiers:Array<String>;
 	var customIdentifiers:Array<String>;
@@ -274,6 +274,9 @@ class Program
 	var formulaHasChanged:Bool = false;
 
 	var fragmentFloatPrecision:Null<String> = null;
+
+	var customFragmentExtensions:Array<String> = [];
+	var extensionCache:StringMap<Bool> = new StringMap<Bool>();
 
 	/**
 		Creates a new `Program` instance.
@@ -385,18 +388,9 @@ class Program
 			}
 			if (PeoteGL.Version.isUBO) glShaderConfig.isUBO = true;
 			if (PeoteGL.Version.isINSTANCED) glShaderConfig.isINSTANCED = true;
-			
-			// gl-extensions for fragment-shader
-			// TODO: let enable custom extensions for shaders like "GL_OES_fragment_precision_high"
-			// TODO: optimize to not check every time!
-			glShaderConfig.FRAGMENT_EXTENSIONS = [];
-			if (gl.getExtension("OES_standard_derivatives") != null)
-				glShaderConfig.FRAGMENT_EXTENSIONS.push({EXTENSION:"GL_OES_standard_derivatives"});
-				
-			if (gl.getExtension("EXT_color_buffer_float") != null)
-				glShaderConfig.FRAGMENT_EXTENSIONS.push({EXTENSION:"EXT_color_buffer_float"});
-			else if (gl.getExtension("OES_texture_float") != null)
-				glShaderConfig.FRAGMENT_EXTENSIONS.push({EXTENSION:"OES_texture_float"});
+
+			cacheExtensions();
+			rebuildFragmentExtensions();
 			
 			buffer.setNewGLContext(gl);
 			createProgram();
@@ -404,6 +398,29 @@ class Program
 			// setNewGLContext for all textures
 			for (t in activeTextures) t.setNewGLContext(gl);		
 		}
+	}
+
+	private inline function cacheExtensions():Void {
+		extensionCache = new StringMap<Bool>();
+		extensionCache.set("OES_standard_derivatives", gl.getExtension("OES_standard_derivatives") != null);
+		extensionCache.set("EXT_color_buffer_float", gl.getExtension("EXT_color_buffer_float") != null);
+		extensionCache.set("OES_texture_float", gl.getExtension("OES_texture_float") != null);
+		for (ext in customFragmentExtensions)
+			if (!extensionCache.exists(ext))
+				extensionCache.set(ext, gl.getExtension(ext) != null);
+	}
+
+	private inline function rebuildFragmentExtensions():Void {
+		glShaderConfig.FRAGMENT_EXTENSIONS = [];
+		if (extensionCache.get("OES_standard_derivatives"))
+			glShaderConfig.FRAGMENT_EXTENSIONS.push({EXTENSION:"GL_OES_standard_derivatives"});
+		if (extensionCache.get("EXT_color_buffer_float"))
+			glShaderConfig.FRAGMENT_EXTENSIONS.push({EXTENSION:"EXT_color_buffer_float"});
+		else if (extensionCache.get("OES_texture_float"))
+			glShaderConfig.FRAGMENT_EXTENSIONS.push({EXTENSION:"OES_texture_float"});
+		for (ext in customFragmentExtensions)
+			if (extensionCache.get(ext))
+				glShaderConfig.FRAGMENT_EXTENSIONS.push({EXTENSION: ext});
 	}
 
 	private inline function clearOldGLContext() 
@@ -492,17 +509,21 @@ class Program
 		
 		if ( !isPicking ) {
 			uTIME = gl.getUniformLocation(glProg, "uTime");
-			uniformFloatLocations = new Array<GLUniformLocation>();
-			uniformVec2Locations = new Array<GLUniformLocation>();
-			for (u in uniformFloats) uniformFloatLocations.push( gl.getUniformLocation(glProg, u.name) );
-			for (u in uniformVec2s) uniformVec2Locations.push( gl.getUniformLocation(glProg, u.name) );
+			var uniformFloatLocations_temp = new Array<GLUniformLocation>();
+			var uniformVec2Locations_temp = new Array<GLUniformLocation>();
+			for (u in uniformFloats) uniformFloatLocations_temp.push( gl.getUniformLocation(glProg, u.name) );
+			for (u in uniformVec2s) uniformVec2Locations_temp.push( gl.getUniformLocation(glProg, u.name) );
+			uniformFloatLocations = Vector.fromArrayCopy(uniformFloatLocations_temp);
+			uniformVec2Locations = Vector.fromArrayCopy(uniformVec2Locations_temp);
 		}
 		else {
 			uTIME_PICK = gl.getUniformLocation(glProg, "uTime");
-			uniformFloatPickLocations = new Array<GLUniformLocation>();
-			uniformVec2PickLocations = new Array<GLUniformLocation>();
-			for (u in uniformFloats) uniformFloatPickLocations.push( gl.getUniformLocation(glProg, u.name) );
-			for (u in uniformVec2s) uniformVec2PickLocations.push( gl.getUniformLocation(glProg, u.name) );
+			var uniformFloatPickLocations_temp = new Array<GLUniformLocation>();
+			var uniformVec2PickLocations_temp = new Array<GLUniformLocation>();
+			for (u in uniformFloats) uniformFloatPickLocations_temp.push( gl.getUniformLocation(glProg, u.name) );
+			for (u in uniformVec2s) uniformVec2PickLocations_temp.push( gl.getUniformLocation(glProg, u.name) );
+			uniformFloatPickLocations = Vector.fromArrayCopy(uniformFloatPickLocations_temp);
+			uniformVec2PickLocations = Vector.fromArrayCopy(uniformVec2PickLocations_temp);
 		}
 		
 		if (!isPicking) {
@@ -540,16 +561,16 @@ class Program
 	var uniformFloatsVertex:Array<UniformFloat> = null;
 	var uniformFloatsFragment:Array<UniformFloat> = null;
 	// TODO: target-optimization for faster access
-	var uniformFloats:Array<UniformFloat> = new Array<UniformFloat>();
-	var uniformFloatLocations:Array<GLUniformLocation>;
-	var uniformFloatPickLocations:Array<GLUniformLocation>;
+	var uniformFloats:Vector<UniformFloat>;
+	var uniformFloatLocations:Vector<GLUniformLocation>;
+	var uniformFloatPickLocations:Vector<GLUniformLocation>;
 
 	var uniformVec2sVertex:Array<UniformVec2> = null;
 	var uniformVec2sFragment:Array<UniformVec2> = null;
 	// TODO: target-optimization for faster access
-	var uniformVec2s:Array<UniformVec2> = new Array<UniformVec2>();
-	var uniformVec2Locations:Array<GLUniformLocation>;
-	var uniformVec2PickLocations:Array<GLUniformLocation>;
+	var uniformVec2s:Vector<UniformVec2>;
+	var uniformVec2Locations:Vector<GLUniformLocation>;
+	var uniformVec2PickLocations:Vector<GLUniformLocation>;
 
 	private function parseColorFormula():Void {
 		var formula:String = "";
@@ -713,36 +734,52 @@ class Program
 
 	private function accumulateUniformsFloat() {
 		if (uniformFloatsVertex == null) {
-			if (uniformFloatsFragment != null) uniformFloats = uniformFloatsFragment;
+			if (uniformFloatsFragment != null) uniformFloats = Vector.fromArrayCopy(uniformFloatsFragment);
 		}
 		else if (uniformFloatsFragment == null) {
-			uniformFloats = uniformFloatsVertex;
+			uniformFloats = Vector.fromArrayCopy(uniformFloatsVertex);
 		}
 		else {
-			uniformFloats = uniformFloatsVertex;
+			var uniformFloats_temp:Array<UniformFloat> = uniformFloatsVertex;
 			for (u in uniformFloatsFragment) {
-				if (uniformFloats.indexOf(u) < 0) {
-					uniformFloats.push(u);
+				if (uniformFloats_temp.indexOf(u) < 0) {
+					uniformFloats_temp.push(u);
 				}
 			}
+			uniformFloats = Vector.fromArrayCopy(uniformFloats_temp);
 		}
 	}
 
 	private function accumulateUniformsVec2() {
 		if (uniformVec2sVertex == null) {
-			if (uniformVec2sFragment != null) uniformVec2s = uniformVec2sFragment;
+			if (uniformVec2sFragment != null) uniformVec2s = Vector.fromArrayCopy(uniformVec2sFragment);
 		}
 		else if (uniformVec2sFragment == null) {
-			uniformVec2s = uniformVec2sVertex;
+			uniformVec2s = Vector.fromArrayCopy(uniformVec2sVertex);
 		}
 		else {
-			uniformVec2s = uniformVec2sVertex;
+			var uniformVec2s_temp:Array<UniformVec2> = uniformVec2sVertex;
 			for (u in uniformVec2sFragment) {
-				if (uniformVec2s.indexOf(u) < 0) {
-					uniformVec2s.push(u);
+				if (uniformVec2s_temp.indexOf(u) < 0) {
+					uniformVec2s_temp.push(u);
 				}
 			}
+			uniformVec2s = Vector.fromArrayCopy(uniformVec2s_temp);
 		}
+	}
+
+	/**
+		Set custom extensions to enable in the fragmentshader.
+		@param extensions an Array of extension name strings
+		@param autoUpdate set it to `true` (update) or `false` (no update), otherwise the `.autoUpdate` property is used
+	**/
+	public function setFragmentExtensions(extensions:Array<String>, ?autoUpdate:Null<Bool>):Void {
+		customFragmentExtensions = extensions;
+		if (gl != null)
+			for (ext in customFragmentExtensions)
+				if (!extensionCache.exists(ext))
+					extensionCache.set(ext, gl.getExtension(ext) != null);
+		checkAutoUpdate(autoUpdate);
 	}
 
 	/**
@@ -1091,11 +1128,7 @@ class Program
 			if (layer < 0) throw('Error, textureLayer "$identifier" did not exists.');
 			textureLayers.get(layer).remove(texture);
 			if (textureLayers.get(layer).length == 0) {
-				textureLayers.remove(layer);
-				// TO keep the textureLayers-MAP <-> ARRAY-customTextureIdentifiers
-				// this can not be removed here:
-				// customTextureIdentifiers.remove(identifier);
-				// TODO: better another removeTextureLayer() later!
+				removeTextureLayer(identifier);
 			}
 		}
 		_updateTexture = true;
@@ -1123,11 +1156,31 @@ class Program
 			#end
 			var layer = getTextureIndexByIdentifier(identifier, false);
 			if (layer < 0) throw('Error, textureLayer "$identifier" did not exists.');
-			textureLayers.remove(layer);
-			customTextureIdentifiers.remove(identifier);
+			removeTextureLayer(identifier);
 		}
 		_updateTexture = true;
 		checkAutoUpdate(autoUpdate);
+	}
+
+	/**
+		Removes a texture-layer (by identifier).
+		@param identifier texture-layer identifier (optional)
+	**/
+	private function removeTextureLayer(identifier:String):Void {
+		var i = customTextureIdentifiers.indexOf(identifier);
+		if (i < 0) return;
+		var layer = textureIdentifiers.length + i;
+		textureLayers.remove(layer);
+		customTextureIdentifiers.remove(identifier);
+		// remap all keys after the removed one
+		for (j in i...customTextureIdentifiers.length) {
+			var oldKey = textureIdentifiers.length + j + 1;
+			var newKey = textureIdentifiers.length + j;
+			if (textureLayers.exists(oldKey)) {
+				textureLayers.set(newKey, textureLayers.get(oldKey));
+				textureLayers.remove(oldKey);
+			}
+		}
 	}
 
 	private inline function checkAutoUpdate(autoUpdate:Null<Bool>) {
@@ -1160,8 +1213,12 @@ class Program
 	**/
 	public function update():Void {
 
+		var activeTextures_temp = (activeTextures != null) ? activeTextures.toArray() : [];
+		var activeUnits_temp = (activeUnits != null) ? activeUnits.toArray() : [];
+
 		if (_updateTexture) 
 		{
+
 			#if peoteview_debug_program
 			trace("update Textures");
 			#end
@@ -1173,26 +1230,26 @@ class Program
 				}
 			}
 			
-			var i = activeTextures.length;
+			var i = activeTextures_temp.length;
 			while (i-- > 0) 
-				if (newTextures.indexOf(activeTextures[i]) < 0) { // remove texture
+				if (newTextures.indexOf(activeTextures_temp[i]) < 0) { // remove texture
 					#if peoteview_debug_program 
 					trace("REMOVE texture", i);
 					#end
-					activeTextures[i].removeFromProgram(this);
-					activeTextures.splice(i, 1);
-					activeUnits.splice(i, 1);
+					activeTextures_temp[i].removeFromProgram(this);
+					activeTextures_temp.splice(i, 1);
+					activeUnits_temp.splice(i, 1);
 				}
 			
 			for (t in newTextures) {
-				if (activeTextures.indexOf(t) < 0) { // add texture
+				if (activeTextures_temp.indexOf(t) < 0) { // add texture
 					#if peoteview_debug_program
-					trace("ADD texture", activeTextures.length);
+					trace("ADD texture", activeTextures_temp.length);
 					#end
-					activeTextures.push(t);
+					activeTextures_temp.push(t);
 					var unit = 0;
-					while (activeUnits.indexOf(unit) >= 0 ) unit++;
-					activeUnits.push(unit);
+					while (activeUnits_temp.indexOf(unit) >= 0 ) unit++;
+					activeUnits_temp.push(unit);
 					t.addToProgram(this);
 				}
 			}
@@ -1209,13 +1266,13 @@ class Program
 			glShaderConfig.FRAGMENT_PROGRAM_UNIFORMS = "";
 			glShaderConfig.TEXTURES = [];
 			
-			if (activeTextures.length == 0) {
+			if (activeTextures_temp.length == 0) {
 				glShaderConfig.hasTEXTURES = false;
 			}
 			else {
 				glShaderConfig.hasTEXTURES = true;
 				
-				for (i in 0...activeTextures.length)
+				for (i in 0...activeTextures_temp.length)
 					glShaderConfig.FRAGMENT_PROGRAM_UNIFORMS += 'uniform sampler2D uTexture$i;';
 				
 				// fill texture-layer in template
@@ -1231,7 +1288,7 @@ class Program
 					for (i in 0...textures.length) {
 						units.push({
 							UNIT_VALUE:(i + 1) + ".0",
-							TEXTURE:"uTexture" + activeTextures.indexOf(textures[i]),
+							TEXTURE:"uTexture" + activeTextures_temp.indexOf(textures[i]),
 							SLOTS_X: textures[i].slotsX + ".0",
 							SLOTS_Y: textures[i].slotsY + ".0",
 							SLOT_WIDTH:  Util.toFloatString(textures[i].slotWidth  / textures[i].width),
@@ -1270,7 +1327,14 @@ class Program
 			glShaderConfig.hasTEXTURE_FUNCTIONS = (usedID_by_ColorFormula == 0 && textureID_Defaults.length == 0) ? false : true;
 		}
 
-		if (gl != null) reCreateProgram(); // recompile shaders
+		activeTextures = Vector.fromArrayCopy(activeTextures_temp);
+		activeUnits = Vector.fromArrayCopy(activeUnits_temp);
+
+		if (gl != null) {
+			cacheExtensions();
+    		rebuildFragmentExtensions();
+			reCreateProgram(); // recompile shaders
+		}
 		_updateTexture = false;
 		_updateColorFormula = false;
 	}
@@ -1281,24 +1345,30 @@ class Program
 		@param index Integer value for the index (starts by `0`)
 	**/
 	public function setActiveTextureGlIndex(texture:Texture, index:Int):Void {
+		var activeTextures_temp = (activeTextures != null) ? activeTextures.toArray() : [];
+		var activeUnits_temp = (activeUnits != null) ? activeUnits.toArray() : [];
+
 		#if peoteview_debug_program
 		trace("set texture index to " + index);
 		#end
 		var oldUnit:Int = -1;
 		var j:Int = -1;
-		for (i in 0...activeTextures.length) {
-			if (activeTextures[i] == texture) {
-				oldUnit = activeUnits[i];
-				activeUnits[i] = index;
+		for (i in 0...activeTextures_temp.length) {
+			if (activeTextures_temp[i] == texture) {
+				oldUnit = activeUnits_temp[i];
+				activeUnits_temp[i] = index;
 			}
-			else if (index == activeUnits[i]) j = i;
+			else if (index == activeUnits_temp[i]) j = i;
 		}
 		if (oldUnit == -1) throw("Error, texture is not in use, try setTextureLayer(layer, [texture]) before setting unit-number manual");
-		if (j != -1) activeUnits[j] = oldUnit;
+		if (j != -1) activeUnits_temp[j] = oldUnit;
 		
 		// update textureList units
-		j = 0; for (t in textureList) t.unit = activeUnits[j++];
-		if (hasPicking()) j = 0; for (t in textureListPicking) t.unit = activeUnits[j++];
+		j = 0; for (t in textureList) t.unit = activeUnits_temp[j++];
+		if (hasPicking()) j = 0; for (t in textureListPicking) t.unit = activeUnits_temp[j++];
+
+		activeTextures = Vector.fromArrayCopy(activeTextures_temp);
+		activeUnits = Vector.fromArrayCopy(activeUnits_temp);
 	}
 
 
@@ -1367,16 +1437,7 @@ class Program
 			}
 			
 			gl.uniform1f (uTIME, peoteView.time);
-			for (i in 0...uniformFloats.length) gl.uniform1f (uniformFloatLocations[i], uniformFloats[i].value);
-			if (uniformVec2s != null) {
-				for (i in 0...uniformVec2s.length) {
-					var vec2 = uniformVec2s[i];
-					var value1 = vec2.value[0];
-					var value2 = vec2.value[1];
-					//trace(value1,value2);
-					gl.uniform2f (uniformVec2Locations[i], value1, value2);
-				}
-			}
+			render_activeUniformFloatsAndVec2s();
 			
 			peoteView.setColor(colorEnabled);
 			peoteView.setGLDepth(zIndexEnabled);			
@@ -1416,16 +1477,7 @@ class Program
 		}
 		
 		gl.uniform1f (uTIME, peoteView.time);
-		for (i in 0...uniformFloats.length) gl.uniform1f (uniformFloatLocations[i], uniformFloats[i].value);
-		if (uniformVec2s != null) {
-			for (i in 0...uniformVec2s.length) {
-				var vec2 = uniformVec2s[i];
-				var value1 = vec2.value[0];
-				var value2 = vec2.value[1];
-				//trace(value1,value2);
-				gl.uniform2f (uniformVec2Locations[i], value1, value2);
-			}
-		}
+		render_activeUniformFloatsAndVec2s();
 		
 		peoteView.setColor(colorEnabled);
 		peoteView.setGLDepth(zIndexEnabled);		
@@ -1454,16 +1506,7 @@ class Program
 		                            (display.y + display.yOffset + yOff) / display.yz);
 		
 		gl.uniform1f (uTIME_PICK, peoteView.time);
-		for (i in 0...uniformFloats.length) gl.uniform1f (uniformFloatPickLocations[i], uniformFloats[i].value);
-		if (uniformVec2s != null) {
-			for (i in 0...uniformVec2s.length) {
-				var vec2 = uniformVec2s[i];
-				var value1 = vec2.value[0];
-				var value2 = vec2.value[1];
-				trace(value1,value2);
-				gl.uniform2f (uniformVec2PickLocations[i], value1, value2);
-			}
-		}
+		render_activeUniformFloatsAndVec2s(true);
 		
 		peoteView.setGLDepth((toElement == -1) ? zIndexEnabled : false); // disable for getAllElementsAt() in peoteView
 		
@@ -1472,6 +1515,19 @@ class Program
 				
 		buffer.pick(peoteView, display, this, toElement);
 		gl.useProgram (null);		
+	}
+
+	private function render_activeUniformFloatsAndVec2s(isPicking:Bool = false):Void {
+		if (uniformFloats != null) {
+			var locations = (isPicking) ? uniformFloatPickLocations : uniformFloatLocations;
+			for (i in 0...uniformFloats.length) gl.uniform1f(locations[i], uniformFloats[i].value);
+		}
+		if (uniformVec2s != null) {
+			var locations = (isPicking) ? uniformVec2PickLocations : uniformVec2Locations;
+			for (i in 0...uniformVec2s.length) {
+				gl.uniform2f(locations[i], uniformVec2s[i].value[0], uniformVec2s[i].value[1]);
+			}
+		}
 	}
 
 }
