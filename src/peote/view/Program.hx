@@ -19,6 +19,8 @@ import peote.view.intern.BufferInterface;
 import peote.view.intern.UniformBufferView;
 import peote.view.intern.UniformBufferDisplay;
 
+import haxe.ds.Vector;
+
 /*
     o-o    o-o  o-o-o  o-o
    o   o  o        o      o
@@ -1188,7 +1190,41 @@ class Program
 		else if (this.autoUpdate) update();
 	}
 
-	// TODO: replaceTexture(textureToReplace:Texture, newTexture:Texture)
+	/**
+		Replaces a `Texture` instance with another in a texture-layer (by identifier) or in all layers where it is used.
+		@param textureToReplace Texture instance to replace
+		@param newTexture Texture instance to replace with
+		@param identifier texture-layer identifier (optional)
+		@param autoUpdate set it to `true` (update) or `false` (no update), otherwise the `.autoUpdate` property is used
+	**/
+	public function replaceTexture(textureToReplace:Texture, newTexture:Texture, ?identifier:String, ?autoUpdate:Null<Bool>):Void {
+		if (textureToReplace == null) throw("Error, textureToReplace is null.");
+		if (textureToReplace.programs == null) throw("Error, textureToReplace is disposed.");
+		if (newTexture == null) throw("Error, newTexture is null.");
+		if (newTexture.programs == null) throw("Error, newTexture is disposed.");
+		if (identifier == null) {
+			for (layer in textureLayers.keys()) {
+				var textures = textureLayers.get(layer);
+				var i = textures.indexOf(textureToReplace);
+				if (i >= 0) {
+					if (textures.indexOf(newTexture) >= 0) throw("Error, newTexture is already in this layer.");
+					textures[i] = newTexture;
+				}
+			}
+		}
+		else {
+			var layer = getTextureIndexByIdentifier(identifier, false);
+			if (layer < 0) throw('Error, textureLayer "$identifier" did not exists.');
+			var textures = textureLayers.get(layer);
+			if (textures == null) throw('Error, textureLayer "$identifier" is empty.');
+			var i = textures.indexOf(textureToReplace);
+			if (i < 0) throw('Error, textureToReplace is not in layer "$identifier".');
+			if (textures.indexOf(newTexture) >= 0) throw("Error, newTexture is already in this layer.");
+			textures[i] = newTexture;
+		}
+		_updateTexture = true;
+		checkAutoUpdate(autoUpdate);
+	}
 
 	/**
 		Returns `true` if the program or a specific texture-layer contains a texture.
