@@ -229,10 +229,10 @@ class NoteSystem {
 		// --- Player side ---
 		if (playable) {
 			if (!isHit) {
-				var noteToHit = strumline.notesToHit[index];
-				var noteToHitExists = noteToHit != null;
-
 				if (!isMissed && diff < _cachedHitbox - offset) {
+					var noteToHit = strumline.notesToHit[index];
+					var noteToHitExists = noteToHit != null;
+
 					var pos = MetaNote.metaNotePositionToSongTime(noteToHit.position - pos);
 					if (!noteToHitExists || Math.abs(diff) < Math.abs(pos)) {
 						strumline.notesToHit[index] = note;
