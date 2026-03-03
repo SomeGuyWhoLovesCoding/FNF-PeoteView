@@ -436,6 +436,7 @@ struct DecoderStream {
         if (!asyncState.nextBufferReady.load(std::memory_order_relaxed) &&
             !asyncState.loadingInProgress.load(std::memory_order_relaxed)) {
             asyncState.requestNextBuffer.store(true, std::memory_order_release);
+            // asyncLoader->signal() is called by doBackgroundLoading() after this returns
         }
     }
     
@@ -553,6 +554,13 @@ private:
     std::atomic<bool> running{false};
     std::atomic<bool> pause{false};
     
+    // Condition variable so the worker wakes immediately on a signal
+    // instead of spinning on a 1ms sleep — eliminates the polling lag
+    // that caused buffer underflows when the audio device stalled.
+    std::mutex wakeMutex;
+    std::condition_variable wakeCV;
+    std::atomic<bool> workPending{false};
+    
 public:
     AsyncLoader(std::vector<DecoderStream*>& streamRefs) 
         : streams(streamRefs) {
@@ -570,6 +578,8 @@ public:
     
     void stop() {
         running.store(false, std::memory_order_release);
+        // Wake the worker so it can observe running=false and exit cleanly
+        signal();
         if (workerThread.joinable()) {
             workerThread.join();
         }
@@ -581,6 +591,14 @@ public:
     
     void resumeLoading() {
         pause.store(false, std::memory_order_release);
+        signal(); // Wake the worker immediately after unpause
+    }
+    
+    // Called by the audio thread when it urgently needs a buffer loaded.
+    // Wakes the worker immediately instead of waiting for the next poll tick.
+    void signal() {
+        workPending.store(true, std::memory_order_release);
+        wakeCV.notify_one();
     }
     
 private:
@@ -590,13 +608,27 @@ private:
         
         while (running.load(std::memory_order_acquire)) {
             if (pause.load(std::memory_order_acquire)) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                // While paused, wait on the CV so we wake instantly on resumeLoading()
+                std::unique_lock<std::mutex> lk(wakeMutex);
+                wakeCV.wait_for(lk, std::chrono::milliseconds(5),
+                    [this]{ return !pause.load(std::memory_order_acquire) || !running.load(std::memory_order_acquire); });
                 continue;
             }
             
+            // Guard against empty stream list — previously a % 0 divide-by-zero
+            // that could silently kill the worker thread.
+            if (streams.empty()) {
+                std::unique_lock<std::mutex> lk(wakeMutex);
+                wakeCV.wait_for(lk, std::chrono::milliseconds(5),
+                    [this]{ return !streams.empty() || !running.load(std::memory_order_acquire); });
+                continue;
+            }
+            
+            workPending.store(false, std::memory_order_release);
+            
             int processed = 0;
-            for (int i = 0; i < streams.size() && processed < MAX_STREAMS_PER_CYCLE; i++) {
-                int index = (currentStream + i) % streams.size();
+            for (int i = 0; i < (int)streams.size() && processed < MAX_STREAMS_PER_CYCLE; i++) {
+                int index = (currentStream + i) % (int)streams.size();
                 DecoderStream* stream = streams[index];
                 
                 if (!stream || !stream->active) {
@@ -610,11 +642,14 @@ private:
                 }
             }
             
-            currentStream = (currentStream + 1) % streams.size();
+            currentStream = (currentStream + 1) % (int)streams.size();
             
-            // Sleep briefly if nothing was processed to avoid busy-waiting
+            // If nothing needed loading, sleep until signalled rather than
+            // burning CPU on a tight 1ms polling loop.
             if (processed == 0) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                std::unique_lock<std::mutex> lk(wakeMutex);
+                wakeCV.wait_for(lk, std::chrono::milliseconds(4),
+                    [this]{ return workPending.load(std::memory_order_acquire) || !running.load(std::memory_order_acquire); });
             }
         }
     }
@@ -1110,6 +1145,7 @@ public:
     
     // Only make requests, async loader will fulfill them
     void doBackgroundLoading() {
+        bool anyRequested = false;
         for (size_t i = 0; i < streams.size(); i++) {
             DecoderStream& s = streams[i];
             
@@ -1127,6 +1163,7 @@ public:
                 
                 if (available < (HALF_BUFFER_FRAMES * 2)) {
                     s.requestBufferLoad();
+                    anyRequested = true;
                 }
             }
             
@@ -1137,7 +1174,15 @@ public:
                 
                 s.requestBufferLoad();
                 s.asyncState.needsLoad.store(false, std::memory_order_release);
+                anyRequested = true;
             }
+        }
+        
+        // Wake the async loader immediately if any stream posted a request.
+        // Previously the loader only checked every 1ms (sleep_for), which
+        // meant a speaker stall could drain the buffer before the decode finished.
+        if (anyRequested && asyncLoader) {
+            asyncLoader->signal();
         }
     }
 
