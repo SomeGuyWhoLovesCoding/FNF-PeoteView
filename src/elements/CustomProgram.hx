@@ -45,6 +45,16 @@ class CustomProgram extends Program
 			var rd = Std.downcast(display, RotatableDisplay);
 			if (rd == null) throw "CustomProgram must be added to a RotatableDisplay";
 
+			// no way
+			rd.uAngle = rd.uAngle_map[this] = new UniformFloat("uDisplayAngle", 0.0);
+			rd.uAngle.program = this;
+			rd.uSin = rd.uSin_map[this] = new UniformFloat("uSin", 0.0);
+			rd.uSin.program = this;
+			rd.uCos = rd.uCos_map[this] = new UniformFloat("uCos", 1.0); // this has to be 1.0. cosine is just sine but inverted.
+			rd.uCos.program = this;
+			rd.uCenter = rd.uCenter_map[this] = new UniformVector("uDisplayC", [display.x + display.width * 0.5, display.y + display.height * 0.5]);
+			rd.uCenter.program = this;
+
 			injectIntoVertexShader(DISPLAY_ROTATION_VERTEX_CODE, false, [rd.uAngle, rd.uSin, rd.uCos], false, [rd.uCenter]);
 
 			//setFormula("rotation", "uDisplayRotation(aRot.z)", false);

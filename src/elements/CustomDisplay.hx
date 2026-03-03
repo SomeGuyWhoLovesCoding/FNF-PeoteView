@@ -65,8 +65,7 @@ class CustomDisplay extends RotatableDisplay {
 		xOffset = -rotatedScrollX - ((Main.INITIAL_WIDTH  >> 1) * scrollShiftMult);
 		yOffset = -rotatedScrollY - ((Main.INITIAL_HEIGHT >> 1) * scrollShiftMult);
 
-		uCenter.value[0] = ((Main.VARIABLE_WIDTH  >> 1) - xOffset) / zoom;
-		uCenter.value[1] = ((Main.VARIABLE_HEIGHT >> 1) - yOffset) / zoom;
+		for (k in uCenter_map.keys()) uCenter_map[k].value = [((Main.VARIABLE_WIDTH  >> 1) - xOffset) / zoom, ((Main.VARIABLE_HEIGHT >> 1) - yOffset) / zoom];
 	}
 
 	function shake(x:Float, y:Float) {
