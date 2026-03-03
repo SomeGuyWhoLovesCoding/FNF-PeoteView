@@ -136,6 +136,12 @@ class Mixer {
 
 	static public function startMusic():Void {
 		MiniAudio.start();
+
+		// Block until audio is actually flowing — typically resolves in <5ms
+		while (MiniAudio.getPlaybackPosition() <= 0) {}
+		// Now sync game time to hardware playback position
+		var playfield = Main.current.playField;
+		if (playfield != null) playfield.songPosition = MiniAudio.getPlaybackPosition();
 	}
 
 	static public function stopMusic():Void {
@@ -218,6 +224,7 @@ class Mixer {
 		if (lastTimestamp1s == 0) lastTimestamp1s = timestamp;
 		var deltaTime:Float = Tools.int64ToFloat(timestamp - lastTimestamp) / 100000;
 		if (deltaTime < 0.0001) deltaTime = 0.0001;
+		if (deltaTime >= 100) deltaTime = 100;
 		if (RenderingMode.enabled) deltaTime = 1000 / RenderingMode.frameRate;
 		if (playField != null) {
 			var field = playField.field;
