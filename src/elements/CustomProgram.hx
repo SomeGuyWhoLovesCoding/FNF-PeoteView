@@ -11,7 +11,7 @@ import peote.view.Program;
 class CustomProgram extends Program
 {
 	private var hasVertexInserted(default, null):Bool;
-	private static inline var ROTATION_VERTEX_CODE = '
+	private static inline var DISPLAY_ROTATION_VERTEX_CODE = '
 		float uDisplayRotateX(vec2 p) {
 			vec2 r = p - uDisplayC;
 			return uCos*r.x - uSin*r.y + uDisplayC.x;
@@ -33,7 +33,7 @@ class CustomProgram extends Program
 			var rd = Std.downcast(display, RotatableDisplay);
 			if (rd == null) throw "CustomProgram must be added to a RotatableDisplay";
 
-			injectIntoVertexShader(ROTATION_VERTEX_CODE, false, [rd.uAngle, rd.uSin, rd.uCos], false, [rd.uCenter]);
+			injectIntoVertexShader(DISPLAY_ROTATION_VERTEX_CODE, false, [rd.uAngle, rd.uSin, rd.uCos], false, [rd.uCenter]);
 
 			//setFormula("rotation", "uDisplayRotation(aRot.z)", false);
 
