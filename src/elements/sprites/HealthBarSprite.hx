@@ -5,11 +5,11 @@ package elements.sprites;
 @:publicFields
 class HealthBarSprite implements Element {
 	// position in pixel (relative to upper left corner of Display)
-	@posX @formula("uDisplayRotateX(vec2((_flip != 0.0 ? aPos.x - w : aPos.x), aPos.y))") var x:Float = 0.0;
-	@posY @formula("uDisplayRotateY(vec2((_flip != 0.0 ? aPos.x - w : aPos.x), aPos.y))") var y:Float = 0.0;
+	@posX @formula("uDisplayRotateX(vec2(mixHelperF(aPos.x, aPos.x - w, _flip), aPos.y))") var x:Float = 0.0;
+	@posY @formula("uDisplayRotateY(vec2(mixHelperF(aPos.x, aPos.x - w, _flip), aPos.y))") var y:Float = 0.0;
 
 	// size in pixel
-	@sizeX @formula("(_flip != 0.0 ? -w : w)") var w:Float = 0.0;
+	@sizeX @formula("mixHelperF(w, -w, _flip)") var w:Float = 0.0;
 	@sizeY var h:Float = 0.0;
 
 	// extra tex attributes for clipping

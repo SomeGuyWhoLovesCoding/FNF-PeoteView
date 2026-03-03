@@ -26,7 +26,7 @@ class ActorElement implements Element {
 	@texSizeX private var clipSizeX:Int = 1;
 	@texSizeY private var clipSizeY:Int = 1;
 
-	@varying @custom @formula("_mirror == 1.0 ? (_flipX == 0.0 ? 1.0 : 0.0) : _flipX") var _flipX:Float = 0.0;
+	@varying @custom @formula("mixHelperF(_flipX, (1.0 - _flipX), _mirror)") var _flipX:Float = 0.0;
 	@varying @custom var _flipY:Float = 0.0;
 	@varying @custom var _mirror:Float = 0.0;
 	@varying @custom var _rotated:Float = 0.0;
@@ -67,15 +67,15 @@ class ActorElement implements Element {
 		return rotated = value;
 	}
 
-	@posX @formula("uDisplayRotateX(vec2(aPos.x + off_x + px + adjust_x + (w * (_mirror == 1.0 ? _flipX : -_flipX)), aPos.y + off_y + py + adjust_y + (h * _flipY)))") var x:Float;
-	@posY @formula("uDisplayRotateY(vec2(aPos.x + off_x + px + adjust_x + (w * (_mirror == 1.0 ? _flipX : -_flipX)), aPos.y + off_y + py + adjust_y + (h * _flipY)))") var y:Float;
+	@posX @formula("uDisplayRotateX(vec2(aPos.x + off_x + px + adjust_x + (w * (_flipX * sign(_mirror - 0.5))), aPos.y + off_y + py + adjust_y + (h * _flipY)))") var x:Float;
+	@posY @formula("uDisplayRotateY(vec2(aPos.x + off_x + px + adjust_x + (w * (_flipX * sign(_mirror - 0.5))), aPos.y + off_y + py + adjust_y + (h * _flipY)))") var y:Float;
 
 	// Replace existing sizeX/sizeY formulas:
-	@sizeX @formula("(w * scale) * (_flipX == 1.0 ? -1.0 : 1.0)") var w:Float;
-	@sizeY @formula("(h * scale) * (_flipY == 1.0 ? -1.0 : 1.0)") var h:Float;
+	@sizeX @formula("(w * scale) * (1.0 + (_flipX * 2.0))") var w:Float;
+	@sizeY @formula("(h * scale) * (1.0 + (_flipY * 2.0))") var h:Float;
 
-	@pivotX @formula("(w < 0.0 ? -w : w) * 0.5") var px:Float;
-	@pivotY @formula("(h < 0.0 ? -h : h) * 0.5") var py:Float;
+	@pivotX @formula("mixHelperF(-w, w, clamp(w, 0.0, 1.0)) * 0.5") var px:Float;
+	@pivotY @formula("mixHelperF(-h, h, clamp(h, 0.0, 1.0)) * 0.5") var py:Float;
 
 	@rotation @formula("uDisplayRotation(r)") var r:Float;
 

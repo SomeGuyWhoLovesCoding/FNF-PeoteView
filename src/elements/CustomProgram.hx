@@ -25,6 +25,10 @@ class CustomProgram extends Program
 		float uDisplayRotation(float r) {
 			return (r + uDisplayAngle) * 57.29577951;
 		}
+
+		float mixHelperF(float a1, float a2, float a3) {
+			return mix(a1, a2, a3);
+		}
 	';
 
 	override public function addToDisplay(display:Display, ?atProgram:Program, addBefore:Bool=false)
