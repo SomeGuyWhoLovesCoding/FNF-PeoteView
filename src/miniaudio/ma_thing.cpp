@@ -2113,7 +2113,7 @@ bool wearingPlugNPlay() {
 
 int detectLatency() {
 	#if HX_WINDOWS
-	int osMs = 46;
+	int osMs = 50;
 	#else
 	int osMs = 10;
 	#endif

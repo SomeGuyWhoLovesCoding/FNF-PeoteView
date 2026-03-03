@@ -138,7 +138,7 @@ class Mixer {
 		MiniAudio.start();
 
 		// Block until audio is actually flowing — typically resolves in <5ms
-		while (MiniAudio.getPlaybackPosition() <= 0) {}
+		while (MiniAudio.getPlaybackPosition() <= 10) {}
 		// Now sync game time to hardware playback position
 		var playfield = Main.current.playField;
 		if (playfield != null) playfield.songPosition = MiniAudio.getPlaybackPosition();
@@ -165,7 +165,7 @@ class Mixer {
 			// That was the cause of the "glitch" halfwheat wanted fixed desperately
 			// so instead I just set it on the note system class where everything processes.
 			var rawPlaybackPosition = MiniAudio.getPlaybackPosition();
-			if (playfield.songPosition - rawPlaybackPosition > 10 && rawPlaybackPosition < 50) {
+			if (playfield.songPosition - rawPlaybackPosition > 5 && rawPlaybackPosition < 50) {
 				playfield.songPosition = ogSongPos;
 			} else {
 				playfield.songPosition += deltaTime * speed;
@@ -180,7 +180,6 @@ class Mixer {
 
 				var diff = ogSongPos - rawPlaybackPosition;
 				var absDiff = Math.abs(diff);
-				//Sys.println(absDiff);
 
 				var smallest:Float = 3.75 * speed;
 				var small:Float = 8.5 * speed;
@@ -301,11 +300,6 @@ class Mixer {
 				var window = lime.app.Application.current.window;
 				updateSmoothMusicTime(deltaTime, playField, window);
 			}
-			#else
-			/*if (RenderingMode.enabled) {
-				//Sys.println('RenderMode Delta Time: $deltaTime');
-				subLoopTick(Tools.betterInt64FromFloat(deltaTime / 0.00001));
-			}*/
 			#end
 		}
 	}
@@ -318,7 +312,7 @@ class Mixer {
 
 	static inline function latency():Int {
 		__cachedLatency_times++;
-		if (__cachedLatency_times > 250) {
+		if (__cachedLatency_times > 50) {
 			__cachedLatency = MiniAudio.detectLatency();
 			__cachedLatency_times = 0;
 		}
