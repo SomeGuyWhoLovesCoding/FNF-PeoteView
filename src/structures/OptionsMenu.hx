@@ -36,9 +36,6 @@ class OptionsMenu {
 		if (optionsBuf == null) {
 			optionsBuf = new Buffer<OptionsSprite>(15);
 			optionsProg = new CustomProgram(optionsBuf);
-			optionsProg.blendEnabled = true;
-			optionsProg.blendSrc = optionsProg.blendSrcAlpha = BlendFactor.ONE;
-			optionsProg.blendDst = optionsProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
 			var tex = TextureSystem.getTexture("optionsMenuSheet");
 			OptionsSprite.init(optionsProg, "optionsMenuSheet", tex);

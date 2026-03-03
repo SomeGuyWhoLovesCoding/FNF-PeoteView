@@ -31,6 +31,14 @@ class CustomProgram extends Program
 		}
 	';
 
+	function new(buffer:BufferInterface) {
+		super(buffer);
+
+		blendEnabled = true;
+		blendSrc = blendSrcAlpha = BlendFactor.ONE;
+		blendDst = blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
+	}
+
 	override public function addToDisplay(display:Display, ?atProgram:Program, addBefore:Bool=false)
 	{
 		if (!hasVertexInserted) {

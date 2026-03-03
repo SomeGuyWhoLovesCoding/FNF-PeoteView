@@ -112,9 +112,6 @@ class UISprite implements Element {
 	static function init(program:CustomProgram, name:String, texture:Texture) {
 		// creates a texture-layer named "name"
 		program.setTexture(texture, name, true);
-		program.blendEnabled = true;
-		program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
-		program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
 		program.injectIntoFragmentShader('
 			vec4 getTexColor( int textureID, vec4 c, float plainColor )

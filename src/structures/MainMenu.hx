@@ -63,9 +63,6 @@ class MainMenu {
 
 			if (backgroundProg == null) {
 				backgroundProg = new CustomProgram(backgroundBuf);
-				backgroundProg.blendEnabled = true;
-				backgroundProg.blendSrc = backgroundProg.blendSrcAlpha = BlendFactor.ONE;
-				backgroundProg.blendDst = backgroundProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
 				TextureSystem.setTexture(backgroundProg, "mainMenuBGTex", "mainMenuBGTex");
 
@@ -80,9 +77,6 @@ class MainMenu {
 
 		if (optionProg == null) {
 			optionProg = new CustomProgram(optionBuf);
-			optionProg.blendEnabled = true;
-			optionProg.blendSrc = optionProg.blendSrcAlpha = BlendFactor.ONE;
-			optionProg.blendDst = optionProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
 			TextureSystem.setTexture(optionProg, "mainMenuSheet", "mainMenuSheet");
 

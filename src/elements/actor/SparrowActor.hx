@@ -64,9 +64,6 @@ class SparrowActor extends Actor
 			if (Actor.programs[tag] == null) {
 				Actor.programs[tag] = new CustomProgram(buffer);
 				program = Actor.programs[tag];
-				program.blendEnabled = true;
-				program.blendSrc     = program.blendSrcAlpha = BlendFactor.ONE;
-				program.blendDst     = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
 				var texName = name + "Char";
 				var xmlPath = Actor.path(name, folder, XML);

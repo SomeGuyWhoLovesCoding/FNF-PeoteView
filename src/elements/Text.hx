@@ -315,9 +315,6 @@ class Text {
 
 		if (noProgram) {
 			program = new CustomProgram(buffer);
-			program.blendEnabled = true;
-			program.blendSrc = program.blendSrcAlpha = BlendFactor.ONE;
-			program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 			program.setFragmentFloatPrecision('medium', true);
 
 			program.injectIntoFragmentShader(TEXT_OUTLINE_FRAGMENT_SHADER);

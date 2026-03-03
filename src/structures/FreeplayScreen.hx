@@ -40,9 +40,6 @@ class FreeplayScreen {
 		if (songTextsBuf == null) {
 			songTextsBuf = new Buffer<Actor>(140, 0, false);
 			songTextsProg = new CustomProgram(songTextsBuf);
-			songTextsProg.blendEnabled = true;
-			songTextsProg.blendSrc = songTextsProg.blendSrcAlpha = BlendFactor.ONE;
-			songTextsProg.blendDst = songTextsProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
 			var tex = TextureSystem.getTexture("alphabetSheet");
 			TextureSystem.setTexture(songTextsProg, "alphabetSheet", "alphabetSheet");
@@ -51,9 +48,6 @@ class FreeplayScreen {
 		if (songIconsBuf == null) {
 			songIconsBuf = new Buffer<HealthBarSprite>(8, 0, false);
 			songIconsProg = new CustomProgram(songIconsBuf);
-			songIconsProg.blendEnabled = true;
-			songIconsProg.blendSrc = songIconsProg.blendSrcAlpha = BlendFactor.ONE;
-			songIconsProg.blendDst = songIconsProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
 			var tex = TextureSystem.getTexture("hbTex");
 			HealthBarSprite.init(songIconsProg, "hbTex", tex);

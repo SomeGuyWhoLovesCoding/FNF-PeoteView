@@ -34,9 +34,6 @@ class PauseScreen {
 		if (pauseBuf == null) {
 			pauseBuf = new Buffer<StoryModeSprite>(5);
 			pauseProg = new CustomProgram(pauseBuf);
-			pauseProg.blendEnabled = true;
-			pauseProg.blendSrc = pauseProg.blendSrcAlpha = BlendFactor.ONE;
-			pauseProg.blendDst = pauseProg.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
 			var tex = TextureSystem.getTexture("storyModeSheet");
 			StoryModeSprite.init(pauseProg, "storyModeSheet", tex);
