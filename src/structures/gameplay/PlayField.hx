@@ -512,13 +512,19 @@ class PlayField {
 
 		if (!RenderingMode.enabled) {
 			Mixer.startMusic();
+			// Burn off the startup gap — spin until the audio clock is actually moving.
+			// This aligns songPosition to the real hardware clock from frame 1,
+			// so updateSmoothMusicTime corrects drift only, never a baked-in offset.
+			var attempts = 0;
+			while (MiniAudio.getPlaybackPosition() <= 0 && attempts++ < 500) {}
+			songPosition = MiniAudio.getPlaybackPosition() + latencyCompensation + Mixer.latency();
 		}
 
 		songStarted = true;
 		songEnded = false;
 
-		// Remove countdown handler if still present (defensive)
-		if (countdownDisp.conductor != null) countdownDisp.conductor.onBeatUnoffsetted.remove(countdownBeatHit);
+		if (countdownDisp.conductor != null) 
+			countdownDisp.conductor.onBeatUnoffsetted.remove(countdownBeatHit);
 	}
 
 	function stopSong(header:Header) {

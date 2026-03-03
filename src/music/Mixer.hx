@@ -136,12 +136,6 @@ class Mixer {
 
 	static public function startMusic():Void {
 		MiniAudio.start();
-
-		// Block until audio is actually flowing — typically resolves in <5ms
-		while (MiniAudio.getPlaybackPosition() <= 10) {}
-		// Now sync game time to hardware playback position
-		var playfield = Main.current.playField;
-		if (playfield != null) playfield.songPosition = MiniAudio.getPlaybackPosition();
 	}
 
 	static public function stopMusic():Void {
