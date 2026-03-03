@@ -277,35 +277,50 @@ class Text {
 
 			program.injectIntoFragmentShader('
 				vec4 outline(int textureID, float os, vec4 oc) {
-					// Simple 8-directional outline like HaxeFlixel
-
 					float invScale = 1.0 + os * 2.0;
 					vec2 coord = (vTexCoord - 0.5) * invScale + 0.5;
-
 					vec4 current = getTextureColor(textureID, coord);
 
-					// Sample 8 directions around the pixel
-					float outlineAlpha = 0.0;
-					int samples = 64;
+					float s1 = 0.9239 * os;
+					float s2 = 0.7071 * os;
+					float s3 = 0.3827 * os;
 
-					for (int i = 0; i < samples; i++) {
-						float angle = float(i) * 0.09817477;
-						vec2 offset = vec2(cos(angle), sin(angle)) * os;
-						float alpha = getTextureColor(textureID, coord + offset).a;
-						outlineAlpha = max(outlineAlpha, alpha);
-					}
+					vec4 a0 = vec4(
+						getTextureColor(textureID, coord + vec2( os,   0.0)).a,
+						getTextureColor(textureID, coord + vec2( s1,   s3 )).a,
+						getTextureColor(textureID, coord + vec2( s2,   s2 )).a,
+						getTextureColor(textureID, coord + vec2( s3,   s1 )).a
+					);
+					vec4 a1 = vec4(
+						getTextureColor(textureID, coord + vec2( 0.0,  os )).a,
+						getTextureColor(textureID, coord + vec2(-s3,   s1 )).a,
+						getTextureColor(textureID, coord + vec2(-s2,   s2 )).a,
+						getTextureColor(textureID, coord + vec2(-s1,   s3 )).a
+					);
+					vec4 a2 = vec4(
+						getTextureColor(textureID, coord + vec2(-os,   0.0)).a,
+						getTextureColor(textureID, coord + vec2(-s1,  -s3 )).a,
+						getTextureColor(textureID, coord + vec2(-s2,  -s2 )).a,
+						getTextureColor(textureID, coord + vec2(-s3,  -s1 )).a
+					);
+					vec4 a3 = vec4(
+						getTextureColor(textureID, coord + vec2( 0.0, -os )).a,
+						getTextureColor(textureID, coord + vec2( s3,  -s1 )).a,
+						getTextureColor(textureID, coord + vec2( s2,  -s2 )).a,
+						getTextureColor(textureID, coord + vec2( s1,  -s3 )).a
+					);
 
-					// Only apply outline where original is transparent
-					outlineAlpha *= (1.0 - current.a);
+					// Sum all 16 samples via 3 vector adds, then dot with 1/16 to average
+					vec4 ones = vec4(0.0625); // 1/16
+					float outlineAlpha = dot(a0 + a1 + a2 + a3, vec4(0.0625));
+					outlineAlpha = smoothstep(0.0, 0.25, outlineAlpha); // remap soft average back to crisp outline
 
-					// Composite: outline behind text
-					vec4 result = mix(vec4(oc.rgb, outlineAlpha), current, current.a);
-
-					return result;
+					vec4 outlineColor = vec4(oc.r, oc.g, oc.b, outlineAlpha);
+					return mix(current, mix(outlineColor, current, current.a), clamp(os * 20.0, 0.0, 1.0));
 				}
 			');
 
-			program.setColorFormula('(os == 0.0 ? getTextureColor(font_ID, vTexCoord) : outline(font_ID, os, oc)) * (c * alphaColor)');
+			program.setColorFormula('outline(font_ID, os, oc) * (c * alphaColor)');
 		}
 
 		this.font = font;

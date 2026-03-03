@@ -58,28 +58,20 @@ class Sustain implements Element
 			vec4 slice(int textureID, float tailPoint) {
 				vec2 coord = vTexCoord;
 
-				// Slice position
-				float slicePosX = 1.0 - (tailPoint * $invTileH * vSize.y) / vSize.x;
-				float tailInvTileW = 1.0 - tailPoint * $invTileW;
+				vec2 raw = vec2(
+					(tailPoint * $invTileH * vSize.y) / vSize.x,
+					tailPoint * $invTileW
+				);
+				vec2 tail = vec2(1.0) - raw;
 
-				// Left branch: fold all arithmetic directly into fract()
-				float leftCoordX = mix(
-					tailInvTileW,
-					0.0,
-					fract(
-						(1.0 - coord.x / slicePosX) * (vSize.x * $tileH / vSize.y - tailPoint) / ($tileW - tailPoint)
-					)
+				vec2 t = vec2(
+					fract((1.0 - coord.x / tail.x) * (vSize.x * $tileH / vSize.y - tailPoint) / ($tileW - tailPoint)),
+					(coord.x - tail.x) / raw.x  // reuse raw.x instead of recomputing 1.0 - tail.x
 				);
 
-				// Right branch: inline oneMinusSlice
-				float rightCoordX = mix(
-					tailInvTileW,
-					1.0,
-					(coord.x - slicePosX) / (1.0 - slicePosX)
-				);
+				vec2 coordX = mix(vec2(tail.y), vec2(0.0, 1.0), t);
 
-				// Branchless select
-				coord.x = mix(leftCoordX, rightCoordX, step(slicePosX, coord.x));
+				coord.x = mix(coordX.x, coordX.y, step(tail.x, coord.x));
 
 				return getTextureColor(textureID, coord);
 			}

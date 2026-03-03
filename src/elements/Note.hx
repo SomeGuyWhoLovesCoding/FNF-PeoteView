@@ -76,22 +76,12 @@ class Note implements Element
 		'
 			vec4 why(int textureID, float initialAlpha, float addedAlpha)
 			{
-				vec2 coord = vTexCoord;
-				vec4 tex = getTextureColor(textureID, coord);
+				vec4 tex = getTextureColor(textureID, vTexCoord);
+				if (tex.a == 0.0) return tex;
 
-				if (tex.a != 0.0) {
-					float oldA = tex.a;
-					float newA = clamp(oldA * initialAlpha + addedAlpha, 0.0, 1.0);
+				float newA = clamp(tex.a * initialAlpha + addedAlpha, 0.0, 1.0);
 
-					// Adjust premultiplied color to match the new alpha
-					if (oldA > 0.0) {
-						tex.rgb *= newA / oldA;
-					}
-
-					tex.a = newA;
-				}
-
-				return tex;
+				return vec4(tex.rgb * (newA / tex.a), newA);
 			}
 		');
 

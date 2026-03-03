@@ -229,6 +229,9 @@ class NoteSystem {
 		// --- Player side ---
 		if (playable) {
 			if (!isHit) {
+				if (isMissed)
+					noteSpr.initialAlpha = Note.defaultMissAlpha;
+
 				if (!isMissed && diff < _cachedHitbox - offset) {
 					var noteToHit = strumline.notesToHit[index];
 					var noteToHitExists = noteToHit != null;
@@ -320,6 +323,9 @@ class NoteSystem {
 			sustainSpr.speed = parent.scrollSpeed;
 			sustainSpr.scale = rec.scale;
 			sustainSpr.length = sustainLength;
+
+			if (isHeld || isMissed)
+				sustainSpr.alpha = Sustain.defaultMissAlpha;
 
 			if (!isHit) {
 				sustainSpr.w = sustainLength;

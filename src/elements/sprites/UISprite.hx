@@ -117,13 +117,13 @@ class UISprite implements Element {
 		program.blendDst = program.blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
 
 		program.injectIntoFragmentShader('
-			vec4 getTexColor( int textureID )
+			vec4 getTexColor( int textureID, vec4 c, float plainColor )
 			{
-				return getTextureColor(textureID, vTexCoord);
+				return mix(getTextureColor(textureID, vTexCoord), c, plainColor);
 			}
 		');
 
-		program.setColorFormula('(plainColor != 1.0 ? getTexColor(${name}_ID) : c) * alphaColor');
+		program.setColorFormula('getTexColor(${name}_ID, c, plainColor) * alphaColor');
 	}
 
 	function new() {}

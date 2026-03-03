@@ -101,20 +101,17 @@ class AnimateActor extends Actor
 					{
 						vec2 uv = vTexCoord;
 
-						float su = _m.x * uv.x + _m.z * uv.y + _originU;
-						float sv = _m.y * uv.x + _m.w * uv.y + _originV;
+						// mat2 in GLSL is column-major: mat2(col0, col1)
+						// col0 = (a, b), col1 = (c, d)
+						mat2 m = mat2(_m.x, _m.y, _m.z, _m.w);
+						vec2 st = m * uv + vec2(_originU, _originV);
 
-						if (_rotated == 1.0) {
-							float tmp = su;
-							su = 1.0 - sv;
-							sv = tmp;
-						}
+						st = mix(st, vec2(1.0 - st.y, st.x), _rotated);
 
-						if (su < 0.0 || su > 1.0 || sv < 0.0 || sv > 1.0) {
+						if (any(lessThan(st, vec2(0.0))) || any(greaterThan(st, vec2(1.0))))
 							return vec4(0.0);
-						}
 
-						return getTextureColor(texId, vec2(su, sv));
+						return getTextureColor(texId, st);
 					}
 				');
 
