@@ -8,11 +8,6 @@ class RotatableDisplay extends Display
 {
 	private var rotation(default, set):Float = 0.0;
 
-	var uAngle_map:Map<CustomProgram, UniformFloat> = [];
-	var uCos_map:Map<CustomProgram, UniformFloat> = [];
-	var uSin_map:Map<CustomProgram, UniformFloat> = [];
-	var uCenter_map:Map<CustomProgram, UniformVector> = [];
-
 	var uAngle:UniformFloat;
 	var uCos:UniformFloat;
 	var uSin:UniformFloat;
@@ -20,15 +15,16 @@ class RotatableDisplay extends Display
 
 	public function new(x:Int, y:Int, width:Int, height:Int, color = 0x00000000) {
 		super(x, y, width, height, color);
+		uAngle   = new UniformFloat("uDisplayAngle", 0.0);
+		uSin     = new UniformFloat("uSin", 0.0);
+		uCos     = new UniformFloat("uCos", 1.0); // this has to be 1.0. cosine is just sine but inverted.
+		uCenter = new UniformVector("uDisplayC", [x + width * 0.5, y + height * 0.5]);
 	}
 
 	private function set_rotation(deg:Float):Float {
-		var uAngle_value = deg * (Math.PI / 180.0);
-		for (uAngle in uAngle_map) uAngle.value = uAngle_value;
-		var uCos_value = Math.cos(uAngle.value);
-		for (uCos in uCos_map) uCos.value = uCos_value;
-		var uSin_value = Math.sin(uAngle.value);
-		for (uSin in uSin_map) uSin.value = Math.sin(uAngle.value);
+		uAngle.value = deg * (Math.PI / 180.0);
+		uCos.value = Math.cos(uAngle.value);
+		uSin.value = Math.sin(uAngle.value);
 		return rotation = deg;
 	}
 }
