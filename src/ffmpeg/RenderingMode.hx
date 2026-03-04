@@ -372,7 +372,7 @@ class RenderingMode {
 		#if FV_LIME_FORK
 		Application.current.window.uncappedFrameRate = false;
 		#else
-		Application.current.window.frameRate = SaveData.graphics.frameRate;
+		Application.current.window.frameRate = SaveData.state.graphics.frameRate;
 		#end
 		Application.current.window.resizable = true;
 		
