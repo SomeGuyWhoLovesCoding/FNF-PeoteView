@@ -272,9 +272,6 @@ class Main extends Application
 
 	var newDeltaTime:Float = 0;
 
-	#if hxcpp
-	var newTimestamp:Float = 0;
-	#end
 	override function update(deltaTime:Int) {
 		Tools.profileFrame();
 
@@ -297,6 +294,11 @@ class Main extends Application
 			#else
 			newDeltaTime = 1000 / Application.current.window.frameRate;
 			#end
+
+			if (Application.current.window.uncappedFrameRate) {
+				var mult = (1000 / Application.current.window.frameRate) / newDeltaTime;
+				newDeltaTime *= mult;
+			}
 
 			if (mainMenu != null && !mainMenu.disposed) {
 				mainMenu.update(newDeltaTime);
@@ -332,6 +334,7 @@ class Main extends Application
 		if (refreshRate == 0) refreshRate = 60;
 		if (renderFrameRate == 0) renderFrameRate = Application.current.window.renderFrameRate = refreshRate;
 		var renderRate = newDeltaTime; // Render is set directly after updating so this is the solution
+		//trace(renderRate);
 		#else
 		var renderFrameRate = Application.current.window.frameRate;
 		var renderRate = 1000 / renderFrameRate;

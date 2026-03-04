@@ -36,3 +36,6 @@ import custom.haxe.*;
 #if customtitlebar
 import titlebar.*;
 #end
+
+// LIME SHIT
+import lime.app.Application;

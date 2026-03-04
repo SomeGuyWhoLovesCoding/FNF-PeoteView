@@ -144,7 +144,8 @@ class MainMenu {
 		for (i in 0...optionBuf.length) {
 			var option = optionBuf.getElement(i);
 
-			var t = Math.min(deltaTime * 0.0115, 1);
+			var mult = (1000 / Application.current.window.frameRate) / deltaTime;
+			var t = Math.min((deltaTime * 0.0115) * mult, 1);
 			if (t == 1) t = (1/lime.app.Application.current.window.frameRate) * 0.0115;
 
 			var anim = optionAnims[i];
