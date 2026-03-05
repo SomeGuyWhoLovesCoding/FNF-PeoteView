@@ -40,7 +40,7 @@ class HealthBar {
 	**/
 	static function init(display:CustomDisplay) {
 		if (hbBuf == null) {
-			hbBuf = new Buffer<HealthBarSprite>(4, 4, true);
+			hbBuf = new Buffer<HealthBarSprite>(16, 16);
 			hbProg = new CustomProgram(hbBuf);
 	
 			var tex = TextureSystem.getTexture("hbTex");
