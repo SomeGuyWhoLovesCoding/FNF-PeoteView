@@ -10,6 +10,32 @@ import lime.ui.Window;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 
+// generated from claude.ai
+class FrameLogger {
+    static var last:Float = 0;
+    static var buf:StringBuf = new StringBuf();
+    static var size:Int = 0;
+    static var file:sys.io.FileOutput;
+
+    public static function log(deltaTime:Int64/*, deltaTimeINGAME:Float*/) {
+		if (file == null) {
+			file = sys.io.File.append("frametimes.log", false);
+			Application.current.window.onClose.add(flush);
+		}
+        var line = 'Raw: $deltaTime'/* + ', In-game: $deltaTimeINGAME'*/ + '\n';
+		buf.add(line);
+		size += line.length;
+		if (size >= 16384) flush();
+    }
+
+    public static function flush() {
+        file.writeString(buf.toString());
+        file.flush();
+        buf = new StringBuf();
+        size = 0;
+    }
+}
+
 private enum abstract StateSelection(Int) {
 	var NONE;
 	var MAIN_MENU;
@@ -274,10 +300,12 @@ class Main extends Application
 
 	override function update(deltaTime:Int) {
 		Tools.profileFrame();
+		//Sys.println(deltaTime);
+		//FrameLogger.log(deltaTime);
 
 		var lastTitle = Application.current.window.title;
 
-		if (MiniAudio.wearingHeadphones()) {
+		/*if (MiniAudio.wearingHeadphones()) {
 			if (lastTitle != "Wearing headphones (test)")
 				Application.current.window.title = "Wearing headphones (test)";
 		} else if (MiniAudio.wearingPlugNPlay()) {
@@ -286,7 +314,7 @@ class Main extends Application
 		} else {
 			if (lastTitle != "yes im wearing speakers")
 				Application.current.window.title = "yes im wearing speakers";
-		}
+		}*/
 
 		if (_started) {
 			#if FV_LIME_FORK
