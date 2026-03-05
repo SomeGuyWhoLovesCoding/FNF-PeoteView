@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <project>
-	<haxedef name="IN_FUNKIN_VIEW" />
 	<meta title="Friday Night Funkin': Peote View" package="peote.view" version="0.1.0" company="Sylvio Sell - maitag" />
 
 	<window width="1280" height="720" fps="60" resizable="true" vsync="false" background="null" />
