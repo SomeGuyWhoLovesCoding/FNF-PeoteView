@@ -309,7 +309,7 @@ class Text {
 		_key = key;
 
 		//trace("Okay, so new buffer is finally made now");
-		buffer = new Buffer<TextCharSprite>(8, 8, false);
+		buffer = new Buffer<TextCharSprite>(16, 16);
 
 		var noProgram = program == null;
 

@@ -76,7 +76,7 @@ class AnimateActor extends Actor
 		if (animateAtlas.imagePath != "" && addBufferAndProgram) {
 			if (tag == null) throw "Tag cannot be null when addBufferAndProgram is true";
 
-			if (Actor.buffers[tag] == null) Actor.buffers[tag] = new Buffer<ActorElement>(4, 4, true);
+			if (Actor.buffers[tag] == null) Actor.buffers[tag] = new Buffer<ActorElement>(16, 16);
 			buffer = Actor.buffers[tag];
 
 			if (Actor.programs[tag] == null) {

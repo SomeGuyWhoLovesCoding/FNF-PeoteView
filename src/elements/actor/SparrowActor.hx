@@ -58,7 +58,7 @@ class SparrowActor extends Actor
 		if (sparrowAtlas.imagePath != "" && addBufferAndProgram) {
 			if (tag == null) throw "Tag cannot be null when addBufferAndProgram is true";
 
-			if (Actor.buffers[tag] == null) Actor.buffers[tag] = new Buffer<ActorElement>(64);
+			if (Actor.buffers[tag] == null) Actor.buffers[tag] = new Buffer<ActorElement>(16, 16);
 			buffer = Actor.buffers[tag];
 
 			if (Actor.programs[tag] == null) {
