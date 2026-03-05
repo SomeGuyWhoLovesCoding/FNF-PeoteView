@@ -129,7 +129,7 @@ class HUD {
 	**/
 	static function init() {
 		if (uiBuf == null) {
-			uiBuf = new Buffer<UISprite>(4, 4, true);
+			uiBuf = new Buffer<UISprite>(16, 16);
 			uiProg = new CustomProgram(uiBuf);
 
 			var tex = TextureSystem.getTexture("uiTex");

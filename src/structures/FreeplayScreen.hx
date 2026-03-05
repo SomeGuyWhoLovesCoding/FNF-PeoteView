@@ -38,7 +38,7 @@ class FreeplayScreen {
 
 	function reload(chapterName:String) {
 		if (songTextsBuf == null) {
-			songTextsBuf = new Buffer<Actor>(140, 0, false);
+			songTextsBuf = new Buffer<Actor>(16, 16);
 			songTextsProg = new CustomProgram(songTextsBuf);
 
 			var tex = TextureSystem.getTexture("alphabetSheet");
@@ -46,7 +46,7 @@ class FreeplayScreen {
 		}
 
 		if (songIconsBuf == null) {
-			songIconsBuf = new Buffer<HealthBarSprite>(8, 0, false);
+			songIconsBuf = new Buffer<HealthBarSprite>(8, 8);
 			songIconsProg = new CustomProgram(songIconsBuf);
 
 			var tex = TextureSystem.getTexture("hbTex");
