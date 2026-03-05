@@ -21,6 +21,10 @@ jobs:
         with:
           version: latest
 
+      - name: Setup haxelib
+        run: haxelib setup C:/haxelib
+        shell: cmd
+
       - name: Cache haxelib dependencies
         id: haxelib-cache
         uses: actions/cache@v4
@@ -31,7 +35,6 @@ jobs:
       - name: Install haxelib dependencies
         if: steps.haxelib-cache.outputs.cache-hit != 'true'
         run: |
-          haxelib setup C:/haxelib
           haxelib install format --quiet
           haxelib install hxp --quiet
           haxelib install hxcpp --quiet
@@ -87,6 +90,9 @@ jobs:
           sudo ln -sf /usr/include/libdrm/drm_mode.h /usr/include/drm_mode.h && \
           sudo ln -sf /usr/include/libdrm/drm.h /usr/include/drm.h
 
+      - name: Setup haxelib
+        run: haxelib setup ~/haxelib
+
       - name: Cache haxelib dependencies
         id: haxelib-cache
         uses: actions/cache@v4
@@ -97,7 +103,6 @@ jobs:
       - name: Install haxelib dependencies
         if: steps.haxelib-cache.outputs.cache-hit != 'true'
         run: |
-          haxelib setup ~/haxelib
           haxelib install format --quiet
           haxelib install hxp --quiet
           haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet
