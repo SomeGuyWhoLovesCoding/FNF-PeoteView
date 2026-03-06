@@ -7,7 +7,7 @@
 		<compilerflag value="-I${PROJECT_DIR}/miniaudio" />
 		<compilerflag value="-I${PROJECT_DIR}/miniaudio/include" />
 		<compilerflag value="-I${PROJECT_DIR}/miniaudio/signalsmith-stretch" />
-		<file name="${PROJECT_DIR}/miniaudio/ma_thing.cpp" />
+		<file name="${PROJECT_DIR}/miniaudio/ma_thing_standalone.cpp" />
 	</files>
 	
 	<target id="haxe">

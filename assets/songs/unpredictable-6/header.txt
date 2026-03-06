@@ -5,8 +5,8 @@ Speed: 1.62
 BPM: 185
 Time Signature: 4/4
 Stage: stage
-Instrumental: assets/songs/unpredictable-6/Inst.flac
-Voices: assets/songs/unpredictable-6/Voices-Player.flac, assets/songs/unpredictable-6/Voices-Opponent.flac
+Instrumental: assets/songs/unpredictable-6/Inst.ogg
+Voices: assets/songs/unpredictable-6/Voices-Player.ogg, assets/songs/unpredictable-6/Voices-Opponent.ogg
 Mania: 4
 Difficulty: #8
 Game Over:
