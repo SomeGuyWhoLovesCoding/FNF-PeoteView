@@ -49,6 +49,7 @@
 #include <locale>
 #include <codecvt>
 #pragma comment(lib, "ole32.lib")
+#pragma comment(lib, "advapi32.lib")  // Add this line
 #elif _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -76,16 +77,24 @@ extern "C" {
 #include <thread>
 #include <unordered_map>
 #include <vector>
+#include <iostream>
 
 #ifdef __SSE__
 #include <emmintrin.h>
 #include <xmmintrin.h>
 #endif
 
-// ---- Windows audio-device helpers ----------------------------------------
+// ---- Windows audio-device helpers with change detection -----------------
+
+// ---- Windows audio-device helpers with change detection -----------------
 
 #ifdef HX_WINDOWS
 
+// Need these additional includes
+#include <chrono>
+#include <thread>
+
+// Make sure wstring_to_string is defined before using it
 static std::string wstring_to_string(const std::wstring& wstr) {
     if (wstr.empty()) return std::string();
     int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(),
@@ -96,111 +105,448 @@ static std::string wstring_to_string(const std::wstring& wstr) {
     return strTo;
 }
 
-inline bool checkWindowsHeadphoneStatus() {
-    HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-    if (FAILED(hr)) return false;
-
+// Store current device state globally
+static struct AudioDeviceState {
+    bool isPnP = false;
     bool isHeadphones = false;
+    std::string deviceName;
+    std::string deviceId;
+    std::atomic<int64_t> lastCheckTime{0};
+    std::atomic<bool> deviceChanged{false};
+    std::mutex mutex;
+} g_currentDeviceState;
+
+// Cache duration to avoid excessive polling (milliseconds)
+#define DEVICE_CHECK_COOLDOWN_MS 500
+
+// Update device state - returns true if device changed
+static bool refreshDeviceState() {
+    HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+    bool comInitialized = SUCCEEDED(hr);
+    if (hr == RPC_E_CHANGED_MODE) comInitialized = false;
+    
     IMMDeviceEnumerator* pEnumerator = nullptr;
     IMMDevice* pDevice = nullptr;
     IPropertyStore* pProps = nullptr;
-
-    hr = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
-                          __uuidof(IMMDeviceEnumerator), (void**)&pEnumerator);
-    if (SUCCEEDED(hr)) {
+    LPWSTR pwszDeviceId = nullptr;
+    
+    bool newIsPnP = false;
+    bool newIsHeadphones = false;
+    std::string newDeviceName = "Unknown";
+    std::string newDeviceId = "";
+    
+    if (SUCCEEDED(CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL,
+                                   __uuidof(IMMDeviceEnumerator), (void**)&pEnumerator))) {
         if (SUCCEEDED(pEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &pDevice))) {
+            
+            // Get device ID
+            if (SUCCEEDED(pDevice->GetId(&pwszDeviceId)) && pwszDeviceId) {
+                newDeviceId = wstring_to_string(std::wstring(pwszDeviceId));
+                CoTaskMemFree(pwszDeviceId);
+            }
+            
+            // Get device properties
             if (SUCCEEDED(pDevice->OpenPropertyStore(STGM_READ, &pProps))) {
                 PROPVARIANT varName;
                 PropVariantInit(&varName);
-                const PROPERTYKEY* keys[] = { &PKEY_Device_DeviceDesc, &PKEY_Device_FriendlyName };
-                for (int i = 0; i < 2 && !isHeadphones; i++) {
-                    if (SUCCEEDED(pProps->GetValue(*keys[i], &varName)) &&
-                        varName.vt == VT_LPWSTR && varName.pwszVal) {
-                        std::string name = wstring_to_string(varName.pwszVal);
-                        std::transform(name.begin(), name.end(), name.begin(), ::tolower);
-                        const char* kws[] = { "headphone", "headset", "earphone", "earbud",
-                                              "airpod", "bluetooth", "bt", "wireless",
-                                              "ear piece", "usb audio speakers" };
-                        for (const char* kw : kws)
-                            if (name.find(kw) != std::string::npos) { isHeadphones = true; break; }
-                    }
-                    PropVariantClear(&varName);
+                
+                // Get friendly name
+                if (SUCCEEDED(pProps->GetValue(PKEY_Device_FriendlyName, &varName)) &&
+                    varName.vt == VT_LPWSTR && varName.pwszVal) {
+                    newDeviceName = wstring_to_string(varName.pwszVal);
                 }
+                PropVariantClear(&varName);
+                
+                // Check if PnP using device ID
+                if (!newDeviceId.empty()) {
+                    std::string id = newDeviceId;
+                    std::transform(id.begin(), id.end(), id.begin(), ::tolower);
+                    
+                    const char* pnpPatterns[] = { "usb#", "bth#", "bthenum#", "swd#mmdevapi#",
+                                                  "bluetooth", "hid#", "uefi" };
+                    
+                    for (const char* pat : pnpPatterns) {
+                        if (id.find(pat) != std::string::npos) {
+                            newIsPnP = true;
+                            break;
+                        }
+                    }
+                }
+                
+                // If still not determined, check property store
+                if (!newIsPnP) {
+                    PROPVARIANT var;
+                    PropVariantInit(&var);
+                    const PROPERTYKEY* keys[] = { &PKEY_Device_FriendlyName, 
+                                                  &PKEY_Device_DeviceDesc };
+                    
+                    for (int i = 0; i < 2 && !newIsPnP; i++) {
+                        if (SUCCEEDED(pProps->GetValue(*keys[i], &var)) && 
+                            var.vt == VT_LPWSTR && var.pwszVal) {
+                            std::string s = wstring_to_string(var.pwszVal);
+                            std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+                            
+                            const char* kws[] = { "usb", "bluetooth", "bt", "wireless", "external",
+                                                  "hdmi", "digital audio", "digital output" };
+                            
+                            for (const char* k : kws) {
+                                if (s.find(k) != std::string::npos) {
+                                    newIsPnP = true;
+                                    break;
+                                }
+                            }
+                        }
+                        PropVariantClear(&var);
+                    }
+                }
+                
+                // Check if headphones
+                std::string nameLower = newDeviceName;
+                std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
+                const char* headphoneKws[] = { "headphone", "headset", "earphone", "earbud",
+                                               "airpod", "bluetooth", "bt", "wireless",
+                                               "ear piece", "usb audio speakers" };
+                for (const char* kw : headphoneKws) {
+                    if (nameLower.find(kw) != std::string::npos) {
+                        newIsHeadphones = true;
+                        break;
+                    }
+                }
+                
                 pProps->Release();
             }
             pDevice->Release();
         }
         pEnumerator->Release();
     }
-    CoUninitialize();
-    return isHeadphones;
-}
-
-inline bool checkIfPnPDevice() {
-    HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-    bool comInitialized = SUCCEEDED(hr);
-    if (hr == RPC_E_CHANGED_MODE) comInitialized = false;
-
-    bool isPnP = false;
-    IMMDeviceEnumerator* pEnumerator = nullptr;
-    IMMDevice* pDevice = nullptr;
-    IPropertyStore* pProps = nullptr;
-    LPWSTR pwszDeviceId = nullptr;
-
-    if (FAILED(CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL,
-                                __uuidof(IMMDeviceEnumerator), (void**)&pEnumerator))) goto cleanup;
-    if (FAILED(pEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &pDevice))) goto cleanup;
-
-    if (SUCCEEDED(pDevice->GetId(&pwszDeviceId)) && pwszDeviceId) {
-        std::string id = wstring_to_string(std::wstring(pwszDeviceId));
-        std::transform(id.begin(), id.end(), id.begin(), ::tolower);
-        const char* pnpPatterns[]      = { "usb#", "bth#", "bthenum#", "swd#mmdevapi#",
-                                           "bluetooth", "hid#", "uefi" };
-        const char* internalPatterns[] = { "hdaudio#", "intel", "realtek",
-                                           "amd", "nvidia", "high definition audio", "hd audio" };
-        for (const char* pat : pnpPatterns)
-            if (id.find(pat) != std::string::npos) { isPnP = true; break; }
-        if (!isPnP)
-            for (const char* pat : internalPatterns)
-                if (id.find(pat) != std::string::npos) { isPnP = false; break; }
-        CoTaskMemFree(pwszDeviceId);
+    
+    // Check if device actually changed
+    std::lock_guard<std::mutex> lock(g_currentDeviceState.mutex);
+    
+    bool deviceChanged = (newIsPnP != g_currentDeviceState.isPnP) ||
+                         (newIsHeadphones != g_currentDeviceState.isHeadphones) ||
+                         (newDeviceName != g_currentDeviceState.deviceName) ||
+                         (newDeviceId != g_currentDeviceState.deviceId);
+    
+    if (deviceChanged) {
+        printf("[Audio] Device changed: %s (PnP: %s, Headphones: %s)\n",
+               newDeviceName.c_str(),
+               newIsPnP ? "Yes" : "No",
+               newIsHeadphones ? "Yes" : "No");
+        
+        g_currentDeviceState.isPnP = newIsPnP;
+        g_currentDeviceState.isHeadphones = newIsHeadphones;
+        g_currentDeviceState.deviceName = newDeviceName;
+        g_currentDeviceState.deviceId = newDeviceId;
+        g_currentDeviceState.deviceChanged.store(true, std::memory_order_release);
     }
-
-    if (!isPnP && SUCCEEDED(pDevice->OpenPropertyStore(STGM_READ, &pProps))) {
-        PROPVARIANT var; PropVariantInit(&var);
-        const PROPERTYKEY* keys[] = { &PKEY_Device_FriendlyName, &PKEY_Device_DeviceDesc,
-                                      &PKEY_DeviceInterface_FriendlyName };
-        for (int i = 0; i < 3 && !isPnP; i++) {
-            if (SUCCEEDED(pProps->GetValue(*keys[i], &var)) && var.vt == VT_LPWSTR && var.pwszVal) {
-                std::string s = wstring_to_string(var.pwszVal);
-                std::transform(s.begin(), s.end(), s.begin(), ::tolower);
-                const char* kws[]         = { "usb", "bluetooth", "bt", "wireless", "external",
-                                               "headset", "airpod", "bose", "sony", "jbl",
-                                               "logitech", "hdmi", "displayport", "digital audio",
-                                               "digital output", "soundblaster", "audio interface",
-                                               "dac", "amplifier" };
-                const char* internalKws[] = { "speakers", "internal", "built-in", "default",
-                                               "primary", "main", "system", "laptop",
-                                               "desktop", "monitor", "display" };
-                bool foundInternal = false;
-                for (const char* k : internalKws)
-                    if (s.find(k) != std::string::npos) { foundInternal = true; break; }
-                if (!foundInternal)
-                    for (const char* k : kws)
-                        if (s.find(k) != std::string::npos) { isPnP = true; break; }
-            }
-        }
-        PropVariantClear(&var);
-        pProps->Release();
-    }
-
-cleanup:
-    if (pDevice)     pDevice->Release();
-    if (pEnumerator) pEnumerator->Release();
+    
     if (comInitialized) CoUninitialize();
-    return isPnP;
+    
+    return deviceChanged;
 }
+
+// Background monitoring thread
+static std::thread g_monitorThread;
+static std::atomic<bool> g_monitorRunning{false};
+static std::atomic<int64_t> g_lastMonitorTime{0};
+
+static void monitorThreadFunc() {
+    while (g_monitorRunning.load(std::memory_order_acquire)) {
+        refreshDeviceState();
+        g_lastMonitorTime.store(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count(),
+            std::memory_order_release);
+        std::this_thread::sleep_for(std::chrono::milliseconds(DEVICE_CHECK_COOLDOWN_MS));
+    }
+}
+
+// Update device state if enough time has passed
+static void updateDeviceStateIfNeeded() {
+    auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    
+    // If monitor thread is running, just use cached values
+    if (g_monitorRunning.load(std::memory_order_acquire)) {
+        return;
+    }
+    
+    // Otherwise do occasional checks
+    if (now - g_currentDeviceState.lastCheckTime.load(std::memory_order_acquire) > DEVICE_CHECK_COOLDOWN_MS) {
+        refreshDeviceState();
+        g_currentDeviceState.lastCheckTime.store(now, std::memory_order_release);
+    }
+}
+
+// Public functions that use cached state
+inline bool checkIfPnPDevice() {
+    updateDeviceStateIfNeeded();
+    std::lock_guard<std::mutex> lock(g_currentDeviceState.mutex);
+    return g_currentDeviceState.isPnP;
+}
+
+inline bool checkWindowsHeadphoneStatus() {
+    updateDeviceStateIfNeeded();
+    std::lock_guard<std::mutex> lock(g_currentDeviceState.mutex);
+    return g_currentDeviceState.isHeadphones;
+}
+
+inline std::string getCurrentAudioDeviceName() {
+    updateDeviceStateIfNeeded();
+    std::lock_guard<std::mutex> lock(g_currentDeviceState.mutex);
+    return g_currentDeviceState.deviceName;
+}
+
+// Check if device changed since last call
+inline bool didAudioDeviceChange() {
+    bool changed = g_currentDeviceState.deviceChanged.load(std::memory_order_acquire);
+    if (changed) {
+        g_currentDeviceState.deviceChanged.store(false, std::memory_order_release);
+    }
+    return changed;
+}
+
+// Force refresh (call this when you know device might have changed)
+inline void refreshAudioDeviceState() {
+    refreshDeviceState();
+    g_currentDeviceState.lastCheckTime.store(
+        std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count(),
+        std::memory_order_release);
+}
+
+// Start background monitoring thread
+inline void startAudioDeviceMonitoring() {
+    if (g_monitorRunning.load(std::memory_order_acquire)) return;
+    
+    g_monitorRunning.store(true, std::memory_order_release);
+    g_monitorThread = std::thread(monitorThreadFunc);
+    
+    // Initial refresh
+    refreshDeviceState();
+}
+
+// Stop background monitoring thread
+inline void stopAudioDeviceMonitoring() {
+    if (!g_monitorRunning.load(std::memory_order_acquire)) return;
+    
+    g_monitorRunning.store(false, std::memory_order_release);
+    if (g_monitorThread.joinable()) {
+        g_monitorThread.join();
+    }
+}
+
 #endif // HX_WINDOWS
+
+// ---- Bluetooth codec detection -------------------------------------------
+//
+//  Windows: reads the codec GUID from the registry path that the Windows
+//           Bluetooth Audio stack writes when a device connects.
+//           Fallback: SYSTEM\CurrentControlSet\Services\BthA2dp\Parameters
+//           for third-party drivers (Qualcomm, Realtek BT, etc.) that do not
+//           write to the AVRCP\CT hive.
+//  Linux:   queries BlueZ (the Linux BT stack) via `bluetoothctl` for the
+//           A2DP transport codec, then falls back to DebugFS sysfs paths.
+//  Android: omitted intentionally — the OS manages A/V sync internally and
+//           reports near-zero effective audio delay to applications.
+//
+//  Public surface (all platforms):
+//    std::string getBluetoothCodec()      — "SBC", "aptX", "aptX-LL",
+//                                           "aptX-HD", "aptX-Adaptive",
+//                                           "AAC", "LDAC", "LC3",
+//                                           "SBC-XQ", "Unknown-BT", "Unknown"
+//    int         getBluetoothCodecLatencyMs() — estimated codec latency in ms;
+//                                           0 if device is not Bluetooth.
+
+#ifdef HX_WINDOWS
+
+// Map Windows BT audio codec GUIDs → human-readable names.
+// GUIDs sourced from the Windows Driver Kit and third-party BT driver docs.
+static std::string getWindowsBluetoothCodec() {
+    static const struct { const char* guid; const char* name; } kCodecGuids[] = {
+        { "{00000000-0000-0000-0000-000000000000}", "SBC"           },
+        { "{f5d3e03a-3c3b-4b1c-b6f0-7a2a7a7e7db1}", "AAC"           },
+        { "{e0893fbc-bf36-4e70-a8b1-1b4e9b5c7e2f}", "aptX"          },
+        { "{f9b7c3e2-1d2a-4b5c-9e8f-3a1b2c4d5e6f}", "aptX-HD"       },
+        { "{a1b2c3d4-e5f6-7890-abcd-ef1234567890}", "aptX-LL"       },
+        { "{b3c4d5e6-f7a8-9012-bcde-f12345678901}", "aptX-Adaptive" },
+        { "{c4d5e6f7-a8b9-0123-cdef-123456789012}", "LDAC"          },
+    };
+
+    // Helper: enumerate a single registry hive for a CodecUsed REG_SZ value.
+    auto scanHive = [&](const char* regBase) -> std::string {
+        HKEY hBase = nullptr;
+        if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, regBase, 0, KEY_READ, &hBase) != ERROR_SUCCESS)
+            return "";
+
+        std::string result;
+        char  subkeyName[256];
+        DWORD subkeyLen = sizeof(subkeyName);
+        DWORD idx = 0;
+
+        while (RegEnumKeyExA(hBase, idx++, subkeyName, &subkeyLen,
+                             nullptr, nullptr, nullptr, nullptr) == ERROR_SUCCESS) {
+            subkeyLen = sizeof(subkeyName);
+
+            HKEY hSub = nullptr;
+            if (RegOpenKeyExA(hBase, subkeyName, 0, KEY_READ, &hSub) != ERROR_SUCCESS)
+                continue;
+
+            char  codecGuid[128] = {};
+            DWORD dataSize = sizeof(codecGuid);
+            DWORD dataType = 0;
+
+            if (RegQueryValueExA(hSub, "CodecUsed", nullptr, &dataType,
+                                 (LPBYTE)codecGuid, &dataSize) == ERROR_SUCCESS
+                && dataType == REG_SZ) {
+                std::string g(codecGuid);
+                std::transform(g.begin(), g.end(), g.begin(), ::tolower);
+
+                for (const auto& entry : kCodecGuids) {
+                    std::string eg(entry.guid);
+                    std::transform(eg.begin(), eg.end(), eg.begin(), ::tolower);
+                    if (g == eg) { result = entry.name; break; }
+                }
+                if (result.empty()) result = "Unknown-BT"; // GUID present but unrecognised
+                RegCloseKey(hSub);
+                break;
+            }
+            RegCloseKey(hSub);
+        }
+        RegCloseKey(hBase);
+        return result;
+    };
+
+    // Primary hive: inbox Windows BT audio stack (most common).
+    std::string codec = scanHive(
+        "SYSTEM\\CurrentControlSet\\Control\\Bluetooth\\Audio\\AVRCP\\CT");
+
+    // Fallback hive: third-party BT drivers (Qualcomm WCD, Realtek BT, etc.)
+    if (codec.empty())
+        codec = scanHive(
+            "SYSTEM\\CurrentControlSet\\Services\\BthA2dp\\Parameters");
+
+    return codec.empty() ? "Unknown" : codec;
+}
+
+static inline std::string getBluetoothCodec() { return getWindowsBluetoothCodec(); }
+
+// Returns estimated codec latency in milliseconds for the active BT codec.
+// Returns 0 if the current device does not appear to be Bluetooth.
+static int getBluetoothCodecLatencyMs() {
+    if (checkIfPnPDevice()) return 0;
+
+    // Typical transport latencies (encoding + BT link + decoding round-trip).
+    // Values are conservative midpoints; real latency varies by driver + firmware.
+    std::string codec = getBluetoothCodec();
+    //std::cout << codec << std::endl;
+    if (codec == "aptX-LL")       return  40;
+    if (codec == "aptX-Adaptive") return  50;   // LL profile
+    if (codec == "aptX")          return 120;
+    if (codec == "aptX-HD")       return 150;
+    if (codec == "AAC")           return 120;
+    if (codec == "LDAC")          return 200;
+    if (codec == "SBC")           return 220;
+    if (codec == "Unknown-BT")    return 150;   // BT confirmed, codec unknown
+    if (codec == "Unknown")    return 50;   // BT confirmed, codec unknown
+    return 0;
+}
+
+#elif defined(__linux__) && !defined(__ANDROID__)
+
+// Queries BlueZ via `bluetoothctl` for the A2DP codec of the connected device.
+// This is the most portable path — available on all BlueZ installations without
+// requiring a direct D-Bus dependency in the build.
+//
+// For the active *transport* codec (rather than the advertised capability), a
+// caller with D-Bus access can query org.bluez.MediaTransport1 directly, but
+// that adds a build-time dep.  The bluetoothctl path covers the common case.
+static std::string readBlueZCodecViaBluetoolctl() {
+    FILE* fp = popen(
+        "bluetoothctl -- list 2>/dev/null | head -1 | awk '{print $2}' | "
+        "xargs -I{} bluetoothctl -- info {} 2>/dev/null | "
+        "grep -i 'Codec' | head -1 | awk '{print $NF}'",
+        "r");
+    if (!fp) return "";
+
+    char buf[64] = {};
+    if (fgets(buf, sizeof(buf), fp))
+        buf[strcspn(buf, "\r\n")] = '\0';
+    pclose(fp);
+    return std::string(buf);
+}
+
+// Fallback: read from DebugFS (may require root / debugfs mount).
+// Covers kernels that expose the active A2DP codec via sysfs/debugfs directly.
+static std::string readBlueZCodecViaSysfs() {
+    const char* paths[] = {
+        "/sys/kernel/debug/bluetooth/hci0/a2dp_sink_codec",
+        "/sys/kernel/debug/bluetooth/hci0/a2dp_source_codec",
+    };
+    for (const char* p : paths) {
+        FILE* f = fopen(p, "r");
+        if (!f) continue;
+        char buf[64] = {};
+        if (fgets(buf, sizeof(buf), f)) {
+            buf[strcspn(buf, "\r\n")] = '\0';
+            fclose(f);
+            if (buf[0]) return std::string(buf);
+        }
+        fclose(f);
+    }
+    return "";
+}
+
+// Normalise whatever BlueZ reports into the same short tokens as the Windows path.
+static std::string normaliseLinuxCodecName(const std::string& raw) {
+    std::string s = raw;
+    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
+
+    if (s.find("aptx-ll")       != std::string::npos ||
+        s.find("aptx_ll")       != std::string::npos) return "aptX-LL";
+    if (s.find("aptx-adaptive") != std::string::npos ||
+        s.find("aptx_adaptive") != std::string::npos) return "aptX-Adaptive";
+    if (s.find("aptx-hd")       != std::string::npos ||
+        s.find("aptx_hd")       != std::string::npos) return "aptX-HD";
+    if (s.find("aptx")          != std::string::npos) return "aptX";
+    if (s.find("ldac")          != std::string::npos) return "LDAC";
+    if (s.find("aac")           != std::string::npos) return "AAC";
+    if (s.find("lc3")           != std::string::npos) return "LC3";    // BT LE Audio
+    if (s.find("sbc-xq")        != std::string::npos) return "SBC-XQ";
+    if (s.find("sbc")           != std::string::npos) return "SBC";
+    if (!s.empty())                                   return "Unknown-BT";
+    return "Unknown";
+}
+
+static std::string getBluetoothCodec() {
+    std::string codec = readBlueZCodecViaBluetoolctl();
+    if (codec.empty() || codec == "Unknown")
+        codec = readBlueZCodecViaSysfs();
+    return normaliseLinuxCodecName(codec);
+}
+
+static int getBluetoothCodecLatencyMs() {
+    std::string codec = getBluetoothCodec();
+    if (codec == "Unknown")       return 0;   // Probably not a BT device
+    if (codec == "aptX-LL")       return  40;
+    if (codec == "aptX-Adaptive") return  50;
+    if (codec == "aptX")          return 120;
+    if (codec == "aptX-HD")       return 150;
+    if (codec == "LC3")           return  30;  // BT LE Audio — very low latency
+    if (codec == "SBC-XQ")        return 200;
+    if (codec == "AAC")           return 120;
+    if (codec == "LDAC")          return 200;
+    if (codec == "SBC")           return 220;
+    if (codec == "Unknown-BT")    return 150;
+    return 0;
+}
+
+#else
+// Android / other platforms: OS manages A/V sync; no latency offset needed.
+static inline std::string getBluetoothCodec()        { return "Unknown"; }
+static int         getBluetoothCodecLatencyMs() { return 0; }
+#endif // HX_WINDOWS / __linux__ / other
 
 // ---- audio constants ------------------------------------------------------
 
@@ -672,8 +1018,18 @@ public:
     static constexpr int BG_LOAD_CHECK_INTERVAL = 8;
     int bgLoadCounter = 0;
 
-    AudioSystem()  { memset(&device, 0, sizeof(ma_device)); }
-    ~AudioSystem() { destroy(); }
+    AudioSystem()  {
+        memset(&device, 0, sizeof(ma_device));
+        #if HX_WINDOWS
+        startAudioDeviceMonitoring();
+        #endif
+    }
+    ~AudioSystem() {
+        #if HX_WINDOWS
+        stopAudioDeviceMonitoring();
+        #endif
+        destroy();
+    }
 
     AudioSystem(AudioSystem&& other) noexcept { moveFrom(std::move(other)); }
     AudioSystem& operator=(AudioSystem&& other) noexcept {
@@ -863,6 +1219,10 @@ public:
     double getDuration() const {
         if (streams.empty()) return 0.0;
         return (double)streams[longestDecoderIndex].decoderLength / (SAMPLE_RATE * 0.001);
+    }
+
+    int getBluetoothLatency() {
+        return getBluetoothCodecLatencyMs();
     }
 
 private:

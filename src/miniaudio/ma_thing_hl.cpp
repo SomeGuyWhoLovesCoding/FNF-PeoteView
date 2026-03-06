@@ -1,7 +1,7 @@
 /*
  * ma_thing_hl.cpp
  * HashLink binding layer — wraps ma_thing_core.h for use from Haxe/HL.
- * No standalone / plain-C++ interface here; see ma_thing_standalone.cpp.
+ * No standalone / plain-C++ interface here; see "ma_thing_standalone.cpp".
  */
 
 // These implementation macros must be defined in exactly one translation unit.
@@ -50,22 +50,6 @@ HL_PRIM void   HL_NAME(setPlaybackRate)(float value)             { g_audioSystem
 HL_PRIM double HL_NAME(getGlobalVolume)(_NO_ARG)                 { return g_audioSystem.getGlobalVolume(); }
 HL_PRIM double HL_NAME(setGlobalVolume)(double value)            { return g_audioSystem.setGlobalVolume(value); }
 
-HL_PRIM bool HL_NAME(wearingHeadphones)(_NO_ARG) {
-#ifdef HX_WINDOWS
-    return checkWindowsHeadphoneStatus();
-#else
-    return false;
-#endif
-}
-
-HL_PRIM bool HL_NAME(wearingPlugNPlay)(_NO_ARG) {
-#ifdef HX_WINDOWS
-    return checkIfPnPDevice();
-#else
-    return false;
-#endif
-}
-
 // Calls the underlying C++ functions directly — not the HL primitives above.
 HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
 #if HX_WINDOWS
@@ -74,10 +58,7 @@ HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
     int osMs = 10;
 #endif
     if (g_audioSystem.exists) {
-#ifdef HX_WINDOWS
-        if (!checkIfPnPDevice())          osMs += 50;
-        if (checkWindowsHeadphoneStatus()) osMs += 50;
-#endif
+        osMs += g_audioSystem.getBluetoothLatency();
     }
     return osMs;
 }
@@ -99,6 +80,23 @@ HL_PRIM bool HL_NAME(isSoundEffectPlaying)(int index)                      { ret
 HL_PRIM void  HL_NAME(setMixerMasterVolume)(float volume)  { g_mixer.setMasterVolume(volume); }
 HL_PRIM float HL_NAME(getMixerMasterVolume)(_NO_ARG)       { return g_mixer.getMasterVolume(); }
 HL_PRIM void  HL_NAME(destroyMixer)(_NO_ARG)               { g_mixer.destroy(); }
+
+// these stay here
+HL_PRIM bool HL_NAME(wearingHeadphones)(_NO_ARG) {
+#ifdef HX_WINDOWS
+    return checkWindowsHeadphoneStatus();
+#else
+    return false;
+#endif
+}
+
+HL_PRIM bool HL_NAME(wearingPlugNPlay)(_NO_ARG) {
+#ifdef HX_WINDOWS
+    return checkIfPnPDevice();
+#else
+    return false;
+#endif
+}
 
 // ---- DEFINE_PRIM declarations --------------------------------------------
 
