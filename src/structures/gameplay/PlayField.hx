@@ -16,8 +16,17 @@ class PlayField {
 	var display(default, null):CustomDisplay;
 	var view(default, null):CustomDisplay;
 
+	// lua
+	var funkinviewlua(default, null):FunkinViewLua;
+
 	function new(path:String) {
-		Chart.load(Paths.asset(path));
+		var chartPath = Paths.asset(path);
+
+    	#if linc_luajit_funkinview
+		funkinviewlua = new FunkinViewLua(chartPath);
+		#end
+
+		Chart.load(chartPath);
 	}
 
 	function init(roof:CustomDisplay, display:CustomDisplay, view:CustomDisplay) {
@@ -160,7 +169,7 @@ class PlayField {
 	 * @param mania The amount of keys you want for your fnf song. (This is configured by the song's header)
 	 */
 	function create(roof:CustomDisplay, display:CustomDisplay, mania:Int = 4) {
-		if (mania > 16) mania = 16;
+		if (mania > 32) mania = 32;
 
 		healthLoss = [for (i in 0...64) 0.02];
 		healthGain = [for (i in 0...64) 0.025];
@@ -246,6 +255,10 @@ class PlayField {
 	function update(deltaTime:Float) {
 		if (disposed || paused) return;
 
+		#if linc_luajit_funkinview
+		funkinviewlua.callFunction('update', deltaTime);
+		#end
+
 		if (!ready) {
 			ready = true;
 			return;
@@ -305,6 +318,10 @@ class PlayField {
 			songPosition += Mixer.latency();
 
 			lastsongpos = songPosition;
+
+			#if linc_luajit_funkinview
+			funkinviewlua.callFunction('postUpdate', deltaTime);
+			#end
 
 			return;
 		}
@@ -580,6 +597,10 @@ class PlayField {
 		ready = false;
 		disposed = true;
 
+    	#if linc_luajit_funkinview
+		funkinviewlua.callFunction('dispose', null);
+		#end
+
 		var conductor = Main.conductor;
 		conductor.onMeasure.remove(measureHit);
 
@@ -635,5 +656,10 @@ class PlayField {
 
 		if (display.fov != 1) display.fov = 1;
 		if (view.fov != 1) view.fov = 1;
+
+		#if linc_luajit_funkinview
+		funkinviewlua.callFunction('postDispose', null);
+		funkinviewlua.dispose();
+		#end
 	}
 }

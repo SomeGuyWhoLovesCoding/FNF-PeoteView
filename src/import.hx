@@ -37,5 +37,17 @@ import custom.haxe.*;
 import titlebar.*;
 #end
 
+// LUA SHIT
+#if linc_luajit_funkinview
+import llua.LuaL;
+import llua.Lua;
+import llua.LuaCallback;
+import llua.LuaOpen;
+import llua.LuaException;
+import llua.State;
+import llua.Convert;
+import llua.Lua.Lua_helper;
+#end
+
 // LIME SHIT
 import lime.app.Application;
