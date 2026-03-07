@@ -140,6 +140,10 @@ class InputSystem {
 		var index = keyData[0];
 		var lane = keyData[1];
 
+		#if linc_luajit_funkinview
+        parent.funkinviewlua.callFunction('keyPress', index, lane);
+		#end
+
 		var noteSystem = parent.noteSystem;
 
 		if (noteSystem != null) {
@@ -151,6 +155,11 @@ class InputSystem {
 		}
 
 		parent.onKeyPress.dispatch(code);
+
+		#if linc_luajit_funkinview
+        parent.funkinviewlua.callFunction('keyPressPost', index, lane);
+        parent.funkinviewlua.callFunction('postKeyPress', index, lane); // alternative syntax
+		#end
 	}
 
 	function release(code:KeyCode, mod:KeyModifier
@@ -173,6 +182,10 @@ class InputSystem {
 		var index = keyData[0];
 		var lane = keyData[1];
 
+		#if linc_luajit_funkinview
+        parent.funkinviewlua.callFunction('keyRelease', index, lane);
+		#end
+
 		var noteSystem = parent.noteSystem;
 
 		if (noteSystem != null) {
@@ -184,6 +197,11 @@ class InputSystem {
 		}
 
 		parent.onKeyRelease.dispatch(code);
+
+		#if linc_luajit_funkinview
+        parent.funkinviewlua.callFunction('keyReleasePost', index, lane);
+        parent.funkinviewlua.callFunction('postKeyRelease', index, lane); // alternative syntax
+		#end
 	}
 
 	function mousePress(x:Float, y:Float, mouseButton:MouseButton) {

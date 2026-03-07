@@ -27,6 +27,10 @@ class PlayField {
 		#end
 
 		Chart.load(chartPath);
+
+		#if linc_luajit_funkinview
+        funkinviewlua.callFunction('byChartCreation', null);
+		#end
 	}
 
 	function init(roof:CustomDisplay, display:CustomDisplay, view:CustomDisplay) {
@@ -320,7 +324,8 @@ class PlayField {
 			lastsongpos = songPosition;
 
 			#if linc_luajit_funkinview
-			funkinviewlua.callFunction('postUpdate', deltaTime);
+			funkinviewlua.callFunction('updatePost', deltaTime);
+			funkinviewlua.callFunction('postUpdate', deltaTime); // alternative syntax
 			#end
 
 			return;
@@ -353,6 +358,10 @@ class PlayField {
 	function pause() {
 		if (disposed || paused || died || RenderingMode.enabled) return;
 
+		#if linc_luajit_funkinview
+		funkinviewlua.callFunction('pause', null);
+		#end
+
 		pauseScreen.open();
 		if (songStarted) Mixer.stopMusic();
 		if (noteSystem != null) {
@@ -365,6 +374,11 @@ class PlayField {
 		paused = true;
 
 		Main.current.playScrollSound();
+
+		#if linc_luajit_funkinview
+		funkinviewlua.callFunction('pausePost', null);
+		funkinviewlua.callFunction('postPause', null); // alternative syntax
+		#end
 	}
 
 	/**
@@ -372,6 +386,10 @@ class PlayField {
 	**/
 	function resume() {
 		if (disposed || !paused || died) return;
+
+		#if linc_luajit_funkinview
+		funkinviewlua.callFunction('resume', null);
+		#end
 
 		pauseScreen.close();
 		if (!RenderingMode.enabled && songStarted && !songEnded) Mixer.startMusic();
@@ -382,6 +400,11 @@ class PlayField {
 		if (inputSystem != null) haxe.Timer.delay(inputSystem.addEvents, 1);
 
 		paused = false;
+
+		#if linc_luajit_funkinview
+		funkinviewlua.callFunction('resumePost', null);
+		funkinviewlua.callFunction('postResume', null); // alternative syntax
+		#end
 	}
 
 	function countdownBeatHit(beat:Float) {
@@ -408,6 +431,10 @@ class PlayField {
 	}
 
 	function hitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
+		#if linc_luajit_funkinview
+        funkinviewlua.callFunction('hitNote', note, timing, notesInOne);
+		#end
+
 		var lane = note.type;
 
 		if (noteSystem.noteTypeFunctionalityPre[note.type] != null) lane = 1;
@@ -456,6 +483,7 @@ class PlayField {
 			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(judgementID);
 			accuracy.increment(judgementAcc, false, notesInOne * 10000);
 			score += judgementScore * notesInOne;
+			postHitNote(note, timing, notesInOne);
 			return;
 		}
 
@@ -469,12 +497,24 @@ class PlayField {
 				if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(judgementID);
 				accuracy.increment(judgementAcc, false, notesInOne * 10000);
 				score += judgementScore * notesInOne;
+				postHitNote(note, timing, notesInOne);
 				return;
 			}
 		}
 	}
 
+	function postHitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
+		#if linc_luajit_funkinview
+        funkinviewlua.callFunction('hitNotePost', note, timing, notesInOne);
+        funkinviewlua.callFunction('postHitNote', note, timing, notesInOne); // alternative syntax
+		#end
+	}
+
 	function missNote(note:MetaNote, notesInOne:Int64) {
+		#if linc_luajit_funkinview
+        funkinviewlua.callFunction('missNote', note, notesInOne);
+		#end
+
 		if (practiceMode && health < 0.05) {
 			health = 0.05;
 		}
@@ -495,9 +535,18 @@ class PlayField {
 
 		if (health < 0 && !disposed)
 			onDeath.dispatch(Chart.header, lane);
+
+		#if linc_luajit_funkinview
+        funkinviewlua.callFunction('missNotePost', note, notesInOne);
+        funkinviewlua.callFunction('postMissNote', note, notesInOne); // alternative syntax
+		#end
 	}
 
 	function completeSustain(note:MetaNote) {
+		#if linc_luajit_funkinview
+        funkinviewlua.callFunction('completeSustain', note);
+		#end
+
 		var lane = note.type;
 		if (noteSystem.noteTypeFunctionalityPre[note.type] != null) lane = 1;
 
@@ -518,13 +567,31 @@ class PlayField {
 				health = 1;
 			}
 		}
+
+		#if linc_luajit_funkinview
+        funkinviewlua.callFunction('completeSustainPost', note);
+        funkinviewlua.callFunction('postCompleteSustain', note); // alternative syntax
+		#end
 	}
 
 	inline function releaseSustain(note:MetaNote) {
+		#if linc_luajit_funkinview
+        funkinviewlua.callFunction('releaseSustain', note);
+		#end
+
 		combo = 0;
+
+		#if linc_luajit_funkinview
+        funkinviewlua.callFunction('releaseSustainPost', note);
+        funkinviewlua.callFunction('postReleaseSustain', note); // alternative syntax
+		#end
 	}
 
 	function startSong(header:Header) {
+		#if linc_luajit_funkinview
+		funkinviewlua.callFunction('startSong', header);
+		#end
+
 		Sys.println('Song activity is on');
 
 		if (!RenderingMode.enabled) {
@@ -542,9 +609,18 @@ class PlayField {
 
 		if (countdownDisp.conductor != null) 
 			countdownDisp.conductor.onBeatUnoffsetted.remove(countdownBeatHit);
+
+		#if linc_luajit_funkinview
+		funkinviewlua.callFunction('startSongPost', header);
+		funkinviewlua.callFunction('postStartSong', header); // alternative syntax
+		#end
 	}
 
 	function stopSong(header:Header) {
+		#if linc_luajit_funkinview
+		funkinviewlua.callFunction('stopSong', header);
+		#end
+
 		Sys.println('Song activity is off');
 
 		if (!RenderingMode.enabled) {
@@ -558,10 +634,19 @@ class PlayField {
 
 		Mixer.setTime(0, null);
 
+		#if linc_luajit_funkinview
+		funkinviewlua.callFunction('stopSongPost', header);
+		funkinviewlua.callFunction('postStopSong', header); // alternative syntax
+		#end
+
 		Main.switchState(MAIN_MENU);
 	}
 
 	function gameOver(header:Header, lane:Int) {
+		#if linc_luajit_funkinview
+		funkinviewlua.callFunction('gameOver', null);
+		#end
+
 		inputSystem.removeEvents();
 		haxe.Timer.delay(inputSystem.addEvents, 2000); // prevent instant end gameover
 
@@ -588,6 +673,11 @@ class PlayField {
 		if (char == null) char = field.actors[1 + field.numSpectators];
 
 		field.actorOnGameOver = char;
+
+		#if linc_luajit_funkinview
+		funkinviewlua.callFunction('gameOverPost', null);
+		funkinviewlua.callFunction('postGameOverPost', null); // alternative syntax
+		#end
 	}
 
 	/**
@@ -658,7 +748,8 @@ class PlayField {
 		if (view.fov != 1) view.fov = 1;
 
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('postDispose', null);
+		funkinviewlua.callFunction('disposePost', null);
+		funkinviewlua.callFunction('postDispose', null); // alternative syntax
 		funkinviewlua.dispose();
 		#end
 	}

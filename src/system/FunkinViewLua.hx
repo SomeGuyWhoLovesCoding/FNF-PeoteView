@@ -82,11 +82,14 @@ class FunkinViewLua {
             }
             addCallbacksList(script);
             vms.push(script);
+            callFunction('createPost', null);
+            callFunction('postCreate', null); // alternative syntax
             luaFilesFound++;
         }
     }
 
     function addCallbacksList(luaScript:FunkinViewLuaScript) {
+        callFunction('create', null);
         luaScript.addCallback("trace", function(string:String) Sys.println('FunkinViewLua: $string'));
     }
 
@@ -103,17 +106,22 @@ class FunkinViewLua {
     }
 
     public var lastCalledFunction:String = '';
-    private var NO_ARGS(default, null):Array<Dynamic> = [];
-    function callFunction(fname:String, args:haxe.Rest<Dynamic>):Dynamic {
+    private var NO_ARGS(default, null):Array<Any> = [];
+    private var returns(default, null):Array<Any> = [];
+    function callFunction(fname:String, args:haxe.Rest<Any>):Array<Any> {
+        returns.resize(0);
         for (script in vms) {
             var lua = script.vm;
 
             // this is a direct port from psych as a test.
-            if(disposed) return Function_Continue;
+            if(disposed) return [Function_Continue];
 
             lastCalledFunction = fname;
             try {
-                if(lua == null) return Function_Continue;
+                if(lua == null) {
+                    returns.push(Function_Continue);
+                    continue;
+                }
 
                 Lua.getglobal(lua, fname);
                 var type:Int = Lua.type(lua, -1);
@@ -124,7 +132,8 @@ class FunkinViewLua {
                     }
 
                     Lua.pop(lua, 1);
-                    return Function_Continue;
+                    returns.push(Function_Continue);
+                    continue;
                 }
 
                 var argsArr = args != null ? args.toArray() : NO_ARGS;
@@ -135,7 +144,8 @@ class FunkinViewLua {
                 if (status != Lua.LUA_OK) {
                     var error:String = getErrorMessage(lua, status);
                     trace("ERROR (" + fname + "): " + error);
-                    return Function_Continue;
+                    returns.push(Function_Continue);
+                    continue;
                 }
 
                 // If successful, pass and then return the result.
@@ -143,14 +153,16 @@ class FunkinViewLua {
                 if (result == null) result = Function_Continue;
 
                 Lua.pop(lua, 1);
-                return result;
+                returns.push(result);
+                continue;
             }
             catch (e:Dynamic) {
                 trace(e);
             }
-            return Function_Continue;
+            returns.push(Function_Continue);
+            continue;
         }
-        return Function_Continue;
+        return returns;
     }
 
     public function getErrorMessage(lua:State, status:Int):String {
