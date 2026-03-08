@@ -32,7 +32,7 @@ jobs:
           haxelib setup C:/haxelib
           haxelib install format --quiet
           haxelib install hxp --quiet
-          haxelib install hxcpp --quiet
+          haxelib git hxcpp https://github.com/SomeGuyWhoLovesCoding/hxcpp-sgwlfnf.git --quiet
           haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet
           haxelib git peote-view_funkinview https://github.com/SomeGuyWhoLovesCoding/peote-view.git --quiet
           haxelib git linc_luajit_funkinview https://github.com/SomeGuyWhoLovesCoding/linc_luajit_funkinview.git --quiet

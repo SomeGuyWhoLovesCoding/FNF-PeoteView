@@ -33,7 +33,7 @@ jobs:
           haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet
           haxelib install format --quiet
           haxelib install hxp --quiet
-          haxelib install hxcpp --quiet
+          haxelib git hxcpp https://github.com/SomeGuyWhoLovesCoding/hxcpp-sgwlfnf.git --quiet
       - name: Make NDLL
         run: |
           echo "--HAXELIB PATH:--"
@@ -93,7 +93,7 @@ jobs:
           haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet
           haxelib install format --quiet
           haxelib install hxp --quiet
-          haxelib install hxcpp --quiet
+          haxelib git hxcpp https://github.com/SomeGuyWhoLovesCoding/hxcpp-sgwlfnf.git --quiet
       - name: Make NDLL
         run: |
           echo "--HAXELIB PATH:--"
