@@ -285,10 +285,8 @@ class NoteSpawner {
 					sustain.diff = virtualSustain.diff;
 					sustain.scrollDirection = strumReceptor.scrollDirection;
 					sustain.r = sustain.scrollDirection;
-					if (downScroll) {
-						sustain.scrollDirection += 180;
-						sustain.r += 180;
-					}
+					if (downScroll) sustain.r += 180;
+					else sustain.scrollDirection += 180;
 					sustain.changeID(id);
 					NoteSystem.sustainsBuf.addElement(sustain);
 				}
