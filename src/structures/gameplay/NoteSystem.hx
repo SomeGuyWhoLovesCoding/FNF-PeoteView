@@ -316,7 +316,6 @@ class NoteSystem {
 		var sustainLength = (duration * 4) - 10;
 		if (sustainExists) {
 			sustainSpr.ref = noteSpr;
-			sustainSpr.r = parent.downScroll ? -90 : 90;
 			sustainSpr.speed = parent.scrollSpeed;
 			sustainSpr.scale = rec.scale;
 			sustainSpr.length = sustainLength;

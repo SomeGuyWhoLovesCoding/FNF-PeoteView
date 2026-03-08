@@ -229,8 +229,8 @@ class NoteSpawner {
 
 					var note = new Note(virtualNote.Sx, virtualNote.Sy, 0, 0, virtualNote.scale, virtualNote.initialAlpha, virtualNote.addedAlpha);
 					note.diff = virtualNote.diff;
-					if (!downScroll) note.diff = -note.diff;
 					note.scrollDirection = strumReceptor.scrollDirection;
+					if (!downScroll) note.scrollDirection += 180;
 
 					note.changeID(id);
 					note.toNote();
@@ -268,10 +268,12 @@ class NoteSpawner {
 		var tailPoints = Sustain.tailPoints;
 		for (i in 0...virtualSustains.length) {
 			var lane = virtualSustains[i];
+			var strumline = parent.strumlines[i];
 			for (j in 0...lane.length) {
 				var index = lane[j];
 				var length = notes.sustainLength[i][j];
 				var id = parent.parent.inputSystem.receptorIds[j];
+				var strumReceptor = strumline.buffer[j];
 				for (k in 0...length) {
 					var virtualSustain:VirtualSustain = index[k];
 					if (virtualSustain == null) continue;
@@ -281,8 +283,8 @@ class NoteSpawner {
 					sustain.c.aF = virtualSustain.alpha;
 					sustain.c.luminanceF = virtualSustain.alpha;
 					sustain.diff = virtualSustain.diff;
-					if (!downScroll) sustain.diff = -sustain.diff;
-					//sustain.scrollDirection = strumReceptor.scrollDirection;
+					sustain.r = strumReceptor.scrollDirection;
+					if (downScroll) sustain.r += 180;
 					sustain.changeID(id);
 					NoteSystem.sustainsBuf.addElement(sustain);
 				}
