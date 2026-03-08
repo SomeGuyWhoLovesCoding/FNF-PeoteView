@@ -85,7 +85,7 @@ class NoteVB {
 }
 
 /**
- * This object is the POD of the note element. 48-byte class.
+ * This object is the POD of the note element. 40-byte class.
  * @since Development
 **/
 #if cpp
@@ -108,6 +108,14 @@ class VirtualNote {
 	// the refrence to the note (8 bytes)
 	var ref:MetaNote;
 
+	// the note diff relative to strum time (4 bytes)
+	var diff:Int;
+
+	// the current strum position 
+	var Sxy:Int;
+	var Sx(get, set):Int;
+	var Sy(get, set):Int;
+
 	// helpers (put these where convenient)
 	inline static function toSigned16(u:Int):Int {
 		var v = u & 0xFFFF;
@@ -119,61 +127,30 @@ class VirtualNote {
 		return s & 0xFFFF;
 	}
 
-	// position (4 bytes)
-	var xy:Int;
-	var x(get, set):Int;
-	var y(get, set):Int;
-
-	inline function get_x():Int {
-		return toSigned16(xy & 0xFFFF);
+	inline function get_Sx():Int {
+		return toSigned16(Sxy & 0xFFFF);
 	}
 
-	inline function set_x(value:Int):Int {
+	inline function set_Sx(value:Int):Int {
 		var u = toUint16(value);
-		xy = (xy & 0xFFFF0000) | u;
+		Sxy = (Sxy & 0xFFFF0000) | u;
 		return value;
 	}
 
-	inline function get_y():Int {
-		return toSigned16((xy >> 16) & 0xFFFF);
+	inline function get_Sy():Int {
+		return toSigned16((Sxy >> 16) & 0xFFFF);
 	}
 
-	inline function set_y(value:Int):Int {
+	inline function set_Sy(value:Int):Int {
 		var u = toUint16(value);
-		xy = (xy & 0x0000FFFF) | (u << 16);
+		Sxy = (Sxy & 0x0000FFFF) | (u << 16);
 		return value;
 	}
 
-	// size (4 bytes)
-	var wh:Int;
-	var w(get, set):Int; // width
-	var h(get, set):Int; // height
-
-	inline function get_w():Int {
-		return toSigned16(wh & 0xFFFF);
-	}
-
-	inline function set_w(value:Int):Int {
-		var u = toUint16(value);
-		wh = (wh & 0xFFFF0000) | u;
-		return value;
-	}
-
-	inline function get_h():Int {
-		return toSigned16((wh >> 16) & 0xFFFF);
-	}
-
-	inline function set_h(value:Int):Int {
-		var u = toUint16(value);
-		wh = (wh & 0x0000FFFF) | (u << 16);
-		return value;
-	}
-
-	inline function new(x:Int, y:Int, w:Int, h:Int) {
-		this.x = x;
-		this.y = y;
-		this.w = w;
-		this.h = h;
+	inline function new(diff:Int, Sx:Int, Sy:Int) {
+		this.diff = diff;
+		this.Sx = Sx;
+		this.Sy = Sy;
 	}
 }
 
@@ -204,6 +181,14 @@ class VirtualSustain {
 	// the rotation of the sustain (8 bytes)
 	var r:Float;
 
+	// the note diff relative to strum time (4 bytes)
+	var diff:Int;
+
+	// the current strum position 
+	var Sxy:Int;
+	var Sx(get, set):Int;
+	var Sy(get, set):Int;
+
 	// helpers (put these where convenient)
 	inline static function toSigned16(u:Int):Int {
 		var v = u & 0xFFFF;
@@ -215,28 +200,23 @@ class VirtualSustain {
 		return s & 0xFFFF;
 	}
 
-	// position (4 bytes)
-	var xy:Int;
-	var x(get, set):Int;
-	var y(get, set):Int;
-
-	inline function get_x():Int {
-		return toSigned16(xy & 0xFFFF);
+	inline function get_Sx():Int {
+		return toSigned16(Sxy & 0xFFFF);
 	}
 
-	inline function set_x(value:Int):Int {
+	inline function set_Sx(value:Int):Int {
 		var u = toUint16(value);
-		xy = (xy & 0xFFFF0000) | u;
+		Sxy = (Sxy & 0xFFFF0000) | u;
 		return value;
 	}
 
-	inline function get_y():Int {
-		return toSigned16((xy >> 16) & 0xFFFF);
+	inline function get_Sy():Int {
+		return toSigned16((Sxy >> 16) & 0xFFFF);
 	}
 
-	inline function set_y(value:Int):Int {
+	inline function set_Sy(value:Int):Int {
 		var u = toUint16(value);
-		xy = (xy & 0x0000FFFF) | (u << 16);
+		Sxy = (Sxy & 0x0000FFFF) | (u << 16);
 		return value;
 	}
 
@@ -274,13 +254,13 @@ class VirtualSustain {
 	 */
 	inline public function followNote(cX:Int, cY:Int, id:Int) {
 		var offset = Sustain.offsets[id];
-		x = cX + (Math.floor(offset[0] * scale) >> 1);
-		y = cY + (Math.floor(offset[1] * scale) >> 1);
+		Sx = cX + (Math.floor(offset[0] * scale) >> 1);
+		Sy = cY + (Math.floor(offset[1] * scale) >> 1);
 	}
 
-	inline function new(x:Int, y:Int, w:Int, h:Int) {
-		this.x = x;
-		this.y = y;
+	inline function new(Sx:Int, Sy:Int, w:Int, h:Int) {
+		this.Sx = Sx;
+		this.Sy = Sy;
 		this.w = w;
 		this.h = h;
 	}

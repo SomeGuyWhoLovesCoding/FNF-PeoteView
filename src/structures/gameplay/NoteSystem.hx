@@ -210,15 +210,12 @@ class NoteSystem {
 		var isMissed:Bool = note.missed;
 		var isHeld:Bool = note.held;
 
-		if (parent.downScroll) diff = -diff;
-
 		var noteSprX = rec.x;
-		var noteSprY = rec.y + Std.int(diff);
+		var noteSprY = rec.y;
 
-		if (parent.downScroll) diff = -diff;
-
-		noteSpr.x = noteSprX;
-		noteSpr.y = noteSprY;
+		noteSpr.diff = Std.int(diff);
+		noteSpr.Sx = noteSprX;
+		noteSpr.Sy = noteSprY;
 		noteSpr.scale = rec.scale;
 		noteSpr.ref = note;
 
@@ -323,13 +320,14 @@ class NoteSystem {
 			sustainSpr.speed = parent.scrollSpeed;
 			sustainSpr.scale = rec.scale;
 			sustainSpr.length = sustainLength;
+			sustainSpr.followNote(rec.x, rec.y, id);
+			sustainSpr.diff = isHit ? 0 : Std.int(diff);
 
 			if (isHeld || isMissed)
 				sustainSpr.alpha = Sustain.defaultMissAlpha;
 
 			if (!isHit) {
 				sustainSpr.w = sustainLength;
-				sustainSpr.followNote(noteSprX, noteSprY, id);
 			} else if (sustainSpr.alpha != 0) {
 				if (sustainSpr.w >= 0) {
 					sustainSpr.followNote(rec.x, rec.y, id);

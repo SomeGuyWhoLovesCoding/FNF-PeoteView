@@ -22,7 +22,7 @@ class RotatableDisplay extends Display
 	}
 
 	private function set_rotation(deg:Float):Float {
-		uAngle.value = deg * (Math.PI / 180.0);
+		uAngle.value = deg * 0.01745329251994329576923690768489;
 		uCos.value = Math.cos(uAngle.value);
 		uSin.value = Math.sin(uAngle.value);
 		return rotation = deg;

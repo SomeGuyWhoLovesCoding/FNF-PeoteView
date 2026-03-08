@@ -21,7 +21,7 @@ class Actor extends ActorElement
 	static var buffers:Map<String, Buffer<ActorElement>>  = [];
 	static var programs:Map<String, CustomProgram>        = [];
 	static var cachedActorDatas:Map<String, ActorData>    = [];
-	static var cachedAtlases:Map<String, Dynamic>         = [];
+	static var cachedAtlases:Map<String, Any>         = [];
 
 	// ── Instance identity ────────────────────────────────────────────────────
 

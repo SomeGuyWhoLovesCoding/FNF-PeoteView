@@ -90,6 +90,8 @@ class Strumline {
 
 		return length = value;
 	}
+	
+	public var scrollDirection:Int = 90;
 
 	var parent(default, null):NoteSystem;
 

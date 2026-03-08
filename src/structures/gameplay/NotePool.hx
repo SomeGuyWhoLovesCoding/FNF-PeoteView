@@ -48,7 +48,7 @@ class NotePool {
 
 		if (allocated == null) {
 			var inactiveObject = inactiveVirtualNotes.pop();
-			if (inactiveObject == null) inactiveObject = new VirtualNote(-9999, -9999, 0, 0);
+			if (inactiveObject == null) inactiveObject = new VirtualNote(0, 0, 0);
 			inactiveObject.initialAlpha = Note.defaultAlpha;
 			inactiveObject.addedAlpha = 0;
 			inactiveObject.notesInOne = 1;
@@ -101,8 +101,9 @@ class NotePool {
 		if (virtualNotes.remove(n)) {
 			allocated.initialAlpha = Note.defaultAlpha;
 			allocated.addedAlpha = 0;
-			allocated.x = -9999;
-			allocated.y = -9999;
+			allocated.Sx = 0;
+			allocated.Sy = 0;
+			allocated.diff = 0x7FFF;
 			inactiveVirtualNotes.push(allocated);
 		}
 
@@ -119,8 +120,9 @@ class NotePool {
 	function putSustain(n:MetaNote) {
 		var allocated:VirtualSustain = virtualSustains.get(n);
 		if (virtualSustains.remove(n)) {
-			allocated.x = -9999;
-			allocated.y = -9999;
+			allocated.Sx = 0;
+			allocated.Sy = 0;
+			allocated.diff = 0x7FFF;
 			allocated.alpha = Sustain.defaultAlpha;
 			inactiveVirtualSusses.push(allocated);
 		}

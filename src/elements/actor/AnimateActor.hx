@@ -141,8 +141,8 @@ class AnimateActor extends Actor
 		for (i in count...activeLeafCount) {
 			leafPool[i].w = 0;
 			leafPool[i].h = 0;
-			if (buffer != null) buffer.updateElement(leafPool[i]);
 		}
+		if (buffer != null) buffer.update();
 		activeLeafCount = count;
 	}
 
