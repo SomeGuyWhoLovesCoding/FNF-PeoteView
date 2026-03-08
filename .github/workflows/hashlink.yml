@@ -25,13 +25,6 @@ jobs:
         run: haxelib setup C:/haxelib
         shell: cmd
 
-      - name: Cache haxelib dependencies
-        id: haxelib-cache
-        uses: actions/cache@v4
-        with:
-          path: C:/haxelib
-          key: haxe-${{runner.os}}-${{hashFiles('install.hxml')}}
-
       - name: Install haxelib dependencies
         if: steps.haxelib-cache.outputs.cache-hit != 'true'
         run: |
@@ -93,13 +86,6 @@ jobs:
 
       - name: Setup haxelib
         run: haxelib setup ~/haxelib
-
-      - name: Cache haxelib dependencies
-        id: haxelib-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/haxelib
-          key: haxe-${{runner.os}}-${{hashFiles('install.hxml')}}
 
       - name: Install haxelib dependencies
         if: steps.haxelib-cache.outputs.cache-hit != 'true'
