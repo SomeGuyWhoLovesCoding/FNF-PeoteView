@@ -1,49 +1,6 @@
-package system;
+package fvlua;
 
 using StringTools;
-
-#if linc_luajit_funkinview
-/**
-    A single Lua script instance for Funkin' View.
-**/
-@:publicFields
-class FunkinViewLuaScript {
-    public var vm(default, null):State;
-    public var disposed(default, null):Bool = false;
-    public var path(default, null):String;
-
-    public function new(path:String) {
-        this.path = path;
-        vm = LuaL.newstate();
-        LuaL.openlibs(vm);
-        Lua.init_callbacks(vm);
-    }
-
-	public function set(variable:String, data:Dynamic) {
-		if(vm == null) {
-			return;
-		}
-
-		Convert.toLua(vm, data);
-		Lua.setglobal(vm, variable);
-	}
-
-    public function addCallback(callback:String, data:Dynamic) {
-        if (vm == null) {
-            return;
-        }
-
-        Lua_helper.add_callback(vm, callback, data);
-    }
-
-    public function dispose() {
-        if (disposed) return;
-        disposed = true;
-        Lua.close(vm);
-        vm = null;
-    }
-}
-#end
 
 /**
     Lua system of Funkin' View.
@@ -51,7 +8,7 @@ class FunkinViewLuaScript {
 @:publicFields
 class FunkinViewLua {
     #if linc_luajit_funkinview
-    private var vms(default, null):Array<FunkinViewLuaScript>;
+    var vms(default, null):Array<FunkinViewLuaScript>;
     var disposed(default, null):Bool;
 
     //// THE VARIABLES ////
@@ -59,7 +16,11 @@ class FunkinViewLua {
     private static inline var Function_Continue = "##FUNKINVIEWLUA_FUNCTION_CONTINUE";
     private static inline var Function_StopLua = "##FUNKINVIEWLUA_FUNCTION_STOPLUA";
 
-    function new(path:String) {
+    var parent(default, null):PlayField;
+    var customSpriteComponent(default, null):CustomLuaSpriteComponent;
+
+    public function new(parent:PlayField, path:String) {
+        this.parent = parent;
         disposed = false;
 
         var files = sys.FileSystem.readDirectory(path);
@@ -82,10 +43,10 @@ class FunkinViewLua {
             }
             addCallbacksList(script);
             vms.push(script);
-            callFunction('createPost', null);
-            callFunction('postCreate', null); // alternative syntax
             luaFilesFound++;
         }
+
+        customSpriteComponent = new CustomLuaSpriteComponent(this);
     }
 
     function addCallbacksList(luaScript:FunkinViewLuaScript) {
@@ -196,6 +157,7 @@ class FunkinViewLua {
 
     function dispose() {
         disposed = true;
+        customSpriteComponent.dispose();
         for (script in vms) script.dispose();
         vms.resize(0);
         vms = null;

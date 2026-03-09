@@ -23,7 +23,7 @@ class PlayField {
 		var chartPath = Paths.asset(path);
 
     	#if linc_luajit_funkinview
-		funkinviewlua = new FunkinViewLua(chartPath);
+		funkinviewlua = new FunkinViewLua(this, chartPath);
 		#end
 
 		Chart.load(chartPath);
