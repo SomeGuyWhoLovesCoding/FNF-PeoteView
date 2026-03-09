@@ -16,20 +16,22 @@ class CustomLuaSpriteComponent {
     public function new(parent:FunkinViewLua) {
         this.parent = parent;
         playField = parent.parent;
-        for (vm in parent.vms) {
-            vm.addCallback("customBufferNew", null); // customBufferNew(startCount, growCount, autoShrink)
-            vm.addCallback("customProgramNew", null); // customProgramNew(customBuffer)
-            vm.addCallback("customElemNew", null); // customElemNew(x, y, w, h, color)
+    }
 
-            vm.addCallback("addElementToBuffer", null); // addElementToBuffer(customElem, customBuffer)
-            vm.addCallback("addTextureToProgram", null); // addTextureToProgram(customProgram, texturePNG)
-            vm.addCallback("addProgramToDisplay", null); // addProgramToDisplay(customProgram, toDisplay, isBehind)
+    // functions are a placeholder.
+    public function addCallbacksList(vm:FunkinViewLuaScript) {
+        vm.addCallback("customBufferNew", null); // customBufferNew(startCount, growCount, autoShrink)
+        vm.addCallback("customProgramNew", null); // customProgramNew(customBuffer)
+        vm.addCallback("customElemNew", null); // customElemNew(x, y, w, h, color)
 
-            vm.addCallback("updateElementToBuffer", null); // updateElementToBuffer(customElem, customBuffer)
-            vm.addCallback("setDisplayAngle", null); // setDisplayAngle(display, rotation)
-            vm.addCallback("updateDisplay", null); // updateDisplay(display)
-            vm.addCallback("updateBuffer", null); // updateBuffer(customBuffer)
-        }
+        vm.addCallback("addElementToBuffer", null); // addElementToBuffer(customElem, customBuffer)
+        vm.addCallback("addTextureToProgram", null); // addTextureToProgram(customProgram, texturePNG)
+        vm.addCallback("addProgramToDisplay", null); // addProgramToDisplay(customProgram, toDisplay, isBehind)
+
+        vm.addCallback("updateElementToBuffer", null); // updateElementToBuffer(customElem, customBuffer)
+        vm.addCallback("setDisplayAngle", null); // setDisplayAngle(display, rotation)
+        vm.addCallback("updateDisplay", null); // updateDisplay(display)
+        vm.addCallback("updateBuffer", null); // updateBuffer(customBuffer)
     }
 
     public function dispose() {

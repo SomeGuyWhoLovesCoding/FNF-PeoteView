@@ -28,6 +28,8 @@ class FunkinViewLua {
 
         vms = [];
 
+        customSpriteComponent = new CustomLuaSpriteComponent(this);
+
         var luaFilesFound = 0;
         for (i in 0...files.length) {
             var scriptFile = '$path/${files[i]}';
@@ -42,11 +44,10 @@ class FunkinViewLua {
                 continue;
             }
             addCallbacksList(script);
+            customSpriteComponent.addCallbacksList(script);
             vms.push(script);
             luaFilesFound++;
         }
-
-        customSpriteComponent = new CustomLuaSpriteComponent(this);
     }
 
     function addCallbacksList(luaScript:FunkinViewLuaScript) {
