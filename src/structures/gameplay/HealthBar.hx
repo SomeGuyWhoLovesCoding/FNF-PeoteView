@@ -120,7 +120,7 @@ class HealthBar {
 	/**
 		Updates the health bar.
 	**/
-	function render(deltaTime:Float) {
+	function update(deltaTime:Float) {
 		var health = parent.health;
 		_smoothHealth = Tools.lerp(_smoothHealth, health, SaveData.state.preferences.smoothHealthbar ? Math.max(Math.min(deltaTime / 60, 1.0), 0.0) : 1.0);
 

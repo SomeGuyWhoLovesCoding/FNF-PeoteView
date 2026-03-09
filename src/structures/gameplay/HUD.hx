@@ -140,16 +140,13 @@ class HUD {
 	var alphaLerp:Float = .0;
 
 	/**
-		Renders the HUD.
+		Updates the HUD.
 	**/
-	function render(deltaTime:Float) {
+	function update(deltaTime:Float) {
 		if (SaveData.state.preferences.ratingPopup) {
 			updateRatingPopup(deltaTime);
-			updateComboNumbers();
 		}
-		healthBar.render(deltaTime);
-		updateTimeBarParts();
-		updateTimeBarText();
+		healthBar.update(deltaTime);
 		updateScoreText(deltaTime);
 
 		var t = Math.min(deltaTime * 0.015, 1.0);
@@ -158,6 +155,17 @@ class HUD {
 			alphaLerp = Tools.lerp(alphaLerp, 1.0, t);
 			setHUDAlpha(alphaLerp);
 		}
+	}
+
+	/**
+		Renders the HUD.
+	**/
+	function render() {
+		if (SaveData.state.preferences.ratingPopup) {
+			updateComboNumbers();
+		}
+		updateTimeBarParts();
+		updateTimeBarText();
 	}
 
 	/**

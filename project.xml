@@ -18,7 +18,6 @@
 	<haxedef name="peoteview_instancedrawing" />
 	<haxedef name="peoteview_vertexarrayobjects" />
 	<haxedef name="peoteview_customdisplay" />
-
 	<!-- <haxedef name="peoteview_fps" />-->
 
 	<!-- for html5 and loading inside onPreloadComplete-event the assets need to be embed=true --> 

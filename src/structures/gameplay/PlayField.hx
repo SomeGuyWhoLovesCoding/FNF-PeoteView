@@ -105,7 +105,8 @@ class PlayField {
 			noteSystem.renderNotes(pos); // new, because of the change I did to the note system to allow for an easy greedy merging optimization
 		}
 		if (hud != null) {
-			hud.render(Math.POSITIVE_INFINITY);
+			hud.render();
+			hud.update(Math.POSITIVE_INFINITY);
 			hud.updateBuffers();
 		}
 		return value;
@@ -247,7 +248,8 @@ class PlayField {
 			hud = new HUD(display, this);
 			hud.alphaLerp = 1;
 			hud.setHUDAlpha(1);
-			hud.render(Math.POSITIVE_INFINITY);
+			hud.render();
+			hud.update(Math.POSITIVE_INFINITY);
 			hud.updateBuffers();
 		}
 	}
@@ -256,8 +258,11 @@ class PlayField {
 		Updates the playfield.
 	**/
 	var lastsongpos:Float = 0;
+	//var deltaTimeincremenetal:Float = 0;
 	function update(deltaTime:Float) {
 		if (disposed || paused) return;
+
+		//trace("Update",deltaTime);
 
 		#if linc_luajit_funkinview
 		funkinviewlua.callFunction('update', deltaTime);
@@ -285,6 +290,8 @@ class PlayField {
 		display.r = -view.r;
 		//view.r = 15;
 
+		//deltaTimeincremenetal += deltaTime;
+
 		if (!died) {
 			Mixer.update(this, deltaTime);
 			//Sys.println('$songPosition' + (((lastsongpos - songPosition) > 50) ? " (CHANGE ALERT! CHANGE ALERT! CHANGE!)" : ""));
@@ -304,6 +311,9 @@ class PlayField {
 			songPosition -= latencyCompensation;
 			songPosition -= Mixer.latency();
 
+			var renderingModeEnabled = RenderingMode.enabled;
+			if (hud != null) hud.update(renderingModeEnabled ? (1000 / RenderingMode.frameRate) : deltaTime);
+
 			#if !FV_LIME_FORK
 			Main.conductor.time = songPosition;
 			#end
@@ -316,6 +326,7 @@ class PlayField {
 				var noteSpawner = noteSystem.noteSpawner;
 				//if (HUD.scoreTxt != null) HUD.scoreTxt.text = ((noteSpawner.timeSpentOnIt * 1000000000) / Tools.int64ToFloat(noteSpawner.top - noteSpawner.bottom)) + "ns";
 				//if (HUD.scoreTxt != null) HUD.scoreTxt.text = (noteSpawner.timeSpentOnIt * 1000) + "ms";
+				//if (HUD.scoreTxt != null) HUD.scoreTxt.text = Std.string(deltaTimeincremenetal);
 			}
 
 			songPosition += latencyCompensation;
@@ -350,6 +361,47 @@ class PlayField {
 			hud.dispose();
 			hud = null;
 		}
+	}
+
+	/**
+		There is mainly nothing in this render function except a couple extra things.
+	**/
+	function render() {
+		#if linc_luajit_funkinview
+		funkinviewlua.callFunction('render', null);
+		#end
+
+		var renderingModeEnabled = RenderingMode.enabled;
+		if (renderingModeEnabled) update(1000 / RenderingMode.frameRate);
+		var noteSystem = noteSystem;
+		if (noteSystem != null) {
+			var pos = MetaNote.floatToMetaNotePosition(songPosition);
+			noteSystem.renderNotes(pos);
+		}
+
+		var field = field;
+		if (field != null) {
+			field.render();
+		}
+
+		var hud = hud;
+		if (hud != null) {
+			hud.render();
+
+			var scoreTxt = HUD.scoreTxt;
+			var noteSpawner = noteSystem.noteSpawner;
+			//if (scoreTxt != null) scoreTxt.text = ((noteSpawner.timeSpentOnIt * 1000000000) / Tools.int64ToFloat(noteSpawner.top - noteSpawner.bottom)) + "ns";
+			//if (scoreTxt != null) scoreTxt.text = (noteSpawner.timeSpentOnIt * 1000) + "ms";
+
+			hud.updateBuffers();
+		}
+
+		if (renderingModeEnabled) RenderingMode.pipeFrame();
+
+		#if linc_luajit_funkinview
+		funkinviewlua.callFunction('renderPost', null);
+		funkinviewlua.callFunction('postRender', null); // alternative syntax
+		#end
 	}
 
 	/**
@@ -393,10 +445,6 @@ class PlayField {
 
 		pauseScreen.close();
 		if (!RenderingMode.enabled && songStarted && !songEnded) Mixer.startMusic();
-		if (noteSystem != null) {
-			var pos = MetaNote.floatToMetaNotePosition(songPosition);
-			noteSystem.onSongPositionJump(pos);
-		}
 		if (inputSystem != null) haxe.Timer.delay(inputSystem.addEvents, 1);
 
 		paused = false;

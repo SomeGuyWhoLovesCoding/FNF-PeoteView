@@ -110,6 +110,7 @@ class FunkinViewLua {
     private var returns(default, null):Array<Any> = [];
     function callFunction(fname:String, args:haxe.Rest<Any>):Array<Any> {
         returns.resize(0);
+        if (vms == null) return null;
         for (script in vms) {
             var lua = script.vm;
 

@@ -323,7 +323,7 @@ class Main extends Application
 			newDeltaTime = 1000 / Application.current.window.frameRate;
 			#end
 
-			if (Application.current.window.uncappedFrameRate) {
+			if (Application.current.window.uncappedFrameRate && !RenderingMode.enabled) {
 				var mult = (1000 / Application.current.window.frameRate) / newDeltaTime;
 				newDeltaTime *= mult;
 			}
@@ -369,33 +369,8 @@ class Main extends Application
 		#end
 
 		if (playField != null) {
-			var renderingModeEnabled = RenderingMode.enabled;
 			if (!playField.paused) {
-				if (renderingModeEnabled) playField.update(1000 / RenderingMode.frameRate);
-				var noteSystem = playField?.noteSystem;
-				if (noteSystem != null) {
-					var pos = MetaNote.floatToMetaNotePosition(playField.songPosition);
-					playField.noteSystem.renderNotes(pos);
-				}
-
-				var field = playField?.field;
-				if (field != null) {
-					field.render();
-				}
-
-				var hud = playField?.hud;
-				if (hud != null) {
-					hud.render(renderingModeEnabled ? (1000 / RenderingMode.frameRate) : renderRate);
-
-					var scoreTxt = HUD.scoreTxt;
-					var noteSpawner = noteSystem.noteSpawner;
-					//if (scoreTxt != null) scoreTxt.text = ((noteSpawner.timeSpentOnIt * 1000000000) / Tools.int64ToFloat(noteSpawner.top - noteSpawner.bottom)) + "ns";
-					//if (scoreTxt != null) scoreTxt.text = (noteSpawner.timeSpentOnIt * 1000) + "ms";
-
-					hud.updateBuffers();
-				}
-
-				if (renderingModeEnabled) RenderingMode.pipeFrame();
+				playField.render();
 			}
 		}
 		if (freeplayMenu != null) {
