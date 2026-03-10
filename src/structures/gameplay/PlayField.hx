@@ -22,14 +22,14 @@ class PlayField {
 	function new(path:String) {
 		var chartPath = Paths.asset(path);
 
-    	#if linc_luajit_funkinview
+		#if linc_luajit_funkinview
 		funkinviewlua = new FunkinViewLua(this, chartPath);
 		#end
 
 		Chart.load(chartPath);
 
 		#if linc_luajit_funkinview
-        funkinviewlua.callFunction('byChartCreation', null);
+		funkinviewlua.callFunction('byChartCreation', null);
 		#end
 	}
 
@@ -462,6 +462,8 @@ class PlayField {
 			// When the game actually begins, remove countdown listener immediately
 			// to avoid duplicate triggers and let Main.conductor take over.
 			if (countdownDisp.conductor != null) countdownDisp.conductor.onBeatUnoffsetted.remove(countdownBeatHit);
+			Main.conductor.onStep.add(stepHit);
+			Main.conductor.onBeat.add(beatHit);
 			Main.conductor.onMeasure.add(measureHit);
 		}
 
@@ -471,7 +473,23 @@ class PlayField {
 		}
 	}
 
-	inline function measureHit(measure:Float) {
+	function stepHit(step:Float) {
+		#if linc_luajit_funkinview
+		funkinviewlua.callFunction('stepHit', step);
+		#end
+	}
+
+	function beatHit(beat:Float) {
+		#if linc_luajit_funkinview
+		funkinviewlua.callFunction('beatHit', beat);
+		#end
+	}
+
+	function measureHit(measure:Float) {
+		#if linc_luajit_funkinview
+		funkinviewlua.callFunction('measureHit', measure);
+		#end
+
 		if (measure >= 0 && SaveData.state.preferences.cameraZooming && songStarted) {
 			display.fov += 0.025;
 			view.fov += 0.011;
@@ -480,7 +498,7 @@ class PlayField {
 
 	function hitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
 		#if linc_luajit_funkinview
-        funkinviewlua.callFunction('hitNote', note, timing, notesInOne);
+		funkinviewlua.callFunction('hitNote', MetaNote.metaNotePositionToSongTime(note.position), note.index, note.duration, note.type, timing, notesInOne);
 		#end
 
 		var lane = note.type;
@@ -553,14 +571,14 @@ class PlayField {
 
 	function postHitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
 		#if linc_luajit_funkinview
-        funkinviewlua.callFunction('hitNotePost', note, timing, notesInOne);
-        funkinviewlua.callFunction('postHitNote', note, timing, notesInOne); // alternative syntax
+		funkinviewlua.callFunction('hitNotePost', note, timing, notesInOne);
+		funkinviewlua.callFunction('postHitNote', note, timing, notesInOne); // alternative syntax
 		#end
 	}
 
 	function missNote(note:MetaNote, notesInOne:Int64) {
 		#if linc_luajit_funkinview
-        funkinviewlua.callFunction('missNote', note, notesInOne);
+		funkinviewlua.callFunction('missNote', note, notesInOne);
 		#end
 
 		if (practiceMode && health < 0.05) {
@@ -585,14 +603,14 @@ class PlayField {
 			onDeath.dispatch(Chart.header, lane);
 
 		#if linc_luajit_funkinview
-        funkinviewlua.callFunction('missNotePost', note, notesInOne);
-        funkinviewlua.callFunction('postMissNote', note, notesInOne); // alternative syntax
+		funkinviewlua.callFunction('missNotePost', note, notesInOne);
+		funkinviewlua.callFunction('postMissNote', note, notesInOne); // alternative syntax
 		#end
 	}
 
 	function completeSustain(note:MetaNote) {
 		#if linc_luajit_funkinview
-        funkinviewlua.callFunction('completeSustain', note);
+		funkinviewlua.callFunction('completeSustain', note);
 		#end
 
 		var lane = note.type;
@@ -617,27 +635,27 @@ class PlayField {
 		}
 
 		#if linc_luajit_funkinview
-        funkinviewlua.callFunction('completeSustainPost', note);
-        funkinviewlua.callFunction('postCompleteSustain', note); // alternative syntax
+		funkinviewlua.callFunction('completeSustainPost', note);
+		funkinviewlua.callFunction('postCompleteSustain', note); // alternative syntax
 		#end
 	}
 
 	inline function releaseSustain(note:MetaNote) {
 		#if linc_luajit_funkinview
-        funkinviewlua.callFunction('releaseSustain', note);
+		funkinviewlua.callFunction('releaseSustain', note);
 		#end
 
 		combo = 0;
 
 		#if linc_luajit_funkinview
-        funkinviewlua.callFunction('releaseSustainPost', note);
-        funkinviewlua.callFunction('postReleaseSustain', note); // alternative syntax
+		funkinviewlua.callFunction('releaseSustainPost', note);
+		funkinviewlua.callFunction('postReleaseSustain', note); // alternative syntax
 		#end
 	}
 
 	function startSong(header:Header) {
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('startSong', header);
+		funkinviewlua.callFunction('startSong', header.title, header.difficulty);
 		#end
 
 		Sys.println('Song activity is on');
@@ -659,14 +677,14 @@ class PlayField {
 			countdownDisp.conductor.onBeatUnoffsetted.remove(countdownBeatHit);
 
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('startSongPost', header);
-		funkinviewlua.callFunction('postStartSong', header); // alternative syntax
+		funkinviewlua.callFunction('startSongPost', header.title, header.difficulty);
+		funkinviewlua.callFunction('postStartSong', header.title, header.difficulty); // alternative syntax
 		#end
 	}
 
 	function stopSong(header:Header) {
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('stopSong', header);
+		funkinviewlua.callFunction('stopSong', header.title, header.difficulty);
 		#end
 
 		Sys.println('Song activity is off');
@@ -683,8 +701,8 @@ class PlayField {
 		Mixer.setTime(0, null);
 
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('stopSongPost', header);
-		funkinviewlua.callFunction('postStopSong', header); // alternative syntax
+		funkinviewlua.callFunction('stopSongPost', header.title, header.difficulty);
+		funkinviewlua.callFunction('postStopSong', header.title, header.difficulty); // alternative syntax
 		#end
 
 		Main.switchState(MAIN_MENU);
@@ -712,6 +730,8 @@ class PlayField {
 
 		var conductor = Main.conductor;
 		conductor.onMeasure.remove(measureHit);
+		conductor.onStep.remove(stepHit);
+		conductor.onBeat.remove(beatHit);
 
 		Mixer.stopMusic();
 
@@ -735,12 +755,14 @@ class PlayField {
 		ready = false;
 		disposed = true;
 
-    	#if linc_luajit_funkinview
+		#if linc_luajit_funkinview
 		funkinviewlua.callFunction('dispose', null);
 		#end
 
 		var conductor = Main.conductor;
 		conductor.onMeasure.remove(measureHit);
+		conductor.onStep.remove(stepHit);
+		conductor.onBeat.remove(beatHit);
 
 		if (field != null) {
 			field.dispose();

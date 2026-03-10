@@ -44,44 +44,9 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 	var missed(get, set):Bool;
 	var held(get, set):Bool;
 
-	// EPOCH HANDLER
-	private static var CHART_EPOCH_DIFF(default, null):Int64 = 0;
-	private static var LAST_CHART_POSITION(default, null):Int64 = 0;
-	private static var CHART_EPOCH_DIFF_ENABLED(default, null):Bool = false;
-
-	// Helper for correcting note overflow handling after exporting/converting a chart in its binary form.
-	// Edge case here is if your chart is at the slightest of unordered
-	private inline static function RESET_CHART_EPOCH() {
-		CHART_EPOCH_DIFF = 0;
-	}
-	private inline static function CHART_EPOCH_DIFF_ENABLE(value:Bool) {
-		CHART_EPOCH_DIFF_ENABLED = value;
-	}
-
 	// Getters
 	inline function get_position():Int64 {
 		var pos:Int64 = ((this >> SHIFT_POSITION) & POSITION_MASK);
-		if (CHART_EPOCH_DIFF_ENABLED) {
-			if (LAST_CHART_POSITION > pos && LAST_CHART_POSITION - pos > (POSITION_MASK + 1) >> 2) {
-				CHART_EPOCH_DIFF++;
-			}
-			pos += (CHART_EPOCH_DIFF * (POSITION_MASK + 1));
-			LAST_CHART_POSITION = pos;
-		}
-
-		var playfield = Main.current.playField;
-		if (playfield != null) {
-			var noteSystem = playfield.noteSystem;
-			if (noteSystem != null) {
-				var noteSpawner = noteSystem.noteSpawner;
-				if (noteSpawner != null) {
-					var epochDiff = Math.floor((playfield.songPosition - MetaNote.metaNotePositionToSongTime(noteSpawner.spawnDist)) / POSITION_OVERFLOWHANDLEVALUE);
-					if (epochDiff < 0) epochDiff = 0; // don't have negative epoch or you emit weird behavior
-					if (epochDiff != 0) pos += MetaNote.floatToMetaNotePosition(epochDiff * POSITION_OVERFLOWHANDLEVALUE);
-				}
-			}
-		}
-
 		return pos;
 	}
 

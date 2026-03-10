@@ -27,7 +27,6 @@ class ChartConverter
 		Converts a base-game chart file to Funkin' View's chart format.
 	**/
 	static function baseGame(path:String) {
-		MetaNote.CHART_EPOCH_DIFF_ENABLE(true);
 		if (!multichartMode) {
 			Sys.println("Welcome to the Funkin' View chart converter!");
 			Sys.println("Converting base-game chart to CBIN...");
@@ -77,9 +76,6 @@ class ChartConverter
 			alreadywroteheader = false;
 			multichartPath = "";
 			multichartCBINPath = "";
-
-			MetaNote.RESET_CHART_EPOCH();
-			MetaNote.CHART_EPOCH_DIFF_ENABLE(false);
 			return;
 		}
 
@@ -106,9 +102,6 @@ class ChartConverter
 			metaNotes = [];
 			alreadywroteheader = false;
 		}
-
-		MetaNote.RESET_CHART_EPOCH();
-		MetaNote.CHART_EPOCH_DIFF_ENABLE(false);
 	}
 
 	/**
