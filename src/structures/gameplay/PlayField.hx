@@ -498,7 +498,8 @@ class PlayField {
 
 	function hitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('hitNote', MetaNote.metaNotePositionToSongTime(note.position), note.index, note.duration, note.type, timing, notesInOne);
+		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
+		funkinviewlua.callFunction('hitNote', notePos, note.index, note.duration, note.type, timing, notesInOne);
 		#end
 
 		var lane = note.type;
@@ -549,7 +550,7 @@ class PlayField {
 			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(judgementID);
 			accuracy.increment(judgementAcc, false, notesInOne * 10000);
 			score += judgementScore * notesInOne;
-			postHitNote(note, timing, notesInOne);
+			postHitNote(#if linc_luajit_funkinview notePos, #end note, timing, notesInOne);
 			return;
 		}
 
@@ -563,22 +564,23 @@ class PlayField {
 				if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(judgementID);
 				accuracy.increment(judgementAcc, false, notesInOne * 10000);
 				score += judgementScore * notesInOne;
-				postHitNote(note, timing, notesInOne);
+				postHitNote(#if linc_luajit_funkinview notePos, #end note, timing, notesInOne);
 				return;
 			}
 		}
 	}
 
-	function postHitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
+	function postHitNote(#if linc_luajit_funkinview notePos:Float, #end note:MetaNote, timing:Float, notesInOne:Int64) {
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('hitNotePost', note, timing, notesInOne);
-		funkinviewlua.callFunction('postHitNote', note, timing, notesInOne); // alternative syntax
+		funkinviewlua.callFunction('hitNotePost', notePos, note.index, note.duration, note.type, timing, notesInOne);
+		funkinviewlua.callFunction('postHitNote', notePos, note.index, note.duration, note.type, timing, notesInOne); // alternative syntax
 		#end
 	}
 
 	function missNote(note:MetaNote, notesInOne:Int64) {
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('missNote', note, notesInOne);
+		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
+		funkinviewlua.callFunction('missNote', notePos, note.index, note.duration, note.type, notesInOne);
 		#end
 
 		if (practiceMode && health < 0.05) {
@@ -603,14 +605,15 @@ class PlayField {
 			onDeath.dispatch(Chart.header, lane);
 
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('missNotePost', note, notesInOne);
-		funkinviewlua.callFunction('postMissNote', note, notesInOne); // alternative syntax
+		funkinviewlua.callFunction('missNotePost', notePos, note.index, note.duration, note.type, notesInOne);
+		funkinviewlua.callFunction('postMissNote', notePos, note.index, note.duration, note.type, notesInOne); // alternative syntax
 		#end
 	}
 
 	function completeSustain(note:MetaNote) {
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('completeSustain', note);
+		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
+		funkinviewlua.callFunction('completeSustain', notePos, note.index, note.duration, note.type);
 		#end
 
 		var lane = note.type;
@@ -635,21 +638,22 @@ class PlayField {
 		}
 
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('completeSustainPost', note);
-		funkinviewlua.callFunction('postCompleteSustain', note); // alternative syntax
+		funkinviewlua.callFunction('completeSustainPost', notePos, note.index, note.duration, note.type);
+		funkinviewlua.callFunction('postCompleteSustain', notePos, note.index, note.duration, note.type); // alternative syntax
 		#end
 	}
 
 	inline function releaseSustain(note:MetaNote) {
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('releaseSustain', note);
+		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
+		funkinviewlua.callFunction('releaseSustain', notePos, note.index, note.duration, note.type);
 		#end
 
 		combo = 0;
 
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('releaseSustainPost', note);
-		funkinviewlua.callFunction('postReleaseSustain', note); // alternative syntax
+		funkinviewlua.callFunction('releaseSustainPost', notePos, note.index, note.duration, note.type);
+		funkinviewlua.callFunction('postReleaseSustain', notePos, note.index, note.duration, note.type); // alternative syntax
 		#end
 	}
 
