@@ -115,5 +115,5 @@ jobs:
         uses: nmerget/upload-gzip-artifact@main
         with:
           name: 'FV-Linux'
-          path: hdlls/linux
+          path: bin/linux/bin
           retention-days: 5
