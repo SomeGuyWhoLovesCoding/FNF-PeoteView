@@ -1,5 +1,6 @@
 package fvlua;
 
+import sys.FileSystem;
 using StringTools;
 
 /**
@@ -39,7 +40,8 @@ class FunkinViewLua {
 			luaFilesFound++;
 		}
 
-		initScript('${path.split("/")[0]}/stages/${header.stage}.lua');
+		var stageLuaFile = '${path.split("/")[0]}/stages/${header.stage}.lua';
+		if (FileSystem.exists(stageLuaFile)) initScript(stageLuaFile);
 
 		callFunction('create', null);
 	}
@@ -75,10 +77,9 @@ class FunkinViewLua {
 		return "unknown";
 	}
 
-	public var lastCalledFunction:String = '';
-	private var NO_ARGS(default, null):Array<Any> = [];
-	private var returns(default, null):Array<Any> = [];
-	function callFunction(fname:String, args:haxe.Rest<Any>):Array<Any> {
+	private static var NO_ARGS(default, null):Array<Dynamic> = [];
+	private var returns(default, null):Array<Dynamic> = [];
+	function callFunction(fname:String, args:haxe.Rest<Dynamic>):Array<Dynamic> {
 		returns.resize(0);
 		if (vms == null) return null;
 		for (script in vms) {
@@ -87,7 +88,6 @@ class FunkinViewLua {
 			// this is a direct port from psych as a test.
 			if(disposed) return [Function_Continue];
 
-			lastCalledFunction = fname;
 			try {
 				if(lua == null) {
 					returns.push(Function_Continue);
@@ -107,7 +107,7 @@ class FunkinViewLua {
 					continue;
 				}
 
-				var argsArr = args != null ? args.toArray() : NO_ARGS;
+				var argsArr:Array<Any> = args == null ? NO_ARGS : args.toArray();
 				for (arg in argsArr) Convert.toLua(lua, arg);
 				var status:Int = Lua.pcall(lua, argsArr.length, 1, 0);
 
@@ -127,9 +127,9 @@ class FunkinViewLua {
 				returns.push(result);
 				continue;
 			}
-			catch (e:Dynamic) {
+			/*catch (e:Dynamic) {
 				trace(e);
-			}
+			}*/
 			returns.push(Function_Continue);
 			continue;
 		}
