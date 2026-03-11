@@ -12,14 +12,14 @@ class FunkinViewLua {
 	var disposed(default, null):Bool;
 
 	//// THE VARIABLES ////
-	private static inline var Function_Stop = "##FUNKINVIEWLUA_FUNCTION_STOP";
-	private static inline var Function_Continue = "##FUNKINVIEWLUA_FUNCTION_CONTINUE";
-	private static inline var Function_StopLua = "##FUNKINVIEWLUA_FUNCTION_STOPLUA";
+	static inline var Function_Stop = "##FUNKINVIEWLUA_FUNCTION_STOP";
+	static inline var Function_Continue = "##FUNKINVIEWLUA_FUNCTION_CONTINUE";
+	static inline var Function_StopLua = "##FUNKINVIEWLUA_FUNCTION_STOPLUA";
 
 	var parent(default, null):PlayField;
 	var customSpriteComponent(default, null):CustomLuaSpriteComponent;
 
-	public function new(parent:PlayField, path:String) {
+	public function new(parent:PlayField, path:String, header:Header) {
 		this.parent = parent;
 		disposed = false;
 
@@ -35,21 +35,28 @@ class FunkinViewLua {
 			var scriptFile = '$path/${files[i]}';
 			if (!scriptFile.endsWith(".lua")) continue;
 			Sys.println('Lua File Found : $scriptFile');
-			var script = new FunkinViewLuaScript(scriptFile);
-			var loadStatus = LuaL.dofile(script.vm, scriptFile);
-			if (loadStatus != Lua.LUA_OK) {
-				var error = getErrorMessage(script.vm, loadStatus);
-				Sys.println('Lua load error in $scriptFile: $error');
-				script.dispose();
-				continue;
-			}
-			addCallbacksList(script);
-			customSpriteComponent.addCallbacksList(script);
-			vms.push(script);
+			if (initScript(scriptFile) == null) continue;
 			luaFilesFound++;
 		}
 
+		initScript('${path.split("/")[0]}/stages/${header.stage}.lua');
+
 		callFunction('create', null);
+	}
+
+	function initScript(scriptFile:String):FunkinViewLuaScript {
+		var script = new FunkinViewLuaScript(scriptFile);
+		var loadStatus = LuaL.dofile(script.vm, scriptFile);
+		if (loadStatus != Lua.LUA_OK) {
+			var error = getErrorMessage(script.vm, loadStatus);
+			Sys.println('Lua load error in $scriptFile: $error');
+			script.dispose();
+			return null;
+		}
+		addCallbacksList(script);
+		customSpriteComponent.addCallbacksList(script);
+		vms.push(script);
+		return script;
 	}
 
 	function addCallbacksList(luaScript:FunkinViewLuaScript) {
@@ -92,7 +99,7 @@ class FunkinViewLua {
 
 				if (type != Lua.LUA_TFUNCTION) {
 					if (type > Lua.LUA_TNIL) {
-						trace("ERROR (" + fname + "): attempt to call a " + typeToString(type) + " value");
+						error("attempt to call a " + typeToString(type) + " value at " + fname);
 					}
 
 					Lua.pop(lua, 1);
@@ -106,8 +113,8 @@ class FunkinViewLua {
 
 				// Checks if it's not successful, then show a error.
 				if (status != Lua.LUA_OK) {
-					var error:String = getErrorMessage(lua, status);
-					trace("ERROR (" + fname + "): " + error);
+					var errorMessage:String = getErrorMessage(lua, status);
+					error(errorMessage + "(at " + fname + ")");
 					returns.push(Function_Continue);
 					continue;
 				}
@@ -127,6 +134,10 @@ class FunkinViewLua {
 			continue;
 		}
 		return returns;
+	}
+
+	public static dynamic function error(err:String) {
+		trace('[ERROR] FunkinViewLua: $err');
 	}
 
 	public function getErrorMessage(lua:State, status:Int):String {

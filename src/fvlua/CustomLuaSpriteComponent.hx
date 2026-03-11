@@ -1,5 +1,10 @@
 package fvlua;
 
+import sys.FileSystem;
+import haxe.ds.StringMap;
+
+using StringTools;
+
 /**
 	A single Lua script instance for Funkin' View.
 **/
@@ -9,45 +14,467 @@ class CustomLuaSpriteComponent {
 	public var parent(default, null):FunkinViewLua;
 	public var playField(default, null):PlayField;
 
-	public var customBuffers(default, null):Array<Buffer<Sprite>>;
-	public var customPrograms(default, null):Array<Program>;
-	public var customSprites(default, null):Array<Sprite>;
+	public var customBuffers(default, null):StringMap<Buffer<LuaSprite>>;
+	public var customPrograms(default, null):StringMap<CustomProgram>;
+	public var customTextures(default, null):StringMap<Texture>;
+	public var customSprites(default, null):StringMap<LuaSprite>;
 
 	public function new(parent:FunkinViewLua) {
 		this.parent = parent;
 		playField = parent.parent;
+
+		customBuffers = new StringMap<Buffer<LuaSprite>>();
+		customPrograms = new StringMap<CustomProgram>();
+		customTextures = new StringMap<Texture>();
+		customSprites = new StringMap<LuaSprite>();
 	}
 
 	// functions are a placeholder.
 	public function addCallbacksList(vm:FunkinViewLuaScript) {
 		// NEW
-		vm.addCallback("customBufferNew", null); // customBufferNew(startCount, growCount, autoShrink)
-		vm.addCallback("customProgramNew", null); // customProgramNew(customBuffer)
-		vm.addCallback("customElemNew", null); // customElemNew(x, y, w, h, color)
+		vm.addCallback("customBufferNew", (bufferName:String, minSize:Int, growSize:Int = 0, autoShrink:Bool = false) -> {
+			//trace('args:$bufferName,$minSize,$growSize,$autoShrink');
+			if (bufferName == "" || bufferName == null) {
+				FunkinViewLua.error("Custom Buffer's Key cannot be empty or nil!");
+				return FunkinViewLua.Function_Stop;
+			}
+			customBuffers.set(bufferName, new Buffer<LuaSprite>(minSize, growSize, autoShrink));
+			return FunkinViewLua.Function_Continue;
+		});
+		vm.addCallback("customProgramNew", (programName:String, customBuffer:String) -> {
+			//trace('args:$programName,$customBuffer');
+			if (programName == "" || programName == null) {
+				FunkinViewLua.error("Custom Program's Key cannot be empty or nil!");
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customBuffers.exists(customBuffer)) {
+				FunkinViewLua.error("Custom Buffer not found: " + customBuffer);
+				return FunkinViewLua.Function_Stop;
+			}
+			var buffer = customBuffers.get(customBuffer);
+			customPrograms.set(programName, new CustomProgram(buffer));
+			return FunkinViewLua.Function_Continue;
+		});
+		vm.addCallback("customElementNew", (elem:String, x:Int, y:Int, w:Float, h:Float, color:String = "white") -> {
+			if (elem == "" || elem == null) {
+				FunkinViewLua.error("Custom Element's Key cannot be empty or nil!");
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = new LuaSprite(x, y, Std.int(w), Std.int(h));
+
+			var defaultColorString = capitalize(color.toLowerCase());
+			var defaultColorSwatch = Color.defaultMap[defaultColorString];
+			if (!Color.defaultMap.exists(defaultColorString)) {
+				var colorSwatch:Null<Int> = Std.parseInt(color);
+				if (colorSwatch == null) defaultColorSwatch = Color.WHITE;
+			}
+			//if (Math.isNaN(defaultColorSwatch)) defaultColorSwatch = Color.WHITE;
+			//trace(defaultColorSwatch);
+
+			sprite.c = defaultColorSwatch;
+			customSprites.set(elem, sprite);
+
+			return FunkinViewLua.Function_Continue;
+		});
 
 		// ADD
-		vm.addCallback("addElementToBuffer", null); // addElementToBuffer(customElem, customBuffer)
-		vm.addCallback("addTextureToProgram", null); // addTextureToProgram(customProgram, texturePNG)
-		vm.addCallback("addProgramToDisplay", null); // addProgramToDisplay(customProgram, toDisplay, isBehind)
+		vm.addCallback("addElementToBuffer", (elemName:String, bufferName:String) -> {
+			if (elemName == "" || elemName == null) {
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customSprites.exists(elemName)) {
+				FunkinViewLua.error("Custom Element not found: " + elemName);
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customBuffers.exists(bufferName)) {
+				FunkinViewLua.error("Custom Buffer not found: " + bufferName);
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = customSprites.get(elemName);
+			var buffer = customBuffers.get(bufferName);
+			buffer.addElement(sprite);
+			return FunkinViewLua.Function_Continue;
+		});
+		vm.addCallback("addTextureToProgram", (programName:String, texturePNG:String, disableAntialiasing:Bool = false) -> {
+			//trace('args:$programName,$texturePNG,$disableAntialiasing');
+			if (programName == "" || programName == null) {
+				FunkinViewLua.error("Custom Program's Key cannot be empty or nil!");
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customPrograms.exists(programName)) {
+				FunkinViewLua.error("Custom Program not found: " + programName);
+				return FunkinViewLua.Function_Stop;
+			}
+			//var texKey = '##${texturePNG.replace('.png', '')}_CUSTOMLUATEXTURE';
+			var program = customPrograms.get(programName);
+			//trace('Custom Program: $program');
+			var texPath = Paths.asset(texturePNG);
+			if (!FileSystem.exists(texPath)) {
+				FunkinViewLua.error("Image not found: " + texPath);
+				return FunkinViewLua.Function_Stop;
+			}
+			// this was going to be customLuaTexture_key btw.
+			TextureSystem.createTexture(programName, texturePNG, disableAntialiasing, true);
+			//trace('Custom Texture: ${TextureSystem.getTexture(programName)}');
+			TextureSystem.setTexture(program, programName, programName);
+			//trace('Added Custom Texture: ${TextureSystem.getTexture(programName)}');
+			customTextures.set(programName, TextureSystem.getTexture(programName));
+			return FunkinViewLua.Function_Continue;
+		});
+		vm.addCallback("addProgramToDisplay", (programName:String, toDisplay:String, isBehind:Bool = false, ?atCustomProgram:String) -> {
+			//trace('args:$programName,$toDisplay,$isBehind');
+			if (programName == "" || programName == null) {
+				FunkinViewLua.error("Custom Program's Key cannot be empty or nil!");
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customPrograms.exists(programName)) {
+				FunkinViewLua.error("Custom Program not found: " + programName);
+				return FunkinViewLua.Function_Stop;
+			}
+			var program = customPrograms.get(programName);
+			var displayValue = toDisplay.toLowerCase();
+			var display = Reflect.field(playField, toDisplay.toLowerCase());
+			if (display == null) {
+				FunkinViewLua.error("Display not found: " + toDisplay.toLowerCase());
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customPrograms.exists(atCustomProgram) && atCustomProgram != null) {
+				FunkinViewLua.error("Custom Program not found: " + programName);
+				return FunkinViewLua.Function_Stop;
+			}
+			var atProgram = atCustomProgram != null ? customPrograms.get(atCustomProgram) : null;
+			if (atProgram == null)
+				display.addProgram(program, null, isBehind);
+			else
+				display.addProgram(program, atProgram, isBehind);
+			return FunkinViewLua.Function_Continue;
+		});
+
+		// REMOOVE
+		vm.addCallback("removeElementFromBuffer", (elemName:String, bufferName:String) -> {
+			if (elemName == "" || elemName == null) {
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customSprites.exists(elemName)) {
+				FunkinViewLua.error("Custom Element not found: " + elemName);
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customBuffers.exists(bufferName)) {
+				FunkinViewLua.error("Custom Buffer not found: " + bufferName);
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = customSprites.get(elemName);
+			var buffer = customBuffers.get(bufferName);
+			buffer.removeElement(sprite);
+			return FunkinViewLua.Function_Continue;
+		});
+		vm.addCallback("wipeTextureFromProgram", (programName:String) -> {
+			if (programName == "" || programName == null) {
+				FunkinViewLua.error("Custom Program's Key cannot be empty or nil!");
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customPrograms.exists(programName)) {
+				FunkinViewLua.error("Custom Program not found: " + programName);
+				return FunkinViewLua.Function_Stop;
+			}
+			var program = customPrograms.get(programName);
+			var texture = customTextures.get(programName);
+			program.removeTexture(texture);
+			return FunkinViewLua.Function_Continue;
+		});
+		vm.addCallback("removeProgramFromDisplay", (programName:String, fromDisplay:String) -> {
+			if (programName == "" || programName == null) {
+				FunkinViewLua.error("Custom Program's Key cannot be empty or nil!");
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customPrograms.exists(programName)) {
+				FunkinViewLua.error("Custom Program not found: " + programName);
+				return FunkinViewLua.Function_Stop;
+			}
+			var program = customPrograms.get(programName);
+			var display = Reflect.field(playField, fromDisplay.toLowerCase());
+			if (display == null) {
+				FunkinViewLua.error("Display not found: " + fromDisplay.toLowerCase());
+				return FunkinViewLua.Function_Stop;
+			}
+			display.removeProgram(program);
+			return FunkinViewLua.Function_Continue;
+		});
 
 		// UPDATE
-		vm.addCallback("updateElementToBuffer", null); // updateElementToBuffer(customElem, customBuffer)
-		vm.addCallback("setDisplayAngle", null); // setDisplayAngle(display, rotation)
-		vm.addCallback("updateDisplay", null); // updateDisplay(display)
-		vm.addCallback("updateBuffer", null); // updateBuffer(customBuffer)
+		vm.addCallback("updateElementToBuffer", (elemName:String, bufferName:String) -> {
+			if (elemName == "" || elemName == null) {
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customSprites.exists(elemName)) {
+				FunkinViewLua.error("Custom Element not found: " + elemName);
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customBuffers.exists(bufferName)) {
+				FunkinViewLua.error("Custom Buffer not found: " + bufferName);
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = customSprites.get(elemName);
+			var buffer = customBuffers.get(bufferName);
+			buffer.updateElement(sprite);
+			return FunkinViewLua.Function_Continue;
+		});
+		vm.addCallback("setDisplayAngle", (fromDisplay:String, rotation:Float) -> {
+			var display = Reflect.field(playField, fromDisplay.toLowerCase());
+			if (display == null) {
+				FunkinViewLua.error("Display not found: " + fromDisplay.toLowerCase());
+			}
+			display.r = rotation;
+			return FunkinViewLua.Function_Continue;
+		});
+		vm.addCallback("updateBuffer", (bufferName:String) -> {
+			if (bufferName == "" || bufferName == null) {
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customBuffers.exists(bufferName)) {
+				FunkinViewLua.error("Custom Buffer not found: " + bufferName);
+				return FunkinViewLua.Function_Stop;
+			}
+			var buffer = customBuffers.get(bufferName);
+			buffer.update();
+			return FunkinViewLua.Function_Continue;
+		});
 
-		// SET ELEMENT PROPS
-		vm.addCallback("setElementPos", null); // setElementPos(customElem, x, y)
-		vm.addCallback("setElementCoordinate", null); // setElementCoordinate(customElem, w, h)
-		vm.addCallback("setElementTint", null); // setElementTint(customElem, color)
-		vm.addCallback("screenCenterElement", null); // screenCenterElement(customElem, axis: "x", "y", or "xy" or any invalid token that leads to "xy")
-		vm.addCallback("setElementAngle", null); // setElementAngle(customElem, rotation)
-		vm.addCallback("setElementAlpha", null); // setElementAlpha(customElem, alpha: 0.0 to 1.0))
+		// GET/SET ELEMENT PROPS
+		vm.addCallback("setElementPos", (elemName:String, x:Float, y:Float) -> {
+			if (elemName == "" || elemName == null) {
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customSprites.exists(elemName)) {
+				FunkinViewLua.error("Custom Element not found: " + elemName);
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = customSprites.get(elemName);
+			sprite.x = x;
+			sprite.y = y;
+			return FunkinViewLua.Function_Continue;
+		});
+		vm.addCallback("getElementPosX", (elemName:String) -> {
+			if (elemName == "" || elemName == null) {
+				return 0.0;
+			}
+			if (!customSprites.exists(elemName)) {
+				FunkinViewLua.error("Custom Element not found: " + elemName);
+				return 0.0;
+			}
+			var sprite = customSprites.get(elemName);
+			return sprite.x;
+		});
+		vm.addCallback("getElementPosY", (elemName:String) -> {
+			if (elemName == "" || elemName == null) {
+				return 0.0;
+			}
+			if (!customSprites.exists(elemName)) {
+				FunkinViewLua.error("Custom Element not found: " + elemName);
+				return 0.0;
+			}
+			var sprite = customSprites.get(elemName);
+			return sprite.y;
+		});
+		vm.addCallback("setElementCoordinate", (elemName:String, w:Float, h:Float) -> {
+			if (elemName == "" || elemName == null) {
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customSprites.exists(elemName)) {
+				FunkinViewLua.error("Custom Element not found: " + elemName);
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = customSprites.get(elemName);
+			sprite.w = w;
+			sprite.h = h;
+			return FunkinViewLua.Function_Continue;
+		});
+		vm.addCallback("getElementCoordinateX", (elemName:String) -> {
+			if (elemName == "" || elemName == null) {
+				return 0.0;
+			}
+			if (!customSprites.exists(elemName)) {
+				FunkinViewLua.error("Custom Element not found: " + elemName);
+				return 0.0;
+			}
+			var sprite = customSprites.get(elemName);
+			return sprite.w;
+		});
+		vm.addCallback("getElementCoordinateY", (elemName:String) -> {
+			if (elemName == "" || elemName == null) {
+				return 0.0;
+			}
+			if (!customSprites.exists(elemName)) {
+				FunkinViewLua.error("Custom Element not found: " + elemName);
+				return 0.0;
+			}
+			var sprite = customSprites.get(elemName);
+			return sprite.h;
+		});
+		vm.addCallback("setElementTint", (elemName:String, color:String) -> {
+			if (elemName == "" || elemName == null) {
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customSprites.exists(elemName)) {
+				FunkinViewLua.error("Custom Element not found: " + elemName);
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = customSprites.get(elemName);
+
+			var defaultColorString = capitalize(color.toLowerCase());
+			var defaultColorSwatch = Color.defaultMap[defaultColorString];
+			if (!Color.defaultMap.exists(defaultColorString)) {
+				var colorSwatch:Null<Int> = Std.parseInt(color);
+				if (colorSwatch == null) defaultColorSwatch = Color.WHITE;
+			}
+			//if (Math.isNaN(defaultColorSwatch)) defaultColorSwatch = Color.WHITE;
+			//trace(defaultColorSwatch);
+
+			sprite.c = defaultColorSwatch;
+			return FunkinViewLua.Function_Continue;
+		});
+		vm.addCallback("getElementTint", (elemName:String) -> {
+			if (elemName == "" || elemName == null) {
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customSprites.exists(elemName)) {
+				FunkinViewLua.error("Custom Element not found: " + elemName);
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = customSprites.get(elemName);
+			return Std.string(sprite.c);
+		});
+		vm.addCallback("screenCenterElement", (elemName:String, fromDisplay:String, axis:String) -> {
+			if (elemName == "" || elemName == null) {
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customSprites.exists(elemName)) {
+				FunkinViewLua.error("Custom Element not found: " + elemName);
+				return FunkinViewLua.Function_Stop;
+			}
+			var display = Reflect.field(playField, fromDisplay.toLowerCase());
+			if (display == null) {
+				FunkinViewLua.error("Display not found: " + fromDisplay.toLowerCase());
+			}
+			var sprite = customSprites.get(elemName);
+			sprite.screenCenter(display, switch (axis.toUpperCase()) {
+				case "X":
+					X;
+				case "Y":
+					Y;
+				default:
+					XY;
+			});
+			return FunkinViewLua.Function_Continue;
+		});
+		vm.addCallback("setElementAngle", (elemName:String, rotation:Float) -> {
+			if (elemName == "" || elemName == null) {
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customSprites.exists(elemName)) {
+				FunkinViewLua.error("Custom Element not found: " + elemName);
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = customSprites.get(elemName);
+			sprite.r = rotation;
+			return FunkinViewLua.Function_Continue;
+		});
+		vm.addCallback("getElementAngle", (elemName:String) -> {
+			if (elemName == "" || elemName == null) {
+				return 0.0;
+			}
+			if (!customSprites.exists(elemName)) {
+				FunkinViewLua.error("Custom Element not found: " + elemName);
+				return 0.0;
+			}
+			var sprite = customSprites.get(elemName);
+			return sprite.r;
+		});
+		vm.addCallback("setElementAlpha", (elemName:String, alpha:Float) -> {
+			if (elemName == "" || elemName == null) {
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customSprites.exists(elemName)) {
+				FunkinViewLua.error("Custom Element not found: " + elemName);
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = customSprites.get(elemName);
+			sprite.c.aF = alpha;
+			sprite.c.luminanceF = alpha;
+			return FunkinViewLua.Function_Continue;
+		});
+		vm.addCallback("getElementAlpha", (elemName:String) -> {
+			if (elemName == "" || elemName == null) {
+				return 1.0;
+			}
+			if (!customSprites.exists(elemName)) {
+				FunkinViewLua.error("Custom Element not found: " + elemName);
+				return 1.0;
+			}
+			var sprite = customSprites.get(elemName);
+			return sprite.c.aF;
+		});
+
+		// OTHER STUFF
+		vm.addCallback("getTextureCoordinateX", (programName:String) -> {
+			if (programName == "" || programName == null) {
+				FunkinViewLua.error("Custom Program's Key cannot be empty or nil!");
+				return 100;
+			}
+			var tex = customTextures.get(programName);
+			return tex.width;
+		});
+
+		vm.addCallback("getTextureCoordinateY", (programName:String) -> {
+			if (programName == "" || programName == null) {
+				FunkinViewLua.error("Custom Program's Key cannot be empty or nil!");
+				return 100;
+			}
+			var tex = customTextures.get(programName);
+			return tex.height;
+		});
 	}
+
+	// https://github.com/ShadowMario/FNF-PsychEngine/blob/5c67ced49e5a98535298a6daa3f8f4ec79ac8399/source/backend/CoolUtil.hx#L41
+	inline public static function capitalize(text:String)
+		return text.charAt(0).toUpperCase() + text.substr(1).toLowerCase();
 
 	public function dispose() {
 		parent = null;
 		playField = null;
+
+		for (customBuffer in customBuffers) {
+			if (customBuffer != null) {
+				customBuffer.clear();
+				customBuffer = null;
+			}
+		}
+		customBuffers.clear();
+		customBuffers = null;
+
+		for (customProgram in customPrograms) {
+			if (customProgram != null) {
+				customProgram = null;
+			}
+		}
+		customPrograms.clear();
+		customPrograms = null;
+
+		for (customTexture in customTextures) {
+			if (customTexture != null) {
+				customTexture = null;
+			}
+		}
+		customTextures.clear();
+		customTextures = null;
+
+		for (customSprite in customSprites) {
+			if (customSprite != null) {
+				customSprite = null;
+			}
+		}
+		customSprites.clear();
+		customSprites = null;
 	}
 	#end
 }

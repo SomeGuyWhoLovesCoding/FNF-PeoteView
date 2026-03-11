@@ -19,24 +19,26 @@ class PlayField {
 	// lua
 	var funkinviewlua(default, null):FunkinViewLua;
 
-	function new(path:String) {
-		var chartPath = Paths.asset(path);
+	private var chartPath(default, null):String; // made this a variable due to complications with lua scripting. not a bug complication, but just an intentional design quirk.
 
-		#if linc_luajit_funkinview
-		funkinviewlua = new FunkinViewLua(this, chartPath);
-		#end
+	function new(path:String) {
+		chartPath = Paths.asset(path);
 
 		Chart.load(chartPath);
-
-		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('byChartCreation', null);
-		#end
 	}
 
 	function init(roof:CustomDisplay, display:CustomDisplay, view:CustomDisplay) {
 		this.roof = roof;
 		this.display = display;
 		this.view = view;
+
+		#if linc_luajit_funkinview
+		funkinviewlua = new FunkinViewLua(this, chartPath, Chart.header);
+		#end
+
+		#if linc_luajit_funkinview
+		//funkinviewlua.callFunction('byChartCreation', null);
+		#end
 
 		create(roof, display, Chart.header.mania);
 	}
@@ -232,6 +234,10 @@ class PlayField {
 		if (RenderingMode.enabled) {
 			RenderingMode.initRender();
 		}
+
+		#if linc_luajit_funkinview
+		funkinviewlua.callFunction('createPost', null);
+		#end
 	}
 
 	/**
@@ -286,8 +292,8 @@ class PlayField {
 		if (display.fov != 1) display.fov = Tools.lerp(display.fov, 1, ratio);
 		if (view.fov != 1) view.fov = Tools.lerp(view.fov, 1, ratio);
 
-		view.r = Math.sin(songPosition / 600) * 6;
-		display.r = -view.r;
+		//view.r = Math.sin(songPosition / 600) * 6;
+		//display.r = -view.r;
 		//view.r = 15;
 
 		//deltaTimeincremenetal += deltaTime;

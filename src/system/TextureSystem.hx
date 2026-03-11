@@ -78,7 +78,9 @@ class TextureSystem {
 		var currentSaveState = SaveData.state.graphics;
 		var antialiasing = currentSaveState.antialiasing && !disableAntialiasing;
 
-		var image = Image.fromFile(Paths.asset(path));
+		var texPath = Paths.asset(path);
+		//trace("TEX PATH " + texPath);
+		var image = Image.fromFile(texPath);
 
 		// I'm proud of this fix, but it couldn't be better be this:
 		var textureData = !premultiply ? TextureData.fromLimeImage(image) : new TextureData(image.width, image.height, TextureFormat.RGBA);

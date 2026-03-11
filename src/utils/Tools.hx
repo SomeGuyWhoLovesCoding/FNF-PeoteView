@@ -350,7 +350,7 @@ class Tools {
 			actors: actors
 		};
 
-		trace('Parsed header: $result');
+		//trace('Parsed header: $result');
 
 		return result;
 	}
