@@ -1,6 +1,10 @@
 package fvlua;
 
 import sys.FileSystem;
+import llua.State;
+import llua.Lua;
+import llua.LuaL;
+import llua.Convert;
 using StringTools;
 
 /**
@@ -83,7 +87,7 @@ class FunkinViewLua {
 		returns.resize(0);
 		if (vms == null) return null;
 		for (script in vms) {
-			var lua = script.vm;
+			var lua:State = script.vm;
 
 			// this is a direct port from psych as a test.
 			if(disposed) return [Function_Continue];
