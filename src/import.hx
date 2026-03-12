@@ -12,7 +12,6 @@ import elements.*;
 import elements.actor.*;
 import elements.actor.sparrow.*;
 import elements.actor.animate.*;
-import elements.text.*;
 import elements.sprites.*;
 import elements.window.*;
 import ffmpeg.*;
