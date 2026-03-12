@@ -69,7 +69,7 @@ class FunkinViewLua {
 		luaScript.addCallback("trace", function(string:String) Sys.println('FunkinViewLua: $string'));
 	}
 
-	public static function typeToString(type:Int):String {
+	static function typeToString(type:Int):String {
 		switch(type) {
 			case Lua.LUA_TBOOLEAN: return "boolean";
 			case Lua.LUA_TNUMBER: return "number";
@@ -140,11 +140,11 @@ class FunkinViewLua {
 		return returns;
 	}
 
-	public static dynamic function error(err:String) {
+	static dynamic function error(err:String) {
 		trace('[ERROR] FunkinViewLua: $err');
 	}
 
-	public function getErrorMessage(lua:State, status:Int):String {
+	function getErrorMessage(lua:State, status:Int):String {
 		if (Lua.gettop(lua) == 0) {
 			return switch(status) {
 				case Lua.LUA_ERRRUN: "Runtime Error";
@@ -171,6 +171,21 @@ class FunkinViewLua {
 
 		return v;
 	}
+
+	static function colorFromStringUtil(color:String):Color {
+		var defaultColorString = capitalize(color.toLowerCase());
+		var defaultColorSwatch = Color.defaultMap[defaultColorString];
+		if (!Color.defaultMap.exists(defaultColorString)) {
+			var colorSwatch:Null<Int> = Std.parseInt(color);
+			if (colorSwatch == null) defaultColorSwatch = Color.WHITE;
+		}
+
+		return defaultColorSwatch;
+	}
+
+	// https://github.com/ShadowMario/FNF-PsychEngine/blob/5c67ced49e5a98535298a6daa3f8f4ec79ac8399/source/backend/CoolUtil.hx#L41
+	inline public static function capitalize(text:String)
+		return text.charAt(0).toUpperCase() + text.substr(1).toLowerCase();
 
 	function dispose() {
 		disposed = true;

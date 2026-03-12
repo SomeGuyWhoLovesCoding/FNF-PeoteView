@@ -52,6 +52,9 @@ class MainMenu {
 			watermarkTxt.x = 3;
 			watermarkTxt.outlineColor = 0x000000FF;
 			watermarkTxt.outlineSize = 0.12; // Usually the default text+ outline size on DaVinci Resolve
+		} else {
+			watermarkTxt.removeProgram();
+			watermarkTxt.addProgram();
 		}
 
 		if (optionBuf == null) {
@@ -101,13 +104,6 @@ class MainMenu {
 
 		display.addProgram(optionProg);
 		view.addProgram(backgroundProg);
-
-		if (watermarkTxt != null) {
-			view.addProgram(watermarkTxt.program);
-		} else {
-			view.removeProgram(watermarkTxt.program);
-			view.addProgram(watermarkTxt.program);
-		}
 
 		haxe.Timer.delay(addEvents, 100);
 
@@ -278,7 +274,7 @@ class MainMenu {
 	function dispose() {
 		removeEvents();
 
-		view.removeProgram(watermarkTxt.program);
+		watermarkTxt.removeProgram();
 
 		display.removeProgram(optionProg);
 		display = null;

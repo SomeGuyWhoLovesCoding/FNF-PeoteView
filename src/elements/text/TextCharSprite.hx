@@ -5,8 +5,8 @@ package elements.text;
 **/
 @:publicFields
 class TextCharSprite implements Element {
-	@posX @formula("uDisplayRotateX(aPos - vec2(w, h) * os * 0.5)") var x:Float;
-	@posY @formula("uDisplayRotateY(aPos - vec2(w, h) * os * 0.5)")  var y:Float;
+	@posX @formula("uDisplayRotateX(aPos)") var x:Float;
+	@posY @formula("uDisplayRotateY(aPos)")  var y:Float;
 	@sizeX @formula("w + (w * (os + os))") var w:Float;
 	@sizeY @formula("h + (h * (os + os))") var h:Float;
 
