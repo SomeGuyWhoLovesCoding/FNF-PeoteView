@@ -86,7 +86,9 @@ class HUD {
 		if (watermarkTxt == null) {
 			watermarkTxt = new Text("watermarkTxtPF", 0, 0, display, 'FV TEST BUILD');
 			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height;
-		} else display.addProgram(watermarkTxt.program);
+		} else {
+			watermarkTxt.addProgram();
+		}
 
 		if (timeBarTxt == null) {
 			timeBarTxt = new Text("timeBarTxt", 0, 0, display, Tools.formatTime(Mixer.length - Math.max(parent.songPosition, 0)));
@@ -95,7 +97,9 @@ class HUD {
 			timeBarTxt.scale = 1.15;
 			timeBarTxt.outlineColor = 0x000000FF;
 			timeBarTxt.outlineSize = 0.12;
-		} else display.addProgram(timeBarTxt.program);
+		} else {
+			timeBarTxt.addProgram();
+		}
 
 		updateTimeBarText();
 
@@ -105,8 +109,9 @@ class HUD {
 			scoreTxt.color.luminanceF = 1.0;
 			scoreTxt.outlineColor = 0x000000FF;
 			scoreTxt.outlineSize = 0.12;
+		} else {
+			scoreTxt.addProgram();
 		}
-		else display.addProgram(scoreTxt.program);
 
 		updateScoreText(0.0);
 
@@ -381,9 +386,9 @@ class HUD {
 		}
 		timeBarParts = null;
 
-		display.removeProgram(watermarkTxt.program);
-		display.removeProgram(timeBarTxt.program);
-		display.removeProgram(scoreTxt.program);
+		watermarkTxt.removeProgram();
+		timeBarTxt.removeProgram();
+		scoreTxt.removeProgram();
 
 		display.removeProgram(uiProg);
 	}
