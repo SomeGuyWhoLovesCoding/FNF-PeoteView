@@ -10,49 +10,21 @@ import elements.text.*;
 @:publicFields
 class TextInternal {
 
-	private static inline var TEXT_OUTLINE_FRAGMENT_SHADER = '
-		vec4 outline(int textureID, float os, vec4 oc) {
-            float invScale = 1.0 + os * 2.0;
-            vec2 coord = (vTexCoord - 0.5) * invScale + 0.5;
-            vec4 current = getTextureColor(textureID, coord);
-
-            float s1 = 0.9239 * os;
-            float s2 = 0.7071 * os;
-            float s3 = 0.3827 * os;
-
-            vec2 o0 = coord + vec2( os,  0.0); vec2 o1  = coord + vec2( s1,  s3);
-            vec2 o2 = coord + vec2( s2,  s2);  vec2 o3  = coord + vec2( s3,  s1);
-            vec2 o4 = coord + vec2(0.0,  os);  vec2 o5  = coord + vec2(-s3,  s1);
-            vec2 o6 = coord + vec2(-s2,  s2);  vec2 o7  = coord + vec2(-s1,  s3);
-            vec2 o8 = coord + vec2(-os, 0.0);  vec2 o9  = coord + vec2(-s1, -s3);
-            vec2 oA = coord + vec2(-s2, -s2);  vec2 oB  = coord + vec2(-s3, -s1);
-            vec2 oC = coord + vec2(0.0, -os);  vec2 oD  = coord + vec2( s3, -s1);
-            vec2 oE = coord + vec2( s2, -s2);  vec2 oF  = coord + vec2( s1, -s3);
-
-            #define IB(v) (step(0.0, v.x) * step(v.x, 1.0) * step(0.0, v.y) * step(v.y, 1.0))
-
-            vec4 a0 = vec4(getTextureColor(textureID, o0).a * IB(o0), getTextureColor(textureID, o1).a * IB(o1), getTextureColor(textureID, o2).a * IB(o2), getTextureColor(textureID, o3).a * IB(o3));
-            vec4 a1 = vec4(getTextureColor(textureID, o4).a * IB(o4), getTextureColor(textureID, o5).a * IB(o5), getTextureColor(textureID, o6).a * IB(o6), getTextureColor(textureID, o7).a * IB(o7));
-            vec4 a2 = vec4(getTextureColor(textureID, o8).a * IB(o8), getTextureColor(textureID, o9).a * IB(o9), getTextureColor(textureID, oA).a * IB(oA), getTextureColor(textureID, oB).a * IB(oB));
-            vec4 a3 = vec4(getTextureColor(textureID, oC).a * IB(oC), getTextureColor(textureID, oD).a * IB(oD), getTextureColor(textureID, oE).a * IB(oE), getTextureColor(textureID, oF).a * IB(oF));
-
-            vec4 maxAB = max(a0, a1);
-            vec4 maxCD = max(a2, a3);
-            vec4 maxAll = max(maxAB, maxCD);
-            float outlineAlpha = max(max(maxAll.x, maxAll.y), max(maxAll.z, maxAll.w));
-            outlineAlpha = smoothstep(0.0, 0.25, outlineAlpha);
-
-            vec4 outlineColor = vec4(oc.r, oc.g, oc.b, outlineAlpha);
-            return mix(current, mix(outlineColor, current, current.a), clamp(os * 20.0, 0.0, 1.0));
-        }
+	private static inline var TEXT_FRAGMENT_SHADER = '
+		vec4 pixelAlpha(int textureID) {
+			vec4 current = getTextureColor(textureID, vTexCoord);
+			// Apply threshold for hard edges
+			float alpha = step(0.5, current.a);
+			return vec4(current.rgb, alpha);
+		}
 	';
 
 	var buffer:Buffer<TextCharSprite>;
 	var program:CustomProgram;
-
 	var display:Display;
 
 	var text(default, set):String = "";
+	var isOutlineLayer:Bool; // Flag to identify if this is an outline layer
 
 	function set_text(str:String) {
 		if (str == text) return text;
@@ -262,13 +234,16 @@ class TextInternal {
 		return advanceX;
 	}
 
-	function new(x:Float, y:Float, display:Display, font:String = "vcr") {
-		buffer = new Buffer<TextCharSprite>(16, 16);
+	function new(x:Float, y:Float, display:Display, font:String = "vcr", outline:Bool = false) {
+		this.isOutlineLayer = outline;
+		
+		// For outline layer, we need a larger buffer to hold multiple offset copies
+		var bufferSize = outline ? 16 * 9 : 16; // 8 directions + original = 9x the sprites
+		buffer = new Buffer<TextCharSprite>(bufferSize, bufferSize);
 
 		program = new CustomProgram(buffer);
-		program.setFragmentFloatPrecision('medium', true);
-		program.injectIntoFragmentShader(TEXT_OUTLINE_FRAGMENT_SHADER);
-		program.setColorFormula('outline(font_ID, os, oc) * (c * alphaColor)');
+		program.injectIntoFragmentShader(TEXT_FRAGMENT_SHADER);
+		program.setColorFormula('pixelAlpha(font_ID) * (c * alphaColor)');
 
 		this.font    = font;
 		this.x       = x;
@@ -278,6 +253,74 @@ class TextInternal {
 		if (!program.isIn(display)) {
 			display.addProgram(program);
 		}
+	}
+
+	/**
+		Render outline by creating multiple offset copies of each character.
+		Call this after setting text, color, and outline properties.
+	**/
+	function renderOutline() {
+		if (!isOutlineLayer || outlineSize <= 0) return;
+		
+		var quarterScale = scale / 4;
+		var advanceX:Float = 0;
+		var outlineOffset = outlineSize * scale;
+		
+		// Define the 8 directions for outline
+		var offsets = [
+			[-outlineOffset, -outlineOffset], // top-left
+			[0, -outlineOffset],               // top
+			[outlineOffset, -outlineOffset],  // top-right
+			[-outlineOffset, 0],               // left
+			[outlineOffset, 0],                // right
+			[-outlineOffset, outlineOffset],   // bottom-left
+			[0, outlineOffset],                 // bottom
+			[outlineOffset, outlineOffset]      // bottom-right
+		];
+		
+		// Clear the buffer first
+		buffer.clear();
+		
+		// For each character, create 8 offset copies for the outline
+		for (i in 0...text.length) {
+			var code = text.charCodeAt(i);
+			var data = parsedTextAtlasData[code];
+			
+			// Calculate base position
+			var baseX = x + (data[4] * quarterScale) + advanceX;
+			var baseY = y + (data[5] * quarterScale);
+			
+			// Create outline copies at each offset
+			for (j in 0...offsets.length) {
+				var spr = buffer.addElement(new TextCharSprite());
+				setupOutlineSprite(spr, data, quarterScale, baseX + offsets[j][0], baseY + offsets[j][1], outlineColor);
+				spr.alpha = alpha;
+				buffer.updateElement(spr);
+			}
+			
+			advanceX += data[6] * quarterScale;
+		}
+		
+		width = advanceX;
+	}
+
+	/**
+		Setup a sprite for outline rendering
+	**/
+	function setupOutlineSprite(spr:TextCharSprite, data:TextCharData, quarterScale:Float, x:Float, y:Float, outlineColor:Color) {
+		var padding = parsedTextAtlasData[256];
+		spr.clipX      = data[0] - (padding[0] >> 1);
+		spr.clipY      = data[1] - (padding[1] >> 1);
+		spr.clipWidth  = spr.clipSizeX = data[2] + padding[0];
+		spr.w          = spr.clipWidth  * quarterScale;
+		spr.clipHeight = spr.clipSizeY  = data[3] + padding[0];
+		spr.h          = spr.clipHeight * quarterScale;
+		spr.x          = x;
+		spr.y          = y;
+		spr.c          = outlineColor;
+		spr.oc         = outlineColor;
+		spr.os         = 0; // No additional outline for outline layer
+		spr.alpha      = 1.0;
 	}
 
 	/**

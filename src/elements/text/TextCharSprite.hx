@@ -5,10 +5,10 @@ package elements.text;
 **/
 @:publicFields
 class TextCharSprite implements Element {
-	@posX @formula("uDisplayRotateX(aPos - (vec2(w, h) * os * 0.5))") var x:Float;
-	@posY @formula("uDisplayRotateY(aPos - (vec2(w, h) * os * 0.5))")  var y:Float;
-	@sizeX @formula("w + (w * (os + os))") var w:Float;
-	@sizeY @formula("h + (h * (os + os))") var h:Float;
+	@posX @formula("uDisplayRotateX(aPos - vec2(os, os))") var x:Float;
+	@posY @formula("uDisplayRotateY(aPos - vec2(os, os))") var y:Float;
+	@sizeX @formula("w + os * 2.0") var w:Float;
+	@sizeY @formula("h + os * 2.0") var h:Float;
 
 	// extra tex attributes for clipping
 	@texX var clipX:Int = 0;

@@ -51,7 +51,7 @@ class MainMenu {
 			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height - 3;
 			watermarkTxt.x = 3;
 			watermarkTxt.outlineColor = 0x000000FF;
-			watermarkTxt.outlineSize = 0.12; // Usually the default text+ outline size on DaVinci Resolve
+			watermarkTxt.outlineSize = 1.25; // 0.06 - usually the default text+ outline size on DaVinci Resolve
 		}
 
 		if (optionBuf == null) {

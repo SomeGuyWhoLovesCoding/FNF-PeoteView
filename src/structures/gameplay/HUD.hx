@@ -35,6 +35,8 @@ class HUD {
 	var display(default, null):CustomDisplay;
 	var parent(default, null):PlayField;
 
+	static inline var WATERMARK_TEXT = 'FV TEST BUILD';
+
 	/**
 		Create the playfield UI.
 	**/
@@ -84,8 +86,10 @@ class HUD {
 		// TEXT SETUP
 
 		if (watermarkTxt == null) {
-			watermarkTxt = new Text("watermarkTxtPF", 0, 0, display, 'FV TEST BUILD');
+			watermarkTxt = new Text("watermarkTxtPF", 0, 0, display, WATERMARK_TEXT);
 			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height;
+			watermarkTxt.outlineColor = 0x000000FF;
+			watermarkTxt.outlineSize = 1;
 		} else {
 			watermarkTxt.addProgram();
 		}
@@ -96,7 +100,7 @@ class HUD {
 			timeBarTxt.y = timeBarBG.y - 2;
 			timeBarTxt.scale = 1.15;
 			timeBarTxt.outlineColor = 0x000000FF;
-			timeBarTxt.outlineSize = 0.12;
+			timeBarTxt.outlineSize = 2;
 		} else {
 			timeBarTxt.addProgram();
 		}
@@ -104,11 +108,11 @@ class HUD {
 		updateTimeBarText();
 
 		if (scoreTxt == null) {
-			scoreTxt = new Text("scoreTxt", 0, 0, display);
+			scoreTxt = new Text("scoreTxt", 0, 0, display, "", "arial");
 			scoreTxt.color.aF = 1.0;
 			scoreTxt.color.luminanceF = 1.0;
 			scoreTxt.outlineColor = 0x000000FF;
-			scoreTxt.outlineSize = 0.12;
+			scoreTxt.outlineSize = 1.25;
 		} else {
 			scoreTxt.addProgram();
 		}
@@ -360,12 +364,24 @@ class HUD {
 
 		// reset scoretxt values
 		if (scoreTxt != null) {
+			watermarkTxt.text = WATERMARK_TEXT;
+			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height;
+			watermarkTxt.color = 0xFFFFFFFF;
+			watermarkTxt.color.aF = 1.0;
+			watermarkTxt.color.luminanceF = 1.0;
+			watermarkTxt.outlineColor = 0x000000FF;
+			watermarkTxt.outlineSize = 1;
+			scoreTxt.outlineSize = 1;
+		}
+
+		// reset scoretxt values
+		if (scoreTxt != null) {
 			scoreTxt.text = "";
 			scoreTxt.color = 0xFFFFFFFF;
 			scoreTxt.color.aF = 1.0;
 			scoreTxt.color.luminanceF = 1.0;
 			scoreTxt.outlineColor = 0x000000FF;
-			scoreTxt.outlineSize = 0.12;
+			scoreTxt.outlineSize = 1.25;
 		}
 
 		// reset timebartxt values
@@ -374,7 +390,7 @@ class HUD {
 			timeBarTxt.y = timeBarBG.y - 2;
 			timeBarTxt.scale = 1.15;
 			timeBarTxt.outlineColor = 0x000000FF;
-			timeBarTxt.outlineSize = 0.12;
+			timeBarTxt.outlineSize = 2;
 		}
 
 		uiBuf.removeElement(timeBarBG);
