@@ -428,7 +428,6 @@ class CustomLuaSpriteComponent {
 			var sprite = customTexts.get(textElem);
 			return "0x" + StringTools.hex(sprite.outlineColor, 8);
 		});
-		
 		vm.addCallback("setTextOutlineSize", (textElem:String, size:Float) -> {
 			if (textElem == "" || textElem == null) {
 				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
@@ -534,6 +533,30 @@ class CustomLuaSpriteComponent {
 			}
 			var sprite = customSprites.get(elemName);
 			return sprite.c.aF;
+		});
+		vm.addCallback("hideText", (elemName:String) -> {
+			if (elemName == "" || elemName == null) {
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customTexts.exists(elemName)) {
+				FunkinViewLua.error("Custom Text not found: " + elemName);
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = customTexts.get(elemName);
+			try { sprite.removeProgram(); } catch(E) {}
+			return FunkinViewLua.Function_Continue;
+		});
+		vm.addCallback("showText", (elemName:String) -> {
+			if (elemName == "" || elemName == null) {
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customTexts.exists(elemName)) {
+				FunkinViewLua.error("Custom Text not found: " + elemName);
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = customTexts.get(elemName);
+			try { sprite.addProgram(); } catch(E) {}
+			return FunkinViewLua.Function_Continue;
 		});
 
 		// OTHER STUFF
