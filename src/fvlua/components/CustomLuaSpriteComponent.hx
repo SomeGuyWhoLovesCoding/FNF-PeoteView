@@ -1,4 +1,4 @@
-package fvlua;
+package fvlua.components;
 
 import sys.FileSystem;
 import haxe.ds.StringMap;
@@ -533,6 +533,51 @@ class CustomLuaSpriteComponent {
 			}
 			var sprite = customSprites.get(elemName);
 			return sprite.c.aF;
+		});
+		vm.addCallback("setTextAlpha", (elemName:String, alpha:Float) -> {
+			if (elemName == "" || elemName == null) {
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customTexts.exists(elemName)) {
+				FunkinViewLua.error("Custom Text not found: " + elemName);
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = customTexts.get(elemName);
+			sprite.alpha = alpha;
+			return FunkinViewLua.Function_Continue;
+		});
+		vm.addCallback("getTextAlpha", (elemName:String) -> {
+			if (elemName == "" || elemName == null) {
+				return 1.0;
+			}
+			if (!customTexts.exists(elemName)) {
+				FunkinViewLua.error("Custom Text not found: " + elemName);
+				return 1.0;
+			}
+			var sprite = customTexts.get(elemName);
+			return sprite.alpha;
+		});
+		vm.addCallback("setTextFormatMarkerPairs", (textElem:String, colors:Array<Dynamic>) -> {
+			if (textElem == "" || textElem == null) {
+				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customTexts.exists(textElem)) {
+				FunkinViewLua.error("Custom Text not found: " + textElem);
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = customTexts.get(textElem);
+			var pairs:Array<TextFormatMarkerPair> = [];
+			for (entry in colors) {
+				var marker:String = entry.marker;
+				var color:Color = FunkinViewLua.colorFromStringUtil(entry.color);
+				trace("Color: " + color, entry.color);
+				var outlineColor:Color = FunkinViewLua.colorFromStringUtil(entry.outlineColor ?? "0x00000000");
+				var outlineSize:Float = entry.outlineSize ?? 0.0;
+				pairs.push(new TextFormatMarkerPair(marker, color, outlineColor, outlineSize));
+			}
+			sprite.setMarkerPairs(pairs);
+			return FunkinViewLua.Function_Continue;
 		});
 		vm.addCallback("hideText", (elemName:String) -> {
 			if (elemName == "" || elemName == null) {

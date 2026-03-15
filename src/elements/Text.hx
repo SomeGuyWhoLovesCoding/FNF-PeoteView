@@ -68,6 +68,7 @@ class Text {
 		markerPairs = pairs;
 		for (pair in markerPairs) pair._onChange = markDirty;
 		markDirty();
+		this.text = text; // so it updates automatically regardless if you've set your text to the new onee or not.
 	}
 
 	private var colorSpans:Array<ColorSpan> = [];

@@ -174,13 +174,13 @@ class FunkinViewLua {
 
 	static function colorFromStringUtil(color:String):Color {
 		var defaultColorString = capitalize(color.toLowerCase());
-		var defaultColorSwatch = Color.defaultMap[defaultColorString];
-		if (!Color.defaultMap.exists(defaultColorString)) {
-			var colorSwatch:Null<Int> = Std.parseInt(color);
-			if (colorSwatch == null) defaultColorSwatch = Color.WHITE;
+		if (Color.defaultMap.exists(defaultColorString)) {
+			return Color.defaultMap[defaultColorString];
 		}
 
-		return defaultColorSwatch;
+		var colorSwatch:Null<Int> = Std.parseInt(color);
+		if (colorSwatch == null) return Color.WHITE;
+		return colorSwatch;
 	}
 
 	// https://github.com/ShadowMario/FNF-PsychEngine/blob/5c67ced49e5a98535298a6daa3f8f4ec79ac8399/source/backend/CoolUtil.hx#L41

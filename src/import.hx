@@ -48,6 +48,7 @@ import llua.State;
 import llua.Convert;
 import llua.Lua.Lua_helper;
 import fvlua.*;
+import fvlua.components.*;
 #end
 
 // LIME SHIT
