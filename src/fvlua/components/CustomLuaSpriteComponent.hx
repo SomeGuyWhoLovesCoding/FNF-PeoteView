@@ -571,7 +571,7 @@ class CustomLuaSpriteComponent {
 			for (entry in colors) {
 				var marker:String = entry.marker;
 				var color:Color = FunkinViewLua.colorFromStringUtil(entry.color);
-				trace("Color: " + color, entry.color);
+				//trace("Color: " + color, entry.color);
 				var outlineColor:Color = FunkinViewLua.colorFromStringUtil(entry.outlineColor ?? "0x00000000");
 				var outlineSize:Float = entry.outlineSize ?? 0.0;
 				pairs.push(new TextFormatMarkerPair(marker, color, outlineColor, outlineSize));
