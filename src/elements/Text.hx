@@ -2,162 +2,432 @@ package elements;
 
 import elements.text.*;
 
-/**
-	The text buffer class.
+private class ColorSpan {
+	public var start:Int;
+	public var end:Int;
+	public var color:Color;
+	public var outlineColor:Color;
+	public var outlineSize:Float;
 
-	Owns two `TextInternal` layers:
-	  • `outlineLayer`  – rendered first (behind), for drop-shadows / fat outlines
-	  • `fillLayer`     – rendered second (in front), the primary visible text
+	public function new(start:Int, end:Int, color:Color, outlineColor:Color, outlineSize:Float) {
+		this.start        = start;
+		this.end          = end;
+		this.color        = color;
+		this.outlineColor = outlineColor;
+		this.outlineSize  = outlineSize;
+	}
+}
 
-	All properties delegate to both layers so they stay in sync.
-	Configure `outlineLayer` directly for anything that should differ between them.
-**/
 @:publicFields
 class Text {
 
-	var _key:String;
+	private static inline var TEXT_FRAGMENT_SHADER = '
+		vec4 pixelAlpha(int textureID, vec4 c, vec4 oc, float os, float rw, float rh) {
+			const float TAU   = 6.28318530;
+			const float steps = 32.0;
 
+			float expandedW = rw + os * 2.0;
+			float expandedH = rh + os * 2.0;
+
+			float paddingX = os / expandedW;
+			float paddingY = os / expandedH;
+
+			vec2 glyphCoord = (vTexCoord - vec2(paddingX, paddingY))
+							/ vec2(1.0 - paddingX * 2.0, 1.0 - paddingY * 2.0);
+			vec4 current = getTextureColor(textureID, glyphCoord);
+
+			vec2 aspect = vec2(1.0 / expandedW, 1.0 / expandedH);
+
+			float outlineAlpha = 0.0;
+			for (float i = 0.0; i < TAU; i += TAU / steps) {
+				vec2 offset = vec2(sin(i), cos(i)) * aspect * os;
+				outlineAlpha = max(outlineAlpha, getTextureColor(textureID, glyphCoord + offset).a);
+			}
+
+			outlineAlpha = smoothstep(0.5, 0.7, outlineAlpha);
+
+			float fillA = current.a;
+			float haloA = outlineAlpha * (1.0 - fillA);
+			// Apply fill color c to glyph, outline color oc to halo.
+			return vec4(current.rgb * c.rgb * fillA + oc.rgb * haloA, fillA + haloA);
+		}
+	';
+
+	var buffer:Buffer<TextCharSprite>;
+	var program:CustomProgram;
+
+	var _key:String;
 	var display:Display;
 
-	/** The behind layer — tweak its color/outlineSize to add a shadow or secondary outline. **/
-	var outlineLayer:TextInternal;
+	// ── Markup ────────────────────────────────────────────────────────────────
 
-	/** The front layer — the primary visible text. **/
-	var fillLayer:TextInternal;
+	var markerPairs(default, null):Array<TextFormatMarkerPair> = [];
 
-	// ── delegating properties ─────────────────────────────────────────
+	function setMarkerPairs(pairs:Array<TextFormatMarkerPair>) {
+		for (pair in markerPairs) pair._onChange = null;
+		markerPairs = pairs;
+		for (pair in markerPairs) pair._onChange = markDirty;
+		markDirty();
+	}
+
+	private var colorSpans:Array<ColorSpan> = [];
+
+	// ── Dirty flag ────────────────────────────────────────────────────────────
+
+	private var _dirty:Bool = false;
+
+	function markDirty() {
+		_dirty = true;
+	}
+
+	function flushIfDirty() {
+		if (!_dirty) return;
+		set_text(_rawText);
+	}
+
+	// ── Text ──────────────────────────────────────────────────────────────────
+
+	var rawText(get, never):String;
+	function get_rawText() return _rawText;
+
+	private var _rawText:String = "";
 
 	var text(default, set):String = "";
 
-	function set_text(str:String) {
-		if (str == text) return text;
-		outlineLayer.text = str;
-		fillLayer.text    = str;
-		return text = str;
-	}
-
 	var x(default, set):Float = 0;
-
-	function set_x(value:Float) {
-		if (value == x) return x;
-		outlineLayer.x = value;
-		fillLayer.x    = value;
-		return x = value;
-	}
 
 	var y(default, set):Float = 0;
 
-	function set_y(value:Float) {
-		if (value == y) return y;
-		outlineLayer.y = value/* - 10*/;
-		fillLayer.y    = value;
-		return y = value;
-	}
-
 	var scale(default, set):Float = 1.0;
 
-	function set_scale(value:Float) {
-		if (value == scale) return scale;
-		outlineLayer.scale = value;
-		fillLayer.scale    = value;
-		return scale = value;
-	}
+	var _scale(default, null):Float = 1.0;
 
-	var _scale(get, never):Float;
-	function get__scale() return fillLayer._scale;
-
-	var width (get, never):Float;
-	function get_width()  return fillLayer.width;
-
-	var height(get, never):Float;
-	function get_height() return fillLayer.height;
+	var width(default, null):Float;
+	var height(default, null):Float;
 
 	var alpha(default, set):Float = 1.0;
 
-	function set_alpha(value:Float):Float {
-		outlineLayer.alpha = value;
-		fillLayer.alpha    = value;
-		return alpha = value;
-	}
-
 	var color(default, set):Color = 0xFFFFFFFF;
-
-	function set_color(value:Color):Color {
-		fillLayer.color    = value;
-		outlineLayer.color = value;
-		return color = value;
-	}
 
 	var outlineColor(default, set):Color = 0x000000FF;
 
+	var outlineSize(default, set):Float = 0;
+
+	// set_text — single slot per character:
+	function set_text(raw:String) {
+		if (raw == _rawText && !_dirty) return text;
+		_dirty   = false;
+		_rawText = raw;
+
+		var parsed = parseMarkup(raw);
+		var str    = parsed.clean;
+		colorSpans = parsed.spans;
+
+		if (text != null && str.length < text.length) {
+			for (ci in str.length...text.length) {
+				var spr = buffer.getElement(ci);
+				if (spr == null) continue;
+				spr.x = spr.y = -999999999;
+				spr.w = spr.h = 0;
+				spr.alpha     = 0;
+				buffer.updateElement(spr);
+			}
+		}
+
+		text = str;
+
+		var quarterScale = scale / 2;
+		var advanceX:Float = 0;
+
+		for (ci in 0...str.length) {
+			var code  = str.charCodeAt(ci);
+			var data  = parsedTextAtlasData[code];
+			var style = resolveStyle(ci);
+
+			var spr:TextCharSprite = ci < buffer.length
+				? buffer.getElement(ci)
+				: buffer.addElement(new TextCharSprite());
+
+			advanceX = setupCharSprite(spr, data, quarterScale, x, y, advanceX,
+				style.c, style.oc, style.os, alpha, parsedTextAtlasData);
+
+			if (height < spr.h + spr.y - data[1])
+				height = spr.h + spr.y - data[1];
+
+			buffer.updateElement(spr);
+		}
+
+		width = advanceX;
+		return str;
+	}
+
+	// set_x:
+	function set_x(value:Float) {
+		if (value == x) return x;
+		for (ci in 0...text.length) {
+			var spr = buffer.getElement(ci);
+			if (spr == null) continue;
+			spr.x += value - x;
+			buffer.updateElement(spr);
+		}
+		return x = value;
+	}
+
+	// set_y:
+	function set_y(value:Float) {
+		if (value == y) return y;
+		for (ci in 0...text.length) {
+			var spr = buffer.getElement(ci);
+			if (spr == null) continue;
+			spr.y += value - y;
+			buffer.updateElement(spr);
+		}
+		return y = value;
+	}
+
+	// set_scale:
+	function set_scale(value:Float) {
+		if (value == scale) return scale;
+		scale = value;
+		var quarterScale = scale / 2; // Default text size is 20. Atlas text size is 40, so we have to shrink to compensate.
+		var advanceX:Float = 0;
+		for (ci in 0...text.length) {
+			var code = text.charCodeAt(ci);
+			var data = parsedTextAtlasData[code];
+			var spr  = buffer.getElement(ci);
+			advanceX = setupCharSpriteScaled(spr, data, quarterScale, x, y, advanceX, parsedTextAtlasData);
+			if (height < spr.h + spr.y - data[1])
+				height = spr.h + spr.y - data[1];
+			buffer.updateElement(spr);
+		}
+		width  = advanceX;
+		height = parsedTextAtlasData[256][2] * quarterScale;
+		_scale = scale;
+		return value;
+	}
+
+	// set_alpha:
+	function set_alpha(value:Float):Float {
+		for (ci in 0...text.length) {
+			var spr = buffer.getElement(ci);
+			if (spr != null) spr.alpha = value;
+			buffer.updateElement(spr);
+		}
+		return alpha = value;
+	}
+
+	// set_color:
+	function set_color(value:Color):Color {
+		for (ci in 0...text.length) {
+			var spr = buffer.getElement(ci);
+			if (spr != null) spr.c = value;
+			buffer.updateElement(spr);
+		}
+		return color = value;
+	}
+
+	// set_outlineColor:
 	function set_outlineColor(value:Color):Color {
-		outlineLayer.color = value;
-		outlineLayer.outlineColor = value;
+		for (ci in 0...text.length) {
+			var spr = buffer.getElement(ci);
+			if (spr != null) spr.oc = value;
+			buffer.updateElement(spr);
+		}
 		return outlineColor = value;
 	}
 
-	var outlineSize(default, set):Float = 0;
-
+	// set_outlineSize:
 	function set_outlineSize(value:Float):Float {
-		outlineLayer.outlineSize = value;
-		outlineLayer.x = x;
-		outlineLayer.y = y;
+		for (ci in 0...text.length) {
+			var spr = buffer.getElement(ci);
+			if (spr != null) spr.os = value;
+			buffer.updateElement(spr);
+		}
 		return outlineSize = value;
 	}
+
+	// ── Font ──────────────────────────────────────────────────────────────────
 
 	var font(default, set):String;
 
 	function set_font(value:String) {
 		if (font == value) return value;
-		outlineLayer.font = value;
-		fillLayer.font    = value;
+		parsedTextAtlasData = Tools.parseFont(value);
+		var displayTextureID = value + "Font";
+		TextureSystem.setTexture(program, displayTextureID, "font");
 		return font = value;
 	}
 
-	function setMarkerPair(part:String, color:Color, outlineColor:Color = 0x000000FF, outlineSize:Float = 0) {
-		outlineLayer.setMarkerPair(part, outlineColor, outlineColor, outlineSize);
-		fillLayer.setMarkerPair(part, color, color, 0);
+	var parsedTextAtlasData:Array<TextCharData>;
+
+	// ── Markup parsing ────────────────────────────────────────────────────────
+
+	private function parseMarkup(raw:String):{clean:String, spans:Array<ColorSpan>} {
+		var spans:Array<ColorSpan> = [];
+		var clean = new StringBuf();
+		var charPos = 0;
+		var i = 0;
+
+		var openMarkerIdx:Int = -1;
+		var openCharPos:Int   = -1;
+
+		while (i < raw.length) {
+			var matched = matchMarkerAt(raw, i);
+
+			if (matched != -1) {
+				var mp = markerPairs[matched];
+
+				if (openMarkerIdx == -1) {
+					openMarkerIdx = matched;
+					openCharPos   = charPos;
+					i += mp.marker.length;
+				} else if (matched == openMarkerIdx) {
+					spans.push(new ColorSpan(
+						openCharPos, charPos,
+						mp.color, mp.outlineColor, mp.outlineSize
+					));
+					openMarkerIdx = -1;
+					openCharPos   = -1;
+					i += mp.marker.length;
+				} else {
+					// Different marker while one is open — treat as literal.
+					clean.addChar(raw.charCodeAt(i));
+					i++;
+					charPos++;
+				}
+			} else {
+				clean.addChar(raw.charCodeAt(i));
+				i++;
+				charPos++;
+			}
+		}
+
+		// Unmatched opener: silently drop.
+
+		return {clean: clean.toString(), spans: spans};
 	}
 
-	// ─────────────────────────────────────────────────────────────────
+	private function matchMarkerAt(raw:String, i:Int):Int {
+		var best    = -1;
+		var bestLen = 0;
+
+		for (mi in 0...markerPairs.length) {
+			var m = markerPairs[mi].marker;
+			if (m.length <= bestLen)       continue;
+			if (i + m.length > raw.length) continue;
+			if (raw.substr(i, m.length) == m) {
+				best    = mi;
+				bestLen = m.length;
+			}
+		}
+
+		return best;
+	}
+
+	private inline function resolveStyle(ci:Int):{c:Color, oc:Color, os:Float} {
+		var c  = color;
+		var oc = outlineColor;
+		var os = outlineSize;
+		for (span in colorSpans) {
+			if (ci >= span.start && ci < span.end) {
+				c  = span.color;
+				oc = span.outlineColor;
+				if (span.outlineSize != 0.0) os = span.outlineSize;
+				else os = outlineSize; // default to it like how flixel prob does it
+			}
+		}
+		return {c: c, oc: oc, os: os};
+	}
+
+	// ── Sprite setup helpers ──────────────────────────────────────────────────
+
+	function setupCharSprite(spr:TextCharSprite, data:TextCharData, quarterScale:Float, x:Float, y:Float, advanceX:Float, color:Color, outlineColor:Color, outlineSize:Float, alpha:Float, atlasData:Array<TextCharData>):Float {
+		var padding    = atlasData[256];
+		// data[0,1] = atlas position of padded rect (no adjustment needed)
+		// data[2,3] = padded width/height (already includes padding on both sides)
+		// data[4,5] = xoffset/yoffset (already has padding subtracted by fontbm)
+		spr.clipX      = data[0];
+		spr.clipY      = data[1];
+		spr.clipWidth  = spr.clipSizeX = data[2];
+		spr.w          = data[2] * quarterScale;
+		spr.clipHeight = spr.clipSizeY = data[3];
+		spr.h          = data[3] * quarterScale;
+		// rw/rh = raw glyph size without padding, in screen pixels
+		spr.rw         = data[2] * quarterScale;
+		spr.rh         = data[3] * quarterScale;
+		spr.x          = x + (data[4] * quarterScale) + advanceX;
+		spr.y          = y + (data[5] * quarterScale);
+		spr.c          = color;
+		spr.oc         = outlineColor;
+		spr.os         = outlineSize;
+		spr.alpha      = alpha;
+		advanceX      += data[6] * quarterScale;
+		return advanceX;
+	}
+
+	function setupCharSpriteScaled(spr:TextCharSprite, data:TextCharData, quarterScale:Float, x:Float, y:Float, advanceX:Float, atlasData:Array<TextCharData>):Float {
+		var padding    = atlasData[256];
+		spr.clipX      = data[0];
+		spr.clipY      = data[1];
+		spr.clipWidth  = spr.clipSizeX = data[2];
+		spr.w          = data[2] * quarterScale;
+		spr.clipHeight = spr.clipSizeY = data[3];
+		spr.h          = data[3] * quarterScale;
+		spr.rw         = (data[2] - padding[0] - padding[2]) * quarterScale;
+		spr.rh         = (data[3] - padding[1] - padding[3]) * quarterScale;
+		spr.x          = x + (data[4] * quarterScale) + advanceX;
+		spr.y          = y + (data[5] * quarterScale);
+		advanceX      += data[6] * quarterScale;
+		return advanceX;
+	}
+
+	// ── Constructor ───────────────────────────────────────────────────────────
 
 	function new(key:String, x:Float, y:Float, display:Display, text:String = "Sample text", font:String = "vcr") {
-		_key         = key;
+		_key   = key;
+		buffer = new Buffer<TextCharSprite>(32, 32);
+
+		program = new CustomProgram(buffer);
+		program.injectIntoFragmentShader(TEXT_FRAGMENT_SHADER);
+		program.setColorFormula('pixelAlpha(font_ID, c, oc, os, rw, rh) * alphaColor');
+
+		this.font    = font;
 		this.display = display;
 
-		// outlineLayer is added to the display first so it draws behind fillLayer
-		outlineLayer = new TextInternal(x, y, display, font, true);
-		fillLayer    = new TextInternal(x, y, display, font);
+		display.addProgram(program);
+
+		// x and y must be set before text so sprite positions are correct.
+		this.x = x;
+		this.y = y;
 
 		if (text == null || text.length == 0) text = "Sample text";
-
 		this.text = text;
-		this.x    = x;
-		this.y    = y;
 	}
 
-	/**
-		Screen center the sprite at a specific axis, in a display.
-		@param axis The axis you want to center the sprite to.
-	**/
+	// ── Utilities ─────────────────────────────────────────────────────────────
+
 	function screenCenter(axis:Axis = XY) {
-		outlineLayer.screenCenter(axis);
-		fillLayer.screenCenter(axis);
+		switch (axis) {
+			case X:  x = (display.width  - width)  * 0.5;
+			case Y:  y = (display.height - height) * 0.5;
+			default: x = (display.width  - width)  * 0.5;
+					 y = (display.height - height) * 0.5;
+		}
 	}
 
 	function dispose() {
-		outlineLayer.dispose();
-		fillLayer.dispose();
+		for (pair in markerPairs) pair._onChange = null;
+		markerPairs = [];
+		if (program.isIn(display)) display.removeProgram(program);
+		buffer.clear();
 		display = null;
 	}
 
 	function removeProgram() {
-		display.removeProgram(outlineLayer.program);
-		display.removeProgram(fillLayer.program);
+		display.removeProgram(program);
 	}
 
 	function addProgram() {
-		display.addProgram(outlineLayer.program);
-		display.addProgram(fillLayer.program);
+		display.addProgram(program);
 	}
 }

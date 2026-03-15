@@ -87,35 +87,44 @@ class HUD {
 
 		if (watermarkTxt == null) {
 			watermarkTxt = new Text("watermarkTxtPF", 0, 0, display, WATERMARK_TEXT);
-			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height;
-			watermarkTxt.outlineColor = 0x000000FF;
-			watermarkTxt.outlineSize = 1;
 		} else {
 			watermarkTxt.addProgram();
 		}
 
+		watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height;//
+		watermarkTxt.outlineColor = 0x000000FF;
+		watermarkTxt.outlineSize = 1;
+
 		if (timeBarTxt == null) {
 			timeBarTxt = new Text("timeBarTxt", 0, 0, display, Tools.formatTime(Mixer.length - Math.max(parent.songPosition, 0)));
-			timeBarTxt.x = (Main.INITIAL_WIDTH - timeBarTxt.width) * 0.5;
-			timeBarTxt.y = timeBarBG.y - 2;
-			timeBarTxt.scale = 1.15;
-			timeBarTxt.outlineColor = 0x000000FF;
-			timeBarTxt.outlineSize = 2;
 		} else {
 			timeBarTxt.addProgram();
 		}
 
+		timeBarTxt.x = (Main.INITIAL_WIDTH - timeBarTxt.width) * 0.5;
+		timeBarTxt.y = timeBarBG.y - 2;
+		timeBarTxt.scale = 1.15;
+		timeBarTxt.outlineColor = 0x000000FF;
+		timeBarTxt.outlineSize = 2;
+
 		updateTimeBarText();
 
 		if (scoreTxt == null) {
-			scoreTxt = new Text("scoreTxt", 0, 0, display, "", "arial");
-			scoreTxt.color.aF = 1.0;
-			scoreTxt.color.luminanceF = 1.0;
-			scoreTxt.outlineColor = 0x000000FF;
-			scoreTxt.outlineSize = 1.25;
+			scoreTxt = new Text("scoreTxt", 0, 0, display, "", "inconsolata");
+			//scoreTxt.outlineSize = 12.5;
 		} else {
 			scoreTxt.addProgram();
 		}
+
+		scoreTxt.color.aF = 1.0;
+		scoreTxt.color.luminanceF = 1.0;
+		scoreTxt.outlineColor = 0x000000FF;
+		scoreTxt.outlineSize = 1.25;
+
+		scoreTxt.color = 0xFFDC8CFF;
+		scoreTxt.setMarkerPairs([new TextFormatMarkerPair('#1#', Color.WHITE, Color.RED),
+			new TextFormatMarkerPair('#2#', Color.GREEN, Color.BLUE),
+			new TextFormatMarkerPair('#3#', Color.BLACK, Color.PURPLE)]);
 
 		updateScoreText(0.0);
 
@@ -283,15 +292,11 @@ class HUD {
 		Updates the score text.
 	**/
 	function updateScoreText(deltaTime:Float) {
-		var scoreText = 'Score: ${parent.score} | Misses: ${parent.misses} | Accuracy: ${parent.accuracy.toString()}';
+		var scoreText = 'Score: #1#${parent.score}#1# | Misses: #2#${parent.misses}#2# | Accuracy: #3#${parent.accuracy.toString()}#3#';
 		if (scoreTxt.text != scoreText) scoreTxt.text = scoreText;
 		scoreTxt.scale = Tools.lerp(scoreTxt.scale, 1.0, Math.min(deltaTime * 0.02, 1.0));
-		scoreTxt.x = Math.floor(healthBar.bg.x) + ((healthBar.bg.w - scoreTxt.width) * 0.5);
-		scoreTxt.y = Math.floor(healthBar.bg.y) + (healthBar.bg.h + 6);
-		/*scoreTxt.color = 0xFFDC8CFF;
-		scoreTxt.setMarkerPair('Score: ', Color.WHITE);
-		scoreTxt.setMarkerPair(', Misses: ', Color.WHITE);
-		scoreTxt.setMarkerPair(', Accuracy: ', Color.WHITE);*/
+		scoreTxt.x = healthBar.bg.x + ((healthBar.bg.w - scoreTxt.width) * 0.5);
+		scoreTxt.y = healthBar.bg.y + (healthBar.bg.h + 6);
 	}
 
 	/**
@@ -360,37 +365,6 @@ class HUD {
 		if (healthBar != null) {
 			healthBar.dispose();
 			healthBar = null;
-		}
-
-		// reset scoretxt values
-		if (scoreTxt != null) {
-			watermarkTxt.text = WATERMARK_TEXT;
-			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height;
-			watermarkTxt.color = 0xFFFFFFFF;
-			watermarkTxt.color.aF = 1.0;
-			watermarkTxt.color.luminanceF = 1.0;
-			watermarkTxt.outlineColor = 0x000000FF;
-			watermarkTxt.outlineSize = 1;
-			scoreTxt.outlineSize = 1;
-		}
-
-		// reset scoretxt values
-		if (scoreTxt != null) {
-			scoreTxt.text = "";
-			scoreTxt.color = 0xFFFFFFFF;
-			scoreTxt.color.aF = 1.0;
-			scoreTxt.color.luminanceF = 1.0;
-			scoreTxt.outlineColor = 0x000000FF;
-			scoreTxt.outlineSize = 1.25;
-		}
-
-		// reset timebartxt values
-		if (timeBarTxt != null) {
-			timeBarTxt.x = (Main.INITIAL_WIDTH - timeBarTxt.width) * 0.5;
-			timeBarTxt.y = timeBarBG.y - 2;
-			timeBarTxt.scale = 1.15;
-			timeBarTxt.outlineColor = 0x000000FF;
-			timeBarTxt.outlineSize = 2;
 		}
 
 		uiBuf.removeElement(timeBarBG);

@@ -1,6 +1,8 @@
 package elements;
 
-@:allow(elements.TextInternal)
+import elements.text.*;
+
+@:allow(elements.Text)
 class TextFormatMarkerPair {
 	public var marker(default, set):String;
 	public var color(default, set):Color;
@@ -13,10 +15,10 @@ class TextFormatMarkerPair {
 		if (_onChange != null) _onChange();
 	}
 
-	function set_marker(v:String):String       { marker       = v; dirty(); return v; }
-	function set_color(v:Color):Color          { color        = v; dirty(); return v; }
-	function set_outlineColor(v:Color):Color   { outlineColor = v; dirty(); return v; }
-	function set_outlineSize(v:Float):Float    { outlineSize  = v; dirty(); return v; }
+	function set_marker(v:String):String     { marker       = v; dirty(); return v; }
+	function set_color(v:Color):Color        { color        = v; dirty(); return v; }
+	function set_outlineColor(v:Color):Color { outlineColor = v; dirty(); return v; }
+	function set_outlineSize(v:Float):Float  { outlineSize  = v; dirty(); return v; }
 
 	public function new(marker:String, color:Color, outlineColor:Color = 0x000000FF, outlineSize:Float = 0) {
 		this.marker       = marker;

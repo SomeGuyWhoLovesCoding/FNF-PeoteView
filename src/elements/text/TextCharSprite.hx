@@ -19,8 +19,8 @@ class TextCharSprite implements Element {
 	// extra tex attributes to adjust texture within the clip
 	@texPosX  var clipPosX:Int = 0;
 	@texPosY  var clipPosY:Int = 0;
-	@texSizeX var clipSizeX:Int = 1;
-	@texSizeY var clipSizeY:Int = 1;
+	@varying @custom @texSizeX var clipSizeX:Int = 1;
+	@varying @custom @texSizeY var clipSizeY:Int = 1;
 
 	@rotation @formula("uDisplayRotation(r)") var r:Float;
 
@@ -44,6 +44,9 @@ class TextCharSprite implements Element {
 
 	@color var oc:Color = 0x000000FF;
 	@varying @custom var os:Float = 0.0;
+
+	@varying @custom var rw:Float = 0.0; // rendered width in pixels (without os expansion)
+	@varying @custom var rh:Float = 0.0; // rendered height in pixels
 
 	function new() {}
 }

@@ -49,7 +49,7 @@
 #include <locale>
 #include <codecvt>
 #pragma comment(lib, "ole32.lib")
-#pragma comment(lib, "advapi32.lib")  // Add this line
+#pragma comment(lib, "advapi32.lib")
 #elif _WIN32
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -71,6 +71,7 @@ extern "C" {
 #include <array>
 #include <atomic>
 #include <condition_variable>
+#include <deque>
 #include <mutex>
 #include <queue>
 #include <string>
@@ -86,15 +87,11 @@ extern "C" {
 
 // ---- Windows audio-device helpers with change detection -----------------
 
-// ---- Windows audio-device helpers with change detection -----------------
-
 #ifdef HX_WINDOWS
 
-// Need these additional includes
 #include <chrono>
 #include <thread>
 
-// Make sure wstring_to_string is defined before using it
 static std::string wstring_to_string(const std::wstring& wstr) {
     if (wstr.empty()) return std::string();
     int size_needed = WideCharToMultiByte(CP_UTF8, 0, &wstr[0], (int)wstr.size(),
@@ -105,7 +102,6 @@ static std::string wstring_to_string(const std::wstring& wstr) {
     return strTo;
 }
 
-// Store current device state globally
 static struct AudioDeviceState {
     bool isPnP = false;
     bool isHeadphones = false;
@@ -116,55 +112,54 @@ static struct AudioDeviceState {
     std::mutex mutex;
 } g_currentDeviceState;
 
-// Cache duration to avoid excessive polling (milliseconds)
 #define DEVICE_CHECK_COOLDOWN_MS 500
 
-// Update device state - returns true if device changed
 static bool refreshDeviceState() {
     HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-    bool comInitialized = SUCCEEDED(hr);
-    if (hr == RPC_E_CHANGED_MODE) comInitialized = false;
-    
+    // S_OK            — we initialized COM, we must uninitialize.
+    // S_FALSE         — COM was already initialized on this thread by us
+    //                   (refcount bumped), we must still uninitialize.
+    // RPC_E_CHANGED_MODE — thread already has a different apartment model;
+    //                   COM was NOT initialized by this call, do NOT uninit.
+    // Any other error — COM not initialized, do NOT uninit.
+    bool comInitialized = (hr == S_OK || hr == S_FALSE);
+
     IMMDeviceEnumerator* pEnumerator = nullptr;
     IMMDevice* pDevice = nullptr;
     IPropertyStore* pProps = nullptr;
     LPWSTR pwszDeviceId = nullptr;
-    
+
     bool newIsPnP = false;
     bool newIsHeadphones = false;
     std::string newDeviceName = "Unknown";
     std::string newDeviceId = "";
-    
+
     if (SUCCEEDED(CoCreateInstance(__uuidof(MMDeviceEnumerator), NULL, CLSCTX_ALL,
                                    __uuidof(IMMDeviceEnumerator), (void**)&pEnumerator))) {
         if (SUCCEEDED(pEnumerator->GetDefaultAudioEndpoint(eRender, eConsole, &pDevice))) {
-            
-            // Get device ID
+
             if (SUCCEEDED(pDevice->GetId(&pwszDeviceId)) && pwszDeviceId) {
                 newDeviceId = wstring_to_string(std::wstring(pwszDeviceId));
                 CoTaskMemFree(pwszDeviceId);
             }
-            
-            // Get device properties
+
             if (SUCCEEDED(pDevice->OpenPropertyStore(STGM_READ, &pProps))) {
                 PROPVARIANT varName;
                 PropVariantInit(&varName);
-                
-                // Get friendly name
+
                 if (SUCCEEDED(pProps->GetValue(PKEY_Device_FriendlyName, &varName)) &&
                     varName.vt == VT_LPWSTR && varName.pwszVal) {
                     newDeviceName = wstring_to_string(varName.pwszVal);
                 }
                 PropVariantClear(&varName);
-                
-                // Check if PnP using device ID
+
                 if (!newDeviceId.empty()) {
                     std::string id = newDeviceId;
                     std::transform(id.begin(), id.end(), id.begin(), ::tolower);
-                    
+
                     const char* pnpPatterns[] = { "usb#", "bth#", "bthenum#", "swd#mmdevapi#",
                                                   "bluetooth", "hid#", "uefi" };
-                    
+
                     for (const char* pat : pnpPatterns) {
                         if (id.find(pat) != std::string::npos) {
                             newIsPnP = true;
@@ -172,23 +167,22 @@ static bool refreshDeviceState() {
                         }
                     }
                 }
-                
-                // If still not determined, check property store
+
                 if (!newIsPnP) {
                     PROPVARIANT var;
                     PropVariantInit(&var);
-                    const PROPERTYKEY* keys[] = { &PKEY_Device_FriendlyName, 
+                    const PROPERTYKEY* keys[] = { &PKEY_Device_FriendlyName,
                                                   &PKEY_Device_DeviceDesc };
-                    
+
                     for (int i = 0; i < 2 && !newIsPnP; i++) {
-                        if (SUCCEEDED(pProps->GetValue(*keys[i], &var)) && 
+                        if (SUCCEEDED(pProps->GetValue(*keys[i], &var)) &&
                             var.vt == VT_LPWSTR && var.pwszVal) {
                             std::string s = wstring_to_string(var.pwszVal);
                             std::transform(s.begin(), s.end(), s.begin(), ::tolower);
-                            
+
                             const char* kws[] = { "usb", "bluetooth", "bt", "wireless", "external",
                                                   "hdmi", "digital audio", "digital output" };
-                            
+
                             for (const char* k : kws) {
                                 if (s.find(k) != std::string::npos) {
                                     newIsPnP = true;
@@ -199,8 +193,7 @@ static bool refreshDeviceState() {
                         PropVariantClear(&var);
                     }
                 }
-                
-                // Check if headphones
+
                 std::string nameLower = newDeviceName;
                 std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
                 const char* headphoneKws[] = { "headphone", "headset", "earphone", "earbud",
@@ -212,41 +205,42 @@ static bool refreshDeviceState() {
                         break;
                     }
                 }
-                
+
                 pProps->Release();
             }
             pDevice->Release();
         }
         pEnumerator->Release();
     }
-    
-    // Check if device actually changed
+
     std::lock_guard<std::mutex> lock(g_currentDeviceState.mutex);
-    
+
     bool deviceChanged = (newIsPnP != g_currentDeviceState.isPnP) ||
                          (newIsHeadphones != g_currentDeviceState.isHeadphones) ||
                          (newDeviceName != g_currentDeviceState.deviceName) ||
                          (newDeviceId != g_currentDeviceState.deviceId);
-    
+
     if (deviceChanged) {
         printf("[Audio] Device changed: %s (PnP: %s, Headphones: %s)\n",
                newDeviceName.c_str(),
                newIsPnP ? "Yes" : "No",
                newIsHeadphones ? "Yes" : "No");
-        
+
         g_currentDeviceState.isPnP = newIsPnP;
         g_currentDeviceState.isHeadphones = newIsHeadphones;
         g_currentDeviceState.deviceName = newDeviceName;
         g_currentDeviceState.deviceId = newDeviceId;
         g_currentDeviceState.deviceChanged.store(true, std::memory_order_release);
     }
-    
+
+    // Fix 1c: always uninitialize if we successfully initialized COM on this
+    // thread (covers both S_OK and S_FALSE), never if we didn't (RPC_E_CHANGED_MODE
+    // or any other failure code).
     if (comInitialized) CoUninitialize();
-    
+
     return deviceChanged;
 }
 
-// Background monitoring thread
 static std::thread g_monitorThread;
 static std::atomic<bool> g_monitorRunning{false};
 static std::atomic<int64_t> g_lastMonitorTime{0};
@@ -262,43 +256,37 @@ static void monitorThreadFunc() {
     }
 }
 
-// Update device state if enough time has passed
 static void updateDeviceStateIfNeeded() {
     auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
-    
-    // If monitor thread is running, just use cached values
+
     if (g_monitorRunning.load(std::memory_order_acquire)) {
         return;
     }
-    
-    // Otherwise do occasional checks
+
     if (now - g_currentDeviceState.lastCheckTime.load(std::memory_order_acquire) > DEVICE_CHECK_COOLDOWN_MS) {
         refreshDeviceState();
         g_currentDeviceState.lastCheckTime.store(now, std::memory_order_release);
     }
 }
 
-// Public functions that use cached state
+// Read cached PnP/headphone state — never triggers a COM refresh.
+// Safe to call from any thread including the audio callback.
 inline bool checkIfPnPDevice() {
-    updateDeviceStateIfNeeded();
     std::lock_guard<std::mutex> lock(g_currentDeviceState.mutex);
     return g_currentDeviceState.isPnP;
 }
 
 inline bool checkWindowsHeadphoneStatus() {
-    updateDeviceStateIfNeeded();
     std::lock_guard<std::mutex> lock(g_currentDeviceState.mutex);
     return g_currentDeviceState.isHeadphones;
 }
 
 inline std::string getCurrentAudioDeviceName() {
-    updateDeviceStateIfNeeded();
     std::lock_guard<std::mutex> lock(g_currentDeviceState.mutex);
     return g_currentDeviceState.deviceName;
 }
 
-// Check if device changed since last call
 inline bool didAudioDeviceChange() {
     bool changed = g_currentDeviceState.deviceChanged.load(std::memory_order_acquire);
     if (changed) {
@@ -307,7 +295,6 @@ inline bool didAudioDeviceChange() {
     return changed;
 }
 
-// Force refresh (call this when you know device might have changed)
 inline void refreshAudioDeviceState() {
     refreshDeviceState();
     g_currentDeviceState.lastCheckTime.store(
@@ -316,21 +303,18 @@ inline void refreshAudioDeviceState() {
         std::memory_order_release);
 }
 
-// Start background monitoring thread
 inline void startAudioDeviceMonitoring() {
     if (g_monitorRunning.load(std::memory_order_acquire)) return;
-    
+
     g_monitorRunning.store(true, std::memory_order_release);
     g_monitorThread = std::thread(monitorThreadFunc);
-    
-    // Initial refresh
+
     refreshDeviceState();
 }
 
-// Stop background monitoring thread
 inline void stopAudioDeviceMonitoring() {
     if (!g_monitorRunning.load(std::memory_order_acquire)) return;
-    
+
     g_monitorRunning.store(false, std::memory_order_release);
     if (g_monitorThread.joinable()) {
         g_monitorThread.join();
@@ -340,29 +324,9 @@ inline void stopAudioDeviceMonitoring() {
 #endif // HX_WINDOWS
 
 // ---- Bluetooth codec detection -------------------------------------------
-//
-//  Windows: reads the codec GUID from the registry path that the Windows
-//           Bluetooth Audio stack writes when a device connects.
-//           Fallback: SYSTEM\CurrentControlSet\Services\BthA2dp\Parameters
-//           for third-party drivers (Qualcomm, Realtek BT, etc.) that do not
-//           write to the AVRCP\CT hive.
-//  Linux:   queries BlueZ (the Linux BT stack) via `bluetoothctl` for the
-//           A2DP transport codec, then falls back to DebugFS sysfs paths.
-//  Android: omitted intentionally — the OS manages A/V sync internally and
-//           reports near-zero effective audio delay to applications.
-//
-//  Public surface (all platforms):
-//    std::string getBluetoothCodec()      — "SBC", "aptX", "aptX-LL",
-//                                           "aptX-HD", "aptX-Adaptive",
-//                                           "AAC", "LDAC", "LC3",
-//                                           "SBC-XQ", "Unknown-BT", "Unknown"
-//    int         getBluetoothCodecLatencyMs() — estimated codec latency in ms;
-//                                           0 if device is not Bluetooth.
 
 #ifdef HX_WINDOWS
 
-// Map Windows BT audio codec GUIDs → human-readable names.
-// GUIDs sourced from the Windows Driver Kit and third-party BT driver docs.
 static std::string getWindowsBluetoothCodec() {
     static const struct { const char* guid; const char* name; } kCodecGuids[] = {
         { "{00000000-0000-0000-0000-000000000000}", "SBC"           },
@@ -374,7 +338,6 @@ static std::string getWindowsBluetoothCodec() {
         { "{c4d5e6f7-a8b9-0123-cdef-123456789012}", "LDAC"          },
     };
 
-    // Helper: enumerate a single registry hive for a CodecUsed REG_SZ value.
     auto scanHive = [&](const char* regBase) -> std::string {
         HKEY hBase = nullptr;
         if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, regBase, 0, KEY_READ, &hBase) != ERROR_SUCCESS)
@@ -408,7 +371,7 @@ static std::string getWindowsBluetoothCodec() {
                     std::transform(eg.begin(), eg.end(), eg.begin(), ::tolower);
                     if (g == eg) { result = entry.name; break; }
                 }
-                if (result.empty()) result = "Unknown-BT"; // GUID present but unrecognised
+                if (result.empty()) result = "Unknown-BT";
                 RegCloseKey(hSub);
                 break;
             }
@@ -418,11 +381,9 @@ static std::string getWindowsBluetoothCodec() {
         return result;
     };
 
-    // Primary hive: inbox Windows BT audio stack (most common).
     std::string codec = scanHive(
         "SYSTEM\\CurrentControlSet\\Control\\Bluetooth\\Audio\\AVRCP\\CT");
 
-    // Fallback hive: third-party BT drivers (Qualcomm WCD, Realtek BT, etc.)
     if (codec.empty())
         codec = scanHive(
             "SYSTEM\\CurrentControlSet\\Services\\BthA2dp\\Parameters");
@@ -432,36 +393,36 @@ static std::string getWindowsBluetoothCodec() {
 
 static inline std::string getBluetoothCodec() { return getWindowsBluetoothCodec(); }
 
-// Returns estimated codec latency in milliseconds for the active BT codec.
-// Returns 0 if the current device does not appear to be Bluetooth.
+// Returns estimated codec latency in milliseconds.
+// Reads device type from the monitor thread's cache only — no COM, no refresh.
+// Safe to call from any thread, including the audio callback and detectLatency().
 static int getBluetoothCodecLatencyMs() {
-    if (checkIfPnPDevice()) return 0;
+    // Read PnP status from cache only. If the cache is not yet populated
+    // (first call before the monitor thread has run), return a safe
+    // conservative default rather than blocking on a COM call.
+    {
+        std::lock_guard<std::mutex> lock(g_currentDeviceState.mutex);
+        if (g_currentDeviceState.isPnP)          return 0;
+        if (g_currentDeviceState.deviceId.empty()) return 50;
+    }
 
-    // Typical transport latencies (encoding + BT link + decoding round-trip).
-    // Values are conservative midpoints; real latency varies by driver + firmware.
-    std::string codec = getBluetoothCodec();
-    //std::cout << codec << std::endl;
+    // getWindowsBluetoothCodec() reads only the registry — no COM, no
+    // apartment issues, safe to call from any thread.
+    std::string codec = getWindowsBluetoothCodec();
     if (codec == "aptX-LL")       return  40;
-    if (codec == "aptX-Adaptive") return  50;   // LL profile
+    if (codec == "aptX-Adaptive") return  50;
     if (codec == "aptX")          return 120;
     if (codec == "aptX-HD")       return 150;
     if (codec == "AAC")           return 120;
     if (codec == "LDAC")          return 200;
     if (codec == "SBC")           return 220;
-    if (codec == "Unknown-BT")    return 150;   // BT confirmed, codec unknown
-    if (codec == "Unknown")    return 50;   // BT confirmed, codec unknown
+    if (codec == "Unknown-BT")    return 150;
+    if (codec == "Unknown")       return  50;
     return 0;
 }
 
 #elif defined(__linux__) && !defined(__ANDROID__)
 
-// Queries BlueZ via `bluetoothctl` for the A2DP codec of the connected device.
-// This is the most portable path — available on all BlueZ installations without
-// requiring a direct D-Bus dependency in the build.
-//
-// For the active *transport* codec (rather than the advertised capability), a
-// caller with D-Bus access can query org.bluez.MediaTransport1 directly, but
-// that adds a build-time dep.  The bluetoothctl path covers the common case.
 static std::string readBlueZCodecViaBluetoolctl() {
     FILE* fp = popen(
         "bluetoothctl -- list 2>/dev/null | head -1 | awk '{print $2}' | "
@@ -477,8 +438,6 @@ static std::string readBlueZCodecViaBluetoolctl() {
     return std::string(buf);
 }
 
-// Fallback: read from DebugFS (may require root / debugfs mount).
-// Covers kernels that expose the active A2DP codec via sysfs/debugfs directly.
 static std::string readBlueZCodecViaSysfs() {
     const char* paths[] = {
         "/sys/kernel/debug/bluetooth/hci0/a2dp_sink_codec",
@@ -498,7 +457,6 @@ static std::string readBlueZCodecViaSysfs() {
     return "";
 }
 
-// Normalise whatever BlueZ reports into the same short tokens as the Windows path.
 static std::string normaliseLinuxCodecName(const std::string& raw) {
     std::string s = raw;
     std::transform(s.begin(), s.end(), s.begin(), ::tolower);
@@ -512,7 +470,7 @@ static std::string normaliseLinuxCodecName(const std::string& raw) {
     if (s.find("aptx")          != std::string::npos) return "aptX";
     if (s.find("ldac")          != std::string::npos) return "LDAC";
     if (s.find("aac")           != std::string::npos) return "AAC";
-    if (s.find("lc3")           != std::string::npos) return "LC3";    // BT LE Audio
+    if (s.find("lc3")           != std::string::npos) return "LC3";
     if (s.find("sbc-xq")        != std::string::npos) return "SBC-XQ";
     if (s.find("sbc")           != std::string::npos) return "SBC";
     if (!s.empty())                                   return "Unknown-BT";
@@ -528,12 +486,12 @@ static std::string getBluetoothCodec() {
 
 static int getBluetoothCodecLatencyMs() {
     std::string codec = getBluetoothCodec();
-    if (codec == "Unknown")       return 0;   // Probably not a BT device
+    if (codec == "Unknown")       return 0;
     if (codec == "aptX-LL")       return  40;
     if (codec == "aptX-Adaptive") return  50;
     if (codec == "aptX")          return 120;
     if (codec == "aptX-HD")       return 150;
-    if (codec == "LC3")           return  30;  // BT LE Audio — very low latency
+    if (codec == "LC3")           return  30;
     if (codec == "SBC-XQ")        return 200;
     if (codec == "AAC")           return 120;
     if (codec == "LDAC")          return 200;
@@ -543,7 +501,6 @@ static int getBluetoothCodecLatencyMs() {
 }
 
 #else
-// Android / other platforms: OS manages A/V sync; no latency offset needed.
 static inline std::string getBluetoothCodec()        { return "Unknown"; }
 static int         getBluetoothCodecLatencyMs() { return 0; }
 #endif // HX_WINDOWS / __linux__ / other
@@ -563,8 +520,6 @@ static int         getBluetoothCodecLatencyMs() { return 0; }
 #define HALF_BUFFER_FRAMES  ((SAMPLE_RATE * HALF_BUFFER_MS) / 1000)
 #define TOTAL_BUFFER_FRAMES (PADDING_FRAMES + BUFFER_FRAMES + PADDING_FRAMES)
 
-// Maximum frames the audio device is expected to request per callback.
-// The pitched-playback path uses fixed stack buffers sized to this value.
 #define MAX_CALLBACK_FRAMES 4096
 
 // ---- SIMD mix helpers -----------------------------------------------------
@@ -609,17 +564,14 @@ static inline void mix_scalar(float* dst, const float* src, int samples, float v
 // ==========================================================================
 
 struct DecoderStream {
-    // Triple-buffered PCM storage
     float* pcmBufferA = nullptr;
     float* pcmBufferB = nullptr;
     float* pcmBufferC = nullptr;
 
-    // Pointers used by the audio thread only
     float* activeBuffer  = nullptr;
     float* nextBuffer    = nullptr;
     float* loadingBuffer = nullptr;
 
-    // Audio-thread state (touched only by the audio thread)
     ma_uint64 filePosition   = 0;
     ma_uint64 bufferStartPos = 0;
     ma_uint64 localReadPos   = 0;
@@ -638,7 +590,6 @@ struct DecoderStream {
         std::atomic<bool> requestNextBuffer{false};
         std::atomic<bool> requestLoadingBuffer{false};
 
-        // Buffer pointers written by audio thread, read by async thread
         float* asyncNextBuffer    = nullptr;
         float* asyncLoadingBuffer = nullptr;
     } asyncState;
@@ -647,8 +598,6 @@ struct DecoderStream {
     ma_decoder decoder;
     ma_uint64 decoderLength = 0;
 
-    // Per-stream mutex — previously static, which serialised all streams onto
-    // one lock and caused unnecessary stalls.
     std::mutex decoderMutex;
 
     DecoderStream()  { memset(&decoder, 0, sizeof(ma_decoder)); }
@@ -662,7 +611,6 @@ struct DecoderStream {
     DecoderStream(const DecoderStream&)            = delete;
     DecoderStream& operator=(const DecoderStream&) = delete;
 
-    // Called from the audio thread only.
     bool trySwapBuffers() {
         if (!asyncState.nextBufferReady.load(std::memory_order_acquire))
             return false;
@@ -745,11 +693,10 @@ struct DecoderStream {
         if (!asyncState.nextBufferReady.load(std::memory_order_relaxed) &&
             !asyncState.loadingInProgress.load(std::memory_order_relaxed))
             asyncState.requestNextBuffer.store(true, std::memory_order_release);
-        // Caller (doBackgroundLoading) signals the AsyncLoader after this returns.
     }
 
-    // Synchronous fill — used during init and seek (no mutex needed, decoder
-    // is not yet shared with the async thread at those points).
+    // Synchronous fill — used during init and seek. Caller must hold
+    // decoderMutex before calling this (see fillInitialBuffer in AudioSystem).
     void fillBuffer(float* buffer, ma_uint64 decodeStart, ma_uint64* framesRead) {
         ma_uint64 maxFrames = TOTAL_BUFFER_FRAMES;
         if (decodeStart + TOTAL_BUFFER_FRAMES > decoderLength)
@@ -766,7 +713,7 @@ struct DecoderStream {
     }
 
     // Async fill — called from the worker thread; guards the decoder with its
-    // per-stream mutex so the audio thread can seek without data races.
+    // per-stream mutex so seeks cannot race with async decoding.
     void fillBufferAsync(ma_uint64 decodeStart, float* buffer, ma_uint64* framesRead) {
         ma_uint64 maxFrames = TOTAL_BUFFER_FRAMES;
         if (decodeStart + TOTAL_BUFFER_FRAMES > decoderLength)
@@ -819,8 +766,6 @@ private:
         asyncState.loadingBufferValidFrames = other.asyncState.loadingBufferValidFrames;
         asyncState.asyncNextBuffer          = other.asyncState.asyncNextBuffer;
         asyncState.asyncLoadingBuffer       = other.asyncState.asyncLoadingBuffer;
-        // Atomics re-initialise to their defaults; the stream is not live
-        // during a move so in-flight flags are intentionally not transferred.
 
         other.pcmBufferA = other.pcmBufferB = other.pcmBufferC = nullptr;
         other.activeBuffer = other.nextBuffer = other.loadingBuffer = nullptr;
@@ -847,11 +792,18 @@ public:
         signal();
     }
 
-    // Wake the worker immediately. Called by the audio thread when it urgently
-    // needs a buffer — replaces the old 1ms sleep-poll that caused underflows.
     void signal() {
         workPending.store(true, std::memory_order_release);
         wakeCV.notify_one();
+    }
+
+    // Block until the worker thread is confirmed idle (waiting on the CV).
+    // Call this after pauseLoading() and before touching any decoder that
+    // the worker might currently be filling, to ensure no fill is in flight.
+    void waitUntilIdle() {
+        while (!workerIdle.load(std::memory_order_acquire)) {
+            std::this_thread::sleep_for(std::chrono::microseconds(200));
+        }
     }
 
 private:
@@ -859,6 +811,7 @@ private:
     std::thread       workerThread;
     std::atomic<bool> running{false};
     std::atomic<bool> pause{false};
+    std::atomic<bool> workerIdle{false};  // true when worker is blocked on CV
     std::mutex        wakeMutex;
     std::condition_variable wakeCV;
     std::atomic<bool> workPending{false};
@@ -870,7 +823,7 @@ private:
 
     void stop() {
         running.store(false, std::memory_order_release);
-        signal(); // wake so the thread can observe running=false and exit
+        signal();
         if (workerThread.joinable()) workerThread.join();
     }
 
@@ -880,20 +833,23 @@ private:
 
         while (running.load(std::memory_order_acquire)) {
             if (pause.load(std::memory_order_acquire)) {
+                workerIdle.store(true, std::memory_order_release);
                 std::unique_lock<std::mutex> lk(wakeMutex);
                 wakeCV.wait_for(lk, std::chrono::milliseconds(5), [this] {
                     return !pause.load(std::memory_order_acquire) ||
                            !running.load(std::memory_order_acquire);
                 });
+                workerIdle.store(false, std::memory_order_release);
                 continue;
             }
 
-            // Guard against % 0 divide-by-zero when stream list is empty.
             if (streams.empty()) {
+                workerIdle.store(true, std::memory_order_release);
                 std::unique_lock<std::mutex> lk(wakeMutex);
                 wakeCV.wait_for(lk, std::chrono::milliseconds(5), [this] {
                     return !streams.empty() || !running.load(std::memory_order_acquire);
                 });
+                workerIdle.store(false, std::memory_order_release);
                 continue;
             }
 
@@ -911,11 +867,13 @@ private:
                 currentStream = (currentStream + 1) % (int)streams.size();
 
             if (processed == 0) {
+                workerIdle.store(true, std::memory_order_release);
                 std::unique_lock<std::mutex> lk(wakeMutex);
                 wakeCV.wait_for(lk, std::chrono::milliseconds(4), [this] {
                     return workPending.load(std::memory_order_acquire) ||
                            !running.load(std::memory_order_acquire);
                 });
+                workerIdle.store(false, std::memory_order_release);
             }
         }
     }
@@ -989,7 +947,7 @@ private:
 };
 
 // ==========================================================================
-//  AudioSystem  (music track / multi-stream playback)
+//  AudioSystem
 // ==========================================================================
 
 class AudioSystem {
@@ -1007,14 +965,9 @@ public:
     bool  exists              = false;
     float masterVolume        = 1.0f;
 
-    // Pre-allocated scratch buffers for the pitched-playback path.
-    // Sized to MAX_CALLBACK_FRAMES so we never allocate in the audio callback.
     float pitchInputMix[MAX_CALLBACK_FRAMES * CHANNEL_COUNT]      = {};
     float pitchStretchedOut[MAX_CALLBACK_FRAMES * CHANNEL_COUNT]  = {};
 
-    // Throttle background-loading checks: only poll every N callbacks.
-    // The async loader wakes immediately via signal() when urgently needed,
-    // so we don't need to check every single callback.
     static constexpr int BG_LOAD_CHECK_INTERVAL = 8;
     int bgLoadCounter = 0;
 
@@ -1038,8 +991,6 @@ public:
     }
     AudioSystem(const AudioSystem&)            = delete;
     AudioSystem& operator=(const AudioSystem&) = delete;
-
-    // ------------------------------------------------------------------
 
     void loadFiles(std::vector<const char*> argv) {
         if (argv.empty()) { printf("No input files.\n"); return; }
@@ -1123,13 +1074,10 @@ public:
         if (!exists) return;
         exists = false;
 
-        // Stop the async loader before touching the device or streams.
         if (asyncLoader) { delete asyncLoader; asyncLoader = nullptr; }
 
         ma_device_stop(&device);
         ma_device_uninit(&device);
-        // Decoder uninit happens inside ~DecoderStream, which is called here.
-        // This is safe: miniaudio decoders are independent of the device.
         streams.clear();
         decoderVolumes.clear();
         filePaths.clear();
@@ -1162,7 +1110,11 @@ public:
 
     void seekToPCMFrame(int64_t pos) {
         if (!exists) return;
+
         if (asyncLoader) asyncLoader->pauseLoading();
+        // Wait until the worker is confirmed idle so no fillBufferAsync call
+        // is in flight before we touch the decoders below.
+        if (asyncLoader) asyncLoader->waitUntilIdle();
 
         bool wasPlaying = (mixerState == 1);
         if (wasPlaying) ma_device_stop(&device);
@@ -1229,12 +1181,19 @@ private:
     AsyncLoader* asyncLoader = nullptr;
     std::vector<DecoderStream*> streamPtrs;
 
+    // fillInitialBuffer acquires decoderMutex before calling fillBuffer.
+    // This is consistent with fillBufferAsync and ensures that if pauseLoading()
+    // returns before the worker has fully exited its current fill (the window
+    // closed by waitUntilIdle()), we don't race on the decoder state.
     void fillInitialBuffer(size_t index, ma_uint64 startFrame) {
         DecoderStream& s = streams[index];
         ma_uint64 decodeStart = (startFrame > PADDING_FRAMES) ? startFrame - PADDING_FRAMES : 0;
 
         ma_uint64 framesRead = 0;
-        s.fillBuffer(s.activeBuffer, decodeStart, &framesRead);
+        {
+            std::lock_guard<std::mutex> lock(s.decoderMutex);
+            s.fillBuffer(s.activeBuffer, decodeStart, &framesRead);
+        }
 
         s.bufferStartPos = decodeStart;
         s.validFrames    = framesRead;
@@ -1280,7 +1239,6 @@ private:
         s.asyncState.loadingBufferReady.store(true, std::memory_order_release);
     }
 
-    // Called from the audio callback to post load-requests to the async loader.
     void doBackgroundLoading() {
         bool anyRequested = false;
         for (size_t i = 0; i < streams.size(); i++) {
@@ -1384,13 +1342,10 @@ private:
                     sys->streams[i].asyncState.needsLoad.store(true, std::memory_order_release);
             }
         } else {
-            // Fixed-size stack buffers; assert that the device never asks for
-            // more frames than we allocated for.
             static_assert(MAX_CALLBACK_FRAMES >= 4096,
                           "MAX_CALLBACK_FRAMES too small for pitched playback buffers");
 
             if (frameCount > MAX_CALLBACK_FRAMES) {
-                // Defensive: can't pitch-stretch more than our buffer allows.
                 sys->mixerState = anyActive ? 1 : 3;
                 (void)pInput;
                 return;
@@ -1450,13 +1405,6 @@ private:
 
 // ==========================================================================
 //  BackgroundTrack
-//
-//  Preloads the entire file into memory (like SoundEffectPool) so the audio
-//  callback never calls a decoder. This eliminates OGG/vorbis decode CPU from
-//  the hot path entirely. Looping is a simple position wrap — zero decode cost.
-//  For very long files (>~5 min at 44100 stereo f32 ≈ 100 MB) you may prefer
-//  to revert to streaming, but for typical background music this is the right
-//  trade-off.
 // ==========================================================================
 
 struct BackgroundTrack {
@@ -1527,7 +1475,6 @@ struct BackgroundTrack {
     void setVolume(float v)  { volume = v; }
     void setLooping(bool lp) { looping = lp; }
 
-    // Called from the audio callback — pure PCM copy + SIMD mix, no decoding.
     ma_uint64 readFrames(float* output, ma_uint32 requestedFrames, float masterVolume) {
         if (!active || !pcmData || frameCount == 0) return 0;
 
@@ -1586,7 +1533,6 @@ struct SoundEffectInstance {
         : pcmData(data), frameCount(frames), playbackPosition(0),
           volume(vol), playing(true) {}
 
-    // Parameter named 'requestedFrames' to avoid shadowing the member 'frameCount'.
     ma_uint64 readFrames(float* output, ma_uint32 requestedFrames, float masterVolume) {
         if (!playing || !pcmData) return 0;
 
@@ -1673,11 +1619,10 @@ public:
             instances.emplace_back(pcmData, frameCount, volume);
             ++playingCount;
         }
-        // At capacity: silently drop — standard pool behaviour.
     }
 
     ma_uint64 readFrames(float* output, ma_uint32 requestedFrames, float masterVolume) {
-        if (playingCount == 0) return 0;  // fast path: nothing active
+        if (playingCount == 0) return 0;
         ma_uint64 maxRead = 0;
         int stillPlaying = 0;
         for (auto& inst : instances) {
@@ -1713,19 +1658,6 @@ private:
 
 // ==========================================================================
 //  AudioMixerManager
-//
-//  The audio callback must never block. We achieve this with a simple
-//  double-buffered "snapshot" approach:
-//    - Two arrays of raw pointers to BackgroundTrack / SoundEffectPool.
-//    - The game thread updates the active list under mixerMutex, then
-//      atomically publishes the new snapshot index.
-//    - The audio callback reads the current snapshot index (relaxed load)
-//      and iterates the matching pointer arrays — no lock required.
-//    - Pointers in the snapshot are only invalidated when the game thread
-//      calls unload*(), which first waits one extra callback cycle via a
-//      generation counter before freeing.  For simplicity we just keep
-//      unloaded objects alive until destroy() — the pool is typically
-//      small (< 64 entries) and the memory cost is trivial.
 // ==========================================================================
 
 class AudioMixerManager {
@@ -1754,7 +1686,6 @@ public:
         std::lock_guard<std::mutex> lk(mixerMutex);
         backgroundTracks.clear(); soundEffectPools.clear();
         backgroundTrackMap.clear(); soundEffectMap.clear();
-        // Clear both snapshots
         for (int b = 0; b < 2; b++) {
             bgSnapshot[b].clear();
             sfxSnapshot[b].clear();
@@ -1838,6 +1769,15 @@ public:
     void unloadBackgroundTrack(int idx) {
         std::lock_guard<std::mutex> lk(mixerMutex);
         if (!inRange(idx, backgroundTracks)) return;
+
+        // Clear both snapshots before erasing so the audio callback never
+        // dereferences a pointer that deque::erase is about to invalidate.
+        // The seq_cst fence ensures the callback sees the cleared snapshots
+        // before we touch the underlying storage.
+        bgSnapshot[0].clear();
+        bgSnapshot[1].clear();
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+
         eraseAndFixup(backgroundTrackMap, idx);
         backgroundTracks.erase(backgroundTracks.begin() + idx);
         publishSnapshot();
@@ -1846,6 +1786,11 @@ public:
     void unloadSoundEffect(int idx) {
         std::lock_guard<std::mutex> lk(mixerMutex);
         if (!inRange(idx, soundEffectPools)) return;
+
+        sfxSnapshot[0].clear();
+        sfxSnapshot[1].clear();
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+
         eraseAndFixup(soundEffectMap, idx);
         soundEffectPools.erase(soundEffectPools.begin() + idx);
         publishSnapshot();
@@ -1858,8 +1803,10 @@ public:
     float getMasterVolume() const  { return masterVolume.load(std::memory_order_relaxed); }
 
 private:
-    std::vector<BackgroundTrack>  backgroundTracks;
-    std::vector<SoundEffectPool>  soundEffectPools;
+    // deque guarantees that push_back never moves existing elements, so raw
+    // pointers stored in bgSnapshot/sfxSnapshot remain stable across loads.
+    std::deque<BackgroundTrack>  backgroundTracks;
+    std::deque<SoundEffectPool>  soundEffectPools;
     std::mutex mixerMutex;
 
     std::unordered_map<std::string, int> backgroundTrackMap;
@@ -1868,17 +1815,12 @@ private:
     ma_device device;
     bool  deviceInitialized = false;
 
-    // masterVolume is atomic so the callback can read without a lock.
     std::atomic<float> masterVolume{1.0f};
 
-    // Double-buffered pointer snapshots for lock-free callback access.
-    // snapshotIndex selects which buffer is "live" for the audio thread.
     std::vector<BackgroundTrack*> bgSnapshot[2];
     std::vector<SoundEffectPool*> sfxSnapshot[2];
     std::atomic<int> snapshotIndex{0};
 
-    // Called under mixerMutex. Rebuilds the inactive snapshot from the
-    // current vectors, then flips the index atomically.
     void publishSnapshot() {
         int next = 1 - snapshotIndex.load(std::memory_order_relaxed);
         bgSnapshot[next].clear();
@@ -1908,7 +1850,6 @@ private:
         float* out = (float*)pOutput;
         memset(out, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
 
-        // Read the current snapshot — no lock needed.
         int snap = mixer->snapshotIndex.load(std::memory_order_acquire);
         float vol = mixer->masterVolume.load(std::memory_order_relaxed);
 

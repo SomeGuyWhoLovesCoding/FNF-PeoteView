@@ -39,17 +39,27 @@ class TextInternal {
 
 	var markerPairs(default, null):Array<TextFormatMarkerPair> = [];
 
-	function addMarkerPair(pair:TextFormatMarkerPair) {
-		pair._onChange = () -> set_text(_rawText);
-		markerPairs.push(pair);
-	}
-
-	function removeMarkerPair(pair:TextFormatMarkerPair) {
-		pair._onChange = null;
-		markerPairs.remove(pair);
+	function setMarkups(pairs:Array<TextFormatMarkerPair>) {
+		for (pair in markerPairs) pair._onChange = null;
+		markerPairs = pairs;
+		for (pair in markerPairs) pair._onChange = markDirty;
+		markDirty();
 	}
 
 	private var colorSpans:Array<ColorSpan> = [];
+
+	// ── Dirty flag ────────────────────────────────────────────────────────────
+
+	private var _dirty:Bool = false;
+
+	function markDirty() {
+		_dirty = true;
+	}
+
+	function flushIfDirty() {
+		if (!_dirty) return;
+		set_text(_rawText); // _dirty cleared inside set_text now
+	}
 
 	// ── Text ──────────────────────────────────────────────────────────────────
 
@@ -58,6 +68,8 @@ class TextInternal {
 	var text(default, set):String = "";
 
 	function set_text(raw:String) {
+		if (raw == _rawText && !_dirty) return text;
+		_dirty  = false;
 		_rawText = raw;
 
 		var parsed = parseMarkup(raw);
@@ -335,7 +347,7 @@ class TextInternal {
 	function set_outlineSize(value:Float):Float {
 		outlineSize = value;
 		if (isOutlineLayer) {
-			set_text(_rawText);
+			markDirty();
 		} else {
 			for (i in 0...text.length) {
 				var spr = buffer.getElement(i);

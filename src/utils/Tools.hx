@@ -153,12 +153,12 @@ class Tools {
 
 			var args = [
 				'--font-file', fontFile,
-				'--font-size', '80',
+				'--font-size', '40',
 				'--data-format', 'json',
-				'--padding-up', '3',
-				'--padding-right', '3',
-				'--padding-down', '3',
-				'--padding-left', '3',
+				'--padding-up', '8',
+				'--padding-right', '8',
+				'--padding-down', '8',
+				'--padding-left', '8',
 				'--extra-info',
 				'--output', outputPath
 			];
@@ -188,8 +188,10 @@ class Tools {
 			parsedData[number][5] = element.yoffset;
 			parsedData[number][6] = element.xadvance;
 		}
-		parsedData[256][0] = padding[0];
-		parsedData[256][1] = padding[1];
+		parsedData[256][0] = padding[3]; // left  (used for horizontal)
+		parsedData[256][1] = padding[0]; // up    (used for vertical)
+		parsedData[256][2] = padding[1]; // right
+		parsedData[256][3] = padding[2]; // down
 
 		TextureSystem.createTexture(name + "Font", fontPNGPath, false, true);
 
