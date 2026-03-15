@@ -33,7 +33,6 @@ class Text {
 		if (str == text) return text;
 		outlineLayer.text = str;
 		fillLayer.text    = str;
-        outlineLayer.renderOutline(); // Render outline after setting text
 		return text = str;
 	}
 
@@ -43,7 +42,6 @@ class Text {
 		if (value == x) return x;
 		outlineLayer.x = value;
 		fillLayer.x    = value;
-        outlineLayer.renderOutline(); // Render outline after setting text
 		return x = value;
 	}
 
@@ -53,7 +51,6 @@ class Text {
 		if (value == y) return y;
 		outlineLayer.y = value/* - 10*/;
 		fillLayer.y    = value;
-        outlineLayer.renderOutline(); // Render outline after setting text
 		return y = value;
 	}
 
@@ -63,7 +60,6 @@ class Text {
 		if (value == scale) return scale;
 		outlineLayer.scale = value;
 		fillLayer.scale    = value;
-        outlineLayer.renderOutline(); // Render outline after setting text
 		return scale = value;
 	}
 
@@ -81,7 +77,6 @@ class Text {
 	function set_alpha(value:Float):Float {
 		outlineLayer.alpha = value;
 		fillLayer.alpha    = value;
-        outlineLayer.renderOutline(); // Render outline after setting text
 		return alpha = value;
 	}
 
@@ -90,7 +85,6 @@ class Text {
 	function set_color(value:Color):Color {
 		fillLayer.color    = value;
 		outlineLayer.color = value;
-        outlineLayer.renderOutline(); // Render outline after setting text
 		return color = value;
 	}
 
@@ -99,7 +93,6 @@ class Text {
 	function set_outlineColor(value:Color):Color {
 		outlineLayer.color = value;
 		outlineLayer.outlineColor = value;
-        outlineLayer.renderOutline(); // Render outline after setting text
 		return outlineColor = value;
 	}
 
@@ -109,7 +102,6 @@ class Text {
 		outlineLayer.outlineSize = value;
 		outlineLayer.x = x;
 		outlineLayer.y = y;
-        outlineLayer.renderOutline(); // Render outline after setting text
 		return outlineSize = value;
 	}
 
@@ -119,13 +111,11 @@ class Text {
 		if (font == value) return value;
 		outlineLayer.font = value;
 		fillLayer.font    = value;
-        outlineLayer.renderOutline(); // Render outline after setting text
 		return font = value;
 	}
 
 	function setMarkerPair(part:String, color:Color, outlineColor:Color = 0x000000FF, outlineSize:Float = 0) {
 		outlineLayer.setMarkerPair(part, outlineColor, outlineColor, outlineSize);
-        outlineLayer.renderOutline(); // Render outline after setting text
 		fillLayer.setMarkerPair(part, color, color, 0);
 	}
 
@@ -153,7 +143,6 @@ class Text {
 	function screenCenter(axis:Axis = XY) {
 		outlineLayer.screenCenter(axis);
 		fillLayer.screenCenter(axis);
-        outlineLayer.renderOutline(); // Render outline after setting text
 	}
 
 	function dispose() {
