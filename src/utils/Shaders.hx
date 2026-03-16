@@ -96,7 +96,7 @@ class Shaders {
         // Near-vertical edge ~ blend E/W
         edgeBlend = mix(upscaled, (upscaled + ec + wc) * (1.0/3.0), aaSmooth * 0.45);
     } else if (gx * gy > 0.0) {
-        // Diagonal \  ~ blend NW/SE
+        // Diagonal \\  ~ blend NW/SE
         edgeBlend = mix(upscaled, (upscaled + nw + se) * (1.0/3.0), aaSmooth * 0.40);
     } else {
         // Diagonal /  ~ blend NE/SW
