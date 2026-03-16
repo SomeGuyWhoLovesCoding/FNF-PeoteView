@@ -305,7 +305,7 @@ class FreeplayScreen {
 		icon.changeID(Tools.fromIconGridXMLCharacter(song.icon)[0]);
 		var alpha = calcItemAlpha(k) * alphaLerp;
 		icon.alpha = alpha;
-		icon.x = 0;//iconX + ((icon.w * 0.35) + 12);
+		icon.x = iconX + ((icon.w * 0.35) + 12);
 		icon.y = ((-curSelectedLerp * 156) + (156 * k) + 320) - 30; // https://github.com/ShadowMario/FNF-PsychEngine/blob/main/source/objects/HealthIcon.hx#L22
 		//icon.w = 150 * 4;
 		//icon.h = 150 * 4;
