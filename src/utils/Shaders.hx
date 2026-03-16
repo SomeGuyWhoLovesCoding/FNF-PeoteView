@@ -5,76 +5,109 @@ class Shaders {
     static inline var UPSCALE_FRAGMENT_SHADER =
         '
         vec4 ravuSample(int textureID, vec2 uv, vec2 texelSize, vec2 lo, vec2 hi) {
-            vec2 texPos  = uv / texelSize - 0.5;
-            vec2 texPos1 = floor(texPos);
-            vec2 phase   = texPos - texPos1;
+    vec2 texPos  = uv / texelSize - 0.5;
+    vec2 texPos1 = floor(texPos);
+    vec2 phase   = texPos - texPos1;
 
-            vec2 ph2 = phase * phase;
-            vec2 ph3 = ph2  * phase;
+    vec2 ph2 = phase * phase;
+    vec2 ph3 = ph2  * phase;
 
-            vec2 w0 = -0.5 * ph3 + 1.0 * ph2 - 0.5 * phase;
-            vec2 w1 =  1.5 * ph3 - 2.5 * ph2 + 1.0;
-            vec2 w2 = -1.5 * ph3 + 2.0 * ph2 + 0.5 * phase;
-            vec2 w3 =  0.5 * ph3 - 0.5 * ph2;
+    vec2 w0 = -0.5 * ph3 + 1.0 * ph2 - 0.5 * phase;
+    vec2 w1 =  1.5 * ph3 - 2.5 * ph2 + 1.0;
+    vec2 w2 = -1.5 * ph3 + 2.0 * ph2 + 0.5 * phase;
+    vec2 w3 =  0.5 * ph3 - 0.5 * ph2;
 
-            vec2 wA = w0 + w1;
-            vec2 wB = w2 + w3;
-            vec2 uvA = clamp((texPos1 + w1 / wA) * texelSize, lo, hi);
-            vec2 uvB = clamp((texPos1 + 2.0 + w3 / wB) * texelSize, lo, hi);
+    vec2 wA = w0 + w1;
+    vec2 wB = w2 + w3;
+    vec2 uvA = clamp((texPos1 + w1 / wA) * texelSize, lo, hi);
+    vec2 uvB = clamp((texPos1 + 2.0 + w3 / wB) * texelSize, lo, hi);
 
-            vec4 sAA = getTextureColor(textureID, vec2(uvA.x, uvA.y));
-            vec4 sBA = getTextureColor(textureID, vec2(uvB.x, uvA.y));
-            vec4 sAB = getTextureColor(textureID, vec2(uvA.x, uvB.y));
-            vec4 sBB = getTextureColor(textureID, vec2(uvB.x, uvB.y));
+    vec4 sAA = getTextureColor(textureID, vec2(uvA.x, uvA.y));
+    vec4 sBA = getTextureColor(textureID, vec2(uvB.x, uvA.y));
+    vec4 sAB = getTextureColor(textureID, vec2(uvA.x, uvB.y));
+    vec4 sBB = getTextureColor(textureID, vec2(uvB.x, uvB.y));
 
-            float hA = wA.x / (wA.x + wB.x);
-            float hB = wA.y / (wA.y + wB.y);
-            vec4 upscaled = mix(mix(sBB, sAB, hA), mix(sBA, sAA, hA), hB);
+    float hA = wA.x / (wA.x + wB.x);
+    float hB = wA.y / (wA.y + wB.y);
+    vec4 upscaled = mix(mix(sBB, sAB, hA), mix(sBA, sAA, hA), hB);
 
-            vec4 nc     = getTextureColor(textureID, clamp(uv + vec2( 0.0,        -texelSize.y), lo, hi));
-            vec4 sc     = getTextureColor(textureID, clamp(uv + vec2( 0.0,         texelSize.y), lo, hi));
-            vec4 ec     = getTextureColor(textureID, clamp(uv + vec2( texelSize.x,  0.0       ), lo, hi));
-            vec4 wc     = getTextureColor(textureID, clamp(uv + vec2(-texelSize.x,  0.0       ), lo, hi));
-            vec4 center = getTextureColor(textureID, uv);
+    // --- 8-neighborhood (axis + diagonal) ---
+    vec4 nc  = getTextureColor(textureID, clamp(uv + vec2( 0.0,          -texelSize.y), lo, hi));
+    vec4 sc  = getTextureColor(textureID, clamp(uv + vec2( 0.0,           texelSize.y), lo, hi));
+    vec4 ec  = getTextureColor(textureID, clamp(uv + vec2( texelSize.x,   0.0        ), lo, hi));
+    vec4 wc  = getTextureColor(textureID, clamp(uv + vec2(-texelSize.x,   0.0        ), lo, hi));
+    vec4 ne  = getTextureColor(textureID, clamp(uv + vec2( texelSize.x,  -texelSize.y), lo, hi));
+    vec4 nw  = getTextureColor(textureID, clamp(uv + vec2(-texelSize.x,  -texelSize.y), lo, hi));
+    vec4 se  = getTextureColor(textureID, clamp(uv + vec2( texelSize.x,   texelSize.y), lo, hi));
+    vec4 sw  = getTextureColor(textureID, clamp(uv + vec2(-texelSize.x,   texelSize.y), lo, hi));
+    vec4 center = getTextureColor(textureID, uv);
 
-            vec4 minNeighbor = min(center, min(min(nc, sc), min(ec, wc)));
-            vec4 maxNeighbor = max(center, max(max(nc, sc), max(ec, wc)));
+    // Min/max clamp from full 8-neighborhood
+    vec4 minN = min(center, min(min(nc, sc), min(ec, wc)));
+    vec4 maxN = max(center, max(max(nc, sc), max(ec, wc)));
+    minN = min(minN, min(min(ne, nw), min(se, sw)));
+    maxN = max(maxN, max(max(ne, nw), max(se, sw)));
 
-            vec4 lap = center * 4.0 - (nc + sc + ec + wc);
+    // Laplacian sharpening (axis-only, same as before)
+    vec4 lap = center * 4.0 - (nc + sc + ec + wc);
 
-            vec3  LUM    = vec3(0.299, 0.587, 0.114);
-            float lumN   = dot(nc.rgb, LUM);
-            float lumS   = dot(sc.rgb, LUM);
-            float lumE   = dot(ec.rgb, LUM);
-            float lumW   = dot(wc.rgb, LUM);
+    // --- Seam suppression ---
+    float edgeDist = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
+    float seamMask = smoothstep(0.0, texelSize.x * 2.0, edgeDist);
 
-            // lapMag normalized for 4-neighbor kernel range
-            float lapMag  = length(lap.rgb) / 6.0;
+    upscaled.rgb = clamp(
+        upscaled.rgb + lap.rgb * 0.8 * seamMask,
+        minN.rgb, maxN.rgb
+    );
 
-            // Seam suppression only ~ no brightMask, no edgeGate
-            // Let the minmax clamp handle overshoot instead
-            float edgeDist = min(min(uv.x, 1.0 - uv.x), min(uv.y, 1.0 - uv.y));
-            float seamMask = smoothstep(0.0, texelSize.x * 2.0, edgeDist);
+    // --- Luminance for all 8 neighbors ---
+    vec3  LUM  = vec3(0.299, 0.587, 0.114);
+    float lumC  = dot(center.rgb, LUM);
+    float lumN  = dot(nc.rgb,  LUM);
+    float lumS  = dot(sc.rgb,  LUM);
+    float lumE  = dot(ec.rgb,  LUM);
+    float lumW  = dot(wc.rgb,  LUM);
+    float lumNE = dot(ne.rgb,  LUM);
+    float lumNW = dot(nw.rgb,  LUM);
+    float lumSE = dot(se.rgb,  LUM);
+    float lumSW = dot(sw.rgb,  LUM);
 
-            upscaled.rgb = clamp(
-                upscaled.rgb + lap.rgb * 0.8 * seamMask,
-                minNeighbor.rgb, maxNeighbor.rgb
-            );
+    // Sobel-style gradient magnitude ~ catches diagonals
+    float gx = (lumNE + 2.0*lumE + lumSE) - (lumNW + 2.0*lumW + lumSW);
+    float gy = (lumSW + 2.0*lumS + lumSE) - (lumNW + 2.0*lumN + lumNE);
+    float gradMag = sqrt(gx*gx + gy*gy) / 4.0; // normalize to ~[0,1]
 
-            // Directional AA blend ~ preserved from original
-            float aaSmooth   = smoothstep(0.15, 0.5, lapMag);
-            float horizontal = abs(lumN - lumS);
-            float vertical   = abs(lumE - lumW);
+    // lapMag still used for sharpness guard
+    float lapMag = length(lap.rgb) / 6.0;
 
-            vec4 edgeBlend = horizontal < vertical
-                ? mix(upscaled, (upscaled + nc + sc) * 0.333, aaSmooth * 0.25)
-                : mix(upscaled, (upscaled + ec + wc) * 0.333, aaSmooth * 0.25);
+    // aaSmooth: trigger on gradient, guard against flat areas with lapMag
+    float aaSmooth = smoothstep(0.08, 0.4, gradMag) * smoothstep(0.04, 0.15, lapMag);
 
-            upscaled.rgb = clamp(edgeBlend.rgb, minNeighbor.rgb, maxNeighbor.rgb);
-            upscaled.a   = center.a;
+    // Determine dominant edge direction from Sobel gradient angle
+    float absGx = abs(gx);
+    float absGy = abs(gy);
 
-            return upscaled;
-        }
+    vec4 edgeBlend;
+
+    if (absGx < absGy * 0.4) {
+        // Near-horizontal edge ~ blend N/S
+        edgeBlend = mix(upscaled, (upscaled + nc + sc) * (1.0/3.0), aaSmooth * 0.45);
+    } else if (absGy < absGx * 0.4) {
+        // Near-vertical edge ~ blend E/W
+        edgeBlend = mix(upscaled, (upscaled + ec + wc) * (1.0/3.0), aaSmooth * 0.45);
+    } else if (gx * gy > 0.0) {
+        // Diagonal \  ~ blend NW/SE
+        edgeBlend = mix(upscaled, (upscaled + nw + se) * (1.0/3.0), aaSmooth * 0.40);
+    } else {
+        // Diagonal /  ~ blend NE/SW
+        edgeBlend = mix(upscaled, (upscaled + ne + sw) * (1.0/3.0), aaSmooth * 0.40);
+    }
+
+    upscaled.rgb = clamp(edgeBlend.rgb, minN.rgb, maxN.rgb);
+    upscaled.a   = center.a;
+
+    return upscaled;
+}
 
         vec4 alphaEdgeReconstruct(int textureID, vec2 uv, vec2 texW, vec2 texH) {
             vec2 texelSize = vec2(1.0 / texW.x, 1.0 / texH.x);
