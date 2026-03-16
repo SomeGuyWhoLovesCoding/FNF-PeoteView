@@ -236,6 +236,8 @@ class Field {
 	}
 
 	function endGameOver(goBack:Bool = false) {
+		MiniAudio.stopBackgroundTrack(gameOverMusic);
+
 		if (goBack) {
 			isInGameOver = false;
 			Main.switchState(MAIN_MENU);
@@ -245,7 +247,6 @@ class Field {
 		var gameOverMeta = Chart.header.gameOver;
 		var theme = gameOverMeta.theme;
 
-		MiniAudio.stopBackgroundTrack(gameOverMusic);
 		MiniAudio.playSoundEffect(gameOverConfirm, 0.7);
 
 		actorOnGameOver.finishAnim = "";
