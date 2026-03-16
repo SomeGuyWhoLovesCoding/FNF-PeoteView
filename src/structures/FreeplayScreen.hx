@@ -41,8 +41,16 @@ class FreeplayScreen {
 			songTextsBuf = new Buffer<Actor>(16, 16);
 			songTextsProg = new CustomProgram(songTextsBuf);
 
-			var tex = TextureSystem.getTexture("alphabetSheet");
-			TextureSystem.setTexture(songTextsProg, "alphabetSheet", "alphabetSheet");
+			var texName = "alphabetSheet";
+			var tex = TextureSystem.getTexture(texName);
+			TextureSystem.setTexture(songTextsProg, texName, texName);
+
+			if (Main.current.upscale) {
+				songTextsProg.injectIntoFragmentShader(Shaders.UPSCALE_FRAGMENT_SHADER);
+				songTextsProg.setColorFormula('
+					iconPixel(${texName}_ID, vTexCoord, vec2(spriteW, 0.0), vec2(spriteH, 0.0)) * color
+				');
+			}
 		}
 
 		if (songIconsBuf == null) {
@@ -81,8 +89,7 @@ class FreeplayScreen {
 			for (i in 0...7) {
 				var icon = new HealthBarSprite();
 				icon.type = HEALTH_ICON;
-				icon.c.aF = 0.0;
-				icon.c.luminanceF = 0.0;
+				icon.alpha = 0.0;
 				songIconsBuf.addElement(icon);
 				icon;
 			}
@@ -271,10 +278,11 @@ class FreeplayScreen {
 		var icon = songIconGroup[i];
 		icon.changeID(Tools.fromIconGridXMLCharacter(song.icon)[0]);
 		var alpha = calcItemAlpha(k) * alphaLerp;
-		icon.c.aF = alpha;
-		icon.c.luminanceF = alpha;
+		icon.alpha = alpha;
 		icon.x = iconX + ((icon.w * 0.35) + 12);
 		icon.y = ((-curSelectedLerp * 156) + (156 * k) + 320) - 30; // https://github.com/ShadowMario/FNF-PsychEngine/blob/main/source/objects/HealthIcon.hx#L22
+		icon.texW = 150;
+		icon.texH = 150;
 		songIconsBuf.updateElement(icon);
 	}
 

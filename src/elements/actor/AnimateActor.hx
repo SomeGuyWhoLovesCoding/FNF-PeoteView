@@ -19,6 +19,42 @@ import elements.actor.*;
 @:publicFields
 class AnimateActor extends Actor
 {
+	private static inline var ANIMATE_FRAGMENT_SHADER = '
+		vec4 getColor(int texId, vec4 _m, float _rotated, float _originU, float _originV)
+		{
+			vec2 uv = vTexCoord;
+
+			// mat2 in GLSL is column-major: mat2(col0, col1)
+			// col0 = (a, b), col1 = (c, d)
+			mat2 m = mat2(_m.x, _m.y, _m.z, _m.w);
+			vec2 st = m * uv + vec2(_originU, _originV);
+
+			st = mix(st, vec2(1.0 - st.y, st.x), _rotated);
+
+			if (any(lessThan(st, vec2(0.0))) || any(greaterThan(st, vec2(1.0))))
+				return vec4(0.0);
+
+			return getTextureColor(texId, st);
+		}
+
+		vec2 getColorReturnJustUV(int texId, vec4 _m, float _rotated, float _originU, float _originV)
+		{
+			vec2 uv = vTexCoord;
+
+			// mat2 in GLSL is column-major: mat2(col0, col1)
+			// col0 = (a, b), col1 = (c, d)
+			mat2 m = mat2(_m.x, _m.y, _m.z, _m.w);
+			vec2 st = m * uv + vec2(_originU, _originV);
+
+			st = mix(st, vec2(1.0 - st.y, st.x), _rotated);
+
+			if (any(lessThan(st, vec2(0.0))) || any(greaterThan(st, vec2(1.0))))
+				return vec2(0.0);
+
+			return st;
+		}
+	';
+
 	var animateAtlas(default, null):AnimateAtlas;
 
 	// ── Animate leaf pool ────────────────────────────────────────────────────
@@ -93,28 +129,19 @@ class AnimateActor extends Actor
 				// Each leaf uploads its own a/b/c/d matrix components so the
 				// fragment shader can invert the transform and sample the atlas
 				// correctly even for skewed or non-uniformly scaled sprites.
-				program.injectIntoFragmentShader('
-					vec4 getColor(int texId, vec4 _m, float _rotated, float _originU, float _originV)
-					{
-						vec2 uv = vTexCoord;
-
-						// mat2 in GLSL is column-major: mat2(col0, col1)
-						// col0 = (a, b), col1 = (c, d)
-						mat2 m = mat2(_m.x, _m.y, _m.z, _m.w);
-						vec2 st = m * uv + vec2(_originU, _originV);
-
-						st = mix(st, vec2(1.0 - st.y, st.x), _rotated);
-
-						if (any(lessThan(st, vec2(0.0))) || any(greaterThan(st, vec2(1.0))))
-							return vec4(0.0);
-
-						return getTextureColor(texId, st);
-					}
-				');
-
-				program.setColorFormula(
-					'getColor(${texName}_ID, vec4(_ma, _mb, _mc, _md), _rotated, _originU, _originV)'
-				);
+				// Inside the program creation block, after setColorFormula:
+				if (Main.current.upscale) {
+					program.injectIntoFragmentShader(ANIMATE_FRAGMENT_SHADER + "\n\n" + Shaders.UPSCALE_FRAGMENT_SHADER);
+					program.setColorFormula(
+						'iconPixel(${texName}_ID, getColorReturnJustUV(${texName}_ID, vec4(_ma, _mb, _mc, _md), _rotated, _originU, _originV), vec2(spriteW, 0.0), vec2(spriteH, 0.0))'
+					);
+				}
+				else {
+					program.injectIntoFragmentShader(ANIMATE_FRAGMENT_SHADER);
+					program.setColorFormula(
+						'getColor(${texName}_ID, vec4(_ma, _mb, _mc, _md), _rotated, _originU, _originV)'
+					);
+				}
 			} else {
 				program = Actor.programs[tag];
 			}
@@ -270,6 +297,8 @@ class AnimateActor extends Actor
 		el.rotated    = sprite.rotated;
 		el.clipWidth  = sprite.width;
 		el.clipHeight = sprite.height;
+		el.spriteW    = sprite.width;
+		el.spriteH    = sprite.height;
 
 		// ── Inverse matrix for UV distortion ──────────────────────────────
 

@@ -166,6 +166,9 @@ class Main extends Application
 	var sound_confIdx:Int;
 	var sound_cancelIdx:Int;
 
+	// UPSCALE CONDITION - WHENEVER YOU WANT YOUR GAME TO RUN LIKE COCK OR RUN LIKE WHEELS
+	var upscale:Bool = true;
+
 	public function startSample(window:Window)
 	{
 		current = this;

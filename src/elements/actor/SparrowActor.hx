@@ -61,20 +61,26 @@ class SparrowActor extends Actor
 			if (Actor.buffers[tag] == null) Actor.buffers[tag] = new Buffer<ActorElement>(16, 16);
 			buffer = Actor.buffers[tag];
 
+			var texName = name + "Char";
 			if (Actor.programs[tag] == null) {
 				Actor.programs[tag] = new CustomProgram(buffer);
 				program = Actor.programs[tag];
 
-				var texName = name + "Char";
 				var xmlPath = Actor.path(name, folder, XML);
 				var texPath = StringTools.replace(xmlPath, "data.xml", sparrowAtlas.imagePath);
 				TextureSystem.createTexture(texName, texPath, false, true);
 				TextureSystem.setTexture(program, texName, texName);
-
-				// Sparrow uses identity matrix varyings — the UV distortion shader
-				// is a no-op here; nothing extra is injected.
 			} else {
 				program = Actor.programs[tag];
+			}
+
+			// Sparrow uses identity matrix varyings — the UV distortion shader
+			// is a no-op here; nothing extra is injected except upscale if it's enabled.
+			if (Main.current.upscale) {
+				program.injectIntoFragmentShader(Shaders.UPSCALE_FRAGMENT_SHADER);
+				program.setColorFormula('
+					iconPixel(${texName}_ID, vTexCoord, vec2(spriteW, 0.0), vec2(spriteH, 0.0)) * color
+				');
 			}
 
 			display.addProgram(program);
@@ -156,5 +162,7 @@ class SparrowActor extends Actor
 		this.flipY = flipY;
 		clipWidth  = width;
 		clipHeight = height;
+		spriteW  = width;
+		spriteH = height;
 	}
 }

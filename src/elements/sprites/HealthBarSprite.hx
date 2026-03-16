@@ -4,6 +4,28 @@ package elements.sprites;
 
 @:publicFields
 class HealthBarSprite implements Element {
+	private static inline var HEALTH_BAR_SPRITE_GRADIENT_SHADER = '
+		vec4 gradientOf6(int textureID, float gradientMode, vec4 c, vec4 c1, vec4 c2, vec4 c3, vec4 c4, vec4 c5, vec4 c6) {
+			float y = clamp(vTexCoord.y, 0.0, 1.0);
+
+			// Scale to [0..5]
+			float fy = y * 5.0;
+			int segment = int(floor(fy));       // 0..4
+			float t = fract(fy);                // fractional part
+
+			vec4 colors[6];
+			colors[0] = c1;
+			colors[1] = c2;
+			colors[2] = c3;
+			colors[3] = c4;
+			colors[4] = c5;
+			colors[5] = c6;
+
+			// Lerp between current and next color
+			return mix(getTextureColor(textureID, vTexCoord), mix(colors[segment], colors[segment + 1], t), gradientMode);
+		}
+	';
+
 	// position in pixel (relative to upper left corner of Display)
 	@posX @formula("uDisplayRotateX(vec2(mixHelperF(aPos.x, aPos.x - w, _flip), aPos.y))") var x:Float = 0.0;
 	@posY @formula("uDisplayRotateY(vec2(mixHelperF(aPos.x, aPos.x - w, _flip), aPos.y))") var y:Float = 0.0;
@@ -97,33 +119,24 @@ class HealthBarSprite implements Element {
 
 	var OPTIONS = { texRepeatX: false, texRepeatY: false, blend: true };
 
+	@varying @custom var texW:Float = 0.0;
+	@varying @custom var texH:Float = 0.0;
+
 	static function init(program:CustomProgram, name:String, texture:Texture) {
-		// creates a texture-layer named "name"
 		program.setTexture(texture, name, true);
-
-		program.injectIntoFragmentShader('
-			vec4 gradientOf6(int textureID, float gradientMode, vec4 c, vec4 c1, vec4 c2, vec4 c3, vec4 c4, vec4 c5, vec4 c6) {
-				float y = clamp(vTexCoord.y, 0.0, 1.0);
-
-				// Scale to [0..5]
-				float fy = y * 5.0;
-				int segment = int(floor(fy));       // 0..4
-				float t = fract(fy);                // fractional part
-
-				vec4 colors[6];
-				colors[0] = c1;
-				colors[1] = c2;
-				colors[2] = c3;
-				colors[3] = c4;
-				colors[4] = c5;
-				colors[5] = c6;
-
-				// Lerp between current and next color
-				return mix(getTextureColor(textureID, vTexCoord), mix(colors[segment], colors[segment + 1], t), gradientMode);
-			}
-		');
-
-		program.setColorFormula('gradientOf6(${name}_ID, gradientMode, c, c1, c2, c3, c4, c5, c6) * (c * alphaColor)');
+		if (Main.current.upscale) {
+			program.injectIntoFragmentShader('$HEALTH_BAR_SPRITE_GRADIENT_SHADER\n\n${Shaders.UPSCALE_FRAGMENT_SHADER}');
+			program.setColorFormula('
+				(gradientMode > 0.0
+					? gradientOf6(${name}_ID, gradientMode, c, c1, c2, c3, c4, c5, c6) * (c * alphaColor)
+					: iconPixel(${name}_ID, vTexCoord, vec2(texW, 0.0), vec2(texH, 0.0)) * (c * alphaColor))
+			');
+		} else {
+			program.injectIntoFragmentShader(HEALTH_BAR_SPRITE_GRADIENT_SHADER);
+			program.setColorFormula('
+				gradientOf6(${name}_ID, gradientMode, c, c1, c2, c3, c4, c5, c6) * (c * alphaColor)
+			');
+		}
 	}
 
 	function new() {}

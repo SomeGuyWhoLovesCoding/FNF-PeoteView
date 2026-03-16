@@ -23,8 +23,8 @@ class UISprite implements Element {
 	// extra tex attributes to adjust texture within the clip
 	@texPosX  var clipPosX:Int = 0;
 	@texPosY  var clipPosY:Int = 0;
-	@texSizeX var clipSizeX:Int = 200;
-	@texSizeY var clipSizeY:Int = 200;
+	@custom @varying @texSizeX var clipSizeX:Int = 200;
+	@custom @varying @texSizeY var clipSizeY:Int = 200;
 
 	@rotation @formula("uDisplayRotation(r)") var r:Float;
 
@@ -113,14 +113,23 @@ class UISprite implements Element {
 		// creates a texture-layer named "name"
 		program.setTexture(texture, name, true);
 
-		program.injectIntoFragmentShader('
-			vec4 getTexColor( int textureID, vec4 c, float plainColor )
-			{
-				return mix(getTextureColor(textureID, vTexCoord), c, plainColor);
-			}
-		');
-
-		program.setColorFormula('getTexColor(${name}_ID, c, plainColor) * alphaColor');
+		// Sparrow uses identity matrix varyings — the UV distortion shader
+		// is a no-op here; nothing extra is injected except upscale if it's enabled.
+		if (Main.current.upscale) {
+			program.injectIntoFragmentShader(Shaders.UPSCALE_FRAGMENT_SHADER);
+			program.setColorFormula('
+				mix(iconPixel(${name}_ID, vTexCoord, vec2(clipSizeX, 0.0), vec2(clipSizeY, 0.0)), c, plainColor) * alphaColor
+			');
+		}
+		else {
+			program.injectIntoFragmentShader('
+				vec4 getTexColor( int textureID, vec4 c, float plainColor )
+				{
+					return mix(getTextureColor(textureID, vTexCoord), c, plainColor);
+				}
+			');
+			program.setColorFormula('getTexColor(${name}_ID, c, plainColor) * alphaColor');
+		}
 	}
 
 	function new() {}

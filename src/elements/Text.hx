@@ -34,6 +34,43 @@ class Text {
 
 			vec2 glyphCoord = (vTexCoord - vec2(paddingX, paddingY))
 							/ vec2(1.0 - paddingX * 2.0, 1.0 - paddingY * 2.0);
+
+			vec2 texelSize = vec2(1.0 / expandedW, 1.0 / expandedH);
+			vec2 lo = texelSize * 1.5;
+			vec2 hi = vec2(1.0) - texelSize * 1.5;
+
+			vec4 current = ravuSample(textureID, glyphCoord, texelSize, lo, hi);
+
+			float outlineAlpha = 0.0;
+			for (float i = 0.0; i < TAU; i += TAU / steps) {
+				vec2 offset = vec2(sin(i), cos(i)) * texelSize * os;
+				outlineAlpha = max(
+					outlineAlpha,
+					ravuSample(textureID, glyphCoord + offset, texelSize, lo, hi).a
+				);
+			}
+
+			outlineAlpha = smoothstep(0.5, 0.7, outlineAlpha);
+
+			float fillA = current.a;
+			float haloA = outlineAlpha * (1.0 - fillA);
+			return vec4(current.rgb * c.rgb * fillA + oc.rgb * haloA, fillA + haloA);
+		}
+	';
+
+	private static inline var TEXT_FRAGMENT_SHADER_NO_UPSCALE = '
+		vec4 pixelAlpha(int textureID, vec4 c, vec4 oc, float os, float rw, float rh) {
+			const float TAU   = 6.28318530;
+			const float steps = 32.0;
+
+			float expandedW = rw + os * 2.0;
+			float expandedH = rh + os * 2.0;
+
+			float paddingX = os / expandedW;
+			float paddingY = os / expandedH;
+
+			vec2 glyphCoord = (vTexCoord - vec2(paddingX, paddingY))
+							/ vec2(1.0 - paddingX * 2.0, 1.0 - paddingY * 2.0);
 			vec4 current = getTextureColor(textureID, glyphCoord);
 
 			vec2 aspect = vec2(1.0 / expandedW, 1.0 / expandedH);
@@ -48,7 +85,6 @@ class Text {
 
 			float fillA = current.a;
 			float haloA = outlineAlpha * (1.0 - fillA);
-			// Apply fill color c to glyph, outline color oc to halo.
 			return vec4(current.rgb * c.rgb * fillA + oc.rgb * haloA, fillA + haloA);
 		}
 	';
@@ -389,7 +425,11 @@ class Text {
 		buffer = new Buffer<TextCharSprite>(32, 32);
 
 		program = new CustomProgram(buffer);
-		program.injectIntoFragmentShader(TEXT_FRAGMENT_SHADER);
+		if (Main.current.upscale) {
+			program.injectIntoFragmentShader(Shaders.UPSCALE_FRAGMENT_SHADER + "\n\n" + TEXT_FRAGMENT_SHADER);
+		} else {
+			program.injectIntoFragmentShader(TEXT_FRAGMENT_SHADER_NO_UPSCALE);
+		}
 		program.setColorFormula('pixelAlpha(font_ID, c, oc, os, rw, rh) * alphaColor');
 
 		this.font    = font;

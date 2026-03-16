@@ -23,8 +23,8 @@ class StoryModeSprite implements Element {
 	// extra tex attributes to adjust texture within the clip
 	@texPosX  var clipPosX:Int = 0;
 	@texPosY  var clipPosY:Int = 0;
-	@texSizeX var clipSizeX:Int = 200;
-	@texSizeY var clipSizeY:Int = 200;
+	@custom @varying @texSizeX var clipSizeX:Int = 200;
+	@custom @varying @texSizeY var clipSizeY:Int = 200;
 
 	@rotation @formula("uDisplayRotation(r)") var r:Float;
 
@@ -79,6 +79,13 @@ class StoryModeSprite implements Element {
 	static function init(program:CustomProgram, name:String, texture:Texture) {
 		// creates a texture-layer named "name"
 		program.setTexture(texture, name, true);
+
+		if (Main.current.upscale) {
+			program.injectIntoFragmentShader(Shaders.UPSCALE_FRAGMENT_SHADER);
+			program.setColorFormula('
+				iconPixel(${name}_ID, vTexCoord, vec2(clipSizeX, 0.0), vec2(clipSizeY, 0.0)) * c
+			');
+		}
 	}
 
 	function new() {}

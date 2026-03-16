@@ -32,7 +32,9 @@ class HealthBar {
 	var healthBarXA(default, null):Float;
 	var healthBarYA(default, null):Float;
 
-	var playerOGIcon:Any; // Tracks the player's original icon.
+	public static var tex:Texture;
+
+	//var playerOGIcon:Any; // Tracks the player's original icon.
 
 	/**
 		Initializes the health bar.
@@ -43,7 +45,7 @@ class HealthBar {
 			hbBuf = new Buffer<HealthBarSprite>(16, 16);
 			hbProg = new CustomProgram(hbBuf);
 	
-			var tex = TextureSystem.getTexture("hbTex");
+			tex = TextureSystem.getTexture("hbTex");
 			HealthBarSprite.init(hbProg, "hbTex", tex);
 		}
 	}
@@ -105,11 +107,18 @@ class HealthBar {
 		var iconP1 = healthIcons[1] = new HealthBarSprite(); // Made more like FNF, so P1 is da player LOL.
 		iconP1.type = HEALTH_ICON;
 		iconP1.changeID(healthIconIDs[1][0]);
-		playerOGIcon = healthIconIDs[1][0];
+		//playerOGIcon = healthIconIDs[1][0];
 		//trace(playerOGIcon + "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"); //alory's done that print lol
 
 		iconP2.y = iconP1.y = bg.y - 75;
 		iconP1.flip = true;
+
+		iconP1.texW = 150;
+		iconP1.texH = 150;
+		iconP2.texW = 150;
+		iconP2.texH = 150;
+		//trace('tex dimensions: ${tex.width} x ${tex.height}');
+		//trace('iconP1 texW: ${iconP1.texW}, texH: ${iconP1.texH}');
 
 		hbBuf.addElement(iconP2);
 		hbBuf.addElement(iconP1);

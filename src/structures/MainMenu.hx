@@ -76,9 +76,10 @@ class MainMenu {
 		}
 
 		if (optionProg == null) {
+			var texName = "mainMenuSheet";
 			optionProg = new CustomProgram(optionBuf);
 
-			TextureSystem.setTexture(optionProg, "mainMenuSheet", "mainMenuSheet");
+			TextureSystem.setTexture(optionProg, texName, texName);
 
 			for (i in 0...optionAnims.length) {
 				var spr = Actor.create(view, null, "images/mainMenu", 0, 0, 24, "", false);
@@ -96,6 +97,13 @@ class MainMenu {
 				}
 				spr.color.aF = 0.0;
 				optionBuf.addElement(spr);
+			}
+
+			if (Main.current.upscale) {
+				optionProg.injectIntoFragmentShader(Shaders.UPSCALE_FRAGMENT_SHADER);
+				optionProg.setColorFormula('
+					iconPixel(${texName}_ID, vTexCoord, vec2(spriteW, 0.0), vec2(spriteH, 0.0)) * color
+				');
 			}
 		}
 
@@ -274,6 +282,12 @@ class MainMenu {
 		removeEvents();
 
 		watermarkTxt.removeProgram();
+
+		// dont do this
+		/*if (Main.current.upscale) {
+			optionProg.injectIntoFragmentShader('');
+			optionProg.setColorFormula('c');
+		}*/
 
 		display.removeProgram(optionProg);
 		display = null;

@@ -25,6 +25,8 @@ class ActorElement implements Element {
 
 	@texSizeX private var clipSizeX:Int = 1;
 	@texSizeY private var clipSizeY:Int = 1;
+	@varying @custom var spriteW:Float = 0.0;
+	@varying @custom var spriteH:Float = 0.0;
 
 	@varying @custom @formula("mixHelperF(_flipX, (1.0 - _flipX), _mirror)") var _flipX:Float = 0.0;
 	@varying @custom var _flipY:Float = 0.0;

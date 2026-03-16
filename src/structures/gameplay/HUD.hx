@@ -116,11 +116,8 @@ class HUD {
 			scoreTxt.addProgram();
 		}
 
-		scoreTxt.color.aF = 1.0;
-		scoreTxt.color.luminanceF = 1.0;
 		scoreTxt.outlineColor = 0x000000FF;
 		scoreTxt.outlineSize = 1.25;
-
 		scoreTxt.color = 0xFFDC8CFF;
 		scoreTxt.setMarkerPairs([new TextFormatMarkerPair('#1#', Color.WHITE, Color.RED),
 			new TextFormatMarkerPair('#2#', Color.GREEN, Color.BLUE),
