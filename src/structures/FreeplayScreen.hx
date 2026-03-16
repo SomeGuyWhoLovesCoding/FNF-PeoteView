@@ -31,6 +31,9 @@ class FreeplayScreen {
 
 	var chapter(default, null):String;
 
+	// Per-sprite animation state: tracks frame counter, timing, and last played animation name.
+	static var spriteAnimState:Map<Actor, SpriteAnimState> = new Map();
+
 	function new(parent:FreeplayMenu, chapterName:String) {
 		this.parent = parent;
 		chapter = chapterName;
@@ -80,6 +83,8 @@ class FreeplayScreen {
 					spr.color.aF = 0.0;
 					spr.color.luminanceF = 0.0;
 					songTextsBuf.addElement(spr);
+					// Initialise per-sprite animation state.
+					spriteAnimState.set(spr, new SpriteAnimState(0, 0.0, ""));
 					spr;
 				}
 			]
@@ -107,6 +112,7 @@ class FreeplayScreen {
 			while (elements.length != 0) {
 				var elem = elements.pop();
 				if (elem != null) {
+					spriteAnimState.remove(elem); // Clean up per-sprite state to avoid leaking Actor refs.
 					elem.dispose();
 					elem = null;
 				}
@@ -126,9 +132,9 @@ class FreeplayScreen {
 	var curSelectedTarget:Float = 0.0;
 
 	var firstFrameToAnimate:Bool = true;
-	var framesElapsed:Int64 = 0;
-	var durationRemaining:Float = 0;
-	var canAdvanceFrame:Bool = false;
+
+	// Stored so advanceAnimFrame can reference it without threading deltaTime all the way down.
+	var _currentDeltaTime:Float = 0.0;
 
 	// Took this from https://github.com/CCobaltDev/FNF-Horizon-Engine/blob/rewrite/source/horizon/objects/Alphabet.hx#L83 and extended it to work with the vanilla alphabet
 	// edit: deepseek did this same approach as with InputSystem.hx
@@ -154,7 +160,7 @@ class FreeplayScreen {
 	// --- Render helpers ---
 
 	inline function calcRatio(deltaTime:Float):Float {
-		var ratio = Math.min(deltaTime * 0.015, 1);
+		var ratio = Math.max(Math.min(deltaTime * 0.015, 1), 0.00001);
 		if (ratio == 1) ratio = (1 / lime.app.Application.current.window.frameRate) * 0.015;
 		return ratio;
 	}
@@ -165,11 +171,6 @@ class FreeplayScreen {
 		alphaLerp = 0.0;
 		xLerp = 20 - (parent.nav.value() * 20);
 		xLerpPrev = xLerp;
-	}
-
-	inline function updateTimers(deltaTime:Float) {
-		durationRemaining -= deltaTime;
-		if (durationRemaining < 0) canAdvanceFrame = true;
 	}
 
 	inline function updateLerps(ratio:Float) {
@@ -194,11 +195,38 @@ class FreeplayScreen {
 		return char;
 	}
 
-	inline function advanceAnimFrame(spr:Actor) {
-		if (!canAdvanceFrame) return;
-		framesElapsed++;
-		canAdvanceFrame = false;
-		durationRemaining = spr.frameDurationMs;
+	/**
+		Advances the animation frame for a single sprite using its own independent state.
+		Skips `playAnimation` when the animation name hasn't changed to avoid resetting frameIndex.
+	**/
+	inline function advanceAnimFrame(spr:Actor, animName:String) {
+		var state = spriteAnimState.get(spr);
+		if (state == null) {
+			// Safety fallback: should have been created in reload(), but guard anyway.
+			state.frames = 0;
+			state.duration = 0.0;
+			state.lastAnim = "";
+			spriteAnimState.set(spr, state);
+		}
+
+		// Only call playAnimation when the anim name actually changes, so frameIndex isn't reset every tick.
+		if (state.lastAnim != animName) {
+			spr.playAnimation('$animName bold instance 1', false);
+			state.lastAnim = animName;
+			// Reset frame counter so the new animation starts from the beginning.
+			state.frames = 0;
+			state.duration = spr.frameDurationMs;
+		}
+
+		// Tick this sprite's own timer.
+		state.duration -= _currentDeltaTime;
+		if (state.duration <= 0) {
+			state.frames++;
+			state.duration = spr.frameDurationMs;
+		}
+
+		spr.frameIndex = Int64.toInt(state.frames % Std.int(Math.max(spr.endingFrameIndex - spr.startingFrameIndex, 1)));
+		spr.changeFrame();
 	}
 
 	inline function positionCharSprite(spr:Actor, char:String, x:Float, k:Int) {
@@ -240,10 +268,8 @@ class FreeplayScreen {
 
 			var spr = grp[j];
 
-			advanceAnimFrame(spr);
-			spr.playAnimation('$char bold instance 1', false);
-			spr.frameIndex = Int64.toInt(framesElapsed % Std.int(Math.max(spr.endingFrameIndex - spr.startingFrameIndex, 1)));
-			spr.changeFrame();
+			// Each sprite now advances independently — no shared frame counter or timer.
+			advanceAnimFrame(spr, char);
 
 			positionCharSprite(spr, char, x, k);
 
@@ -279,8 +305,10 @@ class FreeplayScreen {
 		icon.changeID(Tools.fromIconGridXMLCharacter(song.icon)[0]);
 		var alpha = calcItemAlpha(k) * alphaLerp;
 		icon.alpha = alpha;
-		icon.x = iconX + ((icon.w * 0.35) + 12);
+		icon.x = 0;//iconX + ((icon.w * 0.35) + 12);
 		icon.y = ((-curSelectedLerp * 156) + (156 * k) + 320) - 30; // https://github.com/ShadowMario/FNF-PsychEngine/blob/main/source/objects/HealthIcon.hx#L22
+		//icon.w = 150 * 4;
+		//icon.h = 150 * 4;
 		icon.texW = 150;
 		icon.texH = 150;
 		songIconsBuf.updateElement(icon);
@@ -294,7 +322,9 @@ class FreeplayScreen {
 			return;
 		}
 
-		updateTimers(deltaTime);
+		// Store deltaTime so advanceAnimFrame can use it without an extra parameter.
+		_currentDeltaTime = deltaTime;
+
 		updateLerps(ratio);
 
 		var incrementBest = calcIncrementBest();
@@ -325,5 +355,19 @@ class FreeplayScreen {
 		if (songIconsProg.isIn(display)) {
 			display.removeProgram(songIconsProg);
 		}
+	}
+}
+
+/** Per-sprite animation state used by `spriteAnimState`. **/
+@:publicFields
+private class SpriteAnimState {
+	var frames:Int;
+	var duration:Float;
+	var lastAnim:String;
+
+	function new(f:Int, dur:Float, lA:String) {
+		frames = f;
+		duration = dur;
+		lastAnim = lA;
 	}
 }
