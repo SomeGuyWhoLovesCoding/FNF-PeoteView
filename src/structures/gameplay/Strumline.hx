@@ -251,10 +251,10 @@ class Strumline {
 		for (i in 0...length) {
 			var rec = buffer[i];
 			rec.reset();
-			try {
-				NoteSystem.notesBuf.updateElement(rec);
-			} catch (e) {}
 		}
+		try {
+			NoteSystem.notesBuf.update();
+		} catch (e) {}
 	}
 
 	function dispose() {

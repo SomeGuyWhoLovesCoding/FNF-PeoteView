@@ -52,9 +52,11 @@ class Text {
 
 			outlineAlpha = smoothstep(0.5, 0.7, outlineAlpha);
 
-			float fillA = current.a;
-			float haloA = outlineAlpha * (1.0 - fillA);
-			return vec4(current.rgb * c.rgb * fillA + oc.rgb * haloA, fillA + haloA);
+			float fillA   = current.a;
+			float haloA   = outlineAlpha * (1.0 - fillA);
+			vec3  fillRGB = c.rgb * fillA;
+			vec3  haloRGB = oc.rgb * haloA;
+			return vec4(fillRGB + haloRGB, fillA + haloA);
 		}
 	';
 
@@ -83,9 +85,11 @@ class Text {
 
 			outlineAlpha = smoothstep(0.5, 0.7, outlineAlpha);
 
-			float fillA = current.a;
-			float haloA = outlineAlpha * (1.0 - fillA);
-			return vec4(current.rgb * c.rgb * fillA + oc.rgb * haloA, fillA + haloA);
+			float fillA   = current.a;
+			float haloA   = outlineAlpha * (1.0 - fillA);
+			vec3  fillRGB = c.rgb * fillA;
+			vec3  haloRGB = oc.rgb * haloA;
+			return vec4(fillRGB + haloRGB, fillA + haloA);
 		}
 	';
 
@@ -151,6 +155,10 @@ class Text {
 	var outlineSize(default, set):Float = 0;
 
 	// set_text — single slot per character:
+	private var _activeCount:Int = 0;  // how many sprites are actually live
+
+	// ── set_text ──────────────────────────────────────────────────────────────
+
 	function set_text(raw:String) {
 		if (raw == _rawText && !_dirty) return text;
 		_dirty   = false;
@@ -159,9 +167,12 @@ class Text {
 		var parsed = parseMarkup(raw);
 		var str    = parsed.clean;
 		colorSpans = parsed.spans;
+		text       = str;
 
-		if (text != null && str.length < text.length) {
-			for (ci in str.length...text.length) {
+		// Hide previously-active sprites that are now beyond the new length.
+		var oldCount = _activeCount;
+		if (str.length < oldCount) {
+			for (ci in str.length...oldCount) {
 				var spr = buffer.getElement(ci);
 				if (spr == null) continue;
 				spr.x = spr.y = -999999999;
@@ -170,31 +181,57 @@ class Text {
 				buffer.updateElement(spr);
 			}
 		}
-
-		text = str;
+		_activeCount = str.length;
 
 		var quarterScale = scale / 2;
 		var advanceX:Float = 0;
+		var newHeight:Float = 0;           // reset height properly
+		var spanIdx:Int = 0;               // walk spans in order (see resolveStyleFast)
 
 		for (ci in 0...str.length) {
-			var code  = str.charCodeAt(ci);
-			var data  = parsedTextAtlasData[code];
-			var style = resolveStyle(ci);
+			var code = str.charCodeAt(ci);
+			var data = parsedTextAtlasData[code];
 
 			var spr:TextCharSprite = ci < buffer.length
 				? buffer.getElement(ci)
 				: buffer.addElement(new TextCharSprite());
 
-			advanceX = setupCharSprite(spr, data, quarterScale, x, y, advanceX,
-				style.c, style.oc, style.os, alpha, parsedTextAtlasData);
+			// Resolve style with O(1)-amortised span walk instead of O(spans) per char.
+			while (spanIdx < colorSpans.length && colorSpans[spanIdx].end <= ci)
+				spanIdx++;
+			var span = (spanIdx < colorSpans.length && ci >= colorSpans[spanIdx].start)
+				? colorSpans[spanIdx] : null;
+			var sc  = span != null ? span.color        : color;
+			var soc = span != null ? span.outlineColor : outlineColor;
+			var sos = (span != null && span.outlineSize != 0.0) ? span.outlineSize : outlineSize;
 
-			if (height < spr.h + spr.y - data[1])
-				height = spr.h + spr.y - data[1];
+			// Fill sprite.
+			var padding = parsedTextAtlasData[256];
+			spr.clipX      = data[0];
+			spr.clipY      = data[1];
+			spr.clipWidth  = spr.clipSizeX = data[2];
+			spr.clipHeight = spr.clipSizeY = data[3];
+			spr.w          = data[2] * quarterScale;
+			spr.h          = data[3] * quarterScale;
+			spr.rw         = data[2] * quarterScale;
+			spr.rh         = data[3] * quarterScale;
+			spr.x          = x + data[4] * quarterScale + advanceX;
+			spr.y          = y + data[5] * quarterScale;
+			spr.c          = sc;
+			spr.oc         = soc;
+			spr.os         = sos;
+			spr.alpha      = alpha;
 
-			buffer.updateElement(spr);
+			advanceX += data[6] * quarterScale;
+
+			var sprH = spr.h + spr.y - y;   // height contribution relative to baseline
+			if (sprH > newHeight) newHeight = sprH;
+
+			buffer.updateElement(spr);   // single update per sprite
 		}
 
-		width = advanceX;
+		width  = advanceX;
+		height = newHeight;
 		return str;
 	}
 
@@ -205,8 +242,8 @@ class Text {
 			var spr = buffer.getElement(ci);
 			if (spr == null) continue;
 			spr.x += value - x;
-			buffer.updateElement(spr);
 		}
+		buffer.update();
 		return x = value;
 	}
 
@@ -217,8 +254,8 @@ class Text {
 			var spr = buffer.getElement(ci);
 			if (spr == null) continue;
 			spr.y += value - y;
-			buffer.updateElement(spr);
 		}
+		buffer.update();
 		return y = value;
 	}
 
@@ -235,11 +272,11 @@ class Text {
 			advanceX = setupCharSpriteScaled(spr, data, quarterScale, x, y, advanceX, parsedTextAtlasData);
 			if (height < spr.h + spr.y - data[1])
 				height = spr.h + spr.y - data[1];
-			buffer.updateElement(spr);
 		}
 		width  = advanceX;
 		height = parsedTextAtlasData[256][2] * quarterScale;
 		_scale = scale;
+		buffer.update();
 		return value;
 	}
 
@@ -248,8 +285,8 @@ class Text {
 		for (ci in 0...text.length) {
 			var spr = buffer.getElement(ci);
 			if (spr != null) spr.alpha = value;
-			buffer.updateElement(spr);
 		}
+		buffer.update();
 		return alpha = value;
 	}
 
@@ -258,8 +295,8 @@ class Text {
 		for (ci in 0...text.length) {
 			var spr = buffer.getElement(ci);
 			if (spr != null) spr.c = value;
-			buffer.updateElement(spr);
 		}
+		buffer.update();
 		return color = value;
 	}
 
@@ -268,8 +305,8 @@ class Text {
 		for (ci in 0...text.length) {
 			var spr = buffer.getElement(ci);
 			if (spr != null) spr.oc = value;
-			buffer.updateElement(spr);
 		}
+		buffer.update();
 		return outlineColor = value;
 	}
 
@@ -278,8 +315,8 @@ class Text {
 		for (ci in 0...text.length) {
 			var spr = buffer.getElement(ci);
 			if (spr != null) spr.os = value;
-			buffer.updateElement(spr);
 		}
+		buffer.update();
 		return outlineSize = value;
 	}
 

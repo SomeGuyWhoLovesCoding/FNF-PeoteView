@@ -114,13 +114,10 @@ class FreeplayScreen {
 				if (elem != null) {
 					spriteAnimState.remove(elem); // Clean up per-sprite state to avoid leaking Actor refs.
 					elem.dispose();
-					elem = null;
 				}
 			}
-			//songTextCharGroup = null; big mistake. do not nullify these. They are persistent across the whole front menu.
 		}
 		songIconGroup.splice(0, songIconGroup.length);
-		//songIconGroup = null;
 		disposed = true;
 	}
 
@@ -203,9 +200,7 @@ class FreeplayScreen {
 		var state = spriteAnimState.get(spr);
 		if (state == null) {
 			// Safety fallback: should have been created in reload(), but guard anyway.
-			state.frames = 0;
-			state.duration = 0.0;
-			state.lastAnim = "";
+    		state = new SpriteAnimState(0, 0.0, "");
 			spriteAnimState.set(spr, state);
 		}
 
@@ -276,8 +271,6 @@ class FreeplayScreen {
 			var alpha = isInvalidCharacter ? 0.0 : calcItemAlpha(k) * alphaLerp;
 			spr.color.aF = alpha;
 			spr.color.luminanceF = alpha;
-			songTextsBuf.updateElement(spr);
-			spr.updateBuffer();
 
 			if (j == Math.min(title.length - 1, 17)) {
 				iconX = spr.x;
@@ -311,7 +304,6 @@ class FreeplayScreen {
 		//icon.h = 150 * 4;
 		icon.texW = 150;
 		icon.texH = 150;
-		songIconsBuf.updateElement(icon);
 	}
 
 	function render(deltaTime:Float) {
@@ -333,6 +325,9 @@ class FreeplayScreen {
 			var iconX = updateSongText(i, incrementBest);
 			updateSongIcon(i, incrementBest, iconX);
 		}
+
+		songTextsBuf.update();
+		songIconsBuf.update();
 
 		xLerpPrev = xLerp;
 	}
