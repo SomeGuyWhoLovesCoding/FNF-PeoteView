@@ -167,7 +167,7 @@ class Main extends Application
 	var sound_cancelIdx:Int;
 
 	// UPSCALE CONDITION - WHENEVER YOU WANT YOUR GAME TO RUN LIKE COCK OR RUN LIKE WHEELS
-	var upscale:Bool = true;
+	var upscale:Bool = false;
 
 	public function startSample(window:Window)
 	{
@@ -215,6 +215,8 @@ class Main extends Application
 			window.onMouseDown.add((x, y, button) -> {
 				if (mouseDown != null) mouseDown(x, y, button);
 			});
+
+			//Application.current.window.uncappedFrameRate = true;
 
 			_started = true;
 		}, 100);
@@ -325,6 +327,7 @@ class Main extends Application
 			#else
 			newDeltaTime = 1000 / Application.current.window.frameRate;
 			#end
+			//trace(newDeltaTime);
 
 			if (Application.current.window.uncappedFrameRate && !RenderingMode.enabled) {
 				var mult = (1000 / Application.current.window.frameRate) / newDeltaTime;
@@ -378,6 +381,7 @@ class Main extends Application
 		}
 		if (freeplayMenu != null) {
 			if (freeplayMenu.active) {
+				//Sys.println(renderRate);
 				freeplayMenu.render(renderRate);
 			}
 		}

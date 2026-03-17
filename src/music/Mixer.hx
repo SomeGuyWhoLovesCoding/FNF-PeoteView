@@ -103,7 +103,7 @@ class Mixer {
 		MiniAudio.loadFiles(files);
 		trackCount = files.length;
 		length = MiniAudio.getDuration();
-		Sys.println("     vvvvvvv\n  [ Audio Pipeline ]   Song initialized. (Length: " + Tools.formatTime(length, true) + ")");
+		Sys.println("  [ Audio Pipeline ]   Song initialized. (Length: " + Tools.formatTime(length, true) + ")");
 		enableSubLoop();
 	}
 
@@ -279,10 +279,10 @@ class Mixer {
 		if (playField != null) {
 			if (!playField.songEnded) {
 				if (RenderingMode.enabled && playField.songPosition > length) {
-					Sys.println('     vvvvvvv\n  [ Audio Pipeline ]   Stopping song playback due to rendering mode.\n');
+					Sys.println('  [ Audio Pipeline ]   Stopping song playback due to rendering mode.\n');
 					playField.onStopSong.dispatch(Chart.header);
 				} else if (playField.songStarted && isStopped() && !playField.songEnded && !RenderingMode.enabled) {
-					Sys.println('     vvvvvvv\n  [ Audio Pipeline ]   Stopping song playback due to stop condition.\n');
+					Sys.println('  [ Audio Pipeline ]   Stopping song playback due to stop condition.\n');
 					playField.onStopSong.dispatch(Chart.header);
 				}
 			}

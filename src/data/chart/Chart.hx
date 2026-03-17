@@ -24,7 +24,7 @@ class Chart {
 	**/
 	static function load(path:String) {
 		destroyed = false;
-		Sys.println('      vvvvvvvvv\n  [ Chart System ]  Parsing chart(s) from folder...');
+		Sys.println('  [ Chart System ]  Parsing chart(s) from folder...');
 
 		if (FileSystem.exists('$path/chart.json') && (!FileSystem.exists('$path/chart.cbin')) || FileSystem.exists('$path/charts')) {
 			ChartConverter.baseGame(path);
@@ -34,20 +34,20 @@ class Chart {
 
 		var stamp = haxe.Timer.stamp();
 		File.loadChart('$path/chart.cbin');
-		Sys.println('      vvvvvvvvv\n  [ Chart System ]  Done! Took ${Tools.formatTime((haxe.Timer.stamp() - stamp) * 1000.0, true)} to load.');
+		Sys.println('  [ Chart System ]  Done! Took ${Tools.formatTime((haxe.Timer.stamp() - stamp) * 1000.0, true)} to load.');
 	}
 
 	/**
 		Destroys an already-existing chart. Self-explanatory.
 	**/
 	static function destroy() {
-		Sys.println('      vvvvvvvvv\n  [ Chart System ]  Destroying chart...');
+		Sys.println('  [ Chart System ]  Destroying chart...');
 
 		header = null;
 
 		var stamp = haxe.Timer.stamp();
 		File.destroyChart();
 		destroyed = true;
-		Sys.println('      vvvvvvvvv\n  [ Chart System ]  Done! Took ${Tools.formatTime((haxe.Timer.stamp() - stamp) * 1000.0, true)} to destroy.');
+		Sys.println('  [ Chart System ]  Done! Took ${Tools.formatTime((haxe.Timer.stamp() - stamp) * 1000.0, true)} to destroy.');
 	}
 }
