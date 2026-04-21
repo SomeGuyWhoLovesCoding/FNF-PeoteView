@@ -13,12 +13,17 @@ class Strumline {
 	var notesToHit(default, null):Array<Null<MetaNote>>;
 	var notesToHit_sprites(default, null):Array<Note>;
 	var notesToHit_indexes(default, null):Array<Int64>;
+	// this is for my new shardded chart data format system for funkin' view (god mode)
+	var getTimeCorrection(default, null):Array<Int64>;
+
 	var sustainsToHold(default, null):Array<Null<MetaNote>>;
 	var sustainsToHold_indexes(default, null):Array<Int64>;
 	var sustainsToHold_duration(default, null):Array<Int>;
 	var botHitsToCheck(default, null):Array<Bool>;
 	var playerHitsToCheck(default, null):Array<Bool>;
-	var fakeOverlapStorage(default, null):Array<Int>; // This is for fake note overlapping!!! So it renders faster instead of just checking one by one without relying on an index based approach like this. Thanks - sgwl
+	// This is for fake note overlapping!!! So it renders faster instead of just checking one by one without relying on an index based approach like this. Thanks - sgwl
+	var fakeOverlapStorage(default, null):Array<Int>;
+
 	var botTimers(default, null):Array<Float>;
 	var sustainsActive(default, null):Array<Bool>;
 	var buffer(default, null):Array<Note>;
@@ -65,6 +70,7 @@ class Strumline {
 		notesToHit.resize(value);
 		notesToHit_sprites.resize(value);
 		notesToHit_indexes.resize(value);
+		getTimeCorrection.resize(value);
 		sustainsToHold.resize(value);
 		sustainsToHold_indexes.resize(value);
 		sustainsToHold_duration.resize(value);
@@ -99,6 +105,7 @@ class Strumline {
 		notesToHit = [];
 		notesToHit_sprites = [];
 		notesToHit_indexes = [];
+		getTimeCorrection = [];
 		sustainsToHold = [];
 		sustainsToHold_duration = [];
 		sustainsToHold_indexes = [];
@@ -165,7 +172,7 @@ class Strumline {
 			// Now 0..1 instead of -250..250 just in case people don't know what the hitbox actually is
 			// and it's flexible too considering you want different offsets for certain things yk?
 			// also adjust for scroll speed like psych does
-			var _timing = MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency);
+			var _timing = MetaNote.metaNotePositionToSongTime((noteToHit.position + File.getTimeCorrectionForIndex(notesToHit_indexes[index])) - posWithLatency);
 			var timing = (_timing / parent._cachedHitbox) * 0.9;
 			// this trace was there because I was constantly testing the new latency compensation system
 			// specifically implemented inside the note system as I've had to even make an `onBeatHitUnoffsetted` event
@@ -229,6 +236,7 @@ class Strumline {
 	function resetInputs() {
 		notesToHit.resize(0);
 		notesToHit_indexes.resize(0);
+		getTimeCorrection.resize(0);
 		sustainsToHold.resize(0);
 		sustainsToHold_indexes.resize(0);
 		sustainsToHold_duration.resize(0);
@@ -238,6 +246,7 @@ class Strumline {
 		sustainsActive.resize(0);
 		notesToHit.resize(length);
 		notesToHit_indexes.resize(length);
+		getTimeCorrection.resize(length);
 		sustainsToHold.resize(length);
 		sustainsToHold_indexes.resize(length);
 		sustainsToHold_duration.resize(length);
@@ -261,8 +270,10 @@ class Strumline {
 		if (notesToHit != null) {
 			while (notesToHit.pop() != null) {}
 			while (notesToHit_indexes.pop() != null) {}
+			while (getTimeCorrection.pop() != null) {}
 			notesToHit = null;
 			notesToHit_indexes = null;
+			getTimeCorrection = null;
 		}
 		if (sustainsToHold != null) {
 			while (sustainsToHold.pop() != null) {}

@@ -1,6 +1,6 @@
 #include <stdexcept>
 
-// Include the core implementation
+// Include the core implementation.
 #include "chart_file_core.cpp"
 
 // ============================================================================
@@ -8,8 +8,7 @@
 // ============================================================================
 
 void loadChart(const char* path) {
-    if (!core_loadChart(path))
-        throw std::runtime_error("Failed to open chart file");
+    core_loadChart(path);
 }
 
 void destroyChart() {
@@ -26,4 +25,10 @@ void setNote(int64_t index, int64_t value) {
 
 int64_t getLength() {
     return core_getLength();
+}
+
+int64_t getTimeCorrectionForIndex(int64_t index) {
+    if (!gReader) return 0;
+    uint64_t shardId = gReader->findShardForGlobalIndex(index); // make this public or add a method
+    return shardId * 1000000000LL;
 }

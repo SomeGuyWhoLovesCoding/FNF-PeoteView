@@ -184,7 +184,8 @@ class NoteSystem {
 		var index = note.index;
 		var lane = 0;
 		var duration = note.duration;
-		var position = note.position;
+		var timeCorrection = File.getTimeCorrectionForIndex(_id);
+		var position = note.position + timeCorrection;
 
 		var noteTypeCall:Int->Int->Bool->Void = noteTypeFunctionalityPre[note.type];
 		var noteTypeCallExists = noteTypeCall != null;
@@ -233,7 +234,7 @@ class NoteSystem {
 					var noteToHit = strumline.notesToHit[index];
 					var noteToHitExists = noteToHit != null;
 
-					var pos = MetaNote.metaNotePositionToSongTime(noteToHit.position - pos);
+					var pos = MetaNote.metaNotePositionToSongTime((noteToHit.position + File.getTimeCorrectionForIndex(_id)) - pos);
 					if (!noteToHitExists || Math.abs(diff) < Math.abs(pos)) {
 						strumline.notesToHit[index] = note;
 						strumline.notesToHit_indexes[index] = _id;

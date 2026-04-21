@@ -24,6 +24,7 @@ extern class File {
 	@:native("setNote") static function setNote(atIndex:Int64, value:Int64):Void;
 	@:native("getLength") static function getLength():Int64;
 	@:native("destroyChart") static function destroyChart():Void;
+	@:native("getTimeCorrectionForIndex") static function getTimeCorrectionForIndex(index:Int64):Int64;
 }
 #elseif hl
 class File {
@@ -44,5 +45,9 @@ class File {
 	}
 
 	@:hlNative("chart_file", "destroyChart") public static function destroyChart():Void {}
+
+	@:hlNative("chart_file", "getTimeCorrectionForIndex") public static function getTimeCorrectionForIndex(index:hl.I64):hl.I64 {
+		return 0;
+	}
 }
 #end

@@ -47,6 +47,7 @@ class NoteSpawner {
 		var i = bottom;
 		var scrollSpeed = parent.parent.scrollSpeed;
 		var prev:MetaNote = -1;
+		var prevTimeCorrection:Int64 = 0;
 		var noteSpr:VirtualNote = null;
 		var j:Int = 0;
 
@@ -60,10 +61,12 @@ class NoteSpawner {
 			var receptor = parent.strumlines[lane].buffer[n.index];
 			var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
 
-			var diff = (MetaNote.metaNotePositionToSongTime(n.position - pos)) * scrollSpeed;
+			var n_position = n.position + File.getTimeCorrectionForIndex(i);
+			if (i <= 5) trace("note time " + i + " (wonky): " + n_position);
+			var diff = (MetaNote.metaNotePositionToSongTime((n_position) - pos)) * scrollSpeed;
 			var newY = receptor.y + Math.floor(diff);
 
-			var ghost = isGhostNote(prev, n);
+			var ghost = isGhostNote(prev, n, prevTimeCorrection, i);
 
 			var shouldOverlap = noteSpr != null && shouldNotesOverlap(prev, n, noteSpr, receptor, newY,
 				fakeOverlapStorage[prev != -1 ? prev.index : -1]) && !ghost;
@@ -80,6 +83,7 @@ class NoteSpawner {
 			}
 
 			prev = n;
+			prevTimeCorrection = i;
 			++i;
 		}
 		timeSpentOnIt = haxe.Timer.stamp() - time;
@@ -92,7 +96,8 @@ class NoteSpawner {
 		while (top != len) {
 			// Only fetch once
 			var n = File.getNote(top);
-			if (n.position - pos >= spawnDist) break;
+			var tc = File.getTimeCorrectionForIndex(top);
+			if ((n.position + tc) - pos >= spawnDist) break;
 
 			// Initialize the note once
 			n.flag = false;
@@ -110,9 +115,10 @@ class NoteSpawner {
 		var len = File.getLength();
 		while (bottom != len) {
 			var n = File.getNote(bottom);
+			var tc = File.getTimeCorrectionForIndex(bottom);
 
 			// Only calculate once
-			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - n.position;
+			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - (n.position + tc);
 			if (despawnCheck <= despawnDist) break;
 
 			// Return to pool
@@ -144,7 +150,7 @@ class NoteSpawner {
 			var hi:Int64 = len;
 			while (lo < hi) {
 				var mid = (lo + hi) >> 1;
-				if (File.getNote(mid).position < target)
+				if (File.getNote(mid).position + File.getTimeCorrectionForIndex(mid) < target)
 					lo = mid + 1;
 				else
 					hi = mid;
@@ -157,7 +163,7 @@ class NoteSpawner {
 			var hi:Int64 = len;
 			while (lo < hi) {
 				var mid = (lo + hi) >> 1;
-				if (File.getNote(mid).position <= target)
+				if (File.getNote(mid).position + File.getTimeCorrectionForIndex(mid) <= target)
 					lo = mid + 1;
 				else
 					hi = mid;
@@ -302,9 +308,9 @@ class NoteSpawner {
 	 * @param current The current meta note.
 	 * @return True if the notes are duplicates.
 	 */
-	inline function isGhostNote(prev:MetaNote, current:MetaNote):Bool {
+	inline function isGhostNote(prev:MetaNote, current:MetaNote, prevIndex:Int64, curIndex:Int64):Bool {
 		return prev != -1
-			&& prev.position == current.position
+			&& prev.position + File.getTimeCorrectionForIndex(prevIndex) == current.position + File.getTimeCorrectionForIndex(curIndex)
 			&& prev.index == current.index
 			&& prev.type == current.type;
 	}

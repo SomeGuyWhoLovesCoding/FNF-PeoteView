@@ -33,7 +33,7 @@ class Chart {
 		header = Tools.parseHeader(path);
 
 		var stamp = haxe.Timer.stamp();
-		File.loadChart('$path/chart.cbin');
+		File.loadChart('$path/chart');
 		Sys.println('  [ Chart System ]  Done! Took ${Tools.formatTime((haxe.Timer.stamp() - stamp) * 1000.0, true)} to load.');
 	}
 
