@@ -502,9 +502,9 @@ class PlayField {
 		}
 	}
 
-	function hitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
+	function hitNote(note:MetaNote, timing:Float, notesInOne:Int64, _i:Int64) {
 		#if linc_luajit_funkinview
-		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
+		var notePos = MetaNote.metaNotePositionToSongTime(note.position + File.getTimeCorrectionForIndex(_i));
 		funkinviewlua.callFunction('hitNote', notePos, note.index, note.duration, note.type, timing, notesInOne);
 		#end
 
@@ -583,9 +583,9 @@ class PlayField {
 		#end
 	}
 
-	function missNote(note:MetaNote, notesInOne:Int64) {
+	function missNote(note:MetaNote, notesInOne:Int64, _i:Int64) {
 		#if linc_luajit_funkinview
-		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
+		var notePos = MetaNote.metaNotePositionToSongTime(note.position + File.getTimeCorrectionForIndex(_i));
 		funkinviewlua.callFunction('missNote', notePos, note.index, note.duration, note.type, notesInOne);
 		#end
 
@@ -616,9 +616,9 @@ class PlayField {
 		#end
 	}
 
-	function completeSustain(note:MetaNote) {
+	function completeSustain(note:MetaNote, _i:Int64) {
 		#if linc_luajit_funkinview
-		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
+		var notePos = MetaNote.metaNotePositionToSongTime(note.position + File.getTimeCorrectionForIndex(_i));
 		funkinviewlua.callFunction('completeSustain', notePos, note.index, note.duration, note.type);
 		#end
 
@@ -649,9 +649,9 @@ class PlayField {
 		#end
 	}
 
-	inline function releaseSustain(note:MetaNote) {
+	inline function releaseSustain(note:MetaNote, _i:Int64) {
 		#if linc_luajit_funkinview
-		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
+		var notePos = MetaNote.metaNotePositionToSongTime(note.position + File.getTimeCorrectionForIndex(_i));
 		funkinviewlua.callFunction('releaseSustain', notePos, note.index, note.duration, note.type);
 		#end
 

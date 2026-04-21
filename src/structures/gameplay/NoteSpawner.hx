@@ -16,8 +16,6 @@ class NoteSpawner {
 
 	var parent(default, null):NoteSystem;
 
-	var THREAD_ID = 0;
-
 	function new(parent:NoteSystem) {
 		this.parent = parent;
 
@@ -41,73 +39,74 @@ class NoteSpawner {
 	function processNotes(pos:Int64) {
 		var latency = Main.conductor.offset;
 		var latencyI64 = MetaNote.floatToMetaNotePosition(latency);
-
+		
 		pos += latencyI64;
-
+		
 		var i = bottom;
 		var scrollSpeed = parent.parent.scrollSpeed;
 		var prev:MetaNote = -1;
 		var prevTimeCorrection:Int64 = 0;
 		var noteSpr:VirtualNote = null;
 		var j:Int = 0;
-
+		
 		var time = haxe.Timer.stamp();
 		while (i < top) {
 			var n = File.getNote(i);
-
+			
 			var lane = parent.noteTypeFunctionalityPre[n.type] != null
 				? 1
 				: (n.type % parent.strumlines.length);
 			var receptor = parent.strumlines[lane].buffer[n.index];
 			var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
-
-			var n_position = n.position + File.getTimeCorrectionForIndex(i);
-			if (i <= 5) trace("note time " + i + " (wonky): " + n_position);
-			var diff = (MetaNote.metaNotePositionToSongTime((n_position) - pos)) * scrollSpeed;
+			
+			var timeCorrection = File.getTimeCorrectionForIndex(i);
+			var n_position = n.position + timeCorrection;
+			
+			// FIX: Remove the extra subtraction of timeCorrection from pos
+			var diff = (MetaNote.metaNotePositionToSongTime(n_position - pos)) * scrollSpeed;
 			var newY = receptor.y + Math.floor(diff);
-
+			
 			var ghost = isGhostNote(prev, n, prevTimeCorrection, i);
-
+			
 			var shouldOverlap = noteSpr != null && shouldNotesOverlap(prev, n, noteSpr, receptor, newY,
 				fakeOverlapStorage[prev != -1 ? prev.index : -1]) && !ghost;
-
+			
 			fakeOverlapStorage[n.index] = newY;
-
+			
 			if (shouldOverlap) {
 				mergeNoteIntoSprite(noteSpr, n);
 			} else {
 				if (!ghost) {
 					++j;
-					noteSpr = parent.drawNote(pos, n, diff, i, THREAD_ID);
+					noteSpr = parent.drawNote(pos, n, diff, i);
 				}
 			}
-
+			
 			prev = n;
 			prevTimeCorrection = i;
 			++i;
 		}
 		timeSpentOnIt = haxe.Timer.stamp() - time;
-
+		
 		pos -= latencyI64;
 	}
 
 	function cullTop(pos:Int64) {
 		var len = File.getLength();
 		while (top != len) {
-			// Only fetch once
 			var n = File.getNote(top);
 			var tc = File.getTimeCorrectionForIndex(top);
+			// FIX: Use corrected position for spawn distance check
 			if ((n.position + tc) - pos >= spawnDist) break;
-
-			// Initialize the note once
+			
 			n.flag = false;
 			n.missed = false;
 			n.held = false;
 			File.setNote(top, n);
-
+			
 			++top;
 		}
-
+		
 		if (top < len) curTopNote = File.getNote(top);
 	}
 
@@ -116,20 +115,18 @@ class NoteSpawner {
 		while (bottom != len) {
 			var n = File.getNote(bottom);
 			var tc = File.getTimeCorrectionForIndex(bottom);
-
-			// Only calculate once
+			
+			// FIX: Use corrected position for despawn distance check
 			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - (n.position + tc);
 			if (despawnCheck <= despawnDist) break;
-
-			// Return to pool
+			
 			var notePool = parent.notePool;
 			notePool.putNote(n, bottom);
 			notePool.putSustain(n);
-
+			
 			++bottom;
 		}
-
-		// Cache the bottom note once
+		
 		if (bottom < len) curBottomNote = File.getNote(bottom);
 	}
 
@@ -193,12 +190,10 @@ class NoteSpawner {
 	 * @param pos The current song position in note format.
 	 */
 	function renderNotes(pos:Int64) {
-		var notesThreaded = parent.virtualNoteBuffers;
+		var notes = parent.virtualNoteBuffer;
 
-		for (notes in notesThreaded) {
-			renderVirtualNotes(notes, pos);
-			renderVirtualSustains(notes);
-		}
+		renderVirtualNotes(notes, pos);
+		renderVirtualSustains(notes);
 	}
 
 	// both of these arrays are used to easily render notes in the opposite order.
@@ -309,8 +304,10 @@ class NoteSpawner {
 	 * @return True if the notes are duplicates.
 	 */
 	inline function isGhostNote(prev:MetaNote, current:MetaNote, prevIndex:Int64, curIndex:Int64):Bool {
+		var prevCorrection = File.getTimeCorrectionForIndex(prevIndex);
+		var curCorrection = File.getTimeCorrectionForIndex(curIndex);
 		return prev != -1
-			&& prev.position + File.getTimeCorrectionForIndex(prevIndex) == current.position + File.getTimeCorrectionForIndex(curIndex)
+			&& prev.position + prevCorrection == current.position + curCorrection
 			&& prev.index == current.index
 			&& prev.type == current.type;
 	}

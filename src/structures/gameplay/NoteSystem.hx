@@ -47,7 +47,7 @@ class NoteSystem {
 	var strumlines(default, null):Array<Strumline>;
 	var noteSpawner(default, null):NoteSpawner;
 	var notePool(default, null):NotePool;
-	var virtualNoteBuffers(default, null):Array<NoteVB>;
+	var virtualNoteBuffer(default, null):NoteVB;
 
 	var noteTypeFunctionalityPre(default, null):Array<Int->Int->Bool->Void>;
 
@@ -85,9 +85,7 @@ class NoteSystem {
 			strumlines.push(strumline);
 		}
 
-		virtualNoteBuffers = [];
-		for (i in 0...4) 
-			virtualNoteBuffers[i] = new NoteVB(strumlines.length, strumlines[0].buffer.length);
+		virtualNoteBuffer = new NoteVB(strumlines.length, strumlines[0].buffer.length);
 
 		setScrollSpeed(Chart.header.speed);
 
@@ -106,8 +104,7 @@ class NoteSystem {
 		if (delta < 0 || MetaNote.metaNotePositionToSongTime(delta) > 200)
 			_lastPos = pos;
 
-		for (virtualNoteBuffer in virtualNoteBuffers)
-			virtualNoteBuffer.clear();
+		virtualNoteBuffer.clear();
 
 		if (noteSpawner != null)
 			noteSpawner.update(pos);
@@ -180,11 +177,12 @@ class NoteSystem {
 	 * @param id The index the note belongs to.
 	 * @returns The virtual note that was successfully drawn.
 	**/
-	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64, THREAD_ID:Int = 0):VirtualNote {
+	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64):VirtualNote {
 		var index = note.index;
 		var lane = 0;
 		var duration = note.duration;
 		var timeCorrection = File.getTimeCorrectionForIndex(_id);
+		//if (_id == 2) trace(_id, 'Position ${note.position} Time correction ${timeCorrection} Diff ${diff}');
 		var position = note.position + timeCorrection;
 
 		var noteTypeCall:Int->Int->Bool->Void = noteTypeFunctionalityPre[note.type];
@@ -234,10 +232,11 @@ class NoteSystem {
 					var noteToHit = strumline.notesToHit[index];
 					var noteToHitExists = noteToHit != null;
 
-					var pos = MetaNote.metaNotePositionToSongTime((noteToHit.position + File.getTimeCorrectionForIndex(_id)) - pos);
-					if (!noteToHitExists || Math.abs(diff) < Math.abs(pos)) {
+					var _pos = MetaNote.metaNotePositionToSongTime((noteToHit.position + strumline.getTimeCorrection[index]) - pos);
+					if (!noteToHitExists || Math.abs(diff) < Math.abs(_pos)) {
 						strumline.notesToHit[index] = note;
 						strumline.notesToHit_indexes[index] = _id;
+						strumline.getTimeCorrection[index] = timeCorrection;
 					}
 				}
 
@@ -256,7 +255,7 @@ class NoteSystem {
 						parent.onNoteMiss.dispatch(note, noteSpr.notesInOne);
 					if (parent.field != null)
 						parent.field.missNote(note, noteSpr.notesInOne);
-					parent.missNote(note, noteSpr.notesInOne);
+					parent.missNote(note, noteSpr.notesInOne, _id);
 
 					if (sustainExists && !isHeld) {
 						sustainSpr.alpha = Sustain.defaultMissAlpha;
@@ -307,7 +306,7 @@ class NoteSystem {
 					parent.onNoteHit.dispatch(note, 0, noteSpr.notesInOne);
 				if (parent.field != null)
 					parent.field.hitNote(note, 0, noteSpr.notesInOne);
-				parent.hitNote(note, 0, noteSpr.notesInOne);
+				parent.hitNote(note, 0, noteSpr.notesInOne, _id);
 
 				File.setNote(_id, n);
 			}
@@ -349,7 +348,7 @@ class NoteSystem {
 						parent.onSustainComplete.dispatch(note);
 					if (parent.field != null)
 						parent.field.completeSustain(note);
-					parent.completeSustain(note);
+					parent.completeSustain(note, _id);
 
 					File.setNote(_id, n);
 				}
@@ -360,12 +359,12 @@ class NoteSystem {
 				strumline.sustainsActive[index] = !isHeld;
 
 			if (noteSpr != null)
-				virtualNoteBuffers[THREAD_ID].addSustain(sustainSpr, noteSpr);
+				virtualNoteBuffer.addSustain(sustainSpr, noteSpr);
 		}
 
 		// --- Buffer note ---
 		if (!isHit)
-			virtualNoteBuffers[THREAD_ID].addNote(noteSpr);
+			virtualNoteBuffer.addNote(noteSpr);
 
 		return noteSpr;
 	}
@@ -425,8 +424,7 @@ class NoteSystem {
 	**/
 	function dispose() {
 		// Clear up the virtual note buffer for the funnies
-		for (virtualNoteBuffer in virtualNoteBuffers)
-			virtualNoteBuffer.clear();
+		virtualNoteBuffer.clear();
 
 		// Clear note & sustain buffers to refresh for new window
 		notesBuf.clear();

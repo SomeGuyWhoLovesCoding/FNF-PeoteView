@@ -184,7 +184,7 @@ class Strumline {
 				pf.onNoteHit.dispatch(noteToHit, timing, 1);
 			if (pf.field != null)
 				pf.field.hitNote(noteToHit, timing, 1);
-			pf.hitNote(noteToHit, timing, 1);
+			pf.hitNote(noteToHit, timing, 1, notesToHit_indexes[index]);
 
 			notesToHit[index] = null;
 
@@ -213,7 +213,7 @@ class Strumline {
 				pf.onSustainRelease.dispatch(sustainToRelease);
 			if (pf.field != null)
 				pf.field.releaseSustain(sustainToRelease);
-			pf.releaseSustain(sustainToRelease);
+			pf.releaseSustain(sustainToRelease, sustainsToHold_indexes[index]);
 			sustainsToHold[index] = null;
 			sustainsToHold_indexes[index] = 0;
 			sustainsToHold_duration[index] = 0;

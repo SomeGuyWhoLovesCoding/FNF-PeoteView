@@ -90,24 +90,29 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 		return value;
 	}
 
+	//// NUMBER CONVERSION FUNCTIONS
+
 	// Time conversion - IMPORTANT: position is in 1/4 nanosecond ticks
 	// 1 second = 4,000,000,000 ticks
 	// 1 millisecond = 4,000,000 ticks
 	static var TICKS_PER_SECOND:Int64 = Tools.betterInt64FromFloat(4000000000);
 	static var TICKS_PER_MS:Int64 = 4000000;
 	
-	// Convert song time (seconds) to position ticks
+	// Convert song time (ms) to position ticks
 	inline static function floatToMetaNotePosition(f:Float):Int64 {
-		return Tools.betterInt64FromFloat(f * 4000000000.0);
+		return Tools.betterInt64FromFloat(f * 4000000.0);
 	}
 
-	// Convert position ticks to song time (seconds)
+	// Convert position ticks to song time (ms)
 	inline static function metaNotePositionToSongTime(pos:Int64):Float {
 		var isNegative = pos < 0;
 		var absPos = isNegative ? -pos : pos;
-		
-		var result = Tools.int64ToFloat(absPos) / 4000000000.0;
-		
+
+		var scaled:Int64 = absPos / 4000000;
+		var remainder:Int64 = absPos % 4000000;
+
+		var result = Tools.int64ToFloat(scaled) + Tools.int64ToFloat(remainder) / 4000000;
+
 		return isNegative ? -result : result;
 	}
 
