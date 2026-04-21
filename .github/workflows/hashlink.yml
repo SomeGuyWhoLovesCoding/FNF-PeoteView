@@ -110,5 +110,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: 'FV-HL-Linux'
-          path: "FV-HL-Linux.tar.gz"
+          path: "bin/hl/FV-HL-Linux.tar.gz"
           archive: false
