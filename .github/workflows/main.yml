@@ -111,7 +111,7 @@ jobs:
           # Rebuild is required here, I'm on mobile
           haxelib run lime rebuild linux
           haxelib run lime build linux --app-version="4.0.0-${{ github.run_id}}"
-          tar -zcvf bin/linux/bin/FV-Linux.tar.gz bin/linux/bin
+          tar -czvf bin/linux/bin/FV-Linux.tar.gz -C bin/linux/bin *
       - name: Publish artifact
         uses: actions/upload-artifact@v7
         with:
