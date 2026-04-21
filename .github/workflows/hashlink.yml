@@ -105,7 +105,7 @@ jobs:
         run: |
           haxelib run lime rebuild hl
           haxelib run lime build hl --app-version="4.0.0-${{ github.run_id}}"
-          tar -zcvf FV-HL-Linux.tar.gz "bin/hl/bin/"
+          tar -zcvf FV-HL-Linux.tar.gz -C bin/hl/bin/
       - name: Publish artifact
         uses: actions/upload-artifact@v7
         with:
