@@ -45,7 +45,7 @@ jobs:
       - name: Compile
         run: haxelib run lime build windows --app-version="4.0.0-${{ github.run_id}}"
       - name: Publish artifact
-        uses: actions/upload-artifact@v5.0.0
+        uses: actions/upload-artifact@v7
         with:
           name: 'FV-Windows'
           path: bin/windows/bin
@@ -111,9 +111,10 @@ jobs:
           # Rebuild is required here, I'm on mobile
           haxelib run lime rebuild linux
           haxelib run lime build linux --app-version="4.0.0-${{ github.run_id}}"
+          tar -zcvf FV-Linux.tar.gz bin/linux/bin
       - name: Publish artifact
-        uses: nmerget/upload-gzip-artifact@main
+        uses: actions/upload-artifact@v7
         with:
           name: 'FV-Linux'
-          path: bin/linux/bin
-          retention-days: 5
+          path: "FV-Linux.tar.gz"
+          archive: false
