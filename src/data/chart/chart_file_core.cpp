@@ -390,6 +390,19 @@ private:
         }
     }
     
+    uint64_t findShardForGlobalIndex(int64_t globalIndex) const {
+        if (globalIndex < 0 || globalIndex >= totalNotes) {
+            throw std::out_of_range("Global index out of range: " + std::to_string(globalIndex));
+        }
+        
+        auto it = std::upper_bound(shardStartIndices.begin(), shardStartIndices.end(), globalIndex);
+        if (it == shardStartIndices.begin()) {
+            throw std::runtime_error("Invalid shard lookup");
+        }
+        
+        size_t shardPos = std::distance(shardStartIndices.begin(), it) - 1;
+        return availableShards[shardPos];
+    }
     
 public:
     ShardedChartReader(const char* path) : chartDir(path) {
@@ -411,20 +424,6 @@ public:
         }
         activeShards.clear();
         currentShard = nullptr;
-    }
-
-    uint64_t findShardForGlobalIndex(int64_t globalIndex) const {
-        if (globalIndex < 0 || globalIndex >= totalNotes) {
-            throw std::out_of_range("Global index out of range: " + std::to_string(globalIndex));
-        }
-        
-        auto it = std::upper_bound(shardStartIndices.begin(), shardStartIndices.end(), globalIndex);
-        if (it == shardStartIndices.begin()) {
-            throw std::runtime_error("Invalid shard lookup");
-        }
-        
-        size_t shardPos = std::distance(shardStartIndices.begin(), it) - 1;
-        return availableShards[shardPos];
     }
     
     inline uint64_t getNote(int64_t globalIndex) {
