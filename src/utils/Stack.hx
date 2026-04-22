@@ -1,6 +1,6 @@
 package utils;
 
-// virtual
+// originated from https://github.com/DimensionscapeOrg/crossbyte/blob/main/src/crossbyte/ds/Stack.hx
 
 /**
  * ...

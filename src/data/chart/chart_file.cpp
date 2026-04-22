@@ -29,6 +29,6 @@ int64_t getLength() {
 
 int64_t getTimeCorrectionForIndex(int64_t index) {
     if (!gReader) return 0;
-    uint64_t shardId = gReader->findShardForGlobalIndex(index); // thumbsup
+    uint64_t shardId = gReader->findShardForGlobalIndex(index);
     return shardId * 1000000000LL;
 }

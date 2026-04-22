@@ -109,7 +109,7 @@ class NoteSystem {
 		if (noteSpawner != null)
 			noteSpawner.update(pos);
 
-		trace('Note pool length: ${notePool.inactiveVirtualNotes.length}, Sustain pool length:  ${notePool.inactiveVirtualSusses.length}');
+		//trace('Note pool length: ${notePool.inactiveVirtualNotes.length}, Sustain pool length:  ${notePool.inactiveVirtualSusses.length}');
 	}
 
 	private var _lastPos(default, null):Int64; // for adaptive bot timer
@@ -316,7 +316,7 @@ class NoteSystem {
 		}
 
 		// --- Sustain handling ---
-		var sustainLength = duration - 10;
+		var sustainLength = duration - 20;
 		if (sustainExists) {
 			sustainSpr.ref = noteSpr;
 			sustainSpr.speed = parent.scrollSpeed;
@@ -337,7 +337,7 @@ class NoteSystem {
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
 
-				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainLength - 12)) && !isHeld) {
+				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainLength - 20)) && !isHeld) {
 					var n:Int64 = note.toNumber();
 					(n:MetaNote).held = true;
 					isHeld = true;
@@ -358,7 +358,7 @@ class NoteSystem {
 			}
 
 			// Fixes the rare receptor pause issue, finally
-			if (diff + sustainLength - 12 < 0)
+			if (diff + sustainLength - 20 < 0)
 				strumline.sustainsActive[index] = !isHeld;
 
 			if (noteSpr != null)

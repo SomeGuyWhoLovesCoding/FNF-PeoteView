@@ -5,7 +5,6 @@
 #include <algorithm>
 #include <map>
 #include <string>
-#include <filesystem>
 #include <vector>
 #include <fstream>
 #include <iomanip>
@@ -17,13 +16,64 @@
 #include <windows.h>
 #undef NOMINMAX
 #else
-#include <sys/mman.h>
+#include <sys/types.h>
 #include <sys/stat.h>
-#include <fcntl.h>
+#include <dirent.h>
 #include <unistd.h>
 #endif
 
-namespace fs = std::filesystem;
+// ============================================================================
+// Portable filesystem helpers (no std::filesystem / C++17 required)
+// ============================================================================
+
+// Returns file size in bytes, or -1 on failure
+static int64_t getFileSize(const std::string& path) {
+#ifdef _WIN32
+    WIN32_FILE_ATTRIBUTE_DATA info;
+    if (!GetFileAttributesExA(path.c_str(), GetFileExInfoStandard, &info))
+        return -1;
+    return ((int64_t)info.nFileSizeHigh << 32) | info.nFileSizeLow;
+#else
+    struct stat st;
+    if (stat(path.c_str(), &st) != 0) return -1;
+    return (int64_t)st.st_size;
+#endif
+}
+
+// Strips directory and extension, returning just the stem (e.g. "42" from "42.bin")
+static std::string getStem(const std::string& filename) {
+    size_t dot = filename.rfind('.');
+    return (dot == std::string::npos) ? filename : filename.substr(0, dot);
+}
+
+static std::string getExtension(const std::string& filename) {
+    size_t dot = filename.rfind('.');
+    return (dot == std::string::npos) ? "" : filename.substr(dot);
+}
+
+// Fills `out` with filenames (not full paths) of regular files in `dir`
+static void listFiles(const std::string& dir, std::vector<std::string>& out) {
+#ifdef _WIN32
+    WIN32_FIND_DATAA ffd;
+    std::string pattern = dir + "\\*";
+    HANDLE hFind = FindFirstFileA(pattern.c_str(), &ffd);
+    if (hFind == INVALID_HANDLE_VALUE) return;
+    do {
+        if (!(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+            out.push_back(ffd.cFileName);
+    } while (FindNextFileA(hFind, &ffd));
+    FindClose(hFind);
+#else
+    DIR* d = opendir(dir.c_str());
+    if (!d) return;
+    struct dirent* entry;
+    while ((entry = readdir(d)) != nullptr) {
+        if (entry->d_type == DT_REG)
+            out.push_back(entry->d_name);
+    }
+    closedir(d);
+#endif
+}
 
 // ============================================================================
 // Time formatting function (matching Haxe behavior)
@@ -71,16 +121,16 @@ std::string formatTime(double ms, bool showMS = false) {
 // ============================================================================
 // Note unpacking helpers - POSITION IS ABSOLUTE IN TICKS
 // ============================================================================
-inline uint32_t getPosition(uint64_t note) { return (note >> 0) & 0x3FFFFFFF; }   // Absolute position in ticks
-inline uint16_t getDuration(uint64_t note) { return (note >> 30) & 0xFFFF; }      // Duration in ms
-inline uint8_t getIndex(uint64_t note)     { return (note >> 46) & 0xFF; }
-inline uint8_t getType(uint64_t note)      { return (note >> 54) & 0x7F; }
-inline bool getFlag(uint64_t note)         { return (note >> 61) & 1; }
-inline bool getMissed(uint64_t note)       { return (note >> 62) & 1; }
-inline bool getHeld(uint64_t note)         { return (note >> 63) & 1; }
+uint32_t getPosition(uint64_t note) { return (note >> 0) & 0x3FFFFFFF; }   // Absolute position in ticks
+uint16_t getDuration(uint64_t note) { return (note >> 30) & 0xFFFF; }      // Duration in ms
+uint8_t getIndex(uint64_t note)     { return (note >> 46) & 0xFF; }
+uint8_t getType(uint64_t note)      { return (note >> 54) & 0x7F; }
+bool getFlag(uint64_t note)         { return (note >> 61) & 1; }
+bool getMissed(uint64_t note)       { return (note >> 62) & 1; }
+bool getHeld(uint64_t note)         { return (note >> 63) & 1; }
 
 // Convert ticks to milliseconds (1 tick = 0.25 nanoseconds = 0.00000025 ms)
-inline double ticksToMs(uint32_t ticks) {
+double ticksToMs(uint32_t ticks) {
     return ticks / 4000000.0;  // 4,000,000 ticks per ms
 }
 
@@ -122,16 +172,22 @@ public:
         }
     }
     
-    inline uint64_t get(int64_t index) const {
+    uint64_t get(int64_t index) const {
+        if (index < 0 || index >= (int64_t)data.size()) {
+            throw std::out_of_range("Index out of range");
+        }
         return data[index];
     }
     
-    inline void set(int64_t index, uint64_t value) {
+    void set(int64_t index, uint64_t value) {
+        if (index < 0 || index >= (int64_t)data.size()) {
+            throw std::out_of_range("Index out of range");
+        }
         data[index] = value;
         modified = true;
     }
     
-    inline int64_t size() const { return data.size(); }
+    int64_t size() const { return data.size(); }
 };
 
 // ============================================================================
@@ -152,26 +208,25 @@ private:
     std::vector<uint64_t> availableShards;
     std::vector<int64_t> shardStartIndices;  // For binary search
     uint64_t currentShardId = 0;
-    ShardInfo* cachedShard = nullptr;      // Current shard cache
-    ShardInfo* prevCachedShard = nullptr;  // Previous shard cache (for backwards iteration)
     int64_t totalNotes = 0;
     
     static constexpr int POOL_SIZE = 100;
-    static constexpr int POOL_THRESHOLD = POOL_SIZE / 4;  // Quarter of pool size = 25
     static constexpr int PRELOAD_THRESHOLD = 50;
 
     int64_t correctionTime = 0;
     
     void scanShards() {
-        for (const auto& entry : fs::directory_iterator(chartDir)) {
-            if (entry.is_regular_file() && entry.path().extension() == ".bin") {
-                std::string filename = entry.path().stem().string();
-                try {
-                    uint64_t shardId = std::stoull(filename);
-                    availableShards.push_back(shardId);
-                } catch (...) {
-                    std::cerr << "Warning: Invalid shard filename: " << filename << std::endl;
-                }
+        std::vector<std::string> files;
+        listFiles(chartDir, files);
+
+        for (const auto& name : files) {
+            if (getExtension(name) != ".bin") continue;
+            std::string stem = getStem(name);
+            try {
+                uint64_t shardId = std::stoull(stem);
+                availableShards.push_back(shardId);
+            } catch (...) {
+                std::cerr << "Warning: Invalid shard filename: " << name << std::endl;
             }
         }
         
@@ -182,7 +237,8 @@ private:
             shardStartIndices.push_back(cumulative);
             
             std::string path = chartDir + "/" + std::to_string(shardId) + ".bin";
-            uint64_t fileSize = fs::file_size(path);
+            int64_t fileSize = getFileSize(path);
+            if (fileSize < 0) throw std::runtime_error("Cannot stat shard: " + path);
             int64_t noteCount = fileSize / sizeof(uint64_t);
             cumulative += noteCount;
         }
@@ -221,32 +277,25 @@ private:
         info.noteCount = info.reader.size();
         info.endIndex = info.startIndex + info.noteCount;
         activeShards[shardId] = std::move(info);
+        
+        //std::cout << "[POOL] Loaded shard " << shardId << " (" << info.noteCount << " notes)" << std::endl;
     }
     
     void unloadShard(uint64_t shardId) {
         auto it = activeShards.find(shardId);
         if (it != activeShards.end()) {
             it->second.reader.flush();
-            
-            // Invalidate caches if we unload them
-            if (cachedShard && cachedShard->shardId == shardId) {
-                cachedShard = nullptr;
-            }
-            if (prevCachedShard && prevCachedShard->shardId == shardId) {
-                prevCachedShard = nullptr;
-            }
-            
             activeShards.erase(it);
+            //std::cout << "[POOL] Unloaded shard " << shardId << std::endl;
         }
     }
     
     void managePool(uint64_t currentShard) {
-        // Remove shards that are beyond the quarter threshold
+        // Remove shards that are far behind
         std::vector<uint64_t> toRemove;
         for (auto& pair : activeShards) {
             uint64_t shardId = pair.first;
-            // Use POOL_THRESHOLD (25) instead of full POOL_SIZE
-            if (shardId + POOL_THRESHOLD < currentShard && currentShard > shardId + POOL_THRESHOLD) {
+            if (shardId + POOL_SIZE < currentShard) {
                 toRemove.push_back(shardId);
             }
         }
@@ -292,8 +341,6 @@ public:
             pair.second.reader.flush();
         }
         activeShards.clear();
-        cachedShard = nullptr;
-        prevCachedShard = nullptr;
     }
     
     // Binary search to find which shard contains the global index
@@ -312,81 +359,43 @@ public:
         return availableShards[shardPos];
     }
     
-    inline uint64_t getNote(int64_t globalIndex) {
-        // Fast path 1: check current cached shard
-        if (cachedShard && globalIndex >= cachedShard->startIndex && globalIndex < cachedShard->endIndex) {
-            return cachedShard->reader.get(globalIndex - cachedShard->startIndex);
-        }
-        
-        // Fast path 2: check previous cached shard (for backwards iteration)
-        if (prevCachedShard && globalIndex >= prevCachedShard->startIndex && globalIndex < prevCachedShard->endIndex) {
-            // Swap caches - the previous becomes current, current becomes previous
-            std::swap(cachedShard, prevCachedShard);
-            return cachedShard->reader.get(globalIndex - cachedShard->startIndex);
-        }
-        
-        // Slow path: find the correct shard
+    uint64_t getNote(int64_t globalIndex) {
         uint64_t shardId = findShardForGlobalIndex(globalIndex);
         correctionTime = shardId * 1000000000;
         
         // Cache the current shard for sequential access
         if (shardId != currentShardId) {
-            // Before changing current, save it as previous
-            if (cachedShard && cachedShard->shardId == currentShardId) {
-                prevCachedShard = cachedShard;
-            }
             currentShardId = shardId;
             managePool(currentShardId);
         }
         
         // Ensure shard is loaded
-        auto it = activeShards.find(shardId);
-        if (it == activeShards.end()) {
+        if (activeShards.find(shardId) == activeShards.end()) {
             loadShard(shardId);
-            it = activeShards.find(shardId);
         }
         
-        cachedShard = &(it->second);
-        int64_t localIndex = globalIndex - cachedShard->startIndex;
+        ShardInfo& info = activeShards[shardId];
+        int64_t localIndex = globalIndex - info.startIndex;
         
-        return cachedShard->reader.get(localIndex);
+        return info.reader.get(localIndex);
     }
     
-    inline void setNote(int64_t globalIndex, uint64_t value) {
-        // Fast path 1: check current cached shard
-        if (cachedShard && globalIndex >= cachedShard->startIndex && globalIndex < cachedShard->endIndex) {
-            cachedShard->reader.set(globalIndex - cachedShard->startIndex, value);
-            return;
-        }
-        
-        // Fast path 2: check previous cached shard
-        if (prevCachedShard && globalIndex >= prevCachedShard->startIndex && globalIndex < prevCachedShard->endIndex) {
-            std::swap(cachedShard, prevCachedShard);
-            cachedShard->reader.set(globalIndex - cachedShard->startIndex, value);
-            return;
-        }
-        
-        // Slow path
+    void setNote(int64_t globalIndex, uint64_t value) {
         uint64_t shardId = findShardForGlobalIndex(globalIndex);
         
         if (shardId != currentShardId) {
-            if (cachedShard && cachedShard->shardId == currentShardId) {
-                prevCachedShard = cachedShard;
-            }
             currentShardId = shardId;
             managePool(currentShardId);
         }
         
-        auto it = activeShards.find(shardId);
-        if (it == activeShards.end()) {
+        if (activeShards.find(shardId) == activeShards.end()) {
             loadShard(shardId);
-            it = activeShards.find(shardId);
         }
         
-        cachedShard = &(it->second);
-        int64_t localIndex = globalIndex - cachedShard->startIndex;
+        ShardInfo& info = activeShards[shardId];
+        int64_t localIndex = globalIndex - info.startIndex;
         
-        cachedShard->reader.set(localIndex, value);
+        info.reader.set(localIndex, value);
     }
     
     void printNoteInfo(int64_t globalIndex) {
@@ -413,23 +422,16 @@ public:
                   << " raw=0x" << std::hex << note << std::dec << std::endl;
     }
     
-    inline int64_t getLength() const {
+    int64_t getLength() const {
         return totalNotes;
     }
     
-    inline size_t getShardCount() const {
+    size_t getShardCount() const {
         return availableShards.size();
     }
     
     void printPoolStats() const {
         std::cout << "[POOL] Active shards: " << activeShards.size() << " / " << availableShards.size() << std::endl;
-        std::cout << "[POOL] Threshold: " << POOL_THRESHOLD << " shards" << std::endl;
-        if (cachedShard) {
-            std::cout << "[CACHE] Current shard: " << cachedShard->shardId << std::endl;
-        }
-        if (prevCachedShard) {
-            std::cout << "[CACHE] Previous shard: " << prevCachedShard->shardId << std::endl;
-        }
         int count = 0;
         for (const auto& pair : activeShards) {
             if (count++ >= 10) {
