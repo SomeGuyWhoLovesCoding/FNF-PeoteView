@@ -39,40 +39,39 @@ class NoteSpawner {
 	function processNotes(pos:Int64) {
 		var latency = Main.conductor.offset;
 		var latencyI64 = MetaNote.floatToMetaNotePosition(latency);
-		
+
 		pos += latencyI64;
-		
+
 		var i = bottom;
 		var scrollSpeed = parent.parent.scrollSpeed;
 		var prev:MetaNote = -1;
 		var prevTimeCorrection:Int64 = 0;
 		var noteSpr:VirtualNote = null;
 		var j:Int = 0;
-		
+
 		var time = haxe.Timer.stamp();
 		while (i < top) {
 			var n = File.getNote(i);
-			
+
 			var lane = parent.noteTypeFunctionalityPre[n.type] != null
 				? 1
 				: (n.type % parent.strumlines.length);
 			var receptor = parent.strumlines[lane].buffer[n.index];
 			var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
-			
+
 			var timeCorrection = File.getTimeCorrectionForIndex(i);
 			var n_position = n.position + timeCorrection;
-			
-			// FIX: Remove the extra subtraction of timeCorrection from pos
+
 			var diff = (MetaNote.metaNotePositionToSongTime(n_position - pos)) * scrollSpeed;
 			var newY = receptor.y + Math.floor(diff);
-			
+
 			var ghost = isGhostNote(prev, n, prevTimeCorrection, i);
-			
+
 			var shouldOverlap = noteSpr != null && shouldNotesOverlap(prev, n, noteSpr, receptor, newY,
 				fakeOverlapStorage[prev != -1 ? prev.index : -1]) && !ghost;
-			
+
 			fakeOverlapStorage[n.index] = newY;
-			
+
 			if (shouldOverlap) {
 				mergeNoteIntoSprite(noteSpr, n);
 			} else {
@@ -81,13 +80,13 @@ class NoteSpawner {
 					noteSpr = parent.drawNote(pos, n, diff, i);
 				}
 			}
-			
+
 			prev = n;
 			prevTimeCorrection = i;
 			++i;
 		}
 		timeSpentOnIt = haxe.Timer.stamp() - time;
-		
+
 		pos -= latencyI64;
 	}
 
@@ -96,17 +95,16 @@ class NoteSpawner {
 		while (top != len) {
 			var n = File.getNote(top);
 			var tc = File.getTimeCorrectionForIndex(top);
-			// FIX: Use corrected position for spawn distance check
 			if ((n.position + tc) - pos >= spawnDist) break;
-			
+
 			n.flag = false;
 			n.missed = false;
 			n.held = false;
 			File.setNote(top, n);
-			
+
 			++top;
 		}
-		
+
 		if (top < len) curTopNote = File.getNote(top);
 	}
 
@@ -115,18 +113,18 @@ class NoteSpawner {
 		while (bottom != len) {
 			var n = File.getNote(bottom);
 			var tc = File.getTimeCorrectionForIndex(bottom);
-			
+
 			// FIX: Use corrected position for despawn distance check
 			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - (n.position + tc);
 			if (despawnCheck <= despawnDist) break;
-			
+
 			var notePool = parent.notePool;
 			notePool.putNote(n, bottom);
-			notePool.putSustain(n);
-			
+			notePool.putSustain(n, bottom);
+
 			++bottom;
 		}
-		
+
 		if (bottom < len) curBottomNote = File.getNote(bottom);
 	}
 
@@ -252,9 +250,6 @@ class NoteSpawner {
 				var note = regularNoteList.pop();
 				NoteSystem.notesBuf.addElement(note);
 			}
-
-			var zero = notes.noteLength[0][2];
-			if (zero == 0) zero = 1;
 		}
 	}
 

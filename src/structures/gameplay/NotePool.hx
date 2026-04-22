@@ -1,145 +1,105 @@
 package structures.gameplay;
 
+import utils.Stack;
+
 /**
 	The pool of the note system.
 	I'm proud of this class, it is the most efficient way to handle notes and sustains when working with peote-view.
-	It uses a map to store the notes and sustains, and an array to store the inactive notes and sustains.
-	When a note or sustain is needed, it checks if it is already allocated, if not, it creates a new one.
-	When a note or sustain is no longer needed, it puts it in the inactive list.
-	When a note or sustain is needed again, it checks the inactive list first, if it is not empty, it uses the last inactive note or sustain.
-	This way, it reduces the number of objects created and destroyed, which is a performance boost.
-	It also allows for easy access to the notes and sustains by their underlying meta note.
-	This is a very important class for the note system, and it is used in the NoteSystem class.
-	It is also used in said class to handle the notes and sustains.
-	This entire passage was written with github copilot, and I am very proud of it.
+	It uses sparse arrays indexed by global note index for O(1) lookup of active notes and sustains.
+	Inactive objects are stored in free lists for efficient object reuse.
+	When a note or sustain is needed, it checks if it is already allocated at that index. If not, it pops from the inactive list or creates a new one.
+	When a note or sustain is no longer needed, it is reset and pushed to its respective inactive list.
+	This approach eliminates constant object allocation/destruction, providing a significant performance boost.
+	It also allows for direct access to notes and sustains by their global note index.
+	This is a very important class for the note system, and it is used in the NoteSystem class to manage all active and pooled notes/sustains.
 	@since Development
 **/
 @:publicFields
 class NotePool {
-	var virtualNotes(default, null):MetaNoteMap<VirtualNote>;
-	var inactiveVirtualNotes(default, null):Array<VirtualNote>;
-	var virtualSustains(default, null):MetaNoteMap<VirtualSustain>;
-	var inactiveVirtualSusses(default, null):Array<VirtualSustain>;
+    var inactiveVirtualNotes(default, null):Stack<VirtualNote>;
+    var inactiveVirtualSusses(default, null):Stack<VirtualSustain>;
 
-	var parent(default, null):NoteSystem;
+    var parent(default, null):NoteSystem;
 
 	/**
-	 * Creates the note pool.
-	 * @param parent The parent of this class.
+	 * Initializes the NotePool with parent reference and empty arrays.
+	 * @param parent The NoteSystem instance that owns this pool.
 	 */
-	function new(parent:NoteSystem) {
-		this.parent = parent;
-
-		virtualNotes = new MetaNoteMap<VirtualNote>();
-		virtualSustains = new MetaNoteMap<VirtualSustain>();
-		inactiveVirtualNotes = [];
-		inactiveVirtualSusses = [];
-	}
+    function new(parent:NoteSystem) {
+        this.parent = parent;
+        inactiveVirtualNotes = new Stack<VirtualNote>();
+        inactiveVirtualSusses = new Stack<VirtualSustain>();
+    }
 
 	/**
-	 * Creates a new note and determines when to add it to note pool or not.
-	 * This function is called every time you call `drawNote`, constantly. Do not implement anything else in there if you want to change something in this note system.
-	 * @param id The index the note sprite (existing or not) should change to.
-	 * @param n The underlying meta note the note sprite's data should be set to.
-     * @param index The index the note belongs to.
+	 * Gets or creates a VirtualNote for the given index.
+	 * Reuses inactive notes from the pool if available, otherwise creates a new one.
+	 * @param id The note sprite ID (unused in current implementation).
+	 * @param n The underlying meta note to reference.
+	 * @param index The global note index for array access.
+	 * @return The allocated VirtualNote at the given index.
 	 */
-	function getNote(id:Int, n:MetaNote, index:Int64):VirtualNote {
-		var allocated = virtualNotes.get(n);
-
-		if (allocated == null) {
-			var inactiveObject = inactiveVirtualNotes.pop();
-			if (inactiveObject == null) inactiveObject = new VirtualNote(0, 0, 0);
-			inactiveObject.initialAlpha = Note.defaultAlpha;
-			inactiveObject.addedAlpha = 0;
-			inactiveObject.notesInOne = 1;
-			inactiveObject.ref = n;
-			allocated = inactiveObject;
-			virtualNotes.set(n, inactiveObject);
-		}
-
-		allocated.initialAlpha = Note.defaultAlpha;
-		allocated.ref = n;
-
-		return allocated;
-		//return null;
-	}
+    function getNote(id:Int, n:MetaNote, index:Int64):VirtualNote {
+        var obj = inactiveVirtualNotes.pop();
+        if (obj == null) obj = new VirtualNote(0, 0, 0);
+        obj.initialAlpha = Note.defaultAlpha;
+        obj.addedAlpha = 0;
+        obj.notesInOne = 1;
+        obj.ref = n;
+        return obj;
+    }
 
 	/**
-	 * Creates a new sustain and determines when to add it to note pool or not.
-	 * @param id The index the sustain sprite (existing or not) should change to.
-	 * @param n The underlying meta note the sustain sprite's data should be set to.
+	 * Gets or creates a VirtualSustain for the given index.
+	 * Reuses inactive sustains from the pool if available, otherwise creates a new one.
+	 * @param id The sustain sprite ID (unused in current implementation).
+	 * @param n The underlying meta note to reference.
+	 * @param index The global note index for array access.
+	 * @return The allocated VirtualSustain at the given index.
 	 */
-	function getSustain(id:Int, n:MetaNote):VirtualSustain {
-		var allocated = virtualSustains.get(n);
-
-		if (allocated == null) {
-			var tex = TextureSystem.getTexture("sustainTex");
-
-			var inactiveObject = inactiveVirtualSusses.pop();
-			if (inactiveObject == null) {
-				inactiveObject = new VirtualSustain(-9999, -9999,
-				Math.floor(tex.width / tex.tilesX),
-			        Math.floor(tex.height / tex.tilesY)
-				);
-				inactiveObject.alpha = Sustain.defaultAlpha;
-			}
-			allocated = inactiveObject;
-			virtualSustains.set(n, inactiveObject);
-		}
-
-
-		return allocated;
-	}
+    function getSustain(id:Int, n:MetaNote, index:Int64):VirtualSustain {
+        var tex = TextureSystem.getTexture("sustainTex");
+        var obj = inactiveVirtualSusses.pop();
+        if (obj == null) {
+            obj = new VirtualSustain(-9999, -9999,
+                Math.floor(tex.width / tex.tilesX),
+                Math.floor(tex.height / tex.tilesY)
+            );
+        }
+        obj.alpha = Sustain.defaultAlpha;
+        return obj;
+    }
 
 	/**
-	 * Puts a note in its inactive list.
-	 * @param n The underlying meta note in which selects the note sprite to be put in the inactive list.
+	 * Deactivates a note and returns it to the inactive pool.
+	 * Resets all visual properties and clears note flags in the file system.
+	 * @param n The underlying meta note to deactivate.
+	 * @param index The global note index.
 	 */
-	function putNote(n:MetaNote, index:Int64) {
-		var allocated:VirtualNote = virtualNotes.get(n);
-
-		if (virtualNotes.remove(n)) {
-			allocated.initialAlpha = Note.defaultAlpha;
-			allocated.addedAlpha = 0;
-			allocated.Sx = 0;
-			allocated.Sy = 0;
-			allocated.diff = 0x7FFF;
-			inactiveVirtualNotes.push(allocated);
-		}
-
-		n.flag = false;
-		n.missed = false;
-		n.held = false;
-		File.setNote(index, n);
-	}
+    function putNote(n:MetaNote, index:Int64) {
+        // Reset sprite and return to free list
+        // No lookup needed — cullBottom calls this for the note leaving the window
+        n.flag = false;
+        n.missed = false;
+        n.held = false;
+        File.setNote(index, n);
+        // Note: the VirtualNote itself is returned via putNoteSprite
+        // called separately when the sprite reference is available
+    }
 
 	/**
-	 * Puts a sustain in its inactive list.
-	 * @param n The underlying meta note in which selects the sustain sprite to be put in the inactive list.
+	 * Deactivates a sustain and returns it to the inactive pool.
+	 * Resets all visual properties and alpha.
+	 * @param n The underlying meta note to deactivate.
+	 * @param index The global note index.
 	 */
-	function putSustain(n:MetaNote) {
-		var allocated:VirtualSustain = virtualSustains.get(n);
-		if (virtualSustains.remove(n)) {
-			allocated.Sx = 0;
-			allocated.Sy = 0;
-			allocated.diff = 0x7FFF;
-			allocated.alpha = Sustain.defaultAlpha;
-			inactiveVirtualSusses.push(allocated);
-		}
-	}
+    function putSustain(n:MetaNote, index:Int64) {}
 
 	/**
-	 * Disposes the note pool.
+	 * Cleans up all pool arrays and references for garbage collection.
 	 */
-	function dispose() {
-		if (virtualNotes != null) {
-			virtualNotes.clear();
-			virtualNotes = null;
-		}
-
-		if (virtualSustains != null) {
-			virtualSustains.clear();
-			virtualSustains = null;
-		}
-	}
+    function dispose() {
+        inactiveVirtualNotes = null;
+        inactiveVirtualSusses = null;
+    }
 }

@@ -59,7 +59,7 @@ class NoteSystem {
 	**/
 	function new(parent:PlayField) {
 		noteTypeFunctionalityPre = [];
-		noteTypeFunctionalityPre.resize(1 << 5); // Max 5 bit value
+		noteTypeFunctionalityPre.resize(1 << 7); // Max 7 bit value (128 possible entries)
 
 		this.parent = parent;
 
@@ -108,6 +108,8 @@ class NoteSystem {
 
 		if (noteSpawner != null)
 			noteSpawner.update(pos);
+
+		trace('Note pool length: ${notePool.inactiveVirtualNotes.length}, Sustain pool length:  ${notePool.inactiveVirtualSusses.length}');
 	}
 
 	private var _lastPos(default, null):Int64; // for adaptive bot timer
@@ -181,6 +183,7 @@ class NoteSystem {
 		var index = note.index;
 		var lane = 0;
 		var duration = note.duration;
+		//if (_id <= 6) trace(duration);
 		var timeCorrection = File.getTimeCorrectionForIndex(_id);
 		//if (_id == 2) trace(_id, 'Position ${note.position} Time correction ${timeCorrection} Diff ${diff}');
 		var position = note.position + timeCorrection;
@@ -201,7 +204,7 @@ class NoteSystem {
 
 		var noteSpr = notePool.getNote(id, note, _id);
 		if (noteSpr == null) return noteSpr;
-		var sustainSpr = duration != 0 ? notePool.getSustain(id, note) : null;
+		var sustainSpr = duration != 0 ? notePool.getSustain(id, note, _id) : null;
 		var sustainExists = duration != 0;
 
 		var leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
@@ -313,7 +316,7 @@ class NoteSystem {
 		}
 
 		// --- Sustain handling ---
-		var sustainLength = (duration * 4) - 10;
+		var sustainLength = duration - 10;
 		if (sustainExists) {
 			sustainSpr.ref = noteSpr;
 			sustainSpr.speed = parent.scrollSpeed;

@@ -71,16 +71,16 @@ std::string formatTime(double ms, bool showMS = false) {
 // ============================================================================
 // Note unpacking helpers - POSITION IS ABSOLUTE IN TICKS
 // ============================================================================
-uint32_t getPosition(uint64_t note) { return (note >> 0) & 0x3FFFFFFF; }   // Absolute position in ticks
-uint16_t getDuration(uint64_t note) { return (note >> 30) & 0xFFFF; }      // Duration in ms
-uint8_t getIndex(uint64_t note)     { return (note >> 46) & 0xFF; }
-uint8_t getType(uint64_t note)      { return (note >> 54) & 0x7F; }
-bool getFlag(uint64_t note)         { return (note >> 61) & 1; }
-bool getMissed(uint64_t note)       { return (note >> 62) & 1; }
-bool getHeld(uint64_t note)         { return (note >> 63) & 1; }
+inline uint32_t getPosition(uint64_t note) { return (note >> 0) & 0x3FFFFFFF; }   // Absolute position in ticks
+inline uint16_t getDuration(uint64_t note) { return (note >> 30) & 0xFFFF; }      // Duration in ms
+inline uint8_t getIndex(uint64_t note)     { return (note >> 46) & 0xFF; }
+inline uint8_t getType(uint64_t note)      { return (note >> 54) & 0x7F; }
+inline bool getFlag(uint64_t note)         { return (note >> 61) & 1; }
+inline bool getMissed(uint64_t note)       { return (note >> 62) & 1; }
+inline bool getHeld(uint64_t note)         { return (note >> 63) & 1; }
 
 // Convert ticks to milliseconds (1 tick = 0.25 nanoseconds = 0.00000025 ms)
-double ticksToMs(uint32_t ticks) {
+inline double ticksToMs(uint32_t ticks) {
     return ticks / 4000000.0;  // 4,000,000 ticks per ms
 }
 
@@ -122,22 +122,16 @@ public:
         }
     }
     
-    uint64_t get(int64_t index) const {
-        if (index < 0 || index >= (int64_t)data.size()) {
-            throw std::out_of_range("Index out of range");
-        }
+    inline uint64_t get(int64_t index) const {
         return data[index];
     }
     
-    void set(int64_t index, uint64_t value) {
-        if (index < 0 || index >= (int64_t)data.size()) {
-            throw std::out_of_range("Index out of range");
-        }
+    inline void set(int64_t index, uint64_t value) {
         data[index] = value;
         modified = true;
     }
     
-    int64_t size() const { return data.size(); }
+    inline int64_t size() const { return data.size(); }
 };
 
 // ============================================================================
@@ -158,9 +152,12 @@ private:
     std::vector<uint64_t> availableShards;
     std::vector<int64_t> shardStartIndices;  // For binary search
     uint64_t currentShardId = 0;
+    ShardInfo* cachedShard = nullptr;      // Current shard cache
+    ShardInfo* prevCachedShard = nullptr;  // Previous shard cache (for backwards iteration)
     int64_t totalNotes = 0;
     
     static constexpr int POOL_SIZE = 100;
+    static constexpr int POOL_THRESHOLD = POOL_SIZE / 4;  // Quarter of pool size = 25
     static constexpr int PRELOAD_THRESHOLD = 50;
 
     int64_t correctionTime = 0;
@@ -224,25 +221,32 @@ private:
         info.noteCount = info.reader.size();
         info.endIndex = info.startIndex + info.noteCount;
         activeShards[shardId] = std::move(info);
-        
-        //std::cout << "[POOL] Loaded shard " << shardId << " (" << info.noteCount << " notes)" << std::endl;
     }
     
     void unloadShard(uint64_t shardId) {
         auto it = activeShards.find(shardId);
         if (it != activeShards.end()) {
             it->second.reader.flush();
+            
+            // Invalidate caches if we unload them
+            if (cachedShard && cachedShard->shardId == shardId) {
+                cachedShard = nullptr;
+            }
+            if (prevCachedShard && prevCachedShard->shardId == shardId) {
+                prevCachedShard = nullptr;
+            }
+            
             activeShards.erase(it);
-            //std::cout << "[POOL] Unloaded shard " << shardId << std::endl;
         }
     }
     
     void managePool(uint64_t currentShard) {
-        // Remove shards that are far behind
+        // Remove shards that are beyond the quarter threshold
         std::vector<uint64_t> toRemove;
         for (auto& pair : activeShards) {
             uint64_t shardId = pair.first;
-            if (shardId + POOL_SIZE < currentShard) {
+            // Use POOL_THRESHOLD (25) instead of full POOL_SIZE
+            if (shardId + POOL_THRESHOLD < currentShard && currentShard > shardId + POOL_THRESHOLD) {
                 toRemove.push_back(shardId);
             }
         }
@@ -288,6 +292,8 @@ public:
             pair.second.reader.flush();
         }
         activeShards.clear();
+        cachedShard = nullptr;
+        prevCachedShard = nullptr;
     }
     
     // Binary search to find which shard contains the global index
@@ -306,43 +312,81 @@ public:
         return availableShards[shardPos];
     }
     
-    uint64_t getNote(int64_t globalIndex) {
+    inline uint64_t getNote(int64_t globalIndex) {
+        // Fast path 1: check current cached shard
+        if (cachedShard && globalIndex >= cachedShard->startIndex && globalIndex < cachedShard->endIndex) {
+            return cachedShard->reader.get(globalIndex - cachedShard->startIndex);
+        }
+        
+        // Fast path 2: check previous cached shard (for backwards iteration)
+        if (prevCachedShard && globalIndex >= prevCachedShard->startIndex && globalIndex < prevCachedShard->endIndex) {
+            // Swap caches - the previous becomes current, current becomes previous
+            std::swap(cachedShard, prevCachedShard);
+            return cachedShard->reader.get(globalIndex - cachedShard->startIndex);
+        }
+        
+        // Slow path: find the correct shard
         uint64_t shardId = findShardForGlobalIndex(globalIndex);
         correctionTime = shardId * 1000000000;
         
         // Cache the current shard for sequential access
         if (shardId != currentShardId) {
+            // Before changing current, save it as previous
+            if (cachedShard && cachedShard->shardId == currentShardId) {
+                prevCachedShard = cachedShard;
+            }
             currentShardId = shardId;
             managePool(currentShardId);
         }
         
         // Ensure shard is loaded
-        if (activeShards.find(shardId) == activeShards.end()) {
+        auto it = activeShards.find(shardId);
+        if (it == activeShards.end()) {
             loadShard(shardId);
+            it = activeShards.find(shardId);
         }
         
-        ShardInfo& info = activeShards[shardId];
-        int64_t localIndex = globalIndex - info.startIndex;
+        cachedShard = &(it->second);
+        int64_t localIndex = globalIndex - cachedShard->startIndex;
         
-        return info.reader.get(localIndex);
+        return cachedShard->reader.get(localIndex);
     }
     
-    void setNote(int64_t globalIndex, uint64_t value) {
+    inline void setNote(int64_t globalIndex, uint64_t value) {
+        // Fast path 1: check current cached shard
+        if (cachedShard && globalIndex >= cachedShard->startIndex && globalIndex < cachedShard->endIndex) {
+            cachedShard->reader.set(globalIndex - cachedShard->startIndex, value);
+            return;
+        }
+        
+        // Fast path 2: check previous cached shard
+        if (prevCachedShard && globalIndex >= prevCachedShard->startIndex && globalIndex < prevCachedShard->endIndex) {
+            std::swap(cachedShard, prevCachedShard);
+            cachedShard->reader.set(globalIndex - cachedShard->startIndex, value);
+            return;
+        }
+        
+        // Slow path
         uint64_t shardId = findShardForGlobalIndex(globalIndex);
         
         if (shardId != currentShardId) {
+            if (cachedShard && cachedShard->shardId == currentShardId) {
+                prevCachedShard = cachedShard;
+            }
             currentShardId = shardId;
             managePool(currentShardId);
         }
         
-        if (activeShards.find(shardId) == activeShards.end()) {
+        auto it = activeShards.find(shardId);
+        if (it == activeShards.end()) {
             loadShard(shardId);
+            it = activeShards.find(shardId);
         }
         
-        ShardInfo& info = activeShards[shardId];
-        int64_t localIndex = globalIndex - info.startIndex;
+        cachedShard = &(it->second);
+        int64_t localIndex = globalIndex - cachedShard->startIndex;
         
-        info.reader.set(localIndex, value);
+        cachedShard->reader.set(localIndex, value);
     }
     
     void printNoteInfo(int64_t globalIndex) {
@@ -369,16 +413,23 @@ public:
                   << " raw=0x" << std::hex << note << std::dec << std::endl;
     }
     
-    int64_t getLength() const {
+    inline int64_t getLength() const {
         return totalNotes;
     }
     
-    size_t getShardCount() const {
+    inline size_t getShardCount() const {
         return availableShards.size();
     }
     
     void printPoolStats() const {
         std::cout << "[POOL] Active shards: " << activeShards.size() << " / " << availableShards.size() << std::endl;
+        std::cout << "[POOL] Threshold: " << POOL_THRESHOLD << " shards" << std::endl;
+        if (cachedShard) {
+            std::cout << "[CACHE] Current shard: " << cachedShard->shardId << std::endl;
+        }
+        if (prevCachedShard) {
+            std::cout << "[CACHE] Previous shard: " << prevCachedShard->shardId << std::endl;
+        }
         int count = 0;
         for (const auto& pair : activeShards) {
             if (count++ >= 10) {

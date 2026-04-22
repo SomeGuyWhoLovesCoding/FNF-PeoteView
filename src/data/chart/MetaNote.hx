@@ -97,10 +97,11 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 	// 1 millisecond = 4,000,000 ticks
 	static var TICKS_PER_SECOND:Int64 = Tools.betterInt64FromFloat(4000000000);
 	static var TICKS_PER_MS:Int64 = 4000000;
+	static var TICKS_PER_MS_FLOAT:Float = 4000000.0;
 	
 	// Convert song time (ms) to position ticks
 	inline static function floatToMetaNotePosition(f:Float):Int64 {
-		return Tools.betterInt64FromFloat(f * 4000000.0);
+		return Tools.betterInt64FromFloat(f * TICKS_PER_MS_FLOAT);
 	}
 
 	// Convert position ticks to song time (ms)
@@ -111,18 +112,17 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 		var scaled:Int64 = absPos / 4000000;
 		var remainder:Int64 = absPos % 4000000;
 
-		var result = Tools.int64ToFloat(scaled) + Tools.int64ToFloat(remainder) / 4000000;
+		var result = Tools.int64ToFloat(scaled) + Tools.int64ToFloat(remainder) / TICKS_PER_MS_FLOAT;
 
 		return isNegative ? -result : result;
 	}
 
-	// Duration conversion (duration is in milliseconds)
 	inline static function intToMetaNoteDuration(i:Int):Int64 {
 		return Int64.ofInt(i) * TICKS_PER_MS;
 	}
 
 	inline static function floatDurationToInt(i:Float):Int {
-		return Std.int(i);
+		return Std.int(i / TICKS_PER_MS_FLOAT);
 	}
 
 	inline function toNumber():Int64 return this;
