@@ -337,7 +337,7 @@ class NoteSystem {
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
 
-				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainLength - 20)) && !isHeld) {
+				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainLength - 45)) && !isHeld) {
 					var n:Int64 = note.toNumber();
 					(n:MetaNote).held = true;
 					isHeld = true;
@@ -358,7 +358,7 @@ class NoteSystem {
 			}
 
 			// Fixes the rare receptor pause issue, finally
-			if (diff + sustainLength - 20 < 0)
+			if (diff + sustainLength - 45 < 0)
 				strumline.sustainsActive[index] = !isHeld;
 
 			if (noteSpr != null)
