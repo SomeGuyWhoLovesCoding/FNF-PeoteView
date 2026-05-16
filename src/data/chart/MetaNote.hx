@@ -98,8 +98,8 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 	static var TICKS_PER_SECOND:Int64 = Tools.betterInt64FromFloat(4000000000);
 	static var TICKS_PER_MS:Int64 = 4000000;
 	static var TICKS_PER_MS_FLOAT:Float = 4000000.0;
-	static var DURATION_TICKS_PER_MS:Int64 = 5000000;
-	static var DURATION_TICKS_PER_MS_FLOAT:Float = 5000000.0;
+	static var DURATION_TICKS_PER_MS:Int64 = 4000000;
+	static var DURATION_TICKS_PER_MS_FLOAT:Float = 4000000.0;
 	
 	// Convert song time (ms) to position ticks
 	inline static function floatToMetaNotePosition(f:Float):Int64 {
