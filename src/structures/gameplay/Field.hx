@@ -166,11 +166,18 @@ class Field {
 		char.playAnimationFromSingId(index);
 	}
 
+	var turnoncustomcamera = false;
+
+	var defaultCameraXpos:Array<Float> = [-50, 50];
+	var defaultCameraYpos:Array<Float> = [0, 0];
+
 	inline function hitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
 		sing(note.index, (note.type == 0 ? opponent : player), false, note.duration > 2 && timing < parent.hitbox * 0.5);
 
-		targetCamera.x = note.type == 0 ? -50 : 50; // Prototype camera logic I have for now
-		targetCamera.y = 0;
+		if (turnoncustomcamera) return;
+
+		targetCamera.x = defaultCameraXpos[note.type]; // Prototype camera logic I have for now
+		targetCamera.y = defaultCameraYpos[note.type];
 	}
 
 	inline function missNote(note:MetaNote, notesInOne:Int64) {

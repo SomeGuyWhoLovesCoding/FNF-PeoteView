@@ -80,6 +80,21 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 			return Reflect.setProperty(playField, name, value);
 		});
 
+		// for field camera stuff
+		// now you can customize it however you like it
+		vm.addCallback("turnOnCustomCamera", function() {
+			playField.field.turnoncustomcamera = true;
+		});
+		vm.addCallback("turnOffCustomCamera", function() {
+			playField.field.turnoncustomcamera = false;
+		});
+		vm.addCallback("setDefaultCameraPosition", (lane:Int, x:Float, y:Float) -> {
+			var field = playField.field;
+			if (field == null) return;
+			field.defaultCameraXpos[lane] = x;
+			field.defaultCameraYpos[lane] = y;
+		});
+
 		// because why not
 		vm.addCallback("loadSong", (songDir:String) -> {
 			Main.songChosen = songDir;
@@ -145,11 +160,12 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 				FunkinViewLua.error("Display not found: " + fromDisplay.toLowerCase());
 			}
 			var shake:Point = null;
-			switch (display) {
-				case view:
+			switch (fromDisplay.toLowerCase()) {
+				case "view":
 					shake = playField.viewShake;
-				case display:
+				case "display":
 					shake = playField.dispShake;
+				default:
 			}
 			shake.x = x;
 			shake.y = y;
