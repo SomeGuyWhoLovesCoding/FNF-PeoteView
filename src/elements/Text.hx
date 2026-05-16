@@ -18,6 +18,10 @@ private class ColorSpan {
 	}
 }
 
+/**
+	The visual representation of text, whether you want to have it show in a certain font, or move it around.
+	@since Development
+**/
 @:publicFields
 class Text {
 

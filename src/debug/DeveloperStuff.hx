@@ -7,7 +7,8 @@ import lime.ui.KeyModifier;
 /**
 	This class is intended for developers of the engine to test new stuff.
 	It is not intended for end users.
-	It contains various methods that can be used to test the engine's features.	
+	It contains various methods that can be used to test the engine's features.
+	@since Development
 **/
 @:publicFields
 class DeveloperStuff {

@@ -7,6 +7,7 @@ import llua.Convert;
 
 /**
     A single Lua script instance for Funkin' View.
+	@since Development
 **/
 @:publicFields
 class FunkinViewLuaScript {

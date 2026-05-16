@@ -2,6 +2,7 @@ package elements.actor;
 
 /**
 	Character path type.
+	@since Development
 **/
 enum abstract CharacterPathType(Int) {
 	var SPRITESHEET;

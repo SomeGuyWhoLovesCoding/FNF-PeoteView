@@ -3,6 +3,7 @@ package data.gameplay;
 /**
 	The navigation class.
 	I'm serious. This class was made to reduce boilerplate inside menus where it would be uneccessary to have the same code over and over for everything. 
+	@since Development
 **/
 @:publicFields
 @:noDebug

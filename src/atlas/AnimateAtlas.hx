@@ -6,6 +6,7 @@ import haxe.Json;
 /**
  * Resolved leaf: one concrete atlas sprite with its fully accumulated
  * world-space 2-D affine transform (parent chain multiplied in).
+ * @since Development
  */
 typedef ResolvedLeaf = {
 	var sprite:AnimateSprite;
@@ -19,6 +20,7 @@ typedef ResolvedLeaf = {
 
 /**
  * One display frame = all visible leaves, back-to-front (layer order preserved).
+ * @since Development
  */
 typedef ResolvedFrame = Array<ResolvedLeaf>;
 
@@ -26,6 +28,7 @@ typedef ResolvedFrame = Array<ResolvedLeaf>;
  * Handles Adobe Animate atlas format (spritemap1.json + Animation.json).
  * After construction, use getResolvedFrames() to get pre-baked per-frame
  * sprite lists with accumulated transforms ready for rendering.
+ * @since Development
  */
 @:publicFields
 class AnimateAtlas {
@@ -339,6 +342,9 @@ class AnimateAtlas {
 // Data structures
 // -------------------------------------------------------------------------
 
+/**
+ * @since Development
+**/
 @:structInit
 class AnimateSprite {
 	public var name:String;
@@ -353,12 +359,18 @@ class AnimateSprite {
 	public var frameHeight:Int;
 }
 
+/**
+ * @since Development
+**/
 @:structInit
 class AnimateAnimation {
 	public var name:String;
 	public var frames:Array<AnimateFrame>;
 }
 
+/**
+ * @since Development
+**/
 @:structInit
 class AnimateFrame {
 	public var index:Int;
@@ -366,6 +378,9 @@ class AnimateFrame {
 	public var elements:Array<AnimateFrameElement>;
 }
 
+/**
+ * @since Development
+**/
 @:structInit
 class AnimateFrameElement {
 	public var instanceName:String;
@@ -378,6 +393,9 @@ class AnimateFrameElement {
 	public var color:Dynamic;
 }
 
+/**
+ * @since Development
+**/
 @:structInit
 class AnimateMatrix {
 	public var a:Float;
@@ -388,12 +406,18 @@ class AnimateMatrix {
 	public var ty:Float;
 }
 
+/**
+ * @since Development
+**/
 @:structInit
 class AnimateTransform {
 	public var x:Float;
 	public var y:Float;
 }
 
+/**
+ * @since Development
+**/
 @:structInit
 class AnimateMeta {
 	public var app:String;

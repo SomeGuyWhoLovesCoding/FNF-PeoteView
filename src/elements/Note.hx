@@ -2,6 +2,7 @@ package elements;
 
 /**
 	The note sprite of the note system. This is also used for the receptor.
+	@since Development
 **/
 class Note implements Element
 {

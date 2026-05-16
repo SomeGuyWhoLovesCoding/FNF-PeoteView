@@ -1,7 +1,9 @@
-// This is another copy of UISprite, but with a different name and different properties, SPECIFICALLY for the health bar group.
-
 package elements.sprites;
 
+/**
+	* This is another copy of UISprite, but with a different name and different properties, SPECIFICALLY for the health bar group.
+	* @since Development
+**/
 @:publicFields
 class HealthBarSprite implements Element {
 	private static inline var HEALTH_BAR_SPRITE_GRADIENT_SHADER = '

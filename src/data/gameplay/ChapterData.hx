@@ -2,6 +2,7 @@ package data.gameplay;
 
 /**
 	The chapter data from the file.
+	@since Development
 **/
 @:publicFields
 typedef ChapterData = {
@@ -11,6 +12,7 @@ typedef ChapterData = {
 
 /**
 	The chapter data from the file.
+	@since Development
 **/
 @:publicFields
 typedef GeneralChapterData = {
@@ -27,6 +29,7 @@ typedef GeneralChapterData = {
 
 /**
 	The chapter data from the file.
+	@since Development
 **/
 @:publicFields
 typedef ChapterSong = {

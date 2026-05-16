@@ -1,7 +1,8 @@
 package utils;
 
 /**
-	2 dimensional point class with the update callback.
+	* 2 dimensional point class with the update callback.
+	* @since Development
 **/
 #if cpp
 @:unreflective

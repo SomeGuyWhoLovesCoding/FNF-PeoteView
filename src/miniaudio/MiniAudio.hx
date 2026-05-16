@@ -1,5 +1,10 @@
 package miniaudio;
 
+/**
+	* The native Miniaudio extern.
+	* C++ and HL.
+	* @since Development
+**/
 #if cpp
 import cpp.ConstCharStar;
 @:buildXml('<include name="../../../miniaudioBuild.xml" />')

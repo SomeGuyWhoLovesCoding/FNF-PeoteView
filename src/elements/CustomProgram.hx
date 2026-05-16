@@ -6,6 +6,7 @@ import peote.view.Program;
 /**
 	CustomProgram is a class that extends Program with added rotation support at the vertex level.
 	But I have a warning though, inside the class's code is overriden code for a new feature called Uniform Vectors.
+	@since Development
 **/
 @:publicFields
 class CustomProgram extends Program

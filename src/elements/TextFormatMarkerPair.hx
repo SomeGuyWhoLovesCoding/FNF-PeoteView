@@ -2,6 +2,10 @@ package elements;
 
 import elements.text.*;
 
+/**
+	The text format marker pair, to color the text with marker pairs.
+	@since Development
+**/
 @:allow(elements.Text)
 class TextFormatMarkerPair {
 	public var marker(default, set):String;

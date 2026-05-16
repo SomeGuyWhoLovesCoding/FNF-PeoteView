@@ -4,6 +4,10 @@
 
 package elements.sprites;
 
+/**
+	* This is a class containing texture coordinate hacks to stuff sprites related to the UI to one image.
+	* @since Development
+**/
 @:publicFields
 class UISprite implements Element {
 	// position in pixel (relative to upper left corner of Display)

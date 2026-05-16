@@ -1,5 +1,8 @@
 package utils;
 
+/**
+	* @since Development
+**/
 @:publicFields
 class Shaders {
     static inline var UPSCALE_FRAGMENT_SHADER =

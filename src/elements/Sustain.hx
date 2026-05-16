@@ -2,6 +2,7 @@ package elements;
 
 /**
 	The sustain note of the note sprite.
+	@since Development
 **/
 class Sustain implements Element
 {

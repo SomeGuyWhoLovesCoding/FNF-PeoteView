@@ -2,6 +2,7 @@ package data.gameplay;
 
 /**
 	The story mode data from the story mode file.
+	@since Development
 **/
 @:publicFields
 typedef StoryModeData = {
@@ -12,6 +13,7 @@ typedef StoryModeData = {
 
 /**
 	The metadata from the story mode file.
+	@since Development
 **/
 @:publicFields
 typedef StoryModeMeta = {
@@ -33,6 +35,7 @@ typedef StoryModeMeta = {
 
 /**
 	The sory mode chapter data from the story mode file.
+	@since Development
 **/
 @:publicFields
 typedef StoryModeChapter = {

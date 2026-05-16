@@ -5,6 +5,7 @@ import sys.io.File;
 
 /**
 	The texture system.
+	@since Development
 **/
 #if !debug
 @:noDebug

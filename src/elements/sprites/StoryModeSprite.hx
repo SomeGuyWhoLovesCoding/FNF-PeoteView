@@ -1,9 +1,13 @@
 // EVERYTHING RELATED TO THE STORY MENU SHEET IN THE CLASS IS 100% HARDCODED.
-// This is a cheap copy of UISprite with less things in mind because it's meant for the story menu.
-// This was originally meant for the pause menu, but it was later used for the story menu.
 
 package elements.sprites;
 
+/**
+	* This is a cheap copy of UISprite with less things in mind because it's meant for the story menu.
+	* This was originally meant for the pause menu, but it was later used for the story menu.
+	* But currently, this is unused. I'll try and figure out what's possible relying on this class.
+	* @since Development
+**/
 @:publicFields
 class StoryModeSprite implements Element {
 	// position in pixel (relative to upper left corner of Display)

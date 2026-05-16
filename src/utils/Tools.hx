@@ -6,6 +6,10 @@ import data.chart.Header;
 import sys.io.Process;
 using StringTools;
 
+/**
+	* Some helper shit. idc 
+	* @since Development
+**/
 @:publicFields
 class Tools {
 	static var iconGridMap:Map<String, Array<Int>> = [];

@@ -4,6 +4,7 @@ package elements;
 	CustomDisplay is a custom class that extends RotatableDisplay.
 	It adds a few extra properties to the Display class (such as scroll, scale, and fov), and most importantly, automatic rotating support at the vertex level,
 	as described in RotatableDisplay.
+	@since Development
 **/
 @:publicFields
 class CustomDisplay extends RotatableDisplay {

@@ -6,6 +6,7 @@ import input2action.util.NestedArray;
 /**
 	The controls of the fnf engine.
 	This allows for easy keybind managing for it.
+	@since Development
 **/
 @:publicFields
 class Controls {

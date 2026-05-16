@@ -2,6 +2,7 @@ package atlas;
 
 /**
  * Implementation of sparrow atlas in my own way, for the character system and note system.
+ * @since Development
 **/
 @:publicFields
 @:structInit
@@ -75,6 +76,9 @@ class SparrowAtlas {
 	}
 }
 
+/**
+ * @since Development
+**/
 @:publicFields
 @:structInit
 class SubTexture {

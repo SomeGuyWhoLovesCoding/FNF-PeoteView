@@ -2,6 +2,9 @@ package utils;
 
 using StringTools;
 
+/**
+ * @since Development
+**/
 @:publicFields
 class Paths {
 	/**

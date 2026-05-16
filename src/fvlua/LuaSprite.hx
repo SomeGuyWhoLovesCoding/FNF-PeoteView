@@ -2,6 +2,7 @@ package fvlua;
 
 /**
 	The element with centered rotation and support for global rotation via camera rotation. Same API as `Sprite`, just without `clip*X/Y` for simplicity and maintainability.
+	@since Development
 **/
 @:publicFields
 class LuaSprite implements Element

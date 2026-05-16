@@ -7,6 +7,11 @@ import sys.io.FileOutput;
 import sys.io.FileInput;
 using StringTools;
 
+/**
+ * Pseudo vanilla json to funkin' view converter.
+ * This is deprecated, for now.
+ * @since Development
+**/
 #if !debug
 @:noDebug
 #end

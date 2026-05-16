@@ -2,6 +2,7 @@ package elements;
 
 /**
 	RotatableDisplay is a custom class that extends Display with added rotation support at the vertex level.
+	@since Development
 **/
 @:publicFields
 class RotatableDisplay extends Display

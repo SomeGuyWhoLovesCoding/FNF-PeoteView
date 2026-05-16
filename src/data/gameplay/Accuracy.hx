@@ -1,11 +1,8 @@
 package data.gameplay;
 
-/*@:publicFields
-class AccuracyVariables {
-	static inline var INCREMENT:Int128 = 10000;
-	static inline var ZERO:Int128 = 0;
-}*/
-
+/**
+	* @since Development
+**/
 @:publicFields
 abstract Accuracy(Array<Int128>) {
 	var left(get, never):Int128;

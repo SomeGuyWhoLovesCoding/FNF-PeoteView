@@ -2,6 +2,7 @@ package elements;
 
 /**
 	The element with centered rotation and support for global rotation via camera rotation.
+	@since Development
 **/
 @:publicFields
 class Sprite implements Element

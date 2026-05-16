@@ -2,6 +2,7 @@ package elements.text;
 
 /**
 	The underlying text character element.
+	@since Development
 **/
 @:publicFields
 class TextCharSprite implements Element {

@@ -1,5 +1,9 @@
 package elements.actor;
 
+/**
+	* Contains animation data and all of what psych engine alreay offers for an easy port.
+	* @since Development
+**/
 @:structInit
 @:publicFields
 class ActorData {

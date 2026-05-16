@@ -44,6 +44,10 @@ private enum abstract StateSelection(Int) {
 	var CREDITS;
 }
 
+/**
+	* The entry point for the application
+	@since Zero
+**/
 @:publicFields
 class Main extends Application
 {

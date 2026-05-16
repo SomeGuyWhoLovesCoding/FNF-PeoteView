@@ -13,6 +13,7 @@ import lime.ui.Window;
 
 /**
 	The save data securer.
+	@since Development
 **/
 @:publicFields
 class SaveData_Securer {
@@ -27,6 +28,7 @@ class SaveData_Securer {
 
 /**
 	The save data structure.
+	@since Development
 **/
 @:structInit
 @:publicFields
@@ -116,6 +118,7 @@ class SaveData {
 
 /**
 	The save data controls category.
+	@since Development
 **/
 @:structInit
 @:publicFields
@@ -127,6 +130,7 @@ class SaveData_Controls {
 
 /**
 	The save data UI sub-category of the controls.
+	@since Development
 **/
 @:structInit
 @:publicFields
@@ -141,6 +145,7 @@ class Controls_UI {
 
 /**
 	The save data game sub-category of the controls.
+	@since Development
 **/
 @:structInit
 @:publicFields
@@ -154,6 +159,7 @@ class Controls_Game {
 
 /**
 	The save data preferences category.
+	@since Development
 **/
 @:structInit
 @:publicFields
@@ -169,6 +175,7 @@ class SaveData_Preferences {
 
 /**
 	The save data graphics category.
+	@since Development
 **/
 @:structInit
 @:publicFields

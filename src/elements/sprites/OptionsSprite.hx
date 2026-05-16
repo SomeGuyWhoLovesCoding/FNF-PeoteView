@@ -1,8 +1,11 @@
 // EVERYTHING RELATED TO THE OPTIONS SCREEN SHEET IN THE CLASS IS 100% HARDCODED.
-// This is a cheap copy of UISprite with less things in mind because it's meant for the options screen.
 
 package elements.sprites;
 
+/**
+	* This is a cheap copy of UISprite with less things in mind because it's meant for the options screen.
+	* @since Development
+**/
 @:publicFields
 class OptionsSprite implements Element {
 	// position in pixel (relative to upper left corner of Display)

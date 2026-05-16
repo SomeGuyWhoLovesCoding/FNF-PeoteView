@@ -1,5 +1,9 @@
 package elements.actor;
 
+/**
+	* This class is nothing special. Just a structure containing internal animation frame properties.
+	* @since Development
+**/
 @:structInit
 @:publicFields
 class ActorAnimationData {
