@@ -146,7 +146,11 @@ class Main extends Application
 
 	static var songChosen:String = "";
 
-	static public function switchState(newState:StateSelection) {
+	static public dynamic function uponSongExit() {
+		switchState(MAIN_MENU);
+	}
+
+	static public function switchState(newState:StateSelection, skipTransition:Bool = false) {
 		var instance = Main.current;
 
 		switch (instance.currentState) {

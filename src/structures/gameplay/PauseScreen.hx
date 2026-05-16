@@ -146,7 +146,7 @@ class PauseScreen {
 				removeEvents();
 			case 3: // EXIT
 				Main.current.playCancelSound();
-				Main.switchState(MAIN_MENU);
+				Main.uponSongExit();
 		}
 	}
 

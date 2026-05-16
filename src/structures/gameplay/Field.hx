@@ -170,6 +170,7 @@ class Field {
 		sing(note.index, (note.type == 0 ? opponent : player), false, note.duration > 2 && timing < parent.hitbox * 0.5);
 
 		targetCamera.x = note.type == 0 ? -50 : 50; // Prototype camera logic I have for now
+		targetCamera.y = 0;
 	}
 
 	inline function missNote(note:MetaNote, notesInOne:Int64) {

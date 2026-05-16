@@ -13,8 +13,11 @@ import cpp.RawPointer;
 import cpp.NativeProcess;
 #end
 
-// TODO: IMPLEMENT ES3 SUPPORTED LOGIC INTO THIS
-// Flagged, because it's not supported on ES3 yet. Would have to make a literal lime API based off that, which would be quite the testament.
+/**
+	* TODO: IMPLEMENT ES3 SUPPORTED LOGIC INTO THIS
+	* Flagged, because it's not supported on ES3 yet. Would have to make a literal lime API based off that, which would be quite the testament.
+	* @since Development
+**/
 @:publicFields
 class RenderingMode {
 	static final PBO_BUFFERS:Int = 5;

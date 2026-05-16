@@ -9,6 +9,7 @@ using StringTools;
 
 /**
 	Lua system of Funkin' View.
+	@since Development
 **/
 @:publicFields
 class FunkinViewLua {
@@ -22,7 +23,7 @@ class FunkinViewLua {
 	static inline var Function_StopLua = "##FUNKINVIEWLUA_FUNCTION_STOPLUA";
 
 	var parent(default, null):PlayField;
-	var customSpriteComponent(default, null):CustomLuaSpriteComponent;
+	var components(default, null):Array<LuaComponentObject>;
 
 	public function new(parent:PlayField, path:String, header:Header) {
 		this.parent = parent;
@@ -32,8 +33,10 @@ class FunkinViewLua {
 		//Sys.println('Lua files? $files');
 
 		vms = [];
+		components = [];
 
-		customSpriteComponent = new CustomLuaSpriteComponent(this);
+		components.push(new CustomLuaSpriteComponent(this));
+		components.push(new CustomPlayFieldComponent(this));
 
 		var luaFilesFound = 0;
 		for (i in 0...files.length) {
@@ -60,13 +63,16 @@ class FunkinViewLua {
 			return null;
 		}
 		addCallbacksList(script);
-		customSpriteComponent.addCallbacksList(script);
+		for (component in components) component.addCallbacksList(script);
 		vms.push(script);
 		return script;
 	}
 
 	function addCallbacksList(luaScript:FunkinViewLuaScript) {
 		luaScript.addCallback("trace", function(string:String) Sys.println('FunkinViewLua: $string'));
+
+		// build target (windows, mac, linux, etc.)
+		luaScript.set('buildTarget', lime.system.System.platformName);
 	}
 
 	static function typeToString(type:Int):String {
@@ -189,7 +195,9 @@ class FunkinViewLua {
 
 	function dispose() {
 		disposed = true;
-		customSpriteComponent.dispose();
+		for (component in components) component.dispose();
+		components.resize(0);
+		components = null;
 		for (script in vms) script.dispose();
 		
 		vms.resize(0);

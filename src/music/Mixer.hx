@@ -225,25 +225,27 @@ class Mixer {
 				if (!field.isInGameOver) {
 					// If the song hasn't started yet, update the countdown conductor only.
 					// Do NOT apply latency compensation here — countdownDisp.conductor must see a pure musical timeline.
-					if (!playField.songStarted && !playField.songEnded) {
-						// Mixer already advanced playfield.songPosition during pre-start,
-						// so simply push that time to the countdown conductor.
-						if (playField.countdownDisp != null) {
-							if (playField.countdownDisp.conductor != null)
-								playField.countdownDisp.conductor.time = playField.songPosition;
+					if (playField.startedCountdown) {
+						if (!playField.songStarted && !playField.songEnded) {
+							// Mixer already advanced playfield.songPosition during pre-start,
+							// so simply push that time to the countdown conductor.
+							if (playField.countdownDisp != null) {
+								if (playField.countdownDisp.conductor != null)
+									playField.countdownDisp.conductor.time = playField.songPosition;
+							}
 						}
-					}
-					var songNotActive = !playField.songStarted || playField.songEnded || RenderingMode.enabled;
-					if (!playField.paused) {
-						if (songNotActive) {
-							if (deltaTime > renderDelta && !RenderingMode.enabled) deltaTime = renderDelta;
-							playField.songPosition += deltaTime * Mixer.speed;
-						} else {
-							updateSmoothMusicTime(deltaTime, playField, window);
+						var songNotActive = !playField.songStarted || playField.songEnded || RenderingMode.enabled;
+						if (!playField.paused) {
+							if (songNotActive) {
+								if (deltaTime > renderDelta && !RenderingMode.enabled) deltaTime = renderDelta;
+								playField.songPosition += deltaTime * Mixer.speed;
+							} else {
+								updateSmoothMusicTime(deltaTime, playField, window);
+							}
 						}
-					}
 
-					Main.conductor.time = playField.songPosition + (playField.latencyCompensation - Mixer.latency());
+						Main.conductor.time = playField.songPosition + (playField.latencyCompensation - Mixer.latency());
+					}
 				} else {
 					field.updateGameOver(deltaTime);
 				}

@@ -50,6 +50,26 @@ class PlayField {
 			field.gfConductor.changeBpmAt(time, value);*/
 	}
 
+	var customSongName = "";
+
+	// helper function made for playfield
+	inline function formatCustomSongName(title:String) {
+		return customSongName == "" ? title : customSongName;
+	}
+
+	var customStage = "";
+
+	// helper function made for playfield
+	inline function formatCustomStage(stage:String) {
+		return customStage == "" ? stage : customStage;
+	}
+
+	inline function setCustomStage(stage:String) {
+		#if linc_luajit_funkinview
+		funkinviewlua.callFunction('onChangeStage', stage);
+		#end
+	}
+
 	// https://github.com/ShadowMario/FNF-PsychEngine/blob/main/source/backend/Rating.hx#L29
 	var ratingJudgementList:Array<Judgement> = [
 		[
@@ -85,6 +105,8 @@ class PlayField {
 	var health:Float = 0.5;
 	var healthGain:Array<Float>;
 	var healthLoss:Array<Float>;
+	var deathCounter:Int;
+	var startedCountdown:Bool = false;
 
 	var latencyCompensation:Int;
 
@@ -153,7 +175,7 @@ class PlayField {
 	var hitbox:Float = 220;
 	var ready:Bool = false;
 
-	function setTime(value:Float, playAgain:Bool = false) {
+	function setTime(value:Float) {
 		if (disposed || !songStarted || songEnded || paused || died) return;
 		if (value > Mixer.length - 1000) value = Mixer.length - 1000;
 
@@ -236,6 +258,7 @@ class PlayField {
 		}
 
 		#if linc_luajit_funkinview
+		startedCountdown = funkinviewlua.callFunction('startCountdown', formatCustomSongName(Chart.header.title), Chart.header.difficulty)[0] != FunkinViewLua.Function_Stop;
 		funkinviewlua.callFunction('createPost', null);
 		#end
 	}
@@ -299,23 +322,25 @@ class PlayField {
 		//deltaTimeincremenetal += deltaTime;
 
 		if (!died) {
-			Mixer.update(this, deltaTime);
-			//Sys.println('$songPosition' + (((lastsongpos - songPosition) > 50) ? " (CHANGE ALERT! CHANGE ALERT! CHANGE!)" : ""));
+			if (startedCountdown) {
+				Mixer.update(this, deltaTime);
+				//Sys.println('$songPosition' + (((lastsongpos - songPosition) > 50) ? " (CHANGE ALERT! CHANGE ALERT! CHANGE!)" : ""));
 
-			#if !FV_LIME_FORK
-			// If the song hasn't started yet, update the countdown conductor only.
-			// Do NOT apply latency compensation here — countdownDisp.conductor must see a pure musical timeline.
-			if (!songStarted && !songEnded) {
-				// Mixer already advanced playfield.songPosition during pre-start,
-				// so simply push that time to the countdown conductor.
-				if (countdownDisp != null && countdownDisp.conductor != null) {
-					countdownDisp.conductor.time = songPosition;
+				#if !FV_LIME_FORK
+				// If the song hasn't started yet, update the countdown conductor only.
+				// Do NOT apply latency compensation here — countdownDisp.conductor must see a pure musical timeline.
+				if (!songStarted && !songEnded) {
+					// Mixer already advanced playfield.songPosition during pre-start,
+					// so simply push that time to the countdown conductor.
+					if (countdownDisp != null && countdownDisp.conductor != null) {
+						countdownDisp.conductor.time = songPosition;
+					}
 				}
-			}
-			#end
+				#end
 
-			songPosition -= latencyCompensation;
-			songPosition -= Mixer.latency();
+				songPosition -= latencyCompensation;
+				songPosition -= Mixer.latency();
+			}
 
 			var renderingModeEnabled = RenderingMode.enabled;
 			if (hud != null) hud.update(renderingModeEnabled ? (1000 / RenderingMode.frameRate) : deltaTime);
@@ -335,8 +360,10 @@ class PlayField {
 				//if (HUD.scoreTxt != null) HUD.scoreTxt.text = Std.string(deltaTimeincremenetal);
 			}
 
-			songPosition += latencyCompensation;
-			songPosition += Mixer.latency();
+			if (startedCountdown) {
+				songPosition += latencyCompensation;
+				songPosition += Mixer.latency();
+			}
 
 			lastsongpos = songPosition;
 
@@ -413,14 +440,14 @@ class PlayField {
 	/**
 		Pauses the playfield.
 	**/
-	function pause() {
+	function pause(showpausescreen:Bool = true) {
 		if (disposed || paused || died || RenderingMode.enabled) return;
 
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('pause', null);
+		if (funkinviewlua.callFunction('pause', null)[0] == FunkinViewLua.Function_Stop) return;
 		#end
 
-		pauseScreen.open();
+		if (showpausescreen) pauseScreen.open();
 		if (songStarted) Mixer.stopMusic();
 		if (noteSystem != null) {
 			var pos = MetaNote.floatToMetaNotePosition(songPosition);
@@ -431,7 +458,7 @@ class PlayField {
 
 		paused = true;
 
-		Main.current.playScrollSound();
+		if (showpausescreen) Main.current.playScrollSound();
 
 		#if linc_luajit_funkinview
 		funkinviewlua.callFunction('pausePost', null);
@@ -586,7 +613,9 @@ class PlayField {
 	function missNote(note:MetaNote, notesInOne:Int64, _i:Int64) {
 		#if linc_luajit_funkinview
 		var notePos = MetaNote.metaNotePositionToSongTime(note.position + File.getTimeCorrectionForIndex(_i));
-		funkinviewlua.callFunction('missNote', notePos, note.index, note.duration, note.type, notesInOne);
+		if (funkinviewlua.callFunction('missNote', notePos, note.index, note.duration, note.type, notesInOne)[0] == FunkinViewLua.Function_Continue) {
+			return;
+		};
 		#end
 
 		if (practiceMode && health < 0.05) {
@@ -665,16 +694,13 @@ class PlayField {
 
 	function startSong(header:Header) {
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('startSong', header.title, header.difficulty);
+		funkinviewlua.callFunction('startSong', formatCustomSongName(header.title), header.difficulty);
 		#end
 
 		Sys.println('Song activity is on');
 
 		if (!RenderingMode.enabled) {
 			Mixer.startMusic();
-			// Burn off the startup gap — spin until the audio clock is actually moving.
-			// This aligns songPosition to the real hardware clock from frame 1,
-			// so updateSmoothMusicTime corrects drift only, never a baked-in offset.
 			var attempts = 0;
 			while (MiniAudio.getPlaybackPosition() <= 0 && attempts++ < 500) {}
 			songPosition = MiniAudio.getPlaybackPosition() + latencyCompensation + Mixer.latency();
@@ -687,14 +713,14 @@ class PlayField {
 			countdownDisp.conductor.onBeatUnoffsetted.remove(countdownBeatHit);
 
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('startSongPost', header.title, header.difficulty);
-		funkinviewlua.callFunction('postStartSong', header.title, header.difficulty); // alternative syntax
+		funkinviewlua.callFunction('startSongPost', formatCustomSongName(header.title), header.difficulty);
+		funkinviewlua.callFunction('postStartSong', formatCustomSongName(header.title), header.difficulty); // alternative syntax
 		#end
 	}
 
 	function stopSong(header:Header) {
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('stopSong', header.title, header.difficulty);
+		funkinviewlua.callFunction('stopSong', formatCustomSongName(header.title), header.difficulty);
 		#end
 
 		Sys.println('Song activity is off');
@@ -711,8 +737,8 @@ class PlayField {
 		Mixer.setTime(0, null);
 
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('stopSongPost', header.title, header.difficulty);
-		funkinviewlua.callFunction('postStopSong', header.title, header.difficulty); // alternative syntax
+		funkinviewlua.callFunction('stopSongPost', formatCustomSongName(header.title), header.difficulty);
+		funkinviewlua.callFunction('postStopSong', formatCustomSongName(header.title), header.difficulty); // alternative syntax
 		#end
 
 		Main.switchState(MAIN_MENU);
@@ -756,6 +782,8 @@ class PlayField {
 		funkinviewlua.callFunction('gameOverPost', null);
 		funkinviewlua.callFunction('postGameOverPost', null); // alternative syntax
 		#end
+
+		deathCounter++;
 	}
 
 	/**

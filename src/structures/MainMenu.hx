@@ -14,6 +14,8 @@ import lime.ui.MouseWheelMode;
 **/
 @:publicFields
 class MainMenu {
+	inline static var fnfpVer = '0.94';
+
 	static var optionAnims:Array<String> = ['story mode', 'freeplay', /*'awards', 'credits',*/ 'options', 'backspace to exit'];
 
 	var display:CustomDisplay;
@@ -47,7 +49,7 @@ class MainMenu {
 		view.fov = 1.0;
 
 		if (watermarkTxt == null) {
-			watermarkTxt = new Text("mainMenuWatermarkTxt", 0, 0, view, "Funkin' View - Prototype");
+			watermarkTxt = new Text("mainMenuWatermarkTxt", 0, 0, view, 'Funkin\' View - Version $fnfpVer');
 			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height - 3;
 			watermarkTxt.x = 3;
 			watermarkTxt.outlineColor = 0x000000FF;

@@ -6,23 +6,20 @@ import haxe.ds.StringMap;
 using StringTools;
 
 /**
-	A single Lua script instance for Funkin' View.
+	A Lua Sprite component instance for Funkin' View.
+	@since Development
 **/
 @:publicFields
-class CustomLuaSpriteComponent {
+class CustomLuaSpriteComponent extends LuaComponentObject {
 	#if linc_luajit_funkinview
-	public var parent(default, null):FunkinViewLua;
-	public var playField(default, null):PlayField;
-
 	public var customBuffers(default, null):StringMap<Buffer<LuaSprite>>;
 	public var customPrograms(default, null):StringMap<LuaProgram>;
 	public var customTextures(default, null):StringMap<Texture>;
 	public var customSprites(default, null):StringMap<LuaSprite>;
 	public var customTexts(default, null):StringMap<LuaText>;
 
-	public function new(parent:FunkinViewLua) {
-		this.parent = parent;
-		playField = parent.parent;
+	public function new(_parent:FunkinViewLua) {
+        super(_parent);
 
 		customBuffers = new StringMap<Buffer<LuaSprite>>();
 		customPrograms = new StringMap<LuaProgram>();
@@ -32,7 +29,7 @@ class CustomLuaSpriteComponent {
 	}
 
 	// functions are a placeholder.
-	public function addCallbacksList(vm:FunkinViewLuaScript) {
+	override public function addCallbacksList(vm:FunkinViewLuaScript) {
 		// NEW
 		vm.addCallback("customBufferNew", (bufferName:String, minSize:Int, growSize:Int = 0, autoShrink:Bool = false) -> {
 			//trace('args:$bufferName,$minSize,$growSize,$autoShrink');
@@ -624,9 +621,8 @@ class CustomLuaSpriteComponent {
 		});
 	}
 
-	public function dispose() {
-		parent = null;
-		playField = null;
+	override public function dispose() {
+        super.dispose();
 
 		for (customBuffer in customBuffers) {
 			if (customBuffer != null) {

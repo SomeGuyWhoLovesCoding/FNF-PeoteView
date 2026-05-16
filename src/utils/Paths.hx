@@ -7,7 +7,7 @@ class Paths {
 	/**
 	* Internal custom asset path, for modding.
 	**/
-	private static var customAssetPath(default, null):String = "";
+	static var customAssetPath(default, null):String = "";
 
 	inline static function setAssetsFolder(val:String)
 		customAssetPath = val.split("/")[0] + "/"; // Prevent multiple slashes
