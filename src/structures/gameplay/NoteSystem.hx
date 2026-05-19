@@ -230,9 +230,9 @@ class NoteSystem {
 
 		var rawLeftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
 		var leftover = Std.int(Math.max(0, Math.min(rawLeftover, duration))); // Clamp to valid range
-		var isHit:Bool = File.isNoteHit(note.flag;
-		var isMissed:Bool = note.missed;
-		var isHeld:Bool = note.held;
+		var isHit:Bool = File.isNoteHit(_id);
+		var isMissed:Bool = File.isNoteMissed(_id);
+		var isHeld:Bool = File.isNoteHeld(_id);
 
 		var noteSprX = rec.x;
 		var noteSprY = rec.y;
@@ -282,8 +282,7 @@ class NoteSystem {
 				if (diff < -_cachedHitbox - offset && !isMissed) {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
 					var n:Int64 = note.toNumber();
-					(n:MetaNote).missed = true;
-					isMissed = true;
+					File.setNoteMissed(_id, isMissed = true);
 
 					var type = note.type;
 					if (noteTypeCallExists) {
@@ -299,8 +298,7 @@ class NoteSystem {
 					if (sustainExists && !isHeld) {
 						sustainSpr.alpha = Sustain.defaultMissAlpha;
 						var n:Int64 = note.toNumber();
-						(n:MetaNote).held = true;
-						isHeld = true;
+						File.setNoteHeld(_id, isHeld = true);
 						parent.onSustainRelease.dispatch(note);
 					}
 
@@ -311,8 +309,6 @@ class NoteSystem {
 					if (SaveData.state.preferences.ratingPopup && hud != null) {
 						hud.hideRatingPopup();
 					}
-
-					File.setNote(_id, n);
 				}
 			}
 		}
@@ -322,7 +318,7 @@ class NoteSystem {
 			// Handle opponent note hit (non-sustain)
 			if (!isHit && diff < 0) {
 				var n:Int64 = note.toNumber();
-				(n:MetaNote).flag = isHit = true;
+				File.setNoteHit(_id, isHit = true);
 
 				// Confirm the receptor
 				if (!rec.confirmed()) rec.confirm();
@@ -346,8 +342,6 @@ class NoteSystem {
 				if (parent.field != null)
 					parent.field.hitNote(note, 0, noteSpr.notesInOne);
 				parent.hitNote(note, 0, noteSpr.notesInOne, _id);
-
-				File.setNote(_id, n);
 			}
 		}
 
@@ -380,9 +374,8 @@ class NoteSystem {
 				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainLength - 45)) && !isHeld) {
 					var n:Int64 = note.toNumber();
 					// Only complete if we haven't already, regardless of direction
-					if (!(n:MetaNote).held) {
-						(n:MetaNote).held = true;
-						isHeld = true;
+					if (!isHeld) {
+						File.setNoteHeld(_id, isHeld = true);
 					}
 
 					if (playable && rec.confirmed()) rec.press();
@@ -395,8 +388,6 @@ class NoteSystem {
 					if (parent.field != null)
 						parent.field.completeSustain(note);
 					parent.completeSustain(note, _id);
-
-					File.setNote(_id, n);
 				}
 			}
 

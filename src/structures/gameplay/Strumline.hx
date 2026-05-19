@@ -135,7 +135,7 @@ class Strumline {
 		var noteToHit = notesToHit[index];
 		var rec = buffer[index];
 
-		if (noteToHit != null && !noteToHit.missed && !noteToHit.flag) {
+		if (noteToHit != null && !File.isNoteMissed(notesToHit_indexes[index]) && !File.isNoteHit(notesToHit_indexes[index])) {
 			var pf = parent.parent;
 			var type = noteToHit.type;
 
@@ -159,8 +159,7 @@ class Strumline {
 			}
 
 			var n:Int64 = noteToHit.toNumber();
-			(n:MetaNote).flag = true;
-			File.setNote(notesToHit_indexes[index], n);
+			File.setNoteHit(notesToHit_indexes[index], true);
 			sustainsToHold_duration[index] = noteToHit.duration;
 
 			if (noteToHit.duration > 20) {
@@ -187,7 +186,6 @@ class Strumline {
 			pf.hitNote(noteToHit, timing, 1, notesToHit_indexes[index]);
 
 			notesToHit[index] = null;
-
 			notesToHit_indexes[index] = 0;
 		} else {
 			if (!rec.pressed()) {
@@ -200,14 +198,13 @@ class Strumline {
 		var sustainToRelease = sustainsToHold[index];
 		var rec = buffer[index];
 
-		var sustainReleaseCallbackCanRun = sustainToRelease != null && sustainToRelease.index == index && (sustainToRelease.flag && !sustainToRelease.held);
+		var sustainReleaseCallbackCanRun = sustainToRelease != null && sustainToRelease.index == index && (File.isNoteHit(sustainsToHold_indexes[index]) && !File.isNoteHeld(sustainsToHold_indexes[index]));
 
 		if (sustainReleaseCallbackCanRun) {
 			var pf = parent.parent;
 
 			var n:Int64 = sustainToRelease.toNumber();
-			(n:MetaNote).held = true;
-			File.setNote(sustainsToHold_indexes[index], n);
+			File.setNoteHeld(sustainsToHold_indexes[index], true);
 
 			if (@:privateAccess pf.onSustainRelease.__listeners.length != 0)
 				pf.onSustainRelease.dispatch(sustainToRelease);

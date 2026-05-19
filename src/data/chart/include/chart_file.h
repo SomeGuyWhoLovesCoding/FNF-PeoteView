@@ -17,4 +17,5 @@ bool isNoteMissed(int64_t atIndex);
 void setNoteMissed(int64_t atIndex, bool value);
 bool isNoteHeld(int64_t atIndex);
 void setNoteHeld(int64_t atIndex, bool value);
+void clearJudgement(void);
 #endif /* CHART_FILE_H */
