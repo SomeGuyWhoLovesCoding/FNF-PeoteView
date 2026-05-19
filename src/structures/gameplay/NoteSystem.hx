@@ -230,7 +230,7 @@ class NoteSystem {
 
 		var rawLeftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
 		var leftover = Std.int(Math.max(0, Math.min(rawLeftover, duration))); // Clamp to valid range
-		var isHit:Bool = note.flag;
+		var isHit:Bool = File.isNoteHit(note.flag;
 		var isMissed:Bool = note.missed;
 		var isHeld:Bool = note.held;
 

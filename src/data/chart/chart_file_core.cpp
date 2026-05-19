@@ -6,11 +6,9 @@
 #include <map>
 #include <string>
 #include <vector>
-#include <fstream>
 #include <iomanip>
 #include <cmath>
 
-// Fix Windows min/max macros
 #ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
@@ -18,21 +16,26 @@
 #else
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
+#include <fcntl.h>
 #include <dirent.h>
 #include <unistd.h>
 #endif
 
 // ============================================================================
-// Portable filesystem helpers (no std::filesystem / C++17 required)
+// Constants
 // ============================================================================
+static constexpr int64_t JUDGEDATA_MIN_BYTES = 1179648; // 1.125 MB
 
-// Returns file size in bytes, or -1 on failure
+// ============================================================================
+// Portable filesystem helpers
+// ============================================================================
 static int64_t getFileSize(const std::string& path) {
 #ifdef _WIN32
     WIN32_FILE_ATTRIBUTE_DATA info;
     if (!GetFileAttributesExA(path.c_str(), GetFileExInfoStandard, &info))
         return -1;
-    return ((int64_t)info.nFileSizeHigh << 32) | info.nFileSizeLow;
+    return ((int64_t)info.nFileSizeHigh << 32) | (int64_t)info.nFileSizeLow;
 #else
     struct stat st;
     if (stat(path.c_str(), &st) != 0) return -1;
@@ -40,7 +43,18 @@ static int64_t getFileSize(const std::string& path) {
 #endif
 }
 
-// Strips directory and extension, returning just the stem (e.g. "42" from "42.bin")
+static bool fileExists(const std::string& path) {
+    return getFileSize(path) >= 0;
+}
+
+static bool deleteFile(const std::string& path) {
+#ifdef _WIN32
+    return DeleteFileA(path.c_str()) != 0;
+#else
+    return unlink(path.c_str()) == 0;
+#endif
+}
+
 static std::string getStem(const std::string& filename) {
     size_t dot = filename.rfind('.');
     return (dot == std::string::npos) ? filename : filename.substr(0, dot);
@@ -51,7 +65,6 @@ static std::string getExtension(const std::string& filename) {
     return (dot == std::string::npos) ? "" : filename.substr(dot);
 }
 
-// Fills `out` with filenames (not full paths) of regular files in `dir`
 static void listFiles(const std::string& dir, std::vector<std::string>& out) {
 #ifdef _WIN32
     WIN32_FIND_DATAA ffd;
@@ -76,145 +89,332 @@ static void listFiles(const std::string& dir, std::vector<std::string>& out) {
 }
 
 // ============================================================================
-// Time formatting function (matching Haxe behavior)
+// Time formatting
 // ============================================================================
-std::string formatTime(double ms, bool showMS = false) {
-    if (std::isnan(ms)) {
-        return "null";
-    }
-    
-    int milliseconds = static_cast<int>(ms * 0.1) % 100;
+static std::string formatTime(double ms, bool showMS = false) {
+    if (std::isnan(ms)) return "null";
+    int centis  = static_cast<int>(ms * 0.1) % 100;
     int seconds = static_cast<int>(ms * 0.001);
-    int hours = seconds / 3600;
-    seconds %= 3600;
-    int minutes = seconds / 60;
-    seconds %= 60;
-    
-    std::string time;
-    
-    if (hours > 0) {
-        time += std::to_string(hours) + ":";
-    }
-    
-    if (minutes < 10 && hours > 0) {
-        time += "0" + std::to_string(minutes) + ":";
-    } else {
-        time += std::to_string(minutes) + ":";
-    }
-    
-    if (seconds < 10) {
-        time += "0";
-    }
-    time += std::to_string(seconds);
-    
+    int hours   = seconds / 3600; seconds %= 3600;
+    int minutes = seconds / 60;   seconds %= 60;
+    std::string t;
+    if (hours > 0) t += std::to_string(hours) + ":";
+    if (minutes < 10 && hours > 0) t += "0";
+    t += std::to_string(minutes) + ":";
+    if (seconds < 10) t += "0";
+    t += std::to_string(seconds);
     if (showMS) {
-        time += ".";
-        if (milliseconds < 10) {
-            time += "0";
-        }
-        time += std::to_string(milliseconds);
+        t += ".";
+        if (centis < 10) t += "0";
+        t += std::to_string(centis);
     }
-    
-    return time;
+    return t;
 }
 
 // ============================================================================
-// Note unpacking helpers - POSITION IS ABSOLUTE IN TICKS
+// MetaNote bitpacking (64 bits, no flag bits):
+//   [0..31]  position — 32 bits, 1/4,000,000 ms granularity (1/16 ns)
+//   [32..47] duration — 16 bits, 1 ms granularity
+//   [48..55] index    — 8 bits,  up to 256 keys
+//   [56..63] type     — 8 bits,  up to 256 note types
 // ============================================================================
-uint32_t getPosition(uint64_t note) { return (note >> 0) & 0x3FFFFFFF; }   // Absolute position in ticks
-uint16_t getDuration(uint64_t note) { return (note >> 30) & 0xFFFF; }      // Duration in ms
-uint8_t getIndex(uint64_t note)     { return (note >> 46) & 0xFF; }
-uint8_t getType(uint64_t note)      { return (note >> 54) & 0x7F; }
-bool getFlag(uint64_t note)         { return (note >> 61) & 1; }
-bool getMissed(uint64_t note)       { return (note >> 62) & 1; }
-bool getHeld(uint64_t note)         { return (note >> 63) & 1; }
+static inline uint32_t getPosition(uint64_t n) { return (uint32_t)(n & 0xFFFFFFFFull); }
+static inline uint16_t getDuration(uint64_t n) { return (uint16_t)((n >> 32) & 0xFFFFull); }
+static inline uint8_t  getIndex   (uint64_t n) { return (uint8_t) ((n >> 48) & 0xFFull);  }
+static inline uint8_t  getType    (uint64_t n) { return (uint8_t) ((n >> 56) & 0xFFull);  }
 
-// Convert ticks to milliseconds (1 tick = 0.25 nanoseconds = 0.00000025 ms)
-double ticksToMs(uint32_t ticks) {
-    return ticks / 4000000.0;  // 4,000,000 ticks per ms
-}
+static inline double ticksToMs(uint32_t ticks) { return ticks / 4000000.0; }
 
 // ============================================================================
-// Simple direct file reader with write support
+// MappedFile — read-only memory-mapped chart shard.
 // ============================================================================
-class DirectFileReader {
-private:
-    std::vector<uint64_t> data;
-    std::string filename;
-    bool modified = false;
-    
+class MappedFile {
 public:
-    bool open(const char* path) {
-        filename = path;
-        std::ifstream file(path, std::ios::binary);
-        if (!file) return false;
-        
-        file.seekg(0, std::ios::end);
-        size_t size = file.tellg();
-        file.seekg(0, std::ios::beg);
-        
-        size_t count = size / sizeof(uint64_t);
-        data.resize(count);
-        file.read((char*)data.data(), size);
-        file.close();
-        
+    MappedFile() {}
+    ~MappedFile() { close(); }
+
+    MappedFile(const MappedFile&)            = delete;
+    MappedFile& operator=(const MappedFile&) = delete;
+
+    MappedFile(MappedFile&& o) noexcept { *this = std::move(o); }
+    MappedFile& operator=(MappedFile&& o) noexcept {
+        if (this != &o) {
+            close();
+            ptr_  = o.ptr_;  o.ptr_  = nullptr;
+            size_ = o.size_; o.size_ = 0;
+#ifdef _WIN32
+            hFile_    = o.hFile_;    o.hFile_    = INVALID_HANDLE_VALUE;
+            hMapping_ = o.hMapping_; o.hMapping_ = nullptr;
+#else
+            fd_ = o.fd_; o.fd_ = -1;
+#endif
+        }
+        return *this;
+    }
+
+    bool open(const std::string& path) {
+        close();
+        int64_t sz = getFileSize(path);
+        if (sz <= 0) return false;
+        size_ = (size_t)sz;
+
+#ifdef _WIN32
+        hFile_ = CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ,
+                             nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (hFile_ == INVALID_HANDLE_VALUE) return false;
+        hMapping_ = CreateFileMappingA(hFile_, nullptr, PAGE_READONLY, 0, 0, nullptr);
+        if (!hMapping_) {
+            CloseHandle(hFile_); hFile_ = INVALID_HANDLE_VALUE; return false;
+        }
+        ptr_ = MapViewOfFile(hMapping_, FILE_MAP_READ, 0, 0, 0);
+        if (!ptr_) {
+            CloseHandle(hMapping_); hMapping_ = nullptr;
+            CloseHandle(hFile_);    hFile_    = INVALID_HANDLE_VALUE;
+            return false;
+        }
+#else
+        fd_ = ::open(path.c_str(), O_RDONLY);
+        if (fd_ < 0) return false;
+        ptr_ = mmap(nullptr, size_, PROT_READ, MAP_SHARED, fd_, 0);
+        if (ptr_ == MAP_FAILED) {
+            ::close(fd_); fd_ = -1; ptr_ = nullptr; return false;
+        }
+        madvise(ptr_, size_, MADV_SEQUENTIAL);
+#endif
         return true;
     }
-    
-    void flush() {
-        if (modified && !filename.empty()) {
-            std::ofstream file(filename, std::ios::binary);
-            if (file) {
-                file.write((char*)data.data(), data.size() * sizeof(uint64_t));
-                file.close();
-                modified = false;
-            }
-        }
+
+    void close() {
+        if (!ptr_) return;
+#ifdef _WIN32
+        UnmapViewOfFile(ptr_);
+        CloseHandle(hMapping_); hMapping_ = nullptr;
+        CloseHandle(hFile_);    hFile_    = INVALID_HANDLE_VALUE;
+#else
+        munmap(ptr_, size_);
+        ::close(fd_); fd_ = -1;
+#endif
+        ptr_  = nullptr;
+        size_ = 0;
     }
-    
-    uint64_t get(int64_t index) const {
-        if (index < 0 || index >= (int64_t)data.size()) {
-            throw std::out_of_range("Index out of range");
-        }
-        return data[index];
-    }
-    
-    void set(int64_t index, uint64_t value) {
-        if (index < 0 || index >= (int64_t)data.size()) {
-            throw std::out_of_range("Index out of range");
-        }
-        data[index] = value;
-        modified = true;
-    }
-    
-    int64_t size() const { return data.size(); }
+
+    const uint64_t* data()  const { return reinterpret_cast<const uint64_t*>(ptr_); }
+    int64_t         count() const { return (int64_t)(size_ / sizeof(uint64_t)); }
+    bool            valid() const { return ptr_ != nullptr; }
+
+private:
+    void*  ptr_  = nullptr;
+    size_t size_ = 0;
+#ifdef _WIN32
+    HANDLE hFile_    = INVALID_HANDLE_VALUE;
+    HANDLE hMapping_ = nullptr;
+#else
+    int fd_ = -1;
+#endif
 };
 
 // ============================================================================
-// Sharded Chart Reader with Pooling System and Binary Search
+// JudgeMap — memory-mapped read/write judgedata shard.
+//
+// Layout: 3 bits per note, packed LSB-first into a byte stream.
+//   bit 0 = hit (flag)
+//   bit 1 = missed
+//   bit 2 = held
+//
+// File lifecycle:
+//   - No file on disk  →  shard is fully clean; all reads return 0b000.
+//   - File exists      →  mapped read/write on first access.
+//   - clearJudgement() →  unmap + delete file; shard returns to clean state.
+//
+// Allocation size: max(JUDGEDATA_MIN_BYTES, next power-of-two >= exact bytes).
+// New pages are zero-filled by the OS so no explicit memset needed on creation.
+// ============================================================================
+class JudgeMap {
+public:
+    JudgeMap()  {}
+    ~JudgeMap() { unmap(); }
+
+    JudgeMap(const JudgeMap&)            = delete;
+    JudgeMap& operator=(const JudgeMap&) = delete;
+
+    // Attach to a shard path and note count. Does not create the file.
+    void attach(const std::string& path, int64_t noteCount) {
+        unmap();
+        path_      = path;
+        noteCount_ = noteCount;
+        exact_     = (noteCount * 3 + 7) / 8;
+        if (fileExists(path_)) ensureMapped();
+    }
+
+    void detach() { unmap(); path_.clear(); noteCount_ = 0; exact_ = 0; }
+
+    // Returns 0b000 if unmapped (file absent = clean) or index out of range.
+    uint8_t get(int64_t localIndex) const {
+        if (!ptr_) return 0;
+        int64_t bitPos  = localIndex * 3;
+        int64_t byteIdx = bitPos / 8;
+        int     shift   = (int)(bitPos % 8);
+        if (byteIdx >= mappedBytes_) return 0;
+        uint32_t word = ptr_[byteIdx];
+        if (byteIdx + 1 < mappedBytes_) word |= ((uint32_t)ptr_[byteIdx + 1] << 8);
+        return (uint8_t)((word >> shift) & 0x7);
+    }
+
+    void set(int64_t localIndex, uint8_t value) {
+        ensureMapped();
+        int64_t bitPos  = localIndex * 3;
+        int64_t byteIdx = bitPos / 8;
+        int     shift   = (int)(bitPos % 8);
+        ptr_[byteIdx] = (uint8_t)((ptr_[byteIdx] & ~(0x7u << shift)) |
+                                  ((value & 0x7u) << shift));
+        int overflow = shift + 3 - 8;
+        if (overflow > 0 && byteIdx + 1 < mappedBytes_) {
+            int keep = 8 - overflow;
+            ptr_[byteIdx + 1] = (uint8_t)((ptr_[byteIdx + 1] & ~((1u << overflow) - 1u)) |
+                                           ((value & 0x7u) >> keep));
+        }
+    }
+
+    bool isFlag  (int64_t i) const { return (get(i) >> 0) & 1; }
+    bool isMissed(int64_t i) const { return (get(i) >> 1) & 1; }
+    bool isHeld  (int64_t i) const { return (get(i) >> 2) & 1; }
+
+    void setFlag  (int64_t i, bool v) { uint8_t s=get(i); set(i, v?(s|1):(s&~1)); }
+    void setMissed(int64_t i, bool v) { uint8_t s=get(i); set(i, v?(s|2):(s&~2)); }
+    void setHeld  (int64_t i, bool v) { uint8_t s=get(i); set(i, v?(s|4):(s&~4)); }
+
+    // Unmap and delete the file. All subsequent reads return 0b000.
+    void clearJudgement() {
+        unmap();
+        if (!path_.empty() && fileExists(path_))
+            deleteFile(path_);
+    }
+
+    bool isMapped() const { return ptr_ != nullptr; }
+
+private:
+    std::string path_;
+    int64_t     noteCount_   = 0;
+    int64_t     exact_       = 0;
+    int64_t     mappedBytes_ = 0;
+    uint8_t*    ptr_         = nullptr;
+#ifdef _WIN32
+    HANDLE hFile_    = INVALID_HANDLE_VALUE;
+    HANDLE hMapping_ = nullptr;
+#else
+    int fd_ = -1;
+#endif
+
+    // Allocation size: max(JUDGEDATA_MIN_BYTES, next power-of-two >= exact_).
+    int64_t allocSize() const {
+        int64_t sz = JUDGEDATA_MIN_BYTES;
+        if (exact_ > sz) {
+            sz = 1;
+            while (sz < exact_) sz <<= 1;
+        }
+        return sz;
+    }
+
+    void ensureMapped() {
+        if (ptr_) return;
+
+        int64_t fileBytes = allocSize();
+
+#ifdef _WIN32
+        hFile_ = CreateFileA(path_.c_str(),
+                             GENERIC_READ | GENERIC_WRITE, 0, nullptr,
+                             OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (hFile_ == INVALID_HANDLE_VALUE)
+            throw std::runtime_error("JudgeMap: cannot open " + path_);
+
+        LARGE_INTEGER cur; GetFileSizeEx(hFile_, &cur);
+        if (cur.QuadPart < fileBytes) {
+            LARGE_INTEGER li; li.QuadPart = fileBytes;
+            SetFilePointerEx(hFile_, li, nullptr, FILE_BEGIN);
+            SetEndOfFile(hFile_);
+            // NTFS zero-fills extended regions automatically.
+        }
+
+        hMapping_ = CreateFileMappingA(hFile_, nullptr, PAGE_READWRITE, 0, 0, nullptr);
+        if (!hMapping_) {
+            CloseHandle(hFile_); hFile_ = INVALID_HANDLE_VALUE;
+            throw std::runtime_error("JudgeMap: CreateFileMapping failed for " + path_);
+        }
+        ptr_ = reinterpret_cast<uint8_t*>(
+            MapViewOfFile(hMapping_, FILE_MAP_ALL_ACCESS, 0, 0, 0));
+        if (!ptr_) {
+            CloseHandle(hMapping_); hMapping_ = nullptr;
+            CloseHandle(hFile_);    hFile_    = INVALID_HANDLE_VALUE;
+            throw std::runtime_error("JudgeMap: MapViewOfFile failed for " + path_);
+        }
+#else
+        fd_ = ::open(path_.c_str(), O_RDWR | O_CREAT, 0644);
+        if (fd_ < 0)
+            throw std::runtime_error("JudgeMap: cannot open " + path_);
+
+        struct stat st; fstat(fd_, &st);
+        if ((int64_t)st.st_size < fileBytes) {
+            if (ftruncate(fd_, (off_t)fileBytes) != 0) {
+                ::close(fd_); fd_ = -1;
+                throw std::runtime_error("JudgeMap: ftruncate failed for " + path_);
+            }
+            // POSIX guarantees zero-fill for pages extended by ftruncate.
+        }
+
+        ptr_ = reinterpret_cast<uint8_t*>(
+            mmap(nullptr, (size_t)fileBytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0));
+        if (ptr_ == MAP_FAILED) {
+            ::close(fd_); fd_ = -1; ptr_ = nullptr;
+            throw std::runtime_error("JudgeMap: mmap failed for " + path_);
+        }
+        madvise(ptr_, (size_t)fileBytes, MADV_RANDOM);
+#endif
+        mappedBytes_ = fileBytes;
+    }
+
+    void unmap() {
+        if (!ptr_) return;
+#ifdef _WIN32
+        UnmapViewOfFile(ptr_); ptr_ = nullptr;
+        CloseHandle(hMapping_); hMapping_ = nullptr;
+        CloseHandle(hFile_);    hFile_    = INVALID_HANDLE_VALUE;
+#else
+        munmap(ptr_, (size_t)mappedBytes_); ptr_ = nullptr;
+        ::close(fd_); fd_ = -1;
+#endif
+        mappedBytes_ = 0;
+    }
+};
+
+// ============================================================================
+// ShardedChartReader
 // ============================================================================
 class ShardedChartReader {
 private:
     struct ShardInfo {
-        DirectFileReader reader;
-        int64_t noteCount;
-        uint64_t shardId;
-        int64_t startIndex;  // Global start index of this shard
-        int64_t endIndex;    // Global end index (exclusive)
+        MappedFile chart;
+        JudgeMap   judge;
+        int64_t    noteCount  = 0;
+        uint64_t   shardId    = 0;
+        int64_t    startIndex = 0;
+        int64_t    endIndex   = 0;
     };
 
-    std::string chartDir;
+    std::string                   chartDir;
     std::map<uint64_t, ShardInfo> activeShards;
-    std::vector<uint64_t> availableShards;
-    std::vector<int64_t> shardStartIndices;  // For binary search
-    uint64_t currentShardId = 0;
-    int64_t totalNotes = 0;
-    
-    static constexpr int POOL_SIZE = 100;
+    std::vector<uint64_t>         availableShards;
+    std::vector<int64_t>          shardStartIndices;
+    uint64_t                      currentShardId = 0;
+    int64_t                       totalNotes     = 0;
+    int64_t                       correctionTime = 0;
+
+    static constexpr int POOL_SIZE         = 100;
     static constexpr int PRELOAD_THRESHOLD = 50;
 
-    int64_t correctionTime = 0;
-    
+    std::string judgedataPath(uint64_t shardId) const {
+        return chartDir + "/judge" + std::to_string(shardId) + ".bin";
+    }
+
     void scanShards() {
         std::vector<std::string> files;
         listFiles(chartDir, files);
@@ -222,229 +422,188 @@ private:
         for (const auto& name : files) {
             if (getExtension(name) != ".bin") continue;
             std::string stem = getStem(name);
+            if (stem.rfind("judge", 0) == 0) continue;
             try {
-                uint64_t shardId = std::stoull(stem);
-                availableShards.push_back(shardId);
+                uint64_t id = std::stoull(stem);
+                availableShards.push_back(id);
             } catch (...) {
-                std::cerr << "Warning: Invalid shard filename: " << name << std::endl;
+                std::cerr << "Warning: unrecognised shard filename: " << name << "\n";
             }
         }
-        
+
         std::sort(availableShards.begin(), availableShards.end());
-        
+
         int64_t cumulative = 0;
-        for (uint64_t shardId : availableShards) {
+        for (uint64_t id : availableShards) {
             shardStartIndices.push_back(cumulative);
-            
-            std::string path = chartDir + "/" + std::to_string(shardId) + ".bin";
-            int64_t fileSize = getFileSize(path);
-            if (fileSize < 0) throw std::runtime_error("Cannot stat shard: " + path);
-            int64_t noteCount = fileSize / sizeof(uint64_t);
-            cumulative += noteCount;
+            int64_t sz = getFileSize(chartDir + "/" + std::to_string(id) + ".bin");
+            if (sz < 0) throw std::runtime_error("Cannot stat shard " + std::to_string(id));
+            cumulative += sz / (int64_t)sizeof(uint64_t);
         }
-        
         totalNotes = cumulative;
-        
-        std::cout << "[INFO] Found " << availableShards.size() << " shards, "
-                  << totalNotes << " total notes" << std::endl;
+
+        std::cout << "[INFO] " << availableShards.size() << " shards, "
+                  << totalNotes << " total notes\n";
     }
-    
-    int64_t getShardStartIndex(uint64_t shardId) const {
-        // Binary search to find shard's start index
+
+    int64_t shardStartFor(uint64_t shardId) const {
         auto it = std::lower_bound(availableShards.begin(), availableShards.end(), shardId);
-        if (it == availableShards.end() || *it != shardId) {
-            throw std::runtime_error("Shard not found");
-        }
-        size_t pos = std::distance(availableShards.begin(), it);
-        return shardStartIndices[pos];
+        if (it == availableShards.end() || *it != shardId)
+            throw std::runtime_error("Shard not found: " + std::to_string(shardId));
+        return shardStartIndices[std::distance(availableShards.begin(), it)];
     }
-    
+
     void loadShard(uint64_t shardId) {
-        if (activeShards.find(shardId) != activeShards.end()) {
-            return;
-        }
-        
+        if (activeShards.count(shardId)) return;
+
         ShardInfo info;
-        info.shardId = shardId;
-        info.startIndex = getShardStartIndex(shardId);
-        
-        std::string path = chartDir + "/" + std::to_string(shardId) + ".bin";
-        
-        if (!info.reader.open(path.c_str())) {
-            throw std::runtime_error("Failed to open shard: " + std::to_string(shardId));
-        }
-        
-        info.noteCount = info.reader.size();
-        info.endIndex = info.startIndex + info.noteCount;
+        info.shardId    = shardId;
+        info.startIndex = shardStartFor(shardId);
+
+        if (!info.chart.open(chartDir + "/" + std::to_string(shardId) + ".bin"))
+            throw std::runtime_error("Failed to mmap chart shard " + std::to_string(shardId));
+
+        info.noteCount = info.chart.count();
+        info.endIndex  = info.startIndex + info.noteCount;
+        info.judge.attach(judgedataPath(shardId), info.noteCount);
+
         activeShards[shardId] = std::move(info);
-        
-        //std::cout << "[POOL] Loaded shard " << shardId << " (" << info.noteCount << " notes)" << std::endl;
     }
-    
+
     void unloadShard(uint64_t shardId) {
         auto it = activeShards.find(shardId);
-        if (it != activeShards.end()) {
-            it->second.reader.flush();
-            activeShards.erase(it);
-            //std::cout << "[POOL] Unloaded shard " << shardId << std::endl;
-        }
+        if (it == activeShards.end()) return;
+        it->second.judge.detach();
+        it->second.chart.close();
+        activeShards.erase(it);
     }
-    
-    void managePool(uint64_t currentShard) {
-        // Remove shards that are far behind
+
+    void managePool(uint64_t current) {
         std::vector<uint64_t> toRemove;
-        for (auto& pair : activeShards) {
-            uint64_t shardId = pair.first;
-            if (shardId + POOL_SIZE < currentShard) {
-                toRemove.push_back(shardId);
-            }
-        }
-        
-        for (uint64_t shardId : toRemove) {
-            unloadShard(shardId);
-        }
-        
-        // Preload next shards if we're near the end of loaded range
-        auto it = std::lower_bound(availableShards.begin(), availableShards.end(), currentShard);
+        for (auto& p : activeShards)
+            if (p.first + POOL_SIZE < current)
+                toRemove.push_back(p.first);
+        for (uint64_t id : toRemove) unloadShard(id);
+
+        auto it = std::lower_bound(availableShards.begin(), availableShards.end(), current);
         if (it != availableShards.end()) {
-            size_t currentPos = std::distance(availableShards.begin(), it);
-            size_t remainingShards = availableShards.size() - currentPos;
-            
-            if (remainingShards <= PRELOAD_THRESHOLD) {
-                size_t toLoad = (std::min)((size_t)POOL_SIZE, remainingShards);
-                for (size_t i = 0; i < toLoad; i++) {
-                    uint64_t nextShard = availableShards[currentPos + i];
-                    if (activeShards.find(nextShard) == activeShards.end()) {
-                        loadShard(nextShard);
-                    }
+            size_t pos = std::distance(availableShards.begin(), it);
+            size_t rem = availableShards.size() - pos;
+            if (rem <= (size_t)PRELOAD_THRESHOLD) {
+                size_t n = (std::min)((size_t)POOL_SIZE, rem);
+                for (size_t i = 0; i < n; i++) {
+                    uint64_t next = availableShards[pos + i];
+                    if (!activeShards.count(next)) loadShard(next);
                 }
             }
         }
     }
-    
+
+    ShardInfo& resolve(int64_t globalIndex, int64_t& localOut) {
+        uint64_t shardId = findShardFor(globalIndex);
+        correctionTime   = (int64_t)shardId * 1000000000LL;
+        if (shardId != currentShardId) {
+            currentShardId = shardId;
+            managePool(currentShardId);
+        }
+        if (!activeShards.count(shardId)) loadShard(shardId);
+        ShardInfo& info = activeShards[shardId];
+        localOut = globalIndex - info.startIndex;
+        return info;
+    }
+
 public:
-    ShardedChartReader(const char* path) : chartDir(path) {
+    explicit ShardedChartReader(const char* path) : chartDir(path) {
         scanShards();
-        if (availableShards.empty()) {
-            throw std::runtime_error("No shards found in directory");
-        }
-        
-        // Initial load: load first POOL_SIZE shards
-        size_t initialLoad = (std::min)((size_t)POOL_SIZE, availableShards.size());
-        for (size_t i = 0; i < initialLoad; i++) {
-            loadShard(availableShards[i]);
-        }
+        if (availableShards.empty())
+            throw std::runtime_error("No shards found in " + chartDir);
+        size_t n = (std::min)((size_t)POOL_SIZE, availableShards.size());
+        for (size_t i = 0; i < n; i++) loadShard(availableShards[i]);
     }
-    
+
     ~ShardedChartReader() {
-        for (auto& pair : activeShards) {
-            pair.second.reader.flush();
+        for (auto& p : activeShards) {
+            p.second.judge.detach();
+            p.second.chart.close();
         }
-        activeShards.clear();
     }
-    
-    // Binary search to find which shard contains the global index
-    uint64_t findShardForGlobalIndex(int64_t globalIndex) const {
-        if (globalIndex < 0 || globalIndex >= totalNotes) {
-            throw std::out_of_range("Global index out of range");
-        }
-        
-        // Binary search on shardStartIndices
+
+    uint64_t findShardFor(int64_t globalIndex) const {
+        if (globalIndex < 0 || globalIndex >= totalNotes)
+            throw std::out_of_range("Global index out of range: " + std::to_string(globalIndex));
         auto it = std::upper_bound(shardStartIndices.begin(), shardStartIndices.end(), globalIndex);
-        if (it == shardStartIndices.begin()) {
-            throw std::runtime_error("Invalid shard lookup");
+        size_t pos = std::distance(shardStartIndices.begin(), it) - 1;
+        return availableShards[pos];
+    }
+
+    uint64_t findShardForTimeCorrection(int64_t globalIndex) const {
+        if (globalIndex < 0 || globalIndex >= totalNotes)
+            throw std::out_of_range("Global index out of range: " + std::to_string(globalIndex));
+        auto it = std::upper_bound(shardStartIndices.begin(), shardStartIndices.end(), globalIndex);
+        size_t pos = std::distance(shardStartIndices.begin(), it) - 1;
+        return pos;
+    }
+
+    // ── Chart access ──────────────────────────────────────────────────────────
+    uint64_t getNote(int64_t i) {
+        int64_t l; return resolve(i, l).chart.data()[l];
+    }
+
+    // ── Judgement state ───────────────────────────────────────────────────────
+    bool isNoteHit   (int64_t i) { int64_t l; return resolve(i,l).judge.isFlag  (l); }
+    bool isNoteMissed(int64_t i) { int64_t l; return resolve(i,l).judge.isMissed(l); }
+    bool isNoteHeld  (int64_t i) { int64_t l; return resolve(i,l).judge.isHeld  (l); }
+
+    void setNoteHit   (int64_t i, bool v) { int64_t l; resolve(i,l).judge.setFlag  (l,v); }
+    void setNoteMissed(int64_t i, bool v) { int64_t l; resolve(i,l).judge.setMissed(l,v); }
+    void setNoteHeld  (int64_t i, bool v) { int64_t l; resolve(i,l).judge.setHeld  (l,v); }
+
+    // ── clearJudgement ────────────────────────────────────────────────────────
+    // Deletes every judgeN.bin for all shards — active and evicted.
+    // After this call every note reads as 0b000.
+    void clearJudgement() {
+        for (auto& p : activeShards)
+            p.second.judge.clearJudgement();
+        // Also sweep evicted shards that may have a dirty file on disk.
+        for (uint64_t id : availableShards) {
+            std::string jp = judgedataPath(id);
+            if (fileExists(jp)) deleteFile(jp);
         }
-        
-        size_t shardPos = std::distance(shardStartIndices.begin(), it) - 1;
-        return availableShards[shardPos];
     }
-    
-    uint64_t getNote(int64_t globalIndex) {
-        uint64_t shardId = findShardForGlobalIndex(globalIndex);
-        correctionTime = shardId * 1000000000;
-        
-        // Cache the current shard for sequential access
-        if (shardId != currentShardId) {
-            currentShardId = shardId;
-            managePool(currentShardId);
-        }
-        
-        // Ensure shard is loaded
-        if (activeShards.find(shardId) == activeShards.end()) {
-            loadShard(shardId);
-        }
-        
-        ShardInfo& info = activeShards[shardId];
-        int64_t localIndex = globalIndex - info.startIndex;
-        
-        return info.reader.get(localIndex);
+
+    // ── Debug ─────────────────────────────────────────────────────────────────
+    void printNoteInfo(int64_t i) {
+        uint64_t n  = getNote(i);
+        double   ms = ticksToMs(getPosition(n));
+        std::cout << "  Note " << i << ": "
+                  << "time=" << formatTime(ms, true)
+                  << " pos=" << getPosition(n) << "ticks"
+                  << " dur=" << getDuration(n) << "ms"
+                  << " idx=" << (int)getIndex(n)
+                  << " type=" << (int)getType(n)
+                  << " flags=["
+                  << (isNoteHit(i)    ? "F" : "")
+                  << (isNoteMissed(i) ? "M" : "")
+                  << (isNoteHeld(i)   ? "H" : "") << "]"
+                  << " raw=0x" << std::hex << n << std::dec << "\n";
     }
-    
-    void setNote(int64_t globalIndex, uint64_t value) {
-        uint64_t shardId = findShardForGlobalIndex(globalIndex);
-        
-        if (shardId != currentShardId) {
-            currentShardId = shardId;
-            managePool(currentShardId);
-        }
-        
-        if (activeShards.find(shardId) == activeShards.end()) {
-            loadShard(shardId);
-        }
-        
-        ShardInfo& info = activeShards[shardId];
-        int64_t localIndex = globalIndex - info.startIndex;
-        
-        info.reader.set(localIndex, value);
-    }
-    
-    void printNoteInfo(int64_t globalIndex) {
-        uint64_t note = getNote(globalIndex);
-        
-        uint32_t positionTicks = getPosition(note);
-        uint16_t durationMs = getDuration(note);
-        uint8_t index = getIndex(note);
-        uint8_t type = getType(note);
-        bool flag = getFlag(note);
-        bool missed = getMissed(note);
-        bool held = getHeld(note);
-        
-        // Convert absolute position ticks to milliseconds
-        double timeMs = ticksToMs(positionTicks);
-        
-        std::cout << "  Note " << globalIndex << ": "
-                  << "time=" << formatTime(timeMs, true)
-                  << " pos=" << positionTicks << "ticks"
-                  << " dur=" << durationMs << "ms"
-                  << " idx=" << (int)index
-                  << " type=" << (int)type
-                  << " flags=[" << (flag ? "F" : "") << (missed ? "M" : "") << (held ? "H" : "") << "]"
-                  << " raw=0x" << std::hex << note << std::dec << std::endl;
-    }
-    
-    int64_t getLength() const {
-        return totalNotes;
-    }
-    
-    size_t getShardCount() const {
-        return availableShards.size();
-    }
-    
+
+    int64_t getLength()     const { return totalNotes; }
+    size_t  getShardCount() const { return availableShards.size(); }
+
     void printPoolStats() const {
-        std::cout << "[POOL] Active shards: " << activeShards.size() << " / " << availableShards.size() << std::endl;
-        int count = 0;
-        for (const auto& pair : activeShards) {
-            if (count++ >= 10) {
-                std::cout << "  ... and " << (activeShards.size() - 10) << " more" << std::endl;
+        std::cout << "[POOL] Active: " << activeShards.size()
+                  << " / " << availableShards.size() << "\n";
+        int c = 0;
+        for (const auto& p : activeShards) {
+            if (c++ >= 10) {
+                std::cout << "  ... and " << (activeShards.size()-10) << " more\n";
                 break;
             }
-            std::cout << "  Shard " << pair.first << ": " << pair.second.noteCount << " notes" << std::endl;
-        }
-    }
-    
-    void flushAll() {
-        for (auto& pair : activeShards) {
-            pair.second.reader.flush();
+            std::cout << "  Shard " << p.first
+                      << ": " << p.second.noteCount << " notes"
+                      << (p.second.judge.isMapped() ? " [judge mapped]" : " [judge clean]")
+                      << "\n";
         }
     }
 };
@@ -454,34 +613,12 @@ public:
 // ============================================================================
 static ShardedChartReader* gReader = nullptr;
 
-void core_loadChart(const char* path) {
-    if (gReader) {
-        delete gReader;
-        gReader = nullptr;
-    }
-    gReader = new ShardedChartReader(path);
-}
-
-void core_destroyChart() {
-    if (gReader) {
-        delete gReader;
-        gReader = nullptr;
-    }
-}
+void core_loadChart   (const char* path) { delete gReader; gReader = new ShardedChartReader(path); }
+void core_destroyChart()                 { delete gReader; gReader = nullptr; }
 
 uint64_t core_getNote(int64_t index) {
     if (!gReader) throw std::runtime_error("Chart not loaded");
     return gReader->getNote(index);
-}
-
-void core_setNote(int64_t index, uint64_t value) {
-    if (!gReader) throw std::runtime_error("Chart not loaded");
-    gReader->setNote(index, value);
-}
-
-void core_printNoteInfo(int64_t index) {
-    if (!gReader) throw std::runtime_error("Chart not loaded");
-    gReader->printNoteInfo(index);
 }
 
 int64_t core_getLength() {
@@ -494,10 +631,42 @@ size_t core_getShardCount() {
     return gReader->getShardCount();
 }
 
-void core_printPoolStats() {
-    if (gReader) gReader->printPoolStats();
+bool core_isNoteHit(int64_t index) {
+    if (!gReader) throw std::runtime_error("Chart not loaded");
+    return gReader->isNoteHit(index);
+}
+void core_setNoteHit(int64_t index, bool value) {
+    if (!gReader) throw std::runtime_error("Chart not loaded");
+    gReader->setNoteHit(index, value);
 }
 
-void core_flushChart() {
-    if (gReader) gReader->flushAll();
+bool core_isNoteMissed(int64_t index) {
+    if (!gReader) throw std::runtime_error("Chart not loaded");
+    return gReader->isNoteMissed(index);
+}
+void core_setNoteMissed(int64_t index, bool value) {
+    if (!gReader) throw std::runtime_error("Chart not loaded");
+    gReader->setNoteMissed(index, value);
+}
+
+bool core_isNoteHeld(int64_t index) {
+    if (!gReader) throw std::runtime_error("Chart not loaded");
+    return gReader->isNoteHeld(index);
+}
+void core_setNoteHeld(int64_t index, bool value) {
+    if (!gReader) throw std::runtime_error("Chart not loaded");
+    gReader->setNoteHeld(index, value);
+}
+
+void core_clearJudgement() {
+    if (!gReader) throw std::runtime_error("Chart not loaded");
+    gReader->clearJudgement();
+}
+
+void core_printNoteInfo(int64_t index) {
+    if (!gReader) throw std::runtime_error("Chart not loaded");
+    gReader->printNoteInfo(index);
+}
+void core_printPoolStats() {
+    if (gReader) gReader->printPoolStats();
 }
