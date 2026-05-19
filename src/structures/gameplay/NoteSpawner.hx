@@ -31,23 +31,17 @@ class NoteSpawner {
 	var timeSpentOnItIncrement:Float = 0;
 
 	function update(pos:Int64) {
-		trace("TOP AND BOTTOM (PRE-UPDATE): ",bottom,top);
+		//trace("TOP AND BOTTOM (PRE-UPDATE): ",bottom,top);
 
 		_lastbottom = bottom;
 		_lasttop = top;
 
-		// === BIDIRECTIONAL SEEK FIX ===
-		// Skip culling if we just reset the window (e.g., after a seek)
-		if (!_skipCullNextFrame) {
-			cullTop(pos);
-			cullBottom(pos);
-		}
-		_skipCullNextFrame = false;
-		// ==============================
+		cullTop(pos);
+		cullBottom(pos);
 
 		processNotes(pos);
 
-		trace("TOP AND BOTTOM (POST-UPDATE): ",bottom,top);
+		//trace("TOP AND BOTTOM (POST-UPDATE): ",bottom,top);
 	}
 
 	function processNotes(pos:Int64) {
@@ -142,15 +136,11 @@ class NoteSpawner {
 		if (bottom < len) curBottomNote = File.getNote(bottom);
 	}
 
-	// In NoteSpawner class, add this field:
-	private var _skipCullNextFrame:Bool = false;
-
 	function resetNotes(songPosition:Float) {
 		var pf = parent.parent;
 		if (pf.disposed || pf.died) return;
 
-		// Optional: reset sprite pool if you add this method to NotePool
-		// parent.notePool.reset();
+		parent.notePool.reset();
 
 		var len = File.getLength();
 		if (len <= 0) return;
@@ -187,21 +177,7 @@ class NoteSpawner {
 		var newBottom = lowerBound(minPos);
 		var newTop = upperBound(maxPos) - 1;
 
-		// === EFFICIENT FIX: Reset hit state only for notes in the new window ===
-		// This is O(window_size) — same cost as rendering, no extra overhead
-		var i = newBottom;
-		while (i < newTop + 1) {
-			var n = File.getNote(i);
-			// Only write back if state actually changed (avoids unnecessary File.setNote)
-			if (n.flag || n.missed || n.held) {
-				n.flag = false;
-				n.missed = false;
-				n.held = false;
-				File.setNote(i, n);
-			}
-			i++;
-		}
-		// =====================================================================
+		cullTop(songPos); // this is the perfect solution.
 
 		bottom = newBottom;
 		top = newTop;
@@ -211,9 +187,6 @@ class NoteSpawner {
 		
 		// Clear receptor states to avoid lingering animations
 		parent.resetStrumlines();
-    
-		// === FIX: Skip culling on next update to preserve reset window ===
-		_skipCullNextFrame = true;
 	}
 
 	// Now we're onto the real shit.
