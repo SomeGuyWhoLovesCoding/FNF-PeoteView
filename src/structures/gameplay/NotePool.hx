@@ -102,4 +102,14 @@ class NotePool {
         inactiveVirtualNotes = null;
         inactiveVirtualSusses = null;
     }
+
+	/**
+	 * Cleans up all pool arrays and references for garbage collection, but also reinitializes it.
+	 */
+    function reset() {
+        inactiveVirtualNotes = null;
+        inactiveVirtualSusses = null;
+        inactiveVirtualNotes = new Stack<VirtualNote>();
+        inactiveVirtualSusses = new Stack<VirtualSustain>();
+    }
 }

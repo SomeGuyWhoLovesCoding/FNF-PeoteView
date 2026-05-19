@@ -150,7 +150,8 @@ class Mixer {
 	}
 
 	private static var ogLatencyForImmediateChange(default, null):Int = 100;
-	inline static public function updateSmoothMusicTime(deltaTime:Float, playfield:PlayField, window:Window):Void {
+	static public function updateSmoothMusicTime(deltaTime:Float, playfield:PlayField, window:Window):Void {
+		if (playfield == null) return;
 		if (isPlaying()) {
 			var ogSongPos = playfield.songPosition + (deltaTime * speed);
 			var latency = playfield.latencyCompensation - Mixer.latency();

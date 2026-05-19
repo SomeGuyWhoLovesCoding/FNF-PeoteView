@@ -15,6 +15,8 @@ class LuaComponentObject {
 
 	public function addCallbacksList(vm:FunkinViewLuaScript):Void {}
 
+	public function updateVariablesList(vm:FunkinViewLuaScript):Void {}
+
 	public function dispose():Void {
 		parent = null;
 		playField = null;

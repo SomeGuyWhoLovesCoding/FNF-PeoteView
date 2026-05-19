@@ -36,19 +36,16 @@ class PlayField {
 		funkinviewlua = new FunkinViewLua(this, chartPath, Chart.header);
 		#end
 
-		#if linc_luajit_funkinview
-		//funkinviewlua.callFunction('byChartCreation', null);
-		#end
-
 		create(roof, display, Chart.header.mania);
 	}
 
 	function changeBpmAt(time:Float, value:Float, timeNum:Float, timeDen:Float) {
 		if (Main.conductor != null)
 			Main.conductor.changeBpmAt(time, value, timeNum, timeDen);
-		/*if (field.gfConductor != null)
-			field.gfConductor.changeBpmAt(time, value);*/
 	}
+
+	static var onRestartingForBackwardTimeSetting(default, null):Bool = false;
+	static var timeForRestartingBackwardTime(default, null):Float = 0;
 
 	var customSongName = "";
 
@@ -179,11 +176,20 @@ class PlayField {
 		if (disposed || !songStarted || songEnded || paused || died) return;
 		if (value > Mixer.length - 1000) value = Mixer.length - 1000;
 
+		/*if (value < songPosition) {
+			onRestartingForBackwardTimeSetting = true;
+			timeForRestartingBackwardTime = value;
+			pause(false);
+			Tools.forSync(() -> {
+				Main.switchState(GAMEPLAY, true);
+			});
+			return;
+		}*/
+
 		Mixer.setTime(Math.max(value, 0.0), this);
 		if (hud != null && SaveData.state.preferences.ratingPopup) hud.hideRatingPopup();
 		if (noteSystem != null) {
 			var pos = MetaNote.floatToMetaNotePosition(value);
-			noteSystem.resetNotes(value);
 			noteSystem.onSongPositionJump(pos);
 		}
 		if (field != null) field.resetCharacters();
@@ -227,8 +233,6 @@ class PlayField {
 		conductor.offset = latencyCompensation - Mixer.latency();
 		songPosition = (-conductor.crochet * 4.5) - conductor.offset;
 
-		var pos = MetaNote.floatToMetaNotePosition(songPosition);
-
 		field = new Field(this);
 
 		inputSystem = new InputSystem(mania, this);
@@ -258,9 +262,21 @@ class PlayField {
 		}
 
 		#if linc_luajit_funkinview
-		startedCountdown = funkinviewlua.callFunction('startCountdown', formatCustomSongName(Chart.header.title), Chart.header.difficulty)[0] != FunkinViewLua.Function_Stop;
+		startedCountdown = !onRestartingForBackwardTimeSetting || funkinviewlua.callFunction('startCountdown', formatCustomSongName(Chart.header.title), Chart.header.difficulty)[0] != FunkinViewLua.Function_Stop;
 		funkinviewlua.callFunction('createPost', null);
 		#end
+
+		if (onRestartingForBackwardTimeSetting) {
+			onRestartingForBackwardTimeSetting = false;
+			startSong(Chart.header);
+			setTime(timeForRestartingBackwardTime);
+			
+			#if linc_luajit_funkinview
+			funkinviewlua.callFunction('postTimeChange', timeForRestartingBackwardTime, Chart.header);
+			#end
+
+			timeForRestartingBackwardTime = 0;
+		}
 	}
 
 	/**
@@ -294,6 +310,7 @@ class PlayField {
 		//trace("Update",deltaTime);
 
 		#if linc_luajit_funkinview
+		funkinviewlua.updateVariablesList();
 		funkinviewlua.callFunction('update', deltaTime);
 		#end
 
@@ -709,8 +726,10 @@ class PlayField {
 		songStarted = true;
 		songEnded = false;
 
-		if (countdownDisp.conductor != null) 
-			countdownDisp.conductor.onBeatUnoffsetted.remove(countdownBeatHit);
+		if (countdownDisp != null) {
+			if (countdownDisp.conductor != null) 
+				countdownDisp.conductor.onBeatUnoffsetted.remove(countdownBeatHit);
+		}
 
 		#if linc_luajit_funkinview
 		funkinviewlua.callFunction('startSongPost', formatCustomSongName(header.title), header.difficulty);

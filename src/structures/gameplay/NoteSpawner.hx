@@ -136,6 +136,8 @@ class NoteSpawner {
 		var pf = parent.parent;
 		if (pf.disposed || pf.died) return;
 
+		parent.notePool.reset();
+
 		var len = File.getLength();
 		if (len <= 0) return;
 
@@ -170,6 +172,8 @@ class NoteSpawner {
 			return lo;
 		}
 
+		trace(bottom,top);
+
 		bottom = lowerBound(minPos);
 		top = upperBound(maxPos) - 1;
 
@@ -179,10 +183,10 @@ class NoteSpawner {
 		if (top < 0) top = 0;
 		else if (top >= len) top = len - 1;
 
+		trace(bottom,top);
+
 		curBottomNote = File.getNote(bottom);
 		curTopNote = File.getNote(top);
-
-		parent.resetStrumlines();
 	}
 
 	// Now we're onto the real shit.

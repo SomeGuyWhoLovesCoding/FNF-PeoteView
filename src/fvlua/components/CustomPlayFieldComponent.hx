@@ -59,19 +59,6 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 		set('seenCutscene', PlayState.seenCutscene);
 		set('hasVocals', PlayState.SONG.needsVoices);*/
 
-		// Screen stuff
-		vm.set('screenWidth', Main.VARIABLE_WIDTH);
-		vm.set('screenHeight', Main.VARIABLE_HEIGHT);
-
-		// Other settings
-		vm.set('downscroll', SaveData.state.preferences.downScroll);
-		vm.set('frameRate', SaveData.state.graphics.frameRate);
-		vm.set('hideHud', SaveData.state.preferences.hideHUD);
-		vm.set('smoothHealthbar', SaveData.state.preferences.smoothHealthbar);
-		vm.set('scoreZoom', SaveData.state.preferences.scoreTxtBopping);
-		vm.set('cameraZoomOnBeat', SaveData.state.preferences.cameraZooming);
-		vm.set('currentModDirectory', Paths.customAssetPath);
-
 		// regular old bullshit from psych engine
 		vm.addCallback("getProperty", (name:String) -> {
 			return Reflect.getProperty(playField, name);
@@ -108,9 +95,9 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 		}); // this one specifically is a wip.
 		var exitSongCallback = function() {
 			playField.pause(false);
-			haxe.Timer.delay(() -> {
+			Tools.forSync(() -> {
 				Main.uponSongExit();
-			}, 1);
+			});
 			return true;
 		};
 		vm.addCallback("endSong", exitSongCallback);
@@ -120,13 +107,16 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 			// The one-frame delay just doesn't matter to any casual player.
 			// the same thing goes to above
 			playField.pause(false);
-			haxe.Timer.delay(() -> {
+			Tools.forSync(() -> {
 				Main.switchState(GAMEPLAY, skipTransition);
-			}, 1);
+			});
 			return true;
 		});
-		vm.set("songPosition", playField.songPosition);
-		vm.addCallback("setSongPosition", playField.setTime);
+		vm.addCallback("setSongPosition", (time:Float) -> {
+			var pf = playField; // FunkinViewLua.playField : PlayField
+			if (pf == null || pf.disposed || !pf.songStarted || pf.songEnded || pf.paused || pf.died) return;
+			pf.setTime(time);
+		});
 
 		vm.addCallback("setCameraScroll", function(x:Float, y:Float) {
 			playField.field.targetCamera.x = x;
@@ -173,16 +163,6 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 		});
 		});
 
-		// now onto the real shit
-		vm.set('curMeasure', Main.conductor.curMeasure);
-		vm.set('curBeat', Main.conductor.curBeat);
-		vm.set('curStep', Main.conductor.curStep);
-
-		vm.set('score', playField.score);
-		vm.set('misses', playField.misses);
-		vm.set('combo', playField.combo);
-		vm.set('deaths', playField.deathCounter);
-
 		vm.addCallback('addScore', function(value:Int64) {
 			playField.score += value;
 		});
@@ -207,10 +187,6 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 		});
 
 		vm.addCallback('getAccuracyString', playField.accuracy.toString);
-		vm.set('totalNotesHit', playField.accuracy.left);
-		vm.set('totalPlayed', playField.accuracy.right);
-
-		vm.set('inGameOver', playField.field?.isInGameOver);
 
 		vm.addCallback('healthGainMult', function(lane) {
 			return playField.healthGain[lane];
@@ -220,19 +196,89 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 		});
 
 		vm.addCallback('setHealthGainMult', function(lane, value) {
-			return playField.healthGain[lane] = value;
+			playField.healthGain[lane] = value;
+			vm.addCallback('healthGainMult', function(lane) {
+				return playField.healthGain[lane];
+			});
 		});
 		vm.addCallback('setHealthLossMult', function(lane, value) {
-			return playField.healthLoss[lane] = value;
+			playField.healthLoss[lane] = value;
+			vm.addCallback('healthLossMult', function(lane) {
+				return playField.healthLoss[lane];
+			});
 		});
 
-		vm.set('playbackRate', Mixer.speed);
 		vm.addCallback('setPlaybackRate', function(speed:Float) {
+			// this is here because lua is not safe with this game when setting certain properties
 			Mixer.speed = speed;
 		});
 
+		vm.addCallback('setHealth', function(health:Float) {
+			playField.health = health;
+		});
+
+		vm.addCallback('turnOnCustomHealthBarColor', function() {
+			if (playField.hud == null) return;
+			if (playField.hud.healthBar == null) return;
+			playField.hud.healthBar.customHealthBarColorEnabled = true;
+		});
+
+		vm.addCallback('turnOffCustomHealthBarColor', function() {
+			if (playField.hud == null) return;
+			if (playField.hud.healthBar == null) return;
+			playField.hud.healthBar.customHealthBarColorEnabled = false;
+		});
+
+		vm.addCallback('setHealthBarColorsLeft', function(left:Array<String>) {
+			if (playField.hud == null) return;
+			if (playField.hud.healthBar == null) return;
+			var colorArray:Array<Color> = Tools.hexesToOpaqueColor(left);
+			playField.hud.healthBar.healthIconColors[0] = Tools.convertToSixColors(colorArray);
+		});
+
+		vm.addCallback('setHealthBarColorsRight', function(right:Array<String>) {
+			if (playField.hud == null) return;
+			if (playField.hud.healthBar == null) return;
+			var colorArray:Array<Color> = Tools.hexesToOpaqueColor(right);
+			playField.hud.healthBar.healthIconColors[1] = Tools.convertToSixColors(colorArray);
+		});
+	}
+
+	override public function updateVariablesList(vm:FunkinViewLuaScript):Void {
+		// Screen stuff
+		vm.set('screenWidth', Main.VARIABLE_WIDTH);
+		vm.set('screenHeight', Main.VARIABLE_HEIGHT);
+
+		// Other settings
+		vm.set('downscroll', SaveData.state.preferences.downScroll);
+		vm.set('frameRate', SaveData.state.graphics.frameRate);
+		vm.set('hideHud', SaveData.state.preferences.hideHUD);
+		vm.set('smoothHealthbar', SaveData.state.preferences.smoothHealthbar);
+		vm.set('scoreZoom', SaveData.state.preferences.scoreTxtBopping);
+		vm.set('cameraZoomOnBeat', SaveData.state.preferences.cameraZooming);
+		vm.set('currentModDirectory', Paths.customAssetPath);
+
+		vm.set('playbackRate', Mixer.speed);
+
+		vm.set("songPosition", playField.songPosition);
+		vm.set('totalNotesHit', playField.accuracy.left);
+		vm.set('totalPlayed', playField.accuracy.right);
+
+		vm.set('curMeasure', Main.conductor.curMeasure);
+		vm.set('curBeat', Main.conductor.curBeat);
+		vm.set('curStep', Main.conductor.curStep);
+
+		vm.set('score', playField.score);
+		vm.set('misses', playField.misses);
+		vm.set('combo', playField.combo);
+		vm.set('deaths', playField.deathCounter);
+
+		vm.set('inGameOver', playField.field?.isInGameOver);
+
 		vm.set('botPlay', playField.botplay);
 		vm.set('practice', playField.practiceMode);
+
+		vm.set('health', playField.health);
 	}
 
 	override public function dispose():Void {

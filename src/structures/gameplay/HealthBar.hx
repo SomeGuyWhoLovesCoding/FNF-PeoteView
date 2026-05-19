@@ -22,6 +22,8 @@ class HealthBar {
 
 	var healthIcons(default, null):Array<HealthBarSprite> = [];
 	var healthIconIDs(default, null):Array<Array<Int>> = [[0, 1], [2, 3]];
+
+	var customHealthBarColorEnabled:Bool;
 	var healthIconColors:Array<Array<Color>> = [
 		[Color.WHITE, Color.BLUE, Color.YELLOW, Color.RED3, Color.GREY2, Color.CYAN],
 		[Color.LIME, Color.LIME, Color.LIME, Color.LIME, Color.LIME, Color.LIME]
@@ -82,7 +84,8 @@ class HealthBar {
 			part.h = bg.h - healthBarHS;
 			part.y = bg.y + healthBarYA;
 			part.gradientMode = 1.0;
-			part.setAllColors(actors[i].data.colors);
+			if (!customHealthBarColorEnabled)
+				part.setAllColors(actors[i].data.colors);
 
 			hbBuf.addElement(part);
 		}
@@ -155,6 +158,8 @@ class HealthBar {
 
 		var healthIconColor = actors[(parent.flipHealthBar ? 1 : 0) + 1].data.colors;
 
+		if (customHealthBarColorEnabled)
+			healthIconColor = healthIconColors[(parent.flipHealthBar ? 1 : 0)];
 		part1.setAllColors(healthIconColor);
 
 		part1.w = (bg.w - Math.floor(bg.w * (parent.flipHealthBar ? 1 - _smoothHealth : _smoothHealth))) - (healthBarWS * 2.0);
@@ -168,6 +173,9 @@ class HealthBar {
 		if (part2 == null) return;
 
 		var healthIconColor = actors[(parent.flipHealthBar ? 0 : 1) + 1].data.colors;
+
+		if (customHealthBarColorEnabled)
+			healthIconColor = healthIconColors[(parent.flipHealthBar ? 0 : 1)];
 
 		part2.setAllColors(healthIconColor);
 

@@ -75,6 +75,12 @@ class FunkinViewLua {
 		luaScript.set('buildTarget', lime.system.System.platformName);
 	}
 
+	function updateVariablesList() {
+		for (script in vms)
+			for (component in components)
+				component.updateVariablesList(script);
+	}
+
 	static function typeToString(type:Int):String {
 		switch(type) {
 			case Lua.LUA_TBOOLEAN: return "boolean";

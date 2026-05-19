@@ -121,6 +121,10 @@ class NoteSystem {
 	function onSongPositionJump(pos:Int64) {
 		_lastPos = pos;
 		resetStrumlines(); // force reset them
+
+		if (noteSpawner != null) {
+			noteSpawner.resetNotes(MetaNote.metaNotePositionToSongTime(pos));
+		}
 	}
 
 	// Modified refreshRendering to handle timer decrements more safely:

@@ -361,9 +361,13 @@ class Tools {
 		return result;
 	}
 
-	static function convertToSixColors(col:Array<Int>) {
+	static function convertToSixColors(col:Array<Null<Int>>) {
 		if (col == null) return [for (i in 0...6) 0];
 		var arr:Array<Int> = [for (i in 0...6) 0];
+		for (i in 0...col.length) {
+			if (col[i] == null)
+				col.remove(i);
+		}
 		switch (col.length) {
 			case 1:
 				for (i in 0...6) arr[i] = col[0];
@@ -401,5 +405,9 @@ class Tools {
 			arr.push((argbColor:Int));
 		}
 		return arr;
+	}
+
+	static function forSync(func:Void->Void) {
+		haxe.Timer.delay(func, 1);
 	}
 }
