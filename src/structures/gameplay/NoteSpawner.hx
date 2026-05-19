@@ -20,6 +20,49 @@ class NoteSpawner {
 
 	var parent(default, null):NoteSystem;
 
+	// Add these methods to NoteSpawner:
+	#if DEBUG_NOTE_FLAGS
+	static var _csvLog:sys.io.FileOutput = null;
+	static var _csvLogPath:String = "note_flags_log.csv";
+	static var _csvHeaderWritten:Bool = false;
+
+	function initCsvLog() {
+		if (_csvLog == null) {
+			_csvLog = sys.io.File.write(_csvLogPath, false); // overwrite
+			_csvHeaderWritten = false;
+		}
+	}
+
+	function writeCsvHeader() {
+		if (!_csvHeaderWritten && _csvLog != null) {
+			_csvLog.writeString("timestamp_ms,songPos_ms,_id,position_ms,duration_ms,lane,index,flag,missed,held\n");
+			_csvHeaderWritten = true;
+		}
+	}
+
+	function logNoteFlags(pos:Int64, note:MetaNote, _id:Int64, lane:Int, timeCorrection:Int64) {
+		if (_csvLog == null) initCsvLog();
+		writeCsvHeader();
+		
+		var timestamp = Std.int(haxe.Timer.stamp() * 1000);
+		var songPosMs = Std.int(MetaNote.metaNotePositionToSongTime(pos));
+		var notePosMs = Std.int(MetaNote.metaNotePositionToSongTime(note.position + timeCorrection));
+		
+		// CSV line: timestamp, songPos, _id, notePosition, duration, lane, receptorIndex, flag, missed, held
+		var line = '${timestamp},${songPosMs},${_id},${notePosMs},${note.duration},${lane},${note.index},${note.flag ? 1 : 0},${note.missed ? 1 : 0},${note.held ? 1 : 0}\n';
+		_csvLog.writeString(line);
+		_csvLog.flush(); // ensure immediate write
+	}
+
+	function disposeCsvLog() {
+		if (_csvLog != null) {
+			_csvLog.close();
+			_csvLog = null;
+			_csvHeaderWritten = false;
+		}
+	}
+	#end
+
 	function new(parent:NoteSystem) {
 		this.parent = parent;
 
@@ -30,28 +73,44 @@ class NoteSpawner {
 	var timeSpentOnIt:Float = 0;
 	var timeSpentOnItIncrement:Float = 0;
 
-	function update(pos:Int64) {
-		//trace("TOP AND BOTTOM (PRE-UPDATE): ",bottom,top);
-
+	function update(pos:Int64, isSeeking:Bool = false) {
 		_lastbottom = bottom;
 		_lasttop = top;
 
 		cullTop(pos);
 		cullBottom(pos);
 
-		if (parent.movingBackward) {
+		#if DEBUG_NOTE_FLAGS
+		if (isSeeking) {
+			if (_csvLog != null) {
+				var timestamp = Std.int(haxe.Timer.stamp() * 1000);
+				var songPosMs = Std.int(MetaNote.metaNotePositionToSongTime(pos));
+				_csvLog.writeString('\n# SEEK EVENT at timestamp=${timestamp}ms, songPos=${songPosMs}ms, bottom=${bottom}, top=${top}\n');
+				_csvLog.flush();
+			}
+		}
+		#end
+
+		// Clear strumline state if seeking OR moving backward this frame
+		if (isSeeking || parent.movingBackward) {
 			for (i in 0...parent.strumlines.length) {
 				var strumline = parent.strumlines[i];
-				for (j in 0...strumline.notesToHit.length) {
+				for (j in 0...strumline.buffer.length) {
 					strumline.notesToHit[j] = null;
 					strumline.notesToHit_indexes[j] = 0;
+					strumline.notesToHit_sprites[j] = null;
+					strumline.sustainsActive[j] = false;
+					strumline.sustainsToHold[j] = null;
+					strumline.sustainsToHold_indexes[j] = 0;
+					strumline.sustainsToHold_duration[j] = 0;
+					strumline.botTimers[j] = 0;
+					strumline.getTimeCorrection[j] = 0;
+					strumline.fakeOverlapStorage[j] = -99999;
 				}
 			}
 		}
 
 		processNotes(pos);
-
-		//trace("TOP AND BOTTOM (POST-UPDATE): ",bottom,top);
 	}
 
 	function processNotes(pos:Int64) {
@@ -70,6 +129,12 @@ class NoteSpawner {
 		var time = haxe.Timer.stamp();
 		while (i < top) {
 			var n = File.getNote(i);
+    
+			#if DEBUG_NOTE_FLAGS
+			logNoteFlags(pos, n, i, 
+				parent.noteTypeFunctionalityPre[n.type] != null ? 1 : (n.type % parent.strumlines.length),
+				File.getTimeCorrectionForIndex(i));
+			#end
 
 			var lane = parent.noteTypeFunctionalityPre[n.type] != null
 				? 1
@@ -211,16 +276,41 @@ class NoteSpawner {
 		var newBottom = lowerBound(minPos);
 		var newTop = upperBound(maxPos) - 1;
 
-		cullTop(songPos); // this is the perfect solution.
+		cullTop(songPos);
+
+		// Reset MetaNote flags for all notes in the new window
+		var i = newBottom;
+		while (i < newTop + 1) {
+			var n = File.getNote(i);
+			n.flag = false;
+			n.missed = false; 
+			n.held = false;
+			File.setNote(i, n);
+			i++;
+		}
+
+		// 🔥 CRITICAL: Clear ALL strumline hit-tracking state
+		for (strumline in parent.strumlines) {
+			for (j in 0...strumline.buffer.length) {
+				strumline.notesToHit[j] = null;
+				strumline.notesToHit_indexes[j] = 0;
+				strumline.notesToHit_sprites[j] = null;
+				strumline.sustainsActive[j] = false;  // ← This was missing!
+				strumline.sustainsToHold[j] = null;
+				strumline.sustainsToHold_indexes[j] = 0;
+				strumline.sustainsToHold_duration[j] = 0;
+				strumline.botTimers[j] = 0;
+				strumline.getTimeCorrection[j] = 0;
+				strumline.fakeOverlapStorage[j] = -99999;  // Use sentinel, not 0
+			}
+		}
 
 		bottom = newBottom;
 		top = newTop;
-
 		curBottomNote = File.getNote(bottom);
 		curTopNote = File.getNote(top);
 		
-		// Clear receptor states to avoid lingering animations
-		parent.resetStrumlines();
+		parent.resetStrumlines();  // Still call this for animations
 	}
 
 	// Now we're onto the real shit.
@@ -389,5 +479,14 @@ class NoteSpawner {
 		var alphaToAdd = n.missed ? Note.defaultMissAlpha : Note.defaultAlpha;
 		noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + alphaToAdd, 256);
 		noteSpr.notesInOne++;
+	}
+
+	/**
+	 * Nothing to dispose here. Just a spoof function used for either debugging purposes or future features.
+	 */
+	function dispose() {
+		#if DEBUG_NOTE_FLAGS
+		disposeCsvLog();
+		#end
 	}
 }
