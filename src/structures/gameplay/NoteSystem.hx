@@ -206,7 +206,7 @@ class NoteSystem {
 		var duration = note.duration;
 		//if (_id <= 6) trace(duration);
 		var timeCorrection = File.getTimeCorrectionForIndex(_id);
-		//if (_id == 2) trace(_id, 'Position ${note.position} Time correction ${timeCorrection} Diff ${diff}');
+		//if (_id == 12) trace(_id, 'Position ${note.position} Time correction ${timeCorrection} Diff ${diff} is hit ${File.isNoteHit(_id)}');
 		var position = note.position + timeCorrection;
 
 		var noteTypeCall:Int->Int->Bool->Void = noteTypeFunctionalityPre[note.type];

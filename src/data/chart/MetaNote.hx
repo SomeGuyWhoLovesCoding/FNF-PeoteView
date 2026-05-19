@@ -37,7 +37,8 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 	inline function get_position():Int64 {
 		// Extract as low 32 bits unsigned, then reconstruct as Int64
 		var lowBits:UInt = (this & POSITION_MASK).low;
-		return Int64.make(0, lowBits);  // high=0, low=lowBits as unsigned
+		var value = Int64.make(0, lowBits);
+		return value;
 	}
 
 	inline function get_duration():Int {

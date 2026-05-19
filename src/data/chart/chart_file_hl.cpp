@@ -62,7 +62,7 @@ HL_PRIM void HL_NAME(setNoteHeld)(int64_t index, bool value) {
     core_setNoteHeld(index, value);
 }
 
-// now that's how judgements should work
+/// now that's how judgements should work
 HL_PRIM void HL_NAME(clearJudgement)(_NO_ARG) {
     core_clearJudgement();
 }

@@ -26,7 +26,7 @@
 // ============================================================================
 // Constants
 // ============================================================================
-static constexpr int64_t JUDGEDATA_MIN_BYTES = 1179648; // 1.125 MB
+static constexpr int64_t JUDGEDATA_MIN_BYTES = 147456; // 1.125 MB
 
 // ============================================================================
 // Portable filesystem helpers
@@ -581,6 +581,7 @@ public:
     }
 
     ~ShardedChartReader() {
+        clearJudgement();
         for (auto& p : activeShards) {
             p.second.judge.detach();
             p.second.chart.close();
@@ -621,15 +622,33 @@ public:
     void setNoteHeld  (int64_t i, bool v) { int64_t l = 0; resolve(i,l).judge.setHeld  (l,v); }
 
     // ── clearJudgement ────────────────────────────────────────────────────────
-    // Deletes every judgeN.bin for all shards — active and evicted.
-    // After this call every note reads as 0b000.
+    // Deletes EVERY judgeN.bin file found in the chart directory.
     void clearJudgement() {
-        for (auto& p : activeShards)
-            p.second.judge.clearJudgement();
-        // Also sweep evicted shards that may have a dirty file on disk.
+        // 1. Clear and unmap active shards
+        for (auto& p : activeShards) {
+            p.second.judge.clearJudgement(); // This unmaps and deletes the specific file
+        }
+        
+        // 2. Sweep the directory for ANY remaining judge*.bin files
+        // This ensures orphaned, evicted, or mismatched judge files are deleted.
+        std::vector<std::string> files;
+        listFiles(chartDir, files);
+        
+        for (const auto& name : files) {
+            // Check if it's a judge file
+            if (name.rfind("judge", 0) == 0 && getExtension(name) == ".bin") {
+                std::string fullPath = chartDir + "/" + name;
+                if (fileExists(fullPath)) {
+                    deleteFile(fullPath);
+                }
+            }
+        }
+        
+        // 3. Optional: Clear the internal state of known shards if they weren't active
+        // (Not strictly necessary if we deleted the files, but good for consistency)
         for (uint64_t id : availableShards) {
-            std::string jp = judgedataPath(id);
-            if (fileExists(jp)) deleteFile(jp);
+             // If it wasn't in activeShards, its JudgeMap might still think it's attached
+             // But since we deleted the file above, next access will recreate it clean.
         }
     }
 

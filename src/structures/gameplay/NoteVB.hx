@@ -52,7 +52,7 @@ class NoteVB {
 	/**
 	 * @param note The virtual note you want to add.
 	**/
-	inline function addNote(note:VirtualNote) {
+	function addNote(note:VirtualNote) {
 		var ref = note.ref;
 		var lane = ref.type;
 		notes[lane][ref.index][
@@ -64,7 +64,7 @@ class NoteVB {
 	/**
 	 * @param note The virtual note you want to add.
 	**/
-	inline function addSustain(sustain:VirtualSustain, note:VirtualNote) {
+	function addSustain(sustain:VirtualSustain, note:VirtualNote) {
 		var ref = note.ref;
 		var lane = ref.type;
 		sustains[note.ref.type][ref.index][
@@ -94,25 +94,25 @@ class NoteVB {
 @:publicFields
 class VirtualNote {
 	// the amount of same notes within a line, combined (8 bytes)
-	var notesInOne:Int64;
+	var notesInOne:Int64 = 1;
 
 	// the initial alpha of the note (8 bytes)
-	var initialAlpha:Float;
+	var initialAlpha:Float = 1;
 
 	// the alpha of same notes within a line, combined (8 bytes)
-	var addedAlpha:Float;
+	var addedAlpha:Float = 0;
 
 	// the scale of the note (8 bytes)
-	var scale:Float;
+	var scale:Float = 1;
 
 	// the refrence to the note (8 bytes)
 	var ref:MetaNote;
 
 	// the note diff relative to strum time (4 bytes)
-	var diff:Int;
+	var diff:Int = 0;
 
 	// the current strum position 
-	var Sxy:Int;
+	var Sxy:Int = 0;
 	var Sx(get, set):Int;
 	var Sy(get, set):Int;
 
@@ -164,28 +164,28 @@ class VirtualNote {
 @:publicFields
 class VirtualSustain {
 	// the alpha of sustain (8 bytes)
-	var alpha:Float;
+	var alpha:Float = 0;
 
 	// the scale of the sustain (8 bytes)
-	var scale:Float;
+	var scale:Float = 0;
 
 	// the speed of the sustain (8 bytes)
-	var speed:Float;
+	var speed:Float = 0;
 
 	// the duration of the sustain (4 bytes)
-	var length:Int;
+	var length:Int = 0;
 
 	// the reference to the sustain (48 bytes)
 	var ref:VirtualNote;
 
 	// the rotation of the sustain (8 bytes)
-	var r:Float;
+	var r:Float = 0;
 
 	// the note diff relative to strum time (4 bytes)
-	var diff:Int;
+	var diff:Int = 0;
 
 	// the current strum position 
-	var Sxy:Int;
+	var Sxy:Int = 0;
 	var Sx(get, set):Int;
 	var Sy(get, set):Int;
 
@@ -221,7 +221,7 @@ class VirtualSustain {
 	}
 
 	// size (4 bytes)
-	var wh:Int;
+	var wh:Int = 0;
 	var w(get, set):Int; // width
 	var h(get, set):Int; // height
 
