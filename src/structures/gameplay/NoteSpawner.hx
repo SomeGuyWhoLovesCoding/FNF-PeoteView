@@ -39,6 +39,16 @@ class NoteSpawner {
 		cullTop(pos);
 		cullBottom(pos);
 
+		if (parent.movingBackward) {
+			for (i in 0...parent.strumlines.length) {
+				var strumline = parent.strumlines[i];
+				for (j in 0...strumline.notesToHit.length) {
+					strumline.notesToHit[j] = null;
+					strumline.notesToHit_indexes[j] = 0;
+				}
+			}
+		}
+
 		processNotes(pos);
 
 		//trace("TOP AND BOTTOM (POST-UPDATE): ",bottom,top);
@@ -152,6 +162,9 @@ class NoteSpawner {
 			if (despawnCheck > despawnDist) break;
 			// This note is back in range, rewind bottom to include it
 			--bottom;
+			var n2 = File.getNote(bottom);
+			n2.flag = false; n2.missed = false; n2.held = false;
+			File.setNote(bottom, n2);
 		}
 		
 		if (bottom < len) curBottomNote = File.getNote(bottom);

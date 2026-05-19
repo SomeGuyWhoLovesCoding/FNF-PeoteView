@@ -92,12 +92,18 @@ class NoteSystem {
 		update(MetaNote.floatToMetaNotePosition(parent.songPosition));
 	}
 
+	var movingBackward(default, null):Bool = false;
+	private var _stableLastPos:Int64; // tracks pos before the clamp
+
 	/**
 	 * This processes the virtual notes in real time.
 	 * @param pos The song's position in the note position format.
 	**/
 	function update(pos:Int64) {
-		if (_lastPos == 0) _lastPos = pos; // initialize safely
+    	if (_lastPos == 0) { _lastPos = pos; _stableLastPos = pos; }
+
+		movingBackward = pos < _stableLastPos;
+		_stableLastPos = pos;
 
 		// if position jumped too far (pause or seek), resync
 		var delta = pos - _lastPos;
@@ -239,11 +245,25 @@ class NoteSystem {
 					var noteToHit = strumline.notesToHit[index];
 					var noteToHitExists = noteToHit != null;
 
-					var _pos = MetaNote.metaNotePositionToSongTime((noteToHit.position + strumline.getTimeCorrection[index]) - pos);
-					if (!noteToHitExists || Math.abs(diff) < Math.abs(_pos)) {
+					if (!noteToHitExists) {
 						strumline.notesToHit[index] = note;
 						strumline.notesToHit_indexes[index] = _id;
 						strumline.getTimeCorrection[index] = timeCorrection;
+					} else {
+						var _pos = MetaNote.metaNotePositionToSongTime(
+							(noteToHit.position + strumline.getTimeCorrection[index]) - pos
+						);
+						// Prefer the note closest to the receptor from the upcoming direction.
+						// If diff is positive (ahead), prefer smallest positive diff.
+						// If both are behind (negative), prefer least negative (closest to receptor).
+						var currentIsBetter = movingBackward
+							? (diff > _pos) // backward: prefer the one further ahead (largest diff = most future)
+							: (Math.abs(diff) < Math.abs(_pos)); // forward: closest wins as before
+						if (currentIsBetter) {
+							strumline.notesToHit[index] = note;
+							strumline.notesToHit_indexes[index] = _id;
+							strumline.getTimeCorrection[index] = timeCorrection;
+						}
 					}
 				}
 
@@ -343,8 +363,10 @@ class NoteSystem {
 
 				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainLength - 45)) && !isHeld) {
 					var n:Int64 = note.toNumber();
-					(n:MetaNote).held = true;
-					isHeld = true;
+					if (!movingBackward) {
+						(n:MetaNote).held = true;
+						isHeld = true;
+					}
 
 					if (playable && rec.confirmed()) rec.press();
 
