@@ -26,10 +26,10 @@ class NoteSpawner {
 		bottom = 0;
 		top = 0;
 
-		for (i in 0...20) {
+		/*for (i in 0...20) {
 			var note:MetaNote = File.getNote(i);
 			trace(note.position+File.getTimeCorrectionForIndex(i),note.duration,note.index,note.type);
-		}
+		}*/
 
 		File.clearJudgement();
 	}
@@ -65,7 +65,7 @@ class NoteSpawner {
 
 		processNotes(pos);
 
-		trace("top&bottom:",top,bottom);
+		//trace("top&bottom:",top,bottom);
 	}
 
 	function processNotes(pos:Int64) {
