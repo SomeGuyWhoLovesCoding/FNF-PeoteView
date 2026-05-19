@@ -468,7 +468,6 @@ class PlayField {
 		if (songStarted) Mixer.stopMusic();
 		if (noteSystem != null) {
 			var pos = MetaNote.floatToMetaNotePosition(songPosition);
-			noteSystem.onSongPositionJump(pos);
 			noteSystem.resetStrumlines();
 		}
 		if (inputSystem != null) inputSystem.removeEvents();
