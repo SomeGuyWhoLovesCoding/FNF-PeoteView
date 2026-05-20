@@ -25,11 +25,6 @@ class NoteSpawner {
 
 		bottom = 0;
 		top = 0;
-
-		for (i in 0...20) {
-			var note:MetaNote = File.getNote(i);
-			trace(note.position,note.duration,note.index,note.type);
-		}
 	}
 
 	var timeSpentOnIt:Float = 0;
