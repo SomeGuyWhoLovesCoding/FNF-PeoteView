@@ -69,6 +69,6 @@ class File {
 		return false;
 	}
 	@:hlNative("chart_file", "setNoteHeld") public static function setNoteHeld(atIndex:hl.I64, value:Bool):Void {}
-	@:hlNative("chart_file", "clearJudgement") public static function clearJudgement():Void {}
+	@:hlNative("chart_file", "clearJudgement") public static function clearJudgement():Void;
 }
 #end
