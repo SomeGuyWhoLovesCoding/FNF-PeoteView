@@ -25,52 +25,29 @@ class NoteSpawner {
 
 		bottom = 0;
 		top = 0;
-
-		/*for (i in 0...20) {
-			var note:MetaNote = File.getNote(i);
-			trace(note.position+File.getTimeCorrectionForIndex(i),note.duration,note.index,note.type);
-		}*/
-
-		File.clearJudgement();
 	}
 
 	var timeSpentOnIt:Float = 0;
 	var timeSpentOnItIncrement:Float = 0;
 
-	function update(pos:Int64, isSeeking:Bool = false) {
+	function update(pos:Int64) {
+		//trace("TOP AND BOTTOM (PRE-UPDATE): ",bottom,top);
+
 		_lastbottom = bottom;
 		_lasttop = top;
 
 		cullTop(pos);
 		cullBottom(pos);
 
-		// Clear strumline state if seeking OR moving backward this frame
-		if (isSeeking || parent.movingBackward) {
-			for (i in 0...parent.strumlines.length) {
-				var strumline = parent.strumlines[i];
-				for (j in 0...strumline.buffer.length) {
-					strumline.notesToHit[j] = null;
-					strumline.notesToHit_indexes[j] = 0;
-					strumline.notesToHit_sprites[j] = null;
-					strumline.sustainsActive[j] = false;
-					strumline.sustainsToHold[j] = null;
-					strumline.sustainsToHold_indexes[j] = 0;
-					strumline.sustainsToHold_duration[j] = 0;
-					strumline.botTimers[j] = 0;
-					strumline.getTimeCorrection[j] = 0;
-					strumline.fakeOverlapStorage[j] = -99999;
-				}
-			}
-		}
-
 		processNotes(pos);
 
-		//trace("top&bottom:",top,bottom);
+		//trace("TOP AND BOTTOM (POST-UPDATE): ",bottom,top);
 	}
 
 	function processNotes(pos:Int64) {
 		var latency = Main.conductor.offset;
 		var latencyI64 = MetaNote.floatToMetaNotePosition(latency);
+		//trace('latency',latency,'latencyI64',latencyI64);
 
 		pos += latencyI64;
 
@@ -80,6 +57,8 @@ class NoteSpawner {
 		var prevTimeCorrection:Int64 = 0;
 		var noteSpr:VirtualNote = null;
 		var j:Int = 0;
+
+		trace('processNotes: bottom=$bottom top=$top pos=$pos');
 
 		var time = haxe.Timer.stamp();
 		while (i < top) {
@@ -92,11 +71,9 @@ class NoteSpawner {
 			var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
 
 			var timeCorrection = File.getTimeCorrectionForIndex(i);
-			var n_position:Int64 = n.position + timeCorrection;
-			//Sys.println(n_position);
+			var n_position = n.position + timeCorrection;
 
 			var diff = (MetaNote.metaNotePositionToSongTime(n_position - pos)) * scrollSpeed;
-			//if (i == 5) trace('NOTE 5 $diff');
 			var newY = receptor.y + Math.floor(diff);
 
 			var ghost = isGhostNote(prev, n, prevTimeCorrection, i);
@@ -126,55 +103,26 @@ class NoteSpawner {
 
 	function cullTop(pos:Int64) {
 		var len = File.getLength();
-		
-		// === FORWARD: Include notes now within spawn range ===
 		while (top < len) {
 			var n = File.getNote(top);
 			var tc = File.getTimeCorrectionForIndex(top);
-			// Stop if note is too far ahead
 			if ((n.position + tc) - pos >= spawnDist) break;
 			++top;
 		}
-		
-		// === BACKWARD: Exclude notes now too far ahead ===
-		while (top > bottom) {
-			var n = File.getNote(top - 1);
-			var tc = File.getTimeCorrectionForIndex(top - 1);
-			// Stop if note is still within range
-			if ((n.position + tc) - pos < spawnDist) break;
-			// This note is now too far, rewind top to exclude it
-			--top;
-		}
-		
 		if (top < len) curTopNote = File.getNote(top);
 	}
 
 	function cullBottom(pos:Int64) {
 		var len = File.getLength();
-		
-		// === FORWARD: Exclude notes that have despawned ===
 		while (bottom < len) {
 			var n = File.getNote(bottom);
 			var tc = File.getTimeCorrectionForIndex(bottom);
-			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - (n.position + tc);
-			// Stop if note hasn't despawned yet
+			var despawnCheck:Int64 = pos - MetaNote.intToMetaNoteDuration(n.duration) - (n.position + tc);
 			if (despawnCheck <= despawnDist) break;
-			// This note has despawned, return to pool
-			var notePool = parent.notePool;
+			parent.notePool.putNote(n, bottom);
+			parent.notePool.putSustain(n, bottom);
 			++bottom;
 		}
-		
-		// === BACKWARD: Include notes now back in range ===
-		while (bottom > 0 && bottom < top) {
-			var n = File.getNote(bottom - 1);
-			var tc = File.getTimeCorrectionForIndex(bottom - 1);
-			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - (n.position + tc);
-			// Stop if note is still too far behind
-			if (despawnCheck > despawnDist) break;
-			// This note is back in range, rewind bottom to include it
-			--bottom;
-		}
-		
 		if (bottom < len) curBottomNote = File.getNote(bottom);
 	}
 
@@ -219,16 +167,16 @@ class NoteSpawner {
 		var newBottom = lowerBound(minPos);
 		var newTop = upperBound(maxPos) - 1;
 
-		cullTop(songPos);
-
-		File.clearJudgement();
+		cullTop(songPos); // this is the perfect solution.
 
 		bottom = newBottom;
 		top = newTop;
+
 		curBottomNote = File.getNote(bottom);
 		curTopNote = File.getNote(top);
 		
-		parent.resetStrumlines();  // Still call this for animations
+		// Clear receptor states to avoid lingering animations
+		parent.resetStrumlines();
 	}
 
 	// Now we're onto the real shit.
@@ -391,18 +339,11 @@ class NoteSpawner {
 	/**
 	 * Merges a note into an existing sprite by increasing its alpha.
 	 * @param noteSpr The note sprite to merge into.
-	 * @param n The meta note from an index to be merged.
+	 * @param n The meta note from index being merged.
 	 */
-	inline function mergeNoteIntoSprite(noteSpr:VirtualNote, i:Int64) {
-		var alphaToAdd = File.isNoteMissed(i) ? Note.defaultMissAlpha : Note.defaultAlpha;
+	inline function mergeNoteIntoSprite(noteSpr:VirtualNote, n:Int64) {
+		var alphaToAdd = File.isNoteMissed(n) ? Note.defaultMissAlpha : Note.defaultAlpha;
 		noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + alphaToAdd, 256);
 		noteSpr.notesInOne++;
-	}
-
-	/**
-	 * Nothing to dispose here. Just a spoof function used for either debugging purposes or future features.
-	 */
-	function dispose() {
-		//...
 	}
 }

@@ -79,9 +79,7 @@ class NotePool {
     function putNote(n:MetaNote, index:Int64) {
         // Reset sprite and return to free list
         // No lookup needed — cullBottom calls this for the note leaving the window
-        File.setNoteHit(index, false);
-        File.setNoteMissed(index, false);
-        File.setNoteHeld(index, false);
+        //.
         // Note: the VirtualNote itself is returned via putNoteSprite
         // called separately when the sprite reference is available
     }

@@ -92,42 +92,24 @@ class NoteSystem {
 		update(MetaNote.floatToMetaNotePosition(parent.songPosition));
 	}
 
-	var movingBackward(default, null):Bool = false;
-	private var _stableLastPos:Int64; // tracks pos before the clamp
-	var isSeeking(default, null):Bool = false;
-	var seekTimeout:Float = 0;
-	static inline var SEEK_WINDOW_MS = 100.0;
-
 	/**
 	 * This processes the virtual notes in real time.
 	 * @param pos The song's position in the note position format.
 	**/
-
-	// In update():
 	function update(pos:Int64) {
-		if (_lastPos == 0) { _lastPos = pos; _stableLastPos = pos; }
+		if (_lastPos == 0) _lastPos = pos; // initialize safely
 
+		// if position jumped too far (pause or seek), resync
 		var delta = pos - _lastPos;
-		var deltaMs = MetaNote.metaNotePositionToSongTime(delta);
-		
-		// Clear seeking flag after timeout
-		if (isSeeking && haxe.Timer.stamp() > seekTimeout) {
-			isSeeking = false;
-		}
-		
-		movingBackward = pos < _stableLastPos;
-		_stableLastPos = pos;
-		
-		// Detect discontinuous jump
-		if (movingBackward) {
-			isSeeking = true;
-			seekTimeout = haxe.Timer.stamp() + (SEEK_WINDOW_MS / 1000);
+		if (delta < 0 || MetaNote.metaNotePositionToSongTime(delta) > 200)
 			_lastPos = pos;
-		}
 
 		virtualNoteBuffer.clear();
+
 		if (noteSpawner != null)
-			noteSpawner.update(pos, isSeeking);  // ← Pass flag
+			noteSpawner.update(pos);
+
+		//trace('Note pool length: ${notePool.inactiveVirtualNotes.length}, Sustain pool length:  ${notePool.inactiveVirtualSusses.length}');
 	}
 
 	private var _lastPos(default, null):Int64; // for adaptive bot timer
@@ -138,6 +120,7 @@ class NoteSystem {
 	**/
 	function onSongPositionJump(pos:Int64) {
 		_lastPos = pos;
+		resetStrumlines(); // force reset them
 
 		if (noteSpawner != null) {
 			noteSpawner.resetNotes(MetaNote.metaNotePositionToSongTime(pos));
@@ -163,9 +146,9 @@ class NoteSystem {
 			for (j in 0...botTimers.length) {
 				var rec = strumline.buffer[j];
 				if (parent.botplay) canMess = true;
-				if (canMess && !movingBackward) { // ← Add !movingBackward check
+				if (canMess) {
 					if (!strumline.sustainsActive[j]) {
-						if (strumline.botTimers[j] < 0) {
+						if (strumline.botTimers[j] < 0 && !strumline.sustainsActive[j]) {
 							rec.reset();
 							strumline.botTimers[j] = 0;
 						}
@@ -190,6 +173,11 @@ class NoteSystem {
 		noteSpawner.renderNotes(pos);
 	}
 
+	#if hl
+	private var _csvFile:sys.io.FileOutput = null;
+	private var _csvFrame:Int = 0;
+	#end
+
 	/**
 	 * Again, do not fuck with this.
 	 * I put lots of effort into this abomination of a function.
@@ -206,7 +194,7 @@ class NoteSystem {
 		var duration = note.duration;
 		//if (_id <= 6) trace(duration);
 		var timeCorrection = File.getTimeCorrectionForIndex(_id);
-		//if (_id == 12) trace(_id, 'Position ${note.position} Time correction ${timeCorrection} Diff ${diff} is hit ${File.isNoteHit(_id)}');
+		//if (_id == 2) trace(_id, 'Position ${note.position} Time correction ${timeCorrection} Diff ${diff}');
 		var position = note.position + timeCorrection;
 
 		var noteTypeCall:Int->Int->Bool->Void = noteTypeFunctionalityPre[note.type];
@@ -228,8 +216,7 @@ class NoteSystem {
 		var sustainSpr = duration != 0 ? notePool.getSustain(id, note, _id) : null;
 		var sustainExists = duration != 0;
 
-		var rawLeftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
-		var leftover = Std.int(Math.max(0, Math.min(rawLeftover, duration))); // Clamp to valid range
+		var leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
 		var isHit:Bool = File.isNoteHit(_id);
 		var isMissed:Bool = File.isNoteMissed(_id);
 		var isHeld:Bool = File.isNoteHeld(_id);
@@ -257,25 +244,11 @@ class NoteSystem {
 					var noteToHit = strumline.notesToHit[index];
 					var noteToHitExists = noteToHit != null;
 
-					if (!noteToHitExists) {
+					var _pos = MetaNote.metaNotePositionToSongTime((noteToHit.position + strumline.getTimeCorrection[index]) - pos);
+					if (!noteToHitExists || Math.abs(diff) < Math.abs(_pos)) {
 						strumline.notesToHit[index] = note;
 						strumline.notesToHit_indexes[index] = _id;
 						strumline.getTimeCorrection[index] = timeCorrection;
-					} else {
-						var _pos = MetaNote.metaNotePositionToSongTime(
-							(noteToHit.position + strumline.getTimeCorrection[index]) - pos
-						);
-						// Prefer the note closest to the receptor from the upcoming direction.
-						// If diff is positive (ahead), prefer smallest positive diff.
-						// If both are behind (negative), prefer least negative (closest to receptor).
-						var currentIsBetter = movingBackward
-							? (diff > _pos) // backward: prefer the one further ahead (largest diff = most future)
-							: (Math.abs(diff) < Math.abs(_pos)); // forward: closest wins as before
-						if (currentIsBetter) {
-							strumline.notesToHit[index] = note;
-							strumline.notesToHit_indexes[index] = _id;
-							strumline.getTimeCorrection[index] = timeCorrection;
-						}
 					}
 				}
 
@@ -297,7 +270,6 @@ class NoteSystem {
 
 					if (sustainExists && !isHeld) {
 						sustainSpr.alpha = Sustain.defaultMissAlpha;
-						var n:Int64 = note.toNumber();
 						File.setNoteHeld(_id, isHeld = true);
 						parent.onSustainRelease.dispatch(note);
 					}
@@ -347,9 +319,6 @@ class NoteSystem {
 
 		// --- Sustain handling ---
 		var sustainLength = duration - 20;
-		/*if (sustainExists && strumline.sustainsActive[index] && !isHit) {
-			Sys.println('[WARN] Sustain active but note not hit! Note $_id, lane $lane, index $index');
-		}*/
 		if (sustainExists) {
 			sustainSpr.ref = noteSpr;
 			sustainSpr.speed = parent.scrollSpeed;
@@ -364,19 +333,15 @@ class NoteSystem {
 			if (!isHit) {
 				sustainSpr.w = sustainLength;
 			} else if (sustainSpr.alpha != 0) {
-				if (sustainSpr.w >= 0 && !movingBackward) {
+				if (sustainSpr.w >= 0) {
 					sustainSpr.followNote(rec.x, rec.y, id);
-					// Use the already-clamped leftover
-					sustainSpr.w = Std.int(Math.max(0, sustainLength - leftover));
+					sustainSpr.w = sustainLength - leftover;
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
 
 				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainLength - 45)) && !isHeld) {
 					var n:Int64 = note.toNumber();
-					// Only complete if we haven't already, regardless of direction
-					if (!isHeld) {
-						File.setNoteHeld(_id, isHeld = true);
-					}
+					File.setNoteHeld(_id, isHeld = true);
 
 					if (playable && rec.confirmed()) rec.press();
 
@@ -391,8 +356,8 @@ class NoteSystem {
 				}
 			}
 
-			// Only update during forward playback to avoid seek artifacts
-			if (!movingBackward && !isSeeking && diff + sustainLength - 45 < 0)
+			// Fixes the rare receptor pause issue, finally
+			if (diff + sustainLength - 45 < 0)
 				strumline.sustainsActive[index] = !isHeld;
 
 			if (noteSpr != null)
@@ -460,7 +425,9 @@ class NoteSystem {
 	 * Disposes the note system.
 	**/
 	function dispose() {
-		noteSpawner.dispose(); // nothing to dispose here, just a function for future reference
+		#if hl
+		if (_csvFile != null) { _csvFile.close(); _csvFile = null; }
+		#end
 
 		// Clear up the virtual note buffer for the funnies
 		virtualNoteBuffer.clear();
