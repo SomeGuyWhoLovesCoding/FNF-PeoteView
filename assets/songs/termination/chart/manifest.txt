@@ -1,5 +1,5 @@
 # Sharded chart
-# Each shard = 0.25 seconds = 1,000,000,000 new ticks
+# Each shard = 0.25 seconds = 4,000,000,000 new ticks
 # 1058 shards, 1002623 notes
 0.bin: 19999 notes
 1.bin: 20000 notes
