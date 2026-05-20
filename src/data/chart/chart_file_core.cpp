@@ -437,6 +437,7 @@ private:
     std::vector<int64_t>          shardStartIndices;
     uint64_t                      currentShardId = 0;
     int64_t                       totalNotes     = 0;
+    int64_t                       correctionTime = 0;
 
     static constexpr int POOL_SIZE         = 100;
     static constexpr int PRELOAD_THRESHOLD = 50;
@@ -544,30 +545,11 @@ private:
         }
     }
 
-public:
-    int64_t                       correctionTime = 0;
-
-    explicit ShardedChartReader(const char* path) : chartDir(path) {
-        scanShards();
-        if (availableShards.empty())
-            throw std::runtime_error("No shards found in " + chartDir);
-        size_t n = (std::min)((size_t)POOL_SIZE, availableShards.size());
-        for (size_t i = 0; i < n; i++) loadShard(availableShards[i]);
-    }
-
-    ~ShardedChartReader() {
-        clearJudgement();
-        for (auto& p : activeShards) {
-            p.second.judge.detach();
-            p.second.chart.close();
-        }
-    }
-
     ShardInfo& resolve(int64_t globalIndex, int64_t& localOut) {
         uint64_t logicalShardId = findShardFor(globalIndex);
         
         // Time correction: logical shard ID × ticks per 0.25s interval
-        correctionTime = (int64_t)logicalShardId * 4000000000LL; // 0.25s = 4e9 ticks
+        correctionTime = (int64_t)logicalShardId * 4000000000LL; // 0.25s = 1e9 ticks
         
         // Check if this logical shard has a physical file
         if (!std::binary_search(availableShards.begin(), availableShards.end(), logicalShardId)) {
@@ -583,12 +565,27 @@ public:
         if (!activeShards.count(logicalShardId)) {
             loadShard(logicalShardId); // loadShard uses logical ID as key
         }
-
+        
         ShardInfo& info = activeShards[logicalShardId];
         localOut = globalIndex - info.startIndex;
-        /*fprintf(stderr, "resolve(%lld) -> shard=%llu startIndex=%lld localOut=%lld\n", 
-                globalIndex, logicalShardId, info.startIndex, localOut);*/
         return info;
+    }
+
+public:
+    explicit ShardedChartReader(const char* path) : chartDir(path) {
+        scanShards();
+        if (availableShards.empty())
+            throw std::runtime_error("No shards found in " + chartDir);
+        size_t n = (std::min)((size_t)POOL_SIZE, availableShards.size());
+        for (size_t i = 0; i < n; i++) loadShard(availableShards[i]);
+    }
+
+    ~ShardedChartReader() {
+        clearJudgement();
+        for (auto& p : activeShards) {
+            p.second.judge.detach();
+            p.second.chart.close();
+        }
     }
 
     uint64_t findShardFor(int64_t globalIndex) const {

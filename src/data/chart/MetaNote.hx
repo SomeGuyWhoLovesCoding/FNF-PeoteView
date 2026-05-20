@@ -35,7 +35,10 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 
 	// Getters
 	inline function get_position():Int64 {
-		return Int64.make(0, this.low);
+		// Extract as low 32 bits unsigned, then reconstruct as Int64
+		var lowBits:UInt = (this & POSITION_MASK).low;
+		var value = Int64.make(0, lowBits);
+		return value;
 	}
 
 	inline function get_duration():Int {
@@ -63,9 +66,7 @@ abstract MetaNote(Int64) from Int64 to Int64 {
 	
 	// Convert song time (ms) to position ticks
 	inline static function floatToMetaNotePosition(f:Float):Int64 {
-		var value:Int64 = Tools.betterInt64FromFloat(f * TICKS_PER_MS_FLOAT);
-		//trace("yes, please do.",value);
-		return value;
+		return Tools.betterInt64FromFloat(f * TICKS_PER_MS_FLOAT);
 	}
 
 	// Convert position ticks to song time (ms)

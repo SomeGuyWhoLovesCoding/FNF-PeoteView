@@ -28,10 +28,9 @@ int64_t getLength() {
 }
 
 int64_t getTimeCorrectionForIndex(int64_t index) {
-    if (!gReader) throw std::runtime_error("Chart not loaded");
-    int64_t local = 0;
-    gReader->resolve(index, local);
-    return gReader->correctionTime;
+    if (!gReader) return 0;
+    uint64_t shardId = gReader->findShardForTimeCorrection(index);
+    return shardId * 4000000000LL;
 }
 
 // new shit
