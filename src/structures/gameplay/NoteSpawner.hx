@@ -92,11 +92,9 @@ class NoteSpawner {
 			var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
 
 			var timeCorrection = File.getTimeCorrectionForIndex(i);
-			var n_position:Int64 = n.position + timeCorrection;
-			//Sys.println(n_position);
+			var n_position = n.position + timeCorrection;
 
 			var diff = (MetaNote.metaNotePositionToSongTime(n_position - pos)) * scrollSpeed;
-			//if (i == 5) trace('NOTE 5 $diff');
 			var newY = receptor.y + Math.floor(diff);
 
 			var ghost = isGhostNote(prev, n, prevTimeCorrection, i);
@@ -161,6 +159,8 @@ class NoteSpawner {
 			if (despawnCheck <= despawnDist) break;
 			// This note has despawned, return to pool
 			var notePool = parent.notePool;
+			notePool.putNote(n, bottom);
+			notePool.putSustain(n, bottom);
 			++bottom;
 		}
 		
