@@ -8,7 +8,6 @@
 #include <vector>
 #include <iomanip>
 #include <cmath>
-#include <set>
 
 #ifdef _WIN32
 #define NOMINMAX
@@ -235,38 +234,8 @@ public:
     JudgeMap()  {}
     ~JudgeMap() { unmap(); }
 
-    JudgeMap(JudgeMap&& o) noexcept { *this = std::move(o); }
-    JudgeMap& operator=(JudgeMap&& o) noexcept {
-        if (this != &o) {
-            // release current resources
-            unmap();
-            // transfer ownership
-            path_        = std::move(o.path_);
-            noteCount_   = o.noteCount_;
-            exact_       = o.exact_;
-            mappedBytes_ = o.mappedBytes_;
-            ptr_         = o.ptr_;
-    #ifdef _WIN32
-            hFile_       = o.hFile_;
-            hMapping_    = o.hMapping_;
-    #else
-            fd_          = o.fd_;
-    #endif
-            // leave source in a safe, destructible state
-            o.ptr_         = nullptr;
-            o.mappedBytes_ = 0;
-            o.noteCount_   = 0;
-            o.exact_       = 0;
-            o.path_.clear();
-    #ifdef _WIN32
-            o.hFile_       = INVALID_HANDLE_VALUE;
-            o.hMapping_    = nullptr;
-    #else
-            o.fd_          = -1;
-    #endif
-        }
-        return *this;
-    }
+    JudgeMap(const JudgeMap&)            = delete;
+    JudgeMap& operator=(const JudgeMap&) = delete;
 
     // Attach to a shard path and note count. Does not create the file.
     void attach(const std::string& path, int64_t noteCount) {
@@ -450,45 +419,31 @@ private:
         std::vector<std::string> files;
         listFiles(chartDir, files);
 
-        // Step 1: Collect existing shard IDs
-        std::set<uint64_t> existingShards;
-        uint64_t maxShardId = 0;
-        
         for (const auto& name : files) {
             if (getExtension(name) != ".bin") continue;
             std::string stem = getStem(name);
-            if (stem.rfind("judge", 0) == 0) continue; // skip judge files
+            if (stem.rfind("judge", 0) == 0) continue;
             try {
                 uint64_t id = std::stoull(stem);
-                existingShards.insert(id);
-                maxShardId = std::max<uint64_t>(maxShardId, id);
+                availableShards.push_back(id);
             } catch (...) {
                 std::cerr << "Warning: unrecognised shard filename: " << name << "\n";
             }
         }
 
-        // Step 2: Build logical shard map (0..maxShardId inclusive)
+        std::sort(availableShards.begin(), availableShards.end());
+
         int64_t cumulative = 0;
-        for (uint64_t logicalId = 0; logicalId <= maxShardId; ++logicalId) {
-            // Every logical shard gets an entry in shardStartIndices
+        for (uint64_t id : availableShards) {
             shardStartIndices.push_back(cumulative);
-            
-            // Only track physically existing shards for loading
-            if (existingShards.count(logicalId)) {
-                availableShards.push_back(logicalId);
-                
-                std::string path = chartDir + "/" + std::to_string(logicalId) + ".bin";
-                int64_t sz = getFileSize(path);
-                if (sz < 0) throw std::runtime_error("Cannot stat shard " + std::to_string(logicalId));
-                cumulative += sz / (int64_t)sizeof(uint64_t);
-            }
-            // Missing shards contribute 0 notes but preserve index alignment
+            int64_t sz = getFileSize(chartDir + "/" + std::to_string(id) + ".bin");
+            if (sz < 0) throw std::runtime_error("Cannot stat shard " + std::to_string(id));
+            cumulative += sz / (int64_t)sizeof(uint64_t);
         }
-        
         totalNotes = cumulative;
-        std::cout << "[INFO] Logical shards: 0.." << maxShardId 
-                << " | Physical files: " << availableShards.size()
-                << " | Total notes: " << totalNotes << "\n";
+
+        std::cout << "[INFO] " << availableShards.size() << " shards, "
+                  << totalNotes << " total notes\n";
     }
 
     int64_t shardStartFor(uint64_t shardId) const {
@@ -498,22 +453,21 @@ private:
         return shardStartIndices[std::distance(availableShards.begin(), it)];
     }
 
-    void loadShard(uint64_t logicalShardId) {
-        if (activeShards.count(logicalShardId)) return;
+    void loadShard(uint64_t shardId) {
+        if (activeShards.count(shardId)) return;
 
         ShardInfo info;
-        info.shardId    = logicalShardId; // logical ID, not array index
-        info.startIndex = shardStartIndices[logicalShardId]; // direct lookup
+        info.shardId    = shardId;
+        info.startIndex = shardStartFor(shardId);
 
-        std::string path = chartDir + "/" + std::to_string(logicalShardId) + ".bin";
-        if (!info.chart.open(path))
-            throw std::runtime_error("Failed to mmap shard " + std::to_string(logicalShardId));
+        if (!info.chart.open(chartDir + "/" + std::to_string(shardId) + ".bin"))
+            throw std::runtime_error("Failed to mmap chart shard " + std::to_string(shardId));
 
         info.noteCount = info.chart.count();
         info.endIndex  = info.startIndex + info.noteCount;
-        info.judge.attach(judgedataPath(logicalShardId), info.noteCount);
+        info.judge.attach(judgedataPath(shardId), info.noteCount);
 
-        activeShards[logicalShardId] = std::move(info);
+        activeShards[shardId] = std::move(info);
     }
 
     void unloadShard(uint64_t shardId) {
@@ -546,27 +500,14 @@ private:
     }
 
     ShardInfo& resolve(int64_t globalIndex, int64_t& localOut) {
-        uint64_t logicalShardId = findShardFor(globalIndex);
-        
-        // Time correction: logical shard ID × ticks per 0.25s interval
-        correctionTime = (int64_t)logicalShardId * 4000000000LL; // 0.25s = 1e9 ticks
-        
-        // Check if this logical shard has a physical file
-        if (!std::binary_search(availableShards.begin(), availableShards.end(), logicalShardId)) {
-            // Missing shard = no notes in this time window
-            throw std::runtime_error("Accessing note in missing shard " + std::to_string(logicalShardId));
-        }
-        
-        if (logicalShardId != currentShardId) {
-            currentShardId = logicalShardId;
+        uint64_t shardId = findShardFor(globalIndex);
+        correctionTime   = (int64_t)shardId * 1000000000LL;
+        if (shardId != currentShardId) {
+            currentShardId = shardId;
             managePool(currentShardId);
         }
-        
-        if (!activeShards.count(logicalShardId)) {
-            loadShard(logicalShardId); // loadShard uses logical ID as key
-        }
-        
-        ShardInfo& info = activeShards[logicalShardId];
+        if (!activeShards.count(shardId)) loadShard(shardId);
+        ShardInfo& info = activeShards[shardId];
         localOut = globalIndex - info.startIndex;
         return info;
     }
@@ -589,36 +530,33 @@ public:
 
     uint64_t findShardFor(int64_t globalIndex) const {
         if (globalIndex < 0 || globalIndex >= totalNotes)
-            throw std::out_of_range("Global index out of range");
-        
-        // Binary search on logical shard boundaries
+            throw std::out_of_range("Global index out of range: " + std::to_string(globalIndex));
         auto it = std::upper_bound(shardStartIndices.begin(), shardStartIndices.end(), globalIndex);
-        if (it == shardStartIndices.begin()) 
-            throw std::runtime_error("Invalid shard lookup");
-        
-        // The logical shard ID is the INDEX in shardStartIndices
-        uint64_t logicalShardId = std::distance(shardStartIndices.begin(), it) - 1;
-        return logicalShardId;
+        size_t pos = std::distance(shardStartIndices.begin(), it) - 1;
+        return availableShards[pos];
     }
 
-    // Time correction now uses logical shard ID directly ✅
     uint64_t findShardForTimeCorrection(int64_t globalIndex) const {
-        return findShardFor(globalIndex); // Same logic, clearer name
+        if (globalIndex < 0 || globalIndex >= totalNotes)
+            throw std::out_of_range("Global index out of range: " + std::to_string(globalIndex));
+        auto it = std::upper_bound(shardStartIndices.begin(), shardStartIndices.end(), globalIndex);
+        size_t pos = std::distance(shardStartIndices.begin(), it) - 1;
+        return pos;
     }
 
     // ── Chart access ──────────────────────────────────────────────────────────
     uint64_t getNote(int64_t i) {
-        int64_t l = 0; return resolve(i, l).chart.data()[l];
+        int64_t l; return resolve(i, l).chart.data()[l];
     }
 
     // ── Judgement state ───────────────────────────────────────────────────────
-    bool isNoteHit   (int64_t i) { int64_t l = 0; return resolve(i,l).judge.isFlag  (l); }
-    bool isNoteMissed(int64_t i) { int64_t l = 0; return resolve(i,l).judge.isMissed(l); }
-    bool isNoteHeld  (int64_t i) { int64_t l = 0; return resolve(i,l).judge.isHeld  (l); }
+    bool isNoteHit   (int64_t i) { int64_t l; return resolve(i,l).judge.isFlag  (l); }
+    bool isNoteMissed(int64_t i) { int64_t l; return resolve(i,l).judge.isMissed(l); }
+    bool isNoteHeld  (int64_t i) { int64_t l; return resolve(i,l).judge.isHeld  (l); }
 
-    void setNoteHit   (int64_t i, bool v) { int64_t l = 0; resolve(i,l).judge.setFlag  (l,v); }
-    void setNoteMissed(int64_t i, bool v) { int64_t l = 0; resolve(i,l).judge.setMissed(l,v); }
-    void setNoteHeld  (int64_t i, bool v) { int64_t l = 0; resolve(i,l).judge.setHeld  (l,v); }
+    void setNoteHit   (int64_t i, bool v) { int64_t l; resolve(i,l).judge.setFlag  (l,v); }
+    void setNoteMissed(int64_t i, bool v) { int64_t l; resolve(i,l).judge.setMissed(l,v); }
+    void setNoteHeld  (int64_t i, bool v) { int64_t l; resolve(i,l).judge.setHeld  (l,v); }
 
     // ── clearJudgement ────────────────────────────────────────────────────────
     // Deletes every judgeN.bin for all shards — active and evicted.

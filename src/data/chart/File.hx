@@ -31,7 +31,6 @@ extern class File {
 	@:native("setNoteMissed") static function setNoteMissed(atIndex:Int64, value:Bool):Void;
 	@:native("isNoteHeld") static function isNoteHeld(atIndex:Int64):Bool;
 	@:native("setNoteHeld") static function setNoteHeld(atIndex:Int64, value:Bool):Void;
-	@:native("clearJudgement") static function clearJudgement():Void;
 }
 #elseif hl
 class File {
@@ -57,18 +56,17 @@ class File {
 		return 0;
 	}
 
-	@:hlNative("chart_file", "isNoteHit") public static function isNoteHit(atIndex:hl.I64):Bool {
+	@:hlNative("chart_file", "isNoteHit") static function isNoteHit(atIndex:hl.I64):Bool {
 		return false;
 	}
-	@:hlNative("chart_file", "setNoteHit") public static function setNoteHit(atIndex:hl.I64, value:Bool):Void {}
-	@:hlNative("chart_file", "isNoteMissed") public static function isNoteMissed(atIndex:hl.I64):Bool {
+	@:hlNative("chart_file", "setNoteHit") static function setNoteHit(atIndex:hl.I64, value:Bool):Void {}
+	@:hlNative("chart_file", "isNoteMissed") static function isNoteMissed(atIndex:hl.I64):Bool {
 		return false;
 	}
-	@:hlNative("chart_file", "setNoteMissed") public static function setNoteMissed(atIndex:hl.I64, value:Bool):Void {}
-	@:hlNative("chart_file", "isNoteHeld") public static function isNoteHeld(atIndex:hl.I64):Bool {
+	@:hlNative("chart_file", "setNoteMissed") static function setNoteMissed(atIndex:hl.I64, value:Bool):Void {}
+	@:hlNative("chart_file", "isNoteHeld") static function isNoteHeld(atIndex:hl.I64):Bool {
 		return false;
 	}
-	@:hlNative("chart_file", "setNoteHeld") public static function setNoteHeld(atIndex:hl.I64, value:Bool):Void {}
-	@:hlNative("chart_file", "clearJudgement") public static function clearJudgement():Void;
+	@:hlNative("chart_file", "setNoteHeld") static function setNoteHeld(atIndex:hl.I64, value:Bool):Void {}
 }
 #end

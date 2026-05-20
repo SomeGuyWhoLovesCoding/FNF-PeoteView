@@ -32,8 +32,8 @@ HL_PRIM void HL_NAME(destroyChart)(_NO_ARG) {
 
 HL_PRIM int64_t HL_NAME(getTimeCorrectionForIndex)(int64_t index) {
     if (!gReader) return 0;
-    uint64_t shardId = gReader->findShardForTimeCorrection(index);
-    return shardId * 4000000000LL;
+    uint64_t shardId = gReader->findShardForGlobalIndex(index);
+    return shardId * 1000000000LL;
 }
 
 // new shit
@@ -62,11 +62,6 @@ HL_PRIM void HL_NAME(setNoteHeld)(int64_t index, bool value) {
     core_setNoteHeld(index, value);
 }
 
-// now that's how judgements should work
-HL_PRIM void HL_NAME(clearJudgement)(_NO_ARG) {
-    core_clearJudgement();
-}
-
 // ============================================================================
 // Haxe bindings
 // ============================================================================
@@ -77,9 +72,8 @@ DEFINE_PRIM(_I64,  getLength, _NO_ARG)
 DEFINE_PRIM(_VOID, destroyChart, _NO_ARG)
 DEFINE_PRIM(_I64, getTimeCorrectionForIndex, _I64)
 DEFINE_PRIM(_BOOL,  isNoteHit, _I64)
-DEFINE_PRIM(_VOID,  setNoteHit, _I64 _BOOL)
+DEFINE_PRIM(_VOID,  setNoteHit, _I64, _BOOL)
 DEFINE_PRIM(_BOOL,  isNoteMissed, _I64)
-DEFINE_PRIM(_VOID,  setNoteMissed, _I64 _BOOL)
+DEFINE_PRIM(_VOID,  setNoteMissed, _I64, _BOOL)
 DEFINE_PRIM(_BOOL,  isNoteHeld, _I64)
-DEFINE_PRIM(_VOID,  setNoteHeld, _I64 _BOOL)
-DEFINE_PRIM(_VOID,  clearJudgement, _NO_ARG)
+DEFINE_PRIM(_VOID,  setNoteHeld, _I64, _BOOL)

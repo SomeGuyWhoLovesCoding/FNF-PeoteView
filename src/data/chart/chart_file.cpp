@@ -59,7 +59,7 @@ void setNoteHeld(int64_t index, bool value) {
     core_setNoteHeld(index, value);
 }
 
-// Clears all judgement states.
+// Clears all judgement state.
 // Call this from Haxe's resetNotes() with the lowerBound seek target.
 void clearJudgement() {
     core_clearJudgement();
