@@ -27,7 +27,7 @@ HL_PRIM int64_t HL_NAME(getLength)(_NO_ARG) {
 }
 
 HL_PRIM void HL_NAME(destroyChart)(_NO_ARG) { 
-    core_destroyChart(); 
+    core_destroyChart();
 }
 
 HL_PRIM int64_t HL_NAME(getTimeCorrectionForIndex)(int64_t index) {

@@ -286,7 +286,11 @@ private:
         if (it != activeShards.end()) {
             it->second.reader.flush();
             activeShards.erase(it);
-            //std::cout << "[POOL] Unloaded shard " << shardId << std::endl;
+            if (shardId == cachedShardId) {  // invalidate cache
+                cachedShardInfo  = nullptr;
+                cachedShardStart = -1;
+                cachedShardEnd   = -1;
+            }
         }
     }
     
@@ -343,59 +347,70 @@ public:
         activeShards.clear();
     }
     
-    // Binary search to find which shard contains the global index
+    // Hot path cache — avoids binary search on sequential/repeated access
+    int64_t cachedShardStart = -1;
+    int64_t cachedShardEnd   = -1;   // exclusive
+    uint64_t cachedShardId   = 0;
+    ShardInfo* cachedShardInfo = nullptr;  // add this
+
     uint64_t findShardForGlobalIndex(int64_t globalIndex) const {
+        // Range check first — O(1), covers sequential and repeated access
+        if (globalIndex >= cachedShardStart && globalIndex < cachedShardEnd) {
+            return cachedShardId;
+        }
+
         if (globalIndex < 0 || globalIndex >= totalNotes) {
             throw std::out_of_range("Global index out of range");
         }
-        
-        // Binary search on shardStartIndices
+
         auto it = std::upper_bound(shardStartIndices.begin(), shardStartIndices.end(), globalIndex);
-        if (it == shardStartIndices.begin()) {
-            throw std::runtime_error("Invalid shard lookup");
-        }
-        
         size_t shardPos = std::distance(shardStartIndices.begin(), it) - 1;
         return availableShards[shardPos];
     }
     
-    uint64_t getNote(int64_t globalIndex) {
-        uint64_t shardId = findShardForGlobalIndex(globalIndex);
-        correctionTime = shardId * 1000000000;
-        
-        // Cache the current shard for sequential access
+    ShardInfo* getShardInfo(int64_t globalIndex) {
+        // O(1) hot path
+        if (globalIndex >= cachedShardStart && globalIndex < cachedShardEnd && cachedShardInfo) {
+            return cachedShardInfo;
+        }
+
+        if (globalIndex < 0 || globalIndex >= totalNotes)
+            throw std::out_of_range("Global index out of range");
+
+        auto it = std::upper_bound(shardStartIndices.begin(), shardStartIndices.end(), globalIndex);
+        size_t shardPos = std::distance(shardStartIndices.begin(), it) - 1;
+        uint64_t shardId = availableShards[shardPos];
+
         if (shardId != currentShardId) {
             currentShardId = shardId;
             managePool(currentShardId);
         }
-        
-        // Ensure shard is loaded
-        if (activeShards.find(shardId) == activeShards.end()) {
+
+        auto mapIt = activeShards.find(shardId);
+        if (mapIt == activeShards.end()) {
             loadShard(shardId);
+            mapIt = activeShards.find(shardId);
         }
-        
-        ShardInfo& info = activeShards[shardId];
-        int64_t localIndex = globalIndex - info.startIndex;
-        
-        return info.reader.get(localIndex);
+
+        cachedShardId    = shardId;
+        cachedShardStart = shardStartIndices[shardPos];
+        cachedShardEnd   = (shardPos + 1 < shardStartIndices.size())
+                        ? shardStartIndices[shardPos + 1]
+                        : totalNotes;
+        cachedShardInfo  = &mapIt->second;
+
+        return cachedShardInfo;
     }
     
+    uint64_t getNote(int64_t globalIndex) {
+        ShardInfo* info = getShardInfo(globalIndex);
+        correctionTime = info->shardId * 1000000000;
+        return info->reader.get(globalIndex - info->startIndex);
+    }
+
     void setNote(int64_t globalIndex, uint64_t value) {
-        uint64_t shardId = findShardForGlobalIndex(globalIndex);
-        
-        if (shardId != currentShardId) {
-            currentShardId = shardId;
-            managePool(currentShardId);
-        }
-        
-        if (activeShards.find(shardId) == activeShards.end()) {
-            loadShard(shardId);
-        }
-        
-        ShardInfo& info = activeShards[shardId];
-        int64_t localIndex = globalIndex - info.startIndex;
-        
-        info.reader.set(localIndex, value);
+        ShardInfo* info = getShardInfo(globalIndex);
+        info->reader.set(globalIndex - info->startIndex, value);
     }
     
     void printNoteInfo(int64_t globalIndex) {

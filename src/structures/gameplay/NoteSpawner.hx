@@ -8,6 +8,7 @@ package structures.gameplay;
 class NoteSpawner {
 	var bottom:Int64;
 	var top:Int64;
+	static var minBottom:Int64 = -1;
 
 	var _lastbottom:Int64;
 	var _lasttop:Int64;
@@ -60,7 +61,8 @@ class NoteSpawner {
 
 		pos += latencyI64;
 
-		var i = bottom;
+		var i = (minBottom != -1 && bottom < minBottom) ? minBottom : bottom;
+		//Sys.println('MIN BOTTOM: $minBottom');
 		var scrollSpeed = parent.parent.scrollSpeed;
 		var prev:MetaNote = -1;
 		var prevTimeCorrection:Int64 = 0;
@@ -170,7 +172,7 @@ class NoteSpawner {
 		if (bottom < len) curBottomNote = File.getNote(bottom);
 	}
 
-	function resetNotes(songPosition:Float) {
+	function resetNotes(songPosition:Float, backwards:Bool = false) {
 		var pf = parent.parent;
 		if (pf.disposed || pf.died) return;
 
@@ -180,9 +182,8 @@ class NoteSpawner {
 		if (len <= 0) return;
 
 		var songPos = MetaNote.floatToMetaNotePosition(songPosition);
-		var minPos:Int64 = songPos - spawnDist;
-		var maxPos:Int64 = songPos;
-		if (minPos < 0) minPos = 0;
+		var minPos:Int64 = songPos;
+		var maxPos:Int64 = songPos - spawnDist;
 
 		function lowerBound(target:Int64):Int64 {
 			var lo:Int64 = 0, hi:Int64 = len;
@@ -211,7 +212,8 @@ class NoteSpawner {
 		var newBottom = lowerBound(minPos);
 		var newTop = upperBound(maxPos) - 1;
 
-		cullTop(songPos); // this is the perfect solution.
+		if (backwards)
+			minBottom = lowerBound(songPos + MetaNote.floatToMetaNotePosition(350));
 
 		bottom = newBottom;
 		top = newTop;

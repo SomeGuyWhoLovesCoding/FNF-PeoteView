@@ -176,21 +176,25 @@ class PlayField {
 		if (disposed || !songStarted || songEnded || paused || died) return;
 		if (value > Mixer.length - 1000) value = Mixer.length - 1000;
 
-		/*if (value < songPosition) {
+		if (value < songPosition) {
 			onRestartingForBackwardTimeSetting = true;
 			timeForRestartingBackwardTime = value;
+			
+			#if linc_luajit_funkinview
+			funkinviewlua.callFunction('preTimeChange', timeForRestartingBackwardTime, Chart.header);
+			#end
 			pause(false);
 			Tools.forSync(() -> {
 				Main.switchState(GAMEPLAY, true);
 			});
 			return;
-		}*/
+		}
 
 		Mixer.setTime(Math.max(value, 0.0), this);
 		if (hud != null && SaveData.state.preferences.ratingPopup) hud.hideRatingPopup();
 		if (noteSystem != null) {
 			var pos = MetaNote.floatToMetaNotePosition(value);
-			noteSystem.onSongPositionJump(pos);
+			noteSystem.onSongPositionJump(pos, true);
 		}
 		if (field != null) field.resetCharacters();
 	}

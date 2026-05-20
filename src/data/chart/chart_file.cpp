@@ -1,6 +1,6 @@
 #include <stdexcept>
 
-// Include the core implementation.
+// Include the core implementation. 
 #include "chart_file_core.cpp"
 
 // ============================================================================
