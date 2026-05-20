@@ -47,7 +47,6 @@ class NoteSpawner {
 	function processNotes(pos:Int64) {
 		var latency = Main.conductor.offset;
 		var latencyI64 = MetaNote.floatToMetaNotePosition(latency);
-		//trace('latency',latency,'latencyI64',latencyI64);
 
 		pos += latencyI64;
 
@@ -57,8 +56,6 @@ class NoteSpawner {
 		var prevTimeCorrection:Int64 = 0;
 		var noteSpr:VirtualNote = null;
 		var j:Int = 0;
-
-		trace('processNotes: bottom=$bottom top=$top pos=$pos');
 
 		var time = haxe.Timer.stamp();
 		while (i < top) {
@@ -84,7 +81,7 @@ class NoteSpawner {
 			fakeOverlapStorage[n.index] = newY;
 
 			if (shouldOverlap) {
-				mergeNoteIntoSprite(noteSpr, i);
+				mergeNoteIntoSprite(noteSpr, n);
 			} else {
 				if (!ghost) {
 					++j;
@@ -103,26 +100,60 @@ class NoteSpawner {
 
 	function cullTop(pos:Int64) {
 		var len = File.getLength();
+		
+		// === FORWARD: Include notes now within spawn range ===
 		while (top < len) {
 			var n = File.getNote(top);
 			var tc = File.getTimeCorrectionForIndex(top);
+			// Stop if note is too far ahead
 			if ((n.position + tc) - pos >= spawnDist) break;
+			// Include this note (reset hit state for editor)
+			n.flag = false; n.missed = false; n.held = false;
+			File.setNote(top, n);
 			++top;
 		}
+		
+		// === BACKWARD: Exclude notes now too far ahead ===
+		while (top > bottom) {
+			var n = File.getNote(top - 1);
+			var tc = File.getTimeCorrectionForIndex(top - 1);
+			// Stop if note is still within range
+			if ((n.position + tc) - pos < spawnDist) break;
+			// This note is now too far, rewind top to exclude it
+			--top;
+		}
+		
 		if (top < len) curTopNote = File.getNote(top);
 	}
 
 	function cullBottom(pos:Int64) {
 		var len = File.getLength();
+		
+		// === FORWARD: Exclude notes that have despawned ===
 		while (bottom < len) {
 			var n = File.getNote(bottom);
 			var tc = File.getTimeCorrectionForIndex(bottom);
-			var despawnCheck:Int64 = pos - MetaNote.intToMetaNoteDuration(n.duration) - (n.position + tc);
+			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - (n.position + tc);
+			// Stop if note hasn't despawned yet
 			if (despawnCheck <= despawnDist) break;
-			parent.notePool.putNote(n, bottom);
-			parent.notePool.putSustain(n, bottom);
+			// This note has despawned, return to pool
+			var notePool = parent.notePool;
+			notePool.putNote(n, bottom);
+			notePool.putSustain(n, bottom);
 			++bottom;
 		}
+		
+		// === BACKWARD: Include notes now back in range ===
+		while (bottom > 0 && bottom < top) {
+			var n = File.getNote(bottom - 1);
+			var tc = File.getTimeCorrectionForIndex(bottom - 1);
+			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - (n.position + tc);
+			// Stop if note is still too far behind
+			if (despawnCheck > despawnDist) break;
+			// This note is back in range, rewind bottom to include it
+			--bottom;
+		}
+		
 		if (bottom < len) curBottomNote = File.getNote(bottom);
 	}
 
@@ -339,10 +370,10 @@ class NoteSpawner {
 	/**
 	 * Merges a note into an existing sprite by increasing its alpha.
 	 * @param noteSpr The note sprite to merge into.
-	 * @param n The meta note from index being merged.
+	 * @param n The meta note being merged.
 	 */
-	inline function mergeNoteIntoSprite(noteSpr:VirtualNote, n:Int64) {
-		var alphaToAdd = File.isNoteMissed(n) ? Note.defaultMissAlpha : Note.defaultAlpha;
+	inline function mergeNoteIntoSprite(noteSpr:VirtualNote, n:MetaNote) {
+		var alphaToAdd = n.missed ? Note.defaultMissAlpha : Note.defaultAlpha;
 		noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + alphaToAdd, 256);
 		noteSpr.notesInOne++;
 	}

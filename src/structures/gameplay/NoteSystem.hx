@@ -92,12 +92,18 @@ class NoteSystem {
 		update(MetaNote.floatToMetaNotePosition(parent.songPosition));
 	}
 
+	var movingBackward(default, null):Bool = false;
+	private var _stableLastPos:Int64; // tracks pos before the clamp
+
 	/**
 	 * This processes the virtual notes in real time.
 	 * @param pos The song's position in the note position format.
 	**/
 	function update(pos:Int64) {
-		if (_lastPos == 0) _lastPos = pos; // initialize safely
+    	if (_lastPos == 0) { _lastPos = pos; _stableLastPos = pos; }
+
+		movingBackward = pos < _stableLastPos;
+		_stableLastPos = pos;
 
 		// if position jumped too far (pause or seek), resync
 		var delta = pos - _lastPos;
@@ -173,11 +179,6 @@ class NoteSystem {
 		noteSpawner.renderNotes(pos);
 	}
 
-	#if hl
-	private var _csvFile:sys.io.FileOutput = null;
-	private var _csvFrame:Int = 0;
-	#end
-
 	/**
 	 * Again, do not fuck with this.
 	 * I put lots of effort into this abomination of a function.
@@ -217,9 +218,9 @@ class NoteSystem {
 		var sustainExists = duration != 0;
 
 		var leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
-		var isHit:Bool = File.isNoteHit(_id);
-		var isMissed:Bool = File.isNoteMissed(_id);
-		var isHeld:Bool = File.isNoteHeld(_id);
+		var isHit:Bool = note.flag;
+		var isMissed:Bool = note.missed;
+		var isHeld:Bool = note.held;
 
 		var noteSprX = rec.x;
 		var noteSprY = rec.y;
@@ -244,18 +245,33 @@ class NoteSystem {
 					var noteToHit = strumline.notesToHit[index];
 					var noteToHitExists = noteToHit != null;
 
-					var _pos = MetaNote.metaNotePositionToSongTime((noteToHit.position + strumline.getTimeCorrection[index]) - pos);
-					if (!noteToHitExists || Math.abs(diff) < Math.abs(_pos)) {
+					if (!noteToHitExists) {
 						strumline.notesToHit[index] = note;
 						strumline.notesToHit_indexes[index] = _id;
 						strumline.getTimeCorrection[index] = timeCorrection;
+					} else {
+						var _pos = MetaNote.metaNotePositionToSongTime(
+							(noteToHit.position + strumline.getTimeCorrection[index]) - pos
+						);
+						// Prefer the note closest to the receptor from the upcoming direction.
+						// If diff is positive (ahead), prefer smallest positive diff.
+						// If both are behind (negative), prefer least negative (closest to receptor).
+						var currentIsBetter = movingBackward
+							? (diff > _pos) // backward: prefer the one further ahead (largest diff = most future)
+							: (Math.abs(diff) < Math.abs(_pos)); // forward: closest wins as before
+						if (currentIsBetter) {
+							strumline.notesToHit[index] = note;
+							strumline.notesToHit_indexes[index] = _id;
+							strumline.getTimeCorrection[index] = timeCorrection;
+						}
 					}
 				}
 
 				if (diff < -_cachedHitbox - offset && !isMissed) {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
 					var n:Int64 = note.toNumber();
-					File.setNoteMissed(_id, isMissed = true);
+					(n:MetaNote).missed = true;
+					isMissed = true;
 
 					var type = note.type;
 					if (noteTypeCallExists) {
@@ -270,7 +286,9 @@ class NoteSystem {
 
 					if (sustainExists && !isHeld) {
 						sustainSpr.alpha = Sustain.defaultMissAlpha;
-						File.setNoteHeld(_id, isHeld = true);
+						var n:Int64 = note.toNumber();
+						(n:MetaNote).held = true;
+						isHeld = true;
 						parent.onSustainRelease.dispatch(note);
 					}
 
@@ -281,6 +299,8 @@ class NoteSystem {
 					if (SaveData.state.preferences.ratingPopup && hud != null) {
 						hud.hideRatingPopup();
 					}
+
+					File.setNote(_id, n);
 				}
 			}
 		}
@@ -290,7 +310,7 @@ class NoteSystem {
 			// Handle opponent note hit (non-sustain)
 			if (!isHit && diff < 0) {
 				var n:Int64 = note.toNumber();
-				File.setNoteHit(_id, isHit = true);
+				(n:MetaNote).flag = isHit = true;
 
 				// Confirm the receptor
 				if (!rec.confirmed()) rec.confirm();
@@ -314,6 +334,8 @@ class NoteSystem {
 				if (parent.field != null)
 					parent.field.hitNote(note, 0, noteSpr.notesInOne);
 				parent.hitNote(note, 0, noteSpr.notesInOne, _id);
+
+				File.setNote(_id, n);
 			}
 		}
 
@@ -341,7 +363,10 @@ class NoteSystem {
 
 				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainLength - 45)) && !isHeld) {
 					var n:Int64 = note.toNumber();
-					File.setNoteHeld(_id, isHeld = true);
+					if (!movingBackward) {
+						(n:MetaNote).held = true;
+						isHeld = true;
+					}
 
 					if (playable && rec.confirmed()) rec.press();
 
@@ -353,6 +378,8 @@ class NoteSystem {
 					if (parent.field != null)
 						parent.field.completeSustain(note);
 					parent.completeSustain(note, _id);
+
+					File.setNote(_id, n);
 				}
 			}
 
@@ -425,10 +452,6 @@ class NoteSystem {
 	 * Disposes the note system.
 	**/
 	function dispose() {
-		#if hl
-		if (_csvFile != null) { _csvFile.close(); _csvFile = null; }
-		#end
-
 		// Clear up the virtual note buffer for the funnies
 		virtualNoteBuffer.clear();
 
