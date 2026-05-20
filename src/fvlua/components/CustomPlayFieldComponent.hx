@@ -242,10 +242,6 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 			var colorArray:Array<Color> = Tools.hexesToOpaqueColor(right);
 			playField.hud.healthBar.healthIconColors[1] = Tools.convertToSixColors(colorArray);
 		});
-
-		vm.addCallback('flipHealthBar', function(value:Bool) {
-			playField.flipHealthBar = value;
-		});
 	}
 
 	override public function updateVariablesList(vm:FunkinViewLuaScript):Void {

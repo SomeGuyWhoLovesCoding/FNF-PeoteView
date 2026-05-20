@@ -94,40 +94,28 @@ class NoteSystem {
 
 	var movingBackward(default, null):Bool = false;
 	private var _stableLastPos:Int64; // tracks pos before the clamp
-	var isSeeking(default, null):Bool = false;
-	var seekTimeout:Float = 0;
-	static inline var SEEK_WINDOW_MS = 100.0;
 
 	/**
 	 * This processes the virtual notes in real time.
 	 * @param pos The song's position in the note position format.
 	**/
-
-	// In update():
 	function update(pos:Int64) {
-		if (_lastPos == 0) { _lastPos = pos; _stableLastPos = pos; }
+    	if (_lastPos == 0) { _lastPos = pos; _stableLastPos = pos; }
 
-		var delta = pos - _lastPos;
-		var deltaMs = MetaNote.metaNotePositionToSongTime(delta);
-		
-		// Clear seeking flag after timeout
-		if (isSeeking && haxe.Timer.stamp() > seekTimeout) {
-			isSeeking = false;
-		}
-		
 		movingBackward = pos < _stableLastPos;
 		_stableLastPos = pos;
-		
-		// Detect discontinuous jump
-		if (movingBackward) {
-			isSeeking = true;
-			seekTimeout = haxe.Timer.stamp() + (SEEK_WINDOW_MS / 1000);
+
+		// if position jumped too far (pause or seek), resync
+		var delta = pos - _lastPos;
+		if (delta < 0 || MetaNote.metaNotePositionToSongTime(delta) > 200)
 			_lastPos = pos;
-		}
 
 		virtualNoteBuffer.clear();
+
 		if (noteSpawner != null)
-			noteSpawner.update(pos, isSeeking);  // ← Pass flag
+			noteSpawner.update(pos);
+
+		//trace('Note pool length: ${notePool.inactiveVirtualNotes.length}, Sustain pool length:  ${notePool.inactiveVirtualSusses.length}');
 	}
 
 	private var _lastPos(default, null):Int64; // for adaptive bot timer
@@ -138,6 +126,7 @@ class NoteSystem {
 	**/
 	function onSongPositionJump(pos:Int64) {
 		_lastPos = pos;
+		resetStrumlines(); // force reset them
 
 		if (noteSpawner != null) {
 			noteSpawner.resetNotes(MetaNote.metaNotePositionToSongTime(pos));
@@ -163,9 +152,9 @@ class NoteSystem {
 			for (j in 0...botTimers.length) {
 				var rec = strumline.buffer[j];
 				if (parent.botplay) canMess = true;
-				if (canMess && !movingBackward) { // ← Add !movingBackward check
+				if (canMess) {
 					if (!strumline.sustainsActive[j]) {
-						if (strumline.botTimers[j] < 0) {
+						if (strumline.botTimers[j] < 0 && !strumline.sustainsActive[j]) {
 							rec.reset();
 							strumline.botTimers[j] = 0;
 						}
@@ -228,8 +217,7 @@ class NoteSystem {
 		var sustainSpr = duration != 0 ? notePool.getSustain(id, note, _id) : null;
 		var sustainExists = duration != 0;
 
-		var rawLeftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
-		var leftover = Std.int(Math.max(0, Math.min(rawLeftover, duration))); // Clamp to valid range
+		var leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
 		var isHit:Bool = note.flag;
 		var isMissed:Bool = note.missed;
 		var isHeld:Bool = note.held;
@@ -353,9 +341,6 @@ class NoteSystem {
 
 		// --- Sustain handling ---
 		var sustainLength = duration - 20;
-		/*if (sustainExists && strumline.sustainsActive[index] && !isHit) {
-			Sys.println('[WARN] Sustain active but note not hit! Note $_id, lane $lane, index $index');
-		}*/
 		if (sustainExists) {
 			sustainSpr.ref = noteSpr;
 			sustainSpr.speed = parent.scrollSpeed;
@@ -370,17 +355,15 @@ class NoteSystem {
 			if (!isHit) {
 				sustainSpr.w = sustainLength;
 			} else if (sustainSpr.alpha != 0) {
-				if (sustainSpr.w >= 0 && !movingBackward) {
+				if (sustainSpr.w >= 0) {
 					sustainSpr.followNote(rec.x, rec.y, id);
-					// Use the already-clamped leftover
-					sustainSpr.w = Std.int(Math.max(0, sustainLength - leftover));
+					sustainSpr.w = sustainLength - leftover;
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
 
 				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainLength - 45)) && !isHeld) {
 					var n:Int64 = note.toNumber();
-					// Only complete if we haven't already, regardless of direction
-					if (!(n:MetaNote).held) {
+					if (!movingBackward) {
 						(n:MetaNote).held = true;
 						isHeld = true;
 					}
@@ -400,8 +383,8 @@ class NoteSystem {
 				}
 			}
 
-			// Only update during forward playback to avoid seek artifacts
-			if (!movingBackward && !isSeeking && diff + sustainLength - 45 < 0)
+			// Fixes the rare receptor pause issue, finally
+			if (diff + sustainLength - 45 < 0)
 				strumline.sustainsActive[index] = !isHeld;
 
 			if (noteSpr != null)
@@ -469,8 +452,6 @@ class NoteSystem {
 	 * Disposes the note system.
 	**/
 	function dispose() {
-		noteSpawner.dispose(); // nothing to dispose here, just a function for future reference
-
 		// Clear up the virtual note buffer for the funnies
 		virtualNoteBuffer.clear();
 
