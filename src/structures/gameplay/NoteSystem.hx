@@ -308,7 +308,7 @@ class NoteSystem {
 			} else if (sustainSpr.alpha != 0) {
 				if (sustainSpr.w >= 0) {
 					sustainSpr.followNote(rec.x, rec.y, id);
-					sustainSpr.w = sustainLength - leftover;
+					sustainSpr.w = (sustainLength) - leftover;
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
 
@@ -331,7 +331,7 @@ class NoteSystem {
 				}
 			}
 
-			if (diff + sustainLength - 25 < 0)
+			if (diff + (sustainLength >> 1) - 25 < 0)
 				strumline.sustainsActive[index] = !isResolved;
 
 			if (noteSpr != null)
