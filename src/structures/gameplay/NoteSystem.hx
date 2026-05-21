@@ -175,7 +175,7 @@ class NoteSystem {
 		// Judgement-gated state reads
 		var judged:Bool   = File.getJudgement(_id);
 		var isHit:Bool    = judged && !note.flag;   // judged + flag=false → hit
-		if (_id == 1) Sys.println('NOTE 1 IS HIT? $isHit; but is note.flag hit (false)? ${note.flag}. Is it judged? $judged');
+		//if (_id == 1) Sys.println('NOTE 1 IS HIT? $isHit; but is note.flag hit (false)? ${note.flag}. Is it judged? $judged');
 		var isMissed:Bool = judged && note.flag;  // judged + flag=true → missed
 		// sustain resolution is tracked externally in strumline
 		var isResolved:Bool = strumline.sustainsResolved[index];

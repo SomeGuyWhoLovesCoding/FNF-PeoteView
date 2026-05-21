@@ -129,10 +129,7 @@ class Strumline {
 		var rec = buffer[index];
 		var noteIndex = notesToHit_indexes[index];
 
-		var value:Bool = noteToHit != null && !File.getJudgement(noteIndex);
-		Sys.println('Press key $index: note hit condition is $value');
-
-		if (value) {
+		if (noteToHit != null && !File.getJudgement(noteIndex)) {
 			var pf = parent.parent;
 			var type = noteToHit.type;
 
@@ -148,7 +145,6 @@ class Strumline {
 			}
 
 			var sprite = notesToHit_sprites[index];
-			Sys.println('Press key $index: sprite existing is ${sprite}');
 			if (sprite != null) {
 				sprite.initialAlpha = 0;
 				if (@:privateAccess sprite.bytePos != -1)
