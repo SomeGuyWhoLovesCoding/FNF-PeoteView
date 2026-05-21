@@ -1,19 +1,10 @@
 package structures.gameplay;
 
-/**
-	Strumline class for the note system.
-	This class represents a line of notes in the game, which can be hit or held by the player.
-	It manages the notes to hit, sustains to hold, and the buffer of notes.
-	It also handles the drawing of the notes and the input handling for hitting and releasing notes.
-	It is used in the NoteSystem class to manage the notes and sustains in the game.
-	@since Development
-**/
 @:publicFields
 class Strumline {
 	var notesToHit(default, null):Array<Null<MetaNote>>;
 	var notesToHit_sprites(default, null):Array<Note>;
 	var notesToHit_indexes(default, null):Array<Int64>;
-	// this is for my new shardded chart data format system for funkin' view (god mode)
 	var getTimeCorrection(default, null):Array<Int64>;
 
 	var sustainsToHold(default, null):Array<Null<MetaNote>>;
@@ -21,11 +12,12 @@ class Strumline {
 	var sustainsToHold_duration(default, null):Array<Int>;
 	var botHitsToCheck(default, null):Array<Bool>;
 	var playerHitsToCheck(default, null):Array<Bool>;
-	// This is for fake note overlapping!!! So it renders faster instead of just checking one by one without relying on an index based approach like this. Thanks - sgwl
 	var fakeOverlapStorage(default, null):Array<Int>;
 
 	var botTimers(default, null):Array<Float>;
 	var sustainsActive(default, null):Array<Bool>;
+	// Replaces the held bit — tracks whether a sustain has been resolved (completed or released early)
+	var sustainsResolved(default, null):Array<Bool>;
 	var buffer(default, null):Array<Note>;
 
 	var x(default, set):Int;
@@ -75,6 +67,7 @@ class Strumline {
 		sustainsToHold_indexes.resize(value);
 		sustainsToHold_duration.resize(value);
 		sustainsActive.resize(value);
+		sustainsResolved.resize(value);
 		botHitsToCheck.resize(value);
 		playerHitsToCheck.resize(value);
 		fakeOverlapStorage.resize(value);
@@ -85,7 +78,6 @@ class Strumline {
 
 		for (i in 0...value) {
 			var rec = buffer[i];
-
 			if (rec == null) {
 				rec = new Note(x, y, 0, 0);
 				rec.changeID(ids[i]);
@@ -96,7 +88,7 @@ class Strumline {
 
 		return length = value;
 	}
-	
+
 	public var scrollDirection:Int = -90;
 
 	var parent(default, null):NoteSystem;
@@ -114,6 +106,7 @@ class Strumline {
 		fakeOverlapStorage = [];
 		botTimers = [];
 		sustainsActive = [];
+		sustainsResolved = [];
 		buffer = [];
 
 		this.parent = parent;
@@ -135,7 +128,7 @@ class Strumline {
 		var noteToHit = notesToHit[index];
 		var rec = buffer[index];
 
-		if (noteToHit != null && !noteToHit.missed && !noteToHit.flag) {
+		if (noteToHit != null && !noteToHit.flag && !File.getJudgement(notesToHit_indexes[index])) {
 			var pf = parent.parent;
 			var type = noteToHit.type;
 
@@ -159,26 +152,22 @@ class Strumline {
 			}
 
 			var n:Int64 = noteToHit.toNumber();
-			(n:MetaNote).flag = true;
+			// mark as hit: missed=false, then set judgement
+			(n:MetaNote).flag = false;
 			File.setNote(notesToHit_indexes[index], n);
+			File.setJudgement(notesToHit_indexes[index], true);
+
 			sustainsToHold_duration[index] = noteToHit.duration;
+			sustainsResolved[index] = false;
 
 			if (noteToHit.duration > 20) {
-				sustainsToHold[index] = n; // `n` is modified so don't switch this to `noteToHit` since that variable was never modified
+				sustainsToHold[index] = n;
 				sustainsToHold_indexes[index] = notesToHit_indexes[index];
 			}
 
 			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + (Main.conductor.offset * 2.0));
-			// Now 0..1 instead of -250..250 just in case people don't know what the hitbox actually is
-			// and it's flexible too considering you want different offsets for certain things yk?
-			// also adjust for scroll speed like psych does
 			var _timing = MetaNote.metaNotePositionToSongTime((noteToHit.position + File.getTimeCorrectionForIndex(notesToHit_indexes[index])) - posWithLatency);
 			var timing = (_timing / parent._cachedHitbox) * 0.9;
-			// this trace was there because I was constantly testing the new latency compensation system
-			// specifically implemented inside the note system as I've had to even make an `onBeatHitUnoffsetted` event
-			// just to make it so that countdown doesn't get affected by the conductor offset in the first place
-			// yk yk
-			//Sys.println('${noteToHit.index},$_timing,$timing');
 
 			if (@:privateAccess pf.onNoteHit.__listeners.length != 0)
 				pf.onNoteHit.dispatch(noteToHit, timing, 1);
@@ -187,7 +176,6 @@ class Strumline {
 			pf.hitNote(noteToHit, timing, 1, notesToHit_indexes[index]);
 
 			notesToHit[index] = null;
-
 			notesToHit_indexes[index] = 0;
 		} else {
 			if (!rec.pressed()) {
@@ -200,20 +188,24 @@ class Strumline {
 		var sustainToRelease = sustainsToHold[index];
 		var rec = buffer[index];
 
-		var sustainReleaseCallbackCanRun = sustainToRelease != null && sustainToRelease.index == index && (sustainToRelease.flag && !sustainToRelease.held);
+		// Sustain release fires if: note exists, correct lane, was hit, and not yet resolved
+		var sustainReleaseCallbackCanRun = sustainToRelease != null
+			&& sustainToRelease.index == index
+			&& File.getJudgement(sustainsToHold_indexes[index])
+			&& sustainToRelease.flag
+			&& !sustainsResolved[index];
 
 		if (sustainReleaseCallbackCanRun) {
 			var pf = parent.parent;
 
-			var n:Int64 = sustainToRelease.toNumber();
-			(n:MetaNote).held = true;
-			File.setNote(sustainsToHold_indexes[index], n);
+			sustainsResolved[index] = true;
 
 			if (@:privateAccess pf.onSustainRelease.__listeners.length != 0)
 				pf.onSustainRelease.dispatch(sustainToRelease);
 			if (pf.field != null)
 				pf.field.releaseSustain(sustainToRelease);
 			pf.releaseSustain(sustainToRelease, sustainsToHold_indexes[index]);
+
 			sustainsToHold[index] = null;
 			sustainsToHold_indexes[index] = 0;
 			sustainsToHold_duration[index] = 0;
@@ -244,6 +236,7 @@ class Strumline {
 		playerHitsToCheck.resize(0);
 		botTimers.resize(0);
 		sustainsActive.resize(0);
+		sustainsResolved.resize(0);
 		notesToHit.resize(length);
 		notesToHit_indexes.resize(length);
 		getTimeCorrection.resize(length);
@@ -254,6 +247,7 @@ class Strumline {
 		playerHitsToCheck.resize(length);
 		botTimers.resize(length);
 		sustainsActive.resize(length);
+		sustainsResolved.resize(length);
 	}
 
 	function resetAnimations() {
@@ -282,6 +276,10 @@ class Strumline {
 			sustainsToHold = null;
 			sustainsToHold_indexes = null;
 			sustainsToHold_duration = null;
+		}
+		if (sustainsResolved != null) {
+			sustainsResolved.resize(0);
+			sustainsResolved = null;
 		}
 	}
 }

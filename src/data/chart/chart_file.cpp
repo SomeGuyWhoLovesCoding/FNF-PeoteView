@@ -30,5 +30,40 @@ int64_t getLength() {
 int64_t getTimeCorrectionForIndex(int64_t index) {
     if (!gReader) return 0;
     uint64_t shardId = gReader->findShardForGlobalIndex(index);
-    return shardId * 1000000000LL;
+    return shardId * 2000000000LL;
 }
+
+/*void allocJudgementSlot(int slot, int64_t noteCount) {
+    if (!gReader) return;
+    gReader->core_allocJudgementSlot(slot, noteCount);
+}
+
+void clearJudgementSlot(int slot) {
+    if (!gReader) return;
+    gReader->core_clearJudgementSlot(slot);
+}
+
+void setActiveJudgementSlot(int slot) {
+    if (!gReader) return;
+    gReader->core_setActiveJudgementSlot(slot);
+}
+
+int getActiveJudgementSlot() {
+    if (!gReader) return 0;
+    return gReader->core_getActiveJudgementSlot();
+}....*/
+
+bool getJudgement(int64_t globalIndex) {
+    if (!gReader) return false;
+    return gReader->core_getJudgement(globalIndex);
+}
+
+void setJudgement(int64_t globalIndex, bool value) {
+    if (!gReader) return;
+    gReader->core_setJudgement(globalIndex, value);
+}
+
+/*void destroyAllJudgements() {
+    if (!gReader) return;
+    gReader->core_destroyAllJudgements();
+}*/

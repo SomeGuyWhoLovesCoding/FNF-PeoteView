@@ -1,9 +1,5 @@
 package structures.gameplay;
 
-/**
-	* This is a part of the note system to actually spawn notes.
-	* @since Development
-**/
 @:publicFields
 class NoteSpawner {
 	var bottom:Int64;
@@ -26,14 +22,14 @@ class NoteSpawner {
 
 		bottom = 0;
 		top = 0;
+
+		//File.allocJudgement();
 	}
 
 	var timeSpentOnIt:Float = 0;
 	var timeSpentOnItIncrement:Float = 0;
 
 	function update(pos:Int64) {
-		//trace("TOP AND BOTTOM (PRE-UPDATE): ",bottom,top);
-
 		_lastbottom = bottom;
 		_lasttop = top;
 
@@ -51,8 +47,6 @@ class NoteSpawner {
 		}
 
 		processNotes(pos);
-
-		//trace("TOP AND BOTTOM (POST-UPDATE): ",bottom,top);
 	}
 
 	function processNotes(pos:Int64) {
@@ -62,7 +56,6 @@ class NoteSpawner {
 		pos += latencyI64;
 
 		var i = (minBottom != -1 && bottom < minBottom) ? minBottom : bottom;
-		//Sys.println('MIN BOTTOM: $minBottom');
 		var scrollSpeed = parent.parent.scrollSpeed;
 		var prev:MetaNote = -1;
 		var prevTimeCorrection:Int64 = 0;
@@ -112,63 +105,61 @@ class NoteSpawner {
 
 	function cullTop(pos:Int64) {
 		var len = File.getLength();
-		
+
 		// === FORWARD: Include notes now within spawn range ===
 		while (top < len) {
 			var n = File.getNote(top);
 			var tc = File.getTimeCorrectionForIndex(top);
-			// Stop if note is too far ahead
 			if ((n.position + tc) - pos >= spawnDist) break;
-			// Include this note (reset hit state for editor)
-			n.flag = false; n.missed = false; n.held = false;
-			File.setNote(top, n);
+			// Only reset state if not already judged — don't clobber a committed decision
+			if (!File.getJudgement(top)) {
+				n.flag = false;
+				File.setNote(top, n);
+			}
 			++top;
 		}
-		
+
 		// === BACKWARD: Exclude notes now too far ahead ===
 		while (top > bottom) {
 			var n = File.getNote(top - 1);
 			var tc = File.getTimeCorrectionForIndex(top - 1);
-			// Stop if note is still within range
 			if ((n.position + tc) - pos < spawnDist) break;
-			// This note is now too far, rewind top to exclude it
 			--top;
 		}
-		
+
 		if (top < len) curTopNote = File.getNote(top);
 	}
 
 	function cullBottom(pos:Int64) {
 		var len = File.getLength();
-		
+
 		// === FORWARD: Exclude notes that have despawned ===
 		while (bottom < len) {
 			var n = File.getNote(bottom);
 			var tc = File.getTimeCorrectionForIndex(bottom);
 			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - (n.position + tc);
-			// Stop if note hasn't despawned yet
 			if (despawnCheck <= despawnDist) break;
-			// This note has despawned, return to pool
 			var notePool = parent.notePool;
 			notePool.putNote(n, bottom);
 			notePool.putSustain(n, bottom);
 			++bottom;
 		}
-		
+
 		// === BACKWARD: Include notes now back in range ===
 		while (bottom > 0 && bottom < top) {
 			var n = File.getNote(bottom - 1);
 			var tc = File.getTimeCorrectionForIndex(bottom - 1);
 			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - (n.position + tc);
-			// Stop if note is still too far behind
 			if (despawnCheck > despawnDist) break;
-			// This note is back in range, rewind bottom to include it
 			--bottom;
-			var n2 = File.getNote(bottom);
-			n2.flag = false; n2.missed = false; n2.held = false;
-			File.setNote(bottom, n2);
+			// Only reset if not already judged
+			if (!File.getJudgement(bottom)) {
+				var n2 = File.getNote(bottom);
+				n2.flag = false;
+				File.setNote(bottom, n2);
+			}
 		}
-		
+
 		if (bottom < len) curBottomNote = File.getNote(bottom);
 	}
 
@@ -219,32 +210,18 @@ class NoteSpawner {
 
 		curBottomNote = File.getNote(bottom);
 		curTopNote = File.getNote(top);
-		
-		// Clear receptor states to avoid lingering animations
+
 		parent.resetStrumlines();
 	}
 
-	// Now we're onto the real shit.
-
-	/**
-	 * Renders all notes in the current window.
-	 * @param pos The current song position in note format.
-	 */
 	function renderNotes(pos:Int64) {
 		var notes = parent.virtualNoteBuffer;
-
 		renderVirtualNotes(notes, pos);
 		renderVirtualSustains(notes);
 	}
 
-	// both of these arrays are used to easily render notes in the opposite order.
 	var regularNoteList:Array<Note> = [];
 
-	/**
-	 * Renders virtual notes into actual note instances for rendering.
-	 * This is separate from the main update loop onto the render loop to allow for optimizations, and most importantly, this function is separate for profiling.
-	 * @param notes
-	 */
 	function renderVirtualNotes(notes:NoteVB, pos:Int64) {
 		var downScroll = parent.parent.downScroll;
 		var numIterations = 0;
@@ -277,7 +254,6 @@ class NoteSpawner {
 					note.changeID(id);
 					note.toNote();
 
-					// This is here in order to fix the note still visible for the remaining time rendering or so when inputs are polled at an extemely high rate.
 					var noteToHit = strumline.notesToHit[j];
 					strumline.notesToHit_sprites[j] = noteToHit == virtualNote.ref ? note : null;
 
@@ -296,11 +272,6 @@ class NoteSpawner {
 		}
 	}
 
-	/**
-	 * Renders virtual sustains into actual sustain instances for rendering.
-	 * This function is separate for profiling.
-	 * @param notes
-	 */
 	function renderVirtualSustains(notes:NoteVB) {
 		var downScroll = parent.parent.downScroll;
 		var virtualSustains = notes.sustains;
@@ -335,12 +306,6 @@ class NoteSpawner {
 		}
 	}
 
-	/**
-	 * Checks if a note is a ghost (duplicate) of the previous note.
-	 * @param prev The previous meta note.
-	 * @param current The current meta note.
-	 * @return True if the notes are duplicates.
-	 */
 	inline function isGhostNote(prev:MetaNote, current:MetaNote, prevIndex:Int64, curIndex:Int64):Bool {
 		var prevCorrection = File.getTimeCorrectionForIndex(prevIndex);
 		var curCorrection = File.getTimeCorrectionForIndex(curIndex);
@@ -350,16 +315,6 @@ class NoteSpawner {
 			&& prev.type == current.type;
 	}
 
-	/**
-	 * Determines if two notes should visually overlap.
-	 * @param prev The previous meta note.
-	 * @param current The current meta note.
-	 * @param noteSpr The current note sprite.
-	 * @param receptor The receptor for this lane.
-	 * @param newY The Y position of the current note.
-	 * @param prevY The Y position of the previous note.
-	 * @return True if notes should overlap and merge.
-	 */
 	inline function shouldNotesOverlap(prev:MetaNote, current:MetaNote, noteSpr:VirtualNote,
 		receptor:Note, newY:Float, prevY:Float):Bool {
 
@@ -367,13 +322,11 @@ class NoteSpawner {
 
 		var OVERLAP_PIXEL_THRESHOLD = 0;
 
-		// Calculate pixel difference accounting for resolution scaling
 		var pixelDiff = Math.abs(
 			Math.floor(newY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)) -
 			Math.floor(prevY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT))
 		);
 
-		// Check all overlap requirements
 		return pixelDiff <= OVERLAP_PIXEL_THRESHOLD
 			&& prev.type == current.type
 			&& noteSpr.scale == receptor.scale
@@ -381,13 +334,8 @@ class NoteSpawner {
 			&& prev.index == current.index;
 	}
 
-	/**
-	 * Merges a note into an existing sprite by increasing its alpha.
-	 * @param noteSpr The note sprite to merge into.
-	 * @param n The meta note being merged.
-	 */
 	inline function mergeNoteIntoSprite(noteSpr:VirtualNote, n:MetaNote) {
-		var alphaToAdd = n.missed ? Note.defaultMissAlpha : Note.defaultAlpha;
+		var alphaToAdd = !n.flag ? Note.defaultMissAlpha : Note.defaultAlpha;
 		noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + alphaToAdd, 256);
 		noteSpr.notesInOne++;
 	}

@@ -119,22 +119,6 @@ std::string formatTime(double ms, bool showMS = false) {
 }
 
 // ============================================================================
-// Note unpacking helpers - POSITION IS ABSOLUTE IN TICKS
-// ============================================================================
-uint32_t getPosition(uint64_t note) { return (note >> 0) & 0x3FFFFFFF; }   // Absolute position in ticks
-uint16_t getDuration(uint64_t note) { return (note >> 30) & 0xFFFF; }      // Duration in ms
-uint8_t getIndex(uint64_t note)     { return (note >> 46) & 0xFF; }
-uint8_t getType(uint64_t note)      { return (note >> 54) & 0x7F; }
-bool getFlag(uint64_t note)         { return (note >> 61) & 1; }
-bool getMissed(uint64_t note)       { return (note >> 62) & 1; }
-bool getHeld(uint64_t note)         { return (note >> 63) & 1; }
-
-// Convert ticks to milliseconds (1 tick = 0.25 nanoseconds = 0.00000025 ms)
-double ticksToMs(uint32_t ticks) {
-    return ticks / 4000000.0;  // 4,000,000 ticks per ms
-}
-
-// ============================================================================
 // Simple direct file reader with write support
 // ============================================================================
 class DirectFileReader {
@@ -201,6 +185,8 @@ private:
         uint64_t shardId;
         int64_t startIndex;  // Global start index of this shard
         int64_t endIndex;    // Global end index (exclusive)
+        // Judgement buffer — sized to noteCount, zero-initialized at shard load
+        std::vector<uint8_t> judgement;
     };
 
     std::string chartDir;
@@ -260,25 +246,27 @@ private:
     }
     
     void loadShard(uint64_t shardId) {
-        if (activeShards.find(shardId) != activeShards.end()) {
-            return;
-        }
-        
-        ShardInfo info;
-        info.shardId = shardId;
-        info.startIndex = getShardStartIndex(shardId);
-        
+        if (activeShards.find(shardId) != activeShards.end()) return;
+
         std::string path = chartDir + "/" + std::to_string(shardId) + ".bin";
-        
+
+        ShardInfo& info = activeShards[shardId];  // construct in-place
+        info.shardId    = shardId;
+        info.startIndex = getShardStartIndex(shardId);
+
         if (!info.reader.open(path.c_str())) {
+            activeShards.erase(shardId);
             throw std::runtime_error("Failed to open shard: " + std::to_string(shardId));
         }
-        
+
         info.noteCount = info.reader.size();
-        info.endIndex = info.startIndex + info.noteCount;
-        activeShards[shardId] = std::move(info);
-        
-        //std::cout << "[POOL] Loaded shard " << shardId << " (" << info.noteCount << " notes)" << std::endl;
+        info.endIndex  = info.startIndex + info.noteCount;
+
+        int64_t byteCount = (info.noteCount + 7) >> 3;
+        info.judgement.assign(byteCount, 0);
+
+        /*std::cout << "[JDG] Allocated " << byteCount << " bytes for shard " << shardId 
+                << " (" << info.noteCount << " notes)" << std::endl;*/
     }
     
     void unloadShard(uint64_t shardId) {
@@ -401,6 +389,85 @@ public:
 
         return cachedShardInfo;
     }
+
+    // ============================================================================
+    // Judgement Slot System
+    // ============================================================================
+    static constexpr int MAX_JUDGEMENT_SLOTS = 16;
+
+    struct JudgementSlot {
+        uint8_t* data = nullptr;
+        int64_t byteCount = 0;
+        bool active = false;
+    };
+
+    JudgementSlot judgementSlots[MAX_JUDGEMENT_SLOTS];
+    int activeJudgementSlot = 0;
+
+    /*void core_allocJudgementSlot(int slot, int64_t noteCount) {
+        if (slot < 0 || slot >= MAX_JUDGEMENT_SLOTS) return;
+        auto& s = judgementSlots[slot];
+        delete[] s.data;
+        int64_t byteCount = (noteCount + 7) >> 3;
+        s.data = new uint8_t[byteCount]();
+        s.byteCount = byteCount;
+        s.active = true;
+    }
+
+    void core_clearJudgementSlot(int slot) {
+        if (slot < 0 || slot >= MAX_JUDGEMENT_SLOTS) return;
+        auto& s = judgementSlots[slot];
+        delete[] s.data;
+        s.data = new uint8_t[1]();
+        s.byteCount = 1;
+        s.active = false;
+    }
+
+    void core_setActiveJudgementSlot(int slot) {
+        if (slot < 0 || slot >= MAX_JUDGEMENT_SLOTS) return;
+        activeJudgementSlot = slot;
+    }
+
+    int core_getActiveJudgementSlot() {
+        return activeJudgementSlot;
+    }*/
+
+    bool core_getJudgement(int64_t globalIndex) {
+        ShardInfo* info = getShardInfo(globalIndex);
+        if (!info) return false;
+        int64_t localIndex = globalIndex - info->startIndex;
+        int64_t byteIndex  = localIndex >> 3;
+        int     bitIndex   = localIndex & 7;
+        if (byteIndex >= (int64_t)info->judgement.size()) return false;
+        return (info->judgement[byteIndex] >> bitIndex) & 1;
+    }
+
+    void core_setJudgement(int64_t globalIndex, bool value) {
+        ShardInfo* info = getShardInfo(globalIndex);
+        if (!info) {
+            std::cout << "[JDG] getShardInfo returned null for " << globalIndex << std::endl;
+            return;
+        }
+        int64_t localIndex = globalIndex - info->startIndex;
+        int64_t byteIndex  = localIndex >> 3;
+        int     bitIndex   = localIndex & 7;
+        //std::cout << "[JDG] set " << globalIndex << " local=" << localIndex << " byte=" << byteIndex << " bit=" << bitIndex << " bufsize=" << info->judgement.size() << std::endl;
+        if (byteIndex >= (int64_t)info->judgement.size()) { std::cout << "[JDG] OUT OF BOUNDS" << std::endl; return; }
+        if (value)
+            info->judgement[byteIndex] |= (1 << bitIndex);
+        else
+            info->judgement[byteIndex] &= ~(1 << bitIndex);
+    }
+
+    /*void core_destroyAllJudgements() {
+        for (int i = 0; i < MAX_JUDGEMENT_SLOTS; i++) {
+            delete[] judgementSlots[i].data;
+            judgementSlots[i].data = nullptr;
+            judgementSlots[i].byteCount = 0;
+            judgementSlots[i].active = false;
+        }
+        activeJudgementSlot = 0;
+    }*/
     
     uint64_t getNote(int64_t globalIndex) {
         ShardInfo* info = getShardInfo(globalIndex);
@@ -415,26 +482,26 @@ public:
     
     void printNoteInfo(int64_t globalIndex) {
         uint64_t note = getNote(globalIndex);
-        
-        uint32_t positionTicks = getPosition(note);
-        uint16_t durationMs = getDuration(note);
-        uint8_t index = getIndex(note);
-        uint8_t type = getType(note);
-        bool flag = getFlag(note);
-        bool missed = getMissed(note);
-        bool held = getHeld(note);
-        
-        // Convert absolute position ticks to milliseconds
-        double timeMs = ticksToMs(positionTicks);
-        
+
+        uint32_t positionTicks = (note >> 0)  & 0x7FFFFFFF;  // 31 bits
+        uint32_t durationHalfMs = (note >> 31) & 0x1FFFF;    // 17 bits, unit = 0.5ms
+        uint8_t  index          = (note >> 48) & 0xFF;
+        uint8_t  type           = (note >> 56) & 0x7F;
+        bool     missed         = (note >> 63) & 1;
+        bool     judged         = core_getJudgement(globalIndex);
+
+        double timeMs     = positionTicks / 4000000.0;
+        double durationMs = durationHalfMs * 0.5;
+
         std::cout << "  Note " << globalIndex << ": "
-                  << "time=" << formatTime(timeMs, true)
-                  << " pos=" << positionTicks << "ticks"
-                  << " dur=" << durationMs << "ms"
-                  << " idx=" << (int)index
-                  << " type=" << (int)type
-                  << " flags=[" << (flag ? "F" : "") << (missed ? "M" : "") << (held ? "H" : "") << "]"
-                  << " raw=0x" << std::hex << note << std::dec << std::endl;
+                << "time="     << formatTime(timeMs, true)
+                << " pos="     << positionTicks  << "ticks"
+                << " dur="     << durationMs     << "ms"
+                << " idx="     << (int)index
+                << " type="    << (int)type
+                << " judged="  << (judged  ? "Y" : "N")
+                << " missed="  << (missed  ? "Y" : "N")
+                << " raw=0x"   << std::hex << note << std::dec << std::endl;
     }
     
     int64_t getLength() const {

@@ -1,13 +1,5 @@
 package structures.gameplay;
 
-/**
-	The note system.
-	This is the main class that handles the notes and sustains in the game.
-	It is responsible for spawning, drawing, and updating the notes and sustains.
-	It also handles the note hit registration and sustain inputs.
-	This class is used in the PlayField class to handle the notes and sustains.
-	@since Development
-**/
 @:publicFields
 class NoteSystem {
 	static var sustainProg(default, null):CustomProgram;
@@ -27,7 +19,6 @@ class NoteSystem {
 
 		if (notesProg == null) {
 			var tex = TextureSystem.getTexture("noteTex");
-
 			notesProg = new CustomProgram(notesBuf);
 			Note.init(notesProg, "noteTex", tex);
 		}
@@ -38,7 +29,6 @@ class NoteSystem {
 
 		if (sustainProg == null) {
 			var tex2 = TextureSystem.getTexture("sustainTex");
-
 			sustainProg = new CustomProgram(sustainsBuf);
 			Sustain.init(sustainProg, "sustainTex", tex2);
 		}
@@ -53,13 +43,9 @@ class NoteSystem {
 
 	var parent(default, null):PlayField;
 
-	/**
-	 * Creates the note system.
-	 * @param parent The parent of this class.
-	**/
 	function new(parent:PlayField) {
 		noteTypeFunctionalityPre = [];
-		noteTypeFunctionalityPre.resize(1 << 7); // Max 7 bit value (128 possible entries)
+		noteTypeFunctionalityPre.resize(1 << 7);
 
 		this.parent = parent;
 
@@ -77,7 +63,7 @@ class NoteSystem {
 
 		strumlines = [];
 
-		for (i in 0...2) { // how many strumlines you'll use throughout the entire song, only. Not dynamic because I'm lazy to do any overcomplication and I want to keep it pretty simple.
+		for (i in 0...2) {
 			var strumline = new Strumline(STRUMLINE_X_OFFSET + Std.int(Main.INITIAL_WIDTH * (i * 0.5)),
 				parent.downScroll ? Main.INITIAL_HEIGHT - STRUMLINE_Y_OFFSET_DOWNSCROLL : STRUMLINE_Y_OFFSET,
 				Std.int(inputSystem.strumline[0]), inputSystem.strumline[1], mania, this);
@@ -93,19 +79,14 @@ class NoteSystem {
 	}
 
 	var movingBackward(default, null):Bool = false;
-	private var _stableLastPos:Int64; // tracks pos before the clamp
+	private var _stableLastPos:Int64;
 
-	/**
-	 * This processes the virtual notes in real time.
-	 * @param pos The song's position in the note position format.
-	**/
 	function update(pos:Int64) {
-    	if (_lastPos == 0) { _lastPos = pos; _stableLastPos = pos; }
+		if (_lastPos == 0) { _lastPos = pos; _stableLastPos = pos; }
 
 		movingBackward = pos < _stableLastPos;
 		_stableLastPos = pos;
 
-		// if position jumped too far (pause or seek), resync
 		var delta = pos - _lastPos;
 		if (delta < 0 || MetaNote.metaNotePositionToSongTime(delta) > 200)
 			_lastPos = pos;
@@ -114,38 +95,28 @@ class NoteSystem {
 
 		if (noteSpawner != null)
 			noteSpawner.update(pos);
-
-		//trace('Note pool length: ${notePool.inactiveVirtualNotes.length}, Sustain pool length:  ${notePool.inactiveVirtualSusses.length}');
 	}
 
-	private var _lastPos(default, null):Int64; // for adaptive bot timer
+	private var _lastPos(default, null):Int64;
 
-	/**
-	 * Call this when pausing, seeking, or any time the song position jumps.
-	 * This ensures bot timers are properly synchronized.
-	**/
 	function onSongPositionJump(pos:Int64, pushToOffset:Float = 0) {
 		_lastPos = pos;
 		_stableLastPos = pos;
-		resetStrumlines(); // force reset them
+		resetStrumlines();
 
 		if (noteSpawner != null) {
 			noteSpawner.resetNotes(MetaNote.metaNotePositionToSongTime(pos), pushToOffset);
 		}
 	}
 
-	// Modified refreshRendering to handle timer decrements more safely:
-	// very shotty attempt at resetting receptors once one has an idle still sticking around after a note or sustain hit
 	private function refreshRendering(pos:Int64) {
-		// Clear note & sustain buffers to refresh for new window
 		notesBuf.clear();
 		sustainsBuf.clear();
 
-		// Calculate time delta - clamp to prevent issues from pausing/seeking
 		var delta = pos - _lastPos;
 		if (delta < 0) delta = -delta;
 		var timeDelta = MetaNote.metaNotePositionToSongTime(delta) * 0.001;
-		//Sys.println('Strumline renderer time delta: $timeDelta');
+
 		for (i in 0...strumlines.length) {
 			var strumline = strumlines[i];
 			var botTimers = strumline.botTimers;
@@ -169,34 +140,16 @@ class NoteSystem {
 		_lastPos = pos;
 	}
 
-	/**
-	 * Renders the note system.
-	 * @param pos The song's position in the note position format.
-	**/
 	function renderNotes(pos:Int64) {
 		refreshRendering(pos);
-
-		// Render notes in current window
 		noteSpawner.renderNotes(pos);
 	}
 
-	/**
-	 * Again, do not fuck with this.
-	 * I put lots of effort into this abomination of a function.
-	 * This function was ported from the old note system.
-	 * Note hitreg and sustain inputs are handled here.
-	 * @param pos The song's position in note position format.
-	 * @param note The meta note you want to draw the note to.
-	 * @param id The index the note belongs to.
-	 * @returns The virtual note that was successfully drawn.
-	**/
 	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64):VirtualNote {
 		var index = note.index;
 		var lane = 0;
 		var duration = note.duration;
-		//if (_id <= 6) trace(duration);
 		var timeCorrection = File.getTimeCorrectionForIndex(_id);
-		//if (_id == 2) trace(_id, 'Position ${note.position} Time correction ${timeCorrection} Diff ${diff}');
 		var position = note.position + timeCorrection;
 
 		var noteTypeCall:Int->Int->Bool->Void = noteTypeFunctionalityPre[note.type];
@@ -205,7 +158,6 @@ class NoteSystem {
 		if (!noteTypeCallExists) {
 			lane = note.type % strumlines.length;
 		} else {
-			// Special note types get routed to lane 1 by convention.
 			lane = 1;
 		}
 
@@ -219,9 +171,14 @@ class NoteSystem {
 		var sustainExists = duration != 0;
 
 		var leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
-		var isHit:Bool = note.flag;
-		var isMissed:Bool = note.missed;
-		var isHeld:Bool = note.held;
+
+		// Judgement-gated state reads
+		var judged:Bool   = File.getJudgement(_id);
+		var isHit:Bool    = judged && !note.flag;   // judged + flag=1 → hit
+		//if (_id == 1) Sys.println('NOTE 1 IS HIT? $isHit; but is note.flag hit (false)? ${note.flag}. Is it judged? $judged');
+		var isMissed:Bool = judged && note.flag;  // judged + flag=0 → missed
+		// sustain resolution is tracked externally in strumline
+		var isResolved:Bool = strumline.sustainsResolved[index];
 
 		var noteSprX = rec.x;
 		var noteSprY = rec.y;
@@ -254,12 +211,9 @@ class NoteSystem {
 						var _pos = MetaNote.metaNotePositionToSongTime(
 							(noteToHit.position + strumline.getTimeCorrection[index]) - pos
 						);
-						// Prefer the note closest to the receptor from the upcoming direction.
-						// If diff is positive (ahead), prefer smallest positive diff.
-						// If both are behind (negative), prefer least negative (closest to receptor).
 						var currentIsBetter = movingBackward
-							? (diff > _pos) // backward: prefer the one further ahead (largest diff = most future)
-							: (Math.abs(diff) < Math.abs(_pos)); // forward: closest wins as before
+							? (diff > _pos)
+							: (Math.abs(diff) < Math.abs(_pos));
 						if (currentIsBetter) {
 							strumline.notesToHit[index] = note;
 							strumline.notesToHit_indexes[index] = _id;
@@ -271,8 +225,9 @@ class NoteSystem {
 				if (diff < -_cachedHitbox - offset && !isMissed) {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
 					var n:Int64 = note.toNumber();
-					(n:MetaNote).missed = true;
+					(n:MetaNote).flag = true;           // chosen to miss
 					isMissed = true;
+					File.setJudgement(_id, true);
 
 					var type = note.type;
 					if (noteTypeCallExists) {
@@ -285,11 +240,10 @@ class NoteSystem {
 						parent.field.missNote(note, noteSpr.notesInOne);
 					parent.missNote(note, noteSpr.notesInOne, _id);
 
-					if (sustainExists && !isHeld) {
+					if (sustainExists && !isResolved) {
 						sustainSpr.alpha = Sustain.defaultMissAlpha;
-						var n:Int64 = note.toNumber();
-						(n:MetaNote).held = true;
-						isHeld = true;
+						strumline.sustainsResolved[index] = true;
+						isResolved = true;
 						parent.onSustainRelease.dispatch(note);
 					}
 
@@ -308,20 +262,19 @@ class NoteSystem {
 
 		// --- Opponent side ---
 		else {
-			// Handle opponent note hit (non-sustain)
 			if (!isHit && diff < 0) {
 				var n:Int64 = note.toNumber();
-				(n:MetaNote).flag = isHit = true;
+				// opponent hit: judged as hit (missed=false)
+				(n:MetaNote).flag = false;
+				// Re-read immediately so sustain/visual logic below uses correct state
+				isHit = true;
+				File.setJudgement(_id, true);
 
-				// Confirm the receptor
 				if (!rec.confirmed()) rec.confirm();
 
-				// Start glow timer for non-sustains
 				strumline.botTimers[index] = 0.045;
-
 				strumline.sustainsToHold_duration[index] = 0;
 
-				// Setup sustain visuals if needed
 				if (sustainExists) {
 					strumline.sustainsActive[index] = true;
 					strumline.sustainsToHold_duration[index] = note.duration;
@@ -337,11 +290,12 @@ class NoteSystem {
 				parent.hitNote(note, 0, noteSpr.notesInOne, _id);
 
 				File.setNote(_id, n);
+				//Sys.println('SET JUDGEMENT for $_id, readback: ${File.getJudgement(_id)}');
 			}
 		}
 
 		// --- Sustain handling ---
-		var sustainLength = duration - 20;
+		var sustainLength = (duration >> 1) - 20;
 		if (sustainExists) {
 			sustainSpr.ref = noteSpr;
 			sustainSpr.speed = parent.scrollSpeed;
@@ -350,7 +304,7 @@ class NoteSystem {
 			sustainSpr.followNote(rec.x, rec.y, id);
 			sustainSpr.diff = isHit ? 0 : Std.int(diff);
 
-			if (isHeld || isMissed)
+			if (isResolved || isMissed)
 				sustainSpr.alpha = Sustain.defaultMissAlpha;
 
 			if (!isHit) {
@@ -362,11 +316,10 @@ class NoteSystem {
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
 
-				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainLength - 45)) && !isHeld) {
-					var n:Int64 = note.toNumber();
+				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainLength - 45)) && !isResolved) {
 					if (!movingBackward) {
-						(n:MetaNote).held = true;
-						isHeld = true;
+						strumline.sustainsResolved[index] = true;
+						isResolved = true;
 					}
 
 					if (playable && rec.confirmed()) rec.press();
@@ -379,32 +332,26 @@ class NoteSystem {
 					if (parent.field != null)
 						parent.field.completeSustain(note);
 					parent.completeSustain(note, _id);
-
-					File.setNote(_id, n);
 				}
 			}
 
-			// Fixes the rare receptor pause issue, finally
 			if (diff + sustainLength - 45 < 0)
-				strumline.sustainsActive[index] = !isHeld;
+				strumline.sustainsActive[index] = !isResolved;
 
 			if (noteSpr != null)
 				virtualNoteBuffer.addSustain(sustainSpr, noteSpr);
 		}
 
-		// --- Buffer note ---
 		if (!isHit)
 			virtualNoteBuffer.addNote(noteSpr);
 
 		return noteSpr;
 	}
 
-	// Add these cache variables at the class level
 	var _cachedScrollSpeed:Float = 0;
 	var _cachedHitbox:Float = 200;
 	var _cachedDownScroll:Bool = false;
 
-	// Update them when scroll speed changes
 	function setScrollSpeed(value:Float) {
 		noteSpawner.spawnDist = MetaNote.floatToMetaNotePosition(1600 / value);
 		noteSpawner.despawnDist = MetaNote.floatToMetaNotePosition(360 / Math.min(Math.max(value, 0.0001), 1.0));
@@ -414,9 +361,6 @@ class NoteSystem {
 		return value;
 	}
 
-	/**
-	 * Resets the strumlines of this note system.
-	**/
 	function resetStrumlines(resetAnims:Bool = true) {
 		for (i in 0...strumlines.length) {
 			var strumline = strumlines[i];
@@ -427,9 +371,6 @@ class NoteSystem {
 		}
 	}
 
-	/**
-	 * Resets the strumlines of this note system.
-	**/
 	function resetPlayerStrumlines(resetAnims:Bool = true) {
 		for (i in 0...strumlines.length) {
 			var strumline = strumlines[i];
@@ -441,22 +382,12 @@ class NoteSystem {
 		}
 	}
 
-	/**
-	 * Resets the notes in this note system.
-	 * This is used when downscroll is enabled or when the player wants to reset the notes
-	 */
 	function resetNotes(songPosition:Float) {
 		noteSpawner.resetNotes(songPosition);
 	}
 
-	/**
-	 * Disposes the note system.
-	**/
 	function dispose() {
-		// Clear up the virtual note buffer for the funnies
 		virtualNoteBuffer.clear();
-
-		// Clear note & sustain buffers to refresh for new window
 		notesBuf.clear();
 		sustainsBuf.clear();
 
@@ -465,13 +396,10 @@ class NoteSystem {
 				var strumline = strumlines.pop();
 				strumline.dispose();
 			}
-
 			strumlines = null;
 		}
 
-		if (noteSpawner != null) {
-			noteSpawner = null;
-		}
+		if (noteSpawner != null) noteSpawner = null;
 
 		if (notePool != null) {
 			notePool.dispose();
@@ -479,7 +407,6 @@ class NoteSystem {
 		}
 
 		var display = parent.display;
-
 		display.removeProgram(sustainProg);
 		display.removeProgram(notesProg);
 
