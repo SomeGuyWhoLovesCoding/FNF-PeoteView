@@ -192,7 +192,7 @@ class Strumline {
 		var sustainReleaseCallbackCanRun = sustainToRelease != null
 			&& sustainToRelease.index == index
 			&& File.getJudgement(sustainsToHold_indexes[index])
-			&& sustainToRelease.flag
+			&& !sustainToRelease.flag
 			&& !sustainsResolved[index];
 
 		if (sustainReleaseCallbackCanRun) {

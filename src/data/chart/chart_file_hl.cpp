@@ -33,7 +33,7 @@ HL_PRIM void HL_NAME(destroyChart)(_NO_ARG) {
 HL_PRIM int64_t HL_NAME(getTimeCorrectionForIndex)(int64_t index) {
     if (!gReader) return 0;
     uint64_t shardId = gReader->findShardForGlobalIndex(index);
-    return shardId * 2000000000LL; //.
+    return shardId * 2000000000LL;
 }
 
 /*HL_PRIM void HL_NAME(allocJudgementSlot)(int slot, int64_t noteCount) {

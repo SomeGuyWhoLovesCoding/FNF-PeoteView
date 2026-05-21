@@ -631,7 +631,6 @@ class PlayField {
 	}
 
 	function missNote(note:MetaNote, notesInOne:Int64, _i:Int64) {
-		Sys.println(notesInOne);
 		#if linc_luajit_funkinview
 		var notePos = MetaNote.metaNotePositionToSongTime(note.position + File.getTimeCorrectionForIndex(_i));
 		if (funkinviewlua.callFunction('missNote', notePos, note.index, note.duration, note.type, notesInOne)[0] == FunkinViewLua.Function_Stop) {
