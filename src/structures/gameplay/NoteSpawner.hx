@@ -172,7 +172,7 @@ class NoteSpawner {
 		if (bottom < len) curBottomNote = File.getNote(bottom);
 	}
 
-	function resetNotes(songPosition:Float, backwards:Bool = false) {
+	function resetNotes(songPosition:Float, pushToOffset:Float = 0) {
 		var pf = parent.parent;
 		if (pf.disposed || pf.died) return;
 
@@ -212,8 +212,7 @@ class NoteSpawner {
 		var newBottom = lowerBound(minPos);
 		var newTop = upperBound(maxPos) - 1;
 
-		if (backwards)
-			minBottom = lowerBound(songPos + MetaNote.floatToMetaNotePosition(350));
+		minBottom = lowerBound(songPos + MetaNote.floatToMetaNotePosition(pushToOffset));
 
 		bottom = newBottom;
 		top = newTop;

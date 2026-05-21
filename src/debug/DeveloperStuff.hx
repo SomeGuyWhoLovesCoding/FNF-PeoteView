@@ -21,9 +21,9 @@ class DeveloperStuff {
 		if (playField == null) return;
 		switch (code) {
 			case KeyCode.PERIOD:
-				playField.setTime(playField.songPosition + 1500);
+				playField.setTime(playField.songPosition + 1500, 350);
 			case KeyCode.COMMA:
-				playField.setTime(playField.songPosition - 1500);
+				playField.setTime(playField.songPosition - 1500, 350);
 			/*case KeyCode.S:
 				playField.setTime(2200);*/
 			case KeyCode.NUMBER_9:

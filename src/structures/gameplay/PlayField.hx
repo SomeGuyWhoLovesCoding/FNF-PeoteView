@@ -172,7 +172,7 @@ class PlayField {
 	var hitbox:Float = 220;
 	var ready:Bool = false;
 
-	function setTime(value:Float) {
+	function setTime(value:Float, pushToOffset:Float = 0) {
 		if (disposed || !songStarted || songEnded || paused || died) return;
 		if (value > Mixer.length - 1000) value = Mixer.length - 1000;
 
@@ -194,7 +194,7 @@ class PlayField {
 		if (hud != null && SaveData.state.preferences.ratingPopup) hud.hideRatingPopup();
 		if (noteSystem != null) {
 			var pos = MetaNote.floatToMetaNotePosition(value);
-			noteSystem.onSongPositionJump(pos, true);
+			noteSystem.onSongPositionJump(pos, pushToOffset);
 		}
 		if (field != null) field.resetCharacters();
 	}

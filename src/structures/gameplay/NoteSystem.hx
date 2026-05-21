@@ -124,13 +124,13 @@ class NoteSystem {
 	 * Call this when pausing, seeking, or any time the song position jumps.
 	 * This ensures bot timers are properly synchronized.
 	**/
-	function onSongPositionJump(pos:Int64, backwards:Bool = false) {
+	function onSongPositionJump(pos:Int64, pushToOffset:Float = 0) {
 		_lastPos = pos;
 		_stableLastPos = pos;
 		resetStrumlines(); // force reset them
 
 		if (noteSpawner != null) {
-			noteSpawner.resetNotes(MetaNote.metaNotePositionToSongTime(pos), backwards);
+			noteSpawner.resetNotes(MetaNote.metaNotePositionToSongTime(pos), pushToOffset);
 		}
 	}
 
@@ -482,5 +482,7 @@ class NoteSystem {
 
 		display.removeProgram(sustainProg);
 		display.removeProgram(notesProg);
+
+		NoteSpawner.minBottom = 0;
 	}
 }
