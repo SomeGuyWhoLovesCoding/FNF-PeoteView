@@ -54,7 +54,7 @@ HL_PRIM void HL_NAME(setActiveJudgementSlot)(int slot) {
 HL_PRIM int HL_NAME(getActiveJudgementSlot)(_NO_ARG) {
     if (!gReader) return 0;
     return gReader->core_getActiveJudgementSlot();
-}*/
+}*/ 
 
 HL_PRIM bool HL_NAME(getJudgement)(int64_t globalIndex) {
     if (!gReader) return false;

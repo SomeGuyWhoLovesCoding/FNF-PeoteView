@@ -51,7 +51,7 @@ void setActiveJudgementSlot(int slot) {
 int getActiveJudgementSlot() {
     if (!gReader) return 0;
     return gReader->core_getActiveJudgementSlot();
-}.*/
+}..*/
 
 bool getJudgement(int64_t globalIndex) {
     if (!gReader) return false;

@@ -174,9 +174,9 @@ class NoteSystem {
 
 		// Judgement-gated state reads
 		var judged:Bool   = File.getJudgement(_id);
-		var isHit:Bool    = judged && !note.flag;   // judged + flag=1 → hit
-		//if (_id == 1) Sys.println('NOTE 1 IS HIT? $isHit; but is note.flag hit (false)? ${note.flag}. Is it judged? $judged');
-		var isMissed:Bool = judged && note.flag;  // judged + flag=0 → missed
+		var isHit:Bool    = judged && !note.flag;   // judged + flag=false → hit
+		if (_id == 1) Sys.println('NOTE 1 IS HIT? $isHit; but is note.flag hit (false)? ${note.flag}. Is it judged? $judged');
+		var isMissed:Bool = judged && note.flag;  // judged + flag=true → missed
 		// sustain resolution is tracked externally in strumline
 		var isResolved:Bool = strumline.sustainsResolved[index];
 
@@ -187,7 +187,7 @@ class NoteSystem {
 		noteSpr.Sx = noteSprX;
 		noteSpr.Sy = noteSprY;
 		noteSpr.scale = rec.scale;
-		noteSpr.ref = note;
+		noteSpr.globalIndex = _id;
 
 		var playable = strumline.playable && !(parent.botplay || RenderingMode.enabled);
 
@@ -205,16 +205,13 @@ class NoteSystem {
 
 					if (!noteToHitExists) {
 						strumline.notesToHit[index] = note;
-						strumline.notesToHit_indexes[index] = _id;
+						strumline.notesToHit_indexes[index] = noteSpr.globalIndex;
 						strumline.getTimeCorrection[index] = timeCorrection;
 					} else {
 						var _pos = MetaNote.metaNotePositionToSongTime(
 							(noteToHit.position + strumline.getTimeCorrection[index]) - pos
-						);
-						var currentIsBetter = movingBackward
-							? (diff > _pos)
-							: (Math.abs(diff) < Math.abs(_pos));
-						if (currentIsBetter) {
+						) * _cachedScrollSpeed;  // Match diff's units
+						if (strumline.notesToHit_indexes[index] != noteSpr.globalIndex && Math.abs(diff) < Math.abs(_pos)) {
 							strumline.notesToHit[index] = note;
 							strumline.notesToHit_indexes[index] = _id;
 							strumline.getTimeCorrection[index] = timeCorrection;
@@ -290,7 +287,6 @@ class NoteSystem {
 				parent.hitNote(note, 0, noteSpr.notesInOne, _id);
 
 				File.setNote(_id, n);
-				//Sys.println('SET JUDGEMENT for $_id, readback: ${File.getJudgement(_id)}');
 			}
 		}
 
@@ -344,6 +340,8 @@ class NoteSystem {
 
 		if (!isHit)
 			virtualNoteBuffer.addNote(noteSpr);
+
+		//if (_id == 0 && playable) Sys.println('SET JUDGEMENT for $_id, readback: ${File.getJudgement(_id)}');
 
 		return noteSpr;
 	}

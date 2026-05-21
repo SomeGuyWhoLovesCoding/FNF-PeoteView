@@ -127,8 +127,12 @@ class Strumline {
 	function press(index:Int #if FV_LIME_FORK , timestamp:Float #end) {
 		var noteToHit = notesToHit[index];
 		var rec = buffer[index];
+		var noteIndex = notesToHit_indexes[index];
 
-		if (noteToHit != null && !noteToHit.flag && !File.getJudgement(notesToHit_indexes[index])) {
+		var value:Bool = noteToHit != null && !File.getJudgement(noteIndex);
+		Sys.println('Press key $index: note hit condition is $value');
+
+		if (value) {
 			var pf = parent.parent;
 			var type = noteToHit.type;
 
@@ -144,6 +148,7 @@ class Strumline {
 			}
 
 			var sprite = notesToHit_sprites[index];
+			Sys.println('Press key $index: sprite existing is ${sprite}');
 			if (sprite != null) {
 				sprite.initialAlpha = 0;
 				if (@:privateAccess sprite.bytePos != -1)
@@ -154,29 +159,29 @@ class Strumline {
 			var n:Int64 = noteToHit.toNumber();
 			// mark as hit: missed=false, then set judgement
 			(n:MetaNote).flag = false;
-			File.setNote(notesToHit_indexes[index], n);
-			File.setJudgement(notesToHit_indexes[index], true);
+			File.setNote(noteIndex, n);
+			File.setJudgement(noteIndex, true);
 
 			sustainsToHold_duration[index] = noteToHit.duration;
 			sustainsResolved[index] = false;
 
 			if (noteToHit.duration > 20) {
 				sustainsToHold[index] = n;
-				sustainsToHold_indexes[index] = notesToHit_indexes[index];
+				sustainsToHold_indexes[index] = noteIndex;
 			}
 
 			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + (Main.conductor.offset * 2.0));
-			var _timing = MetaNote.metaNotePositionToSongTime((noteToHit.position + File.getTimeCorrectionForIndex(notesToHit_indexes[index])) - posWithLatency);
+			var _timing = MetaNote.metaNotePositionToSongTime((noteToHit.position + File.getTimeCorrectionForIndex(noteIndex)) - posWithLatency);
 			var timing = (_timing / parent._cachedHitbox) * 0.9;
 
 			if (@:privateAccess pf.onNoteHit.__listeners.length != 0)
 				pf.onNoteHit.dispatch(noteToHit, timing, 1);
 			if (pf.field != null)
 				pf.field.hitNote(noteToHit, timing, 1);
-			pf.hitNote(noteToHit, timing, 1, notesToHit_indexes[index]);
+			pf.hitNote(noteToHit, timing, 1, noteIndex);
 
 			notesToHit[index] = null;
-			notesToHit_indexes[index] = 0;
+			notesToHit_indexes[index] = noteIndex = 0;
 		} else {
 			if (!rec.pressed()) {
 				rec.press();
@@ -187,11 +192,12 @@ class Strumline {
 	function release(index:Int) {
 		var sustainToRelease = sustainsToHold[index];
 		var rec = buffer[index];
+		var sustainIndex = sustainsToHold_indexes[index];
 
 		// Sustain release fires if: note exists, correct lane, was hit, and not yet resolved
 		var sustainReleaseCallbackCanRun = sustainToRelease != null
 			&& sustainToRelease.index == index
-			&& File.getJudgement(sustainsToHold_indexes[index])
+			&& File.getJudgement(sustainIndex)
 			&& !sustainToRelease.flag
 			&& !sustainsResolved[index];
 
@@ -204,10 +210,10 @@ class Strumline {
 				pf.onSustainRelease.dispatch(sustainToRelease);
 			if (pf.field != null)
 				pf.field.releaseSustain(sustainToRelease);
-			pf.releaseSustain(sustainToRelease, sustainsToHold_indexes[index]);
+			pf.releaseSustain(sustainToRelease, sustainIndex);
 
 			sustainsToHold[index] = null;
-			sustainsToHold_indexes[index] = 0;
+			sustainsToHold_indexes[index] = sustainIndex = 0;
 			sustainsToHold_duration[index] = 0;
 
 			var hud = pf.hud;

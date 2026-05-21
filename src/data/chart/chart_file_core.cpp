@@ -295,7 +295,6 @@ private:
         uint64_t shardId    = 0;
         int64_t  startIndex = 0;
         int64_t  endIndex   = 0;
-        std::vector<uint8_t> judgement;
     };
 
     std::string chartDir;
@@ -396,7 +395,6 @@ private:
 
         info.noteCount = info.reader.size();
         info.endIndex  = info.startIndex + info.noteCount;
-        info.judgement.assign((info.noteCount + 7) >> 3, 0);
         
         activeShards.emplace(shardId, std::move(info));
     }
@@ -468,7 +466,6 @@ private:
             if (!info->reader.open(path.c_str())) { delete info; return nullptr; }
             info->noteCount = info->reader.size();
             info->endIndex  = info->startIndex + info->noteCount;
-            info->judgement.assign((info->noteCount + 7) >> 3, 0);
             return info;
         });
     }
@@ -535,10 +532,23 @@ private:
     }
 
 public:
+    std::vector<uint8_t> globalJudgement;
+    bool globalJudgementInitialized = false;
+
+    void initGlobalJudgement() {
+        if (globalJudgementInitialized) return;
+        // Allocate enough bytes for totalNotes bits
+        globalJudgement.assign((totalNotes + 7) >> 3, 0);
+        globalJudgementInitialized = true;
+    }
+
     ShardedChartReader(const char* path) : chartDir(path) {
         scanShards();
         if (availableShards.empty())
             throw std::runtime_error("No shards found in directory");
+        
+        // Initialize global judgement buffer immediately
+        initGlobalJudgement();
 
         // Load synchronously up to INITIAL_BYTE_BUDGET bytes worth of shards
         size_t bytesLoaded = 0;
@@ -636,24 +646,32 @@ public:
         info->reader.set(globalIndex - info->startIndex, value);
     }
 
-    // Optimized judgement with direct bit operations
+    // UPDATED: Use global buffer instead of shard-local vector
     bool core_getJudgement(int64_t globalIndex) {
-        ShardInfo* info = getShardInfoFast(globalIndex, judgeCache);
-        int64_t localIndex = globalIndex - info->startIndex;
-        int64_t byteIndex  = localIndex >> 3;
-        int     bitIndex   = localIndex & 7;
-        if (byteIndex >= (int64_t)info->judgement.size()) return false;
-        return (info->judgement[byteIndex] >> bitIndex) & 1;
+        if (!globalJudgementInitialized) initGlobalJudgement();
+        if (globalIndex < 0 || globalIndex >= totalNotes) return false;
+        
+        int64_t byteIndex = globalIndex >> 3;
+        int     bitIndex  = globalIndex & 7;
+        
+        if (byteIndex >= (int64_t)globalJudgement.size()) return false;
+        return (globalJudgement[byteIndex] >> bitIndex) & 1;
     }
 
+    // UPDATED: Use global buffer
     void core_setJudgement(int64_t globalIndex, bool value) {
-        ShardInfo* info = getShardInfoFast(globalIndex, judgeCache);
-        int64_t localIndex = globalIndex - info->startIndex;
-        int64_t byteIndex  = localIndex >> 3;
-        int     bitIndex   = localIndex & 7;
-        if (byteIndex >= (int64_t)info->judgement.size()) return;
-        if (value) info->judgement[byteIndex] |=  (1 << bitIndex);
-        else       info->judgement[byteIndex] &= ~(1 << bitIndex);
+        if (!globalJudgementInitialized) initGlobalJudgement();
+        if (globalIndex < 0 || globalIndex >= totalNotes) return;
+
+        int64_t byteIndex = globalIndex >> 3;
+        int     bitIndex  = globalIndex & 7;
+        
+        if (byteIndex >= (int64_t)globalJudgement.size()) return;
+        
+        if (value) 
+            globalJudgement[byteIndex] |=  (1 << bitIndex);
+        else       
+            globalJudgement[byteIndex] &= ~(1 << bitIndex);
     }
 
     void printNoteInfo(int64_t globalIndex) {

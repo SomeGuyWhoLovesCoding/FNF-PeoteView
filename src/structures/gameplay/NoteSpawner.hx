@@ -24,6 +24,10 @@ class NoteSpawner {
 		top = 0;
 
 		//File.allocJudgement();
+		for (i in 0...20) {
+			var note:MetaNote = File.getNote(i);
+			Sys.println('Is it judged? ${File.getJudgement(i)}. Note flag? ${note.flag}. Here\'s the position of the note for reference: ${note.position}');
+		}
 	}
 
 	var timeSpentOnIt:Float = 0;
@@ -111,11 +115,6 @@ class NoteSpawner {
 			var n = File.getNote(top);
 			var tc = File.getTimeCorrectionForIndex(top);
 			if ((n.position + tc) - pos >= spawnDist) break;
-			// Only reset state if not already judged — don't clobber a committed decision
-			if (!File.getJudgement(top)) {
-				n.flag = false;
-				File.setNote(top, n);
-			}
 			++top;
 		}
 
@@ -152,12 +151,6 @@ class NoteSpawner {
 			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - (n.position + tc);
 			if (despawnCheck > despawnDist) break;
 			--bottom;
-			// Only reset if not already judged
-			if (!File.getJudgement(bottom)) {
-				var n2 = File.getNote(bottom);
-				n2.flag = false;
-				File.setNote(bottom, n2);
-			}
 		}
 
 		if (bottom < len) curBottomNote = File.getNote(bottom);
@@ -254,8 +247,8 @@ class NoteSpawner {
 					note.changeID(id);
 					note.toNote();
 
-					var noteToHit = strumline.notesToHit[j];
-					strumline.notesToHit_sprites[j] = noteToHit == virtualNote.ref ? note : null;
+					var noteToHitIdx = strumline.notesToHit_indexes[j];
+					strumline.notesToHit_sprites[j] = noteToHitIdx == virtualNote.globalIndex ? note : null;
 
 					regularNoteList.push(note);
 
@@ -335,7 +328,7 @@ class NoteSpawner {
 	}
 
 	inline function mergeNoteIntoSprite(noteSpr:VirtualNote, n:MetaNote) {
-		var alphaToAdd = !n.flag ? Note.defaultMissAlpha : Note.defaultAlpha;
+		var alphaToAdd = n.flag ? Note.defaultMissAlpha : Note.defaultAlpha;
 		noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + alphaToAdd, 256);
 		noteSpr.notesInOne++;
 	}

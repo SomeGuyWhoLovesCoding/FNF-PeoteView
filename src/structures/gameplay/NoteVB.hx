@@ -85,7 +85,7 @@ class NoteVB {
 }
 
 /**
- * This object is the POD of the note element. 40-byte class.
+ * This object is the POD of the note element. 48-byte class.
  * @since Development
 **/
 #if cpp
@@ -107,6 +107,9 @@ class VirtualNote {
 
 	// the refrence to the note (8 bytes)
 	var ref:MetaNote;
+
+	// the global index branching down to the note (8 bytes)
+	var globalIndex:Int64;
 
 	// the note diff relative to strum time (4 bytes)
 	var diff:Int;

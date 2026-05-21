@@ -552,7 +552,9 @@ class PlayField {
 	function hitNote(note:MetaNote, timing:Float, notesInOne:Int64, _i:Int64) {
 		#if linc_luajit_funkinview
 		var notePos = MetaNote.metaNotePositionToSongTime(note.position + File.getTimeCorrectionForIndex(_i));
-		funkinviewlua.callFunction('hitNote', notePos, note.index, note.duration, note.type, timing, notesInOne);
+		if (funkinviewlua.callFunction('hitNote', notePos, note.index, note.duration, note.type, timing, notesInOne)[0] == FunkinViewLua.Function_Stop) {
+			return;
+		};
 		#end
 
 		var lane = note.type;
