@@ -302,7 +302,7 @@ class NoteSystem {
 
 			var sustainCompleted = pos > position + (MetaNote.floatToMetaNotePosition(sustainLength - 25));
 
-			if (isResolved && !sustainCompleted)
+			if (isResolved && !sustainCompleted && judged)
 				sustainSpr.alpha = Sustain.defaultMissAlpha;
 
 			if (!isHit) {
