@@ -109,6 +109,7 @@ class VirtualNote {
 	var ref:MetaNote;
 
 	// the global index branching down to the note (8 bytes)
+	// note: this had to be implemented as a result of a flaw that had to be fixed in the new judgement implementation on the way.
 	var globalIndex:Int64;
 
 	// the note diff relative to strum time (4 bytes)

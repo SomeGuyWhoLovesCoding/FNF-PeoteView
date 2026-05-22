@@ -300,7 +300,9 @@ class NoteSystem {
 			sustainSpr.followNote(rec.x, rec.y, id);
 			sustainSpr.diff = isHit ? 0 : Std.int(diff);
 
-			if (isResolved && isMissed)
+			var sustainCompleted = pos > position + (MetaNote.floatToMetaNotePosition(sustainLength - 25));
+
+			if (isResolved && !sustainCompleted)
 				sustainSpr.alpha = Sustain.defaultMissAlpha;
 
 			if (!isHit) {
@@ -312,7 +314,7 @@ class NoteSystem {
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
 
-				if (pos > position + (MetaNote.floatToMetaNotePosition(sustainLength - 25)) && !isResolved) {
+				if (sustainCompleted && !isResolved) {
 					if (!movingBackward) {
 						strumline.sustainsResolved[index] = true;
 						isResolved = true;
