@@ -194,7 +194,7 @@ class NoteSpawner {
 		}
 
 		var newBottom = lowerBound(minPos);
-		var newTop = upperBound(maxPos) - 1;
+		var newTop = upperBound(maxPos);
 
 		minBottom = lowerBound(songPos + MetaNote.floatToMetaNotePosition(pushToOffset));
 
