@@ -156,7 +156,7 @@ class Field {
 		player.playAnimation("idle");
 	}
 
-	inline function sing(index:Int, char:Actor, miss:Bool = false, shake:Bool = false, skipAnimation:Bool = false) {
+	function sing(index:Int, char:Actor, miss:Bool = false, shake:Bool = false, skipAnimation:Bool = false) {
 		char.shake = shake;
 		if (skipAnimation) return;
 		if (miss) {
@@ -172,7 +172,7 @@ class Field {
 	var defaultCameraYpos:Array<Float> = [0, 0];
 
 	inline function hitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
-		sing(note.index, (note.type == 0 ? opponent : player), false, note.duration > 2 && timing < parent.hitbox * 0.5);
+		sing(note.index, (note.type == 0 ? opponent : player), false, note.duration > 80 && timing < parent.hitbox * 0.5);
 
 		if (turnoncustomcamera) return;
 

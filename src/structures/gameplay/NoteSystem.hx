@@ -291,7 +291,7 @@ class NoteSystem {
 		}
 
 		// --- Sustain handling ---
-		var sustainLength = (duration >> 1) - 20;
+		var sustainLength = (duration >> 1) - 40;
 		if (sustainExists) {
 			sustainSpr.ref = noteSpr;
 			sustainSpr.speed = parent.scrollSpeed;
