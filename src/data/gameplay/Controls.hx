@@ -30,7 +30,7 @@ class Controls {
 			{
 				action: Action.UI_DOWN,
 				keyboard: NestedArray.fromNestedArrayItem(controls.ui.down),
-				gamepad: NestedArray.fromNestedArrayItem(controls.ui.down)
+				gamepad: NestedArray.fromNestedArrayItem(controls.ui.up)
 			},
 			{
 				action: Action.UI_UP,

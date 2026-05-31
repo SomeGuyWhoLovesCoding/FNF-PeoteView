@@ -1,7 +1,15 @@
 package structures;
 
+import lime.ui.KeyCode;
+import lime.ui.KeyModifier;
+import elements.text.TextCharSprite;
+
 /**
-	The options submenu's display (preference / gameplay sprites).
+	The options submenu's display.
+	This is an internal structure and should only be used inside of the menu NOT to be touched with.
+	It is used to display the options available to the player, such as controls, preferences, and gameplay options.
+	It is responsible for rendering the options and updating them based on the player's input and game state.
+	@since Development
 **/
 @:publicFields
 class OptionsDisplay {
@@ -15,7 +23,14 @@ class OptionsDisplay {
 		"iconBopping"
 	];
 
+	private static var display(get, never):CustomDisplay;
+
+	inline private static function get_display() {
+		return OptionsMenu.display;
+	}
+
 	var parent(default, null):OptionsMenu;
+
 	var options(default, null):Array<OptionsSprite> = [];
 
 	function new(parent:OptionsMenu) {
@@ -26,6 +41,22 @@ class OptionsDisplay {
 		destroyOptions();
 
 		switch (selection) {
+			case CONTROLS:
+				var subCat1 = new OptionsSprite();
+				subCat1.type = CONTROLS_SUBCAT;
+				subCat1.changeID(0);
+				subCat1.x = 400;
+				subCat1.y = 300;
+				options.push(subCat1);
+				OptionsMenu.optionsBuf.addElement(subCat1);
+
+				var subCat2 = new OptionsSprite();
+				subCat2.type = CONTROLS_SUBCAT;
+				subCat2.changeID(1);
+				subCat2.x = 400;
+				subCat2.y = 400;
+				options.push(subCat2);
+				OptionsMenu.optionsBuf.addElement(subCat2);
 			case PREFERENCES:
 				for (i in 0...7) {
 					var option = new OptionsSprite();
@@ -36,8 +67,8 @@ class OptionsDisplay {
 					options.push(option);
 					OptionsMenu.optionsBuf.addElement(option);
 				}
-			case CONTROLS:
 			case GAMEPLAY:
+				// TODO
 		}
 	}
 
@@ -63,7 +94,6 @@ class OptionsDisplay {
 						default:
 					}
 				}
-				SaveData.save();
 			default:
 		}
 	}
@@ -84,7 +114,9 @@ class OptionsDisplay {
 						option.c.luminanceF = parent.alphaLerp;
 					}
 				case GAMEPLAY:
+					// todo
 				case CONTROLS:
+					// todo
 			}
 			OptionsMenu.optionsBuf.updateElement(option);
 		}
@@ -102,4 +134,13 @@ class OptionsDisplay {
 	function dispose() {
 		destroyOptions();
 	}
+}
+
+/**
+	Enum abstract of the option selection.
+**/
+enum abstract OptionsCategorySelection(Int) from Int to Int {
+	var CONTROLS;
+	var PREFERENCES;
+	var GAMEPLAY;
 }

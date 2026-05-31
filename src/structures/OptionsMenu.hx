@@ -2,12 +2,14 @@ package structures;
 
 import input2action.ActionMap;
 import lime.ui.KeyCode;
-import lime.ui.KeyModifier;
 import lime.ui.MouseButton;
 import lime.ui.MouseWheelMode;
 
 /**
 	The options submenu.
+	This is where you can change the game's settings, such as controls, preferences, and gameplay options.
+	It is responsible for rendering the options menu and updating it based on the player's input.
+	@since Development
 **/
 @:publicFields
 class OptionsMenu {
@@ -17,16 +19,14 @@ class OptionsMenu {
 
 	var categoryNav(default, null):Navigation = new Navigation();
 	var optionsNav(default, null):Navigation = new Navigation();
-	var controlsNav(default, null):Navigation = new Navigation();
 
 	var categorySprites(default, null):Array<OptionsSprite> = [];
 
 	var active:Bool = false;
+
 	var opened(default, null):Bool;
-	var programsInDisplay:Bool = false;
 
 	static var optionsDisplay(default, null):OptionsDisplay;
-	var controlsText(default, null):OptionsControlsText;
 
 	var actions(default, null):ActionMap;
 	
@@ -43,8 +43,6 @@ class OptionsMenu {
 	}
 
 	function new() {
-		controlsText = new OptionsControlsText(this);
-
 		for (i in 0...3) {
 			var option = new OptionsSprite();
 			option.type = CATEGORY_TEXT;
@@ -56,7 +54,7 @@ class OptionsMenu {
 		if (optionsDisplay == null) {
 			optionsDisplay = new OptionsDisplay(this);
 		}
-		onCategoryChanged();
+		optionsDisplay.reload(cast optionsNav.value());
 
 		actions = [
 			Controls.Action.UI_LEFT => { action: left },
@@ -70,21 +68,6 @@ class OptionsMenu {
 
 	var alphaLerp:Float = 0.0;
 
-	inline function isControlsCategory():Bool {
-		return (categoryNav.value():OptionsCategorySelection) == CONTROLS;
-	}
-
-	function onCategoryChanged() {
-		if (isControlsCategory()) {
-			optionsDisplay.destroyOptions();
-			controlsNav.setTo(0);
-			controlsText.show();
-		} else {
-			controlsText.hide();
-			optionsDisplay.reload(cast categoryNav.value());
-		}
-	}
-
 	function update(deltaTime:Float) {
 		if (!opened && alphaLerp == 0.0) {
 			shutDown();
@@ -92,7 +75,7 @@ class OptionsMenu {
 		}
 
 		var ratio = Math.min(deltaTime * 0.015, 1.0);
-		if (ratio == 1) ratio = (1 / lime.app.Application.current.window.frameRate) * 0.015;
+		if (ratio == 1) ratio = (1/lime.app.Application.current.window.frameRate) * 0.015; // When loading the options menu the first time it gets stuck at 1.0 for a single frame
 
 		alphaLerp = Tools.lerp(alphaLerp, opened ? 1.0 : 0.0, ratio);
 
@@ -104,11 +87,7 @@ class OptionsMenu {
 			if (originalLuminance != categorySprite.c.luminanceF) optionsBuf.updateElement(categorySprite);
 		}
 
-		if (isControlsCategory()) {
-			controlsText.refresh();
-		} else {
-			optionsDisplay.update(deltaTime);
-		}
+		optionsDisplay.update(deltaTime);
 	}
 
 	function open() {
@@ -122,132 +101,85 @@ class OptionsMenu {
 				categorySprite.c.aF = alphaLerp;
 				optionsBuf.addElement(categorySprite);
 			}
+
 			alphaLerp = 0.0;
 		} catch (e) {}
 
 		haxe.Timer.delay(() -> {
 			var window = lime.app.Application.current.window;
 			Main.current.controls.bindTo(actions);
+			
 			Main.current.mouseDown = mousePress;
-			window.onMouseWheel.add(mouseWheel);
-			#if FV_LIME_FORK
-			window.onKeyDownPrecise.add(controlsKeyCapture);
-			#else
-			window.onKeyDown.add(controlsKeyCapture);
-			#end
+			window.onMouseWheel.add(moveCategory_mouse);
 		}, 1);
 
 		if (!optionsProg.isIn(display)) {
 			display.addProgram(optionsProg);
-			programsInDisplay = true;
-		}
-
-		if (isControlsCategory()) {
-			controlsText.show();
 		}
 	}
 
 	function close() {
-		opened = false;
-
 		var mm = Main.current.mainMenu;
 		var pf = Main.current.playField;
-		var window = lime.app.Application.current.window;
 
+		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
 		Main.current.mouseDown = null;
-		window.onMouseWheel.remove(mouseWheel);
-		#if FV_LIME_FORK
-		window.onKeyDownPrecise.remove(controlsKeyCapture);
-		#else
-		window.onKeyDown.remove(controlsKeyCapture);
-		#end
+		window.onMouseWheel.remove(moveCategory_mouse);
 
 		if (mm != null) {
 			MainMenu.selectedAlpha = 1.0;
 			mm.addEvents();
 		} else if (pf != null) {
-			pf.pauseScreen.onOptionsMenuClose();
+			var pauseScreen = pf.pauseScreen;
+			pauseScreen.onOptionsMenuClose();
 		}
-		
-		// Remove programs from display but keep in memory
-		if (programsInDisplay && optionsProg.isIn(display)) {
-			display.removeProgram(optionsProg);
-			programsInDisplay = false;
-		}
+
+		opened = false;
 	}
 
 	function back(isDown:Bool, param:Int) {
 		if (!isDown) return;
-		if (isControlsCategory()) {
-			controlsText.navigateBack();
-			return;
-		}
 		close();
 		Main.current.playCancelSound();
 	}
 
 	function down(isDown:Bool, param:Int) {
-		if (!isDown || controlsText.waitingForKey || controlsText.inputMode) return;
-		if (isControlsCategory()) {
-			controlsText.navigateDown();
-			return;
-		}
+		if (!isDown) return;
 		optionsNav.scroll(1);
 		optionsNav.resetIfOver(optionsDisplay.options.length);
 		Main.current.playScrollSound();
 	}
 
 	function up(isDown:Bool, param:Int) {
-		if (!isDown || controlsText.waitingForKey || controlsText.inputMode) return;
-		if (isControlsCategory()) {
-			controlsText.navigateUp();
-			return;
-		}
+		if (!isDown) return;
 		optionsNav.scroll(-1);
 		optionsNav.resetIfUnder(optionsDisplay.options.length - 1);
 		Main.current.playScrollSound();
 	}
 
 	function left(isDown:Bool, param:Int) {
-		if (!isDown || controlsText.waitingForKey) return;
+		if (!isDown) return;
 		optionsNav.setTo(0);
 		categoryNav.scroll(-1);
 		categoryNav.resetIfUnder(categorySprites.length - 1);
-		onCategoryChanged();
+		optionsDisplay.reload(cast categoryNav.value());
 		Main.current.playScrollSound();
 	}
 
 	function right(isDown:Bool, param:Int) {
-		if (!isDown || controlsText.waitingForKey) return;
+		if (!isDown) return;
 		optionsNav.setTo(0);
 		categoryNav.scroll(1);
 		categoryNav.resetIfOver(categorySprites.length);
-		onCategoryChanged();
+		optionsDisplay.reload(cast categoryNav.value());
 		Main.current.playScrollSound();
 	}
 
 	function enter(isDown:Bool, param:Int) {
 		if (!isDown) return;
-		if (isControlsCategory()) {
-			controlsText.onEnter();
-			Main.current.playCancelSound();
-			return;
-		}
 		optionsDisplay.enter();
 		Main.current.playCancelSound();
-	}
-
-	function controlsKeyCapture(code:KeyCode, mod:KeyModifier
-		#if FV_LIME_FORK
-		, timestamp:Float
-		#end
-	) {
-		if (!opened) return; // 🔥 MUST BE FIRST
-		if (!isControlsCategory()) return;
-		if (!controlsText.waitingForKey && !controlsText.inputMode) return;
-		controlsText.applyKey(code);
-		if (controlsText.waitingForKey) Main.current.playConfirmSound();
 	}
 
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
@@ -257,25 +189,15 @@ class OptionsMenu {
 		Main.current.playScrollSound();
 	}
 
-	function mouseWheel(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
-		if (controlsText.waitingForKey) return;
-		if (isControlsCategory()) {
-			controlsNav.scroll(-Math.floor(y));
-			controlsNav.resetIfBoth(OptionsControlsText.ROW_COUNT, OptionsControlsText.ROW_COUNT - 1);
-			Main.current.playScrollSound();
-			return;
-		}
+	function moveCategory_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
 		categoryNav.scroll(-Math.floor(y));
 		categoryNav.resetIfBoth(categorySprites.length, categorySprites.length - 1);
-		onCategoryChanged();
+		optionsDisplay.reload(cast categoryNav.value());
 		Main.current.playScrollSound();
 	}
 
 	function shutDown() {
-		// Only proceed if programs are still in display (shouldn't happen after close())
 		if (!optionsProg.isIn(display)) return;
-
-		controlsText.hide();
 
 		for (i in 0...categorySprites.length) {
 			var categorySprite = categorySprites[i];
@@ -285,7 +207,6 @@ class OptionsMenu {
 
 		display.color = 0x00000000;
 		display.removeProgram(optionsProg);
-		programsInDisplay = false;
 
 		active = false;
 		Main.current.removeOptionsMenu();
@@ -303,7 +224,6 @@ class OptionsMenu {
 			}
 		}
 
-		controlsText.hide();
 		optionsDisplay.dispose();
 	}
 }
