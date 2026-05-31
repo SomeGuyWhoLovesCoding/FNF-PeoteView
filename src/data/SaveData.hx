@@ -43,22 +43,7 @@ class SaveData {
 				accept: KeyCode.RETURN,
 				back: KeyCode.BACKSPACE,
 			},
-			game: {
-				keybindArray: [
-					[[KeyCode.SPACE]],
-					[[KeyCode.A], [KeyCode.RIGHT]],
-					[[KeyCode.A], [KeyCode.SPACE], [KeyCode.RIGHT]],
-					[[KeyCode.A, KeyCode.LEFT], [KeyCode.S, KeyCode.DOWN], [KeyCode.W, KeyCode.UP], [KeyCode.D, KeyCode.RIGHT]],
-					[[KeyCode.A, KeyCode.LEFT], [KeyCode.S, KeyCode.DOWN], [KeyCode.SPACE], [KeyCode.W, KeyCode.UP], [KeyCode.D, KeyCode.RIGHT]],
-					[[KeyCode.S], [KeyCode.D], [KeyCode.F], [KeyCode.J], [KeyCode.K], [KeyCode.L]],
-					[[KeyCode.S], [KeyCode.D], [KeyCode.F], [KeyCode.SPACE], [KeyCode.J], [KeyCode.K], [KeyCode.L]],
-					[[KeyCode.A], [KeyCode.S], [KeyCode.D], [KeyCode.F], [KeyCode.H], [KeyCode.J], [KeyCode.K], [KeyCode.L]],
-					[[KeyCode.A], [KeyCode.S], [KeyCode.D], [KeyCode.F], [KeyCode.SPACE], [KeyCode.H], [KeyCode.J], [KeyCode.K], [KeyCode.L]]
-				],
-				reset: KeyCode.R,
-				pause: KeyCode.RETURN,
-				debug: KeyCode.NUMBER_7
-			},
+			game: defaultControlsGame(),
 			inputOffset: 0
 		},
 		preferences: {
@@ -99,6 +84,64 @@ class SaveData {
 		}
 		trace('Savedata file loaded...');
 		state = result;
+		migrate(state);
+	}
+
+	static function migrate(data:SaveData) {
+		var game = data.controls.game;
+		if (game.mania < 1 || game.mania > 16) game.mania = 4;
+		var defaults = defaultKeybindArray();
+		while (game.keybindArray.length < defaults.length) {
+			game.keybindArray.push(defaults[game.keybindArray.length]);
+		}
+
+		var ui = data.controls.ui;
+		if (ui.left == 0) ui.left = KeyCode.LEFT;
+		if (ui.down == 0) ui.down = KeyCode.DOWN;
+		if (ui.up == 0) ui.up = KeyCode.UP;
+		if (ui.right == 0) ui.right = KeyCode.RIGHT;
+		if (ui.accept == 0) ui.accept = KeyCode.RETURN;
+		if (ui.back == 0) ui.back = KeyCode.BACKSPACE;
+	}
+
+	static function defaultControlsGame():Controls_Game {
+		return {
+			mania: 4,
+			keybindArray: defaultKeybindArray(),
+			reset: KeyCode.R,
+			pause: KeyCode.RETURN,
+			debug: KeyCode.NUMBER_7
+		};
+	}
+
+	static function defaultKeybindArray():Array<Array<Array<KeyCode>>> {
+		return [
+			[[KeyCode.SPACE]],
+			[[KeyCode.A], [KeyCode.RIGHT]],
+			[[KeyCode.A], [KeyCode.SPACE], [KeyCode.RIGHT]],
+			[[KeyCode.A, KeyCode.LEFT], [KeyCode.S, KeyCode.DOWN], [KeyCode.W, KeyCode.UP], [KeyCode.D, KeyCode.RIGHT]],
+			[[KeyCode.A, KeyCode.LEFT], [KeyCode.S, KeyCode.DOWN], [KeyCode.SPACE], [KeyCode.W, KeyCode.UP], [KeyCode.D, KeyCode.RIGHT]],
+			[[KeyCode.S], [KeyCode.D], [KeyCode.F], [KeyCode.J], [KeyCode.K], [KeyCode.L]],
+			[[KeyCode.S], [KeyCode.D], [KeyCode.F], [KeyCode.SPACE], [KeyCode.J], [KeyCode.K], [KeyCode.L]],
+			[[KeyCode.A], [KeyCode.S], [KeyCode.D], [KeyCode.F], [KeyCode.H], [KeyCode.J], [KeyCode.K], [KeyCode.L]],
+			[[KeyCode.A], [KeyCode.S], [KeyCode.D], [KeyCode.F], [KeyCode.SPACE], [KeyCode.H], [KeyCode.J], [KeyCode.K], [KeyCode.L]],
+			generatedKeybinds(10),
+			generatedKeybinds(11),
+			generatedKeybinds(12),
+			generatedKeybinds(13),
+			generatedKeybinds(14),
+			generatedKeybinds(15),
+			generatedKeybinds(16),
+		];
+	}
+
+	static function generatedKeybinds(laneCount:Int):Array<Array<KeyCode>> {
+		var row = [
+			KeyCode.A, KeyCode.S, KeyCode.D, KeyCode.F, KeyCode.G,
+			KeyCode.H, KeyCode.J, KeyCode.K, KeyCode.L, KeyCode.SEMICOLON,
+			KeyCode.QUOTE, KeyCode.BACKSLASH, KeyCode.Z, KeyCode.X, KeyCode.C, KeyCode.V
+		];
+		return [for (i in 0...laneCount) [row[i % row.length]]];
 	}
 
 	static function save() {
@@ -150,6 +193,8 @@ class Controls_UI {
 @:structInit
 @:publicFields
 class Controls_Game {
+	/** Selected keybind layout (1–16 keys). **/
+	var mania:Int;
 	var keybindArray:Array<Array<Array<KeyCode>>>;
 	var pause:Int;
 	var reset:Int;
