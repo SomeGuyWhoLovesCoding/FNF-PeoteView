@@ -3,6 +3,7 @@ package structures;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 import elements.text.TextCharSprite;
+import structures.options.*;
 
 /**
 	The options submenu's display.
@@ -13,16 +14,6 @@ import elements.text.TextCharSprite;
 **/
 @:publicFields
 class OptionsDisplay {
-	private static var prefsStr(default, null):Array<String> = [
-		"downScroll",
-		"hideHUD",
-		"smoothHealthbar",
-		"ratingPopup",
-		"scoreTxtBopping",
-		"cameraZooming",
-		"iconBopping"
-	];
-
 	private static var display(get, never):CustomDisplay;
 
 	inline private static function get_display() {
@@ -33,8 +24,13 @@ class OptionsDisplay {
 
 	var options(default, null):Array<OptionsSprite> = [];
 
+	var preferencesDisplay(default, null):PreferencesDisplay;
+	var graphicsDisplay(default, null):GraphicsDisplay;
+
 	function new(parent:OptionsMenu) {
 		this.parent = parent;
+		preferencesDisplay = new PreferencesDisplay(parent);
+		graphicsDisplay = new GraphicsDisplay(parent);
 	}
 
 	function reload(selection:OptionsCategorySelection) {
@@ -58,42 +54,18 @@ class OptionsDisplay {
 				options.push(subCat2);
 				OptionsMenu.optionsBuf.addElement(subCat2);
 			case PREFERENCES:
-				for (i in 0...7) {
-					var option = new OptionsSprite();
-					option.type = PREFERENCE_OPTION;
-					option.changeID(i);
-					option.x = 400;
-					option.y = 125 + (option.h * i);
-					options.push(option);
-					OptionsMenu.optionsBuf.addElement(option);
-				}
+				preferencesDisplay.reload();
 			case GAMEPLAY:
-				// TODO
+				graphicsDisplay.reload();
 		}
 	}
 
 	function enter() {
 		switch ((parent.categoryNav.value():OptionsCategorySelection)) {
 			case PREFERENCES:
-				var field = prefsStr[parent.optionsNav.value()];
-				var optionChecked = Reflect.getProperty(SaveData.state.preferences, field);
-				Reflect.setProperty(SaveData.state.preferences, field, !optionChecked);
-				var pf = Main.current.playField;
-				if (pf != null) {
-					switch (field) {
-						case "downScroll":
-							pf.downScroll = !optionChecked;
-						case "hideHUD" | "ratingPopup":
-							pf.resetHUD();
-						case "smoothHealthbar":
-							var hud = pf.hud;
-							if (hud != null) {
-								var healthBar = hud.healthBar;
-								if (healthBar != null) healthBar.update(0);
-							}
-						default:
-					}
-				}
+				preferencesDisplay.enter();
+			case GAMEPLAY:
+				graphicsDisplay.enter();
 			default:
 		}
 	}
@@ -103,23 +75,11 @@ class OptionsDisplay {
 			var option = options[i];
 			option.c.aF = parent.alphaLerp;
 			option.c.luminanceF = parent.alphaLerp;
-			switch ((parent.categoryNav.value():OptionsCategorySelection)) {
-				case PREFERENCES:
-					var optionChecked = Reflect.getProperty(SaveData.state.preferences, prefsStr[i]);
-					if (i == parent.optionsNav.value()) {
-						option.c.rF = !optionChecked ? parent.alphaLerp : 0.0;
-						option.c.gF = optionChecked ? parent.alphaLerp : 0.0;
-						option.c.bF = 0.0;
-					} else {
-						option.c.luminanceF = parent.alphaLerp;
-					}
-				case GAMEPLAY:
-					// todo
-				case CONTROLS:
-					// todo
-			}
 			OptionsMenu.optionsBuf.updateElement(option);
 		}
+		
+		preferencesDisplay.update(deltaTime);
+		graphicsDisplay.update(deltaTime);
 	}
 
 	function destroyOptions() {
@@ -129,10 +89,15 @@ class OptionsDisplay {
 				OptionsMenu.optionsBuf.removeElement(option);
 			} catch (e) {}
 		}
+		
+		preferencesDisplay.destroyOptions();
+		graphicsDisplay.destroyOptions();
 	}
 
 	function dispose() {
 		destroyOptions();
+		preferencesDisplay.dispose();
+		graphicsDisplay.dispose();
 	}
 }
 

@@ -184,7 +184,7 @@ class PauseScreen {
 		try {
 			for (i in 0...pauseOptions.length) {
 				var pauseOption = pauseOptions[i];
-				if (i == pauseNav.value()) pauseOption.c = Color.YELLOW;
+				if (i == pauseNav.value()) pauseOption.c = Color.GREY3;
 				else pauseOption.c = Color.WHITE;
 				pauseOption.c.aF = 0.0;
 				pauseOption.c.luminanceF = 0.0;

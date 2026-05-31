@@ -1,5 +1,7 @@
 package structures;
 
+import structures.OptionsDisplay.OptionsCategorySelection;
+import structures.options.PreferencesDisplay;
 import input2action.ActionMap;
 import lime.ui.KeyCode;
 import lime.ui.MouseButton;
@@ -144,17 +146,35 @@ class OptionsMenu {
 		Main.current.playCancelSound();
 	}
 
+	function getCurrentCategorysOptionCount() {
+		var result = 0;
+
+		switch ((categoryNav.value():OptionsCategorySelection)) {
+			case CONTROLS:
+				result = 0; // TODO
+			case PREFERENCES:
+				result = PreferencesDisplay.prefsStr.length;
+			case GAMEPLAY:
+				//result = GraphicsDisplay.graphicsStr.length;
+				result = 0; // TODO
+		}
+
+		return result;
+	}
+
 	function down(isDown:Bool, param:Int) {
 		if (!isDown) return;
 		optionsNav.scroll(1);
-		optionsNav.resetIfOver(optionsDisplay.options.length);
+		var optionssLen = getCurrentCategorysOptionCount();
+		optionsNav.resetIfOver(optionssLen);
 		Main.current.playScrollSound();
 	}
 
 	function up(isDown:Bool, param:Int) {
 		if (!isDown) return;
 		optionsNav.scroll(-1);
-		optionsNav.resetIfUnder(optionsDisplay.options.length - 1);
+		var optionssLen = getCurrentCategorysOptionCount();
+		optionsNav.resetIfUnder(optionssLen - 1);
 		Main.current.playScrollSound();
 	}
 
@@ -162,7 +182,8 @@ class OptionsMenu {
 		if (!isDown) return;
 		optionsNav.setTo(0);
 		categoryNav.scroll(-1);
-		categoryNav.resetIfUnder(categorySprites.length - 1);
+		var optionssLen = getCurrentCategorysOptionCount();
+		categoryNav.resetIfUnder(optionssLen - 1);
 		optionsDisplay.reload(cast categoryNav.value());
 		Main.current.playScrollSound();
 	}
