@@ -67,14 +67,14 @@ class PreferencesDisplay {
 			option.c.luminanceF = parent.alphaLerp;
 			
 			var optionChecked = Reflect.getProperty(SaveData.state.preferences, prefsStr[i]);
-			if (i == parent.optionsNav.value()) {
+			/*if (i == parent.optionsNav.value()) {
 				option.c.rF = !optionChecked ? parent.alphaLerp : 0.0;
 				option.c.gF = optionChecked ? parent.alphaLerp : 0.0;
 				option.c.bF = 0.0;
 			} else {
 				option.c.luminanceF = parent.alphaLerp;
-			}
-			//option.c.luminanceF = (i == parent.optionsNav.value()) ? (optionChecked ? parent.alphaLerp * 0.5 : 0.0) : parent.alphaLerp;
+			}*/
+			option.c.luminanceF = parent.alphaLerp * ((i == parent.optionsNav.value()) ? (optionChecked ? 1.0 : 0.35) : 0.5);
 			
 			OptionsMenu.optionsBuf.updateElement(option);
 		}
