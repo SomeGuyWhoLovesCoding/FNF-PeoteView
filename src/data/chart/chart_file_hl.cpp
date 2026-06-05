@@ -74,11 +74,6 @@ HL_PRIM void HL_NAME(setJudgement)(int64_t globalIndex, bool value) {
     gReader->core_setJudgement(globalIndex, value);
 }
 
-/*HL_PRIM void HL_NAME(destroyAllJudgements)(_NO_ARG) {
-    if (!gReader) return;
-    gReader->core_destroyAllJudgements();
-}*/
-
 // ============================================================================
 // Haxe bindings
 // ============================================================================

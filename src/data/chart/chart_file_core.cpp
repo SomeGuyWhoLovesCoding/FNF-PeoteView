@@ -332,46 +332,6 @@ private:
     AccessCache readCache;
     AccessCache judgeCache;
 
-    void scanShards() {
-        std::vector<std::string> files;
-        listFiles(chartDir, files);
-        
-        for (const auto& name : files) {
-            if (getExtension(name) != ".bin") continue;
-            std::string stem = getStem(name);
-            try {
-                availableShards.push_back(std::stoull(stem));
-            } catch (...) {
-                std::cerr << "Warning: Invalid shard filename: " << name << std::endl;
-            }
-        }
-
-        std::sort(availableShards.begin(), availableShards.end());
-
-        shardStartIndices.clear();
-        int64_t cumulative = 0;
-        
-        for (uint64_t shardId : availableShards) {
-            shardStartIndices.push_back(cumulative);
-            std::string path = chartDir + "/" + std::to_string(shardId) + ".bin";
-            
-            // Read the header directly to get actual note count
-            std::ifstream file(path, std::ios::binary);
-            if (!file) {
-                throw std::runtime_error("Cannot open shard: " + path);
-            }
-            
-            ShardHeader header;
-            file.read(reinterpret_cast<char*>(&header), sizeof(ShardHeader));
-            file.close();
-            
-            int64_t noteCount = header.noteCount;  // Use the actual note count from header!
-            
-            cumulative += noteCount;
-        }
-        totalNotes = cumulative;
-    }
-
     int64_t getShardStartIndex(uint64_t shardId) const {
         auto it = std::lower_bound(availableShards.begin(), availableShards.end(), shardId);
         if (it == availableShards.end() || *it != shardId) {
@@ -385,6 +345,67 @@ private:
         return shardStartIndices[idx];
     }
 
+        // Lightweight function to read just the header
+    ShardHeader readHeaderOnly(uint64_t shardId) const {
+        std::string path = chartDir + "/" + std::to_string(shardId) + ".bin";
+        std::ifstream file(path, std::ios::binary);
+        if (!file) {
+            throw std::runtime_error("Cannot open shard: " + path);
+        }
+        
+        ShardHeader header;
+        file.read(reinterpret_cast<char*>(&header), sizeof(ShardHeader));
+        file.close();  // Close immediately - don't keep open
+        
+        return header;
+    }
+    
+    void scanShards() {
+        std::vector<std::string> files;
+        listFiles(chartDir, files);
+        
+        struct TempInfo {
+            uint64_t shardId;
+            int64_t noteCount;
+        };
+        std::vector<TempInfo> tempInfos;
+        tempInfos.reserve(files.size());
+        
+        for (const auto& name : files) {
+            if (getExtension(name) != ".bin") continue;
+            
+            std::string stem = getStem(name);
+            uint64_t shardId;
+            try {
+                shardId = std::stoull(stem);
+            } catch (...) {
+                std::cerr << "Warning: Invalid shard filename: " << name << std::endl;
+                continue;
+            }
+            
+            // Read ONLY the header, then close the file
+            ShardHeader header = readHeaderOnly(shardId);
+            tempInfos.push_back({shardId, header.noteCount});
+        }
+        
+        // Sort by shard ID
+        std::sort(tempInfos.begin(), tempInfos.end(),
+                  [](const TempInfo& a, const TempInfo& b) { return a.shardId < b.shardId; });
+        
+        // Build indices
+        availableShards.clear();
+        shardStartIndices.clear();
+        int64_t cumulative = 0;
+        
+        for (const auto& info : tempInfos) {
+            availableShards.push_back(info.shardId);
+            shardStartIndices.push_back(cumulative);
+            cumulative += info.noteCount;
+        }
+        totalNotes = cumulative;
+    }
+    
+    // Keep loadShard() for actual note access (memory-mapped, stays open)
     void loadShard(uint64_t shardId) {
         {
             std::lock_guard<std::mutex> lk(pendingMutex);
@@ -401,19 +422,21 @@ private:
                 return;
             }
         }
+        
         if (activeShards.find(shardId) != activeShards.end()) return;
-
+        
         std::string path = chartDir + "/" + std::to_string(shardId) + ".bin";
         
         ShardInfo info;
         info.shardId    = shardId;
         info.startIndex = getShardStartIndex(shardId);
-
+        
+        // This now does the full memory-mapped open (expensive, but only when needed)
         if (!info.reader.open(path.c_str())) {
             throw std::runtime_error("Failed to open shard: " + std::to_string(shardId));
         }
-
-        info.noteCount = info.reader.getNoteCount();  // Use header's note count
+        
+        info.noteCount = info.reader.getNoteCount();
         info.endIndex  = info.startIndex + info.noteCount;
         
         activeShards.emplace(shardId, std::move(info));
@@ -658,19 +681,25 @@ public:
     }
 
     ShardedChartReader(const char* path) : chartDir(path) {
+        auto start = std::chrono::steady_clock::now();
+        
         scanShards();
-        if (availableShards.empty())
-            throw std::runtime_error("No shards found in directory");
+        auto scanTime = std::chrono::steady_clock::now();
         
         initGlobalJudgement();
-
+        auto initTime = std::chrono::steady_clock::now();
+        
         size_t bytesLoaded = 0;
         for (size_t i = 0; i < availableShards.size() && bytesLoaded < INITIAL_BYTE_BUDGET; i++) {
-            uint64_t shardId  = availableShards[i];
+            uint64_t shardId = availableShards[i];
             loadShard(shardId);
-            // Rough estimate: each note is 8 bytes
             bytesLoaded += shardStartIndices[i + 1] - shardStartIndices[i];
         }
+        auto loadTime = std::chrono::steady_clock::now();
+        
+        /*std::cout << "Scan time: " << std::chrono::duration_cast<std::chrono::milliseconds>(scanTime - start).count() << "ms\n";
+        std::cout << "Init time: " << std::chrono::duration_cast<std::chrono::milliseconds>(initTime - scanTime).count() << "ms\n";
+        std::cout << "Load time: " << std::chrono::duration_cast<std::chrono::milliseconds>(loadTime - initTime).count() << "ms\n";*/
     }
 
     ~ShardedChartReader() {
