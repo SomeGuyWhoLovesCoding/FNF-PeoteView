@@ -16,6 +16,8 @@ extern class File {
 	@:native("loadChart")                  static function _loadChart(inFile:ConstCharStar):Void;
 	@:native("getNote")                    static function getNote(atIndex:Int64):MetaNote;
 	@:native("setNote")                    static function setNote(atIndex:Int64, value:Int64):Void;
+	@:native("insertNote")                 static function insertNote(atGlobalPosition:Int64, duration:Int, index:Int, type:Int):Void;
+	@:native("removeNote")                 static function removeNote(atIndex:Int64):Void;
 	@:native("getLength")                  static function getLength():Int64;
 	@:native("destroyChart")               static function destroyChart():Void;
 	@:native("getTimeCorrectionForIndex")  static function getTimeCorrectionForIndex(index:Int64):Int64;
@@ -42,6 +44,12 @@ class File {
 
 	@:hlNative("chart_file", "setNote")
 	public static function setNote(atIndex:hl.I64, value:hl.I64):Void {}
+
+	@:hlNative("chart_file", "insertNote")
+	public static function insertNote(atGlobalPosition:hl.I64, duration:Int, index:Int, type:Int):Void {}
+
+	@:hlNative("chart_file", "removeNote")
+	public static function removeNote(atIndex:hl.I64):Void {}
 
 	@:hlNative("chart_file", "getLength")
 	public static function getLength():hl.I64 { return 0; }

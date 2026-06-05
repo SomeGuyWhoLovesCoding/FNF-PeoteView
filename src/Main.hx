@@ -97,45 +97,44 @@ class Main extends Application
 			while (i < len) {
 				var note = File.getNote(i);
 				var noteTime = MetaNote.metaNotePositionToSongTime(note.position + File.getTimeCorrectionForIndex(i));
-				trace("Processed time: " + noteTime + " | Note time (combined): " + (note.position + File.getTimeCorrectionForIndex(i)) + " | Note time: " + note.position + " | Correction time: " + File.getTimeCorrectionForIndex(i));
+				//trace("Processed time: " + noteTime + " | Note time (combined): " + (note.position + File.getTimeCorrectionForIndex(i)) + " | Note time: " + note.position + " | Correction time: " + File.getTimeCorrectionForIndex(i));
 				i++;
 			}
 			// Start initializing total time variables
-			/*var insertTime:Float = 0;
+			var insertTime:Float = 0;
 			var removalTime:Float = 0;
 
-			var arr = new Array<MetaNote>();
-			for (i in 0...1000000) {
-				arr.push(new MetaNote(Tools.betterInt64FromFloat((50.0 + (50.0 * i)) * 100),
-					Math.floor(//100
-						0 * 0.2), // Equal to `note.duration / 5`.
-					i % 4,
-					0,
-				1));
-				//Sys.println(i);
-			}
-
-			for (i in 0...250) {
+			for (i in 0...1) {
 				var stamp = haxe.Timer.stamp();
-				//trace("Insert 1,000,000 notes (array)");
+				//trace("Insert 1,000,000 notes (array)");f
 				//Sys.println("Insert 1,000,000 notes (function)");
 				var stamp2 = haxe.Timer.stamp();
-				File.insertNotes(arr);
+				for (i in 0...20) {
+					var pos = Tools.betterInt64FromFloat((0.0 + (200000000.0 * i)));
+					var dur = 100 * 2;
+					var ind = i % 9;
+					var typ = 1;
+					//trace('adding note ${i+1} (pos,dur,ind,type)',pos,dur,ind,typ);
+					File.insertNote(pos, dur, /* Equal to `note.duration(ms) * 2`. */ ind, typ);
+				}
 				insertTime += haxe.Timer.stamp() - stamp2;
 				//Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp2) * 1000}ms');
 				// Remove notes
 				var stamp3 = haxe.Timer.stamp();
 				//Sys.println("Remove 1,000,000 notes (function)");
 				//Sys.println(arr.length);
-				File.removeNotes(arr);
+				for (i in 5...6) {
+					trace('removing note (index)',i);
+					File.removeNote(i);
+				}
 				removalTime += haxe.Timer.stamp() - stamp3;
 				//Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp3) * 1000}ms');
 				//Sys.println('Inserting 1,000,000 notes fully done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 				Sys.println('Iteration $i done');
 			}
 			// Average it out
-			Sys.println('Total insert time: ' + ((insertTime * 1000) / 250) + 'ms');
-			Sys.println('Total removal time: ' + ((removalTime * 1000) / 250) + 'ms');*/
+			Sys.println('Total insert time: ' + ((insertTime * 1000) / 1) + 'ms');
+			Sys.println('Total removal time: ' + ((removalTime * 1000) / 1) + 'ms');
 			Chart.destroy();
 		}, 8000);
 		#end

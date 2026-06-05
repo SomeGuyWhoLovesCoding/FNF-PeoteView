@@ -22,6 +22,14 @@ HL_PRIM void HL_NAME(setNote)(int64_t atIndex, int64_t value) {
     core_setNote(atIndex, value); 
 }
 
+HL_PRIM void HL_NAME(insertNote)(int64_t globalPosition, int duration, int index, int type) {
+    core_insertNote(globalPosition, duration, index, type);
+}
+
+HL_PRIM void HL_NAME(removeNote)(int64_t globalIndex) {
+    core_removeNote(globalIndex);
+}
+
 HL_PRIM int64_t HL_NAME(getLength)(_NO_ARG) { 
     return core_getLength(); 
 }
@@ -77,6 +85,8 @@ HL_PRIM void HL_NAME(setJudgement)(int64_t globalIndex, bool value) {
 DEFINE_PRIM(_VOID, loadChart, _STRING)
 DEFINE_PRIM(_I64,  getNote, _I64)
 DEFINE_PRIM(_VOID, setNote, _I64 _I64)
+DEFINE_PRIM(_VOID,  insertNote, _I64 _I32 _I32 _I32)
+DEFINE_PRIM(_VOID, removeNote, _I64)
 DEFINE_PRIM(_I64,  getLength, _NO_ARG)
 DEFINE_PRIM(_VOID, destroyChart, _NO_ARG)
 DEFINE_PRIM(_I64, getTimeCorrectionForIndex, _I64)

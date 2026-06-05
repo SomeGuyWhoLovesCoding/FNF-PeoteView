@@ -23,10 +23,9 @@ class NoteSpawner {
 		bottom = 0;
 		top = 0;
 
-		//File.allocJudgement();
 		/*for (i in 0...20) {
 			var note:MetaNote = File.getNote(i);
-			Sys.println('Is it judged? ${File.getJudgement(i)}. Note flag? ${note.flag}. Here\'s the position of the note for reference: ${note.position}');
+			Sys.println('Is it judged? ${File.getJudgement(i)}. Note flag? ${note.flag}. Here\'s the position of the note for reference: ${(note.position + File.getTimeCorrectionForIndex(i))}');
 		}*/
 	}
 

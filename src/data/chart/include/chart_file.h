@@ -10,6 +10,8 @@ int64_t getNote(int64_t atIndex);
 int64_t getLength(void);
 void destroyChart();
 void setNote(int64_t index, int64_t value); // glad I found a use for this stupid function already
+void insertNote(int64_t globalPosition, int duration, int index, int type);
+void removeNote(int64_t globalIndex);
 int64_t getTimeCorrectionForIndex(int64_t index);
 /*void allocJudgementSlot(int slot, int64_t noteCount);
 void clearJudgementSlot(int slot);

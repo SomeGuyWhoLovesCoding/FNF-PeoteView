@@ -23,6 +23,14 @@ void setNote(int64_t index, int64_t value) {
     core_setNote(index, value);
 }
 
+void insertNote(int64_t globalPosition, int duration, int index, int type) {
+    core_insertNote(globalPosition, duration, index, type);
+}
+
+void removeNote(int64_t globalIndex) {
+    core_removeNote(globalIndex);
+}
+
 int64_t getLength() {
     return core_getLength();
 }
