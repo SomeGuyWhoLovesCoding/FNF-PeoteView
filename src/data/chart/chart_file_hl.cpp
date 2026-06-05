@@ -15,7 +15,7 @@ HL_PRIM void HL_NAME(loadChart)(vstring* inFile) {
 }
 
 HL_PRIM int64_t HL_NAME(getNote)(int64_t atIndex) { 
-    return core_getNote(atIndex); 
+    return core_getNote(atIndex);
 }
 
 HL_PRIM void HL_NAME(setNote)(int64_t atIndex, int64_t value) { 

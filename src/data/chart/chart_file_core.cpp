@@ -258,7 +258,7 @@ public:
         memcpy(&header, ptr, sizeof(ShardHeader));
         
         // Data starts after header
-        mappedData = static_cast<uint64_t*>(static_cast<char*>(ptr) + sizeof(ShardHeader));
+        mappedData = (uint64_t*)(static_cast<char*>(ptr) + sizeof(ShardHeader));
         mappedCount = (st.st_size - sizeof(ShardHeader)) / sizeof(uint64_t);
 #endif
         return true;
