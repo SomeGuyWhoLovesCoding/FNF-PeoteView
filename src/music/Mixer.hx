@@ -114,8 +114,12 @@ class Mixer {
 		var backend = @:privateAccess lime.app.Application.current.__backend;
 		@:privateAccess NativeCFFI.lime_subloop_event_manager_register(subLoopTick_init, backend.subLoopTickEventInfo);
 		#end
-		AsyncInput.inputPress.add(inputPress);
-		AsyncInput.inputRelease.add(inputRelease);
+
+		// Delay initialization to avoid blocking audio thread
+		/*haxe.Timer.delay(function() {
+			AsyncInput.inputPress.add(inputPress);
+			AsyncInput.inputRelease.add(inputRelease);
+		}, 0);*/
 		#end
 	}
 
@@ -126,8 +130,12 @@ class Mixer {
 		var backend = @:privateAccess lime.app.Application.current.__backend;
 		@:privateAccess NativeCFFI.lime_subloop_event_manager_register(backend.handleSubLoopEvent, backend.subLoopTickEventInfo);
 		#end
-		AsyncInput.inputPress.remove(inputPress);
-		AsyncInput.inputRelease.remove(inputRelease);
+    
+		// Delay shutdown to avoid blocking audio thread
+		/*haxe.Timer.delay(function() {
+			AsyncInput.inputPress.remove(inputPress);
+			AsyncInput.inputRelease.remove(inputRelease);
+		}, 0);*/
 		#end
 	}
 

@@ -2,7 +2,7 @@
 
 #include <hl.h>
 
-// Include the core implementation
+// Include the core implementation.
 #include "AsyncKBCore.cpp"
 
 // ============================================================================
@@ -33,6 +33,10 @@ HL_PRIM double HL_NAME(getTimestamp)(_NO_ARG) {
     return core_getTimestamp();
 }
 
+HL_PRIM double HL_NAME(getGlobalTimestampComparison)(_NO_ARG) {
+    return core_getGlobalTimestampComparison();
+}
+
 // ============================================================================
 // Haxe bindings
 // ============================================================================
@@ -42,3 +46,4 @@ DEFINE_PRIM(_BOOL, hasEvent, _NO_ARG)
 DEFINE_PRIM(_F64, getScanCode, _NO_ARG)
 DEFINE_PRIM(_F64, getState, _NO_ARG)
 DEFINE_PRIM(_F64, getTimestamp, _NO_ARG)
+DEFINE_PRIM(_F64, getGlobalTimestampComparison, _F64)

@@ -25,6 +25,9 @@ extern class AsyncKB {
 	@:native("getTimestamp")
 	static function _getTimestamp():Float;
 	
+	@:native("getGlobalTimestampComparison")
+	static function getGlobalTimestampComparison():Float;
+	
 	public static inline function start():Void {
 		_start();
 	}
@@ -68,6 +71,9 @@ class AsyncKB {
 	
 	@:hlNative("async_kb", "getTimestamp")
 	public static function getTimestamp():Float { return 0.0; }
+	
+	@:hlNative("async_kb", "getGlobalTimestampComparison")
+	public static function getGlobalTimestampComparison():Float { return 0.0; }
 
 	public static inline function getScanCode():Int {
 		return Std.int(_getScanCode());

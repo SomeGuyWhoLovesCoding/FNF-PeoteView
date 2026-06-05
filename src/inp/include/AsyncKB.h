@@ -11,6 +11,7 @@ bool hasEvent(void);
 double getScanCode(void);
 double getState(void);
 double getTimestamp(void);
+double getGlobalTimestampComparison(void);
 
 #ifdef __cplusplus
 }

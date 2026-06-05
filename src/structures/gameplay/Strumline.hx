@@ -168,6 +168,13 @@ class Strumline {
 
 			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + (Main.conductor.offset * 2.0));
 			var _timing = MetaNote.metaNotePositionToSongTime((noteToHit.position + File.getTimeCorrectionForIndex(noteIndex)) - posWithLatency);
+			#if FV_LIME_FORK
+			var _timingCompare = AsyncKB.getGlobalTimestampComparison();
+			var _timingDiffSubtract = (timestamp - _timingCompare) * 1000.0;
+			_timing += _timingDiffSubtract;
+			//trace('timing: $_timing | timestamp: $timestamp | posWithLatency: $posWithLatency | timingCompare: $_timingCompare | timingDiffSubtract: $_timingDiffSubtract');
+			Sys.println('note timing:$_timing, note index:$index');
+			#end
 			var timing = (_timing / parent._cachedHitbox) * 0.9;
 
 			if (@:privateAccess pf.onNoteHit.__listeners.length != 0)

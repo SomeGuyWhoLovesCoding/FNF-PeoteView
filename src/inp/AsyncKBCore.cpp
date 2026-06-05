@@ -21,7 +21,7 @@
 struct InputEvent {
     double scanCode;
     double state;
-    double timestamp;
+    double timestamp;  // In seconds with high precision
 };
 
 class AsyncInputThread {
@@ -40,11 +40,8 @@ private:
     InputEvent currentEvent;
     bool hasCurrentEvent = false;
     
-    double getCurrentTimestamp() const {
-        auto now = std::chrono::steady_clock::now();
-        static auto start = std::chrono::steady_clock::now();
-        return std::chrono::duration<double>(now - start).count();
-    }
+    std::chrono::steady_clock::time_point startTime;
+    bool startTimeInitialized = false;
     
     void addEvent(const InputEvent& event) {
         std::lock_guard<std::mutex> lock(queueMutex);
@@ -81,12 +78,12 @@ private:
     int windowsToLimeKeyCode(int winKeyCode) {
         // Letters A-Z
         if (winKeyCode >= 'A' && winKeyCode <= 'Z') {
-            return 0x61 + (winKeyCode - 'A');  // A=0x61, B=0x62, etc.
+            return 0x61 + (winKeyCode - 'A');
         }
         
         // Numbers 0-9
         if (winKeyCode >= '0' && winKeyCode <= '9') {
-            return winKeyCode;  // '0'=0x30, '1'=0x31, etc.
+            return winKeyCode;
         }
         
         switch (winKeyCode) {
@@ -99,8 +96,8 @@ private:
             case VK_INSERT: return 0x40000049;
             case VK_HOME: return 0x4000004A;
             case VK_END: return 0x4000004D;
-            case VK_PRIOR: return 0x4000004B;  // PAGE_UP
-            case VK_NEXT: return 0x4000004E;   // PAGE_DOWN
+            case VK_PRIOR: return 0x4000004B;
+            case VK_NEXT: return 0x4000004E;
             case VK_UP: return 0x40000052;
             case VK_DOWN: return 0x40000051;
             case VK_LEFT: return 0x40000050;
@@ -144,21 +141,21 @@ private:
     }
     
     void workerFunction() {
+        startTime = std::chrono::steady_clock::now();
+        startTimeInitialized = true;
         currentKeyStates.fill(0);
+        
         while (running) {
             for (int scanCode = 1; scanCode < 256; scanCode++) {
                 SHORT keyState = GetAsyncKeyState(scanCode);
                 BYTE newState = (keyState & 0x8000) ? 1 : 0;
                 
                 if (newState != currentKeyStates[scanCode]) {
-                    int limeCode = windowsToLimeKeyCode(scanCode);
-                    if (limeCode != 0x00) {
-                        InputEvent event;
-                        event.scanCode = static_cast<double>(limeCode);
-                        event.state = static_cast<double>(newState);
-                        event.timestamp = getCurrentTimestamp();
-                        addEvent(event);
-                    }
+                    InputEvent event;
+                    event.scanCode = static_cast<double>(windowsToLimeKeyCode(scanCode));
+                    event.state = static_cast<double>(newState);
+                    event.timestamp = getCurrentTimestamp();
+                    addEvent(event);
                     currentKeyStates[scanCode] = newState;
                 }
             }
@@ -172,17 +169,15 @@ private:
     std::array<bool, KEY_MAX> currentKeyStates;
     
     int linuxToLimeKeyCode(int evdevCode) {
-        // Letters A-Z
         if (evdevCode >= KEY_A && evdevCode <= KEY_Z) {
             return 0x61 + (evdevCode - KEY_A);
         }
         
-        // Numbers 1-0 (evdev codes 2-11)
         if (evdevCode >= KEY_1 && evdevCode <= KEY_9) {
-            return 0x31 + (evdevCode - KEY_1);  // 1=0x31, 2=0x32, etc.
+            return 0x31 + (evdevCode - KEY_1);
         }
         if (evdevCode == KEY_0) {
-            return 0x30;  // 0=0x30
+            return 0x30;
         }
         
         switch (evdevCode) {
@@ -258,6 +253,8 @@ private:
         
         if (keyboard_fd < 0) return;
         
+        startTime = std::chrono::steady_clock::now();
+        startTimeInitialized = true;
         currentKeyStates.fill(false);
         struct input_event ev;
         
@@ -289,14 +286,24 @@ private:
 #endif
 
 public:
+    double getCurrentTimestamp() {
+        if (!startTimeInitialized) {
+            startTime = std::chrono::steady_clock::now();
+            startTimeInitialized = true;
+        }
+        auto now = std::chrono::steady_clock::now();
+        auto elapsed = std::chrono::duration<double>(now - startTime);
+        return elapsed.count();
+    }
+
     AsyncInputThread() : running(true) {
-        #ifdef _WIN32
-            worker = std::thread(&AsyncInputThread::workerFunction, this);
-        #elif defined(__linux__)
-            worker = std::thread(&AsyncInputThread::workerFunction, this);
-        #else
-            #error "Unsupported platform"
-        #endif
+#ifdef _WIN32
+        worker = std::thread(&AsyncInputThread::workerFunction, this);
+#elif defined(__linux__)
+        worker = std::thread(&AsyncInputThread::workerFunction, this);
+#else
+        #error "Unsupported platform"
+#endif
     }
     
     ~AsyncInputThread() {
@@ -399,4 +406,8 @@ double core_getHistoryTimestamp(int index) {
 
 void core_clearHistory() {
     if (g_inputThread) g_inputThread->clearHistory();
+}
+
+double core_getGlobalTimestampComparison() {
+    return g_inputThread ? g_inputThread->getCurrentTimestamp() : 0.0;
 }

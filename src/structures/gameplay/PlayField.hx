@@ -205,13 +205,15 @@ class PlayField {
 	 * Creates the playfield.
 	 * @param roof The top display you want the playfield's pause screen to go to.
 	 * @param display The ui display you want the playfield's countdown display and hud to go to.
-	 * @param mania The amount of keys you want for your fnf song. (This is configured by the song's header)
+	 * @param mania The amount of keys you want for your fnf song. (up to 256 supported) (This is configured by the song's header)
 	 */
 	function create(roof:CustomDisplay, display:CustomDisplay, mania:Int = 4) {
-		if (mania > 32) mania = 32;
+		AsyncInput.init();
 
-		healthLoss = [for (i in 0...64) 0.02];
-		healthGain = [for (i in 0...64) 0.025];
+		if (mania > 256) mania = 256;
+
+		healthLoss = [for (i in 0...128) 0.02];
+		healthGain = [for (i in 0...128) 0.025];
 
 		onStartSong = new Event<Header->Void>();
 		onPauseSong = new Event<Header->Void>();
@@ -714,6 +716,8 @@ class PlayField {
 		#end
 	}
 
+	var songStartTime:Float = 0.0; // Hardware timestamp when the song actually started
+
 	function startSong(header:Header) {
 		#if linc_luajit_funkinview
 		funkinviewlua.callFunction('startSong', formatCustomSongName(header.title), header.difficulty);
@@ -814,6 +818,8 @@ class PlayField {
 		Disposes the playfield.
 	**/
 	function dispose() {
+		AsyncInput.shutdown();
+
 		ready = false;
 		disposed = true;
 
