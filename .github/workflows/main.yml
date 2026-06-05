@@ -50,50 +50,41 @@ jobs:
           name: 'FV-Windows'
           path: bin/windows/bin
   LinuxBuild:
-    # The type of runner that the job will run on
     runs-on: ubuntu-latest
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
+    
     steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v5.0.0
-
+      
       - uses: krdlab/setup-haxe@master
         with:
           haxe-version: 4.3.6
-      # Runs a set of commands using the runners shell
+          
       - name: Install required Linux libraries
         run: |
-          # Fix repositories and update
           sudo sed -i 's/azure.archive.ubuntu.com/archive.ubuntu.com/g' /etc/apt/sources.list
           sudo apt-get update
-
-          # Install 64-bit dependencies
           sudo apt-get install libc6-dev-i386
           export LIBRARY_PATH=/usr/lib/$(gcc -print-multiarch)
           export C_INCLUDE_PATH=/usr/include/$(gcc -print-multiarch)
           export CPLUS_INCLUDE_PATH=/usr/include/$(gcc -print-multiarch)
           sudo apt-get install g++-multilib
           sudo apt install libx11-dev libxrandr-dev libxinerama-dev
-
-          # Install 64-bit graphics libraries (without version pinning)
           sudo apt-get install libgl-dev libgl1-mesa-dev libasound2-dev
           sudo apt-get install libdrm-dev libgbm-dev mesa-common-dev libegl1-mesa-dev libgles2-mesa-dev
-
-          # Add i386 architecture and install 32-bit libraries
           sudo dpkg --add-architecture i386
           sudo apt update
           sudo apt-get install libgl-dev:i386 libgl1-mesa-dev:i386 libglu1-mesa-dev:i386
           sudo apt-get install libdrm-dev:i386 libgbm-dev:i386 mesa-common-dev:i386 libegl1-mesa-dev:i386 libgles2-mesa-dev:i386
-
-          # Fix both headers and create symlinks
           sudo sed -i 's|<drm_mode.h>|<libdrm/drm_mode.h>|' /usr/include/xf86drmMode.h && \
           sudo sed -i 's|<drm.h>|<libdrm/drm.h>|' /usr/include/xf86drm.h && \
           sudo ln -sf /usr/include/libdrm/drm_mode.h /usr/include/drm_mode.h && \
           sudo ln -sf /usr/include/libdrm/drm.h /usr/include/drm.h
-      - name: Install required haxelibs
+          
+      - name: Setup haxelib
+        run: haxelib setup ~/haxelib
+        
+      - name: Install haxelib dependencies
         run: |
-          haxelib setup ~/haxelib
           haxelib install format --quiet
           haxelib install hxp --quiet
           haxelib git hxcpp https://github.com/SomeGuyWhoLovesCoding/hxcpp-sgwlfnf.git --quiet
@@ -103,18 +94,21 @@ jobs:
           haxelib git linc_luajit_funkinview https://github.com/SomeGuyWhoLovesCoding/linc_luajit_funkinview.git --quiet
           haxelib install input2action --quiet
           haxelib git customtitlebar https://github.com/SomeGuyWhoLovesCoding/customtitlebar.git --quiet
+          
       - name: Check version tag
         run: echo "${{github.run_id}}" > VERSION
+        
       - name: Compile
-      # Zipping to tar.gz is important for extracting to an exe cuz normally if you zip it you will lose that permission
         run: |
-          # Rebuild is required here, I'm on mobile
           haxelib run lime rebuild linux
           haxelib run lime build linux --app-version="4.0.0-${{ github.run_id}}"
-          tar -czvf bin/linux/bin/FV-Linux.tar.gz -C bin/linux/bin *
+          mkdir -p export
+          cp -r bin/linux/bin/* export/
+          cd export && tar -czvf ../FV-Linux.tar.gz *
+          
       - name: Publish artifact
         uses: actions/upload-artifact@v7
         with:
           name: 'FV-Linux'
-          path: "FV-Linux.tar.gz"
+          path: FV-Linux.tar.gz
           archive: false
