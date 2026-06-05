@@ -7,7 +7,9 @@
     #include <fcntl.h>
     #include <unistd.h>
     #include <cstring>
-    #include <sys/select.h>
+    #include <poll.h>
+    #include <errno.h>
+    #include <sys/eventfd.h>
 #endif
 
 #include <atomic>
@@ -21,7 +23,7 @@
 struct InputEvent {
     double scanCode;
     double state;
-    double timestamp;  // In seconds with high precision
+    double timestamp;
 };
 
 class AsyncInputThread {
@@ -73,7 +75,9 @@ private:
     }
     
 #ifdef _WIN32
-    std::array<BYTE, 256> currentKeyStates;
+    HHOOK keyboardHook;
+    HANDLE quitEvent;
+    static AsyncInputThread* instance;
     
     int windowsToLimeKeyCode(int winKeyCode) {
         // Letters A-Z
@@ -140,32 +144,67 @@ private:
         }
     }
     
+    static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
+        if (nCode >= 0 && instance) {
+            KBDLLHOOKSTRUCT* kb = (KBDLLHOOKSTRUCT*)lParam;
+            
+            if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN || 
+                wParam == WM_KEYUP || wParam == WM_SYSKEYUP) {
+                InputEvent event;
+                event.scanCode = static_cast<double>(instance->windowsToLimeKeyCode(kb->vkCode));
+                event.state = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) ? 1.0 : 0.0;
+                event.timestamp = instance->getCurrentTimestamp();
+                instance->addEvent(event);
+            }
+        }
+        return CallNextHookEx(NULL, nCode, wParam, lParam);
+    }
+    
     void workerFunction() {
+        instance = this;
+        quitEvent = CreateEvent(NULL, TRUE, FALSE, NULL);
+        
         startTime = std::chrono::steady_clock::now();
         startTimeInitialized = true;
-        currentKeyStates.fill(0);
+        
+        keyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, LowLevelKeyboardProc, 
+                                        GetModuleHandle(NULL), 0);
+        
+        if (!keyboardHook) {
+            std::cerr << "Failed to set keyboard hook!" << std::endl;
+            CloseHandle(quitEvent);
+            return;
+        }
+        
+        // Message loop with instant wake on shutdown
+        MSG msg;
+        HANDLE handles[] = { quitEvent };
         
         while (running) {
-            for (int scanCode = 1; scanCode < 256; scanCode++) {
-                SHORT keyState = GetAsyncKeyState(scanCode);
-                BYTE newState = (keyState & 0x8000) ? 1 : 0;
-                
-                if (newState != currentKeyStates[scanCode]) {
-                    InputEvent event;
-                    event.scanCode = static_cast<double>(windowsToLimeKeyCode(scanCode));
-                    event.state = static_cast<double>(newState);
-                    event.timestamp = getCurrentTimestamp();
-                    addEvent(event);
-                    currentKeyStates[scanCode] = newState;
+            // Wait for messages OR quit event (infinite wait, zero CPU)
+            DWORD result = MsgWaitForMultipleObjects(1, handles, FALSE, INFINITE, QS_ALLINPUT);
+            
+            if (result == WAIT_OBJECT_0) {
+                // quitEvent was signaled - exit immediately
+                break;
+            } else if (result == WAIT_OBJECT_0 + 1) {
+                // Messages available
+                while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+                    TranslateMessage(&msg);
+                    DispatchMessage(&msg);
                 }
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
+        
+        UnhookWindowsHookEx(keyboardHook);
+        CloseHandle(quitEvent);
+        instance = nullptr;
     }
 #endif
 
 #ifdef __linux__
     int keyboard_fd = -1;
+    int event_fd = -1;
     std::array<bool, KEY_MAX> currentKeyStates;
     
     int linuxToLimeKeyCode(int evdevCode) {
@@ -235,6 +274,13 @@ private:
     }
     
     void workerFunction() {
+        // Create eventfd for instant wake on shutdown
+        event_fd = eventfd(0, EFD_NONBLOCK);
+        if (event_fd < 0) {
+            std::cerr << "Failed to create eventfd" << std::endl;
+            return;
+        }
+        
         // Find keyboard device
         for (int i = 0; i < 32; i++) {
             char path[64];
@@ -242,46 +288,100 @@ private:
             int fd = open(path, O_RDONLY | O_NONBLOCK);
             if (fd >= 0) {
                 char name[256] = {0};
-                ioctl(fd, EVIOCGNAME(sizeof(name)), name);
-                if (strstr(name, "keyboard") || strstr(name, "Keyboard")) {
-                    keyboard_fd = fd;
-                    break;
+                if (ioctl(fd, EVIOCGNAME(sizeof(name)), name) >= 0) {
+                    if (strstr(name, "keyboard") || strstr(name, "Keyboard") || 
+                        strstr(name, "AT Translated") || strstr(name, "kbd")) {
+                        keyboard_fd = fd;
+                        break;
+                    }
                 }
                 close(fd);
             }
         }
         
-        if (keyboard_fd < 0) return;
+        // Fallback to any input device
+        if (keyboard_fd < 0) {
+            for (int i = 0; i < 32; i++) {
+                char path[64];
+                snprintf(path, sizeof(path), "/dev/input/event%d", i);
+                int fd = open(path, O_RDONLY | O_NONBLOCK);
+                if (fd >= 0) {
+                    keyboard_fd = fd;
+                    break;
+                }
+            }
+        }
+        
+        if (keyboard_fd < 0) {
+            std::cerr << "Failed to open keyboard device on Linux" << std::endl;
+            close(event_fd);
+            return;
+        }
         
         startTime = std::chrono::steady_clock::now();
         startTimeInitialized = true;
         currentKeyStates.fill(false);
+        
         struct input_event ev;
+        struct pollfd pfds[2];
+        pfds[0].fd = keyboard_fd;
+        pfds[0].events = POLLIN;
+        pfds[1].fd = event_fd;
+        pfds[1].events = POLLIN;
+        
+        // Set real-time priority
+        struct sched_param param;
+        param.sched_priority = sched_get_priority_max(SCHED_FIFO);
+        pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
         
         while (running) {
-            fd_set fds;
-            FD_ZERO(&fds);
-            FD_SET(keyboard_fd, &fds);
-            struct timeval timeout = {0, 10000};
+            // poll() blocks indefinitely (zero CPU) until:
+            // - keyboard event arrives, OR
+            // - quit event is signaled
+            int ret = poll(pfds, 2, -1);  // -1 = infinite timeout
             
-            if (select(keyboard_fd + 1, &fds, NULL, NULL, &timeout) > 0) {
+            if (ret < 0) {
+                if (errno != EINTR) {
+                    std::cerr << "poll() error on keyboard device" << std::endl;
+                    break;
+                }
+                continue;
+            }
+            
+            // Check if quit event was signaled
+            if (pfds[1].revents & POLLIN) {
+                break;  // Exit immediately
+            }
+            
+            // Handle keyboard events
+            if (pfds[0].revents & POLLIN) {
                 while (read(keyboard_fd, &ev, sizeof(ev)) == sizeof(ev)) {
-                    if (ev.type == EV_KEY) {
+                    if (ev.type == EV_KEY && ev.code >= 0 && ev.code < KEY_MAX) {
                         int limeCode = linuxToLimeKeyCode(ev.code);
-                        int newState = ev.value;
-                        if (limeCode && newState != currentKeyStates[ev.code]) {
-                            InputEvent event;
-                            event.scanCode = static_cast<double>(limeCode);
-                            event.state = static_cast<double>(newState);
-                            event.timestamp = getCurrentTimestamp();
-                            addEvent(event);
-                            currentKeyStates[ev.code] = newState;
+                        if (limeCode) {
+                            bool oldState = currentKeyStates[ev.code];
+                            bool newState = ev.value;
+                            
+                            if (newState != oldState) {
+                                InputEvent event;
+                                event.scanCode = static_cast<double>(limeCode);
+                                event.state = static_cast<double>(newState);
+                                event.timestamp = getCurrentTimestamp();
+                                addEvent(event);
+                                currentKeyStates[ev.code] = newState;
+                            }
                         }
                     }
                 }
             }
         }
-        close(keyboard_fd);
+        
+        if (keyboard_fd >= 0) {
+            close(keyboard_fd);
+        }
+        if (event_fd >= 0) {
+            close(event_fd);
+        }
     }
 #endif
 
@@ -308,6 +408,20 @@ public:
     
     ~AsyncInputThread() {
         running = false;
+        
+#ifdef _WIN32
+        // Signal the quit event to wake the thread
+        if (instance && instance->quitEvent) {
+            SetEvent(instance->quitEvent);
+        }
+#elif defined(__linux__)
+        // Write to eventfd to wake the poll
+        if (event_fd >= 0) {
+            uint64_t value = 1;
+            write(event_fd, &value, sizeof(value));
+        }
+#endif
+        
         if (worker.joinable()) {
             worker.join();
         }
@@ -356,6 +470,10 @@ public:
         eventCount.store(0, std::memory_order_release);
     }
 };
+
+#ifdef _WIN32
+AsyncInputThread* AsyncInputThread::instance = nullptr;
+#endif
 
 static AsyncInputThread* g_inputThread = nullptr;
 
