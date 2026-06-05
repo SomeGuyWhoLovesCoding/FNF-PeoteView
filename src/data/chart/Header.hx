@@ -12,7 +12,7 @@ package data.chart;
 class Header {
 	/**
 		The song's directory (by the title).
-		This property is optional because it is not always used.
+		This property is optional as it's not always used.
 	**/
 	@:optional var dir:String;
 
