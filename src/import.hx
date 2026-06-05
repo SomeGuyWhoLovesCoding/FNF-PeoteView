@@ -19,6 +19,7 @@ import elements.actor.animate.*;
 import elements.sprites.*;
 import elements.window.*;
 import ffmpeg.*;
+import inp.*;
 import interfaces.*;
 #if FV_DEBUG import debug.*; #end
 import miniaudio.*;

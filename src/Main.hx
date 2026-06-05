@@ -76,6 +76,8 @@ class Main extends Application
 	{
 		var titleBarColor:Color = SaveData.state.graphics.customTitleBarColor;
 
+		AsyncInput.main();
+
 		#if (windows && customtitlebar)
 		Titlebar.setTitlebarColor(titleBarColor.r, titleBarColor.g, titleBarColor.b);
 		Titlebar.setTitleFontColor(255, 255, 255);
@@ -368,18 +370,11 @@ class Main extends Application
 		//Sys.println(deltaTime);
 		//FrameLogger.log(deltaTime);
 
-		var lastTitle = Application.current.window.title;
-
-		/*if (MiniAudio.wearingHeadphones()) {
-			if (lastTitle != "Wearing headphones (test)")
-				Application.current.window.title = "Wearing headphones (test)";
-		} else if (MiniAudio.wearingPlugNPlay()) {
-			if (lastTitle != "Wearing plug n play, near-zero latency (test)")
-				Application.current.window.title = "Wearing plug n play, near-zero latency (test)";
-		} else {
-			if (lastTitle != "yes im wearing speakers")
-				Application.current.window.title = "yes im wearing speakers";
+		/*if (@:privateAccess !Mixer.hasSubLoopTick) {
+			AsyncInput.poll();
 		}*/
+
+		var lastTitle = Application.current.window.title;
 
 		if (_started) {
 			#if FV_LIME_FORK

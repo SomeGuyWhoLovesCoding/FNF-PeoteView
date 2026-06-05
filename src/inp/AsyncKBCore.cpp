@@ -1,0 +1,402 @@
+// Platform detection
+#ifdef _WIN32
+    #include <windows.h>
+    #pragma comment(lib, "user32.lib")
+#elif defined(__linux__)
+    #include <linux/input.h>
+    #include <fcntl.h>
+    #include <unistd.h>
+    #include <cstring>
+    #include <sys/select.h>
+#endif
+
+#include <atomic>
+#include <mutex>
+#include <condition_variable>
+#include <array>
+#include <thread>
+#include <chrono>
+#include <iostream>
+
+struct InputEvent {
+    double scanCode;
+    double state;
+    double timestamp;
+};
+
+class AsyncInputThread {
+private:
+    static constexpr size_t MAX_EVENTS = 512;
+    
+    std::atomic<bool> running;
+    std::thread worker;
+    std::array<InputEvent, MAX_EVENTS> eventBuffer;
+    std::atomic<size_t> writeIndex{0};
+    std::atomic<size_t> readIndex{0};
+    std::atomic<size_t> eventCount{0};
+    mutable std::mutex queueMutex;
+    std::condition_variable queueCV;
+    
+    InputEvent currentEvent;
+    bool hasCurrentEvent = false;
+    
+    double getCurrentTimestamp() const {
+        auto now = std::chrono::steady_clock::now();
+        static auto start = std::chrono::steady_clock::now();
+        return std::chrono::duration<double>(now - start).count();
+    }
+    
+    void addEvent(const InputEvent& event) {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        size_t currentWrite = writeIndex.load(std::memory_order_acquire);
+        eventBuffer[currentWrite] = event;
+        writeIndex.store((currentWrite + 1) % MAX_EVENTS, std::memory_order_release);
+        
+        size_t count = eventCount.load(std::memory_order_acquire);
+        if (count < MAX_EVENTS) {
+            eventCount.store(count + 1, std::memory_order_release);
+        } else {
+            size_t currentRead = readIndex.load(std::memory_order_acquire);
+            readIndex.store((currentRead + 1) % MAX_EVENTS, std::memory_order_release);
+        }
+        queueCV.notify_one();
+    }
+    
+    void loadNextEvent() {
+        if (!hasCurrentEvent && eventCount.load(std::memory_order_acquire) > 0) {
+            std::lock_guard<std::mutex> lock(queueMutex);
+            if (eventCount.load(std::memory_order_acquire) > 0) {
+                size_t currentRead = readIndex.load(std::memory_order_acquire);
+                currentEvent = eventBuffer[currentRead];
+                readIndex.store((currentRead + 1) % MAX_EVENTS, std::memory_order_release);
+                eventCount.fetch_sub(1, std::memory_order_release);
+                hasCurrentEvent = true;
+            }
+        }
+    }
+    
+#ifdef _WIN32
+    std::array<BYTE, 256> currentKeyStates;
+    
+    int windowsToLimeKeyCode(int winKeyCode) {
+        // Letters A-Z
+        if (winKeyCode >= 'A' && winKeyCode <= 'Z') {
+            return 0x61 + (winKeyCode - 'A');  // A=0x61, B=0x62, etc.
+        }
+        
+        // Numbers 0-9
+        if (winKeyCode >= '0' && winKeyCode <= '9') {
+            return winKeyCode;  // '0'=0x30, '1'=0x31, etc.
+        }
+        
+        switch (winKeyCode) {
+            case VK_BACK: return 0x08;
+            case VK_TAB: return 0x09;
+            case VK_RETURN: return 0x0D;
+            case VK_ESCAPE: return 0x1B;
+            case VK_SPACE: return 0x20;
+            case VK_DELETE: return 0x7F;
+            case VK_INSERT: return 0x40000049;
+            case VK_HOME: return 0x4000004A;
+            case VK_END: return 0x4000004D;
+            case VK_PRIOR: return 0x4000004B;  // PAGE_UP
+            case VK_NEXT: return 0x4000004E;   // PAGE_DOWN
+            case VK_UP: return 0x40000052;
+            case VK_DOWN: return 0x40000051;
+            case VK_LEFT: return 0x40000050;
+            case VK_RIGHT: return 0x4000004F;
+            case VK_LCONTROL: return 0x400000E0;
+            case VK_RCONTROL: return 0x400000E4;
+            case VK_LSHIFT: return 0x400000E1;
+            case VK_RSHIFT: return 0x400000E5;
+            case VK_LMENU: return 0x400000E2;
+            case VK_RMENU: return 0x400000E6;
+            case VK_LWIN: return 0x400000E3;
+            case VK_RWIN: return 0x400000E7;
+            case VK_CAPITAL: return 0x40000039;
+            case VK_NUMLOCK: return 0x40000053;
+            case VK_SCROLL: return 0x40000047;
+            case VK_F1: return 0x4000003A;
+            case VK_F2: return 0x4000003B;
+            case VK_F3: return 0x4000003C;
+            case VK_F4: return 0x4000003D;
+            case VK_F5: return 0x4000003E;
+            case VK_F6: return 0x4000003F;
+            case VK_F7: return 0x40000040;
+            case VK_F8: return 0x40000041;
+            case VK_F9: return 0x40000042;
+            case VK_F10: return 0x40000043;
+            case VK_F11: return 0x40000044;
+            case VK_F12: return 0x40000045;
+            case VK_OEM_MINUS: return 0x2D;
+            case VK_OEM_PLUS: return 0x3D;
+            case VK_OEM_4: return 0x5B;
+            case VK_OEM_6: return 0x5D;
+            case VK_OEM_5: return 0x5C;
+            case VK_OEM_1: return 0x3B;
+            case VK_OEM_7: return 0x27;
+            case VK_OEM_3: return 0x60;
+            case VK_OEM_COMMA: return 0x2C;
+            case VK_OEM_PERIOD: return 0x2E;
+            case VK_OEM_2: return 0x2F;
+            default: return 0x00;
+        }
+    }
+    
+    void workerFunction() {
+        currentKeyStates.fill(0);
+        while (running) {
+            for (int scanCode = 1; scanCode < 256; scanCode++) {
+                SHORT keyState = GetAsyncKeyState(scanCode);
+                BYTE newState = (keyState & 0x8000) ? 1 : 0;
+                
+                if (newState != currentKeyStates[scanCode]) {
+                    int limeCode = windowsToLimeKeyCode(scanCode);
+                    if (limeCode != 0x00) {
+                        InputEvent event;
+                        event.scanCode = static_cast<double>(limeCode);
+                        event.state = static_cast<double>(newState);
+                        event.timestamp = getCurrentTimestamp();
+                        addEvent(event);
+                    }
+                    currentKeyStates[scanCode] = newState;
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    }
+#endif
+
+#ifdef __linux__
+    int keyboard_fd = -1;
+    std::array<bool, KEY_MAX> currentKeyStates;
+    
+    int linuxToLimeKeyCode(int evdevCode) {
+        // Letters A-Z
+        if (evdevCode >= KEY_A && evdevCode <= KEY_Z) {
+            return 0x61 + (evdevCode - KEY_A);
+        }
+        
+        // Numbers 1-0 (evdev codes 2-11)
+        if (evdevCode >= KEY_1 && evdevCode <= KEY_9) {
+            return 0x31 + (evdevCode - KEY_1);  // 1=0x31, 2=0x32, etc.
+        }
+        if (evdevCode == KEY_0) {
+            return 0x30;  // 0=0x30
+        }
+        
+        switch (evdevCode) {
+            case KEY_BACKSPACE: return 0x08;
+            case KEY_TAB: return 0x09;
+            case KEY_ENTER: return 0x0D;
+            case KEY_ESC: return 0x1B;
+            case KEY_SPACE: return 0x20;
+            case KEY_DELETE: return 0x7F;
+            case KEY_INSERT: return 0x40000049;
+            case KEY_HOME: return 0x4000004A;
+            case KEY_END: return 0x4000004D;
+            case KEY_PAGEUP: return 0x4000004B;
+            case KEY_PAGEDOWN: return 0x4000004E;
+            case KEY_UP: return 0x40000052;
+            case KEY_DOWN: return 0x40000051;
+            case KEY_LEFT: return 0x40000050;
+            case KEY_RIGHT: return 0x4000004F;
+            case KEY_LEFTCTRL: return 0x400000E0;
+            case KEY_RIGHTCTRL: return 0x400000E4;
+            case KEY_LEFTSHIFT: return 0x400000E1;
+            case KEY_RIGHTSHIFT: return 0x400000E5;
+            case KEY_LEFTALT: return 0x400000E2;
+            case KEY_RIGHTALT: return 0x400000E6;
+            case KEY_LEFTMETA: return 0x400000E3;
+            case KEY_RIGHTMETA: return 0x400000E7;
+            case KEY_CAPSLOCK: return 0x40000039;
+            case KEY_NUMLOCK: return 0x40000053;
+            case KEY_SCROLLLOCK: return 0x40000047;
+            case KEY_F1: return 0x4000003A;
+            case KEY_F2: return 0x4000003B;
+            case KEY_F3: return 0x4000003C;
+            case KEY_F4: return 0x4000003D;
+            case KEY_F5: return 0x4000003E;
+            case KEY_F6: return 0x4000003F;
+            case KEY_F7: return 0x40000040;
+            case KEY_F8: return 0x40000041;
+            case KEY_F9: return 0x40000042;
+            case KEY_F10: return 0x40000043;
+            case KEY_F11: return 0x40000044;
+            case KEY_F12: return 0x40000045;
+            case KEY_MINUS: return 0x2D;
+            case KEY_EQUAL: return 0x3D;
+            case KEY_LEFTBRACE: return 0x5B;
+            case KEY_RIGHTBRACE: return 0x5D;
+            case KEY_BACKSLASH: return 0x5C;
+            case KEY_SEMICOLON: return 0x3B;
+            case KEY_APOSTROPHE: return 0x27;
+            case KEY_GRAVE: return 0x60;
+            case KEY_COMMA: return 0x2C;
+            case KEY_DOT: return 0x2E;
+            case KEY_SLASH: return 0x2F;
+            default: return 0x00;
+        }
+    }
+    
+    void workerFunction() {
+        // Find keyboard device
+        for (int i = 0; i < 32; i++) {
+            char path[64];
+            snprintf(path, sizeof(path), "/dev/input/event%d", i);
+            int fd = open(path, O_RDONLY | O_NONBLOCK);
+            if (fd >= 0) {
+                char name[256] = {0};
+                ioctl(fd, EVIOCGNAME(sizeof(name)), name);
+                if (strstr(name, "keyboard") || strstr(name, "Keyboard")) {
+                    keyboard_fd = fd;
+                    break;
+                }
+                close(fd);
+            }
+        }
+        
+        if (keyboard_fd < 0) return;
+        
+        currentKeyStates.fill(false);
+        struct input_event ev;
+        
+        while (running) {
+            fd_set fds;
+            FD_ZERO(&fds);
+            FD_SET(keyboard_fd, &fds);
+            struct timeval timeout = {0, 10000};
+            
+            if (select(keyboard_fd + 1, &fds, NULL, NULL, &timeout) > 0) {
+                while (read(keyboard_fd, &ev, sizeof(ev)) == sizeof(ev)) {
+                    if (ev.type == EV_KEY) {
+                        int limeCode = linuxToLimeKeyCode(ev.code);
+                        int newState = ev.value;
+                        if (limeCode && newState != currentKeyStates[ev.code]) {
+                            InputEvent event;
+                            event.scanCode = static_cast<double>(limeCode);
+                            event.state = static_cast<double>(newState);
+                            event.timestamp = getCurrentTimestamp();
+                            addEvent(event);
+                            currentKeyStates[ev.code] = newState;
+                        }
+                    }
+                }
+            }
+        }
+        close(keyboard_fd);
+    }
+#endif
+
+public:
+    AsyncInputThread() : running(true) {
+        #ifdef _WIN32
+            worker = std::thread(&AsyncInputThread::workerFunction, this);
+        #elif defined(__linux__)
+            worker = std::thread(&AsyncInputThread::workerFunction, this);
+        #else
+            #error "Unsupported platform"
+        #endif
+    }
+    
+    ~AsyncInputThread() {
+        running = false;
+        if (worker.joinable()) {
+            worker.join();
+        }
+    }
+    
+    bool hasEvent() const {
+        return eventCount.load(std::memory_order_acquire) > 0 || hasCurrentEvent;
+    }
+    
+    double getScanCode() {
+        loadNextEvent();
+        return hasCurrentEvent ? currentEvent.scanCode : 0.0;
+    }
+    
+    double getState() {
+        loadNextEvent();
+        return hasCurrentEvent ? currentEvent.state : 0.0;
+    }
+    
+    double getTimestamp() {
+        loadNextEvent();
+        if (hasCurrentEvent) {
+            hasCurrentEvent = false;
+            return currentEvent.timestamp;
+        }
+        return 0.0;
+    }
+    
+    size_t getEventCount() const {
+        return eventCount.load(std::memory_order_acquire);
+    }
+    
+    InputEvent getHistoryEvent(int index) const {
+        if (index < 0 || index >= static_cast<int>(eventCount.load(std::memory_order_acquire))) {
+            InputEvent empty = {0, 0, 0};
+            return empty;
+        }
+        size_t currentRead = readIndex.load(std::memory_order_acquire);
+        size_t eventIndex = (currentRead + index) % MAX_EVENTS;
+        return eventBuffer[eventIndex];
+    }
+    
+    void clearHistory() {
+        std::lock_guard<std::mutex> lock(queueMutex);
+        readIndex.store(writeIndex.load(std::memory_order_acquire), std::memory_order_release);
+        eventCount.store(0, std::memory_order_release);
+    }
+};
+
+static AsyncInputThread* g_inputThread = nullptr;
+
+void core_start() {
+    if (!g_inputThread) {
+        g_inputThread = new AsyncInputThread();
+    }
+}
+
+void core_stop() {
+    if (g_inputThread) {
+        delete g_inputThread;
+        g_inputThread = nullptr;
+    }
+}
+
+bool core_hasEvent() {
+    return g_inputThread ? g_inputThread->hasEvent() : false;
+}
+
+double core_getScanCode() {
+    return g_inputThread ? g_inputThread->getScanCode() : 0.0;
+}
+
+double core_getState() {
+    return g_inputThread ? g_inputThread->getState() : 0.0;
+}
+
+double core_getTimestamp() {
+    return g_inputThread ? g_inputThread->getTimestamp() : 0.0;
+}
+
+size_t core_getEventCount() {
+    return g_inputThread ? g_inputThread->getEventCount() : 0;
+}
+
+double core_getHistoryScanCode(int index) {
+    return g_inputThread ? g_inputThread->getHistoryEvent(index).scanCode : 0.0;
+}
+
+double core_getHistoryState(int index) {
+    return g_inputThread ? g_inputThread->getHistoryEvent(index).state : 0.0;
+}
+
+double core_getHistoryTimestamp(int index) {
+    return g_inputThread ? g_inputThread->getHistoryEvent(index).timestamp : 0.0;
+}
+
+void core_clearHistory() {
+    if (g_inputThread) g_inputThread->clearHistory();
+}

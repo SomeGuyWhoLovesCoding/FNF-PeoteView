@@ -1,0 +1,33 @@
+<xml>
+	<pragma once="true" />
+
+	<cppflag value="HASHLINK" />
+
+	<set name="PROJECT_DIR" value="${this_dir}/src" />
+	<set name="HASHLINK" value="${this_dir}/hashlinkBuildXmls/hl" if="windows" />
+	<set name="HASHLINK" value="${this_dir}/hashlinkBuildXmls/hl_linux" if="linux" />
+	<set name="HL_INCLUDE" value="${HASHLINK}/include" />
+	<set name="HL_BIN" value="${HASHLINK}" />
+
+	<echo value="hashlink: ${HASHLINK}" />
+    <echo value="hashlink include: ${HL_INCLUDE}" />
+    <echo value="hashlink bin: ${HL_BIN}" />
+
+	<files id="chart_file">
+		<compilerflag value="-I${PROJECT_DIR}/inp" />
+		<compilerflag value="-I${PROJECT_DIR}/inp/include" />
+		<file name="${PROJECT_DIR}/inp/AsyncKB_hl.cpp" />
+		<compilerflag value="-I${HASHLINK}/include" />
+	</files>
+
+	<target id="default" output="async_kb" toolid="dll" tool="linker">
+		<files id="chart_file" />
+		<libpath name="${HASHLINK}" if="windows" />
+		<libpath name="/usr/local/lib" if='macos' />
+		<lib name="libhl.lib" if="windows" />
+		<lib name="-lhl" unless="windows" />
+		<ext value=".hdll" />
+		<outdir name="hdlls/windows" if="windows" />
+		<outdir name="hdlls/linux" if="linux" />
+	</target>
+</xml>

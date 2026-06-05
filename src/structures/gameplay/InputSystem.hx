@@ -76,8 +76,8 @@ class InputSystem {
 	function addEvents() {
 		var window = lime.app.Application.current.window;
 		#if FV_LIME_FORK
-		window.onKeyDownPrecise.add(press);
-		window.onKeyUpPrecise.add(release);
+		AsyncInput.inputPress.add(press);
+		AsyncInput.inputRelease.add(release);
 		#else
 		window.onKeyDown.add(press);
 		window.onKeyUp.add(release);
@@ -88,8 +88,8 @@ class InputSystem {
 	function removeEvents() {
 		var window = lime.app.Application.current.window;
 		#if FV_LIME_FORK
-		window.onKeyDownPrecise.remove(press);
-		window.onKeyUpPrecise.remove(release);
+		AsyncInput.inputPress.remove(press);
+		AsyncInput.inputRelease.remove(release);
 		#else
 		window.onKeyDown.remove(press);
 		window.onKeyUp.remove(release);
@@ -97,10 +97,12 @@ class InputSystem {
 		Main.current.mouseDown = null;
 	}
 
-	function press(code:KeyCode, mod:KeyModifier
-		#if FV_LIME_FORK
-		, timestamp:Float
-		#end) {
+	#if FV_LIME_FORK
+	function press(code:KeyCode, timestamp:Float)
+	#else
+	function press(code:KeyCode, mod:KeyModifier)
+	#end
+	{
 		var field = parent.field;
 		var isInGameOver = field.isInGameOver;
 		var controls = SaveData.state.controls;
@@ -163,10 +165,13 @@ class InputSystem {
 		#end
 	}
 
-	function release(code:KeyCode, mod:KeyModifier
-		#if FV_LIME_FORK
-		, timestamp:Float
-		#end) {
+	
+	#if FV_LIME_FORK
+	function release(code:KeyCode, timestamp:Float)
+	#else
+	function release(code:KeyCode, mod:KeyModifier)
+	#end
+	{
 		if (parent.disposed || parent.botplay
 			|| parent.field.isInGameOver
 			|| RenderingMode.enabled || parent.paused) {

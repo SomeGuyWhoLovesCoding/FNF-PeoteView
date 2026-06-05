@@ -1,5 +1,6 @@
 package music;
 
+import lime.ui.KeyCode;
 import miniaudio.MiniAudio;
 import miniaudio.StdVectorString;
 import utils.Tools;
@@ -86,20 +87,19 @@ class Mixer {
 
 	static function setTime(value:Float, playfield:PlayField) {
 		var pcmFrame = Tools.betterInt64FromFloat(value * (sampleRate / 1000.0));
-		// Ah HAH! I found it! It's that
 		MiniAudio.seekToPCMFrame(pcmFrame);
 		if (playfield != null) {
 			if (playfield.songEnded) playfield.songPosition = MiniAudio.getPlaybackPosition();
 		}
 	}
 
-	static var loadedFiles:Array<String>; // Add this
+	static var loadedFiles:Array<String>;
 
 	static public function load(files:Array<String>):Void {
 		for (i in 0...files.length)
 			files[i] = Paths.asset(files[i]);
 
-		loadedFiles = files; // Keep a reference to prevent GC
+		loadedFiles = files;
 		MiniAudio.loadFiles(files);
 		trackCount = files.length;
 		length = MiniAudio.getDuration();
@@ -114,6 +114,8 @@ class Mixer {
 		var backend = @:privateAccess lime.app.Application.current.__backend;
 		@:privateAccess NativeCFFI.lime_subloop_event_manager_register(subLoopTick_init, backend.subLoopTickEventInfo);
 		#end
+		AsyncInput.inputPress.add(inputPress);
+		AsyncInput.inputRelease.add(inputRelease);
 		#end
 	}
 
@@ -124,6 +126,8 @@ class Mixer {
 		var backend = @:privateAccess lime.app.Application.current.__backend;
 		@:privateAccess NativeCFFI.lime_subloop_event_manager_register(backend.handleSubLoopEvent, backend.subLoopTickEventInfo);
 		#end
+		AsyncInput.inputPress.remove(inputPress);
+		AsyncInput.inputRelease.remove(inputRelease);
 		#end
 	}
 
@@ -134,6 +138,14 @@ class Mixer {
 	}
 	#end
 
+	static function inputPress(keyCode:KeyCode, timestamp:Float) {
+		trace('pressed', keyCode, timestamp);
+	}
+
+	static function inputRelease(keyCode:KeyCode, timestamp:Float) {
+		trace('release', keyCode, timestamp);
+	}
+
 	static public function startMusic():Void {
 		MiniAudio.start();
 	}
@@ -143,10 +155,10 @@ class Mixer {
 	}
 
 	static public function destroyMusic():Void {
+		disableSubLoop();
 		MiniAudio.destroy();
 		while (loadedFiles.pop() != null) {}
 		loadedFiles = null; // Clean up
-		disableSubLoop();
 	}
 
 	private static var ogLatencyForImmediateChange(default, null):Int = 100;
@@ -257,6 +269,8 @@ class Mixer {
 			lastTimestamp1s = timestamp;
 		}
 		lastTimestamp = timestamp;
+
+		AsyncInput.poll();
 	}
 	#end
 
