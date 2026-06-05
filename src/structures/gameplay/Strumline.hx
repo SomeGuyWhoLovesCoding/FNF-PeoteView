@@ -173,7 +173,7 @@ class Strumline {
 			var _timingDiffSubtract = (timestamp - _timingCompare) * 1000.0;
 			_timing += _timingDiffSubtract;
 			//trace('timing: $_timing | timestamp: $timestamp | posWithLatency: $posWithLatency | timingCompare: $_timingCompare | timingDiffSubtract: $_timingDiffSubtract');
-			Sys.println('note timing:$_timing, note index:$index');
+			//Sys.println('note timing:$_timing, note index:$index');
 			#end
 			var timing = (_timing / parent._cachedHitbox) * 0.9;
 
