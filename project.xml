@@ -66,7 +66,6 @@
 
 	<haxedef name="HXCPP_CPP17" />
 
-	<icon path="assets/system/LimeFriend.png" />
 	<icon path="assets/system/LimeFriend_16.png" size="16"/>
 	<icon path="assets/system/LimeFriend_32.png" size="32"/>
 	<icon path="assets/system/LimeFriend_64.png" size="64"/>
