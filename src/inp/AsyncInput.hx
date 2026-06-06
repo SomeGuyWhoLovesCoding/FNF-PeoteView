@@ -10,6 +10,7 @@ import lime.ui.KeyCode;
 import lime.app.Application;
 
 @:publicFields
+@:final
 class AsyncInput {
 	static var initialized = false;
 	static var initMutex = new Mutex();
@@ -17,8 +18,15 @@ class AsyncInput {
 	static var inputRelease:Event<KeyCode->Float->Void>;
 
 	static function addEvents() {
-		Application.current.window.onFocusIn.add(init);
-		Application.current.window.onFocusOut.add(shutdown);
+		var window = Application.current.window;
+		window.onFocusIn.add(init);
+		window.onFocusOut.add(shutdown);
+	}
+
+	static function removeEvents() {
+		var window = Application.current.window;
+		window.onFocusIn.remove(init);
+		window.onFocusOut.remove(shutdown);
 	}
 	
 	static function init() {
