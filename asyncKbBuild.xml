@@ -10,7 +10,7 @@
 	</files>
 
 	<target id="haxe">
-		<compilerflag value="-lX11" />
 		<files id="async_kb" />
+		<linkerflag value="-lX11" />
 	</target>
 </xml>
