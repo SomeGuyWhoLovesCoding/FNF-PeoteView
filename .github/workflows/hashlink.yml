@@ -54,7 +54,8 @@ jobs:
       - name: Install required Linux libraries
         if: runner.os == 'Linux'
         run: |
-          setup/linux.bash
+          bash ./setup/linux.bash
+        shell: bash
       
       # Setup haxelib directory (Windows)
       - name: Setup haxelib (Windows)
