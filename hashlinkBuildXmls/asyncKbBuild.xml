@@ -22,7 +22,7 @@
 
 	<target id="default" output="async_kb" toolid="dll" tool="linker">
 		<files id="async_kb" />
-		<linkerflag value="-lX11" />
+		<flag value="-lX11" />
 		<libpath name="${HASHLINK}" if="windows" />
 		<libpath name="/usr/local/lib" if='macos' />
 		<lib name="libhl.lib" if="windows" />
