@@ -13,7 +13,7 @@
     <echo value="hashlink include: ${HL_INCLUDE}" />
     <echo value="hashlink bin: ${HL_BIN}" />
 
-	<files id="chart_file">
+	<files id="async_kb">
 		<lib name="-lX11" if="linux" />
 		<compilerflag value="-I${PROJECT_DIR}/inp" />
 		<compilerflag value="-I${PROJECT_DIR}/inp/include" />
