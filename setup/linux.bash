@@ -1,5 +1,5 @@
 #!/bin/bash
-# setup-linux.sh - Smart parallel Linux dependency installer
+# setup-linux.sh - Properly ordered Linux dependency installer
 
 set -e  # Exit on error
 set -u  # Exit on undefined variable
@@ -22,7 +22,6 @@ log_warn() {
     echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
-# Better error tracing
 trap 'log_error "Script failed on line $LINENO. Exit code: $?"' ERR
 
 log_info "Starting Linux setup..."
@@ -69,36 +68,38 @@ sudo ln -sf /usr/include/libdrm/drm.h /usr/include/drm.h || true
 log_info "Setting up haxelib..."
 haxelib setup ~/haxelib || exit 1
 
-# Install haxelib dependencies with proper dependency ordering
+# Install haxelib dependencies with correct ordering
 log_info "Installing haxelib dependencies..."
 
-# Group 1: Independent libraries (no dependencies between them)
-log_info "Installing independent libraries in parallel..."
+# Step 1: Install packages with NO dependencies (can be parallel)
+log_info "Step 1: Installing packages with no dependencies..."
 haxelib install format --quiet &
 PID_FORMAT=$!
-haxelib install hxp --quiet &
-PID_HXP=$!
 haxelib install peote-view --quiet &
 PID_PEOTE=$!
 haxelib install input2action --quiet &
 PID_INPUT2ACTION=$!
 
-# Wait for group 1 to complete
-wait $PID_FORMAT $PID_HXP $PID_PEOTE $PID_INPUT2ACTION
-log_info "Independent libraries installed"
+wait $PID_FORMAT $PID_PEOTE $PID_INPUT2ACTION
+log_info "Step 1 complete"
 
-# Group 2: hxcpp (needs to be installed before lime)
-log_info "Installing hxcpp..."
+# Step 2: Install hxcpp (required by lime, but hxp might need lime)
+log_info "Step 2: Installing hxcpp..."
 haxelib git hxcpp https://github.com/SomeGuyWhoLovesCoding/hxcpp-sgwlfnf.git --quiet || exit 1
 log_info "hxcpp installed"
 
-# Group 3: lime (depends on hxcpp)
-log_info "Installing lime..."
+# Step 3: Install lime (dependency for hxp)
+log_info "Step 3: Installing lime..."
 haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet || exit 1
 log_info "lime installed"
 
-# Group 4: customtitlebar (independent, can run last)
-log_info "Installing customtitlebar..."
+# Step 4: Install hxp (depends on lime)
+log_info "Step 4: Installing hxp..."
+haxelib install hxp --quiet || exit 1
+log_info "hxp installed"
+
+# Step 5: Install customtitlebar (no conflicts)
+log_info "Step 5: Installing customtitlebar..."
 haxelib git customtitlebar https://github.com/SomeGuyWhoLovesCoding/customtitlebar.git --quiet || exit 1
 log_info "customtitlebar installed"
 
