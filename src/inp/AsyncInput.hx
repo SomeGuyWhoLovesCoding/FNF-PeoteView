@@ -7,6 +7,7 @@ import haxe.Timer;
 import sys.thread.Mutex;
 import sys.thread.Thread;
 import lime.ui.KeyCode;
+import lime.app.Application;
 
 @:publicFields
 class AsyncInput {
@@ -14,6 +15,11 @@ class AsyncInput {
 	static var initMutex = new Mutex();
 	static var inputPress:Event<KeyCode->Float->Void>;
 	static var inputRelease:Event<KeyCode->Float->Void>;
+
+	static function addEvents() {
+		Application.current.window.onFocusIn.add(init);
+		Application.current.window.onFocusOut.add(shutdown);
+	}
 	
 	static function init() {
 		initMutex.acquire();

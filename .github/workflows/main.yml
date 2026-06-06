@@ -74,7 +74,6 @@ jobs:
         run: |
           # Install hxcpp and lime sequentially
           haxelib git hxcpp https://github.com/SomeGuyWhoLovesCoding/hxcpp-sgwlfnf.git --quiet
-          cd C:/haxelib/hxcpp/git/tools/hxcpp && haxe compile.hxml
           haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet
           
           # Everything else in parallel
