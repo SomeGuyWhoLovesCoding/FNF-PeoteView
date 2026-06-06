@@ -102,6 +102,14 @@ jobs:
           haxelib run lime rebuild hl
           haxelib run lime build hl --app-version="4.0.0-${{ github.run_id}}"
         shell: bash
+      
+      # Package Linux build
+      - name: Package Linux build
+        if: matrix.needs_tar == true
+        run: |
+          tar -czvf ${{ github.workspace }}/${{ matrix.artifact_name }}.tar.gz -C bin/hl/bin .
+          echo "TAR_PATH=${{ github.workspace }}/${{ matrix.artifact_name }}.tar.gz" >> $GITHUB_ENV
+        shell: bash
 
       # Publish Windows artifact
       - name: Publish artifact (Windows)
