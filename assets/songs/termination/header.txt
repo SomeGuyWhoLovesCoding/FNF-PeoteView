@@ -5,8 +5,8 @@ Speed: 1.395
 BPM: 222
 Time Signature: 4/4
 Stage: stage
-Instrumental: assets/songs/termination/Inst.flac
-Voices: assets/songs/termination/Voices.flac
+Instrumental: assets/songs/termination/Inst.ogg
+Voices: assets/songs/termination/Voices.ogg
 Mania: 4
 Difficulty: #4
 Game Over:

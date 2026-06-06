@@ -5,8 +5,8 @@ Speed: 0.99
 BPM: 200
 Time Signature: 4/4
 Stage: stage
-Instrumental: assets/songs/god-eater/Inst.flac
-Voices: assets/songs/god-eater/Voices.flac
+Instrumental: assets/songs/god-eater/Inst.ogg
+Voices: assets/songs/god-eater/Voices.ogg
 Mania: 9
 Difficulty: #4
 Game Over:
