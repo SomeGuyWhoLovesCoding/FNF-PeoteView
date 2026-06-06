@@ -80,13 +80,15 @@ haxelib install input2action --quiet
 log_info "Installing remaining haxelibs in parallel..."
 haxelib install format --quiet &
 PID_FORMAT=$!
+haxelib haxelib git linc_luajit_funkinview https://github.com/SomeGuyWhoLovesCoding/linc_luajit_funkinview.git --quiet --quiet &
+PID_LUAJIT=$!
 haxelib git peote-view_funkinview https://github.com/SomeGuyWhoLovesCoding/peote-view.git --quiet &
 PID_PEOTE=$!
 haxelib git customtitlebar https://github.com/SomeGuyWhoLovesCoding/customtitlebar.git --quiet &
 PID_CUSTOM=$!
 
 # Wait for all parallel installations to complete
-wait $PID_FORMAT $PID_PEOTE $PID_CUSTOM
+wait $PID_FORMAT $PID_LUAJIT $PID_PEOTE $PID_CUSTOM
 
 log_info "All haxelib installations completed successfully!"
 log_info "Linux setup complete! 🎉"
