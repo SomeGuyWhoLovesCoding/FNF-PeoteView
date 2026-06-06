@@ -81,6 +81,9 @@ class AsyncInput {
 	static var inputRelease:Event<KeyCode->Float->Void>;
 	static function init() {
 		Sys.println("async input is not supported on mobile. you already have a touchscreen to control and it's pretty fast anyway");
+
+		inputPress = new Event<KeyCode->Float->Void>();
+		inputRelease = new Event<KeyCode->Float->Void>();
 	}
 	static function shutdown() {}
 	static function poll() {}

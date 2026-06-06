@@ -14,6 +14,7 @@
     <echo value="hashlink bin: ${HL_BIN}" />
 
 	<files id="async_kb">
+		<compilerflag value="-lX11" if="linux" />
 		<compilerflag value="-I${PROJECT_DIR}/inp" />
 		<compilerflag value="-I${PROJECT_DIR}/inp/include" />
 		<file name="${PROJECT_DIR}/inp/AsyncKB_hl.cpp" />

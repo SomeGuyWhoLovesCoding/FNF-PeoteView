@@ -8,14 +8,9 @@
 		<compilerflag value="-I${PROJECT_DIR}/inp/include" />
 		<file name="${PROJECT_DIR}/inp/AsyncKB.cpp" />
 	</files>
-	
-	<target id="linux">
-		<compilerflag value="-lX11" />
-		<compilerflag value="-lXext" />
-		<compilerflag value="-lXi" />
-	</target>
 
 	<target id="haxe">
+		<compilerflag value="-lX11" />
 		<files id="async_kb" />
 	</target>
 </xml>
