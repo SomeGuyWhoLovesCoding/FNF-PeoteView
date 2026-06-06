@@ -380,7 +380,7 @@ public:
 #ifdef _WIN32
         if (instance && instance->quitEvent) SetEvent(instance->quitEvent);
 #elif defined(__linux__)
-        if (event_fd >= 0) { uint64_t value = 1; write(event_fd, &value, sizeof(value)); }
+        if (event_fd >= 0) { uint64_t value = 1; (void)write(event_fd, &value, sizeof(value)); }
 #endif
         if (worker.joinable()) worker.join();
     }
