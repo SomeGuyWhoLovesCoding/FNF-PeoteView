@@ -1,11 +1,8 @@
 #!/bin/bash
-# setup-linux.sh - Parallel Linux dependency installer with debugging
+# setup-linux.sh - Parallel Linux dependency installer
 
 set -e  # Exit on error
 set -u  # Exit on undefined variable
-
-# Enable debug mode (uncomment to see all commands)
-# set -x
 
 # Colors for output
 RED='\033[0;31m'
@@ -68,14 +65,41 @@ sudo ln -sf /usr/include/libdrm/drm.h /usr/include/drm.h || true
 log_info "Setting up haxelib..."
 haxelib setup ~/haxelib || exit 1
 
-# Install haxelib dependencies
-log_info "Installing haxelib dependencies..."
-haxelib install format --quiet || exit 1
-haxelib install hxp --quiet || exit 1
-haxelib install hxcpp --quiet || exit 1
-haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet || exit 1
-haxelib install peote-view --quiet || exit 1
-haxelib install input2action --quiet || exit 1
-haxelib git customtitlebar https://github.com/SomeGuyWhoLovesCoding/customtitlebar.git --quiet || exit 1
+# Install haxelib dependencies in parallel
+log_info "Installing haxelib dependencies in parallel..."
 
+# Run all haxelib installs in background
+haxelib install format --quiet &
+PID_FORMAT=$!
+log_info "Installing format (PID: $PID_FORMAT)"
+
+haxelib install hxp --quiet &
+PID_HXP=$!
+log_info "Installing hxp (PID: $PID_HXP)"
+
+haxelib install hxcpp --quiet &
+PID_HXCPP=$!
+log_info "Installing hxcpp (PID: $PID_HXCPP)"
+
+haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet &
+PID_LIME=$!
+log_info "Installing lime from git (PID: $PID_LIME)"
+
+haxelib install peote-view --quiet &
+PID_PEOTE=$!
+log_info "Installing peote-view (PID: $PID_PEOTE)"
+
+haxelib install input2action --quiet &
+PID_INPUT2ACTION=$!
+log_info "Installing input2action (PID: $PID_INPUT2ACTION)"
+
+haxelib git customtitlebar https://github.com/SomeGuyWhoLovesCoding/customtitlebar.git --quiet &
+PID_CUSTOMTITLEBAR=$!
+log_info "Installing customtitlebar from git (PID: $PID_CUSTOMTITLEBAR)"
+
+# Wait for all haxelib installations to complete
+log_info "Waiting for all haxelib installations to finish..."
+wait $PID_FORMAT $PID_HXP $PID_HXCPP $PID_LIME $PID_PEOTE $PID_INPUT2ACTION $PID_CUSTOMTITLEBAR
+
+log_info "All haxelib installations completed successfully"
 log_info "Linux setup complete! 🎉"
