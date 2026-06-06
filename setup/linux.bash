@@ -80,7 +80,7 @@ haxelib install input2action --quiet
 log_info "Installing remaining haxelibs in parallel..."
 haxelib install format --quiet &
 PID_FORMAT=$!
-haxelib haxelib git linc_luajit_funkinview https://github.com/SomeGuyWhoLovesCoding/linc_luajit_funkinview.git --quiet --quiet &
+haxelib git linc_luajit_funkinview https://github.com/SomeGuyWhoLovesCoding/linc_luajit_funkinview.git --quiet --quiet &
 PID_LUAJIT=$!
 haxelib git peote-view_funkinview https://github.com/SomeGuyWhoLovesCoding/peote-view.git --quiet &
 PID_PEOTE=$!
