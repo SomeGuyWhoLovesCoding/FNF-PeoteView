@@ -25,12 +25,14 @@ jobs:
             artifact_path: bin/windows/bin
             haxelib_path: C:/haxelib
             compile_target: windows
+            needs_tar: false
             
           - os: ubuntu-latest
             artifact_name: FV-Linux
-            artifact_path: FV-Linux.tar.gz
+            artifact_path: "FV-Linux.tar.gz"
             haxelib_path: ~/haxelib
             compile_target: linux
+            needs_tar: true
       fail-fast: false  # Don't cancel all builds if one fails
       
     runs-on: ${{ matrix.os }}
@@ -108,10 +110,10 @@ jobs:
       
       # Package Linux build
       - name: Package Linux build
-        if: runner.os == 'Linux'
+        if: matrix.needs_tar == true
         run: |
           mkdir -p export
-          cp -r bin/hl/bin/* export/
+          cp -r bin/linux/bin/* export/
           cd export && tar -czvf ../${{ matrix.artifact_name }} *
         shell: bash
       

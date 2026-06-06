@@ -18,12 +18,14 @@ jobs:
             artifact_path: bin/hl/bin
             haxelib_path: C:/haxelib
             compile_target: hl
+            needs_tar: false
             
           - os: ubuntu-latest
             artifact_name: FV-HL-Linux
-            artifact_path: FV-HL-Linux.tar.gz
+            artifact_path: "FV-HL-Linux.tar.gz"
             haxelib_path: ~/haxelib
             compile_target: hl
+            needs_tar: true
       fail-fast: false
       
     runs-on: ${{ matrix.os }}
@@ -103,7 +105,7 @@ jobs:
       
       # Package Linux build
       - name: Package Linux build
-        if: runner.os == 'Linux'
+        if: matrix.needs_tar == true
         run: |
           mkdir -p export
           cp -r bin/hl/bin/* export/
