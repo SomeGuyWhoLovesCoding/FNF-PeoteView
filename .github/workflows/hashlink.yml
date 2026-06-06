@@ -107,11 +107,8 @@ jobs:
       - name: Package Linux build
         if: matrix.needs_tar == true
         run: |
-          # Create the tar file in a fixed location
-          tar -czvf ${{ github.workspace }}/FV-HL-Linux.tar.gz -C bin/hl/bin .
-          
-          # Verify it exists
-          ls -la ${{ github.workspace }}/FV-HL-Linux.tar.gz
+          tar -czvf ${{ github.workspace }}/${{ matrix.artifact_name }}.tar.gz -C bin/hl/bin .
+          echo "TAR_PATH=${{ github.workspace }}/${{ matrix.artifact_name }}.tar.gz" >> $GITHUB_ENV
         shell: bash
 
       # Publish artifact
@@ -119,5 +116,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact_name }}
-          path: ${{ github.workspace }}/FV-HL-Linux.tar.gz  # Use full absolute path
+          path: ${{ env.TAR_PATH }}
           if-no-files-found: error
