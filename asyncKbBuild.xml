@@ -15,7 +15,7 @@
 		<!-- Add this section to link X11 and pthread on Linux -->
 		<section if="linux">
 			<libpath name="/usr/local/lib" />
-			<lib name="X11" />
+			<lib name="-lX11" />
 			<!--<lib name="pthread" /> -->
 		</section>
 	</target>
