@@ -11,6 +11,6 @@
 
 	<target id="haxe">
 		<files id="async_kb" />
-		<flag value="-lX11" />
+		<lib name="X11" />
 	</target>
 </xml>
