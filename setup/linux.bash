@@ -18,10 +18,6 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
 trap 'log_error "Script failed on line $LINENO. Exit code: $?"' ERR
 
 log_info "Starting Linux setup..."
@@ -65,28 +61,32 @@ haxelib setup ~/haxelib
 # Install haxelib dependencies
 log_info "Installing haxelib dependencies..."
 
-# Install hxcpp and lime sequentially (they have dependencies and compilation)
-log_info "Installing hxcpp (sequential)..."
+# Step 1: Install hxcpp (required by lime)
+log_info "Installing hxcpp..."
 haxelib git hxcpp https://github.com/SomeGuyWhoLovesCoding/hxcpp-sgwlfnf.git --quiet
 
-log_info "Installing lime (sequential - depends on hxcpp)..."
+# Step 2: Install lime (required by hxp and input2action)
+log_info "Installing lime..."
 haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet
 
-# Everything else can be parallel (no conflicts with each other)
+# Step 3: Install packages that depend on lime (cannot be parallel with each other)
+log_info "Installing hxp (depends on lime)..."
+haxelib install hxp --quiet
+
+log_info "Installing input2action (depends on lime)..."
+haxelib install input2action --quiet
+
+# Step 4: Everything else can be parallel (no conflicts)
 log_info "Installing remaining haxelibs in parallel..."
 haxelib install format --quiet &
 PID_FORMAT=$!
-haxelib install hxp --quiet &
-PID_HXP=$!
-haxelib git peote-view_funkinview https://github.com/SomeGuyWhoLovesCoding/peote-view.git --quiet &
+haxelib install peote-view --quiet &
 PID_PEOTE=$!
-haxelib install input2action --quiet &
-PID_INPUT2ACTION=$!
 haxelib git customtitlebar https://github.com/SomeGuyWhoLovesCoding/customtitlebar.git --quiet &
 PID_CUSTOM=$!
 
 # Wait for all parallel installations to complete
-wait $PID_FORMAT $PID_HXP $PID_PEOTE $PID_INPUT2ACTION $PID_CUSTOM
+wait $PID_FORMAT $PID_PEOTE $PID_CUSTOM
 
 log_info "All haxelib installations completed successfully!"
 log_info "Linux setup complete! 🎉"

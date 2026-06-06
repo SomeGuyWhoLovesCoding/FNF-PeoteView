@@ -43,7 +43,7 @@ jobs:
       
       # Cache haxelib dependencies for faster subsequent runs
       - name: Cache haxelib dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v5.0.5
         with:
           path: ${{ matrix.haxelib_path }}
           key: ${{ runner.os }}-haxelib-${{ hashFiles('**/*.hxml', '**/haxelib.json', '**/lime.xml') }}
