@@ -1,18 +1,21 @@
 <xml>
-    <pragma once="true" />
-    <set name="PROJECT_DIR" value="${this_dir}/src" />
+	<pragma once="true" />
 
-    <files id="async_kb">
-        <compilerflag value="-I${PROJECT_DIR}/inp" />
-        <compilerflag value="-I${PROJECT_DIR}/inp/include" />
-        <file name="${PROJECT_DIR}/inp/AsyncKB.cpp" />
-    </files>
-    
-    <!-- Libraries must be inside a target block, NOT inside <files> -->
-    <target id="default">
-        <files id="async_kb" />
-        <lib name="-lX11" if="linux" />
-        <lib name="-lXext" if="linux" />
-        <lib name="-lXi" if="linux" />
-    </target>
+	<set name="PROJECT_DIR" value="${this_dir}/src" />
+
+	<files id="async_kb">
+		<compilerflag value="-I${PROJECT_DIR}/inp" />
+		<compilerflag value="-I${PROJECT_DIR}/inp/include" />
+		<file name="${PROJECT_DIR}/inp/AsyncKB.cpp" />
+	</files>
+	
+	<target id="linux">
+		<compilerflag value="-lX11" />
+		<compilerflag value="-lXext" />
+		<compilerflag value="-lXi" />
+	</target>
+
+	<target id="haxe">
+		<files id="async_kb" />
+	</target>
 </xml>
