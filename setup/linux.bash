@@ -1,5 +1,5 @@
 #!/bin/bash
-# setup-linux.sh - Parallel Linux dependency installer
+# setup-linux.sh - Smart parallel Linux dependency installer
 
 set -e  # Exit on error
 set -u  # Exit on undefined variable
@@ -16,6 +16,10 @@ log_info() {
 
 log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
+}
+
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
 }
 
 # Better error tracing
@@ -37,7 +41,7 @@ sudo apt-get update || {
     exit 1
 }
 
-# Install dependencies sequentially (more reliable than parallel)
+# Install dependencies sequentially
 log_info "Installing 64-bit dependencies..."
 sudo apt-get install -y libc6-dev-i386 g++-multilib || exit 1
 sudo apt install -y libx11-dev libxrandr-dev libxinerama-dev || exit 1
@@ -65,41 +69,38 @@ sudo ln -sf /usr/include/libdrm/drm.h /usr/include/drm.h || true
 log_info "Setting up haxelib..."
 haxelib setup ~/haxelib || exit 1
 
-# Install haxelib dependencies in parallel
-log_info "Installing haxelib dependencies in parallel..."
+# Install haxelib dependencies with proper dependency ordering
+log_info "Installing haxelib dependencies..."
 
-# Run all haxelib installs in background
+# Group 1: Independent libraries (no dependencies between them)
+log_info "Installing independent libraries in parallel..."
 haxelib install format --quiet &
 PID_FORMAT=$!
-log_info "Installing format (PID: $PID_FORMAT)"
-
 haxelib install hxp --quiet &
 PID_HXP=$!
-log_info "Installing hxp (PID: $PID_HXP)"
-
-haxelib install hxcpp --quiet &
-PID_HXCPP=$!
-log_info "Installing hxcpp (PID: $PID_HXCPP)"
-
-haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet &
-PID_LIME=$!
-log_info "Installing lime from git (PID: $PID_LIME)"
-
 haxelib install peote-view --quiet &
 PID_PEOTE=$!
-log_info "Installing peote-view (PID: $PID_PEOTE)"
-
 haxelib install input2action --quiet &
 PID_INPUT2ACTION=$!
-log_info "Installing input2action (PID: $PID_INPUT2ACTION)"
 
-haxelib git customtitlebar https://github.com/SomeGuyWhoLovesCoding/customtitlebar.git --quiet &
-PID_CUSTOMTITLEBAR=$!
-log_info "Installing customtitlebar from git (PID: $PID_CUSTOMTITLEBAR)"
+# Wait for group 1 to complete
+wait $PID_FORMAT $PID_HXP $PID_PEOTE $PID_INPUT2ACTION
+log_info "Independent libraries installed"
 
-# Wait for all haxelib installations to complete
-log_info "Waiting for all haxelib installations to finish..."
-wait $PID_FORMAT $PID_HXP $PID_HXCPP $PID_LIME $PID_PEOTE $PID_INPUT2ACTION $PID_CUSTOMTITLEBAR
+# Group 2: hxcpp (needs to be installed before lime)
+log_info "Installing hxcpp..."
+haxelib git hxcpp https://github.com/SomeGuyWhoLovesCoding/hxcpp-sgwlfnf.git --quiet || exit 1
+log_info "hxcpp installed"
+
+# Group 3: lime (depends on hxcpp)
+log_info "Installing lime..."
+haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet || exit 1
+log_info "lime installed"
+
+# Group 4: customtitlebar (independent, can run last)
+log_info "Installing customtitlebar..."
+haxelib git customtitlebar https://github.com/SomeGuyWhoLovesCoding/customtitlebar.git --quiet || exit 1
+log_info "customtitlebar installed"
 
 log_info "All haxelib installations completed successfully"
 log_info "Linux setup complete! 🎉"
