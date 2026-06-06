@@ -78,7 +78,7 @@ haxelib install format --quiet &
 PID_FORMAT=$!
 haxelib install hxp --quiet &
 PID_HXP=$!
-haxelib install peote-view --quiet &
+haxelib git peote-view_funkinview https://github.com/SomeGuyWhoLovesCoding/peote-view.git --quiet &
 PID_PEOTE=$!
 haxelib install input2action --quiet &
 PID_INPUT2ACTION=$!
