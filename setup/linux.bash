@@ -80,7 +80,7 @@ haxelib install input2action --quiet
 log_info "Installing remaining haxelibs in parallel..."
 haxelib install format --quiet &
 PID_FORMAT=$!
-haxelib install peote-view --quiet &
+haxelib git peote-view_funkinview https://github.com/SomeGuyWhoLovesCoding/peote-view.git --quiet &
 PID_PEOTE=$!
 haxelib git customtitlebar https://github.com/SomeGuyWhoLovesCoding/customtitlebar.git --quiet &
 PID_CUSTOM=$!
