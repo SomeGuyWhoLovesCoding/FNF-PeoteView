@@ -52,7 +52,7 @@ class CountdownDisplay {
 	function setupSounds(suffix:String = "") {
 		CountdownDisplay.suffix = suffix;
 		for (i in 0...4) {
-			sounds.push(MiniAudio.loadSoundEffect(Paths.asset('assets/countdown/${3 - i}${suffix != "" ? '-$suffix' : ''}.ogg')));
+			sounds.push(MiniAudio.loadSoundEffect(Paths.asset('assets/sounds/countdown/${3 - i}${suffix != "" ? '-$suffix' : ''}.ogg')));
 		}
 	}
 

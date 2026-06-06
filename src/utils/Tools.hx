@@ -141,6 +141,10 @@ class Tools {
 			var outputPath = 'assets/fonts/$name/$name';
 
 			#if linux
+			var fontbmGzPath = "assets/fonts/fontbm.gz";
+			if (FileSystem.exists(fontbmGzPath)) {
+				Sys.command("gunzip", [fontbmGzPath]);
+			}
 			// Ensure executable permissions on Linux
 			try {
 				// Check if we can execute it
