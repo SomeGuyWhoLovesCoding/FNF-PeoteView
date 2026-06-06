@@ -1,17 +1,74 @@
 // Platform detection
 #ifdef _WIN32
-    #include <windows.h>
-    #pragma comment(lib, "user32.lib")
+#include <windows.h>
+#pragma comment(lib, "user32.lib")
 #elif defined(__linux__)
-    #include <linux/input.h>
-    #include <fcntl.h>
-    #include <unistd.h>
-    #include <cstring>
-    #include <poll.h>
-    #include <errno.h>
-    #include <sys/eventfd.h>
-    #include <X11/Xlib.h>
-    #include <X11/Xatom.h>
+#include <linux/input.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <cstring>
+#include <poll.h>
+#include <errno.h>
+#include <sys/eventfd.h>
+#include <cstdint> // For uint64_t
+
+// --- GHOST X11 DECLARATIONS ---
+// No heavy X11 headers needed. We declare exactly what we use.
+typedef unsigned long XID;
+typedef XID Window;
+typedef XID Atom;
+struct _XDisplay;
+typedef struct _XDisplay Display;
+typedef int Bool;
+
+#define True 1
+#define False 0
+#define None 0L
+#define Success 0
+#define XA_WINDOW 33L
+#define XA_CARDINAL 6L
+#define PropertyChangeMask (1L<<22)
+#define PropertyNotify 28
+
+struct _XAnyEvent {
+    int type;
+    unsigned long serial;
+    Bool send_event;
+    Display *display;
+    Window window;
+};
+
+struct _XPropertyEvent {
+    int type;
+    unsigned long serial;
+    Bool send_event;
+    Display *display;
+    Window window;
+    Atom atom;
+    int state;
+};
+
+typedef union _XEvent {
+    int type;
+    _XAnyEvent xany;
+    _XPropertyEvent xproperty;
+    long pad[24]; // Ensures correct struct size matching Xlib
+} XEvent;
+
+extern "C" {
+    int XInitThreads(void);
+    Display* XOpenDisplay(const char*);
+    int XCloseDisplay(Display*);
+    Window XDefaultRootWindow(Display*);
+    Atom XInternAtom(Display*, const char*, int);
+    int XGetWindowProperty(Display*, Window, Atom, long, long, Bool, Atom, Atom*, int*, unsigned long*, unsigned long*, unsigned char**);
+    void XFree(void*);
+    int XConnectionNumber(Display*);
+    int XSelectInput(Display*, Window, long);
+    int XPending(Display*);
+    int XNextEvent(Display*, XEvent*);
+}
+// ------------------------------
 #endif
 
 #include <atomic>
@@ -110,7 +167,6 @@ private:
     
     static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
         if (nCode >= 0 && instance) {
-            // AUTO-DETECT FOCUS (Windows)
             HWND foreground = GetForegroundWindow();
             DWORD pid = 0;
             if (foreground) GetWindowThreadProcessId(foreground, &pid);
@@ -262,13 +318,15 @@ private:
         startTimeInitialized = true;
         currentKeyStates.fill(false);
         
-        // AUTO-DETECT FOCUS (Linux via X11)
+        // AUTO-DETECT FOCUS (Linux via Ghost X11)
+        // CRITICAL: XInitThreads makes Xlib thread-safe for background polling
+        XInitThreads();
         dpy = XOpenDisplay(NULL);
         if (dpy) {
             x11_fd = XConnectionNumber(dpy);
             net_active_window = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", True);
             net_wm_pid = XInternAtom(dpy, "_NET_WM_PID", True);
-            root = DefaultRootWindow(dpy);
+            root = XDefaultRootWindow(dpy);
             my_pid = getpid();
             
             if (net_active_window != None && net_wm_pid != None && root != None) {
@@ -348,9 +406,7 @@ private:
             }
         }
         
-        if (keyboard_fd >= 0) close(keyboard_fd);
-        if (event_fd >= 0) close(event_fd);
-        if (dpy) XCloseDisplay(dpy);
+        // Cleanup is now handled safely in the destructor after join()
     }
 #endif
 
@@ -376,24 +432,25 @@ public:
     }
     
     ~AsyncInputThread() {
-            running = false;
-    #ifdef _WIN32
-            if (instance && instance->quitEvent) SetEvent(instance->quitEvent);
-    #elif defined(__linux__)
-            if (event_fd >= 0) {
-                // Write to the eventfd to safely wake up the poll() loop
-                uint64_t val = 1;
-                write(event_fd, &val, sizeof(val));
-            }
-    #endif
-            if (worker.joinable()) worker.join();
-            
-            // NOW it is safe to close the FD after the thread has joined
-    #ifdef __linux__
-            if (event_fd >= 0) close(event_fd);
-            if (keyboard_fd >= 0) close(keyboard_fd); // Also move this here if it's open
-    #endif
+        running = false;
+#ifdef _WIN32
+        if (instance && instance->quitEvent) SetEvent(instance->quitEvent);
+#elif defined(__linux__)
+        if (event_fd >= 0) {
+            // Write to the eventfd to safely wake up the poll() loop
+            uint64_t val = 1;
+            write(event_fd, &val, sizeof(val));
         }
+#endif
+        if (worker.joinable()) worker.join();
+        
+        // NOW it is safe to close the FDs and X11 display after the thread has joined
+#ifdef __linux__
+        if (event_fd >= 0) close(event_fd);
+        if (keyboard_fd >= 0) close(keyboard_fd);
+        if (dpy) XCloseDisplay(dpy);
+#endif
+    }
 
     bool hasEvent() const { return eventCount.load(std::memory_order_acquire) > 0 || hasCurrentEvent; }
     double getScanCode() { loadNextEvent(); return hasCurrentEvent ? currentEvent.scanCode : 0.0; }
