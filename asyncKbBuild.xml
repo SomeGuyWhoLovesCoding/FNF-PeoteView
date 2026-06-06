@@ -4,6 +4,7 @@
 	<set name="PROJECT_DIR" value="${this_dir}/src" />
 
 	<files id="async_kb">
+		<compilerflag value="-I/usr/include/libx11-dev" if="linux" />
 		<compilerflag value="-I${PROJECT_DIR}/inp" />
 		<compilerflag value="-I${PROJECT_DIR}/inp/include" />
 		<file name="${PROJECT_DIR}/inp/AsyncKB.cpp" />
@@ -11,6 +12,5 @@
 
 	<target id="haxe">
 		<files id="async_kb" />
-		<lib name="X11" />
 	</target>
 </xml>

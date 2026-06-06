@@ -14,6 +14,7 @@
     <echo value="hashlink bin: ${HL_BIN}" />
 
 	<files id="async_kb">
+		<compilerflag value="-I/usr/include/libx11-dev" if="linux" />
 		<compilerflag value="-I${PROJECT_DIR}/inp" />
 		<compilerflag value="-I${PROJECT_DIR}/inp/include" />
 		<file name="${PROJECT_DIR}/inp/AsyncKB_hl.cpp" />
@@ -22,7 +23,6 @@
 
 	<target id="default" output="async_kb" toolid="dll" tool="linker">
 		<files id="async_kb" />
-		<flag value="-lX11" />
 		<libpath name="${HASHLINK}" if="windows" />
 		<libpath name="/usr/local/lib" if='macos' />
 		<lib name="libhl.lib" if="windows" />
