@@ -29,7 +29,7 @@ jobs:
             
           - os: ubuntu-latest
             artifact_name: FV-Linux
-            artifact_path: "FV-Linux.tar.gz"
+            artifact_path: FV-Linux.tar.gz
             haxelib_path: ~/haxelib
             compile_target: linux
             needs_tar: true
@@ -112,15 +112,17 @@ jobs:
       - name: Package Linux build
         if: matrix.needs_tar == true
         run: |
-          mkdir -p export
-          cp -r bin/linux/bin/* export/
-          cd export && tar -czvf ../${{ matrix.artifact_name }} *
+          # Create the tar file in a fixed location
+          tar -czvf ${{ github.workspace }}/FV-Linux.tar.gz -C bin/linux/bin .
+          
+          # Verify it exists
+          ls -la ${{ github.workspace }}/FV-Linux.tar.gz
         shell: bash
-      
+
       # Publish artifact
       - name: Publish artifact
         uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact_path }}
+          path: ${{ github.workspace }}/FV-Linux.tar.gz  # Use full absolute path
           if-no-files-found: error
