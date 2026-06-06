@@ -45,7 +45,7 @@ jobs:
         run: haxelib run lime build hl --app-version="4.0.0-${{ github.run_id}}"
 
       - name: Publish artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: 'FV-HL-Windows'
           path: bin/hl/bin
