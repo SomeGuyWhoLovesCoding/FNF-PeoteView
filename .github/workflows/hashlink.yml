@@ -18,14 +18,12 @@ jobs:
             artifact_path: bin/hl/bin
             haxelib_path: C:/haxelib
             compile_target: hl
-            needs_tar: false
             
           - os: ubuntu-latest
             artifact_name: FV-HL-Linux
             artifact_path: FV-HL-Linux.tar.gz
             haxelib_path: ~/haxelib
             compile_target: hl
-            needs_tar: true
       fail-fast: false
       
     runs-on: ${{ matrix.os }}
@@ -41,14 +39,14 @@ jobs:
         with:
           version: latest
       
-      # Cache haxelib dependencies for faster subsequent runs
+      # Cache haxelib dependencies
       - name: Cache haxelib dependencies
-        uses: actions/cache@v5.0.5
+        uses: actions/cache@v3
         with:
           path: ${{ matrix.haxelib_path }}
-          key: ${{ runner.os }}-haxelib-${{ hashFiles('**/*.hxml', '**/haxelib.json', '**/lime.xml') }}
+          key: ${{ runner.os }}-hl-haxelib-${{ hashFiles('**/*.hxml', '**/haxelib.json', '**/lime.xml') }}
           restore-keys: |
-            ${{ runner.os }}-haxelib-
+            ${{ runner.os }}-hl-haxelib-
       
       # Install Linux system dependencies (only for Linux)
       - name: Install required Linux libraries
@@ -105,9 +103,11 @@ jobs:
       
       # Package Linux build
       - name: Package Linux build
-        if: matrix.needs_tar == true
+        if: runner.os == 'Linux'
         run: |
-          tar -czvf ${{ matrix.artifact_name }} -C bin/linux/bin .
+          mkdir -p export
+          cp -r bin/hl/bin/* export/
+          cd export && tar -czvf ../${{ matrix.artifact_name }} *
         shell: bash
       
       # Publish artifact
