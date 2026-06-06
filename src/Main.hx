@@ -76,6 +76,8 @@ class Main extends Application
 	{
 		var titleBarColor:Color = SaveData.state.graphics.customTitleBarColor;
 
+		AsyncInput.addEvents();
+
 		#if (windows && customtitlebar)
 		Titlebar.setTitlebarColor(titleBarColor.r, titleBarColor.g, titleBarColor.b);
 		Titlebar.setTitleFontColor(255, 255, 255);

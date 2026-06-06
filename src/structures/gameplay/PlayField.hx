@@ -209,7 +209,6 @@ class PlayField {
 	 */
 	function create(roof:CustomDisplay, display:CustomDisplay, mania:Int = 4) {
 		AsyncInput.init();
-		AsyncInput.addEvents();
 
 		if (mania > 256) mania = 256;
 
@@ -820,7 +819,6 @@ class PlayField {
 	**/
 	function dispose() {
 		AsyncInput.shutdown();
-		AsyncInput.removeEvents();
 
 		ready = false;
 		disposed = true;
