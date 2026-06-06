@@ -380,7 +380,11 @@ public:
 #ifdef _WIN32
         if (instance && instance->quitEvent) SetEvent(instance->quitEvent);
 #elif defined(__linux__)
-        if (event_fd >= 0) { uint64_t value = 1; (void)write(event_fd, &value, sizeof(value)); }
+        if (event_fd >= 0) {
+            uint64_t value = 1;
+            ssize_t write_result = write(event_fd, &value, sizeof(value));
+            (void)write_result; // This perfectly silences the GCC warning
+        }
 #endif
         if (worker.joinable()) worker.join();
     }
