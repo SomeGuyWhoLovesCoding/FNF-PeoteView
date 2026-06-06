@@ -382,8 +382,11 @@ public:
 #elif defined(__linux__)
         if (event_fd >= 0) {
             uint64_t value = 1;
-            ssize_t write_result = write(event_fd, &value, sizeof(value));
-            (void)write_result; // This perfectly silences the GCC warning
+            
+            #pragma GCC diagnostic push
+            #pragma GCC diagnostic ignored "-Wunused-result"
+            write(event_fd, &value, sizeof(value));
+            #pragma GCC diagnostic pop
         }
 #endif
         if (worker.joinable()) worker.join();

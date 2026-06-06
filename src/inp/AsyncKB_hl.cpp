@@ -2,7 +2,7 @@
 
 #include <hl.h>
 
-// Include the core implementation.
+// Include the core implementation. 
 #include "AsyncKBCore.cpp"
 
 // ============================================================================
