@@ -4,7 +4,7 @@
 #include "AsyncKBCore.cpp"
 
 // ============================================================================
-// Global API (C++ interface with C linkage for Haxe) 
+// Global API (C++ interface with C linkage for Haxe)
 // ============================================================================
 
 extern "C" {
