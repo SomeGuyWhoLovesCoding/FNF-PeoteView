@@ -14,10 +14,12 @@
     <echo value="hashlink bin: ${HL_BIN}" />
 
 	<files id="chart_file">
+		<lib name="-lX11" if="linux" />
 		<compilerflag value="-I${PROJECT_DIR}/inp" />
 		<compilerflag value="-I${PROJECT_DIR}/inp/include" />
 		<file name="${PROJECT_DIR}/inp/AsyncKB_hl.cpp" />
 		<compilerflag value="-I${HASHLINK}/include" />
+		<outdir name="hdlls/linux" if="linux" />
 	</files>
 
 	<target id="default" output="async_kb" toolid="dll" tool="linker">
