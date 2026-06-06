@@ -376,16 +376,24 @@ public:
     }
     
     ~AsyncInputThread() {
-        running = false;
-#ifdef _WIN32
-        if (instance && instance->quitEvent) SetEvent(instance->quitEvent);
-#elif defined(__linux__)
-        if (event_fd >= 0) {
-            close(event_fd);
+            running = false;
+    #ifdef _WIN32
+            if (instance && instance->quitEvent) SetEvent(instance->quitEvent);
+    #elif defined(__linux__)
+            if (event_fd >= 0) {
+                // Write to the eventfd to safely wake up the poll() loop
+                uint64_t val = 1;
+                write(event_fd, &val, sizeof(val));
+            }
+    #endif
+            if (worker.joinable()) worker.join();
+            
+            // NOW it is safe to close the FD after the thread has joined
+    #ifdef __linux__
+            if (event_fd >= 0) close(event_fd);
+            if (keyboard_fd >= 0) close(keyboard_fd); // Also move this here if it's open
+    #endif
         }
-#endif
-        if (worker.joinable()) worker.join();
-    }
 
     bool hasEvent() const { return eventCount.load(std::memory_order_acquire) > 0 || hasCurrentEvent; }
     double getScanCode() { loadNextEvent(); return hasCurrentEvent ? currentEvent.scanCode : 0.0; }

@@ -1,10 +1,10 @@
 <xml>
 	<pragma once="true" />
 
+	<compilerflag value="-lX11" if="linux" />
 	<set name="PROJECT_DIR" value="${this_dir}/src" />
 
 	<files id="async_kb">
-		<compilerflag value="-I/usr/include/X11" if="linux" />
 		<compilerflag value="-I${PROJECT_DIR}/inp" />
 		<compilerflag value="-I${PROJECT_DIR}/inp/include" />
 		<file name="${PROJECT_DIR}/inp/AsyncKB.cpp" />
@@ -12,6 +12,5 @@
 
 	<target id="haxe">
 		<files id="async_kb" />
-		<linkerflag value="-lX11" if="linux" />
 	</target>
 </xml>

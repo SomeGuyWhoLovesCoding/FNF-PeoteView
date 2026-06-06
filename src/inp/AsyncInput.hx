@@ -14,6 +14,16 @@ class AsyncInput {
 	static var initMutex = new Mutex();
 	static var inputPress:Event<KeyCode->Float->Void>;
 	static var inputRelease:Event<KeyCode->Float->Void>;
+
+	static function addEvents() {
+		Application.current.window.onActivate.add(init);
+		Application.current.window.onDeactivate.add(shutdown);
+	}
+
+	static function removeEvents() {
+		Application.current.window.onActivate.remove(init);
+		Application.current.window.onDeactivate.remove(shutdown);
+	}
 	
 	static function init() {
 		initMutex.acquire();
