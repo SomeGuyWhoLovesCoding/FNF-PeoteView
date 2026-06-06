@@ -112,9 +112,7 @@ jobs:
       - name: Package Linux build
         if: matrix.needs_tar == true
         run: |
-          mkdir -p export
-          cp -r bin/linux/bin/* export/
-          cd export && tar -czvf ../${{ matrix.artifact_name }} *
+          tar -czvf ${{ matrix.artifact_name }} -C bin/linux/bin .
         shell: bash
       
       # Publish artifact
