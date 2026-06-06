@@ -1,8 +1,11 @@
 #!/bin/bash
-# setup-linux.sh - Properly ordered Linux dependency installer
+# setup-linux.sh - Parallel Linux dependency installer with debugging
 
 set -e  # Exit on error
 set -u  # Exit on undefined variable
+
+# Enable debug mode (uncomment to see all commands)
+# set -x
 
 # Colors for output
 RED='\033[0;31m'
@@ -18,10 +21,7 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
-log_warn() {
-    echo -e "${YELLOW}[WARN]${NC} $1"
-}
-
+# Better error tracing
 trap 'log_error "Script failed on line $LINENO. Exit code: $?"' ERR
 
 log_info "Starting Linux setup..."
@@ -40,7 +40,7 @@ sudo apt-get update || {
     exit 1
 }
 
-# Install dependencies sequentially
+# Install dependencies sequentially (more reliable than parallel)
 log_info "Installing 64-bit dependencies..."
 sudo apt-get install -y libc6-dev-i386 g++-multilib || exit 1
 sudo apt install -y libx11-dev libxrandr-dev libxinerama-dev || exit 1
@@ -68,40 +68,14 @@ sudo ln -sf /usr/include/libdrm/drm.h /usr/include/drm.h || true
 log_info "Setting up haxelib..."
 haxelib setup ~/haxelib || exit 1
 
-# Install haxelib dependencies with correct ordering
+# Install haxelib dependencies
 log_info "Installing haxelib dependencies..."
-
-# Step 1: Install packages with NO dependencies (can be parallel)
-log_info "Step 1: Installing packages with no dependencies..."
-haxelib install format --quiet &
-PID_FORMAT=$!
-haxelib install peote-view --quiet &
-PID_PEOTE=$!
-haxelib install input2action --quiet &
-PID_INPUT2ACTION=$!
-
-wait $PID_FORMAT $PID_PEOTE $PID_INPUT2ACTION
-log_info "Step 1 complete"
-
-# Step 2: Install hxcpp (required by lime, but hxp might need lime)
-log_info "Step 2: Installing hxcpp..."
-haxelib git hxcpp https://github.com/SomeGuyWhoLovesCoding/hxcpp-sgwlfnf.git --quiet || exit 1
-log_info "hxcpp installed"
-
-# Step 3: Install lime (dependency for hxp)
-log_info "Step 3: Installing lime..."
-haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet || exit 1
-log_info "lime installed"
-
-# Step 4: Install hxp (depends on lime)
-log_info "Step 4: Installing hxp..."
+haxelib install format --quiet || exit 1
 haxelib install hxp --quiet || exit 1
-log_info "hxp installed"
-
-# Step 5: Install customtitlebar (no conflicts)
-log_info "Step 5: Installing customtitlebar..."
+haxelib install hxcpp --quiet || exit 1
+haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet || exit 1
+haxelib install peote-view --quiet || exit 1
+haxelib install input2action --quiet || exit 1
 haxelib git customtitlebar https://github.com/SomeGuyWhoLovesCoding/customtitlebar.git --quiet || exit 1
-log_info "customtitlebar installed"
 
-log_info "All haxelib installations completed successfully"
 log_info "Linux setup complete! 🎉"
