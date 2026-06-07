@@ -4,12 +4,15 @@
 #pragma comment(lib, "user32.lib")
 #elif defined(__linux__)
 #include <linux/input.h>
+#include <linux/input-event-codes.h>  // For KEY_* constants
 #include <fcntl.h>
 #include <unistd.h>
 #include <cstring>
 #include <poll.h>
 #include <errno.h>
 #include <sys/eventfd.h>
+#include <sys/ioctl.h>     // For ioctl
+#include <pthread.h>        // For pthread_setschedparam
 #include <cstdint> // For uint64_t
 
 // --- GHOST X11 DECLARATIONS ---
@@ -257,61 +260,120 @@ private:
     }
     
     int linuxToLimeKeyCode(int evdevCode) {
-        if (evdevCode >= KEY_A && evdevCode <= KEY_Z) return 0x61 + (evdevCode - KEY_A);
-        if (evdevCode >= KEY_1 && evdevCode <= KEY_9) return 0x31 + (evdevCode - KEY_1);
+        // Fix the number mapping (0-9)
+        if (evdevCode >= KEY_1 && evdevCode <= KEY_9) 
+            return 0x31 + (evdevCode - KEY_1);
         if (evdevCode == KEY_0) return 0x30;
         
+        // Letter keys
+        if (evdevCode >= KEY_A && evdevCode <= KEY_Z) 
+            return 0x61 + (evdevCode - KEY_A);
+        
         switch (evdevCode) {
-            case KEY_BACKSPACE: return 0x08; case KEY_TAB: return 0x09; case KEY_ENTER: return 0x0D;
-            case KEY_ESC: return 0x1B; case KEY_SPACE: return 0x20; case KEY_DELETE: return 0x7F;
-            case KEY_INSERT: return 0x40000049; case KEY_HOME: return 0x4000004A; case KEY_END: return 0x4000004D;
-            case KEY_PAGEUP: return 0x4000004B; case KEY_PAGEDOWN: return 0x4000004E; case KEY_UP: return 0x40000052;
-            case KEY_DOWN: return 0x40000051; case KEY_LEFT: return 0x40000050; case KEY_RIGHT: return 0x4000004F;
-            case KEY_LEFTCTRL: return 0x400000E0; case KEY_RIGHTCTRL: return 0x400000E4; case KEY_LEFTSHIFT: return 0x400000E1;
-            case KEY_RIGHTSHIFT: return 0x400000E5; case KEY_LEFTALT: return 0x400000E2; case KEY_RIGHTALT: return 0x400000E6;
-            case KEY_LEFTMETA: return 0x400000E3; case KEY_RIGHTMETA: return 0x400000E7; case KEY_CAPSLOCK: return 0x40000039;
-            case KEY_NUMLOCK: return 0x40000053; case KEY_SCROLLLOCK: return 0x40000047; case KEY_F1: return 0x4000003A;
-            case KEY_F2: return 0x4000003B; case KEY_F3: return 0x4000003C; case KEY_F4: return 0x4000003D;
-            case KEY_F5: return 0x4000003E; case KEY_F6: return 0x4000003F; case KEY_F7: return 0x40000040;
-            case KEY_F8: return 0x40000041; case KEY_F9: return 0x40000042; case KEY_F10: return 0x40000043;
-            case KEY_F11: return 0x40000044; case KEY_F12: return 0x40000045; case KEY_MINUS: return 0x2D;
-            case KEY_EQUAL: return 0x3D; case KEY_LEFTBRACE: return 0x5B; case KEY_RIGHTBRACE: return 0x5D;
-            case KEY_BACKSLASH: return 0x5C; case KEY_SEMICOLON: return 0x3B; case KEY_APOSTROPHE: return 0x27;
-            case KEY_GRAVE: return 0x60; case KEY_COMMA: return 0x2C; case KEY_DOT: return 0x2E;
-            case KEY_SLASH: return 0x2F; default: return 0x00;
+            case KEY_BACKSPACE: return 0x08;
+            case KEY_TAB: return 0x09;
+            case KEY_ENTER: return 0x0D;
+            case KEY_ESC: return 0x1B;
+            case KEY_SPACE: return 0x20;
+            case KEY_DELETE: return 0x7F;
+            case KEY_INSERT: return 0x40000049;
+            case KEY_HOME: return 0x4000004A;
+            case KEY_END: return 0x4000004D;
+            case KEY_PAGEUP: return 0x4000004B;
+            case KEY_PAGEDOWN: return 0x4000004E;
+            case KEY_UP: return 0x40000052;
+            case KEY_DOWN: return 0x40000051;
+            case KEY_LEFT: return 0x40000050;
+            case KEY_RIGHT: return 0x4000004F;
+            case KEY_LEFTCTRL: return 0x400000E0;
+            case KEY_RIGHTCTRL: return 0x400000E4;
+            case KEY_LEFTSHIFT: return 0x400000E1;
+            case KEY_RIGHTSHIFT: return 0x400000E5;
+            case KEY_LEFTALT: return 0x400000E2;
+            case KEY_RIGHTALT: return 0x400000E6;
+            case KEY_LEFTMETA: return 0x400000E3;
+            case KEY_RIGHTMETA: return 0x400000E7;
+            case KEY_CAPSLOCK: return 0x40000039;
+            case KEY_NUMLOCK: return 0x40000053;
+            case KEY_SCROLLLOCK: return 0x40000047;
+            case KEY_F1: return 0x4000003A;
+            case KEY_F2: return 0x4000003B;
+            case KEY_F3: return 0x4000003C;
+            case KEY_F4: return 0x4000003D;
+            case KEY_F5: return 0x4000003E;
+            case KEY_F6: return 0x4000003F;
+            case KEY_F7: return 0x40000040;
+            case KEY_F8: return 0x40000041;
+            case KEY_F9: return 0x40000042;
+            case KEY_F10: return 0x40000043;
+            case KEY_F11: return 0x40000044;
+            case KEY_F12: return 0x40000045;
+            case KEY_MINUS: return 0x2D;
+            case KEY_EQUAL: return 0x3D;
+            case KEY_LEFTBRACE: return 0x5B;
+            case KEY_RIGHTBRACE: return 0x5D;
+            case KEY_BACKSLASH: return 0x5C;
+            case KEY_SEMICOLON: return 0x3B;
+            case KEY_APOSTROPHE: return 0x27;
+            case KEY_GRAVE: return 0x60;
+            case KEY_COMMA: return 0x2C;
+            case KEY_DOT: return 0x2E;
+            case KEY_SLASH: return 0x2F;
+            default: return 0x00;
         }
     }
     
     void workerFunction() {
-        event_fd = eventfd(0, EFD_NONBLOCK);
-        if (event_fd < 0) { std::cerr << "Failed to create eventfd" << std::endl; return; }
+        // Set thread name for debugging (optional)
+        pthread_setname_np(pthread_self(), "InputThread");
         
-        for (int i = 0; i < 32; i++) {
-            char path[64]; snprintf(path, sizeof(path), "/dev/input/event%d", i);
+        event_fd = eventfd(0, EFD_NONBLOCK);
+        if (event_fd < 0) { 
+            std::cerr << "Failed to create eventfd" << std::endl; 
+            return; 
+        }
+        
+        // Find keyboard device
+        keyboard_fd = -1;
+        for (int i = 0; i < 64; i++) {  // Check more devices
+            char path[64]; 
+            snprintf(path, sizeof(path), "/dev/input/event%d", i);
             int fd = open(path, O_RDONLY | O_NONBLOCK);
             if (fd >= 0) {
                 char name[256] = {0};
+                // Fix: Check ioctl return value properly
                 if (ioctl(fd, EVIOCGNAME(sizeof(name)), name) >= 0) {
                     if (strstr(name, "keyboard") || strstr(name, "Keyboard") || 
                         strstr(name, "AT Translated") || strstr(name, "kbd")) {
-                        keyboard_fd = fd; break;
+                        keyboard_fd = fd;
+                        std::cout << "Found keyboard: " << name << std::endl;
+                        break;
                     }
                 }
                 close(fd);
             }
         }
         
+        // Fallback to first input device if no keyboard found
         if (keyboard_fd < 0) {
-            for (int i = 0; i < 32; i++) {
-                char path[64]; snprintf(path, sizeof(path), "/dev/input/event%d", i);
+            for (int i = 0; i < 64; i++) {
+                char path[64]; 
+                snprintf(path, sizeof(path), "/dev/input/event%d", i);
                 int fd = open(path, O_RDONLY | O_NONBLOCK);
-                if (fd >= 0) { keyboard_fd = fd; break; }
+                if (fd >= 0) { 
+                    keyboard_fd = fd;
+                    std::cout << "Using fallback device: " << path << std::endl;
+                    break; 
+                }
             }
         }
         
         if (keyboard_fd < 0) {
             std::cerr << "Failed to open keyboard device on Linux" << std::endl;
-            close(event_fd); return;
+            close(event_fd);
+            event_fd = -1;
+            running = false;
+            return;
         }
         
         startTime = std::chrono::steady_clock::now();
@@ -433,22 +495,37 @@ public:
     
     ~AsyncInputThread() {
         running = false;
-#ifdef _WIN32
-        if (instance && instance->quitEvent) SetEvent(instance->quitEvent);
-#elif defined(__linux__)
+        
+#ifdef __linux__
+        // Wake up the poll loop first
         if (event_fd >= 0) {
-            // Write to the eventfd to safely wake up the poll() loop
             uint64_t val = 1;
             write(event_fd, &val, sizeof(val));
         }
 #endif
+        
+#ifdef _WIN32
+        if (instance && instance->quitEvent) SetEvent(instance->quitEvent);
+#endif
+        
+        // Join the thread - this ensures workerFunction exits completely
         if (worker.joinable()) worker.join();
         
-        // NOW it is safe to close the FDs and X11 display after the thread has joined
+        // NOW safe to close resources after the thread has joined
 #ifdef __linux__
-        if (event_fd >= 0) close(event_fd);
-        if (keyboard_fd >= 0) close(keyboard_fd);
-        if (dpy) XCloseDisplay(dpy);
+        if (keyboard_fd >= 0) {
+            close(keyboard_fd);
+            keyboard_fd = -1;
+        }
+        if (event_fd >= 0) {
+            close(event_fd);
+            event_fd = -1;
+        }
+        if (dpy) {
+            XCloseDisplay(dpy);
+            dpy = nullptr;
+            x11_fd = -1;
+        }
 #endif
     }
 
