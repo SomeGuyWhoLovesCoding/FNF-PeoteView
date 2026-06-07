@@ -6,7 +6,7 @@ using StringTools;
 
 /**
 	Animation component instance for Funkin' View.
-	@since Development
+	@since 0.94
 **/
 @:publicFields
 class CustomAnimationComponent extends LuaComponentObject {

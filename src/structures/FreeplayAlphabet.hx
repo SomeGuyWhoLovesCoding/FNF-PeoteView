@@ -3,6 +3,7 @@ package structures;
 /**
 	Freeplay-style alphabet list (scroll + selection highlight).
 	Used by freeplay song titles and options controls mania (1K–16K).
+	@since 0.94
 **/
 @:publicFields
 class FreeplayAlphabet {

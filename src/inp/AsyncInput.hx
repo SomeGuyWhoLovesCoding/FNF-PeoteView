@@ -8,6 +8,10 @@ import sys.thread.Mutex;
 import sys.thread.Thread;
 import lime.ui.KeyCode;
 
+/**
+	Second input system that runs asynchronously and was made specifically for gameplay.
+	@since 0.94
+**/
 @:publicFields
 class AsyncInput {
 	static var initialized = false;

@@ -2,6 +2,7 @@ package structures;
 
 /**
 	Scroll state and list labels for {@link FreeplayAlphabet}.
+	@since 0.94
 **/
 interface IAlphabetScrollHost {
 	var xLerp:Float;
