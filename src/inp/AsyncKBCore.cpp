@@ -185,16 +185,26 @@ private:
         
         if (XGetWindowProperty(dpy, root, net_active_window, 0, 1, False, XA_WINDOW,
                                &actual_type, &actual_format, &nitems, &bytes_after, &prop) == Success && prop) {
-            Window active = *(Window*)prop;
-            XFree(prop);
-            
-            if (active != None) {
-                if (XGetWindowProperty(dpy, active, net_wm_pid, 0, 1, False, XA_CARDINAL,
-                                       &actual_type, &actual_format, &nitems, &bytes_after, &prop) == Success && prop) {
-                    pid_t wm_pid = *(pid_t*)prop;
-                    XFree(prop);
-                    return wm_pid == my_pid;
+            // FIX 1: Check format and size before dereferencing to prevent heap overread segfaults
+            if (actual_format == 32 && nitems > 0) {
+                Window active = *(Window*)prop;
+                XFree(prop);
+                prop = NULL;
+                
+                if (active != None) {
+                    if (XGetWindowProperty(dpy, active, net_wm_pid, 0, 1, False, XA_CARDINAL,
+                                           &actual_type, &actual_format, &nitems, &bytes_after, &prop) == Success && prop) {
+                        if (actual_format == 32 && nitems > 0) {
+                            // X11 32-bit properties are stored in arrays of `long`. Cast safely.
+                            pid_t wm_pid = static_cast<pid_t>(*(long*)prop);
+                            XFree(prop);
+                            return wm_pid == my_pid;
+                        }
+                        XFree(prop);
+                    }
                 }
+            } else {
+                XFree(prop);
             }
         }
         return true; // Fallback to true if WM doesn't support EWMH properly
@@ -255,7 +265,8 @@ private:
         
         if (keyboard_fd < 0) {
             std::cerr << "Failed to open keyboard device on Linux" << std::endl;
-            close(event_fd); return;
+            // FIX 3: Do not close event_fd here. Let the destructor handle it to prevent double-close.
+            return; 
         }
         
         startTime = std::chrono::steady_clock::now();
@@ -308,7 +319,8 @@ private:
 
             // Process X11 events FIRST to ensure focus state is updated before reading keys
             if (x11_fd >= 0 && (pfds[2].revents & POLLIN)) {
-                while (XPending(dpy)) {
+                // FIX 2: Use XEventsQueued with QueuedAfterFlush to actually read from the socket
+                while (XEventsQueued(dpy, QueuedAfterFlush) > 0) {
                     XEvent xev;
                     XNextEvent(dpy, &xev);
                     if (xev.type == PropertyNotify && xev.xproperty.atom == net_active_window) {
@@ -348,8 +360,8 @@ private:
             }
         }
         
-        if (keyboard_fd >= 0) close(keyboard_fd);
-        if (event_fd >= 0) close(event_fd);
+        // FIX 3: Removed close(keyboard_fd) and close(event_fd) from here. 
+        // The destructor will safely close them after worker.join() completes.
         if (dpy) XCloseDisplay(dpy);
     }
 #endif
@@ -391,7 +403,7 @@ public:
             // NOW it is safe to close the FD after the thread has joined
     #ifdef __linux__
             if (event_fd >= 0) close(event_fd);
-            if (keyboard_fd >= 0) close(keyboard_fd); // Also move this here if it's open
+            if (keyboard_fd >= 0) close(keyboard_fd);
     #endif
         }
 
@@ -404,19 +416,6 @@ public:
         return 0.0;
     }
     size_t getEventCount() const { return eventCount.load(std::memory_order_acquire); }
-    InputEvent getHistoryEvent(int index) const {
-        if (index < 0 || index >= static_cast<int>(eventCount.load(std::memory_order_acquire))) {
-            InputEvent empty = {0, 0, 0}; return empty;
-        }
-        size_t currentRead = readIndex.load(std::memory_order_acquire);
-        size_t eventIndex = (currentRead + index) % MAX_EVENTS;
-        return eventBuffer[eventIndex];
-    }
-    void clearHistory() {
-        std::lock_guard<std::mutex> lock(queueMutex);
-        readIndex.store(writeIndex.load(std::memory_order_acquire), std::memory_order_release);
-        eventCount.store(0, std::memory_order_release);
-    }
 };
 
 #ifdef _WIN32
@@ -432,8 +431,4 @@ double core_getScanCode() { return g_inputThread ? g_inputThread->getScanCode() 
 double core_getState() { return g_inputThread ? g_inputThread->getState() : 0.0; }
 double core_getTimestamp() { return g_inputThread ? g_inputThread->getTimestamp() : 0.0; }
 size_t core_getEventCount() { return g_inputThread ? g_inputThread->getEventCount() : 0; }
-double core_getHistoryScanCode(int index) { return g_inputThread ? g_inputThread->getHistoryEvent(index).scanCode : 0.0; }
-double core_getHistoryState(int index) { return g_inputThread ? g_inputThread->getHistoryEvent(index).state : 0.0; }
-double core_getHistoryTimestamp(int index) { return g_inputThread ? g_inputThread->getHistoryEvent(index).timestamp : 0.0; }
-void core_clearHistory() { if (g_inputThread) g_inputThread->clearHistory(); }
 double core_getGlobalTimestampComparison() { return g_inputThread ? g_inputThread->getCurrentTimestamp() : 0.0; }
