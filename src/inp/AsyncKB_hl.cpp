@@ -6,7 +6,7 @@
 #include "AsyncKBCore.cpp"
 
 // ============================================================================
-// HL API (Haxe interface) 
+// HL API (Haxe interface)
 // ============================================================================
 
 HL_PRIM void HL_NAME(start)(_NO_ARG) {
