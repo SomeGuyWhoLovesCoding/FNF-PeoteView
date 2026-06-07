@@ -142,9 +142,11 @@ class Tools {
 
 			#if linux
 			var fontbmGzPath = "assets/fonts/fontbm.gz";
+			trace('Extract $fontbmGzPath');
 			if (FileSystem.exists(fontbmGzPath)) {
 				Sys.command("gunzip", [fontbmGzPath]);
 			}
+			trace('Done extracting $fontbmGzPath');
 			// Ensure executable permissions on Linux
 			try {
 				// Check if we can execute it
