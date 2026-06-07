@@ -8,12 +8,11 @@ package utils;
  */
 @:publicFields
 @:generic
-@:final
 class FakeStringMap<V> {
     var keys(default, null):Array<String>;
     var values(default, null):Array<V>;
 
-    function new() {
+    public function new() {
         keys = [];
         values = [];
     }
@@ -78,20 +77,20 @@ class FakeStringMap<V> {
         return false;
     }
 
-    inline function clear():Void {
+    public inline function clear():Void {
         // GC-free clear for targets like C++/HashLink
         while (keys.length > 0) keys.pop();
         while (values.length > 0) values.pop();
     }
 
-    inline function iterator():Iterator<V> {
+    public inline function iterator():Iterator<V> {
         return values.iterator();
     }
 
-    inline function keysIterator():Iterator<String> {
+    public inline function keysIterator():Iterator<String> {
         return keys.iterator();
     }
     
-    var length(get, never):Int;
+    public var length(get, never):Int;
     inline function get_length():Int return keys.length;
 }
