@@ -1,7 +1,6 @@
 package fvlua.components;
 
 import sys.FileSystem;
-import haxe.ds.StringMap;
 
 using StringTools;
 
@@ -12,12 +11,12 @@ using StringTools;
 @:publicFields
 class CustomAnimationComponent extends LuaComponentObject {
 	#if linc_luajit_funkinview
-	public var customActors(default, null):StringMap<Actor>;
+	public var customActors(default, null):FakeStringMap<Actor>;
 
 	public function new(_parent:FunkinViewLua) {
         super(_parent);
 
-		customActors = new StringMap<Actor>();
+		customActors = new FakeStringMap<Actor>();
 	}
 
 	// functions are a placeholder.
@@ -37,192 +36,223 @@ class CustomAnimationComponent extends LuaComponentObject {
 			customActors.set(actorName, Actor.create(display, actorType, actorChar, x, y, fps, true));
 			return FunkinViewLua.Function_Continue;
 		});
-		vm.addCallback("addCustomActor", (actor:Actor) -> {
-			if (actor == null) {
-				FunkinViewLua.error("Custom Actor cannot be nil!");
+		vm.addCallback("addCustomActor", (actorName:String) -> {
+			if (actorName == "" || actorName == null) {
+				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;
 			}
-			actor.addToBuffer();
+			customActors.get(actorName).addToBuffer();
 			return FunkinViewLua.Function_Continue;
 		});
-		vm.addCallback("playCustomActorAnimation", (actor:Actor, anim:String, loop:Bool = false) -> {
-            trace("Custom Actor from lua: ",actor);
-			if (actor == null) {
-				FunkinViewLua.error("Custom Actor cannot be nil!");
+		vm.addCallback("playCustomActorAnimation", (actorName:String, anim:String, loop:Bool = false) -> {
+			if (actorName == "" || actorName == null) {
+				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;
 			}
-			actor.playAnimation(anim, loop);
+			var customActor = customActors.get(actorName);
+            customActor.playAnimation(anim, loop);
 			return FunkinViewLua.Function_Continue;
 		});
-		vm.addCallback("stopCustomActorAnimation", (actor:Actor) -> {
-			if (actor == null) {
-				FunkinViewLua.error("Custom Actor cannot be nil!");
+		vm.addCallback("stopCustomActorAnimation", (actorName:String) -> {
+			if (actorName == "" || actorName == null) {
+				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;
 			}
-			actor.stopAnimation();
+			var customActor = customActors.get(actorName);
+            customActor.stopAnimation();
 			return FunkinViewLua.Function_Continue;
 		});
-		vm.addCallback("setCustomActorFinishAnim", (actor:Actor, anim:String) -> {
-			if (actor == null) {
-				FunkinViewLua.error("Custom Actor cannot be nil!");
+		vm.addCallback("setCustomActorFinishAnim", (actorName:String, anim:String) -> {
+			if (actorName == "" || actorName == null) {
+				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;
 			}
-			actor.finishAnim = anim;
+			var customActor = customActors.get(actorName);
+            customActor.finishAnim = anim;
 			return FunkinViewLua.Function_Continue;
 		});
 
         // these four are here just in case you want to replicate the sing poses of >4 mania
-		vm.addCallback("playSingIdCustomActorAnimation", (actor:Actor, index:Int, loop:Bool) -> {
-			if (actor == null) {
-				FunkinViewLua.error("Custom Actor cannot be nil!");
+		vm.addCallback("playSingIdCustomActorAnimation", (actorName:String, index:Int, loop:Bool) -> {
+			if (actorName == "" || actorName == null) {
+				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;
 			}
-			actor.playAnimationFromSingId(index, loop);
+			var customActor = customActors.get(actorName);
+            customActor.playAnimationFromSingId(index, loop);
 			return FunkinViewLua.Function_Continue;
 		});
-		vm.addCallback("playMissIdCustomActorAnimation", (actor:Actor, index:Int, loop:Bool) -> {
-			if (actor == null) {
-				FunkinViewLua.error("Custom Actor cannot be nil!");
+		vm.addCallback("playMissIdCustomActorAnimation", (actorName:String, index:Int, loop:Bool) -> {
+			if (actorName == "" || actorName == null) {
+				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;
 			}
-			actor.playAnimationFromMissId(index, loop);
+			var customActor = customActors.get(actorName);
+            customActor.playAnimationFromMissId(index, loop);
 			return FunkinViewLua.Function_Continue;
 		});
-		vm.addCallback("preComputeCustomActorSingPoses", (actor:Actor, anims:Array<String>) -> {
-			if (actor == null) {
-				FunkinViewLua.error("Custom Actor cannot be nil!");
+		vm.addCallback("preComputeCustomActorSingPoses", (actorName:String, anims:Array<String>) -> {
+			if (actorName == "" || actorName == null) {
+				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;
 			}
-			actor.preComputeSingPosesOfAnimations(anims);
+			var customActor = customActors.get(actorName);
+            customActor.preComputeSingPosesOfAnimations(anims);
 			return FunkinViewLua.Function_Continue;
 		});
-		vm.addCallback("preComputeCustomActorMissPoses", (actor:Actor, anims:Array<String>) -> {
-			if (actor == null) {
-				FunkinViewLua.error("Custom Actor cannot be nil!");
+		vm.addCallback("preComputeCustomActorMissPoses", (actorName:String, anims:Array<String>) -> {
+			if (actorName == "" || actorName == null) {
+				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;
 			}
-			actor.preComputeMissPosesOfAnimations(anims);
+			var customActor = customActors.get(actorName);
+            customActor.preComputeMissPosesOfAnimations(anims);
 			return FunkinViewLua.Function_Continue;
 		});
 
         // Now for the property get/set
-		vm.addCallback("setCustomActorPos", (actor:Actor, x:Float, y:Float) -> {
-			if (actor == null) {
-				FunkinViewLua.error("Custom Actor cannot be nil!");
+		vm.addCallback("setCustomActorPos", (actorName:String, x:Float, y:Float) -> {
+			if (actorName == "" || actorName == null) {
+				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;
 			}
-			actor.x = x;
-            actor.y = y;
+			var customActor = customActors.get(actorName);
+            customActor.x = x;
+            customActor.y = y;
 			return FunkinViewLua.Function_Continue;
 		});
-		vm.addCallback("getCustomActorPosX", (actor:Actor) -> {
-			if (actor == null) {
-				FunkinViewLua.error("Custom Actor cannot be nil!");
+		vm.addCallback("getCustomActorPosX", (actorName:String) -> {
+			if (actorName == "" || actorName == null) {
+				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return 0.0;
 			}
-			return actor.x;
+			var customActor = customActors.get(actorName);
+			return customActor.x;
 		});
-		vm.addCallback("getCustomActorPosY", (actor:Actor) -> {
-			if (actor == null) {
-				FunkinViewLua.error("Custom Actor cannot be nil!");
+		vm.addCallback("getCustomActorPosY", (actorName:String) -> {
+			if (actorName == "" || actorName == null) {
+				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return 0.0;
 			}
-			return actor.y;
+			var customActor = customActors.get(actorName);
+			return customActor.y;
 		});
-		vm.addCallback("setCustomActorAngle", (actor:Actor, r:Float) -> {
-			if (actor == null) {
-				FunkinViewLua.error("Custom Actor cannot be nil!");
+		vm.addCallback("setCustomActorAngle", (actorName:String, r:Float) -> {
+			if (actorName == "" || actorName == null) {
+				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;
 			}
-			actor.r = r;
+			var customActor = customActors.get(actorName);
+            customActor.r = r;
 			return FunkinViewLua.Function_Continue;
 		});
-		vm.addCallback("getCustomActorPosAngle", (actor:Actor) -> {
-			if (actor == null) {
-				FunkinViewLua.error("Custom Actor cannot be nil!");
+		vm.addCallback("getCustomActorPosAngle", (actorName:String) -> {
+			if (actorName == "" || actorName == null) {
+				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return 0.0;
 			}
-			return actor.r;
+			var customActor = customActors.get(actorName);
+			return customActor.r;
 		});
-		vm.addCallback("setCustomActorFPS", (actor:Actor, fps:Float) -> {
-			if (actor == null) {
-				FunkinViewLua.error("Custom Actor cannot be nil!");
+		vm.addCallback("setCustomActorFPS", (actorName:String, fps:Float) -> {
+			if (actorName == "" || actorName == null) {
+				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;
 			}
-			actor.setFps(fps);
+			var customActor = customActors.get(actorName);
+            customActor.setFps(fps);
 			return FunkinViewLua.Function_Continue;
 		});
-		vm.addCallback("getCustomActorFPS", (actor:Actor) -> {
-			if (actor == null) {
-				FunkinViewLua.error("Custom Actor cannot be nil!");
+		vm.addCallback("getCustomActorFPS", (actorName:String) -> {
+			if (actorName == "" || actorName == null) {
+				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return 0.0;
 			}
-			return actor.fps;
+			var customActor = customActors.get(actorName);
+			return customActor.fps;
 		});
-		vm.addCallback("getCustomActorTag", (actor:Actor) -> {
-			if (actor == null) {
-				FunkinViewLua.error("Custom Actor cannot be nil!");
+		vm.addCallback("getCustomActorTag", (actorName:String) -> {
+			if (actorName == "" || actorName == null) {
+				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return "";
 			}
-			return actor.tag;
+			var customActor = customActors.get(actorName);
+			return customActor.tag;
 		});
-		vm.addCallback("getCustomActorDisplay", (actor:Actor) -> {
-			if (actor == null) {
-				FunkinViewLua.error("Custom Actor cannot be nil!");
+		vm.addCallback("getCustomActorDisplay", (actorName:String) -> {
+			if (actorName == "" || actorName == null) {
+				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return null;
 			}
-			return actor.display;
+			var customActor = customActors.get(actorName);
+			return customActor.display;
 		});
-		vm.addCallback("setCustomActorShake", (actor:Actor, shake:Bool) -> {
-			if (actor == null) {
-				FunkinViewLua.error("Custom Actor cannot be nil!");
+		vm.addCallback("setCustomActorShake", (actorName:String, shake:Bool) -> {
+			if (actorName == "" || actorName == null) {
+				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;
 			}
-			actor.shake = shake;
+			var customActor = customActors.get(actorName);
+            customActor.shake = shake;
 			return FunkinViewLua.Function_Continue;
 		});
-		vm.addCallback("setCustomActorStartToEndShakeFrames", (actor:Actor, start:Int, end:Int) -> {
-			if (actor == null) {
-				FunkinViewLua.error("Custom Actor cannot be nil!");
+		vm.addCallback("setCustomActorStartToEndShakeFrames", (actorName:String, start:Int, end:Int) -> {
+			if (actorName == "" || actorName == null) {
+				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;
 			}
-			actor.startingShakeFrame = start;
-            actor.endingShakeFrame = end;
+			var customActor = customActors.get(actorName);
+            customActor.startingShakeFrame = start;
+            customActor.endingShakeFrame = end;
 			return FunkinViewLua.Function_Continue;
 		});
-		vm.addCallback("getCustomActorFrameRange", (actor:Actor) -> {
-			if (actor == null) {
-				FunkinViewLua.error("Custom Actor cannot be nil!");
+		vm.addCallback("getCustomActorFrameRange", (actorName:String) -> {
+			if (actorName == "" || actorName == null) {
+				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return 1;
 			}
-			return actor.endingFrameIndex - actor.startingFrameIndex;
+			var customActor = customActors.get(actorName);
+			return customActor.endingFrameIndex - customActor.startingFrameIndex;
 		});
 
         // now ofc we don't want to forget about our pals that access vanilla field characters that are always present in the song no matter what
-		vm.addCallback("getPlayer", function():Actor {
+		vm.addCallback("getPlayer", function() {
 			var bf = playField?.field?.player;
-			return bf;
+            if (!customActors.exists("FUNKIN_VIEW_BF_099")) {
+                customActors.set("FUNKIN_VIEW_BF_099", bf);
+            }
+			return "FUNKIN_VIEW_BF_099";
 		});
-		vm.addCallback("getBF", function():Actor { // alt syntax (same api)
+		vm.addCallback("getBF", function() { // alt syntax (same api)
 			var bf = playField?.field?.player;
-            trace("BF: ",bf);
-			return bf;
+            if (!customActors.exists("FUNKIN_VIEW_BF_099")) {
+                customActors.set("FUNKIN_VIEW_BF_099", bf);
+            }
+			return "FUNKIN_VIEW_BF_099";
 		});
-		vm.addCallback("getSpectator", function():Actor {
+		vm.addCallback("getSpectator", function() {
 			var gf = playField?.field?.spectator;
-			return gf;
+            if (!customActors.exists("FUNKIN_VIEW_GF_099")) {
+                customActors.set("FUNKIN_VIEW_GF_099", gf);
+            }
+			return "FUNKIN_VIEW_GF_099";
 		});
-		vm.addCallback("getGF", function():Actor { // alt syntax (same api)
+		vm.addCallback("getGF", function() {
 			var gf = playField?.field?.spectator;
-			return gf;
+            if (!customActors.exists("FUNKIN_VIEW_GF_099")) {
+                customActors.set("FUNKIN_VIEW_GF_099", gf);
+            }
+			return "FUNKIN_VIEW_GF_099";
 		});
-		vm.addCallback("getOpponent", function():Actor {
+		vm.addCallback("getOpponent", function() {
 			var opp = playField?.field?.opponent;
-			return opp;
+            if (!customActors.exists("FUNKIN_VIEW_OPP_099")) {
+                customActors.set("FUNKIN_VIEW_OPP_099", opp);
+            }
+			return "FUNKIN_VIEW_OPP_099";
 		});
 
         /*// if you want a more object-oriented way of doing things
-        // this was when I decided to change all occurrences of `actorName:String` to just be `actor:Actor` because now I've realized about the performance concerns I would've hhad
         vm.addCallback("playCustomAnimOfActorObject", function(actor:Actor, anim:String) {
 			if (actor == null) {
 				FunkinViewLua.error("Field Actor's cannot be nil!");

@@ -1,7 +1,6 @@
 package fvlua.components;
 
 import sys.FileSystem;
-import haxe.ds.StringMap;
 
 using StringTools;
 
