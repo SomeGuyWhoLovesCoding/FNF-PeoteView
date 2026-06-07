@@ -368,10 +368,6 @@ class Main extends Application
 		//Sys.println(deltaTime);
 		//FrameLogger.log(deltaTime);
 
-		/*if (@:privateAccess !Mixer.hasSubLoopTick) {
-			AsyncInput.poll();
-		}*/
-
 		var lastTitle = Application.current.window.title;
 
 		if (_started) {
