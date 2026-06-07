@@ -4,15 +4,12 @@ package utils;
  * A highly efficient, cache-friendly map implementation using parallel arrays.
  * Optimized for small datasets (e.g., < 50 elements) where linear search 
  * outperforms the hashing and pointer-chasing overhead of a real Hash Map.
- * 
- * Note: Changed generic parameters to <V> since the keys are strictly Strings.
  * thank you qwen!
  */
 @:publicFields
 @:generic
 @:final
 class FakeStringMap<V> {
-    // Kept private to prevent external modification of the internal arrays
     var keys(default, null):Array<String>;
     var values(default, null):Array<V>;
 
@@ -21,38 +18,62 @@ class FakeStringMap<V> {
         values = [];
     }
 
-    inline function set(key:String, value:V):V {
-        var idx = keys.indexOf(key);
-        if (idx == -1) {
-            keys.push(key);
-            values.push(value);
-        } else {
-            values[idx] = value;
+    function set(key:String, value:V):V {
+        // Cache references to avoid 'this' pointer indirection in the loop
+        var k = keys;
+        var v = values;
+        var len = k.length;
+        
+        for (i in 0...len) {
+            if (k[i] == key) {
+                v[i] = value;
+                return value;
+            }
         }
+        
+        k.push(key);
+        v.push(value);
         return value;
     }
 
-    inline function get(key:String):Null<V> {
-        var idx = keys.indexOf(key);
-        return idx != -1 ? values[idx] : null;
+    function get(key:String):Null<V> {
+        var k = keys;
+        var v = values;
+        var len = k.length;
+        
+        for (i in 0...len) {
+            if (k[i] == key) return v[i];
+        }
+        return null;
     }
 
-    inline function exists(key:String):Bool {
-        return keys.indexOf(key) != -1;
+    function exists(key:String):Bool {
+        var k = keys;
+        var len = k.length;
+        
+        for (i in 0...len) {
+            if (k[i] == key) return true;
+        }
+        return false;
     }
 
-    inline function remove(key:String):Bool {
-        var idx = keys.indexOf(key);
-        if (idx != -1) {
-            // Swap-and-pop: O(1) removal that avoids the GC allocation of Array.splice()
-            var lastIndex = keys.length - 1;
-            if (idx != lastIndex) {
-                keys[idx] = keys[lastIndex];
-                values[idx] = values[lastIndex];
+    function remove(key:String):Bool {
+        var k = keys;
+        var v = values;
+        var len = k.length;
+        
+        for (i in 0...len) {
+            if (k[i] == key) {
+                // Swap-and-pop: O(1) removal that avoids GC allocation
+                var lastIndex = len - 1;
+                if (i != lastIndex) {
+                    k[i] = k[lastIndex];
+                    v[i] = v[lastIndex];
+                }
+                k.pop();
+                v.pop();
+                return true;
             }
-            keys.pop();
-            values.pop();
-            return true;
         }
         return false;
     }
@@ -70,12 +91,6 @@ class FakeStringMap<V> {
     inline function keysIterator():Iterator<String> {
         return keys.iterator();
     }
-
-    /*function initFromStringMap(map:Map<String, V>):Void {
-        for (key in map.keys()) {
-            set(key, map.get(key));
-        }
-    }*/
     
     var length(get, never):Int;
     inline function get_length():Int return keys.length;
