@@ -1,6 +1,6 @@
 package inp;
 
-#if cpp
+#if (cpp && !android)
 import cpp.ConstCharStar;
 
 @:buildXml('<include name="../../../asyncKbBuild.xml" />')
@@ -52,7 +52,7 @@ extern class AsyncKB {
 		return _getTimestamp();
 	}
 }
-#elseif hl
+#elseif (hl && !android)
 class AsyncKB {
 	@:hlNative("async_kb", "start")
 	public static function start():Void {}
@@ -73,6 +73,30 @@ class AsyncKB {
 	public static function getTimestamp():Float { return 0.0; }
 	
 	@:hlNative("async_kb", "getGlobalTimestampComparison")
+	public static function getGlobalTimestampComparison():Float { return 0.0; }
+
+	public static inline function getScanCode():Int {
+		return Std.int(_getScanCode());
+	}
+	
+	public static inline function getState():Int {
+		return Std.int(_getState());
+	}
+}
+#else // unsupported on android
+class AsyncKB {
+	public static function start():Void {}
+	
+	public static function stop():Void {}
+	
+	public static function hasEvent():Bool { return false; }
+	
+	public static function _getScanCode():Float { return 0.0; }
+	
+	public static function _getState():Float { return 0.0; }
+	
+	public static function getTimestamp():Float { return 0.0; }
+	
 	public static function getGlobalTimestampComparison():Float { return 0.0; }
 
 	public static inline function getScanCode():Int {
