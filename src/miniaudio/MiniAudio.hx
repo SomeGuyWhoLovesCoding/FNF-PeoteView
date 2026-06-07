@@ -138,8 +138,12 @@ class MiniAudio {
 	@:hlNative("ma_thing", "playSoundEffect") public static function playSoundEffect(index:Int, volume:hl.F32):Void {}
 	@:hlNative("ma_thing", "stopSoundEffect") public static function stopSoundEffect(index:Int):Void {}
 
-	@:hlNative("ma_thing", "getMixerMasterVolume") public static function getMixerMasterVolume():hl.F32 {}
-	@:hlNative("ma_thing", "setMixerMasterVolume") public static function setMixerMasterVolume(volume:hl.F32):Void {}
+	@:hlNative("ma_thing", "getMixerMasterVolume") public static function getMixerMasterVolume():hl.F32 {
+		return 0.0;
+	}
+	@:hlNative("ma_thing", "setMixerMasterVolume") public static function setMixerMasterVolume(volume:hl.F32):hl.F32 {
+		return 0.0;
+	}
 }
 #else
 class MiniAudio {
