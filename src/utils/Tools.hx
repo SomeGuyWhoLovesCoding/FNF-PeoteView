@@ -12,7 +12,7 @@ using StringTools;
 **/
 @:publicFields
 class Tools {
-	static var iconGridMap:FakeStringMap<Array<Int>> = new FakeStringMap<Array<Int>>();
+	static var iconGridMap:Map<String, Array<Int>> = [];
 
 	static function parseNoteskinData(path:String) {
 		while (Note.offsetAndSizeFrames.length != 0) Note.offsetAndSizeFrames.pop();
@@ -119,12 +119,12 @@ class Tools {
 		return finalData;
 	}
 
-	private static var _fontsCached(default, null):FakeStringMap<Array<elements.text.TextCharData>> = new FakeStringMap<Array<elements.text.TextCharData>>();
+	private static var _fontsCached(default, null):Map<String, Array<elements.text.TextCharData>> = [];
 	private static var _process(default, null):Process;
 	static function parseFont(name:String):Array<elements.text.TextCharData> {
 		//Sys.println('QUERY GAME FONT: $name');
 		if (_fontsCached.exists(name))
-			return _fontsCached.get(name);
+			return _fontsCached[name];
 
 		var path = Paths.asset('assets/fonts/$name');
 		var fontPathSub = '$path/$name';
@@ -199,7 +199,7 @@ class Tools {
 
 		TextureSystem.createTexture(name + "Font", fontPNGPath, false, true);
 
-		_fontsCached.set(name, parsedData);
+		_fontsCached[name] = parsedData;
 		return parsedData;
 	}
 

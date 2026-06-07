@@ -15,10 +15,15 @@ class TextureSystem {
 	/**
 		The texture pool.
 	**/
-	static var pool:FakeStringMap<Texture> = new FakeStringMap<Texture>();
+	static var pool:Map<String, Texture> = [];
 
 	static var noteTex(default, null):Texture;
 	static var sustainTex(default, null):Texture;
+
+	/**
+		The multitexture location map.
+	**/
+	static var multitexLocMap:Map<String, Array<Int>> = [];
 
 	/**
 		Get a pre-existing texture from pool.
@@ -29,7 +34,7 @@ class TextureSystem {
 		switch (key) {
 			case "noteTex": tex = noteTex;
 			case "sustainTex": tex = sustainTex;
-			default: tex = pool.get(key);
+			default: tex = pool[key];
 		}
 		return tex;
 	}
@@ -111,7 +116,7 @@ class TextureSystem {
 
 		if (key == "noteTex") noteTex = texture;
 		else if (key == "sustainTex") sustainTex = texture;
-		else pool.set(key, texture);
+		else pool[key] = texture;
 	}
 
 	/**
@@ -165,6 +170,6 @@ class TextureSystem {
 
 		if (key == "noteTex") noteTex = texture;
 		else if (key == "sustainTex") sustainTex = texture;
-		else pool.set(key, texture);
+		pool[key] = texture;
 	}
 }

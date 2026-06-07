@@ -10,18 +10,17 @@ package utils;
  */
 @:publicFields
 @:generic
-@:final
 class FakeStringMap<V> {
     // Kept private to prevent external modification of the internal arrays
-    var keys(default, null):Array<String>;
-    var values(default, null):Array<V>;
+    private var keys:Array<String>;
+    private var values:Array<V>;
 
-    function new() {
+    public function new() {
         keys = [];
         values = [];
     }
 
-    inline function set(key:String, value:V):V {
+    public inline function set(key:String, value:V):Void {
         var idx = keys.indexOf(key);
         if (idx == -1) {
             keys.push(key);
@@ -29,19 +28,18 @@ class FakeStringMap<V> {
         } else {
             values[idx] = value;
         }
-        return value;
     }
 
-    inline function get(key:String):Null<V> {
+    public inline function get(key:String):Null<V> {
         var idx = keys.indexOf(key);
         return idx != -1 ? values[idx] : null;
     }
 
-    inline function exists(key:String):Bool {
+    public inline function exists(key:String):Bool {
         return keys.indexOf(key) != -1;
     }
 
-    inline function remove(key:String):Bool {
+    public inline function remove(key:String):Bool {
         var idx = keys.indexOf(key);
         if (idx != -1) {
             // Swap-and-pop: O(1) removal that avoids the GC allocation of Array.splice()
@@ -57,26 +55,20 @@ class FakeStringMap<V> {
         return false;
     }
 
-    inline function clear():Void {
+    public inline function clear():Void {
         // GC-free clear for targets like C++/HashLink
         while (keys.length > 0) keys.pop();
         while (values.length > 0) values.pop();
     }
 
-    inline function iterator():Iterator<V> {
+    public inline function iterator():Iterator<V> {
         return values.iterator();
     }
 
-    inline function keysIterator():Iterator<String> {
+    public inline function keysIterator():Iterator<String> {
         return keys.iterator();
     }
-
-    /*function initFromStringMap(map:Map<String, V>):Void {
-        for (key in map.keys()) {
-            set(key, map.get(key));
-        }
-    }*/
     
-    var length(get, never):Int;
+    public var length(get, never):Int;
     inline function get_length():Int return keys.length;
 }

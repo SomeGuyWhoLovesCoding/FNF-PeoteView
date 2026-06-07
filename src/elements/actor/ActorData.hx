@@ -16,7 +16,7 @@ class ActorData {
 	var adjPos:Array<Float>;
 	var camPos:Array<Float>;
 
-	var data:FakeStringMap<ActorAnimationData>;
+	var data:Map<String, ActorAnimationData>;
 
 	/**
 	 * Converts a psych engine character data json to an `ActorData`.
@@ -26,7 +26,7 @@ class ActorData {
 		var content = sys.io.File.getContent(path);
 		var json = haxe.Json.parse(content);
 
-		var _data:FakeStringMap<ActorAnimationData> = new FakeStringMap<ActorAnimationData>();
+		var _data:Map<String, ActorAnimationData> = [];
 
 		var animations:Array<Dynamic> = json.animations;
 

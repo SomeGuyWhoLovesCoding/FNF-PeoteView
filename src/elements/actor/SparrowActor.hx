@@ -33,24 +33,24 @@ class SparrowActor extends Actor
 
 		var atlasKey = '$name/$folder';
 
-		if (Actor.cachedAtlases.get(atlasKey) == null) {
+		if (Actor.cachedAtlases[atlasKey] == null) {
 			if (!Actor.pathExists(name, folder, XML))
 				throw "Sparrow atlas data doesn't exist for: " + name;
 
 			sparrowAtlas = SparrowAtlas.parse(
 				sys.io.File.getContent(Actor.path(name, folder, XML))
 			);
-			Actor.cachedAtlases.set(atlasKey, sparrowAtlas);
+			Actor.cachedAtlases[atlasKey] = sparrowAtlas;
 		} else {
-			sparrowAtlas = Actor.cachedAtlases.get(atlasKey);
+			sparrowAtlas = Actor.cachedAtlases[atlasKey];
 		}
 
 		// ── Character data ─────────────────────────────────────────────────
 
-		if (Actor.cachedActorDatas.get(atlasKey) == null && Actor.pathExists(name, folder, DATA)) {
-			Actor.cachedActorDatas.set(atlasKey, data = ActorData.parse(Actor.path(name, folder, DATA)));
-		} else if (Actor.cachedActorDatas.get(atlasKey) != null) {
-			data = Actor.cachedActorDatas.get(atlasKey);
+		if (Actor.cachedActorDatas[atlasKey] == null && Actor.pathExists(name, folder, DATA)) {
+			Actor.cachedActorDatas[atlasKey] = data = ActorData.parse(Actor.path(name, folder, DATA));
+		} else if (Actor.cachedActorDatas[atlasKey] != null) {
+			data = Actor.cachedActorDatas[atlasKey];
 		}
 
 		// ── Buffer & program ───────────────────────────────────────────────
@@ -58,20 +58,20 @@ class SparrowActor extends Actor
 		if (sparrowAtlas.imagePath != "" && addBufferAndProgram) {
 			if (tag == null) throw "Tag cannot be null when addBufferAndProgram is true";
 
-			if (Actor.buffers.get(tag) == null) Actor.buffers.set(tag, new Buffer<ActorElement>(16, 16));
-			buffer = Actor.buffers.get(tag);
+			if (Actor.buffers[tag] == null) Actor.buffers[tag] = new Buffer<ActorElement>(16, 16);
+			buffer = Actor.buffers[tag];
 
 			var texName = name + "Char";
-			if (Actor.programs.get(tag) == null) {
-				Actor.programs.set(tag,  new CustomProgram(buffer));
-				program = Actor.programs.get(tag);
+			if (Actor.programs[tag] == null) {
+				Actor.programs[tag] = new CustomProgram(buffer);
+				program = Actor.programs[tag];
 
 				var xmlPath = Actor.path(name, folder, XML);
 				var texPath = StringTools.replace(xmlPath, "data.xml", sparrowAtlas.imagePath);
 				TextureSystem.createTexture(texName, texPath, false, true);
 				TextureSystem.setTexture(program, texName, texName);
 			} else {
-				program = Actor.programs.get(tag);
+				program = Actor.programs[tag];
 			}
 
 			// Sparrow uses identity matrix varyings — the UV distortion shader
@@ -93,17 +93,17 @@ class SparrowActor extends Actor
 	// ── Pose precomputation ───────────────────────────────────────────────────
 
 	override private function precomputeSingRange(i:Int, animData:ActorAnimationData) {
-		precomputedSingPoses_range[i] = sparrowAtlas.animMap.get(animData.name);
+		precomputedSingPoses_range[i] = sparrowAtlas.animMap[animData.name];
 	}
 
 	override private function precomputeMissRange(i:Int, animData:ActorAnimationData) {
-		precomputedMissPoses_range[i] = sparrowAtlas.animMap.get(animData.name);
+		precomputedMissPoses_range[i] = sparrowAtlas.animMap[animData.name];
 	}
 
 	// ── Atlas range resolution ────────────────────────────────────────────────
 
 	override private function sparrowRangeFor(symbolName:String):Array<Int> {
-		return sparrowAtlas.animMap.get(symbolName);
+		return sparrowAtlas.animMap[symbolName];
 	}
 
 	override private function resolveAnimationRange(symbolName:String, sparrowRange:Array<Int>) {

@@ -82,7 +82,7 @@ class AnimateActor extends Actor
 
 		var atlasKey = '$name/$folder';
 
-		if (Actor.cachedAtlases.get(atlasKey) == null) {
+		if (Actor.cachedAtlases[atlasKey] == null) {
 			var spritemapPath = Actor.path(name, folder, SPRITEMAP);
 			var animationPath = Actor.path(name, folder, ANIMATION);
 
@@ -94,17 +94,17 @@ class AnimateActor extends Actor
 			var animationContent = sys.io.File.getContent(animationPath);
 
 			animateAtlas = new AnimateAtlas(spritemapContent, animationContent, spritemapPath);
-			Actor.cachedAtlases.set(atlasKey, animateAtlas);
+			Actor.cachedAtlases[atlasKey] = animateAtlas;
 		} else {
-			animateAtlas = Actor.cachedAtlases.get(atlasKey);
+			animateAtlas = Actor.cachedAtlases[atlasKey];
 		}
 
 		// ── Character data ─────────────────────────────────────────────────
 
-		if (Actor.cachedActorDatas.get(atlasKey) == null && Actor.pathExists(name, folder, DATA)) {
-			Actor.cachedActorDatas.set(atlasKey, data = ActorData.parse(Actor.path(name, folder, DATA)));
-		} else if (Actor.cachedActorDatas.get(atlasKey) != null) {
-			data = Actor.cachedActorDatas.get(atlasKey);
+		if (Actor.cachedActorDatas[atlasKey] == null && Actor.pathExists(name, folder, DATA)) {
+			Actor.cachedActorDatas[atlasKey] = data = ActorData.parse(Actor.path(name, folder, DATA));
+		} else if (Actor.cachedActorDatas[atlasKey] != null) {
+			data = Actor.cachedActorDatas[atlasKey];
 		}
 
 		// ── Buffer & program ───────────────────────────────────────────────
@@ -112,13 +112,13 @@ class AnimateActor extends Actor
 		if (animateAtlas.imagePath != "" && addBufferAndProgram) {
 			if (tag == null) throw "Tag cannot be null when addBufferAndProgram is true";
 
-			if (Actor.buffers.get(tag) == null) Actor.buffers.set(tag, new Buffer<ActorElement>(16, 16));
-			buffer = Actor.buffers.get(tag);
+			if (Actor.buffers[tag] == null) Actor.buffers[tag] = new Buffer<ActorElement>(16, 16);
+			buffer = Actor.buffers[tag];
 
-			if (Actor.programs.get(tag) == null) {
+			if (Actor.programs[tag] == null) {
 				
-				Actor.programs.set(tag, new CustomProgram(buffer));
-				program = Actor.programs.get(tag);
+				Actor.programs[tag] = new CustomProgram(buffer);
+				program = Actor.programs[tag];
 
 				var texName = name + "Char";
 				var texPath = animateAtlas.imagePath;
@@ -143,7 +143,7 @@ class AnimateActor extends Actor
 					);
 				}
 			} else {
-				program = Actor.programs.get(tag);
+				program = Actor.programs[tag];
 			}
 
 			display.addProgram(program);
