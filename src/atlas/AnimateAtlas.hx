@@ -33,12 +33,12 @@ typedef ResolvedFrame = Array<ResolvedLeaf>;
 @:publicFields
 class AnimateAtlas {
 	// Raw parsed data
-	var sprites:Map<String, AnimateSprite> = [];
-	var animations:Map<String, AnimateAnimation> = [];
+	var sprites:FakeStringMap<AnimateSprite> = new FakeStringMap<AnimateSprite>();
+	var animations:FakeStringMap<AnimateAnimation> = new FakeStringMap<AnimateAnimation>();
 	var meta:AnimateMeta;
 
 	// Pre-resolved: symbol name -> array of ResolvedFrame (one per display frame)
-	var resolvedAnimations:Map<String, Array<ResolvedFrame>> = [];
+	var resolvedAnimations:FakeStringMap<Array<ResolvedFrame>> = new FakeStringMap<Array<ResolvedFrame>>();
 
 	var imagePath:String;
 
@@ -214,7 +214,7 @@ class AnimateAtlas {
 	function resolveAllAnimations() {
 		// Only resolve top-level "anim" symbols (those referenced from charData),
 		// not every leaf symbol — but resolving all is harmless and simpler.
-		for (animName in animations.keys()) {
+		for (animName in animations.keys) {
 			var resolved = buildResolvedFrames(animName);
 			if (resolved != null) resolvedAnimations.set(animName, resolved);
 		}

@@ -18,10 +18,10 @@ class Actor extends ActorElement
 {
 	// ── Static caches ────────────────────────────────────────────────────────
 
-	static var buffers:Map<String, Buffer<ActorElement>>  = [];
-	static var programs:Map<String, CustomProgram>        = [];
-	static var cachedActorDatas:Map<String, ActorData>    = [];
-	static var cachedAtlases:Map<String, Any>         = [];
+	static var buffers:FakeStringMap<Buffer<ActorElement>>  = new FakeStringMap<Buffer<ActorElement>>();
+	static var programs:FakeStringMap<CustomProgram>        = new FakeStringMap<CustomProgram>();
+	static var cachedActorDatas:FakeStringMap<ActorData>    = new FakeStringMap<ActorData>();
+	static var cachedAtlases:FakeStringMap<Any>         = new FakeStringMap<Any>();
 
 	// ── Instance identity ────────────────────────────────────────────────────
 
@@ -90,8 +90,8 @@ class Actor extends ActorElement
 				 x:Int = 0, y:Int = 0, fps:Int = 24,
 				 ?folder:String = "images/characters/", addBufferAndProgram:Bool = true):Actor {
 		var atlasKey = '$name/$folder';
-		var useAnimate = cachedAtlases[atlasKey] != null
-			? Std.isOfType(cachedAtlases[atlasKey], AnimateAtlas)
+		var useAnimate = cachedAtlases.get(atlasKey) != null
+			? Std.isOfType(cachedAtlases.get(atlasKey), AnimateAtlas)
 			: pathExists(name, folder, SPRITEMAP) && pathExists(name, folder, ANIMATION);
 		return useAnimate
 			? new AnimateActor(display, tag, name, x, y, fps, folder, addBufferAndProgram)
@@ -138,7 +138,7 @@ class Actor extends ActorElement
 		for (i in 0...anims.length) {
 			var str = anims[i];
 			if (!dat.exists(str)) continue;
-			var animData = data.data[str];
+			var animData = data.data.get(str);
 			precomputedSingPoses_animData[i] = animData;
 			precomputeSingRange(i, animData);
 		}
@@ -149,7 +149,7 @@ class Actor extends ActorElement
 		for (i in 0...anims.length) {
 			var str = anims[i];
 			if (!dat.exists(str)) continue;
-			var animData = data.data[str];
+			var animData = data.data.get(str);
 			precomputedMissPoses_animData[i] = animData;
 			precomputeMissRange(i, animData);
 		}
@@ -196,7 +196,7 @@ class Actor extends ActorElement
 
 	function playAnimation(animKey:String, loop:Bool = false) {
 		this.loop  = loop;
-		var animData   = data.data.exists(animKey) ? data.data[animKey] : null;
+		var animData   = data.data.exists(animKey) ? data.data.get(animKey) : null;
 		var symbolName = animData != null ? animData.name : animKey;
 		this.name      = symbolName;
 

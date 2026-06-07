@@ -10,16 +10,16 @@ package atlas;
 class SparrowAtlas {
 	var imagePath:String;
 	var subTextures:Array<SubTexture>;
-	var animMap:Map<String, Array<Int>>;
+	var animMap:FakeStringMap<Array<Int>>;
 
 	static function parse(text:String):SparrowAtlas {
 		var xml = Xml.parse(text);
 		var root = xml.firstElement();
 		var subTexs:Array<SubTexture> = [for (i in 0...root.children.length) null];
-		var aMap:Map<String, Array<Int>> = [];
+		var aMap:FakeStringMap<Array<Int>> = new FakeStringMap<Array<Int>>();
 		var curName:String = "";
 
-		aMap[curName] = [for (i in 0...2) 0];
+		aMap.set(curName, [for (i in 0...2) 0]);
 
 		var index:Int = 0;
 		var started:Bool = false;
@@ -40,12 +40,12 @@ class SparrowAtlas {
 			var nameStripped = name.substring(0, name.length - 4);
 			if (curName != nameStripped) {
 				if (started) {
-					aMap[curName][1] = index - 1;
+					aMap.get(curName)[1] = index - 1;
 				} else {
 					started = true;
 				}
 				curName = nameStripped;
-				aMap[curName] = [for (i in 0...2) index];
+				aMap.set(curName, [for (i in 0...2) index]);
 			}
 
 			subTexs[index] = ({
@@ -66,7 +66,7 @@ class SparrowAtlas {
 			index++;
 		}
 
-		aMap[curName][1] = index;
+		aMap.get(curName)[1] = index;
 
 		return {
 			imagePath: root.get("imagePath"),
