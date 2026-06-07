@@ -32,7 +32,6 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 	override public function addCallbacksList(vm:FunkinViewLuaScript) {
 		// NEW
 		vm.addCallback("customBufferNew", (bufferName:String, minSize:Int, growSize:Int = 0, autoShrink:Bool = false) -> {
-			//trace('args:$bufferName,$minSize,$growSize,$autoShrink');
 			if (bufferName == "" || bufferName == null) {
 				FunkinViewLua.error("Custom Buffer's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;
@@ -41,7 +40,6 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 			return FunkinViewLua.Function_Continue;
 		});
 		vm.addCallback("customProgramNew", (programName:String, customBuffer:String) -> {
-			//trace('args:$programName,$customBuffer');
 			if (programName == "" || programName == null) {
 				FunkinViewLua.error("Custom Program's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;
@@ -107,7 +105,6 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 			return FunkinViewLua.Function_Continue;
 		});
 		vm.addCallback("addTextureToProgram", (programName:String, texturePNG:String, disableAntialiasing:Bool = false) -> {
-			//trace('args:$programName,$texturePNG,$disableAntialiasing');
 			if (programName == "" || programName == null) {
 				FunkinViewLua.error("Custom Program's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;
@@ -116,7 +113,6 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				FunkinViewLua.error("Custom Program not found: " + programName);
 				return FunkinViewLua.Function_Stop;
 			}
-			//var texKey = '##${texturePNG.replace('.png', '')}_CUSTOMLUATEXTURE';
 			var program = customPrograms.get(programName);
 			//trace('Custom Program: $program');
 			var texPath = Paths.asset(texturePNG);
@@ -124,16 +120,12 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				FunkinViewLua.error("Image not found: " + texPath);
 				return FunkinViewLua.Function_Stop;
 			}
-			// this was going to be customLuaTexture_key btw.
 			TextureSystem.createTexture(programName, texturePNG, disableAntialiasing, true);
-			//trace('Custom Texture: ${TextureSystem.getTexture(programName)}');
 			TextureSystem.setTexture(program, programName, programName);
-			//trace('Added Custom Texture: ${TextureSystem.getTexture(programName)}');
 			customTextures.set(programName, TextureSystem.getTexture(programName));
 			return FunkinViewLua.Function_Continue;
 		});
 		vm.addCallback("addProgramToDisplay", (programName:String, toDisplay:String, isBehind:Bool = false, ?atCustomProgram:String) -> {
-			//trace('args:$programName,$toDisplay,$isBehind');
 			if (programName == "" || programName == null) {
 				FunkinViewLua.error("Custom Program's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;

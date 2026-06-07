@@ -174,9 +174,11 @@ class Field {
 	inline function hitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
 		sing(note.index, (note.type == 0 ? opponent : player), false, note.duration > 80 && timing < parent.hitbox * 0.5);
 
+		// defaults to when you want to implement your own custom camera logic
+		// whether you want to replicate the logic of vanilla's or if you just want some mid-song cutscene camera
 		if (turnoncustomcamera) return;
 
-		targetCamera.x = defaultCameraXpos[note.type]; // Prototype camera logic I have for now
+		targetCamera.x = defaultCameraXpos[note.type];
 		targetCamera.y = defaultCameraYpos[note.type];
 	}
 
@@ -270,7 +272,7 @@ class Field {
 			isInGameOver = gameOverConfirmed = false;
 			Main.switchState(GAMEPLAY);
 			parent.display.show();
-		}, 6000); // was 5 sec
+		}, 6000);
 	}
 
 	function updateGameOver(deltaTime:Float) {

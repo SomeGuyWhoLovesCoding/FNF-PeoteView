@@ -37,6 +37,7 @@ class FunkinViewLua {
 
 		components.push(new CustomLuaSpriteComponent(this));
 		components.push(new CustomPlayFieldComponent(this));
+		components.push(new CustomAnimationComponent(this));
 
 		var luaFilesFound = 0;
 		for (i in 0...files.length) {
