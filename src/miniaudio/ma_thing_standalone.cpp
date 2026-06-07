@@ -21,7 +21,7 @@ namespace {
 
 // ---- AudioSystem ---------------------------------------------------------
 
-void loadFiles(std::vector<const char*> argv) { g_audioSystem.loadFiles(argv); }
+void loadFiles(std::vector<const char*> argv)  { g_audioSystem.loadFiles(argv); }
 void start()                                   { g_audioSystem.start(); }
 void stop()                                    { g_audioSystem.stop(); }
 bool stopped()                                 { return g_audioSystem.stopped(); }
@@ -62,7 +62,7 @@ void playSoundEffect(int index, float volume)                 { g_mixer.playSoun
 void stopSoundEffect(int index)                               { g_mixer.stopSoundEffect(index); }
 bool isSoundEffectPlaying(int index)                          { return g_mixer.isSoundEffectPlaying(index); }
 
-void  setMixerMasterVolume(float volume)  { g_mixer.setMasterVolume(volume); }
+float setMixerMasterVolume(float volume)  { return g_mixer.setMasterVolume(volume); }
 float getMixerMasterVolume()              { return g_mixer.getMasterVolume(); }
 void  destroyMixer()                      { g_mixer.destroy(); }
 

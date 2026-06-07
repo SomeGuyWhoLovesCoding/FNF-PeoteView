@@ -85,6 +85,8 @@ extern "C" {
 #include <xmmintrin.h>
 #endif
 
+std::atomic<float> MUSIC_MASTER_VOLUME_099{1.0f};
+
 // ---- Windows audio-device helpers with change detection -----------------
 
 #ifdef HX_WINDOWS
@@ -963,7 +965,6 @@ public:
     float playbackRate        = 1.0f;
     int   mixerState          = 3;
     bool  exists              = false;
-    float masterVolume        = 1.0f;
 
     float pitchInputMix[MAX_CALLBACK_FRAMES * CHANNEL_COUNT]      = {};
     float pitchStretchedOut[MAX_CALLBACK_FRAMES * CHANNEL_COUNT]  = {};
@@ -1087,7 +1088,6 @@ public:
 
         longestDecoderIndex = 0;
         playbackRate  = 1.0f;
-        masterVolume  = 1.0f;
         mixerState    = 3;
     }
 
@@ -1155,8 +1155,8 @@ public:
     }
 
     void   setPlaybackRate(float value) { playbackRate = value; }
-    double getGlobalVolume() const      { return (double)masterVolume; }
-    double setGlobalVolume(double v)    { masterVolume = (float)v; return v; }
+    double getGlobalVolume() const      { return MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed); }
+    double setGlobalVolume(double v)    { MUSIC_MASTER_VOLUME_099.store(v, std::memory_order_relaxed); return v; }
     int    getMixerState() const        { return mixerState; }
 
     double getPlaybackPosition() const {
@@ -1274,7 +1274,7 @@ private:
         if (s.shouldSwapBuffers() || s.isBufferLow()) s.trySwapBuffers();
 
         ma_uint32 framesRead = 0;
-        float vol = decoderVolumes[index] * masterVolume;
+        float vol = decoderVolumes[index] * MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed);
 
         while (framesRead < requestedFrames && s.active) {
             ma_uint64 available = (s.localReadPos < s.validFrames)
@@ -1392,13 +1392,12 @@ private:
 
         longestDecoderIndex = other.longestDecoderIndex;
         playbackRate        = other.playbackRate;
-        masterVolume        = other.masterVolume;
         mixerState          = other.mixerState;
         exists              = other.exists;
 
         other.stretch = nullptr;  other.asyncLoader    = nullptr;
         other.longestDecoderIndex = 0;  other.playbackRate   = 1.0f;
-        other.masterVolume = 1.0f; other.mixerState     = 3;
+        other.mixerState     = 3;
         other.exists = false;
     }
 };
@@ -1475,10 +1474,10 @@ struct BackgroundTrack {
     void setVolume(float v)  { volume = v; }
     void setLooping(bool lp) { looping = lp; }
 
-    ma_uint64 readFrames(float* output, ma_uint32 requestedFrames, float masterVolume) {
+    ma_uint64 readFrames(float* output, ma_uint32 requestedFrames) {
         if (!active || !pcmData || frameCount == 0) return 0;
 
-        float vol = volume * masterVolume;
+        float vol = volume * MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed);;
         ma_uint32 filled = 0;
 
         while (filled < requestedFrames) {
@@ -1533,7 +1532,7 @@ struct SoundEffectInstance {
         : pcmData(data), frameCount(frames), playbackPosition(0),
           volume(vol), playing(true) {}
 
-    ma_uint64 readFrames(float* output, ma_uint32 requestedFrames, float masterVolume) {
+    ma_uint64 readFrames(float* output, ma_uint32 requestedFrames) {
         if (!playing || !pcmData) return 0;
 
         ma_uint64 remaining = frameCount - playbackPosition;
@@ -1541,7 +1540,7 @@ struct SoundEffectInstance {
 
         ma_uint32 toRead = (ma_uint32)std::min<ma_uint64>(remaining, requestedFrames);
         float* src = pcmData + (playbackPosition * CHANNEL_COUNT);
-        float  vol = volume * masterVolume;
+        float  vol = volume * MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed);;
 
 #ifdef __SSE__
         mix_simd(output, src, (int)(toRead * CHANNEL_COUNT), vol);
@@ -1621,13 +1620,13 @@ public:
         }
     }
 
-    ma_uint64 readFrames(float* output, ma_uint32 requestedFrames, float masterVolume) {
+    ma_uint64 readFrames(float* output, ma_uint32 requestedFrames) {
         if (playingCount == 0) return 0;
         ma_uint64 maxRead = 0;
         int stillPlaying = 0;
         for (auto& inst : instances) {
             if (inst.isPlaying()) {
-                ma_uint64 r = inst.readFrames(output, requestedFrames, masterVolume);
+                ma_uint64 r = inst.readFrames(output, requestedFrames);
                 if (r > maxRead) maxRead = r;
                 if (inst.isPlaying()) ++stillPlaying;
             }
@@ -1799,8 +1798,8 @@ public:
     // ------------------------------------------------------------------
     // Volume
     // ------------------------------------------------------------------
-    void  setMasterVolume(float v) { masterVolume.store(v, std::memory_order_relaxed); }
-    float getMasterVolume() const  { return masterVolume.load(std::memory_order_relaxed); }
+    float setMasterVolume(float v) { MUSIC_MASTER_VOLUME_099.store(v, std::memory_order_relaxed); return v; }
+    float getMasterVolume() const  { return MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed); }
 
 private:
     // deque guarantees that push_back never moves existing elements, so raw
@@ -1814,8 +1813,6 @@ private:
 
     ma_device device;
     bool  deviceInitialized = false;
-
-    std::atomic<float> masterVolume{1.0f};
 
     std::vector<BackgroundTrack*> bgSnapshot[2];
     std::vector<SoundEffectPool*> sfxSnapshot[2];
@@ -1851,13 +1848,12 @@ private:
         memset(out, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
 
         int snap = mixer->snapshotIndex.load(std::memory_order_acquire);
-        float vol = mixer->masterVolume.load(std::memory_order_relaxed);
 
         for (BackgroundTrack* track : mixer->bgSnapshot[snap])
-            if (track->active) track->readFrames(out, frameCount, vol);
+            if (track->active) track->readFrames(out, frameCount);
 
         for (SoundEffectPool* pool : mixer->sfxSnapshot[snap])
-            pool->readFrames(out, frameCount, vol);
+            pool->readFrames(out, frameCount);
 
         (void)pInput;
     }

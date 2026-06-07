@@ -64,10 +64,10 @@ import lime._internal.backend.native.NativeCFFI;
 class Mixer {
 	static var globalVolume(get, set):Float;
 	inline static function get_globalVolume():Float {
-		return MiniAudio.getGlobalVolume();
+		return MiniAudio.getMixerMasterVolume();
 	}
 	inline static function set_globalVolume(value:Float):Float {
-		return MiniAudio.setGlobalVolume(value);
+		return MiniAudio.setMixerMasterVolume(value);
 	}
 
 	static var trackCount:Int;

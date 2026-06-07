@@ -39,7 +39,7 @@ void stopSoundEffect(int index);
 bool isSoundEffectPlaying(int index);
 
 // Volume control
-void setMixerMasterVolume(float volume);
+float setMixerMasterVolume(float volume);
 float getMixerMasterVolume();
 
 void destroyMixer(void);

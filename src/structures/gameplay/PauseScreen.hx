@@ -89,13 +89,7 @@ class PauseScreen {
 			var pauseOption = pauseOptions[i];
 			var originalC = pauseOption.c;
 			pauseOption.c.aF = alphaLerp;
-			if (i == pauseNav.value()) {
-				pauseOption.c.rF = alphaLerp;
-				pauseOption.c.gF = alphaLerp;
-				pauseOption.c.bF = 0.0;
-			} else {
-				pauseOption.c.luminanceF = alphaLerp;
-			}
+			pauseOption.c.luminanceF = alphaLerp * (i == pauseNav.value() ? 1.0 : 0.6);
 			if (originalC != pauseOption.c) {
 				if (@:privateAccess pauseOption.bytePos != -1) {
 					pauseBuf.updateElement(pauseOption);

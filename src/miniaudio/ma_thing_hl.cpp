@@ -77,7 +77,7 @@ HL_PRIM void HL_NAME(playSoundEffect)(int index, float volume)             { g_m
 HL_PRIM void HL_NAME(stopSoundEffect)(int index)                           { g_mixer.stopSoundEffect(index); }
 HL_PRIM bool HL_NAME(isSoundEffectPlaying)(int index)                      { return g_mixer.isSoundEffectPlaying(index); }
 
-HL_PRIM void  HL_NAME(setMixerMasterVolume)(float volume)  { g_mixer.setMasterVolume(volume); }
+HL_PRIM float HL_NAME(setMixerMasterVolume)(float volume)  { return g_mixer.setMasterVolume(volume); }
 HL_PRIM float HL_NAME(getMixerMasterVolume)(_NO_ARG)       { return g_mixer.getMasterVolume(); }
 HL_PRIM void  HL_NAME(destroyMixer)(_NO_ARG)               { g_mixer.destroy(); }
 
@@ -128,6 +128,6 @@ DEFINE_PRIM(_I32,  loadSoundEffect,           _STRING)
 DEFINE_PRIM(_VOID, playSoundEffect,           _I32 _F32)
 DEFINE_PRIM(_VOID, stopSoundEffect,           _I32)
 DEFINE_PRIM(_BOOL, isSoundEffectPlaying,      _I32)
-DEFINE_PRIM(_VOID, setMixerMasterVolume,      _F32)
+DEFINE_PRIM(_F32, setMixerMasterVolume,      _F32)
 DEFINE_PRIM(_F32,  getMixerMasterVolume,      _NO_ARG)
 DEFINE_PRIM(_VOID, destroyMixer,              _NO_ARG)
