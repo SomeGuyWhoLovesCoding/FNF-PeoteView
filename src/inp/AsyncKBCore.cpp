@@ -14,64 +14,6 @@
 #include <sys/ioctl.h>     // For ioctl
 #include <pthread.h>        // For pthread_setschedparam
 #include <cstdint> // For uint64_t
-
-// --- GHOST X11 DECLARATIONS ---
-// No heavy X11 headers needed. We declare exactly what we use.
-typedef unsigned long XID;
-typedef XID Window;
-typedef XID Atom;
-struct _XDisplay;
-typedef struct _XDisplay Display;
-typedef int Bool;
-
-#define True 1
-#define False 0
-#define None 0L
-#define Success 0
-#define XA_WINDOW 33L
-#define XA_CARDINAL 6L
-#define PropertyChangeMask (1L<<22)
-#define PropertyNotify 28
-
-struct _XAnyEvent {
-    int type;
-    unsigned long serial;
-    Bool send_event;
-    Display *display;
-    Window window;
-};
-
-struct _XPropertyEvent {
-    int type;
-    unsigned long serial;
-    Bool send_event;
-    Display *display;
-    Window window;
-    Atom atom;
-    int state;
-};
-
-typedef union _XEvent {
-    int type;
-    _XAnyEvent xany;
-    _XPropertyEvent xproperty;
-    long pad[24]; // Ensures correct struct size matching Xlib
-} XEvent;
-
-extern "C" {
-    int XInitThreads(void);
-    Display* XOpenDisplay(const char*);
-    int XCloseDisplay(Display*);
-    Window XDefaultRootWindow(Display*);
-    Atom XInternAtom(Display*, const char*, int);
-    int XGetWindowProperty(Display*, Window, Atom, long, long, Bool, Atom, Atom*, int*, unsigned long*, unsigned long*, unsigned char**);
-    void XFree(void*);
-    int XConnectionNumber(Display*);
-    int XSelectInput(Display*, Window, long);
-    int XPending(Display*);
-    int XNextEvent(Display*, XEvent*);
-}
-// ------------------------------
 #endif
 
 #include <atomic>
@@ -93,7 +35,6 @@ private:
     static constexpr size_t MAX_EVENTS = 512;
     
     std::atomic<bool> running;
-    std::atomic<bool> hasFocus{true}; // Used for Linux state tracking
     std::thread worker;
     std::array<InputEvent, MAX_EVENTS> eventBuffer;
     std::atomic<size_t> writeIndex{0};
@@ -229,36 +170,6 @@ private:
     int event_fd = -1;
     std::array<bool, KEY_MAX> currentKeyStates;
     
-    Display* dpy = nullptr;
-    int x11_fd = -1;
-    Atom net_active_window = None;
-    Atom net_wm_pid = None;
-    Window root = None;
-    pid_t my_pid;
-
-    bool checkX11Focus(Display* dpy, Window root, Atom net_active_window, Atom net_wm_pid, pid_t my_pid) {
-        Atom actual_type;
-        int actual_format;
-        unsigned long nitems, bytes_after;
-        unsigned char* prop = NULL;
-        
-        if (XGetWindowProperty(dpy, root, net_active_window, 0, 1, False, XA_WINDOW,
-                               &actual_type, &actual_format, &nitems, &bytes_after, &prop) == Success && prop) {
-            Window active = *(Window*)prop;
-            XFree(prop);
-            
-            if (active != None) {
-                if (XGetWindowProperty(dpy, active, net_wm_pid, 0, 1, False, XA_CARDINAL,
-                                       &actual_type, &actual_format, &nitems, &bytes_after, &prop) == Success && prop) {
-                    pid_t wm_pid = *(pid_t*)prop;
-                    XFree(prop);
-                    return wm_pid == my_pid;
-                }
-            }
-        }
-        return true; // Fallback to true if WM doesn't support EWMH properly
-    }
-    
     int linuxToLimeKeyCode(int evdevCode) {
         // Fix the number mapping (0-9)
         if (evdevCode >= KEY_1 && evdevCode <= KEY_9) 
@@ -380,63 +291,23 @@ private:
         startTimeInitialized = true;
         currentKeyStates.fill(false);
         
-        // AUTO-DETECT FOCUS (Linux via Ghost X11)
-        // CRITICAL: XInitThreads makes Xlib thread-safe for background polling
-        XInitThreads();
-        dpy = XOpenDisplay(NULL);
-        if (dpy) {
-            x11_fd = XConnectionNumber(dpy);
-            net_active_window = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", True);
-            net_wm_pid = XInternAtom(dpy, "_NET_WM_PID", True);
-            root = XDefaultRootWindow(dpy);
-            my_pid = getpid();
-            
-            if (net_active_window != None && net_wm_pid != None && root != None) {
-                XSelectInput(dpy, root, PropertyChangeMask);
-                bool initialFocus = checkX11Focus(dpy, root, net_active_window, net_wm_pid, my_pid);
-                hasFocus.store(initialFocus, std::memory_order_relaxed);
-            } else {
-                XCloseDisplay(dpy);
-                dpy = nullptr;
-                x11_fd = -1;
-            }
-        }
-        
         struct input_event ev;
-        struct pollfd pfds[3];
+        struct pollfd pfds[2];
         pfds[0].fd = keyboard_fd; pfds[0].events = POLLIN;
         pfds[1].fd = event_fd; pfds[1].events = POLLIN;
-        int num_fds = 2;
-        
-        if (x11_fd >= 0) {
-            pfds[2].fd = x11_fd; pfds[2].events = POLLIN;
-            num_fds = 3;
-        }
         
         struct sched_param param;
         param.sched_priority = sched_get_priority_max(SCHED_FIFO);
         pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
         
         while (running) {
-            int ret = poll(pfds, num_fds, -1);
+            int ret = poll(pfds, 2, -1);
             if (ret < 0) {
                 if (errno != EINTR) { std::cerr << "poll() error" << std::endl; break; }
                 continue;
             }
             
             if (pfds[1].revents & POLLIN) break;
-
-            // Process X11 events FIRST to ensure focus state is updated before reading keys
-            if (x11_fd >= 0 && (pfds[2].revents & POLLIN)) {
-                while (XPending(dpy)) {
-                    XEvent xev;
-                    XNextEvent(dpy, &xev);
-                    if (xev.type == PropertyNotify && xev.xproperty.atom == net_active_window) {
-                        bool focused = checkX11Focus(dpy, root, net_active_window, net_wm_pid, my_pid);
-                        hasFocus.store(focused, std::memory_order_relaxed);
-                    }
-                }
-            }
             
             if (pfds[0].revents & POLLIN) {
                 while (read(keyboard_fd, &ev, sizeof(ev)) == sizeof(ev)) {
@@ -445,30 +316,21 @@ private:
                         bool newState = ev.value;
                         
                         currentKeyStates[ev.code] = newState;
-
-                        bool isFocused = true;
-                        if (x11_fd >= 0) {
-                            isFocused = hasFocus.load(std::memory_order_relaxed);
-                        }
-
-                        if (isFocused) {
-                            int limeCode = linuxToLimeKeyCode(ev.code);
-                            if (limeCode) {
-                                if (newState != oldState) {
-                                    InputEvent event;
-                                    event.scanCode = static_cast<double>(limeCode);
-                                    event.state = static_cast<double>(newState);
-                                    event.timestamp = getCurrentTimestamp();
-                                    addEvent(event);
-                                }
+                        
+                        int limeCode = linuxToLimeKeyCode(ev.code);
+                        if (limeCode) {
+                            if (newState != oldState) {
+                                InputEvent event;
+                                event.scanCode = static_cast<double>(limeCode);
+                                event.state = static_cast<double>(newState);
+                                event.timestamp = getCurrentTimestamp();
+                                addEvent(event);
                             }
                         }
                     }
                 }
             }
         }
-        
-        // Cleanup is now handled safely in the destructor after join()
     }
 #endif
 
@@ -520,11 +382,6 @@ public:
         if (event_fd >= 0) {
             close(event_fd);
             event_fd = -1;
-        }
-        if (dpy) {
-            XCloseDisplay(dpy);
-            dpy = nullptr;
-            x11_fd = -1;
         }
 #endif
     }
