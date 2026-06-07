@@ -1,7 +1,7 @@
 package structures;
 
 /**
-	Scroll state and list labels for {@link FreeplayAlphabet}.
+	Scroll state and list labels for menus like the freeplay menu, the credits menu, the options menu controls section, and of course, the mods menu.
 	@since 0.94
 **/
 interface IAlphabetScrollHost {
