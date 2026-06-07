@@ -138,7 +138,7 @@ class Actor extends ActorElement
 		for (i in 0...anims.length) {
 			var str = anims[i];
 			if (!dat.exists(str)) continue;
-			var animData = data.data[str];
+			var animData = data.data.get(str);
 			precomputedSingPoses_animData[i] = animData;
 			precomputeSingRange(i, animData);
 		}
@@ -149,7 +149,7 @@ class Actor extends ActorElement
 		for (i in 0...anims.length) {
 			var str = anims[i];
 			if (!dat.exists(str)) continue;
-			var animData = data.data[str];
+			var animData = data.data.get(str);
 			precomputedMissPoses_animData[i] = animData;
 			precomputeMissRange(i, animData);
 		}
@@ -196,7 +196,7 @@ class Actor extends ActorElement
 
 	function playAnimation(animKey:String, loop:Bool = false) {
 		this.loop  = loop;
-		var animData   = data.data.exists(animKey) ? data.data[animKey] : null;
+		var animData   = data.data.exists(animKey) ? data.data.get(animKey) : null;
 		var symbolName = animData != null ? animData.name : animKey;
 		this.name      = symbolName;
 

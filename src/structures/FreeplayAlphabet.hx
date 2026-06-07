@@ -18,7 +18,7 @@ class FreeplayAlphabet {
 
 	var _currentDeltaTime:Float = 0.0;
 
-	static var charCorrectionMap:Map<String, String> = [
+	private static var _charCorrectionMapOG:Map<String, String> = [
 		"?" => "question",
 		"&" => "ampersand",
 		"<" => "less",
@@ -36,8 +36,13 @@ class FreeplayAlphabet {
 		"+" => "+",
 		" " => "_",
 	];
+	static var charCorrectionMap:FakeStringMap<String> = new FakeStringMap<String>();
 
 	function new(host:IAlphabetScrollHost, display:CustomDisplay) {
+		for (key in _charCorrectionMapOG.keys()) {
+            charCorrectionMap.set(key, _charCorrectionMapOG.get(key));
+        }
+
 		this.host = host;
 		this.display = display;
 	}
@@ -103,7 +108,7 @@ class FreeplayAlphabet {
 
 	function resolveChar(title:String, j:Int):String {
 		var char = j >= 17 ? "." : title.charAt(j).toLowerCase();
-		if (charCorrectionMap.exists(char)) return charCorrectionMap[char];
+		if (charCorrectionMap.exists(char)) return charCorrectionMap.get(char);
 		return char;
 	}
 
