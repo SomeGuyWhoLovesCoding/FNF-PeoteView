@@ -365,7 +365,6 @@ class Main extends Application
 		Tools.profileFrame();
 		//Sys.println(deltaTime);
 		//FrameLogger.log(deltaTime);
-		Sys.println(MiniAudio.getMixerMasterVolume());
 
 		var lastTitle = Application.current.window.title;
 
