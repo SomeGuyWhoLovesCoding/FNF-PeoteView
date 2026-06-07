@@ -1,6 +1,7 @@
 package fvlua.components;
 
 import sys.FileSystem;
+import haxe.ds.StringMap;
 
 using StringTools;
 
@@ -11,12 +12,12 @@ using StringTools;
 @:publicFields
 class CustomAnimationComponent extends LuaComponentObject {
 	#if linc_luajit_funkinview
-	public var customActors(default, null):FakeStringMap<Actor>;
+	public var customActors(default, null):StringMap<Actor>;
 
 	public function new(_parent:FunkinViewLua) {
         super(_parent);
 
-		customActors = new FakeStringMap<Actor>();
+		customActors = new StringMap<Actor>();
 	}
 
 	// functions are a placeholder.

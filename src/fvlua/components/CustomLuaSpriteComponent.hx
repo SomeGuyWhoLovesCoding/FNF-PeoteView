@@ -1,6 +1,7 @@
 package fvlua.components;
 
 import sys.FileSystem;
+import haxe.ds.StringMap;
 
 using StringTools;
 
@@ -11,20 +12,20 @@ using StringTools;
 @:publicFields
 class CustomLuaSpriteComponent extends LuaComponentObject {
 	#if linc_luajit_funkinview
-	public var customBuffers(default, null):FakeStringMap<Buffer<LuaSprite>>;
-	public var customPrograms(default, null):FakeStringMap<LuaProgram>;
-	public var customTextures(default, null):FakeStringMap<Texture>;
-	public var customSprites(default, null):FakeStringMap<LuaSprite>;
-	public var customTexts(default, null):FakeStringMap<LuaText>;
+	public var customBuffers(default, null):StringMap<Buffer<LuaSprite>>;
+	public var customPrograms(default, null):StringMap<LuaProgram>;
+	public var customTextures(default, null):StringMap<Texture>;
+	public var customSprites(default, null):StringMap<LuaSprite>;
+	public var customTexts(default, null):StringMap<LuaText>;
 
 	public function new(_parent:FunkinViewLua) {
         super(_parent);
 
-		customBuffers = new FakeStringMap<Buffer<LuaSprite>>();
-		customPrograms = new FakeStringMap<LuaProgram>();
-		customTextures = new FakeStringMap<Texture>();
-		customSprites = new FakeStringMap<LuaSprite>();
-		customTexts = new FakeStringMap<LuaText>();
+		customBuffers = new StringMap<Buffer<LuaSprite>>();
+		customPrograms = new StringMap<LuaProgram>();
+		customTextures = new StringMap<Texture>();
+		customSprites = new StringMap<LuaSprite>();
+		customTexts = new StringMap<LuaText>();
 	}
 
 	// functions are a placeholder.
