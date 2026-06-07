@@ -140,6 +140,7 @@ class Tools {
 			var fontFile = 'assets/fonts/ttfs/$name.ttf';
 			var outputPath = 'assets/fonts/$name/$name';
 
+			#if linux
 			// Ensure executable permissions on Linux
 			try {
 				// Check if we can execute it
