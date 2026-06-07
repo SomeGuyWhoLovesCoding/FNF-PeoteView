@@ -17,10 +17,10 @@ extern class AsyncKB {
 	static function _hasEvent():Bool;
 	
 	@:native("getScanCode")
-	static function _getScanCode():Float;
+	static function getScanCode():Int;
 	
 	@:native("getState")
-	static function _getState():Float;
+	static function getState():Int;
 	
 	@:native("getTimestamp")
 	static function _getTimestamp():Float;
@@ -40,14 +40,6 @@ extern class AsyncKB {
 		return _hasEvent();
 	}
 	
-	public static inline function getScanCode():Int {
-		return Std.int(_getScanCode());
-	}
-	
-	public static inline function getState():Int {
-		return Std.int(_getState());
-	}
-	
 	public static inline function getTimestamp():Float {
 		return _getTimestamp();
 	}
@@ -64,24 +56,16 @@ class AsyncKB {
 	public static function hasEvent():Bool { return false; }
 	
 	@:hlNative("async_kb", "getScanCode")
-	public static function _getScanCode():Float { return 0.0; }
+	public static function getScanCode():Int { return 0; }
 	
 	@:hlNative("async_kb", "getState")
-	public static function _getState():Float { return 0.0; }
+	public static function getState():Int { return 0; }
 	
 	@:hlNative("async_kb", "getTimestamp")
 	public static function getTimestamp():Float { return 0.0; }
 	
 	@:hlNative("async_kb", "getGlobalTimestampComparison")
 	public static function getGlobalTimestampComparison():Float { return 0.0; }
-
-	public static inline function getScanCode():Int {
-		return Std.int(_getScanCode());
-	}
-	
-	public static inline function getState():Int {
-		return Std.int(_getState());
-	}
 }
 #else // unsupported on android
 class AsyncKB {
@@ -91,20 +75,12 @@ class AsyncKB {
 	
 	public static function hasEvent():Bool { return false; }
 	
-	public static function _getScanCode():Float { return 0.0; }
+	public static function getScanCode():Int { return 0; }
 	
-	public static function _getState():Float { return 0.0; }
+	public static function getState():Int { return 0; }
 	
 	public static function getTimestamp():Float { return 0.0; }
 	
 	public static function getGlobalTimestampComparison():Float { return 0.0; }
-
-	public static inline function getScanCode():Int {
-		return Std.int(_getScanCode());
-	}
-	
-	public static inline function getState():Int {
-		return Std.int(_getState());
-	}
 }
 #end

@@ -21,11 +21,11 @@ HL_PRIM bool HL_NAME(hasEvent)(_NO_ARG) {
     return core_hasEvent();
 }
 
-HL_PRIM double HL_NAME(getScanCode)(_NO_ARG) {
+HL_PRIM int HL_NAME(getScanCode)(_NO_ARG) {
     return core_getScanCode();
 }
 
-HL_PRIM double HL_NAME(getState)(_NO_ARG) {
+HL_PRIM int HL_NAME(getState)(_NO_ARG) {
     return core_getState();
 }
 
@@ -43,7 +43,7 @@ HL_PRIM double HL_NAME(getGlobalTimestampComparison)(_NO_ARG) {
 DEFINE_PRIM(_VOID, start, _NO_ARG)
 DEFINE_PRIM(_VOID, stop, _NO_ARG)
 DEFINE_PRIM(_BOOL, hasEvent, _NO_ARG)
-DEFINE_PRIM(_F64, getScanCode, _NO_ARG)
-DEFINE_PRIM(_F64, getState, _NO_ARG)
+DEFINE_PRIM(_I32, getScanCode, _NO_ARG)
+DEFINE_PRIM(_I32, getState, _NO_ARG)
 DEFINE_PRIM(_F64, getTimestamp, _NO_ARG)
 DEFINE_PRIM(_F64, getGlobalTimestampComparison, _NO_ARG)

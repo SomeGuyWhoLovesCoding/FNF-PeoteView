@@ -21,11 +21,11 @@ bool hasEvent() {
     return core_hasEvent();
 }
 
-double getScanCode() {
+int getScanCode() {
     return core_getScanCode();
 }
 
-double getState() {
+int getState() {
     return core_getState();
 }
 

@@ -11,12 +11,16 @@ using StringTools;
 @:publicFields
 class CustomAnimationComponent extends LuaComponentObject {
 	#if linc_luajit_funkinview
-	public var customActors(default, null):FakeStringMap<Actor>;
+	inline static var GLOBAL_BF = "FV_BF_099";
+	inline static var GLOBAL_GF = "FV_GF_099";
+	inline static var GLOBAL_OP = "FV_OP_099";
+
+	public var customActors(default, null):Map<String, Actor>;
 
 	public function new(_parent:FunkinViewLua) {
         super(_parent);
 
-		customActors = new FakeStringMap<Actor>();
+		customActors = new Map<String, Actor>();
 	}
 
 	// functions are a placeholder.
@@ -218,38 +222,38 @@ class CustomAnimationComponent extends LuaComponentObject {
         // now ofc we don't want to forget about our pals that access vanilla field characters that are always present in the song no matter what
 		vm.addCallback("getPlayer", function() {
 			var bf = playField?.field?.player;
-            if (!customActors.exists("FUNKIN_VIEW_BF_099")) {
-                customActors.set("FUNKIN_VIEW_BF_099", bf);
+            if (!customActors.exists(GLOBAL_BF)) {
+                customActors.set(GLOBAL_BF, bf);
             }
-			return "FUNKIN_VIEW_BF_099";
+			return GLOBAL_BF;
 		});
 		vm.addCallback("getBF", function() { // alt syntax (same api)
 			var bf = playField?.field?.player;
-            if (!customActors.exists("FUNKIN_VIEW_BF_099")) {
-                customActors.set("FUNKIN_VIEW_BF_099", bf);
+            if (!customActors.exists(GLOBAL_BF)) {
+                customActors.set(GLOBAL_BF, bf);
             }
-			return "FUNKIN_VIEW_BF_099";
+			return GLOBAL_BF;
 		});
 		vm.addCallback("getSpectator", function() {
 			var gf = playField?.field?.spectator;
-            if (!customActors.exists("FUNKIN_VIEW_GF_099")) {
-                customActors.set("FUNKIN_VIEW_GF_099", gf);
+            if (!customActors.exists(GLOBAL_GF)) {
+                customActors.set(GLOBAL_GF, gf);
             }
-			return "FUNKIN_VIEW_GF_099";
+			return GLOBAL_GF;
 		});
 		vm.addCallback("getGF", function() {
 			var gf = playField?.field?.spectator;
-            if (!customActors.exists("FUNKIN_VIEW_GF_099")) {
-                customActors.set("FUNKIN_VIEW_GF_099", gf);
+            if (!customActors.exists(GLOBAL_GF)) {
+                customActors.set(GLOBAL_GF, gf);
             }
-			return "FUNKIN_VIEW_GF_099";
+			return GLOBAL_GF;
 		});
 		vm.addCallback("getOpponent", function() {
 			var opp = playField?.field?.opponent;
-            if (!customActors.exists("FUNKIN_VIEW_OPP_099")) {
-                customActors.set("FUNKIN_VIEW_OPP_099", opp);
+            if (!customActors.exists(GLOBAL_OP)) {
+                customActors.set(GLOBAL_OP, opp);
             }
-			return "FUNKIN_VIEW_OPP_099";
+			return GLOBAL_OP;
 		});
 
         /*// if you want a more object-oriented way of doing things
@@ -268,7 +272,9 @@ class CustomAnimationComponent extends LuaComponentObject {
 
 		for (customActor in customActors) {
 			if (customActor != null) {
-				customActor.dispose();
+				// they will all dispose naturally since playfield's going to be disposed
+				if (customActors[GLOBAL_BF] != customActor && customActors[GLOBAL_GF] != customActor && customActors[GLOBAL_OP] != customActor)
+					customActor.dispose();
 				customActor = null;
 			}
 		}

@@ -23,8 +23,8 @@
 #include <iostream>
 
 struct InputEvent {
-    double scanCode;
-    double state;
+    int scanCode;
+    int state;
     double timestamp;
 };
 
@@ -122,8 +122,8 @@ private:
                 if (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN || 
                     wParam == WM_KEYUP || wParam == WM_SYSKEYUP) {
                     InputEvent event;
-                    event.scanCode = static_cast<double>(instance->windowsToLimeKeyCode(kb->vkCode));
-                    event.state = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) ? 1.0 : 0.0;
+                    event.scanCode = instance->windowsToLimeKeyCode(kb->vkCode);
+                    event.state = (wParam == WM_KEYDOWN || wParam == WM_SYSKEYDOWN) ? 1 : 0;
                     event.timestamp = instance->getCurrentTimestamp();
                     instance->addEvent(event);
                 }
@@ -348,8 +348,8 @@ private:
                             if (limeCode) {
                                 if (newState != oldState) {
                                     InputEvent event;
-                                    event.scanCode = static_cast<double>(limeCode);
-                                    event.state = static_cast<double>(newState);
+                                    event.scanCode = limeCode;
+                                    event.state = newState;
                                     event.timestamp = getCurrentTimestamp();
                                     addEvent(event);
                                 }
@@ -408,8 +408,8 @@ public:
         }
 
     bool hasEvent() const { return eventCount.load(std::memory_order_acquire) > 0 || hasCurrentEvent; }
-    double getScanCode() { loadNextEvent(); return hasCurrentEvent ? currentEvent.scanCode : 0.0; }
-    double getState() { loadNextEvent(); return hasCurrentEvent ? currentEvent.state : 0.0; }
+    int getScanCode() { loadNextEvent(); return hasCurrentEvent ? currentEvent.scanCode : 0; }
+    int getState() { loadNextEvent(); return hasCurrentEvent ? currentEvent.state : 0; }
     double getTimestamp() {
         loadNextEvent();
         if (hasCurrentEvent) { hasCurrentEvent = false; return currentEvent.timestamp; }
@@ -427,8 +427,8 @@ static AsyncInputThread* g_inputThread = nullptr;
 void core_start() { if (!g_inputThread) g_inputThread = new AsyncInputThread(); }
 void core_stop() { if (g_inputThread) { delete g_inputThread; g_inputThread = nullptr; } }
 bool core_hasEvent() { return g_inputThread ? g_inputThread->hasEvent() : false; }
-double core_getScanCode() { return g_inputThread ? g_inputThread->getScanCode() : 0.0; }
-double core_getState() { return g_inputThread ? g_inputThread->getState() : 0.0; }
+int core_getScanCode() { return g_inputThread ? g_inputThread->getScanCode() : 0; }
+int core_getState() { return g_inputThread ? g_inputThread->getState() : 0; }
 double core_getTimestamp() { return g_inputThread ? g_inputThread->getTimestamp() : 0.0; }
 size_t core_getEventCount() { return g_inputThread ? g_inputThread->getEventCount() : 0; }
 double core_getGlobalTimestampComparison() { return g_inputThread ? g_inputThread->getCurrentTimestamp() : 0.0; }

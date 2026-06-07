@@ -8,8 +8,8 @@ extern "C" {
 void start(void);
 void stop(void);
 bool hasEvent(void);
-double getScanCode(void);
-double getState(void);
+int getScanCode(void);
+int getState(void);
 double getTimestamp(void);
 double getGlobalTimestampComparison(void);
 
