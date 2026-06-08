@@ -749,7 +749,7 @@ public:
         auto initTime = std::chrono::steady_clock::now();
         
         size_t bytesLoaded = 0;
-        for (size_t i = 0; i < availableShards.size() && bytesLoaded < INITIAL_BYTE_BUDGET; i++) {
+        for (size_t i = 0; i < POOL_SIZE + PRELOAD_THRESHOLD; i++) {
             uint64_t shardId = availableShards[i];
             loadShard(shardId);
             bytesLoaded += shardStartIndices[i + 1] - shardStartIndices[i];
