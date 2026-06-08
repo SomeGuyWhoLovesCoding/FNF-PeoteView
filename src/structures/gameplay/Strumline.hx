@@ -168,7 +168,7 @@ class Strumline {
 
 			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + (Main.conductor.offset * 2.0));
 			var _timing = MetaNote.metaNotePositionToSongTime((noteToHit.position + File.getTimeCorrectionForIndex(noteIndex)) - posWithLatency);
-			#if (windows || (windows && hl))
+			#if (windows && FV_LIME_FORK)
 			var _timingCompare = AsyncKB.getGlobalTimestampComparison();
 			var _timingDiffSubtract = (timestamp - _timingCompare) * 1000.0;
 			_timing += _timingDiffSubtract;

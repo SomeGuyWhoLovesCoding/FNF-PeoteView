@@ -1,7 +1,7 @@
 package inp;
 
 import lime.app.Event;
-#if (windows || hl) // not supported on android
+#if (windows) // not supported on android
 import inp.AsyncKB;
 import haxe.Timer;
 import sys.thread.Mutex;
