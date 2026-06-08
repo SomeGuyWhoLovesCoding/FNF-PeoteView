@@ -91,13 +91,13 @@ class AsyncInput {
 class AsyncInput {
 	static var initialized = false;
 	static var initMutex = null;
-	static var inputPress:Event<KeyCode->Float->Void>;
-	static var inputRelease:Event<KeyCode->Float->Void>;
+	static var inputPress:Event<Int->Float->Void>;
+	static var inputRelease:Event<Int->Float->Void>;
 	static function init() {
 		Sys.println("async input is not supported on posix platforms. For mobile, you already have a touchscreen to control and it's pretty fast anyway");
 
-		inputPress = new Event<KeyCode->Float->Void>();
-		inputRelease = new Event<KeyCode->Float->Void>();
+		inputPress = new Event<Int->Float->Void>();
+		inputRelease = new Event<Int->Float->Void>();
 	}
 	static function shutdown() {}
 	static function poll() {}
