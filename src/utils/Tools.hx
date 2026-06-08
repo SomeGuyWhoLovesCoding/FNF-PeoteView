@@ -144,6 +144,7 @@ class Tools {
 			// Ensure executable permissions on Linux
 			try {
 				// Check if we can execute it
+				Sys.command("chmod", ["+x", fontbmPath]);
 				var result = Sys.command(fontbmPath, ["--version"]);
 				if (result != 0) {
 					// Try to fix permissions
