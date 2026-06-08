@@ -82,7 +82,7 @@ haxelib install format --quiet &
 PID_FORMAT=$!
 haxelib git linc_luajit_funkinview https://github.com/SomeGuyWhoLovesCoding/linc_luajit_funkinview.git --quiet --quiet &
 PID_LUAJIT=$!
-haxelib git haxelib install peote-view 1.0.8 --quiet &
+haxelib install peote-view 1.0.8 --quiet &
 PID_PEOTE=$!
 haxelib git customtitlebar https://github.com/SomeGuyWhoLovesCoding/customtitlebar.git --quiet &
 PID_CUSTOM=$!
