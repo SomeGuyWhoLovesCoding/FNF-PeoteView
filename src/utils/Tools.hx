@@ -145,7 +145,7 @@ class Tools {
 			try {
 				// Check if we can execute it
 				Sys.command("chmod", ["+x", fontbmPath]);
-				var result = Sys.command(fontbmPath, [""]);
+				var result = Sys.command(fontbmPath, ["--help"]);
 				if (result != 0) {
 					// Try to fix permissions
 					Sys.command("chmod", ["+x", fontbmPath]);
@@ -156,19 +156,19 @@ class Tools {
 			}
 			#end
 
-			var args = [
-				'--font-file', fontFile,
-				'--font-size', '40',
-				'--data-format', 'json',
-				'--padding-up', '8',
-				'--padding-right', '8',
-				'--padding-down', '8',
-				'--padding-left', '8',
-				'--output', outputPath
-			];
+			// build a command we can test by pasting into cli
+			var genFontArgs = '--font-file $fontFile \\
+			--font-size 40 \\
+			--data-format json \\
+			--padding-up 8 \\
+			--padding-right 8 \\
+			--padding-down 8 \\
+			--padding-left 8 \\
+			--output $outputPath';
+			var genFontCommand = '$fontbmPath $genFontArgs';
 
 			Sys.println('Generating font bitmap for: $name');
-			var exitCode = Sys.command(fontbmPath, args);
+			var exitCode = Sys.command(genFontCommand);
 
 			if (exitCode != 0) {
 				Sys.println('WARNING: fontbm exited with code $exitCode');
