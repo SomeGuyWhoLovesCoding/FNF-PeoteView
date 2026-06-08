@@ -342,6 +342,27 @@ private:
                 }
             }
         }
+
+        // Fifth try: If /dev/input/event* fails, try /dev/input/by-path/
+        if (keyboard_fd < 0) {
+            // Try platform keyboard (emulated PS/2 often appears here)
+            const char* devices[] = {
+                "/dev/input/by-path/platform-i8042-serio-0-event-kbd",
+                "/dev/input/by-path/platform-i8042-serio-1-event-kbd",
+                "/dev/input/by-path/platform-i8042-serio-0-event",
+                "/dev/tty0",  // Console input
+                "/dev/tty"    // Current TTY
+            };
+            
+            for (const char* dev_path : devices) {
+                int fd = open(dev_path, O_RDONLY | O_NONBLOCK);
+                if (fd >= 0) {
+                    keyboard_fd = fd;
+                    std::cout << "Using fallback device: " << dev_path << std::endl;
+                    break;
+                }
+            }
+        }
         
         if (keyboard_fd < 0) {
             std::cerr << "Failed to open any keyboard device on Linux" << std::endl;

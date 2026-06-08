@@ -142,7 +142,11 @@ class Tools {
 
 			#if linux
 			// Ensure executable permissions on Linux
-			Sys.command("chmod", ["+x", fontbmPath]);
+			var tempPath = "/tmp/fontbm_" + name; // Unique temp name
+			sys.io.File.copy(fontbmPath, tempPath);
+			Sys.command("/bin/chmod", ["+x", tempPath]);
+			var exitCode = Sys.command(tempPath, args);
+			sys.FileSystem.deleteFile(tempPath);
 			#end
 
 			var args = [

@@ -462,36 +462,26 @@ class Text {
 	// ── Constructor ───────────────────────────────────────────────────────────
 
 	function new(key:String, x:Float, y:Float, display:Display, text:String = "Sample text", font:String = "vcr") {
-		trace('key is $key');
 		_key   = key;
-		trace('buffer created');
 		buffer = new Buffer<TextCharSprite>(32, 32);
 
-		trace('program made');
 		program = new CustomProgram(buffer);
 		if (Main.current.upscale) {
 			program.injectIntoFragmentShader(Shaders.UPSCALE_FRAGMENT_SHADER + "\n\n" + TEXT_FRAGMENT_SHADER);
 		} else {
 			program.injectIntoFragmentShader(TEXT_FRAGMENT_SHADER_NO_UPSCALE);
 		}
-		trace('program color formula made');
 		program.setColorFormula('pixelAlpha(font_ID, c, oc, os, rw, rh) * alphaColor');
 
-		trace('set font');
 		this.font    = font;
-		trace('set display');
 		this.display = display;
 
-		trace('add program to display');
 		display.addProgram(program);
 
 		// x and y must be set before text so sprite positions are correct.
-		trace('set x');
 		this.x = x;
-		trace('set y');
 		this.y = y;
 
-		trace('set text');
 		if (text == null || text.length == 0) text = "Sample text";
 		this.text = text;
 	}
