@@ -13,22 +13,15 @@
     <echo value="hashlink include: ${HL_INCLUDE}" />
     <echo value="hashlink bin: ${HL_BIN}" />
 
-	<files id="async_kb">
+	<files id="async_kb" if="windows">
 		<compilerflag value="-I${PROJECT_DIR}/inp" />
 		<compilerflag value="-I${PROJECT_DIR}/inp/include" />
 		<file name="${PROJECT_DIR}/inp/AsyncKB_hl.cpp" />
 		<compilerflag value="-I${HASHLINK}/include" />
 	</files>
 
-	<target id="default" output="async_kb" toolid="dll" tool="linker">
+	<target id="default" output="async_kb" toolid="dll" tool="linker" if="windows">
 		<files id="async_kb" />
-		
-		<!-- Add this section to link X11 and pthread on Linux -->
-		<section if="linux">
-			<libpath name="/usr/local/lib" />
-			<lib name="-lX11" />
-			<!--<lib name="pthread" /> -->
-		</section>
 
 		<libpath name="${HASHLINK}" if="windows" />
 		<libpath name="/usr/local/lib" if='macos' />

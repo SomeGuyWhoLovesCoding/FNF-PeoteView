@@ -3,20 +3,13 @@
 
 	<set name="PROJECT_DIR" value="${this_dir}/src" />
 
-	<files id="async_kb">
+	<files id="async_kb" if="windows">
 		<compilerflag value="-I${PROJECT_DIR}/inp" />
 		<compilerflag value="-I${PROJECT_DIR}/inp/include" />
 		<file name="${PROJECT_DIR}/inp/AsyncKB.cpp" />
 	</files>
 
-	<target id="haxe">
+	<target id="haxe" if="windows">
 		<files id="async_kb" />
-		
-		<!-- Add this section to link X11 and pthread on Linux -->
-		<section if="linux">
-			<libpath name="/usr/local/lib" />
-			<lib name="-lX11" />
-			<!--<lib name="pthread" /> -->
-		</section>
 	</target>
 </xml>
