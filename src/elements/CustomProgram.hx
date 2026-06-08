@@ -46,7 +46,7 @@ class CustomProgram extends Program
 			var rd = Std.downcast(display, RotatableDisplay);
 			if (rd == null) throw "CustomProgram must be added to a RotatableDisplay";
 
-			injectIntoVertexShader(DISPLAY_ROTATION_VERTEX_CODE, false, [rd.uAngle, rd.uSin, rd.uCos], false, [rd.uCenter]);
+			injectIntoVertexShader(DISPLAY_ROTATION_VERTEX_CODE, false, ["uDisplayAngle" => rd.uAngle, "uSin" => rd.uSin, "uCos" => rd.uCos, "uDisplayC" => rd.uCenter], false);
 
 			//setFormula("rotation", "uDisplayRotation(aRot.z)", false);
 

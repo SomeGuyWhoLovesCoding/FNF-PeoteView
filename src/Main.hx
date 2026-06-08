@@ -249,6 +249,10 @@ class Main extends Application
 
 			prepareGameplayState();
 
+			#if (!html5)
+			if (PeoteGL.Version.isES3) window.context.gl.disable(0x8DB9); // GL_FRAMEBUFFER_SRGB_EXT
+			#end
+
 			peoteView.start();
 
 			addDisplays();

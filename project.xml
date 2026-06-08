@@ -10,7 +10,7 @@
 	<source path="src" />
 
 	<haxelib name="lime" />	
-	<haxelib name="peote-view_funkinview" />
+	<haxelib name="peote-view" />
 	<haxelib name="format" />
   
 	<!-- use special gl-features for optimization (if supported by opengl-es version) -->

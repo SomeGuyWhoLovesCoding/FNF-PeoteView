@@ -6,6 +6,10 @@
 import peote.view.*;
 import peote.view.intern.*;
 
+// since peote-view 1.0.8
+import peote.view.Uniform.UniformFloat;
+import peote.view.Uniform.UniformVec2;
+
 // GAME
 import atlas.*;
 import data.chart.*;

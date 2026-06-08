@@ -12,14 +12,14 @@ class RotatableDisplay extends Display
 	var uAngle:UniformFloat;
 	var uCos:UniformFloat;
 	var uSin:UniformFloat;
-	var uCenter:UniformVector;
+	var uCenter:UniformVec2;
 
 	public function new(x:Int, y:Int, width:Int, height:Int, color = 0x00000000) {
 		super(x, y, width, height, color);
-		uAngle   = new UniformFloat("uDisplayAngle", 0.0);
-		uSin     = new UniformFloat("uSin", 0.0);
-		uCos     = new UniformFloat("uCos", 1.0); // this has to be 1.0. cosine is just sine but inverted.
-		uCenter = new UniformVector("uDisplayC", [x + width * 0.5, y + height * 0.5]);
+		uAngle   = new UniformFloat(0.0);
+		uSin     = new UniformFloat(0.0);
+		uCos     = new UniformFloat(1.0); // this has to be 1.0. cosine is just sine but inverted.
+		uCenter = new UniformVec2({x: x + width * 0.5, y: y + height * 0.5});
 	}
 
 	private function set_rotation(deg:Float):Float {
