@@ -224,11 +224,12 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 			return FunkinViewLua.Function_Continue;
 		});
 		vm.addCallback("setDisplayAngle", (fromDisplay:String, rotation:Float) -> {
-			var display = Reflect.field(playField, fromDisplay.toLowerCase());
+			var display:CustomDisplay = Reflect.field(playField, fromDisplay.toLowerCase());
 			if (display == null) {
 				FunkinViewLua.error("Display not found: " + fromDisplay.toLowerCase());
 			}
 			display.r = rotation;
+			display.update();
 			return FunkinViewLua.Function_Continue;
 		});
 		vm.addCallback("updateBuffer", (bufferName:String) -> {
