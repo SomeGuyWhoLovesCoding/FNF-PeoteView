@@ -276,7 +276,7 @@ class Precision {
 		else if (t.low > 0) return "lowp";
 		#if html5
 		else return null;
-		#elseif !windows
+		#else
 		else return "highp";
 		#end
 	}
