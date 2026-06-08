@@ -13,6 +13,7 @@
 #include <mutex>
 #include <future>
 #include <unordered_map>
+#include <cerrno>
 
 // Fix Windows min/max macros
 #ifdef _WIN32
@@ -232,17 +233,40 @@ public:
 #ifdef _WIN32
         hFile = CreateFileA(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, nullptr,
                             OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (hFile == INVALID_HANDLE_VALUE) return false;
+        if (hFile == INVALID_HANDLE_VALUE) {
+            std::cerr << "[MappedFileReader] CreateFile failed for " << path 
+                      << " (error " << GetLastError() << ")\n";
+            return false;
+        }
 
         LARGE_INTEGER sz;
-        if (!GetFileSizeEx(hFile, &sz)) { closeMap(); return false; }
-        if (sz.QuadPart < sizeof(ShardHeader)) { closeMap(); return false; }
+        if (!GetFileSizeEx(hFile, &sz)) { 
+            std::cerr << "[MappedFileReader] GetFileSizeEx failed for " << path << "\n";
+            closeMap(); 
+            return false; 
+        }
+        if (sz.QuadPart < sizeof(ShardHeader)) { 
+            std::cerr << "[MappedFileReader] File too small: " << path 
+                      << " (" << sz.QuadPart << " bytes)\n";
+            closeMap(); 
+            return false; 
+        }
 
         hMap = CreateFileMappingA(hFile, nullptr, PAGE_READWRITE, 0, 0, nullptr);
-        if (!hMap) { closeMap(); return false; }
+        if (!hMap) { 
+            std::cerr << "[MappedFileReader] CreateFileMapping failed for " << path 
+                      << " (error " << GetLastError() << ")\n";
+            closeMap(); 
+            return false; 
+        }
 
         void* ptr = MapViewOfFile(hMap, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0);
-        if (!ptr) { closeMap(); return false; }
+        if (!ptr) { 
+            std::cerr << "[MappedFileReader] MapViewOfFile failed for " << path 
+                      << " (error " << GetLastError() << ")\n";
+            closeMap(); 
+            return false; 
+        }
 
         // Read header from beginning of file
         memcpy(&header, ptr, sizeof(ShardHeader));
@@ -252,15 +276,35 @@ public:
         mappedCount = (sz.QuadPart - sizeof(ShardHeader)) / sizeof(uint64_t);
 #else
         fd = ::open(path, O_RDWR);
-        if (fd < 0) return false;
+        if (fd < 0) {
+            std::cerr << "[MappedFileReader] open() failed for " << path 
+                      << ": " << strerror(errno) << " (errno " << errno << ")\n";
+            return false;
+        }
 
         struct stat st;
-        if (fstat(fd, &st) != 0) { closeMap(); return false; }
-        if (st.st_size < sizeof(ShardHeader)) { closeMap(); return false; }
+        if (fstat(fd, &st) != 0) { 
+            std::cerr << "[MappedFileReader] fstat() failed for " << path 
+                      << ": " << strerror(errno) << "\n";
+            closeMap(); 
+            return false; 
+        }
+        if (st.st_size < (off_t)sizeof(ShardHeader)) { 
+            std::cerr << "[MappedFileReader] File too small: " << path 
+                      << " (" << st.st_size << " bytes, need " << sizeof(ShardHeader) << ")\n";
+            closeMap(); 
+            return false; 
+        }
 
         mapLen = static_cast<size_t>(st.st_size);
         void* ptr = mmap(nullptr, mapLen, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-        if (ptr == MAP_FAILED) { closeMap(); return false; }
+        if (ptr == MAP_FAILED) { 
+            std::cerr << "[MappedFileReader] mmap() failed for " << path 
+                      << " (size " << mapLen << "): " << strerror(errno) 
+                      << " (errno " << errno << ")\n";
+            closeMap(); 
+            return false; 
+        }
 
         // Read header from beginning of file
         memcpy(&header, ptr, sizeof(ShardHeader));

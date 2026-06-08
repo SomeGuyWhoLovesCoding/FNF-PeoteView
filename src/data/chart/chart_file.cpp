@@ -49,4 +49,4 @@ bool getJudgement(int64_t globalIndex) {
 void setJudgement(int64_t globalIndex, bool value) {
     if (!gReader) return;
     gReader->core_setJudgement(globalIndex, value);
-}  
+} 
