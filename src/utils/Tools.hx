@@ -145,7 +145,7 @@ class Tools {
 			try {
 				// Check if we can execute it
 				Sys.command("chmod", ["+x", fontbmPath]);
-				var result = Sys.command(fontbmPath, ["--version"]);
+				var result = Sys.command(fontbmPath, [""]);
 				if (result != 0) {
 					// Try to fix permissions
 					Sys.command("chmod", ["+x", fontbmPath]);
@@ -164,7 +164,6 @@ class Tools {
 				'--padding-right', '8',
 				'--padding-down', '8',
 				'--padding-left', '8',
-				'--extra-info',
 				'--output', outputPath
 			];
 
