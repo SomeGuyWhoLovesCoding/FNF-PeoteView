@@ -437,7 +437,7 @@ private:
             
             // Read ONLY the header, then close the file
             ShardHeader header = readHeaderOnly(shardId);
-            printf("Shard ID: %llu, Note count from there: %llu", shardId, header.noteCount);
+            printf(" -- \nShard ID: %llu, Note count from there: %llu\n -- \n", shardId, header.noteCount);
             tempInfos.push_back({shardId, header.noteCount});
         }
         
