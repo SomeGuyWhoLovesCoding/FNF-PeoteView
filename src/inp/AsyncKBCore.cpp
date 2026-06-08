@@ -16,6 +16,7 @@
 #include <thread>
 #include <chrono>
 #include <iostream>
+#include <iomanip>
 
 struct InputEvent {
     int scanCode;
@@ -229,41 +230,53 @@ private:
     }
     
     void workerFunction() {
+        std::cout << "[DEBUG] Linux worker thread started" << std::endl;
+        
         // Open connection to X server
+        std::cout << "[DEBUG] Attempting to open X display..." << std::endl;
         dpy = XOpenDisplay(nullptr);
         if (!dpy) {
-            std::cerr << "Failed to open X display. Make sure you're running under X11." << std::endl;
-            std::cerr << "Try: export DISPLAY=:0" << std::endl;
+            std::cerr << "[ERROR] Failed to open X display. Make sure you're running under X11." << std::endl;
+            std::cerr << "[ERROR] Try: export DISPLAY=:0" << std::endl;
             return;
         }
+        std::cout << "[DEBUG] X display opened successfully" << std::endl;
         
         startTime = std::chrono::steady_clock::now();
         startTimeInitialized = true;
         
         // Get the root window
         Window root = DefaultRootWindow(dpy);
+        std::cout << "[DEBUG] Root window: " << root << std::endl;
         
         // Create a simple input-only window (doesn't need to be visible)
+        std::cout << "[DEBUG] Creating capture window..." << std::endl;
         capture_window = XCreateSimpleWindow(dpy, root, 0, 0, 1, 1, 0, 0, 0);
+        std::cout << "[DEBUG] Capture window created: " << capture_window << std::endl;
         
         // Select which events we want to receive
         XSelectInput(dpy, capture_window, 
                      KeyPressMask | KeyReleaseMask | FocusChangeMask);
+        std::cout << "[DEBUG] Selected KeyPress, KeyRelease, and FocusChange events" << std::endl;
         
         // Map the window (make it ready to receive events)
         XMapWindow(dpy, capture_window);
+        std::cout << "[DEBUG] Window mapped" << std::endl;
         
         // Get the file descriptor for the X11 connection
         x11_fd = XConnectionNumber(dpy);
+        std::cout << "[DEBUG] X11 connection FD: " << x11_fd << std::endl;
         
         // Flush all pending requests
         XFlush(dpy);
         
-        std::cout << "X11 keyboard capture initialized successfully" << std::endl;
+        std::cout << "[DEBUG] X11 keyboard capture initialized successfully" << std::endl;
+        std::cout << "[DEBUG] Waiting for keyboard input..." << std::endl;
         
         // Use poll/select to check for events with timeout
         fd_set fds;
         struct timeval tv;
+        int eventCounter = 0;
         
         while (running) {
             // Set up file descriptor set
@@ -280,7 +293,7 @@ private:
             if (ret < 0) {
                 // Error in select
                 if (errno != EINTR) {
-                    std::cerr << "select() error" << std::endl;
+                    std::cerr << "[ERROR] select() error: " << errno << std::endl;
                     break;
                 }
                 continue;
@@ -288,43 +301,81 @@ private:
             
             if (ret > 0 && FD_ISSET(x11_fd, &fds)) {
                 // Process pending X11 events
+                int pendingCount = XPending(dpy);
+                if (pendingCount > 0) {
+                    std::cout << "[DEBUG] " << pendingCount << " X11 events pending" << std::endl;
+                }
+                
                 while (XPending(dpy) > 0) {
                     XEvent event;
                     XNextEvent(dpy, &event);
                     
+                    std::cout << "[DEBUG] Received X11 event type: " << event.type << std::endl;
+                    
                     switch (event.type) {
                         case KeyPress:
+                            std::cout << "[DEBUG] KeyPress event detected!" << std::endl;
+                            // Fall through to handle both
                         case KeyRelease: {
+                            std::cout << "[DEBUG] Key" << ((event.type == KeyPress) ? "Press" : "Release") << " event" << std::endl;
+                            
                             // Get the key symbol
                             KeySym keysym = XLookupKeysym(&event.xkey, 0);
+                            std::cout << "[DEBUG] KeySym: 0x" << std::hex << keysym << std::dec << std::endl;
+                            
                             int limeCode = x11ToLimeKeyCode(keysym);
+                            std::cout << "[DEBUG] Mapped to LimeCode: 0x" << std::hex << limeCode << std::dec << std::endl;
                             
                             if (limeCode != 0) {
                                 InputEvent inputEvent;
                                 inputEvent.scanCode = limeCode;
                                 inputEvent.state = (event.type == KeyPress) ? 1 : 0;
                                 inputEvent.timestamp = getCurrentTimestamp();
+                                
+                                std::cout << "[DEBUG] Adding event to queue - ScanCode: 0x" << std::hex << limeCode 
+                                          << " State: " << std::dec << inputEvent.state 
+                                          << " Time: " << std::fixed << std::setprecision(3) << inputEvent.timestamp << std::endl;
+                                
                                 addEvent(inputEvent);
+                                eventCounter++;
+                                std::cout << "[DEBUG] Total events added: " << eventCounter << std::endl;
+                            } else {
+                                std::cout << "[DEBUG] KeySym 0x" << std::hex << keysym << std::dec << " has no LimeCode mapping" << std::endl;
                             }
                             break;
                         }
                         
                         case FocusIn:
+                            std::cout << "[DEBUG] FocusIn event - Window gained focus" << std::endl;
                             hasFocus = true;
                             break;
                             
                         case FocusOut:
+                            std::cout << "[DEBUG] FocusOut event - Window lost focus" << std::endl;
                             hasFocus = false;
+                            break;
+                            
+                        default:
+                            std::cout << "[DEBUG] Unhandled event type: " << event.type << std::endl;
                             break;
                     }
                 }
             }
+            
+            // Periodic heartbeat to show thread is alive
+            static auto lastHeartbeat = std::chrono::steady_clock::now();
+            auto now = std::chrono::steady_clock::now();
+            if (std::chrono::duration_cast<std::chrono::seconds>(now - lastHeartbeat).count() >= 5) {
+                std::cout << "[HEARTBEAT] Worker thread alive, events processed: " << eventCounter << std::endl;
+                lastHeartbeat = now;
+            }
         }
         
         // Cleanup
+        std::cout << "[DEBUG] Cleaning up X11 resources..." << std::endl;
         XDestroyWindow(dpy, capture_window);
         XCloseDisplay(dpy);
-        std::cout << "X11 keyboard capture stopped" << std::endl;
+        std::cout << "[DEBUG] X11 keyboard capture stopped" << std::endl;
     }
 #endif
 

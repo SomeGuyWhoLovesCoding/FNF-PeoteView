@@ -288,7 +288,10 @@ class Main extends Application
 				if (mouseDown != null) mouseDown(x, y, button);
 			});
 
-			//Application.current.window.uncappedFrameRate = true;
+			haxe.Timer.delay(function() {
+				trace('Async Input initialized. See if it ever works or not');
+				AsyncInput.init();
+			}, 1000);
 
 			_started = true;
 		}, 100);
