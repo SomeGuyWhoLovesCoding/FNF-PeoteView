@@ -140,15 +140,6 @@ class Tools {
 			var fontFile = 'assets/fonts/ttfs/$name.ttf';
 			var outputPath = 'assets/fonts/$name/$name';
 
-			#if linux
-			// Ensure executable permissions on Linux
-			var tempPath = "/tmp/fontbm_" + name; // Unique temp name
-			sys.io.File.copy(fontbmPath, tempPath);
-			Sys.command("/bin/chmod", ["+x", tempPath]);
-			var exitCode = Sys.command(tempPath, args);
-			sys.FileSystem.deleteFile(tempPath);
-			#end
-
 			var args = [
 				'--font-file', fontFile,
 				'--font-size', '40',
@@ -160,10 +151,22 @@ class Tools {
 				'--output', outputPath
 			];
 
+			#if (linux || android)
+			// Ensure executable permissions on Linux
+			var tempPath = "/tmp/fontbm_" + name; // Unique temp name
+			sys.io.File.copy(fontbmPath, tempPath);
+			Sys.command("/bin/chmod", ["+x", tempPath]);
+			var exitCode = Sys.command(tempPath, args);
+			if (exitCode != 0) {
+				Sys.println('WARNING: fontbm exited with code $exitCode');
+			}
+			sys.FileSystem.deleteFile(tempPath);
+			#else
 			var exitCode = Sys.command(fontbmPath, args);
 			if (exitCode != 0) {
 				Sys.println('WARNING: fontbm exited with code $exitCode');
 			}
+			#end
 		}
 
 		var contents = File.getContent(fontPath);
