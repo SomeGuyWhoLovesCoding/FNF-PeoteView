@@ -10,6 +10,7 @@
     #include <poll.h>
     #include <errno.h>
     #include <sys/eventfd.h>
+    #include <sys/ioctl.h>  // Add this
     #include <X11/Xlib.h>
     #include <X11/Xatom.h>
 #endif
@@ -238,34 +239,87 @@ private:
     
     void workerFunction() {
         event_fd = eventfd(0, EFD_NONBLOCK);
-        if (event_fd < 0) { std::cerr << "Failed to create eventfd" << std::endl; return; }
+        if (event_fd < 0) { 
+            std::cerr << "Failed to create eventfd" << std::endl; 
+            return; 
+        }
         
-        for (int i = 0; i < 32; i++) {
-            char path[64]; snprintf(path, sizeof(path), "/dev/input/event%d", i);
+        // First try: Look specifically for keyboards
+        keyboard_fd = -1;
+        for (int i = 0; i < 64; i++) {  // Increased to 64 devices
+            char path[64]; 
+            snprintf(path, sizeof(path), "/dev/input/event%d", i);
             int fd = open(path, O_RDONLY | O_NONBLOCK);
             if (fd >= 0) {
                 char name[256] = {0};
                 if (ioctl(fd, EVIOCGNAME(sizeof(name)), name) >= 0) {
+                    // Check for keyboard indicators
                     if (strstr(name, "keyboard") || strstr(name, "Keyboard") || 
-                        strstr(name, "AT Translated") || strstr(name, "kbd")) {
-                        keyboard_fd = fd; break;
+                        strstr(name, "AT Translated") || strstr(name, "kbd") ||
+                        strstr(name, "Keychron") || strstr(name, "Logitech") ||
+                        strstr(name, "Microsoft") || strstr(name, "Apple")) {
+                        keyboard_fd = fd;
+                        std::cout << "Found keyboard: " << name << " at " << path << std::endl;
+                        break;
                     }
                 }
                 close(fd);
             }
         }
         
+        // Second try: Check device capabilities (more reliable)
         if (keyboard_fd < 0) {
-            for (int i = 0; i < 32; i++) {
-                char path[64]; snprintf(path, sizeof(path), "/dev/input/event%d", i);
+            std::cout << "Looking for any input device with keyboard capabilities..." << std::endl;
+            for (int i = 0; i < 64; i++) {
+                char path[64]; 
+                snprintf(path, sizeof(path), "/dev/input/event%d", i);
                 int fd = open(path, O_RDONLY | O_NONBLOCK);
-                if (fd >= 0) { keyboard_fd = fd; break; }
+                if (fd >= 0) {
+                    unsigned char evtype_bits[EV_MAX/8 + 1];
+                    if (ioctl(fd, EVIOCGBIT(0, sizeof(evtype_bits)), evtype_bits) >= 0) {
+                        // Check if it supports EV_KEY events
+                        if (evtype_bits[EV_KEY/8] & (1 << (EV_KEY % 8))) {
+                            unsigned char key_bits[KEY_MAX/8 + 1];
+                            if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(key_bits)), key_bits) >= 0) {
+                                // Check for keyboard-specific keys
+                                if (test_bit(KEY_A, key_bits) && test_bit(KEY_B, key_bits)) {
+                                    keyboard_fd = fd;
+                                    char name[256] = {0};
+                                    ioctl(fd, EVIOCGNAME(sizeof(name)), name);
+                                    std::cout << "Found keyboard device with keyboard keys: " << name << " at " << path << std::endl;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    close(fd);
+                }
+            }
+        }
+        
+        // Third try: Fallback to first available input device
+        if (keyboard_fd < 0) {
+            std::cout << "Falling back to first available input device..." << std::endl;
+            for (int i = 0; i < 64; i++) {
+                char path[64]; 
+                snprintf(path, sizeof(path), "/dev/input/event%d", i);
+                int fd = open(path, O_RDONLY | O_NONBLOCK);
+                if (fd >= 0) {
+                    keyboard_fd = fd;
+                    char name[256] = {0};
+                    ioctl(fd, EVIOCGNAME(sizeof(name)), name);
+                    std::cout << "Using device: " << name << " at " << path << std::endl;
+                    break;
+                }
             }
         }
         
         if (keyboard_fd < 0) {
-            std::cerr << "Failed to open keyboard device on Linux" << std::endl;
-            // FIX 3: Do not close event_fd here. Let the destructor handle it to prevent double-close.
+            std::cerr << "Failed to open any keyboard device on Linux" << std::endl;
+            std::cerr << "Make sure you have permission to access /dev/input/event*" << std::endl;
+            std::cerr << "Try: sudo usermod -a -G input $USER" << std::endl;
+            std::cerr << "Or run with: sudo ./your_program" << std::endl;
+            close(event_fd);  // Clean up event_fd
             return; 
         }
         
