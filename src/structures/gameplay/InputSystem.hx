@@ -77,8 +77,13 @@ class InputSystem {
 		var window = lime.app.Application.current.window;
 		#if !android
 		#if FV_LIME_FORK
+		#if (windows || (windows && hl))
 		AsyncInput.inputPress.add(press);
 		AsyncInput.inputRelease.add(release);
+		#else
+		window.onKeyDownPrecise.add(press);
+		window.onKeyUpPrecise.add(release);
+		#end
 		#else
 		window.onKeyDown.add(press);
 		window.onKeyUp.add(release);
@@ -91,8 +96,13 @@ class InputSystem {
 		var window = lime.app.Application.current.window;
 		#if !android
 		#if FV_LIME_FORK
+		#if (windows || (windows && hl))
 		AsyncInput.inputPress.remove(press);
 		AsyncInput.inputRelease.remove(release);
+		#else
+		window.onKeyDownPrecise.remove(press);
+		window.onKeyUpPrecise.remove(release);
+		#end
 		#else
 		window.onKeyDown.remove(press);
 		window.onKeyUp.remove(release);

@@ -462,7 +462,6 @@ class Text {
 	// ── Constructor ───────────────────────────────────────────────────────────
 
 	function new(key:String, x:Float, y:Float, display:Display, text:String = "Sample text", font:String = "vcr") {
-		trace
 		_key   = key;
 		buffer = new Buffer<TextCharSprite>(32, 32);
 

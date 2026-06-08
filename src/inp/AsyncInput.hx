@@ -1,7 +1,7 @@
 package inp;
 
 import lime.app.Event;
-#if (windows || linux || hl) // not supported on android
+#if (windows || hl) // not supported on android
 import inp.AsyncKB;
 import haxe.Timer;
 import sys.thread.Mutex;
@@ -94,7 +94,7 @@ class AsyncInput {
 	static var inputPress:Event<KeyCode->Float->Void>;
 	static var inputRelease:Event<KeyCode->Float->Void>;
 	static function init() {
-		Sys.println("async input is not supported on mobile. you already have a touchscreen to control and it's pretty fast anyway");
+		Sys.println("async input is not supported on posix platforms. For mobile, you already have a touchscreen to control and it's pretty fast anyway");
 
 		inputPress = new Event<KeyCode->Float->Void>();
 		inputRelease = new Event<KeyCode->Float->Void>();
