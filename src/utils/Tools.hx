@@ -191,6 +191,7 @@ class Tools {
 
 		Sys.println('Done, and now all we have to do is to quite literally add the texture and it\'s done');
 		TextureSystem.createTexture(name + "Font", fontPNGPath, false, true);
+		Sys.println('Now it\'s done.');
 
 		_fontsCached[name] = parsedData;
 		return parsedData;

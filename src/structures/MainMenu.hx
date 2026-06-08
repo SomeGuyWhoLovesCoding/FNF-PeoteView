@@ -51,9 +51,13 @@ class MainMenu {
 		trace('watermarkTxt create');
 		if (watermarkTxt == null) {
 			watermarkTxt = new Text("mainMenuWatermarkTxt", 0, 0, view, 'Funkin\' View - Version $fnfpVer');
+			Sys.println('Now to set watermarkTxt y.');
 			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height - 3;
+			Sys.println('x');
 			watermarkTxt.x = 3;
+			Sys.println('outlineColor');
 			watermarkTxt.outlineColor = 0x000000FF;
+			Sys.println('outlineSize');
 			watermarkTxt.outlineSize = 1.25; // 0.06 - usually the default text+ outline size on DaVinci Resolve
 		}
 
