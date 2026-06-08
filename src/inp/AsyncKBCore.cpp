@@ -166,119 +166,57 @@ private:
 #endif
 
 #ifdef __linux__
-    // X11 members
-    Display* dpy = nullptr;
-    Window capture_window;
-    int x11_fd = -1;
-    bool hasFocus = true;
+    // EVDEV - This is the Linux equivalent of Windows hook
+    // It captures ALL keyboard input globally, no window needed
+    // BUT requires: sudo usermod -a -G input $USER && logout
     
-    // EVDEV members
     int evdev_fd = -1;
-    bool use_evdev = false;
     std::array<bool, KEY_MAX> currentKeyStates;
     
-    // Helper: test_bit for capability detection (SDL-style)
+    // Helper: test_bit for capability detection
     bool test_bit(int bit, const unsigned char* array) {
         return (array[bit / 8] >> (bit % 8)) & 1;
     }
     
-    // Helper: detect if device is a keyboard using capability bits (SDL-style)
+    // Helper: detect if device is a keyboard
     bool isKeyboardDevice(int fd) {
         unsigned char evtype_bits[EV_MAX/8 + 1] = {0};
         unsigned char key_bits[KEY_MAX/8 + 1] = {0};
         
-        std::cout << "[EVDEV] Testing device capabilities..." << std::endl;
+        if (ioctl(fd, EVIOCGBIT(0, sizeof(evtype_bits)), evtype_bits) < 0) return false;
+        if (!test_bit(EV_KEY, evtype_bits)) return false;
+        if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(key_bits)), key_bits) < 0) return false;
         
-        // Get event type capabilities
-        if (ioctl(fd, EVIOCGBIT(0, sizeof(evtype_bits)), evtype_bits) < 0) {
-            std::cout << "[EVDEV] Failed to get event type bits: " << strerror(errno) << std::endl;
-            return false;
-        }
-        
-        // Check if it supports EV_KEY events
-        if (!test_bit(EV_KEY, evtype_bits)) {
-            std::cout << "[EVDEV] Device does not support EV_KEY events" << std::endl;
-            return false;
-        }
-        
-        // Get key capabilities
-        if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(key_bits)), key_bits) < 0) {
-            std::cout << "[EVDEV] Failed to get key bits: " << strerror(errno) << std::endl;
-            return false;
-        }
-        
-        // Check for keyboard-specific keys (SDL-style detection)
-        bool hasKeyboardKeys = 
-            test_bit(KEY_A, key_bits) && 
-            test_bit(KEY_B, key_bits) &&
-            test_bit(KEY_1, key_bits) &&
-            test_bit(KEY_ENTER, key_bits);
-        
-        if (hasKeyboardKeys) {
-            std::cout << "[EVDEV] ✓ Device has keyboard keys (A, B, 1, ENTER)" << std::endl;
-            return true;
-        }
-        
-        // Fallback: check if it has any keys at all
-        for (int i = 0; i < KEY_MAX; i++) {
-            if (test_bit(i, key_bits)) {
-                std::cout << "[EVDEV] Device has keys but not typical keyboard set" << std::endl;
-                return true;
-            }
-        }
-        
-        return false;
+        // Check for keyboard keys (A, B, 1, ENTER)
+        return (test_bit(KEY_A, key_bits) && test_bit(KEY_B, key_bits) &&
+                test_bit(KEY_1, key_bits) && test_bit(KEY_ENTER, key_bits));
     }
     
-    // Helper: find keyboard device using SDL-style scanning
-    int findEvdevKeyboard() {
-        std::cout << "[EVDEV] Scanning for keyboard devices..." << std::endl;
-        
+    // Helper: find first keyboard device
+    int findKeyboardDevice() {
         for (int i = 0; i < 64; i++) {
             char path[64];
             snprintf(path, sizeof(path), "/dev/input/event%d", i);
             
             int fd = open(path, O_RDONLY | O_NONBLOCK);
-            if (fd < 0) {
-                if (errno != ENOENT && errno != EACCES) {
-                    std::cout << "[EVDEV] Cannot open " << path << ": " << strerror(errno) << std::endl;
-                }
-                continue;
-            }
+            if (fd < 0) continue;
             
-            // Get device name
-            char name[256] = {0};
-            if (ioctl(fd, EVIOCGNAME(sizeof(name)), name) >= 0) {
-                std::cout << "[EVDEV] Testing device: " << path << " - \"" << name << "\"" << std::endl;
-            } else {
-                std::cout << "[EVDEV] Testing device: " << path << " - (unknown name)" << std::endl;
-            }
-            
-            // Check if this is a keyboard using capability detection
             if (isKeyboardDevice(fd)) {
-                std::cout << "[EVDEV] ✓ Found keyboard device: " << path;
-                if (name[0]) std::cout << " (\"" << name << "\")";
-                std::cout << std::endl;
+                char name[256] = {0};
+                ioctl(fd, EVIOCGNAME(sizeof(name)), name);
+                std::cout << "[EVDEV] Found keyboard: " << name << " at " << path << std::endl;
                 return fd;
             }
-            
             close(fd);
         }
-        
         return -1;
     }
     
-    // Helper: convert evdev keycode to Lime scan code
     int evdevToLimeKeyCode(int evdevCode) {
-        // Letters a-z
-        if (evdevCode >= KEY_A && evdevCode <= KEY_Z) 
-            return 0x61 + (evdevCode - KEY_A);
-        // Numbers 0-9
-        if (evdevCode >= KEY_1 && evdevCode <= KEY_9) 
-            return 0x31 + (evdevCode - KEY_1);
+        if (evdevCode >= KEY_A && evdevCode <= KEY_Z) return 0x61 + (evdevCode - KEY_A);
+        if (evdevCode >= KEY_1 && evdevCode <= KEY_9) return 0x31 + (evdevCode - KEY_1);
         if (evdevCode == KEY_0) return 0x30;
         
-        // Special keys
         switch (evdevCode) {
             case KEY_BACKSPACE: return 0x08;
             case KEY_TAB: return 0x09;
@@ -333,124 +271,44 @@ private:
         }
     }
     
-    int x11ToLimeKeyCode(KeySym keysym) {
-        // Letters (uppercase)
-        if (keysym >= XK_A && keysym <= XK_Z) return 0x61 + (keysym - XK_A);
-        // Letters (lowercase)
-        if (keysym >= XK_a && keysym <= XK_z) return 0x61 + (keysym - XK_a);
-        
-        // Numbers
-        if (keysym >= XK_0 && keysym <= XK_9) return keysym;
-        
-        // Special keys
-        switch (keysym) {
-            case XK_BackSpace: return 0x08;
-            case XK_Tab: return 0x09;
-            case XK_Return: return 0x0D;
-            case XK_Escape: return 0x1B;
-            case XK_space: return 0x20;
-            case XK_Delete: return 0x7F;
-            case XK_Insert: return 0x40000049;
-            case XK_Home: return 0x4000004A;
-            case XK_End: return 0x4000004D;
-            case XK_Page_Up: return 0x4000004B;
-            case XK_Page_Down: return 0x4000004E;
-            case XK_Up: return 0x40000052;
-            case XK_Down: return 0x40000051;
-            case XK_Left: return 0x40000050;
-            case XK_Right: return 0x4000004F;
-            case XK_Shift_L: return 0x400000E1;
-            case XK_Shift_R: return 0x400000E5;
-            case XK_Control_L: return 0x400000E0;
-            case XK_Control_R: return 0x400000E4;
-            case XK_Alt_L: return 0x400000E2;
-            case XK_Alt_R: return 0x400000E6;
-            case XK_Super_L: return 0x400000E3;
-            case XK_Super_R: return 0x400000E7;
-            case XK_Caps_Lock: return 0x40000039;
-            case XK_Num_Lock: return 0x40000053;
-            case XK_Scroll_Lock: return 0x40000047;
-            case XK_F1: return 0x4000003A;
-            case XK_F2: return 0x4000003B;
-            case XK_F3: return 0x4000003C;
-            case XK_F4: return 0x4000003D;
-            case XK_F5: return 0x4000003E;
-            case XK_F6: return 0x4000003F;
-            case XK_F7: return 0x40000040;
-            case XK_F8: return 0x40000041;
-            case XK_F9: return 0x40000042;
-            case XK_F10: return 0x40000043;
-            case XK_F11: return 0x40000044;
-            case XK_F12: return 0x40000045;
-            case XK_minus: return 0x2D;
-            case XK_equal: return 0x3D;
-            case XK_bracketleft: return 0x5B;
-            case XK_bracketright: return 0x5D;
-            case XK_backslash: return 0x5C;
-            case XK_semicolon: return 0x3B;
-            case XK_apostrophe: return 0x27;
-            case XK_grave: return 0x60;
-            case XK_comma: return 0x2C;
-            case XK_period: return 0x2E;
-            case XK_slash: return 0x2F;
-            default: return 0x00;
-        }
-    }
-    
     void workerFunction() {
-        std::cout << "[DEBUG] Linux worker thread started" << std::endl;
+        std::cout << "[EVDEV] Linux worker thread started (global keyboard capture mode)" << std::endl;
         
-        // Try EVDEV first (SDL-style raw input, works without focus)
-        std::cout << "[DEBUG] Attempting to initialize EVDEV keyboard (raw input)..." << std::endl;
-        evdev_fd = findEvdevKeyboard();
+        // Find keyboard device
+        evdev_fd = findKeyboardDevice();
         
-        if (evdev_fd >= 0) {
-            std::cout << "[DEBUG] ✓ EVDEV keyboard initialized successfully (fd=" << evdev_fd << ")" << std::endl;
-            std::cout << "[DEBUG] EVDEV mode: Will capture all keyboard input globally (no focus needed)" << std::endl;
-            use_evdev = true;
-            currentKeyStates.fill(false);
-        } else {
-            std::cout << "[DEBUG] EVDEV initialization failed, falling back to X11..." << std::endl;
-            std::cout << "[DEBUG] X11 mode requires window focus to receive keyboard events" << std::endl;
-            use_evdev = false;
+        if (evdev_fd < 0) {
+            std::cerr << "[EVDEV] ERROR: No keyboard device found!" << std::endl;
+            std::cerr << "[EVDEV] You need to be in the 'input' group for this to work." << std::endl;
+            std::cerr << "[EVDEV] Run: sudo usermod -a -G input $USER, then logout and login again." << std::endl;
+            return;
         }
         
         startTime = std::chrono::steady_clock::now();
         startTimeInitialized = true;
+        currentKeyStates.fill(false);
         
-        if (use_evdev) {
-            // ========== EVDEV MODE (Raw input, no focus needed) ==========
-            std::cout << "[DEBUG] Entering EVDEV event loop..." << std::endl;
+        std::cout << "[EVDEV] ✓ Global keyboard capture active - Works like Windows hook!" << std::endl;
+        std::cout << "[EVDEV] No window focus needed - captures ALL keyboard input" << std::endl;
+        
+        struct pollfd pfd;
+        pfd.fd = evdev_fd;
+        pfd.events = POLLIN;
+        
+        struct input_event ev;
+        int eventCounter = 0;
+        
+        while (running) {
+            int ret = poll(&pfd, 1, 100); // 100ms timeout
             
-            struct pollfd pfd;
-            pfd.fd = evdev_fd;
-            pfd.events = POLLIN;
-            
-            struct input_event ev;
-            int eventCounter = 0;
-            int heartbeatCounter = 0;
-            
-            while (running) {
-                int ret = poll(&pfd, 1, 100); // 100ms timeout
-                
-                if (ret < 0) {
-                    if (errno != EINTR) {
-                        std::cerr << "[EVDEV] poll() error: " << strerror(errno) << std::endl;
-                    }
-                    continue;
+            if (ret < 0) {
+                if (errno != EINTR) {
+                    std::cerr << "[EVDEV] poll() error: " << strerror(errno) << std::endl;
                 }
-                
-                if (ret == 0) {
-                    // Timeout - heartbeat every 50 polls (5 seconds)
-                    heartbeatCounter++;
-                    if (heartbeatCounter >= 50) {
-                        std::cout << "[HEARTBEAT] EVDEV worker alive, waiting for keys..." << std::endl;
-                        heartbeatCounter = 0;
-                    }
-                    continue;
-                }
-                
-                // Read events
+                continue;
+            }
+            
+            if (ret > 0 && (pfd.revents & POLLIN)) {
                 while (read(evdev_fd, &ev, sizeof(ev)) == sizeof(ev)) {
                     if (ev.type == EV_KEY && ev.code >= 0 && ev.code < KEY_MAX) {
                         bool oldState = currentKeyStates[ev.code];
@@ -458,172 +316,29 @@ private:
                         
                         if (newState != oldState) {
                             currentKeyStates[ev.code] = newState;
-                            
                             int limeCode = evdevToLimeKeyCode(ev.code);
                             
                             if (limeCode != 0) {
                                 eventCounter++;
-                                double timestamp = getCurrentTimestamp();
-                                
-                                std::cout << "[EVDEV] ⭐ KEY EVENT #" << eventCounter << " ⭐" << std::endl;
-                                std::cout << "  Evdev Code: 0x" << std::hex << ev.code << std::dec << std::endl;
-                                std::cout << "  Lime Code: 0x" << std::hex << limeCode << std::dec << std::endl;
-                                std::cout << "  State: " << (newState ? "PRESSED" : "RELEASED") << std::endl;
-                                std::cout << "  Timestamp: " << std::fixed << std::setprecision(6) << timestamp << "s" << std::endl;
-                                
-                                // Translate to readable key name
-                                std::cout << "  Key: ";
-                                if (limeCode >= 0x61 && limeCode <= 0x7A) {
-                                    std::cout << char(limeCode);
-                                } else if (limeCode >= 0x30 && limeCode <= 0x39) {
-                                    std::cout << char(limeCode);
-                                } else {
-                                    switch (limeCode) {
-                                        case 0x1B: std::cout << "ESC"; break;
-                                        case 0x0D: std::cout << "ENTER"; break;
-                                        case 0x20: std::cout << "SPACE"; break;
-                                        case 0x08: std::cout << "BACKSPACE"; break;
-                                        case 0x09: std::cout << "TAB"; break;
-                                        case 0x7F: std::cout << "DELETE"; break;
-                                        default: std::cout << "KEY(0x" << std::hex << limeCode << std::dec << ")";
-                                    }
-                                }
-                                std::cout << std::endl;
-                                std::cout << "----------------------------------------" << std::endl;
-                                
                                 InputEvent inputEvent;
                                 inputEvent.scanCode = limeCode;
                                 inputEvent.state = newState ? 1 : 0;
-                                inputEvent.timestamp = timestamp;
+                                inputEvent.timestamp = getCurrentTimestamp();
+                                
+                                // Debug print - remove this in production if you want
+                                std::cout << "[EVDEV] Key: 0x" << std::hex << limeCode 
+                                          << " State: " << std::dec << inputEvent.state << std::endl;
+                                
                                 addEvent(inputEvent);
                             }
                         }
                     }
                 }
             }
-            
-            close(evdev_fd);
-            std::cout << "[EVDEV] Worker thread exiting. Total events: " << eventCounter << std::endl;
-            
-        } else {
-            // ========== X11 MODE (Requires window focus) ==========
-            std::cout << "[DEBUG] Opening X display..." << std::endl;
-            dpy = XOpenDisplay(nullptr);
-            if (!dpy) {
-                std::cerr << "[ERROR] Failed to open X display. Make sure you're running under X11." << std::endl;
-                std::cerr << "[ERROR] Try: export DISPLAY=:0" << std::endl;
-                return;
-            }
-            std::cout << "[DEBUG] X display opened successfully" << std::endl;
-            
-            // Get the root window
-            Window root = DefaultRootWindow(dpy);
-            std::cout << "[DEBUG] Root window: " << root << std::endl;
-            
-            // Create a simple input-only window (doesn't need to be visible)
-            std::cout << "[DEBUG] Creating capture window..." << std::endl;
-            capture_window = XCreateSimpleWindow(dpy, root, 0, 0, 1, 1, 0, 0, 0);
-            std::cout << "[DEBUG] Capture window created: " << capture_window << std::endl;
-            
-            // Select which events we want to receive
-            XSelectInput(dpy, capture_window, 
-                         KeyPressMask | KeyReleaseMask | FocusChangeMask);
-            std::cout << "[DEBUG] Selected KeyPress, KeyRelease, and FocusChange events" << std::endl;
-            
-            // Map the window (make it ready to receive events)
-            XMapWindow(dpy, capture_window);
-            std::cout << "[DEBUG] Window mapped" << std::endl;
-            
-            // Get the file descriptor for the X11 connection
-            x11_fd = XConnectionNumber(dpy);
-            std::cout << "[DEBUG] X11 connection FD: " << x11_fd << std::endl;
-            
-            // Flush all pending requests
-            XFlush(dpy);
-            
-            std::cout << "[DEBUG] X11 keyboard capture initialized successfully" << std::endl;
-            std::cout << "[DEBUG] IMPORTANT: Click on the invisible window or your app window to give it focus!" << std::endl;
-            
-            // Use poll/select to check for events with timeout
-            fd_set fds;
-            struct timeval tv;
-            int eventCounter = 0;
-            
-            while (running) {
-                // Set up file descriptor set
-                FD_ZERO(&fds);
-                FD_SET(x11_fd, &fds);
-                
-                // Set timeout to 10ms
-                tv.tv_sec = 0;
-                tv.tv_usec = 10000;
-                
-                int ret = select(x11_fd + 1, &fds, nullptr, nullptr, &tv);
-                
-                if (ret < 0) {
-                    if (errno != EINTR) {
-                        std::cerr << "[ERROR] select() error: " << errno << std::endl;
-                        break;
-                    }
-                    continue;
-                }
-                
-                if (ret > 0 && FD_ISSET(x11_fd, &fds)) {
-                    while (XPending(dpy) > 0) {
-                        XEvent event;
-                        XNextEvent(dpy, &event);
-                        
-                        switch (event.type) {
-                            case KeyPress:
-                            case KeyRelease: {
-                                KeySym keysym = XLookupKeysym(&event.xkey, 0);
-                                int limeCode = x11ToLimeKeyCode(keysym);
-                                
-                                if (limeCode != 0) {
-                                    eventCounter++;
-                                    InputEvent inputEvent;
-                                    inputEvent.scanCode = limeCode;
-                                    inputEvent.state = (event.type == KeyPress) ? 1 : 0;
-                                    inputEvent.timestamp = getCurrentTimestamp();
-                                    
-                                    std::cout << "[X11] Key event #" << eventCounter 
-                                              << " - Code: 0x" << std::hex << limeCode 
-                                              << " State: " << std::dec << inputEvent.state << std::endl;
-                                    
-                                    addEvent(inputEvent);
-                                }
-                                break;
-                            }
-                            
-                            case FocusIn:
-                                std::cout << "[X11] FocusIn - Window gained focus!" << std::endl;
-                                hasFocus = true;
-                                break;
-                                
-                            case FocusOut:
-                                std::cout << "[X11] FocusOut - Window lost focus" << std::endl;
-                                hasFocus = false;
-                                break;
-                        }
-                    }
-                }
-                
-                // Heartbeat every 5 seconds
-                static auto lastHeartbeat = std::chrono::steady_clock::now();
-                auto now = std::chrono::steady_clock::now();
-                if (std::chrono::duration_cast<std::chrono::seconds>(now - lastHeartbeat).count() >= 5) {
-                    std::cout << "[HEARTBEAT] X11 worker alive, events: " << eventCounter 
-                              << ", focused: " << (hasFocus ? "YES" : "NO") << std::endl;
-                    lastHeartbeat = now;
-                }
-            }
-            
-            // Cleanup
-            std::cout << "[DEBUG] Cleaning up X11 resources..." << std::endl;
-            XDestroyWindow(dpy, capture_window);
-            XCloseDisplay(dpy);
-            std::cout << "[DEBUG] X11 keyboard capture stopped" << std::endl;
         }
+        
+        close(evdev_fd);
+        std::cout << "[EVDEV] Worker thread stopped. Total events: " << eventCounter << std::endl;
     }
 #endif
 

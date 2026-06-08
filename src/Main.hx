@@ -288,10 +288,12 @@ class Main extends Application
 				if (mouseDown != null) mouseDown(x, y, button);
 			});
 
+			#if linux
 			haxe.Timer.delay(function() {
 				trace('Async Input initialized. See if it ever works or not');
 				AsyncInput.init();
 			}, 1000);
+			#end
 
 			_started = true;
 		}, 100);

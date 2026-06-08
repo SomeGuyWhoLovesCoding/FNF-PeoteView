@@ -80,8 +80,14 @@ static void listFiles(const std::string& dir, std::vector<std::string>& out) {
     if (!d) return;
     struct dirent* entry;
     while ((entry = readdir(d)) != nullptr) {
-        if (entry->d_type == DT_REG)
+        if (entry->d_type == DT_REG) {
             out.push_back(entry->d_name);
+        } else if (entry->d_type == DT_UNKNOWN) {
+            struct stat st;
+            std::string full = dir + "/" + entry->d_name;
+            if (::stat(full.c_str(), &st) == 0 && S_ISREG(st.st_mode))
+                out.push_back(entry->d_name);
+        }
     }
     closedir(d);
 #endif
@@ -134,17 +140,20 @@ private:
     size_t mapLen = 0;
 #endif
 
+public:
     void closeMap() {
-        if (!mappedData) return;
-        
-        void* headerPtr = static_cast<char*>(static_cast<void*>(mappedData)) - sizeof(ShardHeader);
-        
 #ifdef _WIN32
-        UnmapViewOfFile(headerPtr);
-        if (hMap  != NULL)                { CloseHandle(hMap);  hMap  = NULL; }
-        if (hFile != INVALID_HANDLE_VALUE){ CloseHandle(hFile); hFile = INVALID_HANDLE_VALUE; }
+        if (mappedData) {
+            void* headerPtr = static_cast<char*>(static_cast<void*>(mappedData)) - sizeof(ShardHeader);
+            UnmapViewOfFile(headerPtr);
+        }
+        if (hMap  != NULL)                 { CloseHandle(hMap);  hMap  = NULL; }
+        if (hFile != INVALID_HANDLE_VALUE) { CloseHandle(hFile); hFile = INVALID_HANDLE_VALUE; }
 #else
-        munmap(headerPtr, mapLen);
+        if (mappedData) {
+            void* headerPtr = static_cast<char*>(static_cast<void*>(mappedData)) - sizeof(ShardHeader);
+            munmap(headerPtr, mapLen);
+        }
         if (fd >= 0) { ::close(fd); fd = -1; }
         mapLen = 0;
 #endif
@@ -153,7 +162,6 @@ private:
         memset(&header, 0, sizeof(header));
     }
 
-public:
     MappedFileReader()  = default;
     ~MappedFileReader() { closeMap(); }
 
@@ -265,7 +273,7 @@ public:
     }
 
     uint64_t get(int64_t index) const {
-        if (index < 0 || index >= header.noteCount)
+        if (index < 0 || index >= header.noteCount || index >= mappedCount)
             throw std::out_of_range("MappedFileReader::get out of range");
         return mappedData[index];
     }
@@ -288,7 +296,7 @@ public:
 #ifdef _WIN32
         FlushViewOfFile(headerPtr, sizeof(ShardHeader));
 #else
-        msync(headerPtr, sizeof(ShardHeader), MS_SYNC);
+        msync(headerPtr, sizeof(ShardHeader), MS_ASYNC);
 #endif
     }
 };
@@ -632,7 +640,7 @@ private:
         int64_t oldNoteCount = shard.noteCount;
         
         // Close old mapping FIRST
-        shard.reader.~MappedFileReader();
+        shard.reader.closeMap();
         
         // Resize the file (header + newCapacity notes)
         int64_t newFileSize = sizeof(ShardHeader) + newCapacity * sizeof(uint64_t);
@@ -658,7 +666,6 @@ private:
 #endif
         
         // Reopen with new size
-        new (&shard.reader) MappedFileReader();
         if (!shard.reader.open(path.c_str())) {
             throw std::runtime_error("Failed to remap shard: " + path);
         }
