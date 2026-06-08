@@ -111,7 +111,7 @@ jobs:
       - name: Package Linux build
         if: matrix.needs_tar == true
         run: |
-          tar -czvf ${{ github.workspace }}/${{ matrix.artifact_name }}.tar.gz -C bin/linux/bin .
+          tar -czvf ${{ github.workspace }}/${{ matrix.artifact_name }}.tar.gz -C bin/linux/bin build
           echo "TAR_PATH=${{ github.workspace }}/${{ matrix.artifact_name }}.tar.gz" >> $GITHUB_ENV
         shell: bash
 
