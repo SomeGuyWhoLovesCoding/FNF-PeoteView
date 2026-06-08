@@ -156,7 +156,6 @@ class Tools {
 			}
 			#end
 
-			#if windows
 			var args = [
 				'--font-file', fontFile,
 				'--font-size', '40',
@@ -167,25 +166,9 @@ class Tools {
 				'--padding-left', '8',
 				'--output', outputPath
 			];
-			#else
-			// build a command we can test by pasting into cli
-			var genFontArgs = '--font-file "$fontFile" \\
-			--font-size 40 \\
-			--data-format json \\
-			--padding-up 8 \\
-			--padding-right 8 \\
-			--padding-down 8 \\
-			--padding-left 8 \\
-			--output "$outputPath"';
-			var genFontCommand = '$fontbmPath $genFontArgs';
-			#end
 
 			Sys.println('Generating font bitmap for: $name');
-			#if windows
-			var exitCode = Sys.command(fontbmPath, args);
-			#else
 			var exitCode = Sys.command(genFontCommand);
-			#end
 
 			if (exitCode != 0) {
 				Sys.println('WARNING: fontbm exited with code $exitCode');

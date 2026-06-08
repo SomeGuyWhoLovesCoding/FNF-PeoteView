@@ -48,6 +48,7 @@ class MainMenu {
 		view.scroll.y = 0;
 		view.fov = 1.0;
 
+		trace('watermarkTxt create');
 		if (watermarkTxt == null) {
 			watermarkTxt = new Text("mainMenuWatermarkTxt", 0, 0, view, 'Funkin\' View - Version $fnfpVer');
 			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height - 3;
@@ -56,10 +57,12 @@ class MainMenu {
 			watermarkTxt.outlineSize = 1.25; // 0.06 - usually the default text+ outline size on DaVinci Resolve
 		}
 
+		trace('optionBuf create');
 		if (optionBuf == null) {
 			optionBuf = new Buffer<Actor>(optionAnims.length);
 		}
 
+		trace('backgr create');
 		if (backgroundBuf == null) {
 			backgroundBuf = new Buffer<Sprite>(1);
 
@@ -77,6 +80,7 @@ class MainMenu {
 			}
 		}
 
+		trace('mainMenuSheet create');
 		if (optionProg == null) {
 			var texName = "mainMenuSheet";
 			optionProg = new CustomProgram(optionBuf);

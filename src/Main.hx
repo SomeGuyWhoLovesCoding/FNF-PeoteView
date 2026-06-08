@@ -158,9 +158,11 @@ class Main extends Application
 
 		switch (instance.currentState) {
 			case MAIN_MENU:
+				trace('dispose the main menu');
 				instance.mainMenu.dispose();
 				instance.mainMenu = null;
 			case GAMEPLAY:
+				trace('dispose the gameplay menu');
 				instance.playField.dispose();
 				instance.playField = null;
 			case AWARDS:
@@ -172,7 +174,9 @@ class Main extends Application
 
 		switch (newState) {
 			case MAIN_MENU:
+				trace('new the main menu');
 				instance.mainMenu = new MainMenu();
+				trace('init the main menu');
 				instance.mainMenu.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
 			case GAMEPLAY:
 				instance.playField = new PlayField(songChosen);

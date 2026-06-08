@@ -91,7 +91,7 @@ jobs:
       # Compile for Windows
       - name: Compile (Windows)
         if: runner.os == 'Windows'
-        run: haxelib run lime build hl --app-version="4.0.0-${{ github.run_id}}"
+        run: haxelib run lime build hl --app-version="7.0.0-${{ github.run_id}}"
         shell: cmd
       
       # Compile for Linux
@@ -99,7 +99,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           haxelib run lime rebuild hl
-          haxelib run lime build hl --app-version="4.0.0-${{ github.run_id}}"
+          haxelib run lime build hl --app-version="7.0.0-${{ github.run_id}}"
         shell: bash
       
       # Package Linux build
