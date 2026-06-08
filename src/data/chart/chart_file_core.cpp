@@ -740,25 +740,8 @@ public:
     }
 
     ShardedChartReader(const char* path) : chartDir(path) {
-        auto start = std::chrono::steady_clock::now();
-        
         scanShards();
-        auto scanTime = std::chrono::steady_clock::now();
-        
         initGlobalJudgement();
-        auto initTime = std::chrono::steady_clock::now();
-        
-        size_t bytesLoaded = 0;
-        for (size_t i = 0; i < POOL_SIZE + PRELOAD_THRESHOLD; i++) {
-            uint64_t shardId = availableShards[i];
-            loadShard(shardId);
-            bytesLoaded += shardStartIndices[i + 1] - shardStartIndices[i];
-        }
-        auto loadTime = std::chrono::steady_clock::now();
-        
-        /*std::cout << "Scan time: " << std::chrono::duration_cast<std::chrono::milliseconds>(scanTime - start).count() << "ms\n";
-        std::cout << "Init time: " << std::chrono::duration_cast<std::chrono::milliseconds>(initTime - scanTime).count() << "ms\n";
-        std::cout << "Load time: " << std::chrono::duration_cast<std::chrono::milliseconds>(loadTime - initTime).count() << "ms\n";*/
     }
 
     ~ShardedChartReader() {
