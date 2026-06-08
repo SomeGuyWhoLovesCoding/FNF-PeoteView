@@ -142,18 +142,7 @@ class Tools {
 
 			#if linux
 			// Ensure executable permissions on Linux
-			try {
-				// Check if we can execute it
-				Sys.command("chmod", ["+x", fontbmPath]);
-				var result = Sys.command(fontbmPath, ["--help"]);
-				if (result != 0) {
-					// Try to fix permissions
-					Sys.command("chmod", ["+x", fontbmPath]);
-				}
-			} catch (e:Dynamic) {
-				// Try chmod and retry
-				Sys.command("chmod", ["+x", fontbmPath]);
-			}
+			Sys.command("chmod", ["+x", fontbmPath]);
 			#end
 
 			var args = [
@@ -168,8 +157,7 @@ class Tools {
 			];
 
 			Sys.println('Generating font bitmap for: $name');
-			var exitCode = Sys.command(genFontCommand);
-
+			var exitCode = Sys.command(fontbmPath, args);
 			if (exitCode != 0) {
 				Sys.println('WARNING: fontbm exited with code $exitCode');
 			}
