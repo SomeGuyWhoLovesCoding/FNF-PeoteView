@@ -190,7 +190,11 @@ class Tools {
 			if (exitCode != 0) {
 				Sys.println('WARNING: fontbm exited with code $exitCode');
 			}
+
+			Sys.println('Done generating font bitmap. Now to read the shit.');
 		}
+
+		Sys.println('Now, parsing from $fontPath');
 
 		var contents = File.getContent(fontPath);
 		var data = haxe.Json.parse(contents);
@@ -214,6 +218,7 @@ class Tools {
 		parsedData[256][2] = padding[1]; // right
 		parsedData[256][3] = padding[2]; // down
 
+		Sys.println('Done, and now all we have to do is to quite literally add the texture and it\'s done');
 		TextureSystem.createTexture(name + "Font", fontPNGPath, false, true);
 
 		_fontsCached[name] = parsedData;
