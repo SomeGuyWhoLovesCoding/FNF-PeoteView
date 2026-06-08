@@ -180,10 +180,10 @@ class InputSystem {
 	}
 
 	
-	#if FV_LIME_FORK
+	#if windows
 	function release(code:KeyCode, timestamp:Float)
 	#else
-	function release(code:KeyCode, mod:KeyModifier)
+	function release(code:KeyCode, mod:KeyModifier #if FV_LIME_FORK , timestamp:Float #end)
 	#end
 	{
 		if (parent.disposed || parent.botplay
