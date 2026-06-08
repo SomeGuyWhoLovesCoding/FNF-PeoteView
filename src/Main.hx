@@ -249,19 +249,25 @@ class Main extends Application
 
 			addDisplays();
 
+			trace("1");
 			conductor = new Conductor();
 
+			trace("2");
 			OptionsMenu.init(optionsScreen);
 			optionsMenu = new OptionsMenu();
 
+			trace("3");
 			FreeplayMenu.init(freeplayScreen);
 			freeplayMenu = new FreeplayMenu();
 
+			trace("4");
 			StoryMenu.init(storyScreen);
 			storyMenu = new StoryMenu();
 
+			trace("5");
 			switchState(MAIN_MENU);
 
+			trace("6");
 			resize(peoteView.width, peoteView.height);
 
 			window.onResize.add(resize);
