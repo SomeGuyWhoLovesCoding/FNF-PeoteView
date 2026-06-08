@@ -104,7 +104,6 @@ private:
     
     static LRESULT CALLBACK LowLevelKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
         if (nCode >= 0 && instance) {
-            // AUTO-DETECT FOCUS (Windows)
             HWND foreground = GetForegroundWindow();
             DWORD pid = 0;
             if (foreground) GetWindowThreadProcessId(foreground, &pid);
@@ -162,6 +161,7 @@ private:
 #ifdef __linux__
     Display* dpy = nullptr;
     Window capture_window;
+    int x11_fd = -1;
     bool hasFocus = true;
     
     int x11ToLimeKeyCode(KeySym keysym) {
@@ -253,41 +253,71 @@ private:
         // Map the window (make it ready to receive events)
         XMapWindow(dpy, capture_window);
         
+        // Get the file descriptor for the X11 connection
+        x11_fd = XConnectionNumber(dpy);
+        
         // Flush all pending requests
         XFlush(dpy);
         
         std::cout << "X11 keyboard capture initialized successfully" << std::endl;
         
-        // Main event loop
-        XEvent event;
+        // Use poll/select to check for events with timeout
+        fd_set fds;
+        struct timeval tv;
+        
         while (running) {
-            // Wait for next X11 event (blocks until event arrives)
-            XNextEvent(dpy, &event);
+            // Set up file descriptor set
+            FD_ZERO(&fds);
+            FD_SET(x11_fd, &fds);
             
-            switch (event.type) {
-                case KeyPress:
-                case KeyRelease: {
-                    // Get the key symbol
-                    KeySym keysym = XLookupKeysym(&event.xkey, 0);
-                    int limeCode = x11ToLimeKeyCode(keysym);
-                    
-                    if (limeCode != 0) {
-                        InputEvent inputEvent;
-                        inputEvent.scanCode = limeCode;
-                        inputEvent.state = (event.type == KeyPress) ? 1 : 0;
-                        inputEvent.timestamp = getCurrentTimestamp();
-                        addEvent(inputEvent);
-                    }
+            // Set timeout to 10ms (allows checking running flag frequently)
+            tv.tv_sec = 0;
+            tv.tv_usec = 10000;  // 10ms timeout
+            
+            // Wait for X11 events with timeout
+            int ret = select(x11_fd + 1, &fds, nullptr, nullptr, &tv);
+            
+            if (ret < 0) {
+                // Error in select
+                if (errno != EINTR) {
+                    std::cerr << "select() error" << std::endl;
                     break;
                 }
-                
-                case FocusIn:
-                    hasFocus = true;
-                    break;
+                continue;
+            }
+            
+            if (ret > 0 && FD_ISSET(x11_fd, &fds)) {
+                // Process pending X11 events
+                while (XPending(dpy) > 0) {
+                    XEvent event;
+                    XNextEvent(dpy, &event);
                     
-                case FocusOut:
-                    hasFocus = false;
-                    break;
+                    switch (event.type) {
+                        case KeyPress:
+                        case KeyRelease: {
+                            // Get the key symbol
+                            KeySym keysym = XLookupKeysym(&event.xkey, 0);
+                            int limeCode = x11ToLimeKeyCode(keysym);
+                            
+                            if (limeCode != 0) {
+                                InputEvent inputEvent;
+                                inputEvent.scanCode = limeCode;
+                                inputEvent.state = (event.type == KeyPress) ? 1 : 0;
+                                inputEvent.timestamp = getCurrentTimestamp();
+                                addEvent(inputEvent);
+                            }
+                            break;
+                        }
+                        
+                        case FocusIn:
+                            hasFocus = true;
+                            break;
+                            
+                        case FocusOut:
+                            hasFocus = false;
+                            break;
+                    }
+                }
             }
         }
         
