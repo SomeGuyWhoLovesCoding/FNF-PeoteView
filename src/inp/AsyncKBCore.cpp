@@ -254,7 +254,7 @@ private:
         for (int i = 0; i < 64; i++) {
             char path[64]; 
             snprintf(path, sizeof(path), "/dev/input/event%d", i);
-            int fd = open(path, O_RDONLY | O_NONBLOCK);
+            int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
             if (fd >= 0) {
                 char name[256] = {0};
                 if (ioctl(fd, EVIOCGNAME(sizeof(name)), name) >= 0) {
@@ -278,7 +278,7 @@ private:
             for (int i = 0; i < 64; i++) {
                 char path[64]; 
                 snprintf(path, sizeof(path), "/dev/input/event%d", i);
-                int fd = open(path, O_RDONLY | O_NONBLOCK);
+                int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
                 if (fd >= 0) {
                     unsigned char evtype_bits[EV_MAX/8 + 1] = {0};
                     if (ioctl(fd, EVIOCGBIT(0, sizeof(evtype_bits)), evtype_bits) >= 0) {
@@ -309,7 +309,7 @@ private:
             for (int i = 0; i < 64; i++) {
                 char path[64]; 
                 snprintf(path, sizeof(path), "/dev/input/event%d", i);
-                int fd = open(path, O_RDONLY | O_NONBLOCK);
+                int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
                 if (fd >= 0) {
                     unsigned char evtype_bits[EV_MAX/8 + 1] = {0};
                     if (ioctl(fd, EVIOCGBIT(0, sizeof(evtype_bits)), evtype_bits) >= 0) {
@@ -332,7 +332,7 @@ private:
             for (int i = 0; i < 64; i++) {
                 char path[64]; 
                 snprintf(path, sizeof(path), "/dev/input/event%d", i);
-                int fd = open(path, O_RDONLY | O_NONBLOCK);
+                int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
                 if (fd >= 0) {
                     keyboard_fd = fd;
                     char name[256] = {0};
@@ -355,7 +355,7 @@ private:
             };
             
             for (const char* dev_path : devices) {
-                int fd = open(dev_path, O_RDONLY | O_NONBLOCK);
+                int fd = open(dev_path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
                 if (fd >= 0) {
                     keyboard_fd = fd;
                     std::cout << "Using fallback device: " << dev_path << std::endl;
