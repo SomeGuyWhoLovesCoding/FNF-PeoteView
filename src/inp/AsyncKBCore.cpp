@@ -244,9 +244,14 @@ private:
             return; 
         }
         
+        // Helper lambda to test a bit in a bitset
+        auto test_bit = [](int bit, const unsigned char* array) -> bool {
+            return (array[bit / 8] >> (bit % 8)) & 1;
+        };
+        
         // First try: Look specifically for keyboards
         keyboard_fd = -1;
-        for (int i = 0; i < 64; i++) {  // Increased to 64 devices
+        for (int i = 0; i < 64; i++) {
             char path[64]; 
             snprintf(path, sizeof(path), "/dev/input/event%d", i);
             int fd = open(path, O_RDONLY | O_NONBLOCK);
@@ -275,14 +280,15 @@ private:
                 snprintf(path, sizeof(path), "/dev/input/event%d", i);
                 int fd = open(path, O_RDONLY | O_NONBLOCK);
                 if (fd >= 0) {
-                    unsigned char evtype_bits[EV_MAX/8 + 1];
+                    unsigned char evtype_bits[EV_MAX/8 + 1] = {0};
                     if (ioctl(fd, EVIOCGBIT(0, sizeof(evtype_bits)), evtype_bits) >= 0) {
                         // Check if it supports EV_KEY events
-                        if (evtype_bits[EV_KEY/8] & (1 << (EV_KEY % 8))) {
-                            unsigned char key_bits[KEY_MAX/8 + 1];
+                        if (test_bit(EV_KEY, evtype_bits)) {
+                            unsigned char key_bits[KEY_MAX/8 + 1] = {0};
                             if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(key_bits)), key_bits) >= 0) {
-                                // Check for keyboard-specific keys
-                                if (test_bit(KEY_A, key_bits) && test_bit(KEY_B, key_bits)) {
+                                // Check for keyboard-specific keys (A, B, 1, Enter, etc.)
+                                if (test_bit(KEY_A, key_bits) && test_bit(KEY_B, key_bits) &&
+                                    test_bit(KEY_1, key_bits) && test_bit(KEY_ENTER, key_bits)) {
                                     keyboard_fd = fd;
                                     char name[256] = {0};
                                     ioctl(fd, EVIOCGNAME(sizeof(name)), name);
@@ -297,7 +303,30 @@ private:
             }
         }
         
-        // Third try: Fallback to first available input device
+        // Third try: Check for any device that supports EV_KEY events (could be a keyboard, mouse, etc.)
+        if (keyboard_fd < 0) {
+            std::cout << "Looking for any input device with key events..." << std::endl;
+            for (int i = 0; i < 64; i++) {
+                char path[64]; 
+                snprintf(path, sizeof(path), "/dev/input/event%d", i);
+                int fd = open(path, O_RDONLY | O_NONBLOCK);
+                if (fd >= 0) {
+                    unsigned char evtype_bits[EV_MAX/8 + 1] = {0};
+                    if (ioctl(fd, EVIOCGBIT(0, sizeof(evtype_bits)), evtype_bits) >= 0) {
+                        if (test_bit(EV_KEY, evtype_bits)) {
+                            keyboard_fd = fd;
+                            char name[256] = {0};
+                            ioctl(fd, EVIOCGNAME(sizeof(name)), name);
+                            std::cout << "Using device with key events: " << name << " at " << path << std::endl;
+                            break;
+                        }
+                    }
+                    close(fd);
+                }
+            }
+        }
+        
+        // Fourth try: Fallback to first available input device
         if (keyboard_fd < 0) {
             std::cout << "Falling back to first available input device..." << std::endl;
             for (int i = 0; i < 64; i++) {
@@ -319,10 +348,11 @@ private:
             std::cerr << "Make sure you have permission to access /dev/input/event*" << std::endl;
             std::cerr << "Try: sudo usermod -a -G input $USER" << std::endl;
             std::cerr << "Or run with: sudo ./your_program" << std::endl;
-            close(event_fd);  // Clean up event_fd
+            close(event_fd);
             return; 
         }
         
+        // Rest of your workerFunction remains the same...
         startTime = std::chrono::steady_clock::now();
         startTimeInitialized = true;
         currentKeyStates.fill(false);
