@@ -437,7 +437,7 @@ private:
             
             // Read ONLY the header, then close the file
             ShardHeader header = readHeaderOnly(shardId);
-            printf(" -- \nShard ID: %llu, Note count from there: %llu\n -- \n", shardId, header.noteCount);
+            //printf(" -- \nShard ID: %llu, Note count from there: %llu\n -- \n", shardId, header.noteCount);
             tempInfos.push_back({shardId, header.noteCount});
         }
         
@@ -606,8 +606,15 @@ private:
 
         std::vector<uint64_t> toRemove;
         for (auto& pair : activeShards) {
-            if (pair.first + POOL_SIZE < currentShard)
+            // 🔥 FIX: Use a symmetric window to prevent unbounded FD growth
+            // when seeking backwards or accessing shards out of order.
+            int64_t first = static_cast<int64_t>(pair.first);
+            int64_t current = static_cast<int64_t>(currentShard);
+            int64_t dist = (first > current) ? (first - current) : (current - first);
+            
+            if (dist > POOL_SIZE) {
                 toRemove.push_back(pair.first);
+            }
         }
         for (uint64_t id : toRemove) unloadShard(id);
     }
