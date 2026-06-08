@@ -3,16 +3,10 @@
     #include <windows.h>
     #pragma comment(lib, "user32.lib")
 #elif defined(__linux__)
-    #include <linux/input.h>
-    #include <fcntl.h>
-    #include <unistd.h>
-    #include <cstring>
-    #include <poll.h>
-    #include <errno.h>
-    #include <sys/eventfd.h>
-    #include <sys/ioctl.h>  // Add this
     #include <X11/Xlib.h>
-    #include <X11/Xatom.h>
+    #include <X11/Xutil.h>
+    #include <X11/keysym.h>
+    #include <unistd.h>
 #endif
 
 #include <atomic>
@@ -34,7 +28,6 @@ private:
     static constexpr size_t MAX_EVENTS = 512;
     
     std::atomic<bool> running;
-    std::atomic<bool> hasFocus{true}; // Used for Linux state tracking
     std::thread worker;
     std::array<InputEvent, MAX_EVENTS> eventBuffer;
     std::atomic<size_t> writeIndex{0};
@@ -167,307 +160,141 @@ private:
 #endif
 
 #ifdef __linux__
-    int keyboard_fd = -1;
-    int event_fd = -1;
-    std::array<bool, KEY_MAX> currentKeyStates;
-    
     Display* dpy = nullptr;
-    int x11_fd = -1;
-    Atom net_active_window = None;
-    Atom net_wm_pid = None;
-    Window root = None;
-    pid_t my_pid;
-
-    bool checkX11Focus(Display* dpy, Window root, Atom net_active_window, Atom net_wm_pid, pid_t my_pid) {
-        Atom actual_type;
-        int actual_format;
-        unsigned long nitems, bytes_after;
-        unsigned char* prop = NULL;
-        
-        if (XGetWindowProperty(dpy, root, net_active_window, 0, 1, False, XA_WINDOW,
-                               &actual_type, &actual_format, &nitems, &bytes_after, &prop) == Success && prop) {
-            // FIX 1: Check format and size before dereferencing to prevent heap overread segfaults
-            if (actual_format == 32 && nitems > 0) {
-                Window active = *(Window*)prop;
-                XFree(prop);
-                prop = NULL;
-                
-                if (active != None) {
-                    if (XGetWindowProperty(dpy, active, net_wm_pid, 0, 1, False, XA_CARDINAL,
-                                           &actual_type, &actual_format, &nitems, &bytes_after, &prop) == Success && prop) {
-                        if (actual_format == 32 && nitems > 0) {
-                            // X11 32-bit properties are stored in arrays of `long`. Cast safely.
-                            pid_t wm_pid = static_cast<pid_t>(*(long*)prop);
-                            XFree(prop);
-                            return wm_pid == my_pid;
-                        }
-                        XFree(prop);
-                    }
-                }
-            } else {
-                XFree(prop);
-            }
-        }
-        return true; // Fallback to true if WM doesn't support EWMH properly
-    }
+    Window capture_window;
+    bool hasFocus = true;
     
-    int linuxToLimeKeyCode(int evdevCode) {
-        if (evdevCode >= KEY_A && evdevCode <= KEY_Z) return 0x61 + (evdevCode - KEY_A);
-        if (evdevCode >= KEY_1 && evdevCode <= KEY_9) return 0x31 + (evdevCode - KEY_1);
-        if (evdevCode == KEY_0) return 0x30;
+    int x11ToLimeKeyCode(KeySym keysym) {
+        // Letters (uppercase)
+        if (keysym >= XK_A && keysym <= XK_Z) return 0x61 + (keysym - XK_A);
+        // Letters (lowercase)
+        if (keysym >= XK_a && keysym <= XK_z) return 0x61 + (keysym - XK_a);
         
-        switch (evdevCode) {
-            case KEY_BACKSPACE: return 0x08; case KEY_TAB: return 0x09; case KEY_ENTER: return 0x0D;
-            case KEY_ESC: return 0x1B; case KEY_SPACE: return 0x20; case KEY_DELETE: return 0x7F;
-            case KEY_INSERT: return 0x40000049; case KEY_HOME: return 0x4000004A; case KEY_END: return 0x4000004D;
-            case KEY_PAGEUP: return 0x4000004B; case KEY_PAGEDOWN: return 0x4000004E; case KEY_UP: return 0x40000052;
-            case KEY_DOWN: return 0x40000051; case KEY_LEFT: return 0x40000050; case KEY_RIGHT: return 0x4000004F;
-            case KEY_LEFTCTRL: return 0x400000E0; case KEY_RIGHTCTRL: return 0x400000E4; case KEY_LEFTSHIFT: return 0x400000E1;
-            case KEY_RIGHTSHIFT: return 0x400000E5; case KEY_LEFTALT: return 0x400000E2; case KEY_RIGHTALT: return 0x400000E6;
-            case KEY_LEFTMETA: return 0x400000E3; case KEY_RIGHTMETA: return 0x400000E7; case KEY_CAPSLOCK: return 0x40000039;
-            case KEY_NUMLOCK: return 0x40000053; case KEY_SCROLLLOCK: return 0x40000047; case KEY_F1: return 0x4000003A;
-            case KEY_F2: return 0x4000003B; case KEY_F3: return 0x4000003C; case KEY_F4: return 0x4000003D;
-            case KEY_F5: return 0x4000003E; case KEY_F6: return 0x4000003F; case KEY_F7: return 0x40000040;
-            case KEY_F8: return 0x40000041; case KEY_F9: return 0x40000042; case KEY_F10: return 0x40000043;
-            case KEY_F11: return 0x40000044; case KEY_F12: return 0x40000045; case KEY_MINUS: return 0x2D;
-            case KEY_EQUAL: return 0x3D; case KEY_LEFTBRACE: return 0x5B; case KEY_RIGHTBRACE: return 0x5D;
-            case KEY_BACKSLASH: return 0x5C; case KEY_SEMICOLON: return 0x3B; case KEY_APOSTROPHE: return 0x27;
-            case KEY_GRAVE: return 0x60; case KEY_COMMA: return 0x2C; case KEY_DOT: return 0x2E;
-            case KEY_SLASH: return 0x2F; default: return 0x00;
+        // Numbers
+        if (keysym >= XK_0 && keysym <= XK_9) return keysym;
+        
+        // Special keys
+        switch (keysym) {
+            case XK_BackSpace: return 0x08;
+            case XK_Tab: return 0x09;
+            case XK_Return: return 0x0D;
+            case XK_Escape: return 0x1B;
+            case XK_space: return 0x20;
+            case XK_Delete: return 0x7F;
+            case XK_Insert: return 0x40000049;
+            case XK_Home: return 0x4000004A;
+            case XK_End: return 0x4000004D;
+            case XK_Page_Up: return 0x4000004B;
+            case XK_Page_Down: return 0x4000004E;
+            case XK_Up: return 0x40000052;
+            case XK_Down: return 0x40000051;
+            case XK_Left: return 0x40000050;
+            case XK_Right: return 0x4000004F;
+            case XK_Shift_L: return 0x400000E1;
+            case XK_Shift_R: return 0x400000E5;
+            case XK_Control_L: return 0x400000E0;
+            case XK_Control_R: return 0x400000E4;
+            case XK_Alt_L: return 0x400000E2;
+            case XK_Alt_R: return 0x400000E6;
+            case XK_Super_L: return 0x400000E3;
+            case XK_Super_R: return 0x400000E7;
+            case XK_Caps_Lock: return 0x40000039;
+            case XK_Num_Lock: return 0x40000053;
+            case XK_Scroll_Lock: return 0x40000047;
+            case XK_F1: return 0x4000003A;
+            case XK_F2: return 0x4000003B;
+            case XK_F3: return 0x4000003C;
+            case XK_F4: return 0x4000003D;
+            case XK_F5: return 0x4000003E;
+            case XK_F6: return 0x4000003F;
+            case XK_F7: return 0x40000040;
+            case XK_F8: return 0x40000041;
+            case XK_F9: return 0x40000042;
+            case XK_F10: return 0x40000043;
+            case XK_F11: return 0x40000044;
+            case XK_F12: return 0x40000045;
+            case XK_minus: return 0x2D;
+            case XK_equal: return 0x3D;
+            case XK_bracketleft: return 0x5B;
+            case XK_bracketright: return 0x5D;
+            case XK_backslash: return 0x5C;
+            case XK_semicolon: return 0x3B;
+            case XK_apostrophe: return 0x27;
+            case XK_grave: return 0x60;
+            case XK_comma: return 0x2C;
+            case XK_period: return 0x2E;
+            case XK_slash: return 0x2F;
+            default: return 0x00;
         }
     }
     
     void workerFunction() {
-        event_fd = eventfd(0, EFD_NONBLOCK);
-        if (event_fd < 0) { 
-            std::cerr << "Failed to create eventfd" << std::endl; 
-            return; 
+        // Open connection to X server
+        dpy = XOpenDisplay(nullptr);
+        if (!dpy) {
+            std::cerr << "Failed to open X display. Make sure you're running under X11." << std::endl;
+            std::cerr << "Try: export DISPLAY=:0" << std::endl;
+            return;
         }
         
-        // Helper lambda to test a bit in a bitset
-        auto test_bit = [](int bit, const unsigned char* array) -> bool {
-            return (array[bit / 8] >> (bit % 8)) & 1;
-        };
-        
-        // First try: Look specifically for keyboards
-        keyboard_fd = -1;
-        for (int i = 0; i < 64; i++) {
-            char path[64]; 
-            snprintf(path, sizeof(path), "/dev/input/event%d", i);
-            int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-            if (fd >= 0) {
-                char name[256] = {0};
-                if (ioctl(fd, EVIOCGNAME(sizeof(name)), name) >= 0) {
-                    // Check for keyboard indicators
-                    if (strstr(name, "keyboard") || strstr(name, "Keyboard") || 
-                        strstr(name, "AT Translated") || strstr(name, "kbd") ||
-                        strstr(name, "Keychron") || strstr(name, "Logitech") ||
-                        strstr(name, "Microsoft") || strstr(name, "Apple")) {
-                        keyboard_fd = fd;
-                        std::cout << "Found keyboard: " << name << " at " << path << std::endl;
-                        break;
-                    }
-                }
-                close(fd);
-            }
-        }
-        
-        // Second try: Check device capabilities (more reliable)
-        if (keyboard_fd < 0) {
-            std::cout << "Looking for any input device with keyboard capabilities..." << std::endl;
-            for (int i = 0; i < 64; i++) {
-                char path[64]; 
-                snprintf(path, sizeof(path), "/dev/input/event%d", i);
-                int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-                if (fd >= 0) {
-                    unsigned char evtype_bits[EV_MAX/8 + 1] = {0};
-                    if (ioctl(fd, EVIOCGBIT(0, sizeof(evtype_bits)), evtype_bits) >= 0) {
-                        // Check if it supports EV_KEY events
-                        if (test_bit(EV_KEY, evtype_bits)) {
-                            unsigned char key_bits[KEY_MAX/8 + 1] = {0};
-                            if (ioctl(fd, EVIOCGBIT(EV_KEY, sizeof(key_bits)), key_bits) >= 0) {
-                                // Check for keyboard-specific keys (A, B, 1, Enter, etc.)
-                                if (test_bit(KEY_A, key_bits) && test_bit(KEY_B, key_bits) &&
-                                    test_bit(KEY_1, key_bits) && test_bit(KEY_ENTER, key_bits)) {
-                                    keyboard_fd = fd;
-                                    char name[256] = {0};
-                                    ioctl(fd, EVIOCGNAME(sizeof(name)), name);
-                                    std::cout << "Found keyboard device with keyboard keys: " << name << " at " << path << std::endl;
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    close(fd);
-                }
-            }
-        }
-        
-        // Third try: Check for any device that supports EV_KEY events (could be a keyboard, mouse, etc.)
-        if (keyboard_fd < 0) {
-            std::cout << "Looking for any input device with key events..." << std::endl;
-            for (int i = 0; i < 64; i++) {
-                char path[64]; 
-                snprintf(path, sizeof(path), "/dev/input/event%d", i);
-                int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-                if (fd >= 0) {
-                    unsigned char evtype_bits[EV_MAX/8 + 1] = {0};
-                    if (ioctl(fd, EVIOCGBIT(0, sizeof(evtype_bits)), evtype_bits) >= 0) {
-                        if (test_bit(EV_KEY, evtype_bits)) {
-                            keyboard_fd = fd;
-                            char name[256] = {0};
-                            ioctl(fd, EVIOCGNAME(sizeof(name)), name);
-                            std::cout << "Using device with key events: " << name << " at " << path << std::endl;
-                            break;
-                        }
-                    }
-                    close(fd);
-                }
-            }
-        }
-        
-        // Fourth try: Fallback to first available input device
-        if (keyboard_fd < 0) {
-            std::cout << "Falling back to first available input device..." << std::endl;
-            for (int i = 0; i < 64; i++) {
-                char path[64]; 
-                snprintf(path, sizeof(path), "/dev/input/event%d", i);
-                int fd = open(path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-                if (fd >= 0) {
-                    keyboard_fd = fd;
-                    char name[256] = {0};
-                    ioctl(fd, EVIOCGNAME(sizeof(name)), name);
-                    std::cout << "Using device: " << name << " at " << path << std::endl;
-                    break;
-                }
-            }
-        }
-
-        // Fifth try: If /dev/input/event* fails, try /dev/input/by-path/
-        if (keyboard_fd < 0) {
-            // Try platform keyboard (emulated PS/2 often appears here)
-            const char* devices[] = {
-                "/dev/input/by-path/platform-i8042-serio-0-event-kbd",
-                "/dev/input/by-path/platform-i8042-serio-1-event-kbd",
-                "/dev/input/by-path/platform-i8042-serio-0-event",
-                "/dev/tty0",  // Console input
-                "/dev/tty"    // Current TTY
-            };
-            
-            for (const char* dev_path : devices) {
-                int fd = open(dev_path, O_RDONLY | O_NONBLOCK | O_CLOEXEC);
-                if (fd >= 0) {
-                    keyboard_fd = fd;
-                    std::cout << "Using fallback device: " << dev_path << std::endl;
-                    break;
-                }
-            }
-        }
-        
-        if (keyboard_fd < 0) {
-            std::cerr << "Failed to open any keyboard device on Linux" << std::endl;
-            std::cerr << "Make sure you have permission to access /dev/input/event*" << std::endl;
-            std::cerr << "Try: sudo usermod -a -G input $USER" << std::endl;
-            std::cerr << "Or run with: sudo ./your_program" << std::endl;
-            close(event_fd);
-            return; 
-        }
-        
-        // Rest of your workerFunction remains the same...
         startTime = std::chrono::steady_clock::now();
         startTimeInitialized = true;
-        currentKeyStates.fill(false);
         
-        // AUTO-DETECT FOCUS (Linux via X11)
-        dpy = XOpenDisplay(NULL);
-        if (dpy) {
-            x11_fd = XConnectionNumber(dpy);
-            net_active_window = XInternAtom(dpy, "_NET_ACTIVE_WINDOW", True);
-            net_wm_pid = XInternAtom(dpy, "_NET_WM_PID", True);
-            root = DefaultRootWindow(dpy);
-            my_pid = getpid();
-            
-            if (net_active_window != None && net_wm_pid != None && root != None) {
-                XSelectInput(dpy, root, PropertyChangeMask);
-                bool initialFocus = checkX11Focus(dpy, root, net_active_window, net_wm_pid, my_pid);
-                hasFocus.store(initialFocus, std::memory_order_relaxed);
-            } else {
-                XCloseDisplay(dpy);
-                dpy = nullptr;
-                x11_fd = -1;
-            }
-        }
+        // Get the root window
+        Window root = DefaultRootWindow(dpy);
         
-        struct input_event ev;
-        struct pollfd pfds[3];
-        pfds[0].fd = keyboard_fd; pfds[0].events = POLLIN;
-        pfds[1].fd = event_fd; pfds[1].events = POLLIN;
-        int num_fds = 2;
+        // Create a simple input-only window (doesn't need to be visible)
+        capture_window = XCreateSimpleWindow(dpy, root, 0, 0, 1, 1, 0, 0, 0);
         
-        if (x11_fd >= 0) {
-            pfds[2].fd = x11_fd; pfds[2].events = POLLIN;
-            num_fds = 3;
-        }
+        // Select which events we want to receive
+        XSelectInput(dpy, capture_window, 
+                     KeyPressMask | KeyReleaseMask | FocusChangeMask);
         
-        struct sched_param param;
-        param.sched_priority = sched_get_priority_max(SCHED_FIFO);
-        pthread_setschedparam(pthread_self(), SCHED_FIFO, &param);
+        // Map the window (make it ready to receive events)
+        XMapWindow(dpy, capture_window);
         
+        // Flush all pending requests
+        XFlush(dpy);
+        
+        std::cout << "X11 keyboard capture initialized successfully" << std::endl;
+        
+        // Main event loop
+        XEvent event;
         while (running) {
-            int ret = poll(pfds, num_fds, -1);
-            if (ret < 0) {
-                if (errno != EINTR) { std::cerr << "poll() error" << std::endl; break; }
-                continue;
-            }
+            // Wait for next X11 event (blocks until event arrives)
+            XNextEvent(dpy, &event);
             
-            if (pfds[1].revents & POLLIN) break;
-
-            // Process X11 events FIRST to ensure focus state is updated before reading keys
-            if (x11_fd >= 0 && (pfds[2].revents & POLLIN)) {
-                // FIX 2: Use XEventsQueued with QueuedAfterFlush to actually read from the socket
-                while (XEventsQueued(dpy, QueuedAfterFlush) > 0) {
-                    XEvent xev;
-                    XNextEvent(dpy, &xev);
-                    if (xev.type == PropertyNotify && xev.xproperty.atom == net_active_window) {
-                        bool focused = checkX11Focus(dpy, root, net_active_window, net_wm_pid, my_pid);
-                        hasFocus.store(focused, std::memory_order_relaxed);
+            switch (event.type) {
+                case KeyPress:
+                case KeyRelease: {
+                    // Get the key symbol
+                    KeySym keysym = XLookupKeysym(&event.xkey, 0);
+                    int limeCode = x11ToLimeKeyCode(keysym);
+                    
+                    if (limeCode != 0) {
+                        InputEvent inputEvent;
+                        inputEvent.scanCode = limeCode;
+                        inputEvent.state = (event.type == KeyPress) ? 1 : 0;
+                        inputEvent.timestamp = getCurrentTimestamp();
+                        addEvent(inputEvent);
                     }
+                    break;
                 }
-            }
-            
-            if (pfds[0].revents & POLLIN) {
-                while (read(keyboard_fd, &ev, sizeof(ev)) == sizeof(ev)) {
-                    if (ev.type == EV_KEY && ev.code >= 0 && ev.code < KEY_MAX) {
-                        bool oldState = currentKeyStates[ev.code];
-                        bool newState = ev.value;
-                        
-                        currentKeyStates[ev.code] = newState;
-
-                        bool isFocused = true;
-                        if (x11_fd >= 0) {
-                            isFocused = hasFocus.load(std::memory_order_relaxed);
-                        }
-
-                        if (isFocused) {
-                            int limeCode = linuxToLimeKeyCode(ev.code);
-                            if (limeCode) {
-                                if (newState != oldState) {
-                                    InputEvent event;
-                                    event.scanCode = limeCode;
-                                    event.state = newState;
-                                    event.timestamp = getCurrentTimestamp();
-                                    addEvent(event);
-                                }
-                            }
-                        }
-                    }
-                }
+                
+                case FocusIn:
+                    hasFocus = true;
+                    break;
+                    
+                case FocusOut:
+                    hasFocus = false;
+                    break;
             }
         }
         
-        // FIX 3: Removed close(keyboard_fd) and close(event_fd) from here. 
-        // The destructor will safely close them after worker.join() completes.
-        if (dpy) XCloseDisplay(dpy);
+        // Cleanup
+        XDestroyWindow(dpy, capture_window);
+        XCloseDisplay(dpy);
+        std::cout << "X11 keyboard capture stopped" << std::endl;
     }
 #endif
 
@@ -493,24 +320,12 @@ public:
     }
     
     ~AsyncInputThread() {
-            running = false;
-    #ifdef _WIN32
-            if (instance && instance->quitEvent) SetEvent(instance->quitEvent);
-    #elif defined(__linux__)
-            if (event_fd >= 0) {
-                // Write to the eventfd to safely wake up the poll() loop
-                uint64_t val = 1;
-                write(event_fd, &val, sizeof(val));
-            }
-    #endif
-            if (worker.joinable()) worker.join();
-            
-            // NOW it is safe to close the FD after the thread has joined
-    #ifdef __linux__
-            if (event_fd >= 0) close(event_fd);
-            if (keyboard_fd >= 0) close(keyboard_fd);
-    #endif
-        }
+        running = false;
+#ifdef _WIN32
+        if (instance && instance->quitEvent) SetEvent(instance->quitEvent);
+#endif
+        if (worker.joinable()) worker.join();
+    }
 
     bool hasEvent() const { return eventCount.load(std::memory_order_acquire) > 0 || hasCurrentEvent; }
     int getScanCode() { loadNextEvent(); return hasCurrentEvent ? currentEvent.scanCode : 0; }
