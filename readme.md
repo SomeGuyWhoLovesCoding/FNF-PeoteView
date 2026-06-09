@@ -7,4 +7,3 @@ This is being optimized and organized as frequently as possible for a flexible c
 Expect this repository to be somewhat or sometimes active, because the developer has other stuff to do so don't go "when is funkin view coming out".
 
 Refer to [the wiki](https://github.com/SomeGuyWhoLovesCoding/FNF-PeoteView/wiki/The-Basics) for more info.
-
