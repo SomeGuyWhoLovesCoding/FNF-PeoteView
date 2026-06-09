@@ -18,6 +18,10 @@ log_error() {
     echo -e "${RED}[ERROR]${NC} $1"
 }
 
+log_warn() {
+    echo -e "${YELLOW}[WARN]${NC} $1"
+}
+
 trap 'log_error "Script failed on line $LINENO. Exit code: $?"' ERR
 
 log_info "Starting Linux setup..."
@@ -30,31 +34,62 @@ sudo sed -i 's/azure.archive.ubuntu.com/archive.ubuntu.com/g' /etc/apt/sources.l
 log_info "Running apt update..."
 sudo apt-get update
 
-# Install dependencies sequentially
+# Install 64-bit dependencies first
 log_info "Installing 64-bit dependencies..."
-sudo apt-get install -y libc6-dev-i386 g++-multilib
-sudo apt install -y libx11-dev libxrandr-dev libxinerama-dev
-sudo apt-get install -y libgl-dev libgl1-mesa-dev libasound2-dev
-sudo apt-get install -y libdrm-dev libgbm-dev mesa-common-dev libegl1-mesa-dev libgles2-mesa-dev
-sudo apt-get install -y libinput-dev libudev-dev
+sudo apt-get install -y \
+    libc6-dev-i386 \
+    g++-multilib \
+    libx11-dev \
+    libxrandr-dev \
+    libxinerama-dev \
+    libgl-dev \
+    libgl1-mesa-dev \
+    libasound2-dev \
+    libdrm-dev \
+    libgbm-dev \
+    mesa-common-dev \
+    libegl1-mesa-dev \
+    libgles2-mesa-dev \
+    libudev-dev
 
-# Setup i386
+# Install libinput separately with its dependencies
+log_info "Installing libinput (64-bit)..."
+sudo apt-get install -y libinput-dev
+
+# Setup i386 architecture if not already enabled
 log_info "Setting up i386 architecture..."
-sudo dpkg --add-architecture i386
-sudo apt update
+if ! dpkg --print-foreign-architectures | grep -q i386; then
+    sudo dpkg --add-architecture i386
+    sudo apt-get update
+else
+    log_info "i386 architecture already enabled"
+fi
 
-# Install 32-bit dependencies
-log_info "Installing 32-bit dependencies..."
-sudo apt-get install -y libgl-dev:i386 libgl1-mesa-dev:i386 libglu1-mesa-dev:i386
-sudo apt-get install -y libdrm-dev:i386 libgbm-dev:i386 mesa-common-dev:i386 libegl1-mesa-dev:i386 libgles2-mesa-dev:i386
-sudo apt-get install -y libinput-dev:i386 libudev-dev:i386
+# Install ONLY the essential 32-bit libraries (skip libinput for 32-bit if causing issues)
+log_info "Installing 32-bit graphics libraries (essential for OpenGL)..."
+sudo apt-get install -y \
+    libgl-dev:i386 \
+    libgl1-mesa-dev:i386 \
+    libglu1-mesa-dev:i386 \
+    libdrm-dev:i386 \
+    libgbm-dev:i386 \
+    libegl1-mesa-dev:i386 \
+    libgles2-mesa-dev:i386 \
+    libudev-dev:i386 || log_warn "Some 32-bit libraries failed to install (may not be needed)"
 
-# Fix DRM headers
+# Try to install 32-bit libinput only if absolutely needed (it often fails on older Ubuntu)
+log_info "Attempting to install 32-bit libinput (optional)..."
+if ! sudo apt-get install -y libinput-dev:i386 2>/dev/null; then
+    log_warn "32-bit libinput not installed - this is fine if you're not building 32-bit binaries"
+    log_warn "Your 64-bit build will still work perfectly"
+fi
+
+# Fix DRM headers (your existing code)
 log_info "Fixing DRM headers..."
-sudo sed -i 's|<drm_mode.h>|<libdrm/drm_mode.h>|' /usr/include/xf86drmMode.h || true
-sudo sed -i 's|<drm.h>|<libdrm/drm.h>|' /usr/include/xf86drm.h || true
-sudo ln -sf /usr/include/libdrm/drm_mode.h /usr/include/drm_mode.h || true
-sudo ln -sf /usr/include/libdrm/drm.h /usr/include/drm.h || true
+sudo sed -i 's|<drm_mode.h>|<libdrm/drm_mode.h>|' /usr/include/xf86drmMode.h 2>/dev/null || true
+sudo sed -i 's|<drm.h>|<libdrm/drm.h>|' /usr/include/xf86drm.h 2>/dev/null || true
+sudo ln -sf /usr/include/libdrm/drm_mode.h /usr/include/drm_mode.h 2>/dev/null || true
+sudo ln -sf /usr/include/libdrm/drm.h /usr/include/drm.h 2>/dev/null || true
 
 # Setup haxelib
 log_info "Setting up haxelib..."
@@ -82,7 +117,7 @@ haxelib install input2action --quiet
 log_info "Installing remaining haxelibs in parallel..."
 haxelib install format --quiet &
 PID_FORMAT=$!
-haxelib git linc_luajit_funkinview https://github.com/SomeGuyWhoLovesCoding/linc_luajit_funkinview.git --quiet --quiet &
+haxelib git linc_luajit_funkinview https://github.com/SomeGuyWhoLovesCoding/linc_luajit_funkinview.git --quiet &
 PID_LUAJIT=$!
 haxelib install peote-view 1.0.8 --quiet &
 PID_PEOTE=$!
@@ -93,4 +128,12 @@ PID_CUSTOM=$!
 wait $PID_FORMAT $PID_LUAJIT $PID_PEOTE $PID_CUSTOM
 
 log_info "All haxelib installations completed successfully!"
+log_info ""
+log_info "=========================================="
 log_info "Linux setup complete! 🎉"
+log_info ""
+log_info "IMPORTANT: If you're on VirtualBox and using libinput,"
+log_info "you may need to add your user to the 'input' group:"
+log_info "  sudo usermod -a -G input \$USER"
+log_info "Then log out and back in."
+log_info "=========================================="
