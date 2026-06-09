@@ -65,10 +65,9 @@
 
 	<!-- Copy fontbm files over to cwd -->
 	<postbuild cmd='robocopy fontbmTool\windows bin\windows\bin\assets\fonts * /NFL /NDL /NJH /NJS /NC /NS' if="windows" />
-	<postbuild cmd='robocopy fontbmTool\posix bin\linux\bin\assets\fonts * /NFL /NDL /NJH /NJS /NC /NS' if="linux" />
-	<postbuild cmd='robocopy fontbmTool\posix bin\android\bin\assets\fonts * /NFL /NDL /NJH /NJS /NC /NS' if="linux" />
+	<postbuild cmd='cp -r fontbmTool/posix/. bin\linux\bin\assets\fonts ' if="linux" />
 	<postbuild cmd='robocopy fontbmTool\windows bin\hl\bin\assets\fonts * /NFL /NDL /NJH /NJS /NC /NS' if="windows hl" />
-	<postbuild cmd='robocopy fontbmTool\posix bin\hl\bin\assets\fonts * /NFL /NDL /NJH /NJS /NC /NS' if="linux hl" />
+	<postbuild cmd='cp -r fontbmTool/posix/. bin/hl/bin/assets/fonts' if="linux hl" />
 
 	<haxedef name="HXCPP_CPP17" />
 
