@@ -1,5 +1,7 @@
 package structures.gameplay;
 
+import lime.system.System;
+
 @:publicFields
 class Strumline {
 	var notesToHit(default, null):Array<Null<MetaNote>>;
@@ -169,9 +171,10 @@ class Strumline {
 			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + (Main.conductor.offset * 2.0));
 			var _timing = MetaNote.metaNotePositionToSongTime((noteToHit.position + File.getTimeCorrectionForIndex(noteIndex)) - posWithLatency);
 			#if (windows && FV_LIME_FORK)
-			var _timingCompare = AsyncKB.getGlobalTimestampComparison();
-			var _timingDiffSubtract = (timestamp - _timingCompare) * 1000.0;
+			var _timingCompare = System.getTimerPrecise();
+			var _timingDiffSubtract = timestamp - _timingCompare;
 			_timing += _timingDiffSubtract;
+			Sys.println('$_timingCompare,$_timingDiffSubtract');
 			//trace('timing: $_timing | timestamp: $timestamp | posWithLatency: $posWithLatency | timingCompare: $_timingCompare | timingDiffSubtract: $_timingDiffSubtract');
 			//Sys.println('note timing:$_timing, note index:$index');
 			#end

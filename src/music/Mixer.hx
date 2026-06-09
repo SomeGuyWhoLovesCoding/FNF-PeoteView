@@ -113,6 +113,8 @@ class Mixer {
 		#if lime_cffi
 		var backend = @:privateAccess lime.app.Application.current.__backend;
 		@:privateAccess NativeCFFI.lime_subloop_event_manager_register(subLoopTick_init, backend.subLoopTickEventInfo);
+		AsyncInput.init();
+		@:privateAccess NativeCFFI.lime_asynckey_event_manager_register(asyncKeyEvent_init, backend.asyncKeyEventInfo);
 		#end
 		#end
 	}
@@ -123,6 +125,8 @@ class Mixer {
 		#if lime_cffi
 		var backend = @:privateAccess lime.app.Application.current.__backend;
 		@:privateAccess NativeCFFI.lime_subloop_event_manager_register(backend.handleSubLoopEvent, backend.subLoopTickEventInfo);
+		AsyncInput.shutdown();
+		@:privateAccess NativeCFFI.lime_asynckey_event_manager_register(backend.handleAsyncKeyEvent, backend.asyncKeyEventInfo);
 		#end
 		#end
 	}
@@ -132,15 +136,14 @@ class Mixer {
 		var backend = @:privateAccess lime.app.Application.current.__backend;
 		@:privateAccess subLoopTick(backend.subLoopTickEventInfo.timestamp);
 	}
+	inline static function asyncKeyEvent_init() {
+		var backend = @:privateAccess lime.app.Application.current.__backend;
+		var evt = @:privateAccess backend.asyncKeyEventInfo;
+		//Sys.println('KeyCode: ${evt.keyCode}, State: ${evt.state == 1 ? "PRESSED" : "RELEASED"}, Timestamp: ${evt.timestamp}');
+		if (evt.state == 1) AsyncInput.inputPress.dispatch(evt.keyCode, evt.timestamp);
+		else AsyncInput.inputRelease.dispatch(evt.keyCode, evt.timestamp);
+	}
 	#end
-
-	static function inputPress(keyCode:KeyCode, timestamp:Float) {
-		trace('pressed', keyCode, timestamp);
-	}
-
-	static function inputRelease(keyCode:KeyCode, timestamp:Float) {
-		trace('release', keyCode, timestamp);
-	}
 
 	static public function startMusic():Void {
 		MiniAudio.start();
@@ -265,8 +268,6 @@ class Mixer {
 			lastTimestamp1s = timestamp;
 		}
 		lastTimestamp = timestamp;
-
-		AsyncInput.poll();
 	}
 	#end
 
