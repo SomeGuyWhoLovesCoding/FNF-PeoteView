@@ -36,7 +36,7 @@ sudo apt-get install -y libc6-dev-i386 g++-multilib
 sudo apt install -y libx11-dev libxrandr-dev libxinerama-dev
 sudo apt-get install -y libgl-dev libgl1-mesa-dev libasound2-dev
 sudo apt-get install -y libdrm-dev libgbm-dev mesa-common-dev libegl1-mesa-dev libgles2-mesa-dev
-sudo apt install -y libinput-dev libudev-dev
+sudo apt-get install -y libinput-dev libudev-dev
 
 # Setup i386
 log_info "Setting up i386 architecture..."
