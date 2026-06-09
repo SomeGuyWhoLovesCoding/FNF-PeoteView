@@ -77,7 +77,7 @@ class InputSystem {
 		var window = lime.app.Application.current.window;
 		#if !android
 		#if FV_LIME_FORK
-		#if windows
+		#if !android
 		AsyncInput.inputPress.add(press);
 		AsyncInput.inputRelease.add(release);
 		#else
@@ -96,7 +96,7 @@ class InputSystem {
 		var window = lime.app.Application.current.window;
 		#if !android
 		#if FV_LIME_FORK
-		#if windows
+		#if !android
 		AsyncInput.inputPress.remove(press);
 		AsyncInput.inputRelease.remove(release);
 		#else
@@ -111,7 +111,7 @@ class InputSystem {
 		Main.current.mouseDown = null;
 	}
 
-	#if windows
+	#if !android
 	function press(code:KeyCode, timestamp:Float)
 	#else
 	function press(code:KeyCode, mod:KeyModifier #if FV_LIME_FORK , timestamp:Float #end)
@@ -180,7 +180,7 @@ class InputSystem {
 	}
 
 	
-	#if windows
+	#if !android
 	function release(code:KeyCode, timestamp:Float)
 	#else
 	function release(code:KeyCode, mod:KeyModifier #if FV_LIME_FORK , timestamp:Float #end)

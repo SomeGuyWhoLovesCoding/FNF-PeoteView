@@ -71,9 +71,6 @@ class Conductor
 	function set_time(value:Float):Float
 	{
 		time = value;
-		/*#if windows
-		time -= Mixer.latency();
-		#end*/
 
 		var calc = (time + offset) - offsetTime;
 		var calcUnoffsetted = time - offsetTime;

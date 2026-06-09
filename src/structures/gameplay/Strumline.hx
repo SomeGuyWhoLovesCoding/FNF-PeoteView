@@ -174,7 +174,7 @@ class Strumline {
 
 			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + (Main.conductor.offset * 2.0));
 			var _timing = MetaNote.metaNotePositionToSongTime((noteToHit.position + File.getTimeCorrectionForIndex(noteIndex)) - posWithLatency);
-			#if (windows && FV_LIME_FORK && lime_cffi)
+			#if (FV_LIME_FORK && lime_cffi)
 			var _timingCompare:Float = @:privateAccess NativeCFFI.lime_asynckey_timestamp();
 			var _timingDiffSubtract = timestamp - _timingCompare;
 			_timing += _timingDiffSubtract;
