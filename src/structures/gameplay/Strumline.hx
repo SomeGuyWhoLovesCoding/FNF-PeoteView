@@ -178,7 +178,6 @@ class Strumline {
 			var _timingCompare:Float = @:privateAccess NativeCFFI.lime_asynckey_timestamp();
 			var _timingDiffSubtract = timestamp - _timingCompare;
 			_timing += _timingDiffSubtract;
-			//Sys.println('$_timingCompare,$timestamp');
 			//trace('timing: $_timing | timestamp: $timestamp | posWithLatency: $posWithLatency | timingCompare: $_timingCompare | timingDiffSubtract: $_timingDiffSubtract');
 			//Sys.println('note timing:$_timing, note index:$index');
 			#end
