@@ -47,7 +47,7 @@ sudo apt update
 log_info "Installing 32-bit dependencies..."
 sudo apt-get install -y libgl-dev:i386 libgl1-mesa-dev:i386 libglu1-mesa-dev:i386
 sudo apt-get install -y libdrm-dev:i386 libgbm-dev:i386 mesa-common-dev:i386 libegl1-mesa-dev:i386 libgles2-mesa-dev:i386
-sudo apt install -y libinput-dev:i386 libudev-dev:i386
+sudo apt-get install -y libinput-dev:i386 libudev-dev:i386
 
 # Fix DRM headers
 log_info "Fixing DRM headers..."
