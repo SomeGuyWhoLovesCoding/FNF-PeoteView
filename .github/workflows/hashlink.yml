@@ -41,15 +41,6 @@ jobs:
         with:
           version: latest
       
-      # Cache haxelib dependencies
-      - name: Cache haxelib dependencies
-        uses: actions/cache@v3
-        with:
-          path: ${{ matrix.haxelib_path }}
-          key: ${{ runner.os }}-hl-haxelib-${{ hashFiles('**/*.hxml', '**/haxelib.json', '**/lime.xml') }}
-          restore-keys: |
-            ${{ runner.os }}-hl-haxelib-
-      
       # Install Linux system dependencies (only for Linux)
       - name: Install required Linux libraries
         if: runner.os == 'Linux'
