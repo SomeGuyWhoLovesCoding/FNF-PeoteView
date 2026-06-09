@@ -74,8 +74,7 @@ sudo apt-get install -y \
     libdrm-dev:i386 \
     libgbm-dev:i386 \
     libegl1-mesa-dev:i386 \
-    libgles2-mesa-dev:i386 \
-    libudev-dev:i386 || log_warn "Some 32-bit libraries failed to install (may not be needed)"
+    libgles2-mesa-dev:i386 "Some 32-bit libraries failed to install (may not be needed)"
 
 # Try to install 32-bit libinput only if absolutely needed (it often fails on older Ubuntu)
 log_info "Attempting to install 32-bit libinput (optional)..."
