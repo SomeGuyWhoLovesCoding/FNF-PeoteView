@@ -30,7 +30,7 @@ extern class MiniAudio {
 	@:native("getMixerState") static function getMixerState():Int;
 
 	@:native("setPlaybackRate") static function setPlaybackRate(playbackRate:Float):Void;
-	@:native("seekToPCMFrame") static function seekToPCMFrame(pos:cpp.Int64):Void;
+	@:native("seekToPCMFrame") static function seekToPCMFrame(pos:Int64):Void;
 	@:native("deactivate_decoder") static function deactivate_decoder(index:Int):Void;
 	@:native("amplify_decoder") static function amplify_decoder(index:Int, volume:Float):Void;
 
@@ -147,29 +147,76 @@ class MiniAudio {
 }
 #else
 class MiniAudio {
-	static function destroy():Void {}
-	static function start():Void {}
-	static function stop():Void {}
+	// THE MAIN STUFF
 
-	static function stopped():Int {
+	public static function destroy():Void {}
+	public static function start():Void {}
+	public static function stop():Void {}
+
+	public static function stopped():Bool {
+		return false;
+	}
+
+	public static function loadFiles(arr:Array<String>):Void {}
+
+	public static function getPlaybackPosition():Float {
+		return 0;
+	}
+	public static function getDuration():Float {
+		return 0;
+	}
+	public static function getMixerState():Int {
 		return 0;
 	}
 
-	static function loadFiles(arr:Array<String>):Void {}
-
-	static function getPlaybackPosition():Float {
-		return 0;
-	}
-	static function getDuration():Float {
-		return 0;
-	}
-	static function getMixerState():Int {
+	public static function setPlaybackRate(playbackRate:Float):Void {}
+	public static function seekToPCMFrame(pos:hl.I64):Void {}
+	public static function deactivate_decoder(index:Int):Void {}
+	public static function amplify_decoder(index:Int, volume:Float):Void {}
+	public static function detectLatency():Int {
 		return 0;
 	}
 
-	static function setPlaybackRate(playbackRate:Float):Void {}
-	static function seekToPCMFrame(pos:haxe.Int64):Void {}
-	static function deactivate_decoder(index:Int):Void {}
-	function amplify_decoder(index:Int, volume:Float):Void {}
+	public static function getGlobalVolume():Float {
+		return 0;
+	}
+	public static function setGlobalVolume(value:Float):Float {
+		return 0;
+	}
+
+	public static function wearingHeadphones():Bool {
+		return false;
+	}
+	public static function wearingPlugNPlay():Bool {
+		return false;
+	}
+
+	// AND NOW THE BACKGROUND AND SOUND STUFF
+
+	public static function loadBackgroundTrack(path:String):Int {
+		return 0;
+	}
+
+	public static function playBackgroundTrack(index:Int):Void {}
+	public static function stopBackgroundTrack(index:Int):Void {}
+	public static function setBackgroundTrackVolume(index:Int, volume:Float):Void {}
+	public static function setBackgroundTrackLooping(index:Int, looping:Bool):Void {}
+	public static function isBackgroundTrackPlaying(index:Int):Bool {
+		return false;
+	}
+
+	public static function loadSoundEffect(path:String):Int {
+		return 0;
+	}
+
+	public static function playSoundEffect(index:Int, volume:Float):Void {}
+	public static function stopSoundEffect(index:Int):Void {}
+
+	public static function getMixerMasterVolume():Float {
+		return 0.0;
+	}
+	public static function setMixerMasterVolume(volume:Float):Float {
+		return 0.0;
+	}
 }
 #end

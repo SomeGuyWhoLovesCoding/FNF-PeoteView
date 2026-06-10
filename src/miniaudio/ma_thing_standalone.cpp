@@ -1,6 +1,6 @@
 /*
  * ma_thing_standalone.cpp
- * Plain C++ global interface — links against ma_thing_core.h.
+ * Plain C++ global interface — links against ma_thing_core.h. 
  * No HashLink dependency.
  */
 
@@ -53,12 +53,12 @@ int detectLatency() {
 int  loadBackgroundTrack(const char* path)                    { return g_mixer.loadBackgroundTrack(path); }
 void playBackgroundTrack(int index)                           { g_mixer.playBackgroundTrack(index); }
 void stopBackgroundTrack(int index)                           { g_mixer.stopBackgroundTrack(index); }
-void setBackgroundTrackVolume(int index, float volume)        { g_mixer.setBackgroundTrackVolume(index, volume); }
+void setBackgroundTrackVolume(int index, double volume)        { g_mixer.setBackgroundTrackVolume(index, volume); }
 void setBackgroundTrackLooping(int index, bool looping)       { g_mixer.setBackgroundTrackLooping(index, looping); }
 bool isBackgroundTrackPlaying(int index)                      { return g_mixer.isBackgroundTrackPlaying(index); }
 
 int  loadSoundEffect(const char* path)                        { return g_mixer.loadSoundEffect(path); }
-void playSoundEffect(int index, float volume)                 { g_mixer.playSoundEffect(index, volume); }
+void playSoundEffect(int index, double volume)                 { g_mixer.playSoundEffect(index, volume); }
 void stopSoundEffect(int index)                               { g_mixer.stopSoundEffect(index); }
 bool isSoundEffectPlaying(int index)                          { return g_mixer.isSoundEffectPlaying(index); }
 

@@ -28,19 +28,19 @@ bool wearingPlugNPlay();
 int loadBackgroundTrack(const char* path);
 void playBackgroundTrack(int index);
 void stopBackgroundTrack(int index);
-void setBackgroundTrackVolume(int index, float volume);
+void setBackgroundTrackVolume(int index, double volume);
 void setBackgroundTrackLooping(int index, bool looping);
 bool isBackgroundTrackPlaying(int index);
 
 // Sound effect functions
 int loadSoundEffect(const char* path);
-void playSoundEffect(int index, float volume);
+void playSoundEffect(int index, double volume);
 void stopSoundEffect(int index);
 bool isSoundEffectPlaying(int index);
 
 // Volume control
-float setMixerMasterVolume(float volume);
-float getMixerMasterVolume();
+double setMixerMasterVolume(double volume);
+double getMixerMasterVolume();
 
 void destroyMixer(void);
 #endif /* MA_THING_H */

@@ -1938,8 +1938,8 @@ public:
     // ------------------------------------------------------------------
     // Volume
     // ------------------------------------------------------------------
-    float setMasterVolume(float v) { MUSIC_MASTER_VOLUME_099.store(v, std::memory_order_relaxed); return v; }
-    float getMasterVolume() const  { return MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed); }
+    double setMasterVolume(double v) { MUSIC_MASTER_VOLUME_099.store(v, std::memory_order_relaxed); return v; }
+    double getMasterVolume() const  { return MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed); }
 
 private:
     // deque guarantees that push_back never moves existing elements, so raw

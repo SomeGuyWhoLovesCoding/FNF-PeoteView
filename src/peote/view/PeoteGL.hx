@@ -18,27 +18,6 @@ typedef GLBuffer            = lime.graphics.opengl.GLBuffer;
 typedef GLVertexArrayObject = lime.graphics.opengl.GLVertexArrayObject;
 typedef GLRenderbuffer      = lime.graphics.opengl.GLRenderbuffer;
 
-//typedef Image = lime.graphics.Image;
-
-
-/*#if html5
-	#if peoteview_es3
-		typedef LimeGLRenderContext = lime.graphics.WebGL2RenderContext;
-	#elseif peoteview_es2
-		typedef LimeGLRenderContext = lime.graphics.WebGLRenderContext;
-	#else
-		typedef LimeGLRenderContext = lime.graphics.OpenGLRenderContext; // Dynamic
-	#end
-#else
-	#if peoteview_es3
-		typedef LimeGLRenderContext = lime.graphics.OpenGLES3RenderContext;
-	#elseif peoteview_es2
-		typedef LimeGLRenderContext = lime.graphics.OpenGLES2RenderContext;
-	#else
-		typedef LimeGLRenderContext = lime.graphics.OpenGLRenderContext;
-	#end
-#end*/
-
 typedef LimeGLRenderContext = lime.graphics.OpenGLRenderContext;
 
 @:forward()
@@ -204,7 +183,6 @@ class Version {
 		static inline public var isES3 = false;
 		static inline var isUBO = false;
 		static inline var isINSTANCED = false;
-		static inline var isINTROSPECTED = false;
 		static inline var isVAO = false;
 		
 	#else // check at runtime (depends on available es-version) 
