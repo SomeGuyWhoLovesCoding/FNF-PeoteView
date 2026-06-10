@@ -1227,8 +1227,6 @@ public:
         mixerState = 3;
         
         memset(&device, 0, sizeof(ma_device));
-        
-        printf("[AudioSystem] Destroy complete\n");
     }
 
     void start() {
