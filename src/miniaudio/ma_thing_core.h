@@ -79,7 +79,6 @@ extern "C" {
 #include <unordered_map>
 #include <vector>
 #include <iostream>
-#include <shared_mutex>
 
 #ifdef __SSE__
 #include <emmintrin.h>
@@ -119,6 +118,12 @@ static struct AudioDeviceState {
 
 static bool refreshDeviceState() {
     HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+    // S_OK            — we initialized COM, we must uninitialize.
+    // S_FALSE         — COM was already initialized on this thread by us
+    //                   (refcount bumped), we must still uninitialize.
+    // RPC_E_CHANGED_MODE — thread already has a different apartment model;
+    //                   COM was NOT initialized by this call, do NOT uninit.
+    // Any other error — COM not initialized, do NOT uninit.
     bool comInitialized = (hr == S_OK || hr == S_FALSE);
 
     IMMDeviceEnumerator* pEnumerator = nullptr;
@@ -230,6 +235,9 @@ static bool refreshDeviceState() {
         g_currentDeviceState.deviceChanged.store(true, std::memory_order_release);
     }
 
+    // Fix 1c: always uninitialize if we successfully initialized COM on this
+    // thread (covers both S_OK and S_FALSE), never if we didn't (RPC_E_CHANGED_MODE
+    // or any other failure code).
     if (comInitialized) CoUninitialize();
 
     return deviceChanged;
@@ -264,6 +272,8 @@ static void updateDeviceStateIfNeeded() {
     }
 }
 
+// Read cached PnP/headphone state — never triggers a COM refresh.
+// Safe to call from any thread including the audio callback.
 inline bool checkIfPnPDevice() {
     std::lock_guard<std::mutex> lock(g_currentDeviceState.mutex);
     return g_currentDeviceState.isPnP;
@@ -385,13 +395,21 @@ static std::string getWindowsBluetoothCodec() {
 
 static inline std::string getBluetoothCodec() { return getWindowsBluetoothCodec(); }
 
+// Returns estimated codec latency in milliseconds.
+// Reads device type from the monitor thread's cache only — no COM, no refresh.
+// Safe to call from any thread, including the audio callback and detectLatency().
 static int getBluetoothCodecLatencyMs() {
+    // Read PnP status from cache only. If the cache is not yet populated
+    // (first call before the monitor thread has run), return a safe
+    // conservative default rather than blocking on a COM call.
     {
         std::lock_guard<std::mutex> lock(g_currentDeviceState.mutex);
         if (g_currentDeviceState.isPnP)          return 0;
         if (g_currentDeviceState.deviceId.empty()) return 50;
     }
 
+    // getWindowsBluetoothCodec() reads only the registry — no COM, no
+    // apartment issues, safe to call from any thread.
     std::string codec = getWindowsBluetoothCodec();
     if (codec == "aptX-LL")       return  40;
     if (codec == "aptX-Adaptive") return  50;
@@ -582,9 +600,7 @@ struct DecoderStream {
     ma_decoder decoder;
     ma_uint64 decoderLength = 0;
 
-    // FIX 3: Add mutexes for buffer and decoder protection
-    std::mutex bufferMutex;   // Protects buffer swapping and async buffer pointers
-    std::mutex decoderMutex;  // Protects decoder operations
+    std::mutex decoderMutex;
 
     DecoderStream()  { memset(&decoder, 0, sizeof(ma_decoder)); }
     ~DecoderStream() { cleanup(); }
@@ -598,9 +614,6 @@ struct DecoderStream {
     DecoderStream& operator=(const DecoderStream&) = delete;
 
     bool trySwapBuffers() {
-        // FIX 3: Lock buffer mutex during swap to prevent race with async loader
-        std::lock_guard<std::mutex> lock(bufferMutex);
-        
         if (!asyncState.nextBufferReady.load(std::memory_order_acquire))
             return false;
 
@@ -646,8 +659,6 @@ struct DecoderStream {
     }
 
     void resetState() {
-        std::lock_guard<std::mutex> bufferLock(bufferMutex);
-        
         asyncState.nextBufferReady.store(false,       std::memory_order_release);
         asyncState.loadingBufferReady.store(false,    std::memory_order_release);
         asyncState.loadingInProgress.store(false,     std::memory_order_release);
@@ -668,7 +679,6 @@ struct DecoderStream {
     }
 
     bool shouldSwapBuffers() const {
-        // FIX 3: localReadPos is only modified in audio thread, safe without lock
         if (localReadPos >= validFrames) return true;
         if (localReadPos >= (PADDING_FRAMES + HALF_BUFFER_FRAMES) &&
             asyncState.nextBufferReady.load(std::memory_order_acquire))
@@ -687,6 +697,8 @@ struct DecoderStream {
             asyncState.requestNextBuffer.store(true, std::memory_order_release);
     }
 
+    // Synchronous fill — used during init and seek. Caller must hold
+    // decoderMutex before calling this (see fillInitialBuffer in AudioSystem).
     void fillBuffer(float* buffer, ma_uint64 decodeStart, ma_uint64* framesRead) {
         ma_uint64 maxFrames = TOTAL_BUFFER_FRAMES;
         if (decodeStart + TOTAL_BUFFER_FRAMES > decoderLength)
@@ -695,7 +707,6 @@ struct DecoderStream {
         memset(buffer, 0, maxFrames * CHANNEL_COUNT * sizeof(float));
 
         if (maxFrames > 0) {
-            std::lock_guard<std::mutex> lock(decoderMutex);
             ma_decoder_seek_to_pcm_frame(&decoder, decodeStart);
             ma_decoder_read_pcm_frames(&decoder, buffer, maxFrames, framesRead);
         } else {
@@ -703,6 +714,8 @@ struct DecoderStream {
         }
     }
 
+    // Async fill — called from the worker thread; guards the decoder with its
+    // per-stream mutex so seeks cannot race with async decoding.
     void fillBufferAsync(ma_uint64 decodeStart, float* buffer, ma_uint64* framesRead) {
         ma_uint64 maxFrames = TOTAL_BUFFER_FRAMES;
         if (decodeStart + TOTAL_BUFFER_FRAMES > decoderLength)
@@ -721,9 +734,6 @@ struct DecoderStream {
 
 private:
     void cleanup() {
-        std::lock_guard<std::mutex> bufferLock(bufferMutex);
-        std::lock_guard<std::mutex> decoderLock(decoderMutex);
-        
         if (decoder.onRead != nullptr || decoder.onSeek != nullptr)
             ma_decoder_uninit(&decoder);
 
@@ -736,9 +746,6 @@ private:
     }
 
     void moveFrom(DecoderStream&& other) noexcept {
-        std::lock_guard<std::mutex> srcBufferLock(other.bufferMutex);
-        std::lock_guard<std::mutex> srcDecoderLock(other.decoderMutex);
-        
         pcmBufferA    = other.pcmBufferA;
         pcmBufferB    = other.pcmBufferB;
         pcmBufferC    = other.pcmBufferC;
@@ -770,17 +777,23 @@ private:
 };
 
 // ==========================================================================
-//  AsyncLoader
+//  AsyncLoader - Fixed with proper thread cleanup and shutdown
 // ==========================================================================
 
 class AsyncLoader {
 public:
     explicit AsyncLoader(std::vector<DecoderStream*>& streamRefs)
-        : streams(streamRefs) { start(); }
+        : streams(streamRefs) { 
+        start(); 
+    }
 
-    ~AsyncLoader() { stop(); }
+    ~AsyncLoader() { 
+        stop(); 
+    }
 
-    void pauseLoading() { pause.store(true, std::memory_order_release); }
+    void pauseLoading() { 
+        pause.store(true, std::memory_order_release); 
+    }
 
     void resumeLoading() {
         pause.store(false, std::memory_order_release);
@@ -793,11 +806,19 @@ public:
     }
 
     void waitUntilIdle() {
+        if (!running.load(std::memory_order_acquire)) return;
+        
         while (!workerIdle.load(std::memory_order_acquire)) {
             std::this_thread::sleep_for(std::chrono::microseconds(200));
+            if (!running.load(std::memory_order_acquire)) break;
         }
-        // FIX 2: Add an extra safety barrier - give any in-flight operation time to complete
-        std::this_thread::sleep_for(std::chrono::microseconds(100));
+        
+        // Give any in-flight operation time to complete
+        std::this_thread::sleep_for(std::chrono::microseconds(500));
+    }
+    
+    bool isRunning() const {
+        return running.load(std::memory_order_acquire);
     }
 
 private:
@@ -811,25 +832,69 @@ private:
     std::atomic<bool> workPending{false};
 
     void start() {
+        if (running.load(std::memory_order_acquire)) return;
+        
         running.store(true, std::memory_order_release);
-        workerThread = std::thread([this]() { worker(); });
+        
+        try {
+            workerThread = std::thread([this]() { worker(); });
+        } catch (const std::exception& e) {
+            printf("[AsyncLoader] Failed to start worker thread: %s\n", e.what());
+            running.store(false, std::memory_order_release);
+        }
     }
 
     void stop() {
+        if (!running.load(std::memory_order_acquire)) return;
+        
+        // Signal stop first
         running.store(false, std::memory_order_release);
+        
+        // Wake up the worker if it's sleeping
         signal();
-        if (workerThread.joinable()) workerThread.join();
+        
+        // Wait for thread to finish with timeout
+        if (workerThread.joinable()) {
+            auto startTime = std::chrono::steady_clock::now();
+            const auto timeout = std::chrono::milliseconds(1000);
+            const auto pollInterval = std::chrono::microseconds(500);
+            
+            bool joined = false;
+            while (std::chrono::steady_clock::now() - startTime < timeout) {
+                if (workerThread.joinable()) {
+                    std::this_thread::sleep_for(pollInterval);
+                } else {
+                    joined = true;
+                    break;
+                }
+            }
+            
+            if (!joined && workerThread.joinable()) {
+                printf("[AsyncLoader] Worker thread timeout, detaching...\n");
+                workerThread.detach();
+            } else if (joined) {
+                printf("[AsyncLoader] Worker thread stopped successfully\n");
+            }
+        }
+        
+        // Clear any pending work
+        {
+            std::lock_guard<std::mutex> lock(wakeMutex);
+            workPending.store(false, std::memory_order_release);
+        }
     }
 
     void worker() {
         constexpr int MAX_PER_CYCLE = 2;
         int currentStream = 0;
+        int idleCount = 0;
 
         while (running.load(std::memory_order_acquire)) {
+            // Handle pause state
             if (pause.load(std::memory_order_acquire)) {
                 workerIdle.store(true, std::memory_order_release);
                 std::unique_lock<std::mutex> lk(wakeMutex);
-                wakeCV.wait_for(lk, std::chrono::milliseconds(5), [this] {
+                wakeCV.wait_for(lk, std::chrono::milliseconds(50), [this] {
                     return !pause.load(std::memory_order_acquire) ||
                            !running.load(std::memory_order_acquire);
                 });
@@ -837,10 +902,11 @@ private:
                 continue;
             }
 
+            // Check if streams vector is empty
             if (streams.empty()) {
                 workerIdle.store(true, std::memory_order_release);
                 std::unique_lock<std::mutex> lk(wakeMutex);
-                wakeCV.wait_for(lk, std::chrono::milliseconds(5), [this] {
+                wakeCV.wait_for(lk, std::chrono::milliseconds(50), [this] {
                     return !streams.empty() || !running.load(std::memory_order_acquire);
                 });
                 workerIdle.store(false, std::memory_order_release);
@@ -849,42 +915,75 @@ private:
 
             workPending.store(false, std::memory_order_release);
 
+            // Process loads
             int processed = 0;
-            for (int i = 0; i < (int)streams.size() && processed < MAX_PER_CYCLE; i++) {
-                int idx = (currentStream + i) % (int)streams.size();
-                DecoderStream* s = streams[idx];
-                if (s && s->active && processStreamLoad(s))
-                    processed++;
+            size_t streamCount = streams.size();
+            
+            for (int i = 0; i < (int)streamCount && processed < MAX_PER_CYCLE; i++) {
+                if (!running.load(std::memory_order_acquire)) break;
+                
+                int idx = (currentStream + i) % (int)streamCount;
+                DecoderStream* s = nullptr;
+                
+                // Safe access to streams
+                if (idx >= 0 && idx < (int)streams.size()) {
+                    s = streams[idx];
+                }
+                
+                if (s && s->active) {
+                    if (processStreamLoad(s)) {
+                        processed++;
+                    }
+                }
             }
 
-            if (processed > 0)
-                currentStream = (currentStream + 1) % (int)streams.size();
+            if (processed > 0) {
+                currentStream = (currentStream + 1) % (int)streamCount;
+                idleCount = 0;
+            } else {
+                idleCount++;
+            }
 
-            if (processed == 0) {
+            // If idle, wait for work
+            if (processed == 0 && idleCount > 1) {
                 workerIdle.store(true, std::memory_order_release);
                 std::unique_lock<std::mutex> lk(wakeMutex);
-                wakeCV.wait_for(lk, std::chrono::milliseconds(4), [this] {
+                wakeCV.wait_for(lk, std::chrono::milliseconds(10), [this] {
                     return workPending.load(std::memory_order_acquire) ||
-                           !running.load(std::memory_order_acquire);
+                           !running.load(std::memory_order_acquire) ||
+                           pause.load(std::memory_order_acquire);
                 });
                 workerIdle.store(false, std::memory_order_release);
+            } else if (processed == 0) {
+                // Small backoff to prevent CPU spinning
+                std::this_thread::yield();
             }
         }
     }
 
     bool processStreamLoad(DecoderStream* s) {
+        if (!s) return false;
+        
         bool didWork = false;
 
+        // Handle next buffer request
         if (s->asyncState.requestNextBuffer.load(std::memory_order_acquire)) {
-            if (!s->asyncState.loadingInProgress.load(std::memory_order_relaxed))
-                if (tryLoadNextBuffer(s)) didWork = true;
+            if (!s->asyncState.loadingInProgress.load(std::memory_order_relaxed)) {
+                if (tryLoadNextBuffer(s)) {
+                    didWork = true;
+                }
+            }
             s->asyncState.requestNextBuffer.store(false, std::memory_order_release);
         }
 
+        // Handle loading buffer request
         if (s->asyncState.requestLoadingBuffer.load(std::memory_order_acquire)) {
             if (!s->asyncState.loadingInProgress.load(std::memory_order_relaxed) &&
-                 s->asyncState.nextBufferReady.load(std::memory_order_relaxed))
-                if (tryLoadLoadingBuffer(s)) didWork = true;
+                s->asyncState.nextBufferReady.load(std::memory_order_relaxed)) {
+                if (tryLoadLoadingBuffer(s)) {
+                    didWork = true;
+                }
+            }
             s->asyncState.requestLoadingBuffer.store(false, std::memory_order_release);
         }
 
@@ -892,69 +991,77 @@ private:
     }
 
     bool tryLoadNextBuffer(DecoderStream* s) {
+        if (!s) return false;
+        
         bool expected = false;
         if (!s->asyncState.loadingInProgress.compare_exchange_strong(
-                expected, true, std::memory_order_acq_rel))
+                expected, true, std::memory_order_acq_rel)) {
             return false;
-
-        // FIX 3: Lock buffer mutex to safely read bufferStartPos and asyncNextBuffer
-        ma_uint64 start;
-        float* targetBuffer;
-        {
-            std::lock_guard<std::mutex> lock(s->bufferMutex);
-            start = s->bufferStartPos + HALF_BUFFER_FRAMES;
-            if (start > PADDING_FRAMES) start -= PADDING_FRAMES;
-            targetBuffer = s->asyncState.asyncNextBuffer;
         }
 
-        if (start >= s->decoderLength || !targetBuffer) {
+        // Make sure we're still running
+        if (!running.load(std::memory_order_acquire)) {
             s->asyncState.loadingInProgress.store(false, std::memory_order_release);
             return false;
         }
 
-        ma_uint64 framesRead = 0;
-        s->fillBufferAsync(start, targetBuffer, &framesRead);
+        ma_uint64 start = s->bufferStartPos + HALF_BUFFER_FRAMES;
+        if (start > PADDING_FRAMES) start -= PADDING_FRAMES;
 
-        {
-            std::lock_guard<std::mutex> lock(s->bufferMutex);
+        if (start >= s->decoderLength || !s->asyncState.asyncNextBuffer) {
+            s->asyncState.loadingInProgress.store(false, std::memory_order_release);
+            return false;
+        }
+
+        // Perform the async fill
+        ma_uint64 framesRead = 0;
+        s->fillBufferAsync(start, s->asyncState.asyncNextBuffer, &framesRead);
+
+        // Update the async state with the results
+        if (running.load(std::memory_order_acquire)) {
             s->asyncState.nextBufferStartPos    = start;
             s->asyncState.nextBufferValidFrames = framesRead;
         }
-        s->asyncState.nextBufferReady.store(true,  std::memory_order_release);
+        
+        s->asyncState.nextBufferReady.store(true, std::memory_order_release);
         s->asyncState.loadingInProgress.store(false, std::memory_order_release);
         return true;
     }
 
     bool tryLoadLoadingBuffer(DecoderStream* s) {
+        if (!s) return false;
+        
         bool expected = false;
         if (!s->asyncState.loadingInProgress.compare_exchange_strong(
-                expected, true, std::memory_order_acq_rel))
+                expected, true, std::memory_order_acq_rel)) {
             return false;
-
-        // FIX 3: Lock buffer mutex to safely read asyncNextBufferStartPos and asyncLoadingBuffer
-        ma_uint64 start;
-        float* targetBuffer;
-        {
-            std::lock_guard<std::mutex> lock(s->bufferMutex);
-            start = s->asyncState.nextBufferStartPos + HALF_BUFFER_FRAMES;
-            if (start > PADDING_FRAMES) start -= PADDING_FRAMES;
-            targetBuffer = s->asyncState.asyncLoadingBuffer;
         }
 
-        if (start >= s->decoderLength || !targetBuffer) {
+        // Make sure we're still running
+        if (!running.load(std::memory_order_acquire)) {
             s->asyncState.loadingInProgress.store(false, std::memory_order_release);
             return false;
         }
 
-        ma_uint64 framesRead = 0;
-        s->fillBufferAsync(start, targetBuffer, &framesRead);
+        ma_uint64 start = s->asyncState.nextBufferStartPos + HALF_BUFFER_FRAMES;
+        if (start > PADDING_FRAMES) start -= PADDING_FRAMES;
 
-        {
-            std::lock_guard<std::mutex> lock(s->bufferMutex);
+        if (start >= s->decoderLength || !s->asyncState.asyncLoadingBuffer) {
+            s->asyncState.loadingInProgress.store(false, std::memory_order_release);
+            return false;
+        }
+
+        // Perform the async fill
+        ma_uint64 framesRead = 0;
+        s->fillBufferAsync(start, s->asyncState.asyncLoadingBuffer, &framesRead);
+
+        // Update the async state with the results
+        if (running.load(std::memory_order_acquire)) {
             s->asyncState.loadingBufferStartPos    = start;
             s->asyncState.loadingBufferValidFrames = framesRead;
         }
-        s->asyncState.loadingBufferReady.store(true,  std::memory_order_release);
+        
+        s->asyncState.loadingBufferReady.store(true, std::memory_order_release);
         s->asyncState.loadingInProgress.store(false, std::memory_order_release);
         return true;
     }
@@ -1085,22 +1192,46 @@ public:
 
     void destroy() {
         if (!exists) return;
+        
+        // Mark as not existing first to prevent new callbacks
         exists = false;
-
-        if (asyncLoader) { delete asyncLoader; asyncLoader = nullptr; }
-
+        
+        // Stop the audio device first
         ma_device_stop(&device);
+        
+        // CRITICAL: Stop and delete async loader BEFORE uninitializing decoders
+        if (asyncLoader) {
+            // Signal the loader to stop
+            asyncLoader->pauseLoading();
+            
+            // Give it time to finish current operations
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            
+            // Delete will properly stop and join the thread
+            delete asyncLoader;
+            asyncLoader = nullptr;
+        }
+        
+        // Now it's safe to uninit the device
         ma_device_uninit(&device);
+        
+        // Clear streams (this will uninit decoders)
         streams.clear();
         decoderVolumes.clear();
         filePaths.clear();
         streamPtrs.clear();
-
-        if (stretch) { delete stretch; stretch = nullptr; }
-
+        
+        if (stretch) {
+            delete stretch;
+            stretch = nullptr;
+        }
+        
         longestDecoderIndex = 0;
-        playbackRate  = 1.0f;
-        mixerState    = 3;
+        playbackRate = 1.0f;
+        mixerState = 3;
+        
+        // Ensure device is completely cleared
+        memset(&device, 0, sizeof(ma_device));
     }
 
     void start() {
@@ -1124,6 +1255,8 @@ public:
         if (!exists) return;
 
         if (asyncLoader) asyncLoader->pauseLoading();
+        // Wait until the worker is confirmed idle so no fillBufferAsync call
+        // is in flight before we touch the decoders below.
         if (asyncLoader) asyncLoader->waitUntilIdle();
 
         bool wasPlaying = (mixerState == 1);
@@ -1191,6 +1324,10 @@ private:
     AsyncLoader* asyncLoader = nullptr;
     std::vector<DecoderStream*> streamPtrs;
 
+    // fillInitialBuffer acquires decoderMutex before calling fillBuffer.
+    // This is consistent with fillBufferAsync and ensures that if pauseLoading()
+    // returns before the worker has fully exited its current fill (the window
+    // closed by waitUntilIdle()), we don't race on the decoder state.
     void fillInitialBuffer(size_t index, ma_uint64 startFrame) {
         DecoderStream& s = streams[index];
         ma_uint64 decodeStart = (startFrame > PADDING_FRAMES) ? startFrame - PADDING_FRAMES : 0;
@@ -1201,15 +1338,12 @@ private:
             s.fillBuffer(s.activeBuffer, decodeStart, &framesRead);
         }
 
-        {
-            std::lock_guard<std::mutex> lock(s.bufferMutex);
-            s.bufferStartPos = decodeStart;
-            s.validFrames    = framesRead;
-            s.localReadPos   = (startFrame >= decodeStart) ? startFrame - decodeStart : 0;
+        s.bufferStartPos = decodeStart;
+        s.validFrames    = framesRead;
+        s.localReadPos   = (startFrame >= decodeStart) ? startFrame - decodeStart : 0;
 
-            if (s.localReadPos >= TOTAL_BUFFER_FRAMES)
-                s.localReadPos = TOTAL_BUFFER_FRAMES - 1;
-        }
+        if (s.localReadPos >= TOTAL_BUFFER_FRAMES)
+            s.localReadPos = TOTAL_BUFFER_FRAMES - 1;
 
         s.filePosition = startFrame;
         s.active       = (startFrame < s.decoderLength && framesRead > 0);
@@ -1220,22 +1354,14 @@ private:
         DecoderStream& s = streams[index];
         if (!s.active || s.asyncState.nextBufferReady.load(std::memory_order_relaxed)) return;
 
-        ma_uint64 start;
-        {
-            std::lock_guard<std::mutex> lock(s.bufferMutex);
-            start = s.bufferStartPos + HALF_BUFFER_FRAMES;
-            if (start > PADDING_FRAMES) start -= PADDING_FRAMES;
-        }
+        ma_uint64 start = s.bufferStartPos + HALF_BUFFER_FRAMES;
+        if (start > PADDING_FRAMES) start -= PADDING_FRAMES;
         if (start >= s.decoderLength) return;
 
         ma_uint64 framesRead = 0;
         s.fillBuffer(s.nextBuffer, start, &framesRead);
-        
-        {
-            std::lock_guard<std::mutex> lock(s.bufferMutex);
-            s.asyncState.nextBufferStartPos    = start;
-            s.asyncState.nextBufferValidFrames = framesRead;
-        }
+        s.asyncState.nextBufferStartPos    = start;
+        s.asyncState.nextBufferValidFrames = framesRead;
         s.asyncState.nextBufferReady.store(true, std::memory_order_release);
     }
 
@@ -1245,22 +1371,14 @@ private:
              s.asyncState.loadingBufferReady.load(std::memory_order_relaxed) ||
             !s.asyncState.nextBufferReady.load(std::memory_order_relaxed)) return;
 
-        ma_uint64 start;
-        {
-            std::lock_guard<std::mutex> lock(s.bufferMutex);
-            start = s.asyncState.nextBufferStartPos + HALF_BUFFER_FRAMES;
-            if (start > PADDING_FRAMES) start -= PADDING_FRAMES;
-        }
+        ma_uint64 start = s.asyncState.nextBufferStartPos + HALF_BUFFER_FRAMES;
+        if (start > PADDING_FRAMES) start -= PADDING_FRAMES;
         if (start >= s.decoderLength) return;
 
         ma_uint64 framesRead = 0;
         s.fillBuffer(s.loadingBuffer, start, &framesRead);
-        
-        {
-            std::lock_guard<std::mutex> lock(s.bufferMutex);
-            s.asyncState.loadingBufferStartPos    = start;
-            s.asyncState.loadingBufferValidFrames = framesRead;
-        }
+        s.asyncState.loadingBufferStartPos    = start;
+        s.asyncState.loadingBufferValidFrames = framesRead;
         s.asyncState.loadingBufferReady.store(true, std::memory_order_release);
     }
 
@@ -1681,16 +1799,12 @@ private:
 };
 
 // ==========================================================================
-//  AudioMixerManager - Fixed with proper snapshot system
+//  AudioMixerManager
 // ==========================================================================
 
 class AudioMixerManager {
 public:
-    AudioMixerManager() { 
-        memset(&device, 0, sizeof(ma_device));
-        // Initialize snapshot indices
-        activeSnapshot.store(0, std::memory_order_release);
-    }
+    AudioMixerManager() { memset(&device, 0, sizeof(ma_device)); }
     ~AudioMixerManager() { destroy(); }
 
     bool initialize() {
@@ -1710,23 +1824,14 @@ public:
     }
 
     void destroy() {
-        if (deviceInitialized) { 
-            ma_device_uninit(&device); 
-            deviceInitialized = false; 
-        }
+        if (deviceInitialized) { ma_device_uninit(&device); deviceInitialized = false; }
         std::lock_guard<std::mutex> lk(mixerMutex);
-        backgroundTracks.clear(); 
-        soundEffectPools.clear();
-        backgroundTrackMap.clear(); 
-        soundEffectMap.clear();
-        
-        // FIX 1: Properly clear snapshots with memory ordering
-        for (int i = 0; i < 2; i++) {
-            std::lock_guard<std::mutex> snapLock(snapshotMutex[i]);
-            bgSnapshot[i].clear();
-            sfxSnapshot[i].clear();
+        backgroundTracks.clear(); soundEffectPools.clear();
+        backgroundTrackMap.clear(); soundEffectMap.clear();
+        for (int b = 0; b < 2; b++) {
+            bgSnapshot[b].clear();
+            sfxSnapshot[b].clear();
         }
-        activeSnapshot.store(0, std::memory_order_release);
     }
 
     // ------------------------------------------------------------------
@@ -1800,37 +1905,23 @@ public:
     int  getSoundEffectPlayingCount(int idx){ return inRange(idx, soundEffectPools) ? soundEffectPools[idx].getPlayingCount() : 0; }
 
     // ------------------------------------------------------------------
-    // Unload helpers - FIXED with proper snapshot synchronization
+    // Unload helpers
     // ------------------------------------------------------------------
 
     void unloadBackgroundTrack(int idx) {
         std::lock_guard<std::mutex> lk(mixerMutex);
         if (!inRange(idx, backgroundTracks)) return;
 
-        // FIX 1: Publish an empty snapshot first to ensure the audio callback
-        // won't access the track being removed
-        int nextSnap = 1 - activeSnapshot.load(std::memory_order_acquire);
-        {
-            std::lock_guard<std::mutex> snapLock(snapshotMutex[nextSnap]);
-            bgSnapshot[nextSnap].clear();
-            sfxSnapshot[nextSnap].clear();
-        }
-        
-        // Wait for any audio callbacks that might be using the old snapshot
-        // to complete (two full periods should be safe)
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        
-        // Now swap to the empty snapshot
-        activeSnapshot.store(nextSnap, std::memory_order_release);
-        
-        // Wait again to ensure no callbacks are using the old indices
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        // Clear both snapshots before erasing so the audio callback never
+        // dereferences a pointer that deque::erase is about to invalidate.
+        // The seq_cst fence ensures the callback sees the cleared snapshots
+        // before we touch the underlying storage.
+        bgSnapshot[0].clear();
+        bgSnapshot[1].clear();
+        std::atomic_thread_fence(std::memory_order_seq_cst);
 
-        // Now it's safe to modify the actual data
         eraseAndFixup(backgroundTrackMap, idx);
         backgroundTracks.erase(backgroundTracks.begin() + idx);
-        
-        // Republish with updated data
         publishSnapshot();
     }
 
@@ -1838,17 +1929,9 @@ public:
         std::lock_guard<std::mutex> lk(mixerMutex);
         if (!inRange(idx, soundEffectPools)) return;
 
-        // FIX 1: Publish an empty snapshot first
-        int nextSnap = 1 - activeSnapshot.load(std::memory_order_acquire);
-        {
-            std::lock_guard<std::mutex> snapLock(snapshotMutex[nextSnap]);
-            bgSnapshot[nextSnap].clear();
-            sfxSnapshot[nextSnap].clear();
-        }
-        
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-        activeSnapshot.store(nextSnap, std::memory_order_release);
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+        sfxSnapshot[0].clear();
+        sfxSnapshot[1].clear();
+        std::atomic_thread_fence(std::memory_order_seq_cst);
 
         eraseAndFixup(soundEffectMap, idx);
         soundEffectPools.erase(soundEffectPools.begin() + idx);
@@ -1874,29 +1957,17 @@ private:
     ma_device device;
     bool  deviceInitialized = false;
 
-    // FIX 1: Separate snapshots with their own mutexes
     std::vector<BackgroundTrack*> bgSnapshot[2];
     std::vector<SoundEffectPool*> sfxSnapshot[2];
-    std::mutex snapshotMutex[2];
-    std::atomic<int> activeSnapshot{0};
+    std::atomic<int> snapshotIndex{0};
 
     void publishSnapshot() {
-        // Prepare the inactive snapshot
-        int nextSnap = 1 - activeSnapshot.load(std::memory_order_acquire);
-        
-        {
-            std::lock_guard<std::mutex> snapLock(snapshotMutex[nextSnap]);
-            bgSnapshot[nextSnap].clear();
-            for (auto& t : backgroundTracks) bgSnapshot[nextSnap].push_back(&t);
-            sfxSnapshot[nextSnap].clear();
-            for (auto& p : soundEffectPools)  sfxSnapshot[nextSnap].push_back(&p);
-        }
-        
-        // Memory barrier to ensure all writes are visible before switching
-        std::atomic_thread_fence(std::memory_order_release);
-        
-        // Switch the active snapshot
-        activeSnapshot.store(nextSnap, std::memory_order_release);
+        int next = 1 - snapshotIndex.load(std::memory_order_relaxed);
+        bgSnapshot[next].clear();
+        for (auto& t : backgroundTracks) bgSnapshot[next].push_back(&t);
+        sfxSnapshot[next].clear();
+        for (auto& p : soundEffectPools)  sfxSnapshot[next].push_back(&p);
+        snapshotIndex.store(next, std::memory_order_release);
     }
 
     template<typename Vec>
@@ -1919,11 +1990,7 @@ private:
         float* out = (float*)pOutput;
         memset(out, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
 
-        // FIX 1: Get snapshot index and lock the corresponding snapshot
-        int snap = mixer->activeSnapshot.load(std::memory_order_acquire);
-        
-        // Lock the snapshot to prevent modification during iteration
-        std::lock_guard<std::mutex> snapLock(mixer->snapshotMutex[snap]);
+        int snap = mixer->snapshotIndex.load(std::memory_order_acquire);
 
         for (BackgroundTrack* track : mixer->bgSnapshot[snap])
             if (track->active) track->readFrames(out, frameCount);
@@ -1933,4 +2000,4 @@ private:
 
         (void)pInput;
     }
-};1
+};
