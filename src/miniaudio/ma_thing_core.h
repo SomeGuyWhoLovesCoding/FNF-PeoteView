@@ -85,7 +85,7 @@ extern "C" {
 #include <xmmintrin.h>
 #endif
 
-std::atomic<float> MUSIC_MASTER_VOLUME_099{1.0f};
+std::atomic<double> MUSIC_MASTER_VOLUME_099{1.0f};
 
 // ---- Windows audio-device helpers with change detection -----------------
 
@@ -777,7 +777,7 @@ private:
 };
 
 // ==========================================================================
-//  AsyncLoader - Fixed with proper thread cleanup and shutdown
+//  AsyncLoader - Fixed with proper, clean shutdown (no detach)
 // ==========================================================================
 
 class AsyncLoader {
@@ -792,7 +792,8 @@ public:
     }
 
     void pauseLoading() { 
-        pause.store(true, std::memory_order_release); 
+        pause.store(true, std::memory_order_release);
+        signal();  // Wake up so it can enter pause state immediately
     }
 
     void resumeLoading() {
@@ -808,9 +809,17 @@ public:
     void waitUntilIdle() {
         if (!running.load(std::memory_order_acquire)) return;
         
+        // Signal and wait for idle
+        signal();
+        
+        auto startTime = std::chrono::steady_clock::now();
+        const auto timeout = std::chrono::milliseconds(100);
+        
         while (!workerIdle.load(std::memory_order_acquire)) {
+            if (std::chrono::steady_clock::now() - startTime > timeout) {
+                break;
+            }
             std::this_thread::sleep_for(std::chrono::microseconds(200));
-            if (!running.load(std::memory_order_acquire)) break;
         }
         
         // Give any in-flight operation time to complete
@@ -827,6 +836,7 @@ private:
     std::atomic<bool> running{false};
     std::atomic<bool> pause{false};
     std::atomic<bool> workerIdle{false};
+    std::atomic<bool> stopRequested{false};  // New: explicit stop flag
     std::mutex        wakeMutex;
     std::condition_variable wakeCV;
     std::atomic<bool> workPending{false};
@@ -835,11 +845,11 @@ private:
         if (running.load(std::memory_order_acquire)) return;
         
         running.store(true, std::memory_order_release);
+        stopRequested.store(false, std::memory_order_release);
         
         try {
             workerThread = std::thread([this]() { worker(); });
         } catch (const std::exception& e) {
-            printf("[AsyncLoader] Failed to start worker thread: %s\n", e.what());
             running.store(false, std::memory_order_release);
         }
     }
@@ -848,33 +858,17 @@ private:
         if (!running.load(std::memory_order_acquire)) return;
         
         // Signal stop first
+        stopRequested.store(true, std::memory_order_release);
         running.store(false, std::memory_order_release);
         
-        // Wake up the worker if it's sleeping
+        // Wake up the worker with multiple signals to ensure it breaks out
+        signal();
+        std::this_thread::sleep_for(std::chrono::microseconds(100));
         signal();
         
-        // Wait for thread to finish with timeout
+        // Wait for thread to finish (no timeout - it should respond to stop)
         if (workerThread.joinable()) {
-            auto startTime = std::chrono::steady_clock::now();
-            const auto timeout = std::chrono::milliseconds(1000);
-            const auto pollInterval = std::chrono::microseconds(500);
-            
-            bool joined = false;
-            while (std::chrono::steady_clock::now() - startTime < timeout) {
-                if (workerThread.joinable()) {
-                    std::this_thread::sleep_for(pollInterval);
-                } else {
-                    joined = true;
-                    break;
-                }
-            }
-            
-            if (!joined && workerThread.joinable()) {
-                printf("[AsyncLoader] Worker thread timeout, detaching...\n");
-                workerThread.detach();
-            } else if (joined) {
-                printf("[AsyncLoader] Worker thread stopped successfully\n");
-            }
+            workerThread.join();
         }
         
         // Clear any pending work
@@ -887,15 +881,20 @@ private:
     void worker() {
         constexpr int MAX_PER_CYCLE = 2;
         int currentStream = 0;
-        int idleCount = 0;
 
         while (running.load(std::memory_order_acquire)) {
-            // Handle pause state
-            if (pause.load(std::memory_order_acquire)) {
+            // Check for stop request first
+            if (stopRequested.load(std::memory_order_acquire)) {
+                break;
+            }
+            
+            // Handle pause state (but don't block if stopping)
+            if (pause.load(std::memory_order_acquire) && !stopRequested.load(std::memory_order_acquire)) {
                 workerIdle.store(true, std::memory_order_release);
                 std::unique_lock<std::mutex> lk(wakeMutex);
-                wakeCV.wait_for(lk, std::chrono::milliseconds(50), [this] {
+                wakeCV.wait_for(lk, std::chrono::milliseconds(10), [this] {
                     return !pause.load(std::memory_order_acquire) ||
+                           stopRequested.load(std::memory_order_acquire) ||
                            !running.load(std::memory_order_acquire);
                 });
                 workerIdle.store(false, std::memory_order_release);
@@ -906,8 +905,10 @@ private:
             if (streams.empty()) {
                 workerIdle.store(true, std::memory_order_release);
                 std::unique_lock<std::mutex> lk(wakeMutex);
-                wakeCV.wait_for(lk, std::chrono::milliseconds(50), [this] {
-                    return !streams.empty() || !running.load(std::memory_order_acquire);
+                wakeCV.wait_for(lk, std::chrono::milliseconds(10), [this] {
+                    return !streams.empty() || 
+                           stopRequested.load(std::memory_order_acquire) ||
+                           !running.load(std::memory_order_acquire);
                 });
                 workerIdle.store(false, std::memory_order_release);
                 continue;
@@ -915,17 +916,18 @@ private:
 
             workPending.store(false, std::memory_order_release);
 
-            // Process loads
+            // Process loads - but break early if stopping
             int processed = 0;
             size_t streamCount = streams.size();
             
             for (int i = 0; i < (int)streamCount && processed < MAX_PER_CYCLE; i++) {
-                if (!running.load(std::memory_order_acquire)) break;
+                if (stopRequested.load(std::memory_order_acquire) || !running.load(std::memory_order_acquire)) {
+                    break;
+                }
                 
                 int idx = (currentStream + i) % (int)streamCount;
                 DecoderStream* s = nullptr;
                 
-                // Safe access to streams
                 if (idx >= 0 && idx < (int)streams.size()) {
                     s = streams[idx];
                 }
@@ -939,24 +941,19 @@ private:
 
             if (processed > 0) {
                 currentStream = (currentStream + 1) % (int)streamCount;
-                idleCount = 0;
-            } else {
-                idleCount++;
             }
 
-            // If idle, wait for work
-            if (processed == 0 && idleCount > 1) {
+            // If idle and no stop requested, wait for work
+            if (processed == 0 && !stopRequested.load(std::memory_order_acquire)) {
                 workerIdle.store(true, std::memory_order_release);
                 std::unique_lock<std::mutex> lk(wakeMutex);
-                wakeCV.wait_for(lk, std::chrono::milliseconds(10), [this] {
+                wakeCV.wait_for(lk, std::chrono::milliseconds(5), [this] {
                     return workPending.load(std::memory_order_acquire) ||
+                           stopRequested.load(std::memory_order_acquire) ||
                            !running.load(std::memory_order_acquire) ||
                            pause.load(std::memory_order_acquire);
                 });
                 workerIdle.store(false, std::memory_order_release);
-            } else if (processed == 0) {
-                // Small backoff to prevent CPU spinning
-                std::this_thread::yield();
             }
         }
     }
@@ -993,14 +990,17 @@ private:
     bool tryLoadNextBuffer(DecoderStream* s) {
         if (!s) return false;
         
+        // Check stop before attempting
+        if (stopRequested.load(std::memory_order_acquire)) return false;
+        
         bool expected = false;
         if (!s->asyncState.loadingInProgress.compare_exchange_strong(
                 expected, true, std::memory_order_acq_rel)) {
             return false;
         }
 
-        // Make sure we're still running
-        if (!running.load(std::memory_order_acquire)) {
+        // Check stop again after acquiring lock
+        if (stopRequested.load(std::memory_order_acquire)) {
             s->asyncState.loadingInProgress.store(false, std::memory_order_release);
             return false;
         }
@@ -1013,17 +1013,17 @@ private:
             return false;
         }
 
-        // Perform the async fill
+        // Perform the async fill - this might take time but we have stop checks
         ma_uint64 framesRead = 0;
         s->fillBufferAsync(start, s->asyncState.asyncNextBuffer, &framesRead);
 
-        // Update the async state with the results
-        if (running.load(std::memory_order_acquire)) {
+        // Check stop before updating state
+        if (!stopRequested.load(std::memory_order_acquire) && running.load(std::memory_order_acquire)) {
             s->asyncState.nextBufferStartPos    = start;
             s->asyncState.nextBufferValidFrames = framesRead;
+            s->asyncState.nextBufferReady.store(true, std::memory_order_release);
         }
         
-        s->asyncState.nextBufferReady.store(true, std::memory_order_release);
         s->asyncState.loadingInProgress.store(false, std::memory_order_release);
         return true;
     }
@@ -1031,14 +1031,17 @@ private:
     bool tryLoadLoadingBuffer(DecoderStream* s) {
         if (!s) return false;
         
+        // Check stop before attempting
+        if (stopRequested.load(std::memory_order_acquire)) return false;
+        
         bool expected = false;
         if (!s->asyncState.loadingInProgress.compare_exchange_strong(
                 expected, true, std::memory_order_acq_rel)) {
             return false;
         }
 
-        // Make sure we're still running
-        if (!running.load(std::memory_order_acquire)) {
+        // Check stop again after acquiring lock
+        if (stopRequested.load(std::memory_order_acquire)) {
             s->asyncState.loadingInProgress.store(false, std::memory_order_release);
             return false;
         }
@@ -1051,17 +1054,17 @@ private:
             return false;
         }
 
-        // Perform the async fill
+        // Perform the async fill - this might take time but we have stop checks
         ma_uint64 framesRead = 0;
         s->fillBufferAsync(start, s->asyncState.asyncLoadingBuffer, &framesRead);
 
-        // Update the async state with the results
-        if (running.load(std::memory_order_acquire)) {
+        // Check stop before updating state
+        if (!stopRequested.load(std::memory_order_acquire) && running.load(std::memory_order_acquire)) {
             s->asyncState.loadingBufferStartPos    = start;
             s->asyncState.loadingBufferValidFrames = framesRead;
+            s->asyncState.loadingBufferReady.store(true, std::memory_order_release);
         }
         
-        s->asyncState.loadingBufferReady.store(true, std::memory_order_release);
         s->asyncState.loadingInProgress.store(false, std::memory_order_release);
         return true;
     }
@@ -1201,13 +1204,6 @@ public:
         
         // CRITICAL: Stop and delete async loader BEFORE uninitializing decoders
         if (asyncLoader) {
-            // Signal the loader to stop
-            asyncLoader->pauseLoading();
-            
-            // Give it time to finish current operations
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
-            
-            // Delete will properly stop and join the thread
             delete asyncLoader;
             asyncLoader = nullptr;
         }
@@ -1230,8 +1226,9 @@ public:
         playbackRate = 1.0f;
         mixerState = 3;
         
-        // Ensure device is completely cleared
         memset(&device, 0, sizeof(ma_device));
+        
+        printf("[AudioSystem] Destroy complete\n");
     }
 
     void start() {
