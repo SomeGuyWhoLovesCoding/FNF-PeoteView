@@ -94,7 +94,7 @@ jobs:
       - name: Compile (Linux)
         if: runner.os == 'Linux'
         run: |
-          haxelib run lime rebuild linux -verbose
+          haxelib run lime rebuild linux
           haxelib run lime build linux --app-version="7.0.0-${{ github.run_id}}"
         shell: bash
       
