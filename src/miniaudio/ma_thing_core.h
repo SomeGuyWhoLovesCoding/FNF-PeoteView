@@ -1663,12 +1663,12 @@ struct SoundEffectInstance {
     float*    pcmData         = nullptr;
     ma_uint64 frameCount      = 0;
     ma_uint64 playbackPosition = 0;
-    float     volume          = 1.0f;
+    double     volume          = 1.0f;
     bool      playing         = false;
 
     SoundEffectInstance() = default;
 
-    SoundEffectInstance(float* data, ma_uint64 frames, float vol = 1.0f)
+    SoundEffectInstance(float* data, ma_uint64 frames, double vol = 1.0f)
         : pcmData(data), frameCount(frames), playbackPosition(0),
           volume(vol), playing(true) {}
 
@@ -1680,7 +1680,7 @@ struct SoundEffectInstance {
 
         ma_uint32 toRead = (ma_uint32)std::min<ma_uint64>(remaining, requestedFrames);
         float* src = pcmData + (playbackPosition * CHANNEL_COUNT);
-        float  vol = volume * MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed);;
+        float  vol = volume * MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed);
 
 #ifdef __SSE__
         mix_simd(output, src, (int)(toRead * CHANNEL_COUNT), vol);
@@ -1745,7 +1745,7 @@ public:
         return true;
     }
 
-    void play(float volume = 1.0f) {
+    void play(double volume = 1.0f) {
         if (!pcmData || frameCount == 0) return;
         for (auto& inst : instances) {
             if (!inst.isPlaying()) {
@@ -1889,10 +1889,10 @@ public:
     }
     bool isSoundEffectLoaded(const char* path) { return findSoundEffect(path) >= 0; }
 
-    void playSoundEffect(int idx, float volume = 1.0f) {
+    void playSoundEffect(int idx, double volume = 1.0f) {
         if (inRange(idx, soundEffectPools)) soundEffectPools[idx].play(volume);
     }
-    void playSoundEffect(const char* path, float volume = 1.0f) {
+    void playSoundEffect(const char* path, double volume = 1.0f) {
         int idx = findSoundEffect(path);
         if (idx < 0) idx = loadSoundEffect(path);
         if (idx >= 0) playSoundEffect(idx, volume);

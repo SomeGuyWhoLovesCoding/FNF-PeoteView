@@ -29,15 +29,15 @@ extern class MiniAudio {
 	@:native("getDuration") static function getDuration():Float;
 	@:native("getMixerState") static function getMixerState():Int;
 
-	@:native("setPlaybackRate") static function setPlaybackRate(playbackRate:cpp.Float32):Void;
+	@:native("setPlaybackRate") static function setPlaybackRate(playbackRate:Float):Void;
 	@:native("seekToPCMFrame") static function seekToPCMFrame(pos:cpp.Int64):Void;
 	@:native("deactivate_decoder") static function deactivate_decoder(index:Int):Void;
 	@:native("amplify_decoder") static function amplify_decoder(index:Int, volume:Float):Void;
 
 	@:native("detectLatency") static function detectLatency():Int;
 
-	@:native("getGlobalVolume") static function getGlobalVolume():cpp.Float64;
-	@:native("setGlobalVolume") static function setGlobalVolume(value:cpp.Float64):cpp.Float64;
+	@:native("getGlobalVolume") static function getGlobalVolume():Float;
+	@:native("setGlobalVolume") static function setGlobalVolume(value:Float):Float;
 
 	@:native("wearingHeadphones") static function wearingHeadphones():Bool;
 	@:native("wearingPlugNPlay") static function wearingPlugNPlay():Bool;
@@ -50,7 +50,7 @@ extern class MiniAudio {
 	}
 	@:native("playBackgroundTrack") static function playBackgroundTrack(index:Int):Void;
 	@:native("stopBackgroundTrack") static function stopBackgroundTrack(index:Int):Void;
-	@:native("setBackgroundTrackVolume") static function setBackgroundTrackVolume(index:Int, volume:cpp.Float32):Void;
+	@:native("setBackgroundTrackVolume") static function setBackgroundTrackVolume(index:Int, volume:Float):Void;
 	@:native("setBackgroundTrackLooping") static function setBackgroundTrackLooping(index:Int, looping:Bool):Void;
 	@:native("isBackgroundTrackPlaying") static function isBackgroundTrackPlaying(index:Int):Bool;
 
@@ -58,11 +58,11 @@ extern class MiniAudio {
 	inline static function loadSoundEffect(path:String):Int {
 		return _loadSoundEffect(ConstCharStar.fromString(path));
 	}
-	@:native("playSoundEffect") static function playSoundEffect(index:Int, volume:cpp.Float32):Void;
+	@:native("playSoundEffect") static function playSoundEffect(index:Int, volume:Float):Void;
 	@:native("stopSoundEffect") static function stopSoundEffect(index:Int):Void;
 
-	@:native("getMixerMasterVolume") static function getMixerMasterVolume():cpp.Float32;
-	@:native("setMixerMasterVolume") static function setMixerMasterVolume(volume:cpp.Float32):cpp.Float32;
+	@:native("getMixerMasterVolume") static function getMixerMasterVolume():Float;
+	@:native("setMixerMasterVolume") static function setMixerMasterVolume(volume:Float):Float;
 }
 #elseif hl
 class MiniAudio {
@@ -95,7 +95,7 @@ class MiniAudio {
 		return 0;
 	}
 
-	@:hlNative("ma_thing", "setPlaybackRate") public static function setPlaybackRate(playbackRate:hl.F32):Void {}
+	@:hlNative("ma_thing", "setPlaybackRate") public static function setPlaybackRate(playbackRate:Float):Void {}
 	@:hlNative("ma_thing", "seek_to_pcm_frame") public static function seekToPCMFrame(pos:hl.I64):Void {}
 	@:hlNative("ma_thing", "deactivate_decoder") public static function deactivate_decoder(index:Int):Void {}
 	@:hlNative("ma_thing", "amplify_decoder") public static function amplify_decoder(index:Int, volume:Float):Void {}
@@ -125,7 +125,7 @@ class MiniAudio {
 
 	@:hlNative("ma_thing", "playBackgroundTrack") public static function playBackgroundTrack(index:Int):Void {}
 	@:hlNative("ma_thing", "stopBackgroundTrack") public static function stopBackgroundTrack(index:Int):Void {}
-	@:hlNative("ma_thing", "setBackgroundTrackVolume") public static function setBackgroundTrackVolume(index:Int, volume:hl.F32):Void {}
+	@:hlNative("ma_thing", "setBackgroundTrackVolume") public static function setBackgroundTrackVolume(index:Int, volume:Float):Void {}
 	@:hlNative("ma_thing", "setBackgroundTrackLooping") public static function setBackgroundTrackLooping(index:Int, looping:Bool):Void {}
 	@:hlNative("ma_thing", "isBackgroundTrackPlaying") public static function isBackgroundTrackPlaying(index:Int):Bool {
 		return false;
@@ -135,13 +135,13 @@ class MiniAudio {
 		return 0;
 	}
 
-	@:hlNative("ma_thing", "playSoundEffect") public static function playSoundEffect(index:Int, volume:hl.F32):Void {}
+	@:hlNative("ma_thing", "playSoundEffect") public static function playSoundEffect(index:Int, volume:Float):Void {}
 	@:hlNative("ma_thing", "stopSoundEffect") public static function stopSoundEffect(index:Int):Void {}
 
-	@:hlNative("ma_thing", "getMixerMasterVolume") public static function getMixerMasterVolume():hl.F32 {
+	@:hlNative("ma_thing", "getMixerMasterVolume") public static function getMixerMasterVolume():Float {
 		return 0.0;
 	}
-	@:hlNative("ma_thing", "setMixerMasterVolume") public static function setMixerMasterVolume(volume:hl.F32):hl.F32 {
+	@:hlNative("ma_thing", "setMixerMasterVolume") public static function setMixerMasterVolume(volume:Float):Float {
 		return 0.0;
 	}
 }

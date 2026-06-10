@@ -1,7 +1,7 @@
 /*
  * ma_thing_standalone.cpp
  * Plain C++ global interface — links against ma_thing_core.h.
- * No HashLink dependency. 
+ * No HashLink dependency.
  */
 
 // These implementation macros must be defined in exactly one translation unit.
@@ -62,8 +62,8 @@ void playSoundEffect(int index, float volume)                 { g_mixer.playSoun
 void stopSoundEffect(int index)                               { g_mixer.stopSoundEffect(index); }
 bool isSoundEffectPlaying(int index)                          { return g_mixer.isSoundEffectPlaying(index); }
 
-float setMixerMasterVolume(float volume)  { return g_mixer.setMasterVolume(volume); }
-float getMixerMasterVolume()              { return g_mixer.getMasterVolume(); }
+double setMixerMasterVolume(double volume)  { return g_mixer.setMasterVolume(volume); }
+double getMixerMasterVolume()              { return g_mixer.getMasterVolume(); }
 void  destroyMixer()                      { g_mixer.destroy(); }
 
 // these functions stay here
