@@ -27,7 +27,7 @@ class AsyncInput {
 		initMutex.acquire();
 		if (!initialized) {
 			initialized = true;
-			enableAsyncInput();
+			haxe.Timer.delay(enableAsyncInput, 1);
 		}
 		initMutex.release();
 	}
@@ -36,7 +36,7 @@ class AsyncInput {
 		initMutex.acquire();
 		if (initialized) {
 			initialized = false;
-			disableAsyncInput();
+			haxe.Timer.delay(disableAsyncInput, 1);
 		}
 		initMutex.release();
 	}

@@ -374,8 +374,6 @@ private:
     int64_t  totalNotes     = 0;
 
     static constexpr int    POOL_SIZE          = 10;
-    static constexpr int    PRELOAD_THRESHOLD  = 5;
-    static constexpr size_t INITIAL_BYTE_BUDGET = 524288;
     static constexpr int64_t DEFAULT_SHARD_CAPACITY = 32;
 
     int64_t correctionTime = 0;
@@ -517,8 +515,6 @@ private:
     void scanShards() {
         // Try to load from metadata file first (fast path - single file open)
         if (loadMetadataFromFile()) {
-            std::cout << "[ShardedChartReader] Loaded metadata from shardMeta.bin (" 
-                      << availableShards.size() << " shards)\n";
             return;
         }
         
@@ -561,7 +557,6 @@ private:
             metaOut.write(reinterpret_cast<const char*>(&entry), sizeof(ShardMetaEntry));
         }
         metaOut.close();
-        std::cout << "[ShardedChartReader] Wrote metadata to shardMeta.bin\n";
     }
     
     // Keep loadShard() for actual note access (memory-mapped, stays open)
@@ -778,9 +773,6 @@ private:
                 pair.second.endIndex = pair.second.startIndex + pair.second.noteCount;
             }
         }
-        
-        // Update metadata file after rebuild
-        writeMetadataFile();
     }
 
     void createShardFile(uint64_t shardId, int64_t initialCapacity = DEFAULT_SHARD_CAPACITY) {
@@ -872,9 +864,6 @@ private:
         if (cacheIt != shardMetadataCache.end()) {
             cacheIt->second.capacity = newCapacity;
         }
-        
-        // Update metadata file
-        writeMetadataFile();
     }
 
 public:
@@ -896,6 +885,9 @@ public:
     }
 
     ~ShardedChartReader() {
+        // Update metadata file after rebuild
+        writeMetadataFile();
+
         std::lock_guard<std::mutex> lk(pendingMutex);
         for (auto& pair : pendingLoads) pair.second.wait();
         pendingLoads.clear();
@@ -1080,9 +1072,6 @@ public:
         if (cacheIt != shardMetadataCache.end()) {
             cacheIt->second.noteCount = refreshedShard.noteCount;
         }
-        
-        // Update metadata file
-        writeMetadataFile();
     }
 
     void sortShard(uint64_t shardId) {
@@ -1200,9 +1189,6 @@ public:
         if (cacheIt != shardMetadataCache.end()) {
             cacheIt->second.noteCount = shard.noteCount;
         }
-        
-        // Update metadata file
-        writeMetadataFile();
     }
 
     void printNoteInfo(int64_t globalIndex) {
@@ -1259,7 +1245,7 @@ void core_loadChart(const char* path) {
 void core_destroyChart() {
     ShardedChartReader* old = gReader;
     gReader = nullptr;
-    std::thread([old]{ delete old; }).detach();
+    delete old;
 }
 
 uint64_t core_getNote(int64_t index) {
