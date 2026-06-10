@@ -1,5 +1,8 @@
 package data.chart;
 
+/**
+ * @since Development
+**/
 #if cpp
 import cpp.ConstCharStar;
 

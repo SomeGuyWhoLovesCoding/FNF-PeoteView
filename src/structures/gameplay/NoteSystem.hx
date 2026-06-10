@@ -1,5 +1,9 @@
 package structures.gameplay;
 
+/**
+ * This is where notes render when interconnected to the note spawner.
+ * @since Development
+ */
 @:publicFields
 class NoteSystem {
 	static var sustainProg(default, null):CustomProgram;

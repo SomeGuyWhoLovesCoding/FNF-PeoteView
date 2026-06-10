@@ -3,6 +3,7 @@ package data.chart;
 /**
 	The song's actor meta.
 	This is a structure containing info related to the characters of the song.
+	@since Development
 **/
 #if !debug
 @:noDebug

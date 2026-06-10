@@ -5,6 +5,8 @@ import sys.FileSystem;
 /**
 	The chart class contains a very intruiging and mind-blowing feature called "Memory Mapping", located just deep into `data.chart.File`'s internal code.
 	The new optimization makes it so the chart basically loads instantly instead of waiting a few minutes for eg. a 13.4 gigabyte of a chart to load.
+	On top of that, a very special feature is put into place, called "shards", or 1/4 second segments of charts that make it easy to insert/remove notes
+	@since Development
 **/
 #if !debug
 @:noDebug

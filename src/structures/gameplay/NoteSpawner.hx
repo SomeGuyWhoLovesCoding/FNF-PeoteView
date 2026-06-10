@@ -1,5 +1,9 @@
 package structures.gameplay;
 
+/**
+ * This is where notes behave when interconnected to the note system.
+ * @since Development
+ */
 @:publicFields
 class NoteSpawner {
 	var bottom:Int64;

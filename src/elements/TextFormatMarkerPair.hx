@@ -7,11 +7,12 @@ import elements.text.*;
 	@since Development
 **/
 @:allow(elements.Text)
+@:publicFields
 class TextFormatMarkerPair {
-	public var marker(default, set):String;
-	public var color(default, set):Color;
-	public var outlineColor(default, set):Color;
-	public var outlineSize(default, set):Float;
+	var marker(default, set):String;
+	var color(default, set):Color;
+	var outlineColor(default, set):Color;
+	var outlineSize(default, set):Float;
 
 	private var _onChange:Void->Void = null;
 
@@ -24,7 +25,7 @@ class TextFormatMarkerPair {
 	function set_outlineColor(v:Color):Color { outlineColor = v; dirty(); return v; }
 	function set_outlineSize(v:Float):Float  { outlineSize  = v; dirty(); return v; }
 
-	public function new(marker:String, color:Color, outlineColor:Color = 0x000000FF, outlineSize:Float = 0) {
+	function new(marker:String, color:Color, outlineColor:Color = 0x000000FF, outlineSize:Float = 0) {
 		this.marker       = marker;
 		this.color        = color;
 		this.outlineColor = outlineColor;

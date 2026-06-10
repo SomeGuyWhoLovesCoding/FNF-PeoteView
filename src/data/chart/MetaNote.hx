@@ -1,5 +1,10 @@
 package data.chart;
 
+/**
+ * This is the source of the single note element at the chart format.
+ * It's that small. 8 byte chart format.
+ * @since Development
+ */
 #if !debug
 @:noDebug
 #end

@@ -5,6 +5,7 @@ package utils;
  * Optimized for small datasets (e.g., < 50 elements) where linear search 
  * outperforms the hashing and pointer-chasing overhead of a real Hash Map.
  * thank you qwen!
+ * @since 0.94
  */
 @:publicFields
 @:generic
