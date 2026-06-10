@@ -38,6 +38,13 @@ struct ShardHeader {
     int64_t reserved[6]; // Reserved for future use (padding to 64 bytes)
 };
 
+struct ShardMetaEntry {
+    uint64_t shardId;
+    int64_t noteCount;
+    int64_t capacity;
+    int64_t reserved[6];
+};
+
 // ============================================================================
 // Portable filesystem helpers (no std::filesystem / C++17 required)
 // ============================================================================
@@ -353,6 +360,7 @@ private:
     struct ShardInfo {
         MappedFileReader reader;
         int64_t  noteCount  = 0;
+        int64_t  capacity   = 0;
         uint64_t shardId    = 0;
         int64_t  startIndex = 0;
         int64_t  endIndex   = 0;
@@ -391,40 +399,66 @@ private:
         }
         size_t idx = std::distance(availableShards.begin(), it);
         if (idx >= shardStartIndices.size()) {
-            // This shouldn't happen if createShardFile updated both vectors
             throw std::runtime_error("Shard start index out of range for shard " + std::to_string(shardId));
         }
         return shardStartIndices[idx];
     }
 
-        // Lightweight function to read just the header
-    ShardHeader readHeaderOnly(uint64_t shardId) const {
-        std::string path = chartDir + "/" + std::to_string(shardId) + ".bin";
-        std::ifstream file(path, std::ios::binary);
-        if (!file) {
-            throw std::runtime_error("Cannot open shard: " + path);
+    // Load metadata from the single shardMeta.bin file
+    bool loadMetadataFromFile() {
+        std::string metaPath = chartDir + "/shardMeta.bin";
+        std::ifstream metaFile(metaPath, std::ios::binary);
+        if (!metaFile) {
+            return false;
         }
         
-        ShardHeader header;
-        file.read(reinterpret_cast<char*>(&header), sizeof(ShardHeader));
-        file.close();  // Close immediately - don't keep open
+        uint64_t entryCount;
+        metaFile.read(reinterpret_cast<char*>(&entryCount), sizeof(entryCount));
+        if (!metaFile) return false;
         
-        return header;
+        std::vector<ShardMetaEntry> entries(entryCount);
+        metaFile.read(reinterpret_cast<char*>(entries.data()), entryCount * sizeof(ShardMetaEntry));
+        if (!metaFile) return false;
+        
+        metaFile.close();
+        
+        // Build the shard lists
+        availableShards.clear();
+        shardStartIndices.clear();
+        availableShards.reserve(entryCount);
+        shardStartIndices.reserve(entryCount);
+        
+        int64_t cumulative = 0;
+        for (const auto& entry : entries) {
+            availableShards.push_back(entry.shardId);
+            shardStartIndices.push_back(cumulative);
+            cumulative += entry.noteCount;
+            
+            // Also cache the metadata for later use (capacity, reserved)
+            // We'll store it in a separate map for quick access
+            shardMetadataCache[entry.shardId] = entry;
+        }
+        totalNotes = cumulative;
+        
+        return true;
     }
     
-    void scanShards() {
+    // Fallback: scan shards manually if metadata file doesn't exist
+    void scanShardsFallback() {
         std::vector<std::string> files;
         listFiles(chartDir, files);
         
         struct TempInfo {
             uint64_t shardId;
             int64_t noteCount;
+            int64_t capacity;
         };
         std::vector<TempInfo> tempInfos;
         tempInfos.reserve(files.size());
         
         for (const auto& name : files) {
             if (getExtension(name) != ".bin") continue;
+            if (name == "shardMeta.bin") continue;  // Skip metadata file
             
             std::string stem = getStem(name);
             uint64_t shardId;
@@ -437,8 +471,7 @@ private:
             
             // Read ONLY the header, then close the file
             ShardHeader header = readHeaderOnly(shardId);
-            //printf(" -- \nShard ID: %llu, Note count from there: %llu\n -- \n", shardId, header.noteCount);
-            tempInfos.push_back({shardId, header.noteCount});
+            tempInfos.push_back({shardId, header.noteCount, header.capacity});
         }
         
         // Sort by shard ID
@@ -454,8 +487,81 @@ private:
             availableShards.push_back(info.shardId);
             shardStartIndices.push_back(cumulative);
             cumulative += info.noteCount;
+            
+            // Cache metadata
+            ShardMetaEntry entry;
+            entry.shardId = info.shardId;
+            entry.noteCount = info.noteCount;
+            entry.capacity = info.capacity;
+            memset(entry.reserved, 0, sizeof(entry.reserved));
+            shardMetadataCache[info.shardId] = entry;
         }
         totalNotes = cumulative;
+    }
+    
+    // Lightweight function to read just the header (used only in fallback)
+    ShardHeader readHeaderOnly(uint64_t shardId) const {
+        std::string path = chartDir + "/" + std::to_string(shardId) + ".bin";
+        std::ifstream file(path, std::ios::binary);
+        if (!file) {
+            throw std::runtime_error("Cannot open shard: " + path);
+        }
+        
+        ShardHeader header;
+        file.read(reinterpret_cast<char*>(&header), sizeof(ShardHeader));
+        file.close();
+        
+        return header;
+    }
+    
+    void scanShards() {
+        // Try to load from metadata file first (fast path - single file open)
+        if (loadMetadataFromFile()) {
+            std::cout << "[ShardedChartReader] Loaded metadata from shardMeta.bin (" 
+                      << availableShards.size() << " shards)\n";
+            return;
+        }
+        
+        // Fallback to scanning all shard files (slow path)
+        std::cout << "[ShardedChartReader] shardMeta.bin not found, scanning shard files...\n";
+        scanShardsFallback();
+        
+        // Optionally, write the metadata file for next time
+        writeMetadataFile();
+    }
+    
+    void writeMetadataFile() {
+        std::string metaPath = chartDir + "/shardMeta.bin";
+        std::ofstream metaOut(metaPath, std::ios::binary);
+        if (!metaOut) {
+            std::cerr << "Warning: Could not write " << metaPath << std::endl;
+            return;
+        }
+        
+        uint64_t entryCount = availableShards.size();
+        metaOut.write(reinterpret_cast<const char*>(&entryCount), sizeof(entryCount));
+        
+        for (uint64_t shardId : availableShards) {
+            ShardMetaEntry entry;
+            entry.shardId = shardId;
+            
+            // Try to get from cache first
+            auto cacheIt = shardMetadataCache.find(shardId);
+            if (cacheIt != shardMetadataCache.end()) {
+                entry = cacheIt->second;
+            } else {
+                // Need to read from file
+                ShardHeader header = readHeaderOnly(shardId);
+                entry.noteCount = header.noteCount;
+                entry.capacity = header.capacity;
+                memcpy(entry.reserved, header.reserved, sizeof(header.reserved));
+                shardMetadataCache[shardId] = entry;
+            }
+            
+            metaOut.write(reinterpret_cast<const char*>(&entry), sizeof(ShardMetaEntry));
+        }
+        metaOut.close();
+        std::cout << "[ShardedChartReader] Wrote metadata to shardMeta.bin\n";
     }
     
     // Keep loadShard() for actual note access (memory-mapped, stays open)
@@ -483,6 +589,12 @@ private:
         ShardInfo info;
         info.shardId    = shardId;
         info.startIndex = getShardStartIndex(shardId);
+        
+        // Get capacity from metadata cache if available
+        auto cacheIt = shardMetadataCache.find(shardId);
+        if (cacheIt != shardMetadataCache.end()) {
+            info.capacity = cacheIt->second.capacity;
+        }
         
         // This now does the full memory-mapped open (expensive, but only when needed)
         if (!info.reader.open(path.c_str())) {
@@ -545,11 +657,19 @@ private:
 
         std::string path     = chartDir + "/" + std::to_string(shardId) + ".bin";
         int64_t     startIdx = getShardStartIndex(shardId);
+        
+        // Get capacity from metadata cache
+        int64_t capacity = DEFAULT_SHARD_CAPACITY;
+        auto cacheIt = shardMetadataCache.find(shardId);
+        if (cacheIt != shardMetadataCache.end()) {
+            capacity = cacheIt->second.capacity;
+        }
 
-        pendingLoads[shardId] = std::async(std::launch::async, [shardId, path, startIdx]() -> ShardInfo* {
+        pendingLoads[shardId] = std::async(std::launch::async, [shardId, path, startIdx, capacity]() -> ShardInfo* {
             ShardInfo* info = new ShardInfo();
             info->shardId    = shardId;
             info->startIndex = startIdx;
+            info->capacity   = capacity;
             if (!info->reader.open(path.c_str())) { delete info; return nullptr; }
             info->noteCount = info->reader.getNoteCount();
             info->endIndex  = info->startIndex + info->noteCount;
@@ -606,8 +726,6 @@ private:
 
         std::vector<uint64_t> toRemove;
         for (auto& pair : activeShards) {
-            // 🔥 FIX: Use a symmetric window to prevent unbounded FD growth
-            // when seeking backwards or accessing shards out of order.
             int64_t first = static_cast<int64_t>(pair.first);
             int64_t current = static_cast<int64_t>(currentShard);
             int64_t dist = (first > current) ? (first - current) : (current - first);
@@ -626,18 +744,26 @@ private:
         for (uint64_t shardId : availableShards) {
             shardStartIndices.push_back(cumulative);
             
-            // Get note count from activeShards if loaded, otherwise read from file header
+            // Get note count from activeShards if loaded, otherwise from metadata cache
             auto it = activeShards.find(shardId);
             if (it != activeShards.end()) {
                 cumulative += it->second.noteCount;
             } else {
-                // Read header from file
-                std::string path = chartDir + "/" + std::to_string(shardId) + ".bin";
-                std::ifstream file(path, std::ios::binary);
-                if (file) {
-                    ShardHeader header;
-                    file.read(reinterpret_cast<char*>(&header), sizeof(ShardHeader));
+                auto cacheIt = shardMetadataCache.find(shardId);
+                if (cacheIt != shardMetadataCache.end()) {
+                    cumulative += cacheIt->second.noteCount;
+                } else {
+                    // Fallback to reading from file
+                    ShardHeader header = readHeaderOnly(shardId);
                     cumulative += header.noteCount;
+                    
+                    // Update cache
+                    ShardMetaEntry entry;
+                    entry.shardId = shardId;
+                    entry.noteCount = header.noteCount;
+                    entry.capacity = header.capacity;
+                    memcpy(entry.reserved, header.reserved, sizeof(header.reserved));
+                    shardMetadataCache[shardId] = entry;
                 }
             }
         }
@@ -652,6 +778,9 @@ private:
                 pair.second.endIndex = pair.second.startIndex + pair.second.noteCount;
             }
         }
+        
+        // Update metadata file after rebuild
+        writeMetadataFile();
     }
 
     void createShardFile(uint64_t shardId, int64_t initialCapacity = DEFAULT_SHARD_CAPACITY) {
@@ -678,6 +807,15 @@ private:
         auto it = std::lower_bound(availableShards.begin(), availableShards.end(), shardId);
         if (it == availableShards.end() || *it != shardId) {
             availableShards.insert(it, shardId);
+            
+            // Add to metadata cache
+            ShardMetaEntry entry;
+            entry.shardId = shardId;
+            entry.noteCount = 0;
+            entry.capacity = initialCapacity;
+            memset(entry.reserved, 0, sizeof(entry.reserved));
+            shardMetadataCache[shardId] = entry;
+            
             rebuildShardStartIndices();  // Rebuild all indices after adding new shard
         }
     }
@@ -726,12 +864,25 @@ private:
         shard.reader.setNoteCount(oldNoteCount);
         
         shard.noteCount = oldNoteCount;
+        shard.capacity = newCapacity;
         shard.endIndex = shard.startIndex + shard.noteCount;
+        
+        // Update metadata cache
+        auto cacheIt = shardMetadataCache.find(shardId);
+        if (cacheIt != shardMetadataCache.end()) {
+            cacheIt->second.capacity = newCapacity;
+        }
+        
+        // Update metadata file
+        writeMetadataFile();
     }
 
 public:
     std::vector<uint8_t> globalJudgement;
     bool globalJudgementInitialized = false;
+    
+    // Cache for shard metadata (noteCount, capacity, reserved)
+    std::unordered_map<uint64_t, ShardMetaEntry> shardMetadataCache;
 
     void initGlobalJudgement() {
         if (globalJudgementInitialized) return;
@@ -923,6 +1074,15 @@ public:
                 }
             }
         }
+        
+        // Update metadata cache
+        auto cacheIt = shardMetadataCache.find(shardId);
+        if (cacheIt != shardMetadataCache.end()) {
+            cacheIt->second.noteCount = refreshedShard.noteCount;
+        }
+        
+        // Update metadata file
+        writeMetadataFile();
     }
 
     void sortShard(uint64_t shardId) {
@@ -1034,6 +1194,15 @@ public:
         for (size_t i = shardPos + 1; i < availableShards.size(); i++) {
             shardStartIndices[i]--;
         }
+        
+        // Update metadata cache
+        auto cacheIt = shardMetadataCache.find(shardId);
+        if (cacheIt != shardMetadataCache.end()) {
+            cacheIt->second.noteCount = shard.noteCount;
+        }
+        
+        // Update metadata file
+        writeMetadataFile();
     }
 
     void printNoteInfo(int64_t globalIndex) {
