@@ -304,7 +304,7 @@ public:
         }
 
         mapLen = static_cast<size_t>(st.st_size);
-        void* ptr = mmap(nullptr, mapLen, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+        void* ptr = mmap(nullptr, mapLen, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, fd, 0);
         if (ptr == MAP_FAILED) { 
             std::cerr << "[MappedFileReader] mmap() failed for " << path 
                       << " (size " << mapLen << "): " << strerror(errno) 
