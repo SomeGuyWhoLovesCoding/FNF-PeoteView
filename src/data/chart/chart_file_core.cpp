@@ -285,30 +285,33 @@ public:
         fd = ::open(path, O_RDWR);
         if (fd < 0) {
             std::cerr << "[MappedFileReader] open() failed for " << path 
-                      << ": " << strerror(errno) << " (errno " << errno << ")\n";
+                    << ": " << strerror(errno) << " (errno " << errno << ")\n";
             return false;
         }
 
         struct stat st;
         if (fstat(fd, &st) != 0) { 
             std::cerr << "[MappedFileReader] fstat() failed for " << path 
-                      << ": " << strerror(errno) << "\n";
+                    << ": " << strerror(errno) << "\n";
             closeMap(); 
             return false; 
         }
+        
         if (st.st_size < (off_t)sizeof(ShardHeader)) { 
             std::cerr << "[MappedFileReader] File too small: " << path 
-                      << " (" << st.st_size << " bytes, need " << sizeof(ShardHeader) << ")\n";
+                    << " (" << st.st_size << " bytes, need " << sizeof(ShardHeader) << ")\n";
             closeMap(); 
             return false; 
         }
 
         mapLen = static_cast<size_t>(st.st_size);
-        void* ptr = mmap(nullptr, mapLen, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_POPULATE, fd, 0);
+        
+        // CRITICAL FIX: Use MAP_SHARED for read/write access
+        void* ptr = mmap(nullptr, mapLen, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
         if (ptr == MAP_FAILED) { 
             std::cerr << "[MappedFileReader] mmap() failed for " << path 
-                      << " (size " << mapLen << "): " << strerror(errno) 
-                      << " (errno " << errno << ")\n";
+                    << " (size " << mapLen << "): " << strerror(errno) 
+                    << " (errno " << errno << ")\n";
             closeMap(); 
             return false; 
         }
@@ -316,10 +319,28 @@ public:
         // Read header from beginning of file
         memcpy(&header, ptr, sizeof(ShardHeader));
         
+        // Verify header is valid
+        if (header.noteCount < 0 || header.capacity <= 0 || 
+            header.noteCount > header.capacity) {
+            std::cerr << "[MappedFileReader] Invalid header in " << path 
+                    << ": noteCount=" << header.noteCount 
+                    << ", capacity=" << header.capacity << "\n";
+            munmap(ptr, mapLen);
+            closeMap();
+            return false;
+        }
+        
         // Data starts after header
         mappedData = (uint64_t*)(static_cast<char*>(ptr) + sizeof(ShardHeader));
         mappedCount = (st.st_size - sizeof(ShardHeader)) / sizeof(uint64_t);
-#endif
+        
+        // Verify the mapped count matches capacity
+        if (mappedCount != header.capacity) {
+            std::cerr << "[MappedFileReader] Size mismatch in " << path 
+                    << ": mappedCount=" << mappedCount 
+                    << ", capacity=" << header.capacity << "\n";
+        }
+    #endif
         return true;
     }
 
@@ -1109,6 +1130,9 @@ public:
             uint32_t pos = getLocalPos(note);
             if (pos > maxPos) maxPos = pos;
         }
+        
+        // If all positions are 0, no sorting needed
+        if (maxPos == 0) return;
         
         // Count number of passes needed (based on maxPos bits)
         int maxBits = 0;
