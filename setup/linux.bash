@@ -35,7 +35,7 @@ log_info "Installing 64-bit dependencies..."
 sudo apt-get install -y libc6-dev-i386 g++-multilib
 sudo apt install -y libx11-dev libxrandr-dev libxinerama-dev
 sudo apt-get install -y libgl-dev libgl1-mesa-dev libasound2-dev
-sudo apt-get install -y libdrm-dev libgbm-dev mesa-common-dev libegl1-mesa-dev libgles2-mesa-dev
+sudo apt-get install -y libgbm-dev mesa-common-dev libegl1-mesa-dev libgles2-mesa-dev
 
 # Setup i386
 log_info "Setting up i386 architecture..."
@@ -45,14 +45,7 @@ sudo apt update
 # Install 32-bit dependencies
 log_info "Installing 32-bit dependencies..."
 sudo apt-get install -y libgl-dev:i386 libgl1-mesa-dev:i386 libglu1-mesa-dev:i386
-sudo apt-get install -y libdrm-dev:i386 libgbm-dev:i386 mesa-common-dev:i386 libegl1-mesa-dev:i386 libgles2-mesa-dev:i386
-
-# Fix DRM headers
-log_info "Fixing DRM headers..."
-sudo sed -i 's|<drm_mode.h>|<libdrm/drm_mode.h>|' /usr/include/xf86drmMode.h || true
-sudo sed -i 's|<drm.h>|<libdrm/drm.h>|' /usr/include/xf86drm.h || true
-sudo ln -sf /usr/include/libdrm/drm_mode.h /usr/include/drm_mode.h || true
-sudo ln -sf /usr/include/libdrm/drm.h /usr/include/drm.h || true
+sudo apt-get install -y libgbm-dev:i386 mesa-common-dev:i386 libegl1-mesa-dev:i386 libgles2-mesa-dev:i386\
 
 # Setup haxelib
 log_info "Setting up haxelib..."
