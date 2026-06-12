@@ -81,10 +81,36 @@ class FreeplayScreen implements IAlphabetScrollHost {
 	}
 
 	function unload() {
-		alphabet.unload();
-		songIconsBuf.clear();
+		// First, remove from display to stop rendering
+		if (songIconsProg != null && display != null && songIconsProg.isIn(display)) {
+			display.removeProgram(songIconsProg);
+		}
+		
+		// Dispose all HealthBarSprite elements properly
+		if (songIconGroup != null) {
+			while (songIconGroup.pop() != null) {}
+			songIconGroup.splice(0, songIconGroup.length);
+		}
+		
+		// Clear and dispose the buffer
+		if (songIconsBuf != null) {
+			songIconsBuf.clear();
+			songIconsBuf = null;
+		}
+		
+		// Handle the program
+		if (songIconsProg != null) {
+			songIconsProg = null;
+		}
+		
+		// Clear array
 		songsAvailable.splice(0, songsAvailable.length);
-		songIconGroup.splice(0, songIconGroup.length);
+		
+		// Unload alphabet
+		if (alphabet != null) {
+			alphabet.unload();
+		}
+		
 		disposed = true;
 	}
 

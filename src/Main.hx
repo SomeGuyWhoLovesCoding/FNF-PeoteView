@@ -318,6 +318,13 @@ class Main extends Application
 		if (isClosing) return;
 		isClosing = true;
 		lifecycle = AppLifecycleState.SHUTTING_DOWN;
+		
+		// First, remove event handlers to prevent any new events
+		if (Application.current != null && Application.current.window != null) {
+			unregisterWindowEvents(Application.current.window);
+		}
+		
+		// Then dispose everything else
 		disposeApp();
 	}
 
