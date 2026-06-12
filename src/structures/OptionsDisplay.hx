@@ -28,7 +28,7 @@ class OptionsDisplay {
 	var graphicsDisplay(default, null):GraphicsDisplay;
 	var controlsDisplay(default, null):ControlsDisplay;
 
-	var closed:Bool;
+	var closed:Bool = true;
 
 	function new(parent:OptionsMenu) {
 		this.parent = parent;

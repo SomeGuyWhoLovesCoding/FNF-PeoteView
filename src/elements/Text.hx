@@ -1,25 +1,11 @@
 package elements;
 
 import elements.text.*;
-
-private class ColorSpan {
-	public var start:Int;
-	public var end:Int;
-	public var color:Color;
-	public var outlineColor:Color;
-	public var outlineSize:Float;
-
-	public function new(start:Int, end:Int, color:Color, outlineColor:Color, outlineSize:Float) {
-		this.start        = start;
-		this.end          = end;
-		this.color        = color;
-		this.outlineColor = outlineColor;
-		this.outlineSize  = outlineSize;
-	}
-}
+using StringTools;
 
 /**
 	The visual representation of text, whether you want to have it show in a certain font, or move it around.
+	Supports multiline, alignment, and spacer percentage!
 	@since Development
 **/
 @:publicFields
@@ -112,7 +98,7 @@ class Text {
 		markerPairs = pairs;
 		for (pair in markerPairs) pair._onChange = markDirty;
 		markDirty();
-		this.text = text; // so it updates automatically regardless if you've set your text to the new onee or not.
+		this.text = text;
 	}
 
 	private var colorSpans:Array<ColorSpan> = [];
@@ -127,7 +113,7 @@ class Text {
 
 	function flushIfDirty() {
 		if (!_dirty) return;
-		set_text(_rawText);
+		refresh();
 	}
 
 	// ── Text ──────────────────────────────────────────────────────────────────
@@ -136,189 +122,380 @@ class Text {
 	function get_rawText() return _rawText;
 
 	private var _rawText:String = "";
-
 	var text(default, set):String = "";
+	
+	// New: Line array for multiline
+	private var _lines:Array<String> = [];
+	private var _lineWidths:Array<Float> = [];
+	private var _lineHeights:Array<Float> = [];
+	
+	// New: Multiline properties
+	var multiline(default, set):Bool = false;
+	var lineSpacing(default, set):Float = 0; // Additional spacing between lines in pixels
+	var maxWidth(default, set):Float = 0; // Maximum width before wrapping (0 = no wrap)
+	
+	// New: Alignment
+	var alignment(default, set):TextAlign = LEFT;
+	
+	// New: Spacer percentage (0-1) for character spacing
+	var spacerPercent(default, set):Float = 0.0; // 0 = normal, 1 = double spacing
 
 	var x(default, set):Float = 0;
-
 	var y(default, set):Float = 0;
-
 	var scale(default, set):Float = 1.0;
-
 	var _scale(default, null):Float = 1.0;
-
 	var width(default, null):Float;
 	var height(default, null):Float;
-
 	var alpha(default, set):Float = 1.0;
-
 	var color(default, set):Color = 0xFFFFFFFF;
-
 	var outlineColor(default, set):Color = 0x000000FF;
-
 	var outlineSize(default, set):Float = 0;
 
-	// set_text — single slot per character:
-	private var _activeCount:Int = 0;  // how many sprites are actually live
+	private var _activeCount:Int = 0;
 
-	// ── set_text ──────────────────────────────────────────────────────────────
+	// New: Getters for line information
+	var lineCount(get, never):Int;
+	function get_lineCount() return _lines.length;
+	
+	function getLineText(line:Int):String {
+		return (line >= 0 && line < _lines.length) ? _lines[line] : "";
+	}
+	
+	function getLineWidth(line:Int):Float {
+		return (line >= 0 && line < _lineWidths.length) ? _lineWidths[line] : 0;
+	}
+
+	// ── Setters for new properties ────────────────────────────────────────────
+	
+	function set_multiline(value:Bool):Bool {
+		if (multiline == value) return value;
+		multiline = value;
+		markDirty();
+		refresh();
+		return value;
+	}
+	
+	function set_lineSpacing(value:Float):Float {
+		if (lineSpacing == value) return value;
+		lineSpacing = value;
+		if (multiline) {
+			markDirty();
+			refresh();
+		}
+		return value;
+	}
+	
+	function set_maxWidth(value:Float):Float {
+		if (maxWidth == value) return value;
+		maxWidth = value;
+		if (multiline && maxWidth > 0) {
+			markDirty();
+			refresh();
+		}
+		return value;
+	}
+	
+	function set_alignment(value:TextAlign):TextAlign {
+		if (alignment == value) return value;
+		alignment = value;
+		if (multiline) {
+			markDirty();
+			refresh();
+		}
+		return value;
+	}
+	
+	function set_spacerPercent(value:Float):Float {
+		var clamped = Math.min(Math.max(value, 0.0), 1.0);
+		if (spacerPercent == clamped) return value;
+		spacerPercent = clamped;
+		markDirty();
+		refresh();
+		return value;
+	}
+
+	// ── Text wrapping and line breaking ───────────────────────────────────────
+
+	private function wrapText(str:String):Array<String> {
+		var lines:Array<String> = [];
+		
+		if (!multiline) {
+			// Even when not multiline, we should strip newlines
+			return [str.replace("\n", " ")];
+		}
+		
+		// First, split by explicit newlines
+		var newlineSegments = str.split("\n");
+		
+		for (segment in newlineSegments) {
+			if (maxWidth <= 0) {
+				// No width limit, just add the segment as-is
+				if (segment.length > 0 || lines.length > 0 || segment == newlineSegments[0]) {
+					lines.push(segment);
+				}
+			} else {
+				// Word wrap within maxWidth
+				var words = segment.split(" ");
+				var currentLine = "";
+				var quarterScale = scale / 2;
+				
+				for (i in 0...words.length) {
+					var word = words[i];
+					var testLine = currentLine.length == 0 ? word : currentLine + " " + word;
+					var testWidth = calculateTextWidth(testLine, quarterScale);
+					
+					if (testWidth > maxWidth && currentLine.length > 0) {
+						lines.push(currentLine);
+						currentLine = word;
+					} else {
+						currentLine = testLine;
+					}
+				}
+				
+				if (currentLine.length > 0 || segment.length == 0) {
+					lines.push(currentLine);
+				}
+			}
+		}
+		
+		return lines.length == 0 ? (multiline ? [""] : [str]) : lines;
+	}
+
+	private function calculateTextWidth(line:String, quarterScale:Float):Float {
+		var totalWidth:Float = 0;
+		for (ci in 0...line.length) {
+			var code = line.charCodeAt(ci);
+			var data = parsedTextAtlasData[code];
+			if (data != null) {
+				var charWidth = data[6] * quarterScale;
+				var spacing = charWidth * spacerPercent;
+				totalWidth += charWidth + spacing;
+			}
+		}
+		return totalWidth;
+	}
+	
+	private function calculateLineHeight():Float {
+		if (_lines.length == 0) return 0;
+		
+		var maxHeight:Float = 0;
+		var quarterScale = scale / 2;
+		
+		for (line in _lines) {
+			for (ci in 0...line.length) {
+				var code = line.charCodeAt(ci);
+				var data = parsedTextAtlasData[code];
+				if (data != null) {
+					var charHeight = data[3] * quarterScale;
+					if (charHeight > maxHeight) maxHeight = charHeight;
+				}
+			}
+		}
+		
+		return maxHeight + lineSpacing;
+	}
+
+	// ── set_text (updated with multiline support) ─────────────────────────────
 
 	function set_text(raw:String) {
-		if (raw == _rawText && !_dirty) return text;
-		_dirty   = false;
+		if (!_dirty) if (raw == _rawText) return text;
+		_dirty = false;
 		_rawText = raw;
-
+		
+		// Preserve newlines for markup parsing
 		var parsed = parseMarkup(raw);
-		var str    = parsed.clean;
+		var str = parsed.clean;
 		colorSpans = parsed.spans;
-		text       = str;
-
-		// Hide previously-active sprites that are now beyond the new length.
+		text = str;
+		
+		// Handle multiline - this now respects \n from parseMarkup
+		if (multiline) {
+			_lines = wrapText(str);
+		} else {
+			// When not multiline, replace newlines with spaces
+			_lines = [str.replace("\n", " ")];
+		}
+		
+		// Calculate line widths and total dimensions
+		var quarterScale = scale / 2;
+		_lineWidths = [];
+		var maxLineWidth:Float = 0;
+		var totalHeight:Float = 0;
+		var lineHeight = calculateLineHeight();
+		
+		for (lineIdx in 0..._lines.length) {
+			var line = _lines[lineIdx];
+			var lineWidth = calculateTextWidth(line, quarterScale);
+			_lineWidths.push(lineWidth);
+			if (lineWidth > maxLineWidth) maxLineWidth = lineWidth;
+		}
+		
+		// Total height = sum of all line heights
+		totalHeight = _lines.length * lineHeight;
+		
+		// Store actual dimensions
+		width = maxLineWidth;  // Width is the maximum line width
+		height = totalHeight;   // Height is total height of all lines
+		
+		// Hide previously-active sprites
 		var oldCount = _activeCount;
-		if (str.length < oldCount) {
-			for (ci in str.length...oldCount) {
+		var totalChars = 0;
+		for (line in _lines) totalChars += line.length;
+		
+		if (totalChars < oldCount) {
+			for (ci in totalChars...oldCount) {
 				var spr = buffer.getElement(ci);
 				if (spr == null) continue;
 				spr.x = spr.y = -999999999;
 				spr.w = spr.h = 0;
-				spr.alpha     = 0;
+				spr.alpha = 0;
 				buffer.updateElement(spr);
 			}
 		}
-		_activeCount = str.length;
-
-		var quarterScale = scale / 2;
-		var advanceX:Float = 0;
-		var newHeight:Float = 0;           // reset height properly
-		var spanIdx:Int = 0;               // walk spans in order (see resolveStyleFast)
-
-		for (ci in 0...str.length) {
-			var code = str.charCodeAt(ci);
-			var data = parsedTextAtlasData[code];
-
-			var spr:TextCharSprite = ci < buffer.length
-				? buffer.getElement(ci)
-				: buffer.addElement(new TextCharSprite());
-
-			// Resolve style with O(1)-amortised span walk instead of O(spans) per char.
-			while (spanIdx < colorSpans.length && colorSpans[spanIdx].end <= ci)
-				spanIdx++;
-			var span = (spanIdx < colorSpans.length && ci >= colorSpans[spanIdx].start)
-				? colorSpans[spanIdx] : null;
-			var sc  = span != null ? span.color        : color;
-			var soc = span != null ? span.outlineColor : outlineColor;
-			var sos = (span != null && span.outlineSize != 0.0) ? span.outlineSize : outlineSize;
-
-			// Fill sprite.
-			var padding = parsedTextAtlasData[256];
-			spr.clipX      = data[0];
-			spr.clipY      = data[1];
-			spr.clipWidth  = spr.clipSizeX = data[2];
-			spr.clipHeight = spr.clipSizeY = data[3];
-			spr.w          = data[2] * quarterScale;
-			spr.h          = data[3] * quarterScale;
-			spr.rw         = data[2] * quarterScale;
-			spr.rh         = data[3] * quarterScale;
-			spr.x          = x + data[4] * quarterScale + advanceX;
-			spr.y          = y + data[5] * quarterScale;
-			spr.c          = sc;
-			spr.oc         = soc;
-			spr.os         = sos;
-			spr.alpha      = alpha;
-
-			advanceX += data[6] * quarterScale;
-
-			var sprH = spr.h + spr.y - y;   // height contribution relative to baseline
-			if (sprH > newHeight) newHeight = sprH;
-
-			buffer.updateElement(spr);   // single update per sprite
+		_activeCount = totalChars;
+		
+		// Render each character with line positioning
+		var globalCharIdx = 0;
+		var spanIdx = 0;
+		
+		// Track character position within the original raw text for color spans
+		var rawCharIdx = 0;
+		
+		for (lineIdx in 0..._lines.length) {
+			var line = _lines[lineIdx];
+			var lineWidth = _lineWidths[lineIdx];
+			
+			// Calculate X offset based on alignment - using actual line width, not max width
+			var xOffset = switch (alignment) {
+				case LEFT: 0.0;
+				case CENTER: (maxLineWidth - lineWidth) / 2;
+				case RIGHT: maxLineWidth - lineWidth;
+			}
+			
+			var advanceX = xOffset;
+			var lineY = y + (lineIdx * lineHeight);
+			
+			for (ci in 0...line.length) {
+				var code = line.charCodeAt(ci);
+				var data = parsedTextAtlasData[code];
+				
+				var spr:TextCharSprite = globalCharIdx < buffer.length
+					? buffer.getElement(globalCharIdx)
+					: buffer.addElement(new TextCharSprite());
+				
+				// Resolve style based on position in original text
+				while (spanIdx < colorSpans.length && colorSpans[spanIdx].end <= rawCharIdx)
+					spanIdx++;
+				var span = (spanIdx < colorSpans.length && rawCharIdx >= colorSpans[spanIdx].start)
+					? colorSpans[spanIdx] : null;
+				var sc = span != null ? span.color : color;
+				var soc = span != null ? span.outlineColor : outlineColor;
+				var sos = (span != null && span.outlineSize != 0.0) ? span.outlineSize : outlineSize;
+				
+				// Apply spacer percentage to advance width
+				var baseAdvance = data[6] * quarterScale;
+				var spacerAmount = baseAdvance * spacerPercent;
+				var totalAdvance = baseAdvance + spacerAmount;
+				
+				// Fill sprite
+				spr.clipX = data[0];
+				spr.clipY = data[1];
+				spr.clipWidth = spr.clipSizeX = data[2];
+				spr.clipHeight = spr.clipSizeY = data[3];
+				spr.w = data[2] * quarterScale;
+				spr.h = data[3] * quarterScale;
+				spr.rw = data[2] * quarterScale;
+				spr.rh = data[3] * quarterScale;
+				spr.x = x + (data[4] * quarterScale) + advanceX;
+				spr.y = lineY + (data[5] * quarterScale);
+				spr.c = sc;
+				spr.oc = soc;
+				spr.os = sos;
+				spr.alpha = alpha;
+				
+				advanceX += totalAdvance;
+				buffer.updateElement(spr);
+				globalCharIdx++;
+				rawCharIdx++;
+			}
+			
+			// Skip over newline characters in rawCharIdx for proper span tracking
+			var originalText = text;
+			while (rawCharIdx < originalText.length && originalText.charCodeAt(rawCharIdx) == 10) {
+				rawCharIdx++;
+			}
 		}
-
-		width  = advanceX;
-		height = newHeight;
+		
 		return str;
 	}
 
-	// set_x:
+	// ── Position/transform setters (updated to handle multiline repositioning) ──
+
 	function set_x(value:Float) {
 		if (value == x) return x;
-		for (ci in 0...text.length) {
+		var delta = value - x;
+		for (ci in 0..._activeCount) {
 			var spr = buffer.getElement(ci);
 			if (spr == null) continue;
-			spr.x += value - x;
+			spr.x += delta;
+			buffer.updateElement(spr);
 		}
-		buffer.update();
 		return x = value;
 	}
 
-	// set_y:
 	function set_y(value:Float) {
 		if (value == y) return y;
-		for (ci in 0...text.length) {
+		var delta = value - y;
+		for (ci in 0..._activeCount) {
 			var spr = buffer.getElement(ci);
 			if (spr == null) continue;
-			spr.y += value - y;
+			spr.y += delta;
+			buffer.updateElement(spr);
 		}
-		buffer.update();
 		return y = value;
 	}
 
-	// set_scale:
 	function set_scale(value:Float) {
 		if (value == scale) return scale;
 		scale = value;
-		var quarterScale = scale / 2; // Default text size is 20. Atlas text size is 40, so we have to shrink to compensate.
-		var advanceX:Float = 0;
-		for (ci in 0...text.length) {
-			var code = text.charCodeAt(ci);
-			var data = parsedTextAtlasData[code];
-			var spr  = buffer.getElement(ci);
-			advanceX = setupCharSpriteScaled(spr, data, quarterScale, x, y, advanceX, parsedTextAtlasData);
-			if (height < spr.h + spr.y - data[1])
-				height = spr.h + spr.y - data[1];
-		}
-		width  = advanceX;
-		height = parsedTextAtlasData[256][2] * quarterScale;
-		_scale = scale;
-		buffer.update();
+		markDirty();
+		refresh();
 		return value;
 	}
 
-	// set_alpha:
 	function set_alpha(value:Float):Float {
-		for (ci in 0...text.length) {
+		for (ci in 0..._activeCount) {
 			var spr = buffer.getElement(ci);
 			if (spr != null) spr.alpha = value;
+			buffer.updateElement(spr);
 		}
-		buffer.update();
 		return alpha = value;
 	}
 
-	// set_color:
 	function set_color(value:Color):Color {
-		for (ci in 0...text.length) {
+		for (ci in 0..._activeCount) {
 			var spr = buffer.getElement(ci);
 			if (spr != null) spr.c = value;
+			buffer.updateElement(spr);
 		}
 		buffer.update();
 		return color = value;
 	}
 
-	// set_outlineColor:
 	function set_outlineColor(value:Color):Color {
-		for (ci in 0...text.length) {
+		for (ci in 0..._activeCount) {
 			var spr = buffer.getElement(ci);
 			if (spr != null) spr.oc = value;
+			buffer.updateElement(spr);
 		}
-		buffer.update();
 		return outlineColor = value;
 	}
 
-	// set_outlineSize:
 	function set_outlineSize(value:Float):Float {
-		for (ci in 0...text.length) {
+		for (ci in 0..._activeCount) {
 			var spr = buffer.getElement(ci);
 			if (spr != null) spr.os = value;
+			buffer.updateElement(spr);
 		}
 		buffer.update();
 		return outlineSize = value;
@@ -333,19 +510,21 @@ class Text {
 		parsedTextAtlasData = Tools.parseFont(value);
 		var displayTextureID = value + "Font";
 		TextureSystem.setTexture(program, displayTextureID, "font");
-		return font = value;
+		font = value;
+		markDirty();
+		refresh();
+		return value;
 	}
 
 	var parsedTextAtlasData:Array<TextCharData>;
 
-	// ── Markup parsing ────────────────────────────────────────────────────────
+	// ── Markup parsing (unchanged) ────────────────────────────────────────────
 
 	private function parseMarkup(raw:String):{clean:String, spans:Array<ColorSpan>} {
 		var spans:Array<ColorSpan> = [];
 		var clean = new StringBuf();
 		var charPos = 0;
 		var i = 0;
-
 		var openMarkerIdx:Int = -1;
 		var openCharPos:Int   = -1;
 
@@ -368,7 +547,6 @@ class Text {
 					openCharPos   = -1;
 					i += mp.marker.length;
 				} else {
-					// Different marker while one is open — treat as literal.
 					clean.addChar(raw.charCodeAt(i));
 					i++;
 					charPos++;
@@ -379,90 +557,28 @@ class Text {
 				charPos++;
 			}
 		}
-
-		// Unmatched opener: silently drop.
-
 		return {clean: clean.toString(), spans: spans};
 	}
 
 	private function matchMarkerAt(raw:String, i:Int):Int {
-		var best    = -1;
+		var best = -1;
 		var bestLen = 0;
-
 		for (mi in 0...markerPairs.length) {
 			var m = markerPairs[mi].marker;
-			if (m.length <= bestLen)       continue;
+			if (m.length <= bestLen) continue;
 			if (i + m.length > raw.length) continue;
 			if (raw.substr(i, m.length) == m) {
-				best    = mi;
+				best = mi;
 				bestLen = m.length;
 			}
 		}
-
 		return best;
-	}
-
-	private inline function resolveStyle(ci:Int):{c:Color, oc:Color, os:Float} {
-		var c  = color;
-		var oc = outlineColor;
-		var os = outlineSize;
-		for (span in colorSpans) {
-			if (ci >= span.start && ci < span.end) {
-				c  = span.color;
-				oc = span.outlineColor;
-				if (span.outlineSize != 0.0) os = span.outlineSize;
-				else os = outlineSize; // default to it like how flixel prob does it
-			}
-		}
-		return {c: c, oc: oc, os: os};
-	}
-
-	// ── Sprite setup helpers ──────────────────────────────────────────────────
-
-	function setupCharSprite(spr:TextCharSprite, data:TextCharData, quarterScale:Float, x:Float, y:Float, advanceX:Float, color:Color, outlineColor:Color, outlineSize:Float, alpha:Float, atlasData:Array<TextCharData>):Float {
-		var padding    = atlasData[256];
-		// data[0,1] = atlas position of padded rect (no adjustment needed)
-		// data[2,3] = padded width/height (already includes padding on both sides)
-		// data[4,5] = xoffset/yoffset (already has padding subtracted by fontbm)
-		spr.clipX      = data[0];
-		spr.clipY      = data[1];
-		spr.clipWidth  = spr.clipSizeX = data[2];
-		spr.w          = data[2] * quarterScale;
-		spr.clipHeight = spr.clipSizeY = data[3];
-		spr.h          = data[3] * quarterScale;
-		// rw/rh = raw glyph size without padding, in screen pixels
-		spr.rw         = data[2] * quarterScale;
-		spr.rh         = data[3] * quarterScale;
-		spr.x          = x + (data[4] * quarterScale) + advanceX;
-		spr.y          = y + (data[5] * quarterScale);
-		spr.c          = color;
-		spr.oc         = outlineColor;
-		spr.os         = outlineSize;
-		spr.alpha      = alpha;
-		advanceX      += data[6] * quarterScale;
-		return advanceX;
-	}
-
-	function setupCharSpriteScaled(spr:TextCharSprite, data:TextCharData, quarterScale:Float, x:Float, y:Float, advanceX:Float, atlasData:Array<TextCharData>):Float {
-		var padding    = atlasData[256];
-		spr.clipX      = data[0];
-		spr.clipY      = data[1];
-		spr.clipWidth  = spr.clipSizeX = data[2];
-		spr.w          = data[2] * quarterScale;
-		spr.clipHeight = spr.clipSizeY = data[3];
-		spr.h          = data[3] * quarterScale;
-		spr.rw         = (data[2] - padding[0] - padding[2]) * quarterScale;
-		spr.rh         = (data[3] - padding[1] - padding[3]) * quarterScale;
-		spr.x          = x + (data[4] * quarterScale) + advanceX;
-		spr.y          = y + (data[5] * quarterScale);
-		advanceX      += data[6] * quarterScale;
-		return advanceX;
 	}
 
 	// ── Constructor ───────────────────────────────────────────────────────────
 
 	function new(key:String, x:Float, y:Float, display:Display, text:String = "Sample text", font:String = "vcr") {
-		_key   = key;
+		_key = key;
 		buffer = new Buffer<TextCharSprite>(32, 32);
 
 		program = new CustomProgram(buffer);
@@ -473,28 +589,39 @@ class Text {
 		}
 		program.setColorFormula('pixelAlpha(font_ID, c, oc, os, rw, rh) * alphaColor');
 
-		this.font    = font;
+		this.font = font;
 		this.display = display;
-
 		display.addProgram(program);
 
-		// x and y must be set before text so sprite positions are correct.
 		this.x = x;
 		this.y = y;
+		
+		// Initialize with default values
+		multiline = false;
+		alignment = LEFT;
+		spacerPercent = 0.0;
+		lineSpacing = 0;
+		maxWidth = 0;
 
 		if (text == null || text.length == 0) text = "Sample text";
 		this.text = text;
 	}
 
-	// ── Utilities ─────────────────────────────────────────────────────────────
+	// ── Utilities (updated) ───────────────────────────────────────────────────
 
 	function screenCenter(axis:Axis = XY) {
 		switch (axis) {
-			case X:  x = (display.width  - width)  * 0.5;
-			case Y:  y = (display.height - height) * 0.5;
-			default: x = (display.width  - width)  * 0.5;
-					 y = (display.height - height) * 0.5;
+			case X: x = (display.width - width) * 0.5;
+			case Y: y = (display.height - height) * 0.5;
+			default: 
+				x = (display.width - width) * 0.5;
+				y = (display.height - height) * 0.5;
 		}
+	}
+	
+	// New: Force text recalculation (useful after changing properties)
+	function refresh() {
+		set_text(_rawText);
 	}
 
 	function dispose() {

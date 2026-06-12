@@ -49,7 +49,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 
 	var parent(default, null):OptionsMenu;
 	var options(default, null):Array<OptionsSprite> = [];
-	var alphabet(default, null):FreeplayAlphabet;
+	static var alphabet(default, null):FreeplayAlphabet;
 
 	var bindingIndex:Int = -1;
 	var binding:Bool = false;
@@ -61,7 +61,15 @@ class ControlsDisplay implements IAlphabetScrollHost {
 	var curSelectedTarget:Float = 0.0;
 	var alphaLerp:Float = 0.0;
 
+	static var maniaKeybindTxt(default, null):Text;
+	static var instructionsTxt(default, null):Text;
+	var maniaKeybindsWillShow:Bool;
+
     var closed:Bool;
+	/*var isManiaKeybindSection(set, default):Bool;
+	inline function set_isManiaKeybindSection(value:Bool) {
+		return is
+	}*/
 
 	function new(parent:OptionsMenu) {
 		this.parent = parent;
@@ -76,6 +84,27 @@ class ControlsDisplay implements IAlphabetScrollHost {
         alphabet.reload();
         alphabet.addPrograms();
         closed = false;
+
+		if (maniaKeybindTxt == null) {
+			maniaKeybindTxt = new Text("FUNKIN_VIEW_KEYBIND_TXT", Main.VARIABLE_WIDTH * 0.9, 300, alphabet.display, "KEYBINDS\nNONE", "vcr");
+			maniaKeybindTxt.multiline = true;
+			maniaKeybindTxt.alignment = RIGHT;
+			maniaKeybindTxt.alpha = 0;
+			maniaKeybindTxt.outlineColor = Color.BLACK;
+			maniaKeybindTxt.outlineSize = 1.4;
+		}
+
+		if (instructionsTxt == null) {
+			instructionsTxt = new Text("FUNKIN_VIEW_CONTROLS_INSTRUCTIONS_TXT", 4, 3, alphabet.display, "Press TAB to begin binding\nPress ESC to cancel binding.", "vcr");
+			instructionsTxt.alpha = 0;
+			instructionsTxt.multiline = true;
+			instructionsTxt.alignment = RIGHT;
+			instructionsTxt.outlineColor = Color.BLACK;
+			instructionsTxt.outlineSize = 1.4;
+			instructionsTxt.x = Main.VARIABLE_WIDTH - (instructionsTxt.width + 4);
+		}
+
+		if (!OptionsMenu.optionsDisplay.closed) showTexts();
         
         // Reset state when reloading
         resetHostState();
@@ -84,6 +113,16 @@ class ControlsDisplay implements IAlphabetScrollHost {
         binding = false;
         bindingIndex = -1;
         processingBinding = false;
+	}
+
+	function showTexts() {
+		if (maniaKeybindTxt != null) maniaKeybindTxt.addProgram();
+		if (instructionsTxt != null) instructionsTxt.addProgram();
+	}
+
+	function removeTexts() {
+		if (maniaKeybindTxt != null) maniaKeybindTxt.removeProgram();
+		if (instructionsTxt != null) instructionsTxt.removeProgram();
 	}
 	
 	function resetHostState() {
@@ -120,6 +159,10 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		curSelectedTarget = parent.optionsNav.value();
 		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelectedTarget, ratio);
 		xLerp = 20 - (curSelectedLerp * 20);
+
+		maniaKeybindTxt.alpha = Tools.lerp(maniaKeybindTxt.alpha, curSelectedTarget >= controlFields.length ? 1.0 : 0.0, ratio);
+		maniaKeybindTxt.text = "KEYBINDS\n";
+		instructionsTxt.alpha = alphaLerp;
 
 		alphabet.setDeltaTime(deltaTime);
 		var incrementBest = controlLabels.length > 7
@@ -242,6 +285,8 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		if (closed) return;
 		
 		closed = true;
+
+		removeTexts();
 		
 		// Cancel any active binding first
 		if (binding) {

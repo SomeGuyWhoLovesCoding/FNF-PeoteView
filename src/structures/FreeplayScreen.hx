@@ -26,7 +26,7 @@ class FreeplayScreen implements IAlphabetScrollHost {
 	static var songIconGroup(default, null):Array<HealthBarSprite> = [];
 
 	var parent(default, null):FreeplayMenu;
-	var alphabet(default, null):FreeplayAlphabet;
+	static var alphabet(default, null):FreeplayAlphabet;
 
 	var disposed(default, null):Bool = true;
 
