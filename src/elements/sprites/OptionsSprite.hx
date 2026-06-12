@@ -52,6 +52,12 @@ class OptionsSprite implements Element {
 		return type == CONTROLS_SUBCAT;
 	}
 
+	var isControlsOption(get, never):Bool;
+
+	inline function get_isControlsOption() {
+		return type == CONTROLS_OPTION;
+	}
+
 	var isPreferenceOption(get, never):Bool;
 
 	inline function get_isPreferenceOption() {
@@ -97,6 +103,12 @@ class OptionsSprite implements Element {
 			yValue = hValue * id;
 		}
 
+		if (isControlsOption) {
+			wValue = 574;
+			hValue = 55;
+			yValue = 135 + (hValue * id);
+		}
+
 		if (isPreferenceOption) {
 			wValue = 574;
 			hValue = 55;
@@ -119,6 +131,7 @@ private enum abstract OptionsSpriteType(Int) {
 	var NONE;
 	var CATEGORY_TEXT;
 	var CONTROLS_SUBCAT;
+	var CONTROLS_OPTION;
 	var PREFERENCE_OPTION;
 	var GRAPHICS_OPTION;
 }

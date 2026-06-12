@@ -12,6 +12,10 @@ class FreeplayScreen implements IAlphabetScrollHost {
 	private static var display(get, never):CustomDisplay;
 
 	inline private static function get_display() {
+		// Add null check and ensure display is initialized
+		if (FreeplayMenu.display == null) {
+			throw "FreeplayMenu.display not initialized! Call FreeplayMenu.init() first.";
+		}
 		return FreeplayMenu.display;
 	}
 
@@ -31,7 +35,8 @@ class FreeplayScreen implements IAlphabetScrollHost {
 	function new(parent:FreeplayMenu, chapterName:String) {
 		this.parent = parent;
 		chapter = chapterName;
-		alphabet = new FreeplayAlphabet(this, display);
+		// Don't create alphabet here if display isn't ready
+		// Wait until reload() is called
 	}
 
 	function alphabetListLength():Int {
@@ -43,6 +48,18 @@ class FreeplayScreen implements IAlphabetScrollHost {
 	}
 
 	function reload(chapterName:String) {
+		// Ensure display is available
+		if (FreeplayMenu.display == null) {
+			throw "FreeplayMenu.display not initialized!";
+		}
+		
+		// Ensure previous instance is fully cleaned up
+		if (!disposed) {
+			unload();
+		}
+		
+		// Create NEW instance
+		alphabet = new FreeplayAlphabet(this, display);
 		alphabet.ensurePrograms();
 
 		if (songIconsBuf == null) {
@@ -53,13 +70,12 @@ class FreeplayScreen implements IAlphabetScrollHost {
 			HealthBarSprite.init(songIconsProg, "hbTex", tex);
 		}
 
-		if (!disposed) unload();
-
 		chapter = chapterName;
 
 		var chapterData:ChapterData = haxe.Json.parse(sys.io.File.getContent(Paths.asset('assets/data/chapters/$chapter/data.json')));
 		var songs:Array<ChapterSong> = chapterData.songs;
 
+		songsAvailable = []; // Clear instead of pushing
 		for (i in 0...songs.length) {
 			var song = songs[i];
 			songsAvailable.push(song);
@@ -67,6 +83,9 @@ class FreeplayScreen implements IAlphabetScrollHost {
 
 		alphabet.reload();
 
+		// Clear existing icons before creating new ones
+		clearSongIcons();
+		
 		songIconGroup = [
 			for (i in 0...7) {
 				var icon = new HealthBarSprite();
@@ -79,12 +98,33 @@ class FreeplayScreen implements IAlphabetScrollHost {
 
 		disposed = false;
 	}
+	
+	function clearSongIcons() {
+		// Remove all existing icons from buffer
+		for (icon in songIconGroup) {
+			if (icon != null) {
+				try {
+					songIconsBuf.removeElement(icon);
+				} catch (e) {}
+			}
+		}
+		songIconGroup.splice(0, songIconGroup.length);
+	}
 
 	function unload() {
-		alphabet.unload();
-		songIconsBuf.clear();
+		if (disposed) return;
+		
+		// Properly dispose alphabet instance
+		if (alphabet != null) {
+			alphabet.dispose();
+			alphabet = null;
+		}
+		
 		songsAvailable.splice(0, songsAvailable.length);
-		songIconGroup.splice(0, songIconGroup.length);
+		
+		// Clear song icons
+		clearSongIcons();
+		
 		disposed = true;
 	}
 
@@ -128,18 +168,29 @@ class FreeplayScreen implements IAlphabetScrollHost {
 	}
 
 	function updateSongIcon(i:Int, incrementBest:Int, iconX:Float) {
+		if (i >= songIconGroup.length) return;
+		
 		var k = i + incrementBest;
-		if (k < 0 || k >= songsAvailable.length) return;
+		if (k < 0 || k >= songsAvailable.length) {
+			// Hide icon if out of range
+			var icon = songIconGroup[i];
+			if (icon != null) {
+				icon.alpha = 0.0;
+			}
+			return;
+		}
 
 		var kClamped = Math.floor(Math.min(Math.max(k, 0), songsAvailable.length - 1));
 		var song = songsAvailable[kClamped];
 
 		var icon = songIconGroup[i];
+		if (icon == null) return;
+		
 		icon.changeID(Tools.fromIconGridXMLCharacter(song.icon)[0]);
 		var alpha = alphabet.calcItemAlpha(k) * alphaLerp;
 		icon.alpha = alpha;
 		icon.x = iconX + ((icon.w * 0.35) + 12);
-		icon.y = ((-curSelectedLerp * 156) + (156 * k) + 320) - 30; // https://github.com/ShadowMario/FNF-PsychEngine/blob/main/source/objects/HealthIcon.hx#L22
+		icon.y = ((-curSelectedLerp * 156) + (156 * k) + 320) - 30;
 		icon.texW = 150;
 		icon.texH = 150;
 	}
@@ -151,6 +202,8 @@ class FreeplayScreen implements IAlphabetScrollHost {
 			handleShutdown();
 			return;
 		}
+
+		if (alphabet == null || alphabet.isDisposed) return;
 
 		alphabet.setDeltaTime(deltaTime);
 
@@ -164,23 +217,29 @@ class FreeplayScreen implements IAlphabetScrollHost {
 		}
 
 		alphabet.updateBuffer();
-		songIconsBuf.update();
+		if (songIconsBuf != null) {
+			songIconsBuf.update();
+		}
 
 		xLerpPrev = xLerp;
 	}
 
 	function addPrograms() {
-		alphabet.addPrograms();
+		if (alphabet != null && !alphabet.isDisposed) {
+			alphabet.addPrograms();
+		}
 
-		if (!songIconsProg.isIn(display)) {
+		if (songIconsProg != null && !songIconsProg.isIn(display)) {
 			display.addProgram(songIconsProg);
 		}
 	}
 
 	function shutDown() {
-		alphabet.shutDown();
+		if (alphabet != null && !alphabet.isDisposed) {
+			alphabet.shutDown();
+		}
 
-		if (songIconsProg.isIn(display)) {
+		if (songIconsProg != null && songIconsProg.isIn(display)) {
 			display.removeProgram(songIconsProg);
 		}
 	}

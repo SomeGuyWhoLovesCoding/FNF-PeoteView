@@ -18,7 +18,7 @@ class Controls {
 		reload();
 	}
 
-	function reload() {
+	public function reload() {
 		var controls = SaveData.state.controls;
 
 		config = [
@@ -30,7 +30,7 @@ class Controls {
 			{
 				action: Action.UI_DOWN,
 				keyboard: NestedArray.fromNestedArrayItem(controls.ui.down),
-				gamepad: NestedArray.fromNestedArrayItem(controls.ui.up)
+				gamepad: NestedArray.fromNestedArrayItem(controls.ui.down)
 			},
 			{
 				action: Action.UI_UP,

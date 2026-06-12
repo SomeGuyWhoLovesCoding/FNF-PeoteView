@@ -1,9 +1,9 @@
 package structures;
 
 import structures.OptionsDisplay.OptionsCategorySelection;
-import structures.options.PreferencesDisplay;
 import input2action.ActionMap;
 import lime.ui.KeyCode;
+import lime.ui.KeyModifier;
 import lime.ui.MouseButton;
 import lime.ui.MouseWheelMode;
 
@@ -56,6 +56,7 @@ class OptionsMenu {
 		if (optionsDisplay == null) {
 			optionsDisplay = new OptionsDisplay(this);
 		}
+		optionsDisplay.closed = false;
 		optionsDisplay.reload(cast optionsNav.value());
 
 		actions = [
@@ -92,7 +93,30 @@ class OptionsMenu {
 		optionsDisplay.update(deltaTime);
 	}
 
+	function addEvents() {
+		haxe.Timer.delay(() -> {
+			var window = lime.app.Application.current.window;
+			Main.current.controls.bindTo(actions);
+			
+			Main.current.mouseDown = mousePress;
+			window.onMouseWheel.add(moveCategory_mouse);
+			window.onKeyDown.add(handleKeyDown);
+			window.onKeyUp.add(handleKeyUp);
+		}, 1);
+	}
+
+	function removeEvents() {
+		trace("Remove events fuck you");
+		var window = lime.app.Application.current.window;
+		Main.current.controls.unBind();
+		Main.current.mouseDown = null;
+		window.onMouseWheel.remove(moveCategory_mouse);
+		window.onKeyDown.remove(handleKeyDown);
+		window.onKeyUp.remove(handleKeyUp);
+	}
+
 	function open() {
+		optionsDisplay.closed = false;
 		active = opened = true;
 		Main.current.popupOptionsMenu();
 
@@ -107,13 +131,7 @@ class OptionsMenu {
 			alphaLerp = 0.0;
 		} catch (e) {}
 
-		haxe.Timer.delay(() -> {
-			var window = lime.app.Application.current.window;
-			Main.current.controls.bindTo(actions);
-			
-			Main.current.mouseDown = mousePress;
-			window.onMouseWheel.add(moveCategory_mouse);
-		}, 1);
+		addEvents();
 
 		if (!optionsProg.isIn(display)) {
 			display.addProgram(optionsProg);
@@ -124,10 +142,14 @@ class OptionsMenu {
 		var mm = Main.current.mainMenu;
 		var pf = Main.current.playField;
 
-		var window = lime.app.Application.current.window;
-		Main.current.controls.unBind();
-		Main.current.mouseDown = null;
-		window.onMouseWheel.remove(moveCategory_mouse);
+		// Make sure to cancel any active binding before closing
+		if (optionsDisplay.controlsDisplay.binding) {
+			optionsDisplay.controlsDisplay.cancelBinding();
+		}
+		
+		removeEvents();
+
+		optionsDisplay.closed = true;
 
 		if (mm != null) {
 			MainMenu.selectedAlpha = 1.0;
@@ -146,12 +168,12 @@ class OptionsMenu {
 		Main.current.playCancelSound();
 	}
 
-	function getCurrentCategorysOptionCount() {
+	function getOptionCountofState() {
 		var result = 0;
 
 		switch ((categoryNav.value():OptionsCategorySelection)) {
 			case CONTROLS:
-				result = 0; // TODO
+				result = ControlsDisplay.controlLabels.length;
 			case PREFERENCES:
 				result = PreferencesDisplay.prefsStr.length;
 			case GAMEPLAY:
@@ -162,34 +184,40 @@ class OptionsMenu {
 		return result;
 	}
 
+	inline function isInvalidKeyState() {
+		var disp = optionsDisplay.controlsDisplay;
+		return optionsDisplay != null && (disp.binding && !disp.closed && !optionsDisplay.closed);
+	}
+
 	function down(isDown:Bool, param:Int) {
-		if (!isDown) return;
+		if (!isDown || isInvalidKeyState()) return;
+		trace("how's down?");
 		optionsNav.scroll(1);
-		var optionssLen = getCurrentCategorysOptionCount();
+		var optionssLen = getOptionCountofState();
 		optionsNav.resetIfOver(optionssLen);
 		Main.current.playScrollSound();
 	}
 
 	function up(isDown:Bool, param:Int) {
-		if (!isDown) return;
+		if (!isDown || isInvalidKeyState()) return;
+		trace("why up?");
 		optionsNav.scroll(-1);
-		var optionssLen = getCurrentCategorysOptionCount();
+		var optionssLen = getOptionCountofState();
 		optionsNav.resetIfUnder(optionssLen - 1);
 		Main.current.playScrollSound();
 	}
 
 	function left(isDown:Bool, param:Int) {
-		if (!isDown) return;
+		if (!isDown || isInvalidKeyState()) return;
 		optionsNav.setTo(0);
 		categoryNav.scroll(-1);
-		var optionssLen = getCurrentCategorysOptionCount();
-		categoryNav.resetIfUnder(optionssLen - 1);
+		categoryNav.resetIfUnder(2);
 		optionsDisplay.reload(cast categoryNav.value());
 		Main.current.playScrollSound();
 	}
 
 	function right(isDown:Bool, param:Int) {
-		if (!isDown) return;
+		if (!isDown || isInvalidKeyState()) return;
 		optionsNav.setTo(0);
 		categoryNav.scroll(1);
 		categoryNav.resetIfOver(categorySprites.length);
@@ -198,9 +226,23 @@ class OptionsMenu {
 	}
 
 	function enter(isDown:Bool, param:Int) {
-		if (!isDown) return;
+		if (!isDown || isInvalidKeyState()) return;
 		optionsDisplay.enter();
 		Main.current.playCancelSound();
+	}
+
+	function handleKeyDown(keyCode:KeyCode, keyModifier:KeyModifier) {
+		var disp = optionsDisplay.controlsDisplay;
+		if (disp != null && !disp.closed && !optionsDisplay.closed) {
+			disp.onKeyDown(keyCode, keyModifier);
+		}
+	}
+
+	function handleKeyUp(keyCode:KeyCode, keyModifier:KeyModifier) {
+		var disp = optionsDisplay.controlsDisplay;
+		if (disp != null && !disp.closed && !optionsDisplay.closed) {
+			disp.onKeyUp(keyCode, keyModifier);
+		}
 	}
 
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {

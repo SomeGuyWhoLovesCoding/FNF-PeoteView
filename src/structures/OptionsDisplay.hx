@@ -26,11 +26,15 @@ class OptionsDisplay {
 
 	var preferencesDisplay(default, null):PreferencesDisplay;
 	var graphicsDisplay(default, null):GraphicsDisplay;
+	var controlsDisplay(default, null):ControlsDisplay;
+
+	var closed:Bool;
 
 	function new(parent:OptionsMenu) {
 		this.parent = parent;
 		preferencesDisplay = new PreferencesDisplay(parent);
 		graphicsDisplay = new GraphicsDisplay(parent);
+		controlsDisplay = new ControlsDisplay(parent);
 	}
 
 	function reload(selection:OptionsCategorySelection) {
@@ -38,21 +42,7 @@ class OptionsDisplay {
 
 		switch (selection) {
 			case CONTROLS:
-				var subCat1 = new OptionsSprite();
-				subCat1.type = CONTROLS_SUBCAT;
-				subCat1.changeID(0);
-				subCat1.x = 400;
-				subCat1.y = 300;
-				options.push(subCat1);
-				OptionsMenu.optionsBuf.addElement(subCat1);
-
-				var subCat2 = new OptionsSprite();
-				subCat2.type = CONTROLS_SUBCAT;
-				subCat2.changeID(1);
-				subCat2.x = 400;
-				subCat2.y = 400;
-				options.push(subCat2);
-				OptionsMenu.optionsBuf.addElement(subCat2);
+				controlsDisplay.reload();
 			case PREFERENCES:
 				preferencesDisplay.reload();
 			case GAMEPLAY:
@@ -61,6 +51,7 @@ class OptionsDisplay {
 	}
 
 	function enter() {
+		if (closed) return;
 		switch ((parent.categoryNav.value():OptionsCategorySelection)) {
 			case PREFERENCES:
 				preferencesDisplay.enter();
@@ -78,6 +69,7 @@ class OptionsDisplay {
 			OptionsMenu.optionsBuf.updateElement(option);
 		}
 		
+		controlsDisplay.update(deltaTime);
 		preferencesDisplay.update(deltaTime);
 		graphicsDisplay.update(deltaTime);
 	}
@@ -90,12 +82,14 @@ class OptionsDisplay {
 			} catch (e) {}
 		}
 		
+		controlsDisplay.destroyOptions();
 		preferencesDisplay.destroyOptions();
 		graphicsDisplay.destroyOptions();
 	}
 
 	function dispose() {
 		destroyOptions();
+		controlsDisplay.dispose();
 		preferencesDisplay.dispose();
 		graphicsDisplay.dispose();
 	}

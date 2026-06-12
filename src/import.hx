@@ -32,6 +32,7 @@ import structures.*;
 import structures.gameplay.*;
 import structures.gameplay.NoteVB.VirtualNote;
 import structures.gameplay.NoteVB.VirtualSustain;
+import structures.options.*;
 import system.*;
 import tests.*;
 import utils.*;
