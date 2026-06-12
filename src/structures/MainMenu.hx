@@ -33,7 +33,6 @@ class MainMenu {
 	static var nav(default, null):Navigation = new Navigation();
 
 	var disposed:Bool = false;
-	var eventsAdded:Bool = false;
 	var actions:ActionMap;
 
 	function new() {}
@@ -265,24 +264,20 @@ class MainMenu {
 	}
 
 	function addEvents() {
-		if (eventsAdded || disposed) return;
 		var window = lime.app.Application.current.window;
 
 		Main.current.controls.bindTo(actions);
 		window.onMouseWheel.add(updateMenuOptions_mouse);
 		window.onMouseUp.add(mouseUp);
 		window.onMouseDown.add(mouseDown);
-		eventsAdded = true;
 	}
 
 	function removeEvents() {
-		if (!eventsAdded) return;
 		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
 		window.onMouseWheel.remove(updateMenuOptions_mouse);
 		window.onMouseUp.remove(mouseUp);
 		window.onMouseDown.remove(mouseDown);
-		eventsAdded = false;
 	}
 
 	function dispose() {
@@ -302,9 +297,7 @@ class MainMenu {
 		view.removeProgram(backgroundProg);
 		view = null;
 
-		if (Main.current.freeplayMenu != null) {
-			Main.current.freeplayMenu.dispose();
-		}
+		Main.current.freeplayMenu.dispose();
 
 		disposed = true;
 	}

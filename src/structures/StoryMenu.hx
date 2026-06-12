@@ -11,7 +11,6 @@ class StoryMenu {
 
 	var active(default, null):Bool;
 	var opened(default, null):Bool;
-	var disposed:Bool = false;
 
 	var nav(default, null):Navigation = new Navigation();
 

@@ -174,7 +174,6 @@ class PauseScreen {
 
 	function open() {
 		opened = true;
-		eventsActive = false;
 
 		try {
 			for (i in 0...pauseOptions.length) {
@@ -192,7 +191,9 @@ class PauseScreen {
 			pauseBuf.addElement(diffText);
 		} catch (e) {}
 
-		haxe.Timer.delay(addEvents, 1);
+		haxe.Timer.delay(function() {
+    		haxe.Timer.delay(addEvents, 1);
+		}, 1);
 
 		if (!pauseProg.isIn(display)) {
 			display.addProgram(pauseProg);
@@ -227,9 +228,6 @@ class PauseScreen {
 	function close() {
 		opened = false;
 		removeEvents();
-		if (!atOptionsMenu) {
-			shutDown();
-		}
 	}
 
 	function shutDown() {

@@ -9,7 +9,7 @@ using StringTools;
 
 /**
  * Pseudo vanilla json to funkin' view converter.
- * This is deprecated.
+ * This is deprecated, for now.
  * @since Development
 **/
 #if !debug
