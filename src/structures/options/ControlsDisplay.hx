@@ -55,7 +55,8 @@ class ControlsDisplay implements IAlphabetScrollHost {
 	var binding:Bool = false;
 	var processingBinding:Bool = false;
 	var bindingMania:Bool = false;
-	var maniaBindNum:Int = 0;
+	var maniaBindNum(default, null):Int = 0;
+	var maniaSubBindNum(default, null):Int = 0;
 	var lastBindingTime:Float = 0;
 
 	var xLerp:Float = 0.0;
@@ -65,13 +66,8 @@ class ControlsDisplay implements IAlphabetScrollHost {
 
 	static var maniaKeybindTxt(default, null):Text;
 	static var instructionsTxt(default, null):Text;
-	var maniaKeybindsWillShow:Bool;
 
     var closed:Bool;
-	/*var isManiaKeybindSection(set, default):Bool;
-	inline function set_isManiaKeybindSection(value:Bool) {
-		return is
-	}*/
 
 	function new(parent:OptionsMenu) {
 		this.parent = parent;
@@ -95,6 +91,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			maniaKeybindTxt.outlineColor = Color.BLACK;
 			maniaKeybindTxt.outlineSize = 1.4;
 			maniaKeybindTxt.x = Main.VARIABLE_WIDTH - (maniaKeybindTxt.width + 4);
+			maniaKeybindTxt.setMarkerPairs([new TextFormatMarkerPair('#M#', Color.CYAN)]);
 		}
 
 		if (instructionsTxt == null) {
@@ -164,20 +161,32 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		maniaKeybindTxt.alpha = Tools.lerp(maniaKeybindTxt.alpha, curSelectedTarget >= controlFields.length ? 1.0 : 0.0, ratio);
 		if (bindingMania) {
 			var str = "KEYBINDS\n\n";
-			var keybindArr = SaveData.state.controls.game.keybindArray;
-			for (maniaBind in keybindArr[Std.int(curSelectedTarget) - (controlFields.length - 1)]) {
+			var keybindArr = SaveData.state.controls.game.keybindArray[Std.int(curSelectedTarget) - (controlFields.length - 1)];
+			for (k in 0...keybindArr.length) {
+				var maniaBind = keybindArr;
+				var maniaBinds = keybindArr[k];
+				
+				if (maniaBindNum == k) str += '#M#';
 				str += "[ ";
-				for (i in 0...maniaBind.length) {
-					str += KeyCodeConverter.getSimpleKeyName(maniaBind[i]);
+				if (maniaBindNum == k) str += '#M#';
+
+				for (i in 0...maniaBinds.length) {
+					if (maniaSubBindNum == i) str += '#M#';
+					str += KeyCodeConverter.getSimpleKeyName(maniaBinds[i]);
+					if (maniaSubBindNum == i) str += '#M#';
 					if (i != maniaBind.length - 1) str += ", ";
 				}
+
+				if (maniaBindNum == k) str += '#M#';
 				str += " ]";
+				if (maniaBindNum == k) str += '#M#';
+
 				str += "\n";
 			}
 			maniaKeybindTxt.text = str;
-			maniaKeybindTxt.y = 300 - ((maniaKeybindTxt.height - 20) * 0.3);
 		} else maniaKeybindTxt.text = "KEYBINDS\n...";
 		maniaKeybindTxt.x = Main.VARIABLE_WIDTH - (maniaKeybindTxt.width + 4);
+		maniaKeybindTxt.y = (Main.VARIABLE_HEIGHT * 0.5) - (maniaKeybindTxt.height * 0.5);
 		instructionsTxt.alpha = alphaLerp;
 
 		alphabet.setDeltaTime(deltaTime);
