@@ -286,48 +286,26 @@ class MainMenu {
 	}
 
 	function dispose() {
-		if (disposed) return;
-		
-		// First, remove event handlers BEFORE anything else
 		removeEvents();
-		
-		// Null out action bindings
-		if (actions != null) {
-			actions = null;
+
+		watermarkTxt.removeProgram();
+
+		// dont do this
+		/*if (Main.current.upscale) {
+			optionProg.injectIntoFragmentShader('');
+			optionProg.setColorFormula('c');
+		}*/
+
+		display.removeProgram(optionProg);
+		display = null;
+
+		view.removeProgram(backgroundProg);
+		view = null;
+
+		if (Main.current.freeplayMenu != null) {
+			Main.current.freeplayMenu.dispose();
 		}
-		
-		// Remove programs from displays (safe checks)
-		if (display != null && optionProg != null) {
-			try {
-				if (optionProg.isIn(display)) {
-					display.removeProgram(optionProg);
-				}
-			} catch (e:Dynamic) {
-				// Display might be already destroyed
-			}
-			display = null;
-		}
-		
-		if (view != null && backgroundProg != null) {
-			try {
-				if (backgroundProg.isIn(view)) {
-					view.removeProgram(backgroundProg);
-				}
-			} catch (e:Dynamic) {
-				// View might be already destroyed
-			}
-			view = null;
-		}
-		
-		// Remove watermark text program
-		if (watermarkTxt != null) {
-			try {
-				watermarkTxt.removeProgram();
-			} catch (e:Dynamic) {}
-			watermarkTxt = null;
-		}
-		
-		roof = null;
+
 		disposed = true;
 	}
 }
