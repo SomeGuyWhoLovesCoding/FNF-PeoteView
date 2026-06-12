@@ -54,6 +54,8 @@ class ControlsDisplay implements IAlphabetScrollHost {
 	var bindingIndex:Int = -1;
 	var binding:Bool = false;
 	var processingBinding:Bool = false;
+	var bindingMania:Bool = false;
+	var maniaBindNum:Int = 0;
 	var lastBindingTime:Float = 0;
 
 	var xLerp:Float = 0.0;
@@ -86,12 +88,13 @@ class ControlsDisplay implements IAlphabetScrollHost {
         closed = false;
 
 		if (maniaKeybindTxt == null) {
-			maniaKeybindTxt = new Text("FUNKIN_VIEW_KEYBIND_TXT", Main.VARIABLE_WIDTH * 0.9, 300, alphabet.display, "KEYBINDS\nNONE", "vcr");
+			maniaKeybindTxt = new Text("FUNKIN_VIEW_KEYBIND_TXT", 0, 300, alphabet.display, "KEYBINDS\nNONE", "vcr");
 			maniaKeybindTxt.multiline = true;
 			maniaKeybindTxt.alignment = RIGHT;
 			maniaKeybindTxt.alpha = 0;
 			maniaKeybindTxt.outlineColor = Color.BLACK;
 			maniaKeybindTxt.outlineSize = 1.4;
+			maniaKeybindTxt.x = Main.VARIABLE_WIDTH - (maniaKeybindTxt.width + 4);
 		}
 
 		if (instructionsTxt == null) {
@@ -133,15 +136,13 @@ class ControlsDisplay implements IAlphabetScrollHost {
 	}
 
 	function tab() {
-		if (binding || processingBinding || closed) return;
+		if (binding || processingBinding || bindingMania || closed) return;
 		
 		bindingIndex = parent.optionsNav.value();
 		if (bindingIndex >= controlFields.length) {
-			Main.current.playCancelSound();
-			return;
-		}
-		binding = true;
-		
+			bindingMania = true;
+		} else binding = true;
+
 		// Temporarily disable parent events while binding
 		parent.removeEvents();
 		Application.current.window.onKeyDown.add(onKeyDown);
@@ -161,7 +162,22 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		xLerp = 20 - (curSelectedLerp * 20);
 
 		maniaKeybindTxt.alpha = Tools.lerp(maniaKeybindTxt.alpha, curSelectedTarget >= controlFields.length ? 1.0 : 0.0, ratio);
-		maniaKeybindTxt.text = "KEYBINDS\n";
+		if (bindingMania) {
+			var str = "KEYBINDS\n\n";
+			var keybindArr = SaveData.state.controls.game.keybindArray;
+			for (maniaBind in keybindArr[Std.int(curSelectedTarget) - (controlFields.length - 1)]) {
+				str += "[ ";
+				for (i in 0...maniaBind.length) {
+					str += KeyCodeConverter.getSimpleKeyName(maniaBind[i]);
+					if (i != maniaBind.length - 1) str += ", ";
+				}
+				str += " ]";
+				str += "\n";
+			}
+			maniaKeybindTxt.text = str;
+			maniaKeybindTxt.y = 300 - ((maniaKeybindTxt.height - 20) * 0.3);
+		} else maniaKeybindTxt.text = "KEYBINDS\n...";
+		maniaKeybindTxt.x = Main.VARIABLE_WIDTH - (maniaKeybindTxt.width + 4);
 		instructionsTxt.alpha = alphaLerp;
 
 		alphabet.setDeltaTime(deltaTime);
@@ -208,8 +224,12 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			return;
 		}
 
+		if (bindingMania) {
+
+		}
+
 		// Apply binding if we're in binding mode
-		if (binding && !processingBinding && !closed) {
+		if (binding && !processingBinding && bindingMania && !closed) {
 			// Don't bind the TAB key itself or ESCAPE
 			if (keyCode == BIND_KEY || keyCode == KeyCode.ESCAPE) return;
 			
