@@ -1,12 +1,17 @@
 package structures.options;
 
+import data.SaveData;
+import structures.FreeplayAlphabet;
+import structures.IAlphabetScrollHost;
+import structures.OptionsMenu;
+
 /**
 	Handles the display and interaction for preferences options in the options menu.
-	Manages rendering and updating of preference-related UI elements.
+	Now uses FreeplayAlphabet scrolling system for consistent UI.
 	@since Development
 **/
 @:publicFields
-class PreferencesDisplay {
+class PreferencesDisplay implements IAlphabetScrollHost {
 	public static var prefsStr(default, null):Array<String> = [
 		"downScroll",
 		"hideHUD",
@@ -16,32 +21,73 @@ class PreferencesDisplay {
 		"cameraZooming",
 		"iconBopping"
 	];
-
+	
 	var parent(default, null):OptionsMenu;
 	var options(default, null):Array<OptionsSprite> = [];
-
+	var alphabet(default, null):FreeplayAlphabet;
+	
+	var xLerp:Float = 0.0;
+	var curSelectedLerp:Float = 0.0;
+	var curSelectedTarget:Float = 0.0;
+	var alphaLerp:Float = 0.0;
+	
+	var closed:Bool;
+	
 	function new(parent:OptionsMenu) {
 		this.parent = parent;
 	}
-
+	
 	function reload() {
 		destroyOptions();
-
-		for (i in 0...7) {
-			var option = new OptionsSprite();
-			option.type = PREFERENCE_OPTION;
-			option.changeID(i);
-			option.x = 400;
-			option.y = 125 + (option.h * i);
-			options.push(option);
-			OptionsMenu.optionsBuf.addElement(option);
+		if (alphabet == null) {
+			alphabet = new FreeplayAlphabet(this, OptionsMenu.display);
 		}
+		alphabet.ensurePrograms();
+		alphabet.reload();
+		alphabet.addPrograms();
+		closed = false;
+		
+		// Reset state when reloading
+		resetHostState();
 	}
-
+	
+	function resetHostState() {
+		xLerp = 0.0;
+		curSelectedLerp = 0.0;
+		curSelectedTarget = 0.0;
+		alphaLerp = 0.0;
+	}
+	
+	function update(deltaTime:Float) {
+		if (alphabet == null || closed) return;
+		
+		var ratio = Math.max(Math.min(deltaTime * 0.015, 1), 0.00001);
+		if (ratio == 1) ratio = (1 / lime.app.Application.current.window.frameRate) * 0.015;
+		
+		alphaLerp = Tools.lerp(alphaLerp, parent.opened ? 1.0 : 0.0, ratio);
+		curSelectedTarget = parent.optionsNav.value();
+		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelectedTarget, ratio);
+		xLerp = 20 - (curSelectedLerp * 20);
+		
+		alphabet.setDeltaTime(deltaTime);
+		var incrementBest = prefsStr.length > 7
+			? Math.floor(Math.min(Math.max(curSelectedLerp - 3, 0), prefsStr.length - 7))
+			: 0;
+		
+		for (i in 0...7) {
+			alphabet.updateRowText(i, incrementBest);
+		}
+		alphabet.updateBuffer();
+	}
+	
 	function enter() {
-		var field = prefsStr[parent.optionsNav.value()];
+		if (closed || alphabet == null) return;
+		
+		var field = prefsStr[Math.floor(curSelectedTarget)];
 		var optionChecked = Reflect.getProperty(SaveData.state.preferences, field);
 		Reflect.setProperty(SaveData.state.preferences, field, !optionChecked);
+		
+		// Apply preference changes immediately
 		var pf = Main.current.playField;
 		if (pf != null) {
 			switch (field) {
@@ -56,31 +102,33 @@ class PreferencesDisplay {
 						if (healthBar != null) healthBar.update(0);
 					}
 				default:
+					// No immediate effect needed
 			}
 		}
-	}
-
-	function update(deltaTime:Float) {
-		for (i in 0...options.length) {
-			var option = options[i];
-			option.c.aF = parent.alphaLerp;
-			option.c.luminanceF = parent.alphaLerp;
-			
-			var optionChecked = Reflect.getProperty(SaveData.state.preferences, prefsStr[i]);
-			/*if (i == parent.optionsNav.value()) {
-				option.c.rF = !optionChecked ? parent.alphaLerp : 0.0;
-				option.c.gF = optionChecked ? parent.alphaLerp : 0.0;
-				option.c.bF = 0.0;
-			} else {
-				option.c.luminanceF = parent.alphaLerp;
-			}*/
-			option.c.luminanceF = parent.alphaLerp * ((i == parent.optionsNav.value()) ? (optionChecked ? 1.0 : 0.35) : 0.5);
-			
-			OptionsMenu.optionsBuf.updateElement(option);
+		
+		// Force update the display to show new ON/OFF state
+		if (alphabet != null && !closed) {
+			alphabet.updateBuffer();
 		}
+		
+		Main.current.playCancelSound();
 	}
-
+	
 	function destroyOptions() {
+		if (closed) return;
+		
+		closed = true;
+		
+		// Reset host state before disposing alphabet
+		resetHostState();
+		
+		if (alphabet != null) {
+			// First remove from display, then dispose
+			alphabet.shutDown();
+			alphabet.dispose();
+			alphabet = null;
+		}
+		
 		while (options.length != 0) {
 			var option = options.pop();
 			try {
@@ -88,8 +136,35 @@ class PreferencesDisplay {
 			} catch (e) {}
 		}
 	}
-
+	
 	function dispose() {
 		destroyOptions();
+	}
+	
+	// IAlphabetScrollHost implementation
+	public function alphabetListLength():Int {
+		return prefsStr.length;
+	}
+	
+	public function alphabetItemTitle(index:Int):String {
+		if (index < 0 || index >= prefsStr.length) return "";
+		var prefName = prefsStr[index];
+		var isOn = Reflect.getProperty(SaveData.state.preferences, prefName);
+		var displayText = getDisplayName(prefName);
+		return displayText + (isOn ? " ON" : " OFF");
+	}
+	
+	// Convert internal preference names to user-friendly display names
+	function getDisplayName(prefName:String):String {
+		switch (prefName) {
+			case "downScroll": return "Down Scroll";
+			case "hideHUD": return "Hide HUD";
+			case "smoothHealthbar": return "Smooth Healthbar";
+			case "ratingPopup": return "Rating Popup";
+			case "scoreTxtBopping": return "Score Text Bop";
+			case "cameraZooming": return "Camera Zoom";
+			case "iconBopping": return "Icon Bop";
+			default: return prefName;
+		}
 	}
 }

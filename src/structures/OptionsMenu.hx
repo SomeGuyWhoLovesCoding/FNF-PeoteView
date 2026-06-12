@@ -106,7 +106,6 @@ class OptionsMenu {
 	}
 
 	function removeEvents() {
-		trace("Remove events fuck you");
 		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
 		Main.current.mouseDown = null;
@@ -191,7 +190,6 @@ class OptionsMenu {
 
 	function down(isDown:Bool, param:Int) {
 		if (!isDown || isInvalidKeyState()) return;
-		trace("how's down?");
 		optionsNav.scroll(1);
 		var optionssLen = getOptionCountofState();
 		optionsNav.resetIfOver(optionssLen);
@@ -200,7 +198,6 @@ class OptionsMenu {
 
 	function up(isDown:Bool, param:Int) {
 		if (!isDown || isInvalidKeyState()) return;
-		trace("why up?");
 		optionsNav.scroll(-1);
 		var optionssLen = getOptionCountofState();
 		optionsNav.resetIfUnder(optionssLen - 1);
@@ -228,7 +225,6 @@ class OptionsMenu {
 	function enter(isDown:Bool, param:Int) {
 		if (!isDown || isInvalidKeyState()) return;
 		optionsDisplay.enter();
-		Main.current.playCancelSound();
 	}
 
 	function handleKeyDown(keyCode:KeyCode, keyModifier:KeyModifier) {

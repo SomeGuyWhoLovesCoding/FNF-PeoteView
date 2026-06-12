@@ -10,6 +10,7 @@ import structures.OptionsMenu;
 /**
 	Handles the display and interaction for the controls options in the options menu.
 	Provides a simple vertical keybind list and live binding flow.
+	@since 0.94
 **/
 @:publicFields
 class ControlsDisplay implements IAlphabetScrollHost {

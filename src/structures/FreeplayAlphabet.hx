@@ -18,6 +18,8 @@ class FreeplayAlphabet {
 	var display(default, null):CustomDisplay;
 	var _currentDeltaTime:Float = 0.0;
 	var isDisposed:Bool = false;
+
+	static var ALPHABET_CHARACTER_LIMIT = 24; // This is a final limit.
 	
 	// Static shared resources (read-only, no state)
 	private static var _charCorrectionMapOG:Map<String, String> = [
@@ -85,7 +87,7 @@ class FreeplayAlphabet {
 		// Create instance-specific character sprites
 		songTextCharGroup = [
 			for (i in 0...7) [
-				for (j in 0...20) {
+				for (j in 0...ALPHABET_CHARACTER_LIMIT) {
 					var spr = Actor.create(display, null, "alphabetText", 0, 0, 24, "", false);
 					spr.color.aF = 0.0;
 					spr.color.luminanceF = 0.0;
@@ -146,7 +148,7 @@ class FreeplayAlphabet {
 	}
 	
 	function resolveChar(title:String, j:Int):String {
-		var char = j >= 17 ? "." : title.charAt(j).toLowerCase();
+		var char = j >= ALPHABET_CHARACTER_LIMIT - 3 ? "." : title.charAt(j).toLowerCase();
 		if (charCorrectionMap.exists(char)) return charCorrectionMap.get(char);
 		return char;
 	}
@@ -215,7 +217,7 @@ class FreeplayAlphabet {
 		var x:Float = 20;
 		var iconX:Float = 0.0;
 		
-		for (j in 0...20) {
+		for (j in 0...ALPHABET_CHARACTER_LIMIT) {
 			if (j >= grp.length) break;
 			
 			var char = resolveChar(title, j);
@@ -232,7 +234,7 @@ class FreeplayAlphabet {
 			spr.color.aF = alpha;
 			spr.color.luminanceF = alpha;
 			
-			if (j == Math.min(title.length - 1, 17)) {
+			if (j == Math.min(title.length - 1, ALPHABET_CHARACTER_LIMIT - 3)) {
 				iconX = spr.x;
 			}
 			
