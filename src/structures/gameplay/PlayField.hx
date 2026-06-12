@@ -171,6 +171,7 @@ class PlayField {
 	var flipHealthBar:Bool;
 	var hitbox:Float = 220;
 	var ready:Bool = false;
+	var initialized:Bool = false;
 
 	function setTime(value:Float, pushToOffset:Float = 0) {
 		if (disposed || !songStarted || songEnded || paused || died) return;
@@ -272,6 +273,8 @@ class PlayField {
 		funkinviewlua.callFunction('createPost', null);
 		#end
 
+		initialized = true;
+
 		if (onRestartingForBackwardTimeSetting) {
 			onRestartingForBackwardTimeSetting = false;
 			startSong(Chart.header);
@@ -311,7 +314,7 @@ class PlayField {
 	var lastsongpos:Float = 0;
 	//var deltaTimeincremenetal:Float = 0;
 	function update(deltaTime:Float) {
-		if (disposed || paused) return;
+		if (disposed || paused || !initialized) return;
 
 		//trace("Update",deltaTime);
 
@@ -821,6 +824,7 @@ class PlayField {
 		AsyncInput.shutdown();
 
 		ready = false;
+		initialized = false;
 		disposed = true;
 
 		#if linc_luajit_funkinview

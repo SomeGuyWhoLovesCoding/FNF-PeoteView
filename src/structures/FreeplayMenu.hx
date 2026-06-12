@@ -20,6 +20,7 @@ class FreeplayMenu {
 
 	var active(default, null):Bool;
 	var opened(default, null):Bool;
+	var eventsAdded:Bool = false;
 
 	var freeplayScreen(default, null):FreeplayScreen;
 
@@ -69,18 +70,20 @@ class FreeplayMenu {
 	}
 
 	function open() {
+		if (opened && active) return;
 		Main.current.popupFreeplayMenu();
 
 		opened = active = true;
 
 		haxe.Timer.delay(() -> {
+			if (!opened || eventsAdded) return;
 			var window = lime.app.Application.current.window;
 			Main.current.controls.bindTo(actions);
-
 			Main.current.mouseDown = mousePress;
 			window.onMouseUp.add(mouseRelease);
 			window.onMouseMove.add(mouseDrag);
 			window.onMouseWheel.add(mouseWheel);
+			eventsAdded = true;
 		}, 1);
 
 		if (freeplayScreen.disposed) {
@@ -96,13 +99,18 @@ class FreeplayMenu {
 
 	function close() {
 		var window = lime.app.Application.current.window;
-		Main.current.controls.unBind();
-		Main.current.mouseDown = null;
-		window.onMouseUp.remove(mouseRelease);
-		window.onMouseMove.remove(mouseDrag);
-		window.onMouseWheel.remove(mouseWheel);
+		if (eventsAdded) {
+			Main.current.controls.unBind();
+			Main.current.mouseDown = null;
+			window.onMouseUp.remove(mouseRelease);
+			window.onMouseMove.remove(mouseDrag);
+			window.onMouseWheel.remove(mouseWheel);
+			eventsAdded = false;
+		}
 
 		opened = false;
+		active = false;
+		Main.current.removeFreeplayMenu();
 
 		haxe.Timer.delay(function() {
 			var mm = Main.current.mainMenu;
@@ -205,6 +213,8 @@ class FreeplayMenu {
 		freeplayScreen.unload();
 
 		active = false;
+		opened = false;
+		eventsAdded = false;
 		Main.current.removeFreeplayMenu();
 	}
 }

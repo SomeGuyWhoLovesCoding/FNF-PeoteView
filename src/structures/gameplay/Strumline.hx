@@ -2,6 +2,10 @@ package structures.gameplay;
 
 import lime.system.System;
 
+/**
+ * The home of inputs, whether you own it or not.
+ * @since Development
+**/
 #if (FV_LIME_FORK && lime_cffi)
 import lime._internal.backend.native.NativeCFFI;
 @:access(lime._internal.backend.native.NativeCFFI)

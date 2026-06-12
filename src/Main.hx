@@ -44,6 +44,14 @@ private enum abstract StateSelection(Int) {
 	var CREDITS;
 }
 
+private enum AppLifecycleState {
+	UNINITIALIZED;
+	INITIALIZING;
+	RUNNING;
+	SHUTTING_DOWN;
+	STOPPED;
+}
+
 /**
 	* The entry point for the application
 	@since Zero
@@ -72,8 +80,19 @@ class Main extends Application
 	// Internal variable for checking if the game has booted up
 	private var _started(default, null):Bool;
 
+	private var lifecycle:AppLifecycleState = AppLifecycleState.UNINITIALIZED;
+	private var isClosing:Bool = false;
+
+	private var windowResizeHandler:(Int, Int)->Void;
+	private var windowMouseDownHandler:(Float, Float, MouseButton)->Void;
+	private var windowKeyDownHandler:(KeyCode, KeyModifier)->Void;
+	private var windowCloseHandler:()->Void;
+
 	override function onWindowCreate()
 	{
+		if (lifecycle != AppLifecycleState.UNINITIALIZED) return;
+		lifecycle = AppLifecycleState.INITIALIZING;
+
 		var titleBarColor:Color = SaveData.state.graphics.customTitleBarColor;
 
 		#if (windows && customtitlebar)
@@ -89,7 +108,6 @@ class Main extends Application
 
 		#if chart_test
 		haxe.Timer.delay(function() {
-			// START CHART POFILE
 			Chart.load("assets/songs/god-eater");
 			var len = File.getLength();
 			trace('Chart Length ' + len);
@@ -97,42 +115,29 @@ class Main extends Application
 			while (i < len) {
 				var note = File.getNote(i);
 				var noteTime = MetaNote.metaNotePositionToSongTime(note.position + File.getTimeCorrectionForIndex(i));
-				//trace("Processed time: " + noteTime + " | Note time (combined): " + (note.position + File.getTimeCorrectionForIndex(i)) + " | Note time: " + note.position + " | Correction time: " + File.getTimeCorrectionForIndex(i));
 				i++;
 			}
-			// Start initializing total time variables
 			var insertTime:Float = 0;
 			var removalTime:Float = 0;
 
 			for (i in 0...1) {
-				var stamp = haxe.Timer.stamp();
-				//trace("Insert 1,000,000 notes (array)");f
-				//Sys.println("Insert 1,000,000 notes (function)");
 				var stamp2 = haxe.Timer.stamp();
 				for (i in 0...20) {
 					var pos = Tools.betterInt64FromFloat((0.0 + (200000000.0 * i)));
 					var dur = 100 * 2;
 					var ind = i % 9;
 					var typ = 1;
-					//trace('adding note ${i+1} (pos,dur,ind,type)',pos,dur,ind,typ);
-					File.insertNote(pos, dur, /* Equal to `note.duration(ms) * 2`. */ ind, typ);
+					File.insertNote(pos, dur, ind, typ);
 				}
 				insertTime += haxe.Timer.stamp() - stamp2;
-				//Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp2) * 1000}ms');
-				// Remove notes
 				var stamp3 = haxe.Timer.stamp();
-				//Sys.println("Remove 1,000,000 notes (function)");
-				//Sys.println(arr.length);
 				for (i in 5...6) {
 					trace('removing note (index)',i);
 					File.removeNote(i);
 				}
 				removalTime += haxe.Timer.stamp() - stamp3;
-				//Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp3) * 1000}ms');
-				//Sys.println('Inserting 1,000,000 notes fully done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 				Sys.println('Iteration $i done');
 			}
-			// Average it out
 			Sys.println('Total insert time: ' + ((insertTime * 1000) / 1) + 'ms');
 			Sys.println('Total removal time: ' + ((removalTime * 1000) / 1) + 'ms');
 			Chart.destroy();
@@ -142,7 +147,17 @@ class Main extends Application
 		switch (window.context.type)
 		{
 			case WEBGL, OPENGL, OPENGLES:
-				startSample(window);
+				windowResizeHandler = resize;
+				windowMouseDownHandler = (x, y, button) -> {
+					if (mouseDown != null) mouseDown(x, y, button);
+				};
+				windowKeyDownHandler = controlVolume;
+				windowCloseHandler = function() {
+					shutdown();
+				};
+	
+				registerWindowEvents(window);
+				initializeApp(window);
 			default: throw("Sorry, only works with OpenGL.");
 		}
 	}
@@ -155,21 +170,10 @@ class Main extends Application
 
 	static public function switchState(newState:StateSelection, skipTransition:Bool = false) {
 		var instance = Main.current;
+		if (instance == null) return;
+		if (instance.currentState == newState && newState != StateSelection.NONE) return;
 
-		switch (instance.currentState) {
-			case MAIN_MENU:
-				trace('dispose the main menu');
-				instance.mainMenu.dispose();
-				instance.mainMenu = null;
-			case GAMEPLAY:
-				trace('dispose the gameplay menu');
-				instance.playField.dispose();
-				instance.playField = null;
-			case AWARDS:
-			case CREDITS:
-			case NONE:
-		}
-
+		instance.disposeCurrentState();
 		instance.currentState = newState;
 
 		switch (newState) {
@@ -184,8 +188,24 @@ class Main extends Application
 			case CREDITS:
 			case NONE:
 		}
+	}
 
-		var peoteView = Main.current.peoteView;
+	private function disposeCurrentState():Void {
+		switch (currentState) {
+			case MAIN_MENU:
+				if (mainMenu != null) {
+					mainMenu.dispose();
+					mainMenu = null;
+				}
+			case GAMEPLAY:
+				if (playField != null) {
+					playField.dispose();
+					playField = null;
+				}
+			case AWARDS:
+			case CREDITS:
+			case NONE:
+		}
 	}
 
 	// ------------------------------------------------------------
@@ -240,56 +260,91 @@ class Main extends Application
 
 		peoteView = new PeoteView(window);
 
-		haxe.Timer.delay(function() {
-			createSounds();
-			createTextures();
-			createDisplays();
+		createSounds();
+		createTextures();
+		createDisplays();
 
-			prepareGameplayState();
+		prepareGameplayState();
 
-			#if (!html5)
-			if (PeoteGL.Version.isES3) window.context.gl.disable(0x8DB9); // GL_FRAMEBUFFER_SRGB_EXT
-			#end
+		#if (!html5)
+		if (PeoteGL.Version.isES3) window.context.gl.disable(0x8DB9); // GL_FRAMEBUFFER_SRGB_EXT
+		#end
 
-			peoteView.start();
+		peoteView.start();
 
-			addDisplays();
+		addDisplays();
 
-			trace("1");
-			conductor = new Conductor();
+		conductor = new Conductor();
 
-			trace("2");
-			OptionsMenu.init(optionsScreen);
-			optionsMenu = new OptionsMenu();
+		OptionsMenu.init(optionsScreen);
+		optionsMenu = new OptionsMenu();
 
-			trace("3");
-			FreeplayMenu.init(freeplayScreen);
-			freeplayMenu = new FreeplayMenu();
+		FreeplayMenu.init(freeplayScreen);
+		freeplayMenu = new FreeplayMenu();
 
-			trace("4");
-			StoryMenu.init(storyScreen);
-			storyMenu = new StoryMenu();
+		StoryMenu.init(storyScreen);
+		storyMenu = new StoryMenu();
 
-			trace("5");
-			switchState(MAIN_MENU);
+		switchState(MAIN_MENU);
+		resize(peoteView.width, peoteView.height);
 
-			trace("6");
-			resize(peoteView.width, peoteView.height);
+		#if FV_DEBUG
+		DeveloperStuff.init(window, this);
+		#end
 
-			window.onResize.add(resize);
-			window.onKeyDown.add(controlVolume);
-			window.onClose.add(Chart.destroy);
+		_started = true;
+		lifecycle = AppLifecycleState.RUNNING;
+	}
 
-			#if FV_DEBUG
-			DeveloperStuff.init(window, this);
-			#end
+	private function initializeApp(window:Window):Void {
+		startSample(window);
+	}
 
-			window.onMouseDown.add((x, y, button) -> {
-				if (mouseDown != null) mouseDown(x, y, button);
-			});
+	private function registerWindowEvents(window:Window):Void {
+		window.onResize.add(windowResizeHandler);
+		window.onKeyDown.add(windowKeyDownHandler);
+		window.onMouseDown.add(windowMouseDownHandler);
+		window.onClose.add(windowCloseHandler);
+	}
 
-			_started = true;
-		}, 100);
+	private function unregisterWindowEvents(window:Window):Void {
+		if (windowResizeHandler != null) window.onResize.remove(windowResizeHandler);
+		if (windowKeyDownHandler != null) window.onKeyDown.remove(windowKeyDownHandler);
+		if (windowMouseDownHandler != null) window.onMouseDown.remove(windowMouseDownHandler);
+		if (windowCloseHandler != null) window.onClose.remove(windowCloseHandler);
+	}
+
+	private function shutdown():Void {
+		if (isClosing) return;
+		isClosing = true;
+		lifecycle = AppLifecycleState.SHUTTING_DOWN;
+		disposeApp();
+	}
+
+	private function disposeApp():Void {
+		disposeCurrentState();
+
+		if (optionsMenu != null) {
+			optionsMenu.dispose();
+			optionsMenu = null;
+		}
+
+		if (freeplayMenu != null) {
+			freeplayMenu.dispose();
+			freeplayMenu = null;
+		}
+
+		if (storyMenu != null) {
+			storyMenu.dispose();
+			storyMenu = null;
+		}
+
+		if (Application.current != null && Application.current.window != null) {
+			unregisterWindowEvents(Application.current.window);
+		}
+
+		_started = false;
+		lifecycle = AppLifecycleState.STOPPED;
 	}
 
 	private function prepareGameplayState() {
@@ -378,7 +433,7 @@ class Main extends Application
 
 		var lastTitle = Application.current.window.title;
 
-		if (_started) {
+		if (_started && lifecycle == AppLifecycleState.RUNNING) {
 			#if FV_LIME_FORK
 			newDeltaTime = deltaTime * 0.00001;
 			#else
@@ -406,11 +461,11 @@ class Main extends Application
 				}
 			}
 
-			if (optionsMenu.active) {
+			if (optionsMenu != null && optionsMenu.active) {
 				optionsMenu.update(newDeltaTime);
 			}
 
-			if (storyMenu.active) {
+			if (storyMenu != null && storyMenu.active) {
 				storyMenu.update(newDeltaTime);
 			}
 		}
@@ -419,13 +474,14 @@ class Main extends Application
 	override function render(context:RenderContext) {
 		super.render(context);
 
+		if (lifecycle != AppLifecycleState.RUNNING) return;
+
 		#if FV_LIME_FORK
 		var renderFrameRate = Application.current.window.renderFrameRate;
 		var refreshRate:Float = Application.current.window.displayMode.refreshRate;
 		if (refreshRate == 0) refreshRate = 60;
 		if (renderFrameRate == 0) renderFrameRate = Application.current.window.renderFrameRate = refreshRate;
 		var renderRate = newDeltaTime; // Render is set directly after updating so this is the solution
-		//trace(renderRate);
 		#else
 		var renderFrameRate = Application.current.window.frameRate;
 		var renderRate = 1000 / renderFrameRate;
@@ -438,7 +494,6 @@ class Main extends Application
 		}
 		if (freeplayMenu != null) {
 			if (freeplayMenu.active) {
-				//Sys.println(renderRate);
 				freeplayMenu.render(renderRate);
 			}
 		}

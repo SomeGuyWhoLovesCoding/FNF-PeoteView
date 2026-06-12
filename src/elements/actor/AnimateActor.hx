@@ -191,6 +191,7 @@ class AnimateActor extends Actor
 	override function changeFrame() {
 		if (currentResolvedFrames == null || frameIndex >= currentResolvedFrames.length) return;
 		applyResolvedFrame(currentResolvedFrames[frameIndex]);
+    	if (buffer != null) buffer.update();
 	}
 
 	override private function renderImpl() {

@@ -25,8 +25,8 @@ class OptionsMenu {
 	var categorySprites(default, null):Array<OptionsSprite> = [];
 
 	var active:Bool = false;
-
 	var opened(default, null):Bool;
+	var eventsAdded:Bool = false;
 
 	static var optionsDisplay(default, null):OptionsDisplay;
 
@@ -93,6 +93,7 @@ class OptionsMenu {
 	}
 
 	function open() {
+		if (opened && active) return;
 		active = opened = true;
 		Main.current.popupOptionsMenu();
 
@@ -108,11 +109,12 @@ class OptionsMenu {
 		} catch (e) {}
 
 		haxe.Timer.delay(() -> {
+			if (!opened || eventsAdded) return;
 			var window = lime.app.Application.current.window;
 			Main.current.controls.bindTo(actions);
-			
 			Main.current.mouseDown = mousePress;
 			window.onMouseWheel.add(moveCategory_mouse);
+			eventsAdded = true;
 		}, 1);
 
 		if (!optionsProg.isIn(display)) {
@@ -125,9 +127,12 @@ class OptionsMenu {
 		var pf = Main.current.playField;
 
 		var window = lime.app.Application.current.window;
-		Main.current.controls.unBind();
-		Main.current.mouseDown = null;
-		window.onMouseWheel.remove(moveCategory_mouse);
+		if (eventsAdded) {
+			Main.current.controls.unBind();
+			Main.current.mouseDown = null;
+			window.onMouseWheel.remove(moveCategory_mouse);
+			eventsAdded = false;
+		}
 
 		if (mm != null) {
 			MainMenu.selectedAlpha = 1.0;
@@ -138,6 +143,8 @@ class OptionsMenu {
 		}
 
 		opened = false;
+		active = false;
+		Main.current.removeOptionsMenu();
 	}
 
 	function back(isDown:Bool, param:Int) {
