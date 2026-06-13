@@ -4,6 +4,8 @@ import data.SaveData;
 import structures.FreeplayAlphabet;
 import structures.IAlphabetScrollHost;
 import structures.OptionsMenu;
+import lime.ui.MouseButton;
+import lime.ui.MouseWheelMode;
 
 /**
 	Handles the display and interaction for preferences options in the options menu.
@@ -33,6 +35,18 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 	
 	var closed:Bool;
 	
+	//////////////////////// SCROLL (LIKE PHONE) ////////////////////////
+	var isDragging:Bool = false;
+	var dragStartY:Float = 0.0;
+	var lastDragY:Float = 0.0;
+	var dragAccum:Float = 0.0;
+	
+	// fling impl
+	var dragVelocity:Float = 0.0;
+	var lastDragTime:Float = 0.0;
+	
+	private static inline var DRAG_THRESHOLD:Float = 1.0; // pixels per nav tick
+	
 	function new(parent:OptionsMenu) {
 		this.parent = parent;
 	}
@@ -49,6 +63,10 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		
 		// Reset state when reloading
 		resetHostState();
+		resetDragState();
+		
+		// Register input handlers
+		registerInputHandlers();
 	}
 	
 	function resetHostState() {
@@ -58,6 +76,30 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		alphaLerp = 0.0;
 	}
 	
+	function resetDragState() {
+		isDragging = false;
+		dragAccum = 0.0;
+		dragVelocity = 0.0;
+	}
+	
+	function registerInputHandlers() {
+		var window = lime.app.Application.current.window;
+		Main.current.mouseDown = mousePress;
+		window.onMouseUp.add(mouseRelease);
+		window.onMouseMove.add(mouseDrag);
+		window.onMouseWheel.add(mouseWheel);
+	}
+	
+	function unregisterInputHandlers() {
+		var window = lime.app.Application.current.window;
+		if (Main.current.mouseDown == mousePress) {
+			Main.current.mouseDown = null;
+		}
+		window.onMouseUp.remove(mouseRelease);
+		window.onMouseMove.remove(mouseDrag);
+		window.onMouseWheel.remove(mouseWheel);
+	}
+	
 	function update(deltaTime:Float) {
 		if (alphabet == null || closed) return;
 		
@@ -65,7 +107,22 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		if (ratio == 1) ratio = (1 / lime.app.Application.current.window.frameRate) * 0.015;
 		
 		alphaLerp = Tools.lerp(alphaLerp, parent.opened ? 1.0 : 0.0, ratio);
-		curSelectedTarget = parent.optionsNav.value();
+		
+		// Handle fling inertia
+		if (!isDragging && Math.abs(dragVelocity) > 0.01) {
+			curSelectedTarget += (dragVelocity * deltaTime) / (156.0 / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT));
+			curSelectedTarget = Math.max(0, Math.min(prefsStr.length - 1, curSelectedTarget));
+			parent.optionsNav.setTo(Math.round(curSelectedTarget));
+			
+			dragVelocity *= Math.pow(0.92, deltaTime * 0.04); // exponential decay
+			if (Math.abs(dragVelocity) < 0.01) dragVelocity = 0.0;
+		}
+		
+		// Only update from parent nav when not dragging and no inertia
+		if (!isDragging && dragVelocity == 0.0) {
+			curSelectedTarget = parent.optionsNav.value();
+		}
+		
 		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelectedTarget, ratio);
 		xLerp = 20 - (curSelectedLerp * 20);
 		
@@ -80,8 +137,72 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		alphabet.updateBuffer();
 	}
 	
-	function enter() {
+	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
 		if (closed || alphabet == null) return;
+		
+		switch (button) {
+			case LEFT:
+				isDragging = true;
+				dragStartY = y;
+				lastDragY = y;
+				dragAccum = 0.0;
+				dragVelocity = 0.0;
+				lastDragTime = haxe.Timer.stamp();
+				curSelectedTarget = curSelectedLerp;
+				// Optional: play scroll sound
+				// Main.current.playScrollSound();
+			case RIGHT:
+				// Handle back/exit if needed
+				// parent.close();
+			default:
+		}
+	}
+	
+	function mouseRelease(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
+		if (button != LEFT) return;
+		if (closed || alphabet == null) return;
+		
+		// If it was a click (not a drag), trigger enter
+		if (isDragging && Math.abs(dragStartY - y) < 4.0) {
+			enter();
+		}
+		
+		isDragging = false;
+		dragAccum = 0.0;
+		// velocity carries over into update for fling inertia
+	}
+	
+	function mouseDrag(x:Float, y:Float) {
+		if (!isDragging || closed || alphabet == null) return;
+		
+		var delta = lastDragY - y;
+		lastDragY = y;
+		
+		var now = haxe.Timer.stamp();
+		var dt = now - lastDragTime;
+		lastDragTime = now;
+		
+		var _delta = (delta / (156.0 / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)));
+		
+		// Calculate velocity for fling
+		if (dt > 0) dragVelocity = _delta / 3;
+		
+		curSelectedTarget += _delta;
+		curSelectedTarget = Math.max(0, Math.min(prefsStr.length - 1, curSelectedTarget));
+		parent.optionsNav.setTo(Math.round(curSelectedTarget));
+	}
+	
+	function mouseWheel(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
+		if (closed || alphabet == null) return;
+		
+		parent.optionsNav.scroll(-Math.floor(y));
+		parent.optionsNav.resetIfBoth(prefsStr.length, prefsStr.length - 1);
+		curSelectedTarget = parent.optionsNav.value();
+		Main.current.playScrollSound();
+	}
+	
+	function enter() {
+		if (closed || alphabet == null || isDragging) return;
 		
 		var field = prefsStr[Math.floor(curSelectedTarget)];
 		var optionChecked = Reflect.getProperty(SaveData.state.preferences, field);
@@ -119,8 +240,12 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		
 		closed = true;
 		
+		// Unregister input handlers before cleanup
+		unregisterInputHandlers();
+		
 		// Reset host state before disposing alphabet
 		resetHostState();
+		resetDragState();
 		
 		if (alphabet != null) {
 			// First remove from display, then dispose
