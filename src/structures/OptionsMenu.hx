@@ -101,7 +101,6 @@ class OptionsMenu {
 			Main.current.mouseDown = mousePress;
 			window.onMouseWheel.add(moveCategory_mouse);
 			window.onKeyDown.add(handleKeyDown);
-			window.onKeyUp.add(handleKeyUp);
 		}, 1);
 	}
 
@@ -111,7 +110,6 @@ class OptionsMenu {
 		Main.current.mouseDown = null;
 		window.onMouseWheel.remove(moveCategory_mouse);
 		window.onKeyDown.remove(handleKeyDown);
-		window.onKeyUp.remove(handleKeyUp);
 	}
 
 	function open() {
@@ -231,13 +229,6 @@ class OptionsMenu {
 		var disp = optionsDisplay.controlsDisplay;
 		if (disp != null && !disp.closed && !optionsDisplay.closed) {
 			disp.onKeyDown(keyCode, keyModifier);
-		}
-	}
-
-	function handleKeyUp(keyCode:KeyCode, keyModifier:KeyModifier) {
-		var disp = optionsDisplay.controlsDisplay;
-		if (disp != null && !disp.closed && !optionsDisplay.closed) {
-			disp.onKeyUp(keyCode, keyModifier);
 		}
 	}
 

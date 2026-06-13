@@ -47,6 +47,11 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		"game.debug"
 	];
 
+	inline static var INSTRUCTIONS_TEXT = "Press TAB to begin binding\nPress ESC to cancel binding\n\n" +
+		"Press RESET to blank out binding\nPress DEBUG to swap between #M1#KEY 1#M1# and #M2#KEY 2#M2# during 1K...9K binding"; // had to split it to multiple lines for readability and consistency
+	inline static var DUPLICATE_BIND_ALERT_TEXT = 'Either it\'s the same key you entered, or\nanother keybind was already registered as\n' +
+		'the key you attempted to bind on.\nTry a different key first.';
+
 	var parent(default, null):OptionsMenu;
 	var options(default, null):Array<OptionsSprite> = [];
 	static var alphabet(default, null):FreeplayAlphabet;
@@ -58,6 +63,8 @@ class ControlsDisplay implements IAlphabetScrollHost {
 	var maniaBindNum(default, null):Int = 0;
 	var maniaSubBindNum(default, null):Int = 0;
 	var lastBindingTime:Float = 0;
+
+	var alertDupebind:Bool = false;
 
 	var xLerp:Float = 0.0;
 	var curSelectedLerp:Float = 0.0;
@@ -83,6 +90,8 @@ class ControlsDisplay implements IAlphabetScrollHost {
         alphabet.addPrograms();
         closed = false;
 
+		var subBindMarkup = [new TextFormatMarkerPair('#M1#', Color.CYAN), new TextFormatMarkerPair('#M2#', 0xFF5353FF), new TextFormatMarkerPair('#M3#', 0xFFFF5353)];
+
 		if (maniaKeybindTxt == null) {
 			maniaKeybindTxt = new Text("FUNKIN_VIEW_KEYBIND_TXT", 0, 300, alphabet.display, "KEYBINDS\nNONE", "vcr");
 			maniaKeybindTxt.multiline = true;
@@ -91,16 +100,18 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			maniaKeybindTxt.outlineColor = Color.BLACK;
 			maniaKeybindTxt.outlineSize = 1.4;
 			maniaKeybindTxt.x = Main.VARIABLE_WIDTH - (maniaKeybindTxt.width + 4);
-			maniaKeybindTxt.setMarkerPairs([new TextFormatMarkerPair('#M#', Color.CYAN)]);
+			maniaKeybindTxt.setMarkerPairs(subBindMarkup);
 		}
 
 		if (instructionsTxt == null) {
-			instructionsTxt = new Text("FUNKIN_VIEW_CONTROLS_INSTRUCTIONS_TXT", 4, 3, alphabet.display, "Press TAB to begin binding\nPress ESC to cancel binding.", "vcr");
+			instructionsTxt = new Text("FUNKIN_VIEW_CONTROLS_INSTRUCTIONS_TXT", 4, 3, alphabet.display, "", "vcr");
 			instructionsTxt.alpha = 0;
 			instructionsTxt.multiline = true;
 			instructionsTxt.alignment = RIGHT;
 			instructionsTxt.outlineColor = Color.BLACK;
 			instructionsTxt.outlineSize = 1.4;
+			instructionsTxt.setMarkerPairs(subBindMarkup);
+			instructionsTxt.text = INSTRUCTIONS_TEXT;
 			instructionsTxt.x = Main.VARIABLE_WIDTH - (instructionsTxt.width + 4);
 		}
 
@@ -136,15 +147,14 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		if (binding || processingBinding || bindingMania || closed) return;
 		
 		bindingIndex = parent.optionsNav.value();
-		if (bindingIndex >= controlFields.length) {
-			bindingMania = true;
-		} else binding = true;
+		if (bindingIndex >= controlFields.length) bindingMania = true;
+		else binding = true;
 
 		// Temporarily disable parent events while binding
 		parent.removeEvents();
 		Application.current.window.onKeyDown.add(onKeyDown);
 		
-		Main.current.playConfirmSound();
+		Main.current.playScrollSound();
 	}
 
 	function update(deltaTime:Float) {
@@ -158,33 +168,30 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelectedTarget, ratio);
 		xLerp = 20 - (curSelectedLerp * 20);
 
-		maniaKeybindTxt.alpha = Tools.lerp(maniaKeybindTxt.alpha, curSelectedTarget >= controlFields.length ? 1.0 : 0.0, ratio);
+		maniaKeybindTxt.alpha = Tools.lerp(maniaKeybindTxt.alpha, (curSelectedTarget >= controlFields.length || alertDupebind) ? 1.0 : 0.0, ratio);
 		if (bindingMania) {
-			var str = "KEYBINDS\n\n";
-			var keybindArr = SaveData.state.controls.game.keybindArray[Std.int(curSelectedTarget) - (controlFields.length - 1)];
+			var str = 'KEYBINDS\nUSING ${maniaSubBindNum == 1 ? "#M2#KEY2#M2#" : "#M1#KEY1#M1#"}\n\n';
+			var keybindArr = SaveData.state.controls.game.keybindArray[Std.int(curSelectedTarget) - controlFields.length];
 			for (k in 0...keybindArr.length) {
 				var maniaBind = keybindArr;
 				var maniaBinds = keybindArr[k];
 				
-				if (maniaBindNum == k) str += '#M#';
-				str += "[ ";
-				if (maniaBindNum == k) str += '#M#';
+				str += maniaBindNum == k && maniaSubBindNum == 0 ? "#M1#[ #M1#" : "[ ";
 
 				for (i in 0...maniaBinds.length) {
-					if (maniaSubBindNum == i) str += '#M#';
+					if (maniaSubBindNum == i) str += '#M${maniaSubBindNum+1}#';
 					str += KeyCodeConverter.getSimpleKeyName(maniaBinds[i]);
-					if (maniaSubBindNum == i) str += '#M#';
-					if (i != maniaBind.length - 1) str += ", ";
+					if (maniaSubBindNum == i) str += '#M${maniaSubBindNum+1}#';
+					if (i != maniaBinds.length - 1) str += ", ";
 				}
 
-				if (maniaBindNum == k) str += '#M#';
-				str += " ]";
-				if (maniaBindNum == k) str += '#M#';
+				str += maniaBindNum == k && maniaSubBindNum == 1 ? "#M2# ]#M2#" : " ]";
 
 				str += "\n";
 			}
 			maniaKeybindTxt.text = str;
 		} else maniaKeybindTxt.text = "KEYBINDS\n...";
+		if (alertDupebind) maniaKeybindTxt.text = '#M3#$DUPLICATE_BIND_ALERT_TEXT#M3#\n\n\n\n\n\n';
 		maniaKeybindTxt.x = Main.VARIABLE_WIDTH - (maniaKeybindTxt.width + 4);
 		maniaKeybindTxt.y = (Main.VARIABLE_HEIGHT * 0.5) - (maniaKeybindTxt.height * 0.5);
 		instructionsTxt.alpha = alphaLerp;
@@ -205,15 +212,21 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			binding = false;
 			bindingIndex = -1;
 			processingBinding = false;
-			
-			// Re-enable parent events
-			if (parent != null && parent.opened) {
-				parent.addEvents();
-				Application.current.window.onKeyDown.remove(onKeyDown);
-			}
-			
-			Main.current.playCancelSound();
 		}
+
+		if (bindingMania) {
+			bindingMania = false;
+			maniaBindNum = 0;
+			//SaveData.state.controls.game.keybindArray[Std.int(curSelectedTarget) - controlFields.length] = originalKeysMania;
+		}
+
+		// Re-enable parent events
+		if (parent != null && parent.opened) {
+			parent.addEvents();
+			Application.current.window.onKeyDown.remove(onKeyDown);
+		}
+		
+		Main.current.playCancelSound();
 	}
 
 	function onKeyDown(keyCode:KeyCode, keyModifier:KeyModifier) {
@@ -222,7 +235,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		var BIND_KEY = KeyCode.TAB;
 
 		// Handle escape first - always cancel binding
-		if (keyCode == KeyCode.ESCAPE && binding) {
+		if (keyCode == KeyCode.ESCAPE) {
 			cancelBinding();
 			return;
 		}
@@ -234,12 +247,16 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		}
 
 		if (bindingMania) {
+			// Don't bind the TAB key itself or ESCAPE
+			if (keyCode == BIND_KEY || keyCode == KeyCode.ESCAPE) return;
 
+			applyManiaBinding(keyCode);
+			return;
 		}
 
 		// Apply binding if we're in binding mode
-		if (binding && !processingBinding && bindingMania && !closed) {
-			// Don't bind the TAB key itself or ESCAPE
+		if (binding && !processingBinding && !closed) {
+			// Same goes to here, as well
 			if (keyCode == BIND_KEY || keyCode == KeyCode.ESCAPE) return;
 			
 			// Debounce - prevent multiple rapid bindings
@@ -251,8 +268,15 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		}
 	}
 
-	function onKeyUp(keyCode:KeyCode, keyModifier:KeyModifier) {
-		// Not needed
+	function ui_isSameKeyOrDupe(keyCode:KeyCode) {
+		var ui = SaveData.state.controls.ui;
+		return (ui.left == keyCode || ui.down == keyCode || ui.up == keyCode || ui.right == keyCode) ||
+			(ui.accept == keyCode || ui.back == keyCode);
+	}
+
+	function game_isSameKeyOrDupe(keyCode:KeyCode) {
+		var game = SaveData.state.controls.game;
+		return (game.pause == keyCode || game.reset == keyCode || game.debug == keyCode);
 	}
 
 	function applyBinding(keyCode:KeyCode) {
@@ -269,14 +293,19 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		var field = controlFields[bindingIndex];
 		var parts = field.split(".");
 
-		if (parts.length < 2) {
-			cancelBinding();
-			processingBinding = false;
-			return;
-		}
-
 		var category = parts[0];
 		var name = parts[1];
+
+		var isDupeBind = category == "game" ? game_isSameKeyOrDupe(keyCode) : ui_isSameKeyOrDupe(keyCode);
+		if (parts.length < 2 || isDupeBind) {
+			cancelBinding();
+			processingBinding = false;
+			if (isDupeBind) {
+				alertDupebind = true;
+				haxe.Timer.delay(() -> {alertDupebind = false;}, 7000);
+			}
+			return;
+		}
 
 		if (category == "ui") {
 			Reflect.setProperty(SaveData.state.controls.ui, name, keyCode);
@@ -308,6 +337,62 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		
 		// Reset processing flag
 		processingBinding = false;
+	}
+
+	//var originalKeysMania:Array<Array<KeyCode>> = [];
+	function applyManiaBinding(keyCode:KeyCode) {
+		if (keyCode == SaveData.state.controls.game.debug) {
+			Main.current.playCancelSound();
+			maniaSubBindNum++;
+			maniaSubBindNum %= 2;
+			return;
+		}
+
+		var id = Std.int(curSelectedTarget) - controlFields.length;
+		var keybindsArr = SaveData.state.controls.game.keybindArray[id];
+		//originalKeysMania = keybindsArr;
+		var keybindArr = keybindsArr[maniaBindNum];
+
+		if (keyCode == SaveData.state.controls.game.reset) keybindArr[maniaSubBindNum] = KeyCode.UNKNOWN;
+		else keybindArr[maniaSubBindNum] = keyCode;
+		//trace('maniabindnum before transition $maniaBindNum');
+		maniaBindNum++;
+		//trace('maniabindnum after transition $maniaBindNum');
+		if (maniaBindNum <= keybindsArr.length - 1) {
+			Main.current.playScrollSound();
+			return;
+		}
+
+		// Clear binding state BEFORE saving to prevent event loops
+		bindingMania = false;
+		maniaBindNum = 0;
+		
+		fixMania();
+		
+		// Reload controls AFTER clearing binding state
+		Main.current.controls.reload();
+		
+		// Re-enable parent events after binding is complete
+		if (parent != null && parent.opened) {
+			parent.addEvents();
+			Application.current.window.onKeyDown.remove(onKeyDown);
+		}
+		
+		Main.current.playConfirmSound();
+	}
+
+	// This is to not persist any KeyCode.UNKNOWN
+	function fixMania() {
+		var id = Std.int(curSelectedTarget) - controlFields.length;
+		var keybindsArr = SaveData.state.controls.game.keybindArray[id];
+		for (i in 0...keybindsArr.length) {
+			for (j in 0...keybindsArr[i].length) {
+				if (keybindsArr[i][j] == KeyCode.UNKNOWN) keybindsArr[i].remove(keybindsArr[i][j]);
+			}
+		}
+		//originalKeysMania = keybindsArr;
+		var keybindArr = keybindsArr[maniaBindNum];
+		SaveData.save();
 	}
 
 	function destroyOptions() {

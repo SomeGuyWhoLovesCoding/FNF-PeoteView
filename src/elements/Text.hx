@@ -98,7 +98,7 @@ class Text {
 		markerPairs = pairs;
 		for (pair in markerPairs) pair._onChange = markDirty;
 		markDirty();
-		this.text = text;
+		refresh();
 	}
 
 	private var colorSpans:Array<ColorSpan> = [];

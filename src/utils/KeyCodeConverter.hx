@@ -2,6 +2,10 @@ package utils;
 
 import lime.ui.KeyCode;
 
+/**
+    lime.ui.KeyCode converter deepseek generated for me. You can use this if you want, idc.
+    @since 0.94
+**/
 class KeyCodeConverter
 {
     /**
@@ -14,7 +18,7 @@ class KeyCodeConverter
         return switch (keyCode)
         {
             // Special keys
-            case UNKNOWN: "Unknown";
+            case UNKNOWN: "[_]";
             case BACKSPACE: "Backspace";
             case TAB: "Tab";
             case RETURN: "Return";
@@ -222,7 +226,7 @@ class KeyCodeConverter
             case SEPARATOR: "Separator";
             
             // Default case
-            case _: "Key " + Std.string(keyCode);
+            case _: "[_]";
         }
     }
     
