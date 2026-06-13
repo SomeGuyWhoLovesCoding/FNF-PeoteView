@@ -882,8 +882,8 @@ class PlayField {
 
 		Chart.destroy();
 
-		if (display.fov != 1) display.fov = 1;
-		if (view.fov != 1) view.fov = 1;
+		if (display.fov != 1) { display.fov = 1; display.x = 0; display.y = 0; display.r = 0; }
+		if (view.fov != 1) { view.fov = 1; view.x = 0; view.y = 0; view.r = 0; }
 
 		#if linc_luajit_funkinview
 		funkinviewlua.callFunction('disposePost', null);
