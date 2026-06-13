@@ -48,9 +48,11 @@ class ControlsDisplay implements IAlphabetScrollHost {
 	];
 
 	inline static var INSTRUCTIONS_TEXT = "Press TAB to begin binding\nPress ESC to cancel binding\n\n" +
-		"Press RESET to blank out binding\nPress DEBUG to swap between #M1#KEY 1#M1# and #M2#KEY 2#M2# during 1K...9K binding"; // had to split it to multiple lines for readability and consistency
+		"Press RESET to blank out binding\nPress DEBUG to swap between #M1#KEY 1#M1# and #M2#KEY 2#M2# during 1K...9K binding\n" +
+		"Press BACK to reset currrent MANIA."; // had to split it to multiple lines for readability and consistency
 	inline static var DUPLICATE_BIND_ALERT_TEXT = 'Either it\'s the same key you entered, or\nanother keybind was already registered as\n' +
 		'the key you attempted to bind on.\nTry a different key first.';
+	inline static var RESET_BIND_ALERT_TEXT = 'Successfully reset current MANIA.';
 
 	var parent(default, null):OptionsMenu;
 	var options(default, null):Array<OptionsSprite> = [];
@@ -65,6 +67,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 	var lastBindingTime:Float = 0;
 
 	var alertDupebind:Bool = false;
+	var alertKeybindReset:Bool = false;
 
 	var xLerp:Float = 0.0;
 	var curSelectedLerp:Float = 0.0;
@@ -170,12 +173,14 @@ class ControlsDisplay implements IAlphabetScrollHost {
 
 		maniaKeybindTxt.alpha = Tools.lerp(maniaKeybindTxt.alpha, (curSelectedTarget >= controlFields.length || alertDupebind) ? 1.0 : 0.0, ratio);
 		if (bindingMania) {
-			var str = 'KEYBINDS\nUSING ${maniaSubBindNum == 1 ? "#M2#KEY2#M2#" : "#M1#KEY1#M1#"}\n\n';
+			var str = 'KEYBINDS\nUSING ${maniaSubBindNum == 1 ? "#M2#KEY2#M2#" : "#M1#KEY1#M1#"}\n';
+			if (alertKeybindReset) str += '#M3#$RESET_BIND_ALERT_TEXT#M3#\n';
+			else str += "\n";
 			var keybindArr = SaveData.state.controls.game.keybindArray[Std.int(curSelectedTarget) - controlFields.length];
 			for (k in 0...keybindArr.length) {
 				var maniaBind = keybindArr;
 				var maniaBinds = keybindArr[k];
-				
+
 				str += maniaBindNum == k && maniaSubBindNum == 0 ? "#M1#[ #M1#" : "[ ";
 
 				for (i in 0...maniaBinds.length) {
@@ -190,8 +195,10 @@ class ControlsDisplay implements IAlphabetScrollHost {
 				str += "\n";
 			}
 			maniaKeybindTxt.text = str;
-		} else maniaKeybindTxt.text = "KEYBINDS\n...";
-		if (alertDupebind) maniaKeybindTxt.text = '#M3#$DUPLICATE_BIND_ALERT_TEXT#M3#\n\n\n\n\n\n';
+		} else {
+			if (alertDupebind) maniaKeybindTxt.text = '#M3#$DUPLICATE_BIND_ALERT_TEXT#M3#\n\n\n\n\n\n';
+			else maniaKeybindTxt.text = "KEYBINDS\n...";
+		}
 		maniaKeybindTxt.x = Main.VARIABLE_WIDTH - (maniaKeybindTxt.width + 4);
 		maniaKeybindTxt.y = (Main.VARIABLE_HEIGHT * 0.5) - (maniaKeybindTxt.height * 0.5);
 		instructionsTxt.alpha = alphaLerp;
@@ -352,6 +359,16 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		var keybindsArr = SaveData.state.controls.game.keybindArray[id];
 		//originalKeysMania = keybindsArr;
 		var keybindArr = keybindsArr[maniaBindNum];
+
+		if (keyCode == SaveData.state.controls.ui.back) {
+			Main.current.playCancelSound();
+			SaveData.state.controls.game.keybindArray[id] = SaveData.getDefaultState().controls.game.keybindArray[id];
+			alertKeybindReset = true;
+			haxe.Timer.delay(() -> {alertKeybindReset = false;}, 3000);
+			maniaBindNum = 0;
+			SaveData.save();
+			return;
+		}
 
 		if (keyCode == SaveData.state.controls.game.reset) keybindArr[maniaSubBindNum] = KeyCode.UNKNOWN;
 		else keybindArr[maniaSubBindNum] = keyCode;

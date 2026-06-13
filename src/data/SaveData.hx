@@ -33,51 +33,55 @@ class SaveData_Securer {
 @:structInit
 @:publicFields
 class SaveData {
-	static var state:SaveData = {
-		controls: {
-			ui: {
-				left: KeyCode.LEFT,
-				down: KeyCode.DOWN,
-				up: KeyCode.UP,
-				right: KeyCode.RIGHT,
-				accept: KeyCode.RETURN,
-				back: KeyCode.BACKSPACE,
+	static var state:SaveData = getDefaultState();
+
+	static function getDefaultState():SaveData {
+		return {
+			controls: {
+				ui: {
+					left: KeyCode.LEFT,
+					down: KeyCode.DOWN,
+					up: KeyCode.UP,
+					right: KeyCode.RIGHT,
+					accept: KeyCode.RETURN,
+					back: KeyCode.BACKSPACE,
+				},
+				game: {
+					keybindArray: [
+						[[KeyCode.SPACE]],
+						[[KeyCode.A], [KeyCode.RIGHT]],
+						[[KeyCode.A], [KeyCode.SPACE], [KeyCode.RIGHT]],
+						[[KeyCode.A, KeyCode.LEFT], [KeyCode.S, KeyCode.DOWN], [KeyCode.W, KeyCode.UP], [KeyCode.D, KeyCode.RIGHT]],
+						[[KeyCode.A, KeyCode.LEFT], [KeyCode.S, KeyCode.DOWN], [KeyCode.SPACE], [KeyCode.W, KeyCode.UP], [KeyCode.D, KeyCode.RIGHT]],
+						[[KeyCode.S], [KeyCode.D], [KeyCode.F], [KeyCode.J], [KeyCode.K], [KeyCode.L]],
+						[[KeyCode.S], [KeyCode.D], [KeyCode.F], [KeyCode.SPACE], [KeyCode.J], [KeyCode.K], [KeyCode.L]],
+						[[KeyCode.A], [KeyCode.S], [KeyCode.D], [KeyCode.F], [KeyCode.H], [KeyCode.J], [KeyCode.K], [KeyCode.L]],
+						[[KeyCode.A], [KeyCode.S], [KeyCode.D], [KeyCode.F], [KeyCode.SPACE], [KeyCode.H], [KeyCode.J], [KeyCode.K], [KeyCode.L]]
+					],
+					reset: KeyCode.R,
+					pause: KeyCode.RETURN,
+					debug: KeyCode.NUMBER_7
+				},
+				inputOffset: 0
 			},
-			game: {
-				keybindArray: [
-					[[KeyCode.SPACE]],
-					[[KeyCode.A], [KeyCode.RIGHT]],
-					[[KeyCode.A], [KeyCode.SPACE], [KeyCode.RIGHT]],
-					[[KeyCode.A, KeyCode.LEFT], [KeyCode.S, KeyCode.DOWN], [KeyCode.W, KeyCode.UP], [KeyCode.D, KeyCode.RIGHT]],
-					[[KeyCode.A, KeyCode.LEFT], [KeyCode.S, KeyCode.DOWN], [KeyCode.SPACE], [KeyCode.W, KeyCode.UP], [KeyCode.D, KeyCode.RIGHT]],
-					[[KeyCode.S], [KeyCode.D], [KeyCode.F], [KeyCode.J], [KeyCode.K], [KeyCode.L]],
-					[[KeyCode.S], [KeyCode.D], [KeyCode.F], [KeyCode.SPACE], [KeyCode.J], [KeyCode.K], [KeyCode.L]],
-					[[KeyCode.A], [KeyCode.S], [KeyCode.D], [KeyCode.F], [KeyCode.H], [KeyCode.J], [KeyCode.K], [KeyCode.L]],
-					[[KeyCode.A], [KeyCode.S], [KeyCode.D], [KeyCode.F], [KeyCode.SPACE], [KeyCode.H], [KeyCode.J], [KeyCode.K], [KeyCode.L]]
-				],
-				reset: KeyCode.R,
-				pause: KeyCode.RETURN,
-				debug: KeyCode.NUMBER_7
+			preferences: {
+				downScroll: false,
+				hideHUD: false,
+				smoothHealthbar: true,
+				ratingPopup: true,
+				scoreTxtBopping: false,
+				cameraZooming: true,
+				iconBopping: true
 			},
-			inputOffset: 0
-		},
-		preferences: {
-			downScroll: false,
-			hideHUD: false,
-			smoothHealthbar: true,
-			ratingPopup: true,
-			scoreTxtBopping: false,
-			cameraZooming: true,
-			iconBopping: true
-		},
-		graphics: {
-			frameRate: 0,
-			antialiasing: true,
-			customTitleBarColor: 0x3d3f4177, // RGB then opacity at the end. Except opacity doesn't work.
-			customWindowOutlineColor: 0x27292b77,
-			customTitleTextFont: "Inconsolata"
-		}
-	};
+			graphics: {
+				frameRate: 0,
+				antialiasing: true,
+				customTitleBarColor: 0x3d3f4177, // RGB then opacity at the end. Except opacity doesn't work.
+				customWindowOutlineColor: 0x27292b77,
+				customTitleTextFont: "Inconsolata"
+			}
+		};
+	}
 
 	static function init(window:Window) {
 		window.onClose.add(save, 1);
