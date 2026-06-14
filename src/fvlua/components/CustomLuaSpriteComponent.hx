@@ -311,7 +311,7 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 			if (!customTexts.exists(textElem)) {
-				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				FunkinViewLua.error("Custom Text not found: " + textElem);
 				return FunkinViewLua.Function_Stop;
 			}
 			var sprite = customTexts.get(textElem);
@@ -325,8 +325,8 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				return 0.0;
 			}
 			if (!customTexts.exists(textElem)) {
-				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
-				return FunkinViewLua.Function_Stop;
+				FunkinViewLua.error("Custom Text not found: " + textElem);
+				return 0.0;
 			}
 			var sprite = customTexts.get(textElem);
 			return sprite.x;
@@ -337,8 +337,8 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				return 0.0;
 			}
 			if (!customTexts.exists(textElem)) {
-				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
-				return FunkinViewLua.Function_Stop;
+				FunkinViewLua.error("Custom Text not found: " + textElem);
+				return 0.0;
 			}
 			var sprite = customTexts.get(textElem);
 			return sprite.y;
@@ -349,7 +349,7 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 			if (!customTexts.exists(textElem)) {
-				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				FunkinViewLua.error("Custom Text not found: " + textElem);
 				return FunkinViewLua.Function_Stop;
 			}
 			var sprite = customTexts.get(textElem);
@@ -362,8 +362,8 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				return false;
 			}
 			if (!customTexts.exists(textElem)) {
-				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
-				return FunkinViewLua.Function_Stop;
+				FunkinViewLua.error("Custom Text not found: " + textElem);
+				return false;
 			}
 			var sprite = customTexts.get(textElem);
 			return sprite.multiline;
@@ -374,7 +374,7 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 			if (!customTexts.exists(textElem)) {
-				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				FunkinViewLua.error("Custom Text not found: " + textElem);
 				return FunkinViewLua.Function_Stop;
 			}
 			var sprite = customTexts.get(textElem);
@@ -396,7 +396,7 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				return "";
 			}
 			if (!customTexts.exists(textElem)) {
-				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				FunkinViewLua.error("Custom Text not found: " + textElem);
 				return FunkinViewLua.Function_Stop;
 			}
 			var sprite = customTexts.get(textElem);
@@ -417,7 +417,7 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 			if (!customTexts.exists(textElem)) {
-				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				FunkinViewLua.error("Custom Text not found: " + textElem);
 				return FunkinViewLua.Function_Stop;
 			}
 			var sprite = customTexts.get(textElem);
@@ -430,8 +430,8 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				return 0.0;
 			}
 			if (!customTexts.exists(textElem)) {
-				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
-				return FunkinViewLua.Function_Stop;
+				FunkinViewLua.error("Custom Text not found: " + textElem);
+				return 0.0;
 			}
 			var sprite = customTexts.get(textElem);
 			return sprite.spacerPercent;
@@ -477,7 +477,7 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 			if (!customTexts.exists(textElem)) {
-				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				FunkinViewLua.error("Custom Text not found: " + textElem);
 				return FunkinViewLua.Function_Stop;
 			}
 			var sprite = customTexts.get(textElem);
@@ -490,7 +490,7 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				return "";
 			}
 			if (!customTexts.exists(textElem)) {
-				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				FunkinViewLua.error("Custom Text not found: " + textElem);
 				return "";
 			}
 			var sprite = customTexts.get(textElem);
@@ -526,7 +526,7 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 			if (!customTexts.exists(textElem)) {
-				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				FunkinViewLua.error("Custom Text not found: " + textElem);
 				return FunkinViewLua.Function_Stop;
 			}
 			var sprite = customTexts.get(textElem);
@@ -539,7 +539,7 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				return "0x00000000";
 			}
 			if (!customTexts.exists(textElem)) {
-				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				FunkinViewLua.error("Custom Text not found: " + textElem);
 				return "0x00000000";
 			}
 			var sprite = customTexts.get(textElem);
@@ -551,7 +551,7 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 			if (!customTexts.exists(textElem)) {
-				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				FunkinViewLua.error("Custom Text not found: " + textElem);
 				return FunkinViewLua.Function_Stop;
 			}
 			var sprite = customTexts.get(textElem);
@@ -564,7 +564,7 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				return "0x00000000";
 			}
 			if (!customTexts.exists(textElem)) {
-				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				FunkinViewLua.error("Custom Text not found: " + textElem);
 				return "0x00000000";
 			}
 			var sprite = customTexts.get(textElem);
@@ -576,7 +576,7 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 			if (!customTexts.exists(textElem)) {
-				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				FunkinViewLua.error("Custom Text not found: " + textElem);
 				return FunkinViewLua.Function_Stop;
 			}
 			var sprite = customTexts.get(textElem);
@@ -589,7 +589,7 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				return 0.0;
 			}
 			if (!customTexts.exists(textElem)) {
-				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				FunkinViewLua.error("Custom Text not found: " + textElem);
 				return 0.0;
 			}
 			var sprite = customTexts.get(textElem);
