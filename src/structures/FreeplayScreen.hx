@@ -35,8 +35,6 @@ class FreeplayScreen implements IAlphabetScrollHost {
 	function new(parent:FreeplayMenu, chapterName:String) {
 		this.parent = parent;
 		chapter = chapterName;
-		// Don't create alphabet here if display isn't ready
-		// Wait until reload() is called
 	}
 
 	function alphabetListLength():Int {
@@ -59,8 +57,10 @@ class FreeplayScreen implements IAlphabetScrollHost {
 		}
 		
 		// Create NEW instance
-		alphabet = new FreeplayAlphabet(this, display);
-		alphabet.ensurePrograms();
+		if (alphabet == null) {
+			alphabet = new FreeplayAlphabet(this, display);
+			alphabet.ensurePrograms();
+		}
 
 		if (songIconsBuf == null) {
 			songIconsBuf = new Buffer<HealthBarSprite>(8, 8);
@@ -116,8 +116,7 @@ class FreeplayScreen implements IAlphabetScrollHost {
 		
 		// Properly dispose alphabet instance
 		if (alphabet != null) {
-			alphabet.dispose();
-			alphabet = null;
+			alphabet.shutDown();
 		}
 		
 		songsAvailable.splice(0, songsAvailable.length);

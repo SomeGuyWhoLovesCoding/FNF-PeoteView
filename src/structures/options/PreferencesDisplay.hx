@@ -5,7 +5,6 @@ import structures.FreeplayAlphabet;
 import structures.IAlphabetScrollHost;
 import structures.OptionsMenu;
 import lime.ui.MouseButton;
-import lime.ui.MouseWheelMode;
 
 /**
 	Handles the display and interaction for preferences options in the options menu.
@@ -26,7 +25,7 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 	
 	var parent(default, null):OptionsMenu;
 	var options(default, null):Array<OptionsSprite> = [];
-	var alphabet(default, null):FreeplayAlphabet;
+	static var alphabet(default, null):FreeplayAlphabet;
 	
 	var xLerp:Float = 0.0;
 	var curSelectedLerp:Float = 0.0;
@@ -55,9 +54,9 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		destroyOptions();
 		if (alphabet == null) {
 			alphabet = new FreeplayAlphabet(this, OptionsMenu.display);
+			alphabet.ensurePrograms();
+			alphabet.reload();
 		}
-		alphabet.ensurePrograms();
-		alphabet.reload();
 		alphabet.addPrograms();
 		closed = false;
 		
@@ -87,7 +86,6 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		Main.current.mouseDown = mousePress;
 		window.onMouseUp.add(mouseRelease);
 		window.onMouseMove.add(mouseDrag);
-		window.onMouseWheel.add(mouseWheel);
 	}
 	
 	function unregisterInputHandlers() {
@@ -97,7 +95,6 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		}
 		window.onMouseUp.remove(mouseRelease);
 		window.onMouseMove.remove(mouseDrag);
-		window.onMouseWheel.remove(mouseWheel);
 	}
 	
 	function update(deltaTime:Float) {
@@ -149,11 +146,7 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 				dragVelocity = 0.0;
 				lastDragTime = haxe.Timer.stamp();
 				curSelectedTarget = curSelectedLerp;
-				// Optional: play scroll sound
-				// Main.current.playScrollSound();
 			case RIGHT:
-				// Handle back/exit if needed
-				// parent.close();
 			default:
 		}
 	}
@@ -164,11 +157,25 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		
 		// If it was a click (not a drag), trigger enter
 		if (isDragging && Math.abs(dragStartY - y) < 4.0) {
+			curSelectedTarget += 0.3;
 			enter();
+			curSelectedTarget -= 0.3;
+		} else if (isDragging) {
+			// Snap to the nearest option after dragging
+			var nearestIndex = Math.round(curSelectedTarget);
+			curSelectedTarget = nearestIndex;
+			parent.optionsNav.setTo(nearestIndex);
+			
+			// Optionally trigger enter immediately on drag release
+			// Uncomment the next line if you want to toggle on release
+			// enter();
 		}
 		
 		isDragging = false;
 		dragAccum = 0.0;
+		// Reset drag start position for next interaction
+		dragStartY = 0.0;
+		lastDragY = 0.0;
 		// velocity carries over into update for fling inertia
 	}
 	
@@ -188,21 +195,12 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		if (dt > 0) dragVelocity = _delta / 3;
 		
 		curSelectedTarget += _delta;
-		curSelectedTarget = Math.max(0, Math.min(prefsStr.length - 1, curSelectedTarget));
+		curSelectedTarget = Math.max(0, Math.min(prefsStr.length - 1, curSelectedTarget/* - 0.5*/));
 		parent.optionsNav.setTo(Math.round(curSelectedTarget));
 	}
 	
-	function mouseWheel(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
-		if (closed || alphabet == null) return;
-		
-		parent.optionsNav.scroll(-Math.floor(y));
-		parent.optionsNav.resetIfBoth(prefsStr.length, prefsStr.length - 1);
-		curSelectedTarget = parent.optionsNav.value();
-		Main.current.playScrollSound();
-	}
-	
 	function enter() {
-		if (closed || alphabet == null || isDragging) return;
+		if (closed || alphabet == null) return;
 		
 		var field = prefsStr[Math.floor(curSelectedTarget)];
 		var optionChecked = Reflect.getProperty(SaveData.state.preferences, field);
@@ -250,8 +248,6 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		if (alphabet != null) {
 			// First remove from display, then dispose
 			alphabet.shutDown();
-			alphabet.dispose();
-			alphabet = null;
 		}
 		
 		while (options.length != 0) {
@@ -264,6 +260,10 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 	
 	function dispose() {
 		destroyOptions();
+		if (alphabet != null) {
+			// First remove from display, then dispose
+			alphabet.dispose();
+		}
 	}
 	
 	// IAlphabetScrollHost implementation
@@ -276,7 +276,12 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		var prefName = prefsStr[index];
 		var isOn = Reflect.getProperty(SaveData.state.preferences, prefName);
 		var displayText = getDisplayName(prefName);
-		return displayText + (isOn ? " ON" : " OFF");
+		var str = displayText;
+		var strLen = isOn ? 18 : 17;
+		for (i in 0...Math.floor((strLen - displayText.length) * 1.3) - 3)
+			str += " ";
+		if (isOn) str += "ON"; else str += "OFF";
+		return str;
 	}
 	
 	// Convert internal preference names to user-friendly display names
@@ -284,9 +289,9 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		switch (prefName) {
 			case "downScroll": return "Down Scroll";
 			case "hideHUD": return "Hide HUD";
-			case "smoothHealthbar": return "Smooth Healthbar";
+			case "smoothHealthbar": return "Smooth Health";
 			case "ratingPopup": return "Rating Popup";
-			case "scoreTxtBopping": return "Score Text Bop";
+			case "scoreTxtBopping": return "Score Bop";
 			case "cameraZooming": return "Camera Zoom";
 			case "iconBopping": return "Icon Bop";
 			default: return prefName;

@@ -24,15 +24,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		"Pause",
 		"Reset",
 		"Debug",
-		"1K",
-		"2K",
-		"3K",
-		"4K",
-		"5K",
-		"6K",
-		"7K",
-		"8K",
-		"9K"
+		"Mania"
 	];
 
 	public static var controlFields(default, null):Array<String> = [
@@ -47,9 +39,9 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		"game.debug"
 	];
 
-	inline static var INSTRUCTIONS_TEXT = "Press TAB to begin binding\nPress ESC to cancel binding\n\n" +
-		"Press RESET to blank out binding\nPress DEBUG to swap between #M1#KEY 1#M1# and #M2#KEY 2#M2# during 1K...9K binding\n" +
-		"Press BACK to reset currrent MANIA."; // had to split it to multiple lines for readability and consistency
+	inline static var INSTRUCTIONS_TEXT = "KEYBINDING Instructions:\nPress TAB to begin binding\nPress ESC to cancel binding\n\n" +
+		"MANIA Instructions:\nPress DEBUG to swap between #M1#KEY1#M1# and #M2#KEY2#M2# modes\n" +
+		"Press CTRL+Left or CTRL+Right to change MANIA\nPress BACK to reset currrent MANIA\nPress RESET to blank out binding"; // had to split it to multiple lines for readability and consistency
 	inline static var DUPLICATE_BIND_ALERT_TEXT = 'Either it\'s the same key you entered, or\nanother keybind was already registered as\n' +
 		'the key you attempted to bind on.\nTry a different key first.';
 	inline static var RESET_BIND_ALERT_TEXT = 'Successfully reset current MANIA.';
@@ -61,6 +53,17 @@ class ControlsDisplay implements IAlphabetScrollHost {
 	var bindingIndex:Int = -1;
 	var binding:Bool = false;
 	var processingBinding:Bool = false;
+
+	@:isVar var curManiaNum(get, set):Int = 3;
+	inline function get_curManiaNum() {
+		return curManiaNum;
+	}
+	inline function set_curManiaNum(value:Int) {
+		if (value >= 9) value = 0;
+		if (value < 0) value = 8;
+		return curManiaNum = value;
+	}
+
 	var bindingMania:Bool = false;
 	var maniaBindNum(default, null):Int = 0;
 	var maniaSubBindNum(default, null):Int = 0;
@@ -87,10 +90,10 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		destroyOptions();
         if (alphabet == null) {
             alphabet = new FreeplayAlphabet(this, OptionsMenu.display);
+			alphabet.ensurePrograms();
+        	alphabet.reload();
         }
-        alphabet.ensurePrograms();
-        alphabet.reload();
-        alphabet.addPrograms();
+		alphabet.addPrograms();
         closed = false;
 
 		var subBindMarkup = [new TextFormatMarkerPair('#M1#', Color.CYAN), new TextFormatMarkerPair('#M2#', 0xFF5353FF), new TextFormatMarkerPair('#M3#', 0xFFFF5353)];
@@ -102,20 +105,23 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			maniaKeybindTxt.alpha = 0;
 			maniaKeybindTxt.outlineColor = Color.BLACK;
 			maniaKeybindTxt.outlineSize = 1.4;
-			maniaKeybindTxt.x = Main.VARIABLE_WIDTH - (maniaKeybindTxt.width + 4);
+			maniaKeybindTxt.x = Main.INITIAL_WIDTH - (maniaKeybindTxt.width + 4);
 			maniaKeybindTxt.setMarkerPairs(subBindMarkup);
 		}
 
 		if (instructionsTxt == null) {
 			instructionsTxt = new Text("FUNKIN_VIEW_CONTROLS_INSTRUCTIONS_TXT", 4, 3, alphabet.display, "", "vcr");
+			instructionsTxt.scale = 0.75;
 			instructionsTxt.alpha = 0;
 			instructionsTxt.multiline = true;
 			instructionsTxt.alignment = RIGHT;
+			instructionsTxt.spacerPercent = -0.1;
 			instructionsTxt.outlineColor = Color.BLACK;
-			instructionsTxt.outlineSize = 1.4;
+			instructionsTxt.outlineSize = 1;
 			instructionsTxt.setMarkerPairs(subBindMarkup);
 			instructionsTxt.text = INSTRUCTIONS_TEXT;
-			instructionsTxt.x = Main.VARIABLE_WIDTH - (instructionsTxt.width + 4);
+			instructionsTxt.x = Main.INITIAL_WIDTH - (instructionsTxt.width + 4);
+			instructionsTxt.y = Main.INITIAL_HEIGHT - (instructionsTxt.height + 4);
 		}
 
 		if (!OptionsMenu.optionsDisplay.closed) showTexts();
@@ -171,12 +177,12 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelectedTarget, ratio);
 		xLerp = 20 - (curSelectedLerp * 20);
 
-		maniaKeybindTxt.alpha = Tools.lerp(maniaKeybindTxt.alpha, (curSelectedTarget >= controlFields.length || alertDupebind) ? 1.0 : 0.0, ratio);
+		maniaKeybindTxt.alpha = Tools.lerp(maniaKeybindTxt.alpha, (curSelectedTarget >= controlFields.length || alertDupebind || binding) ? 1.0 : 0.0, ratio);
 		if (bindingMania) {
 			var str = 'KEYBINDS\nUSING ${maniaSubBindNum == 1 ? "#M2#KEY2#M2#" : "#M1#KEY1#M1#"}\n';
 			if (alertKeybindReset) str += '#M3#$RESET_BIND_ALERT_TEXT#M3#\n';
-			else str += "\n";
-			var keybindArr = SaveData.state.controls.game.keybindArray[Std.int(curSelectedTarget) - controlFields.length];
+			else str += "#M3#Currently binding...#M3#\n";
+			var keybindArr = SaveData.state.controls.game.keybindArray[curManiaNum];
 			for (k in 0...keybindArr.length) {
 				var maniaBind = keybindArr;
 				var maniaBinds = keybindArr[k];
@@ -196,11 +202,13 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			}
 			maniaKeybindTxt.text = str;
 		} else {
-			if (alertDupebind) maniaKeybindTxt.text = '#M3#$DUPLICATE_BIND_ALERT_TEXT#M3#\n\n\n\n\n\n';
-			else maniaKeybindTxt.text = "KEYBINDS\n...";
+			if (alertDupebind) maniaKeybindTxt.text = '#M3#$DUPLICATE_BIND_ALERT_TEXT#M3#\n';
+			else maniaKeybindTxt.text = "KEYBINDS\n";
+			if (binding) maniaKeybindTxt.text += "#M3#Currently binding...#M3#\n";
+			else maniaKeybindTxt.text += "...";
 		}
-		maniaKeybindTxt.x = Main.VARIABLE_WIDTH - (maniaKeybindTxt.width + 4);
-		maniaKeybindTxt.y = (Main.VARIABLE_HEIGHT * 0.5) - (maniaKeybindTxt.height * 0.5);
+		maniaKeybindTxt.x = Main.INITIAL_WIDTH - (maniaKeybindTxt.width + 4);
+		maniaKeybindTxt.y = (Main.INITIAL_HEIGHT * 0.5) - (maniaKeybindTxt.height * 0.5);
 		instructionsTxt.alpha = alphaLerp;
 
 		alphabet.setDeltaTime(deltaTime);
@@ -224,7 +232,6 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		if (bindingMania) {
 			bindingMania = false;
 			maniaBindNum = 0;
-			//SaveData.state.controls.game.keybindArray[Std.int(curSelectedTarget) - controlFields.length] = originalKeysMania;
 		}
 
 		// Re-enable parent events
@@ -256,6 +263,18 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		if (bindingMania) {
 			// Don't bind the TAB key itself or ESCAPE
 			if (keyCode == BIND_KEY || keyCode == KeyCode.ESCAPE) return;
+			if ((keyModifier == KeyModifier.LEFT_CTRL || keyModifier == KeyModifier.RIGHT_CTRL)) {
+				switch (keyCode) {
+					case KeyCode.LEFT:
+						curManiaNum--;
+						Main.current.playScrollSound();
+					case KeyCode.RIGHT:
+						curManiaNum++;
+						Main.current.playScrollSound();
+					default:
+				}
+				return;
+			}
 
 			applyManiaBinding(keyCode);
 			return;
@@ -287,6 +306,8 @@ class ControlsDisplay implements IAlphabetScrollHost {
 	}
 
 	function applyBinding(keyCode:KeyCode) {
+		if (isInvalidKey(keyCode)) return;
+
 		// Prevent duplicate processing
 		if (processingBinding) return;
 		processingBinding = true;
@@ -346,23 +367,45 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		processingBinding = false;
 	}
 
-	//var originalKeysMania:Array<Array<KeyCode>> = [];
+	inline function isInvalidKey(keyCode:KeyCode) {
+		var result = false;
+		switch (keyCode) {
+			case KeyCode.F1 | KeyCode.F2 | KeyCode.F3 | KeyCode.F4 | KeyCode.F5 | KeyCode.F6 |
+				KeyCode.F7 | KeyCode.F8 | KeyCode.F9 | KeyCode.F10 | KeyCode.F11 | KeyCode.F12 |
+				KeyCode.LEFT_ALT | KeyCode.RIGHT_ALT | KeyCode.LEFT_CTRL | KeyCode.RIGHT_CTRL |
+				KeyCode.LEFT_SHIFT | KeyCode.RIGHT_SHIFT | KeyCode.VOLUME_DOWN | KeyCode.VOLUME_UP |
+				KeyCode.INSERT | KeyCode.DELETE | KeyCode.PRINT_SCREEN | KeyCode.CAPS_LOCK |
+				KeyCode.HOME | KeyCode.END | KeyCode.SCROLL_LOCK | KeyCode.PAUSE |
+				KeyCode.F13 | KeyCode.F14 | KeyCode.F15 | KeyCode.F16 | KeyCode.F17 | KeyCode.F18 |
+				KeyCode.F19 | KeyCode.F20 | KeyCode.F21 | KeyCode.F22 | KeyCode.F23 | KeyCode.F24 |
+				KeyCode.BRIGHTNESS_DOWN | KeyCode.BRIGHTNESS_UP | KeyCode.BACKLIGHT_DOWN | KeyCode.BACKLIGHT_UP |
+				KeyCode.SLEEP | KeyCode.CUT | KeyCode.COPY | KeyCode.PASTE:
+				result = true;
+			default:
+		}
+		return result;
+	}
+
 	function applyManiaBinding(keyCode:KeyCode) {
-		if (keyCode == SaveData.state.controls.game.debug) {
+		if (isInvalidKey(keyCode)) return;
+
+		var controls = SaveData.state.controls;
+		if (keyCode == controls.game.debug) {
 			Main.current.playCancelSound();
 			maniaSubBindNum++;
 			maniaSubBindNum %= 2;
 			return;
 		}
 
-		var id = Std.int(curSelectedTarget) - controlFields.length;
-		var keybindsArr = SaveData.state.controls.game.keybindArray[id];
+		var id = curManiaNum;
+		var keybindsArr = controls.game.keybindArray[id];
 		//originalKeysMania = keybindsArr;
 		var keybindArr = keybindsArr[maniaBindNum];
 
-		if (keyCode == SaveData.state.controls.ui.back) {
+		if (keyCode == controls.ui.back) {
 			Main.current.playCancelSound();
-			SaveData.state.controls.game.keybindArray[id] = SaveData.getDefaultState().controls.game.keybindArray[id];
+			var defaults = SaveData.getDefaultState();
+			controls.game.keybindArray[id] = defaults.controls.game.keybindArray[id];
 			alertKeybindReset = true;
 			haxe.Timer.delay(() -> {alertKeybindReset = false;}, 3000);
 			maniaBindNum = 0;
@@ -370,7 +413,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			return;
 		}
 
-		if (keyCode == SaveData.state.controls.game.reset) keybindArr[maniaSubBindNum] = KeyCode.UNKNOWN;
+		if (keyCode == controls.game.reset) keybindArr[maniaSubBindNum] = KeyCode.UNKNOWN;
 		else keybindArr[maniaSubBindNum] = keyCode;
 		//trace('maniabindnum before transition $maniaBindNum');
 		maniaBindNum++;
@@ -400,7 +443,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 
 	// This is to not persist any KeyCode.UNKNOWN
 	function fixMania() {
-		var id = Std.int(curSelectedTarget) - controlFields.length;
+		var id = curManiaNum;
 		var keybindsArr = SaveData.state.controls.game.keybindArray[id];
 		for (i in 0...keybindsArr.length) {
 			for (j in 0...keybindsArr[i].length) {
@@ -428,10 +471,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		resetHostState();
 		
 		if (alphabet != null) {
-			// First remove from display, then dispose
 			alphabet.shutDown();
-			alphabet.dispose();
-			alphabet = null;
 		}
 		
 		while (options.length != 0) {
@@ -444,6 +484,10 @@ class ControlsDisplay implements IAlphabetScrollHost {
 
 	function dispose() {
 		destroyOptions();
+		if (alphabet != null) {
+			// First remove from display, then dispose
+			alphabet.dispose();
+		}
 	}
 
 	function alphabetListLength():Int {
@@ -452,8 +496,16 @@ class ControlsDisplay implements IAlphabetScrollHost {
 
 	function alphabetItemTitle(index:Int):String {
 		if (index < 0 || index >= controlLabels.length) return "";
-		if (index < controlFields.length) {
-			return controlLabels[index] + " - " + keyNameForIndex(index);
+		if (index < controlLabels.length) {
+			var str = controlLabels[index];
+			for (i in 0...16 - str.length)
+				str += " ";
+			if (controlLabels[index] != "Mania") str += keyNameForIndex(index);
+			else {
+				str += '${curManiaNum+1}K';
+				//trace(str);
+			}
+			return str;
 		}
 		return controlLabels[index];
 	}
