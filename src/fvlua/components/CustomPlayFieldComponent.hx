@@ -162,16 +162,16 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 		});
 		});
 
-		vm.addCallback('addScore', function(value:Int64) {
+		vm.addCallback('addScore', function(value:Int) {
 			playField.score += value;
 		});
-		vm.addCallback('addMisses', function(value:Int64) {
+		vm.addCallback('addMisses', function(value:Int) {
 			playField.misses += value;
 		});
-		vm.addCallback('addCombo', function(value:Int64) {
+		vm.addCallback('addCombo', function(value:Int) {
 			playField.combo += value;
 		});
-		vm.addCallback('resetCombo', function(value:Int64) {
+		vm.addCallback('resetCombo', function(value:Int) {
 			playField.combo = 0;
 		});
 		vm.addCallback('addDeath', function() {
