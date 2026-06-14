@@ -24,7 +24,15 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		"Pause",
 		"Reset",
 		"Debug",
-		"Mania"  // Single unified entry
+		"1K",
+		"2K",
+		"3K",
+		"4K",
+		"5K",
+		"6K",
+		"7K",
+		"8K",
+		"9K"
 	];
 
 	public static var controlFields(default, null):Array<String> = [
@@ -36,17 +44,15 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		"ui.back",
 		"game.pause",
 		"game.reset",
-		"game.debug",
-		"game.mania"  // Special marker
+		"game.debug"
 	];
 
 	inline static var INSTRUCTIONS_TEXT = "Press TAB to begin binding\nPress ESC to cancel binding\n\n" +
-		"During Mania binding:\nPress CTRL+LEFT/RIGHT to change key count (1K-9K)\n" +
-		"Press DEBUG to swap between #M1#PRIMARY#M1# and #M2#SECONDARY#M2# keys\n" +
-		"Press RESET to clear current key\nPress BACK to reset all keys for current Mania mode";
+		"Press RESET to blank out binding\nPress DEBUG to swap between #M1#KEY 1#M1# and #M2#KEY 2#M2# during 1K...9K binding\n" +
+		"Press BACK to reset currrent MANIA."; // had to split it to multiple lines for readability and consistency
 	inline static var DUPLICATE_BIND_ALERT_TEXT = 'Either it\'s the same key you entered, or\nanother keybind was already registered as\n' +
 		'the key you attempted to bind on.\nTry a different key first.';
-	inline static var RESET_BIND_ALERT_TEXT = 'Successfully reset $maniaKeyCountK Mania mode.';
+	inline static var RESET_BIND_ALERT_TEXT = 'Successfully reset current MANIA.';
 
 	var parent(default, null):OptionsMenu;
 	var options(default, null):Array<OptionsSprite> = [];
@@ -56,9 +62,8 @@ class ControlsDisplay implements IAlphabetScrollHost {
 	var binding:Bool = false;
 	var processingBinding:Bool = false;
 	var bindingMania:Bool = false;
-	var maniaKeyCount:Int = 4;  // Session-persistent, starts at 4K
-	var maniaCurrentLane:Int = 0;  // Which lane we're binding (0 to maniaKeyCount-1)
-	var maniaSubBindNum:Int = 0;  // 0 for primary key, 1 for secondary
+	var maniaBindNum(default, null):Int = 0;
+	var maniaSubBindNum(default, null):Int = 0;
 	var lastBindingTime:Float = 0;
 
 	var alertDupebind:Bool = false;
@@ -71,6 +76,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 
 	static var maniaKeybindTxt(default, null):Text;
 	static var instructionsTxt(default, null):Text;
+	// A central bind box that shows whenever a bind is active. This is the "box" the user requested.
 	static var bindBox(default, null):Text;
 
     var closed:Bool;
@@ -114,6 +120,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			instructionsTxt.x = Main.VARIABLE_WIDTH - (instructionsTxt.width + 4);
 		}
 
+		// Create bind box if it doesn't exist. This box will be shown/hidden when binding starts/ends.
 		if (bindBox == null) {
 			bindBox = new Text("FUNKIN_BIND_BOX", 0, 0, alphabet.display, "", "vcr");
 			bindBox.multiline = true;
@@ -121,14 +128,17 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			bindBox.alpha = 0;
 			bindBox.outlineColor = Color.BLACK;
 			bindBox.outlineSize = 1.6;
+			// initial pos - will be centered in update loop as needed
 			bindBox.x = (Main.VARIABLE_WIDTH * 0.5) - (bindBox.width * 0.5);
 			bindBox.y = (Main.VARIABLE_HEIGHT * 0.5) - (bindBox.height * 0.5);
 		}
 
 		if (!OptionsMenu.optionsDisplay.closed) showTexts();
         
+		// Reset state when reloading
 		resetHostState();
 		
+		// Reset binding state
 		binding = false;
 		bindingIndex = -1;
 		processingBinding = false;
@@ -137,6 +147,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 	function showTexts() {
 		if (maniaKeybindTxt != null) maniaKeybindTxt.addProgram();
 		if (instructionsTxt != null) instructionsTxt.addProgram();
+		// bindBox is intentionally not added here; it should only be shown while an active bind is open.
 	}
 
 	function removeTexts() {
@@ -156,20 +167,17 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		if (binding || processingBinding || bindingMania || closed) return;
 		
 		bindingIndex = parent.optionsNav.value();
-		if (bindingIndex >= controlFields.length - 1) {
-			bindingMania = true;
-			maniaCurrentLane = 0;
-			maniaSubBindNum = 0;
-		} else binding = true;
+		if (bindingIndex >= controlFields.length) bindingMania = true;
+		else binding = true;
 
+		// Temporarily disable parent events while binding
 		parent.removeEvents();
 		Application.current.window.onKeyDown.add(onKeyDown);
 		
+		// Show bind box to indicate binding is active
 		if (bindBox != null) {
-			if (bindingMania) {
-				bindBox.text = "Mania Mode: $maniaKeyCountK\nBinding Lane ${maniaCurrentLane + 1}/$maniaKeyCount\n" +
-					"Press CTRL+LEFT/RIGHT to change key count\nPress ESC to cancel";
-			} else bindBox.text = "Press a key to bind\nPress ESC to cancel";
+			if (bindingMania) bindBox.text = "Press a key to bind Mania lane\nPress ESC to cancel";
+			else bindBox.text = "Press a key to bind\nPress ESC to cancel";
 			bindBox.addProgram();
 		}
 		
@@ -187,45 +195,43 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelectedTarget, ratio);
 		xLerp = 20 - (curSelectedLerp * 20);
 
-		var isManiaSelected = (curSelectedTarget >= controlFields.length - 1);
-		maniaKeybindTxt.alpha = Tools.lerp(maniaKeybindTxt.alpha, (isManiaSelected || alertDupebind) ? 1.0 : 0.0, ratio);
-		
-		if (isManiaSelected) {
-			var str = 'MANIA $maniaKeyCountK\n';
-			str += 'Editing: #M${maniaSubBindNum + 1}#${maniaSubBindNum == 0 ? "PRIMARY" : "SECONDARY"}#M${maniaSubBindNum + 1}#\n\n';
-			if (alertKeybindReset) str += '#M3#' + RESET_BIND_ALERT_TEXT + '#M3#\n\n';
+		maniaKeybindTxt.alpha = Tools.lerp(maniaKeybindTxt.alpha, (curSelectedTarget >= controlFields.length || alertDupebind) ? 1.0 : 0.0, ratio);
+		if (bindingMania) {
+			var str = 'KEYBINDS\nUSING ${maniaSubBindNum == 1 ? "#M2#KEY2#M2#" : "#M1#KEY1#M1#"}\n';
+			if (alertKeybindReset) str += '#M3#$RESET_BIND_ALERT_TEXT#M3#\n';
 			else str += "\n";
-			
-			var keybinds = SaveData.state.controls.game.keybindArray[maniaKeyCount - 1];
-			for (lane in 0...keybinds.length) {
-				var laneNum = lane + 1;
-				str += 'LANE $laneNum: [ ';
-				
-				for (i in 0...keybinds[lane].length) {
-					if (maniaCurrentLane == lane && maniaSubBindNum == i && bindingMania) {
-						str += '#M${i + 1}#';
-					}
-					str += KeyCodeConverter.getSimpleKeyName(keybinds[lane][i]);
-					if (maniaCurrentLane == lane && maniaSubBindNum == i && bindingMania) {
-						str += '#M${i + 1}#';
-					}
-					if (i < keybinds[lane].length - 1) str += ', ';
+			var keybindArr = SaveData.state.controls.game.keybindArray[Std.int(curSelectedTarget) - controlFields.length];
+			for (k in 0...keybindArr.length) {
+				var maniaBind = keybindArr;
+				var maniaBinds = keybindArr[k];
+
+				str += maniaBindNum == k && maniaSubBindNum == 0 ? "#M1#[ #M1#" : "[ ";
+
+				for (i in 0...maniaBinds.length) {
+					if (maniaSubBindNum == i) str += '#M${maniaSubBindNum+1}#';
+					str += KeyCodeConverter.getSimpleKeyName(maniaBinds[i]);
+					if (maniaSubBindNum == i) str += '#M${maniaSubBindNum+1}#';
+					if (i != maniaBinds.length - 1) str += ", ";
 				}
-				str += ' ]\n';
+
+				str += maniaBindNum == k && maniaSubBindNum == 1 ? "#M2# ]#M2#" : " ]";
+
+				str += "\n";
 			}
 			maniaKeybindTxt.text = str;
 		} else {
 			if (alertDupebind) maniaKeybindTxt.text = '#M3#$DUPLICATE_BIND_ALERT_TEXT#M3#\n\n\n\n\n';
 			else maniaKeybindTxt.text = "KEYBINDS\n...";
 		}
-		
 		maniaKeybindTxt.x = Main.VARIABLE_WIDTH - (maniaKeybindTxt.width + 4);
 		maniaKeybindTxt.y = (Main.VARIABLE_HEIGHT * 0.5) - (maniaKeybindTxt.height * 0.5);
 		instructionsTxt.alpha = alphaLerp;
 
+		// Keep bind box centered while visible
 		if (bindBox != null) {
 			bindBox.x = (Main.VARIABLE_WIDTH * 0.5) - (bindBox.width * 0.5);
 			bindBox.y = (Main.VARIABLE_HEIGHT * 0.5) - (bindBox.height * 0.5);
+			// set alpha to 1 while binding, otherwise fade out
 			if (binding || bindingMania || alertDupebind) bindBox.alpha = Tools.lerp(bindBox.alpha, 1.0, ratio);
 			else bindBox.alpha = Tools.lerp(bindBox.alpha, 0.0, ratio);
 		}
@@ -250,12 +256,14 @@ class ControlsDisplay implements IAlphabetScrollHost {
 
 		if (bindingMania) {
 			bindingMania = false;
-			maniaCurrentLane = 0;
-			maniaSubBindNum = 0;
+			maniaBindNum = 0;
+			//SaveData.state.controls.game.keybindArray[Std.int(curSelectedTarget) - controlFields.length] = originalKeysMania;
 		}
 
+		// Hide bind box when cancelling binding
 		if (bindBox != null) bindBox.removeProgram();
 
+		// Re-enable parent events
 		if (parent != null && parent.opened) {
 			parent.addEvents();
 			Application.current.window.onKeyDown.remove(onKeyDown);
@@ -269,48 +277,37 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		
 		var BIND_KEY = KeyCode.TAB;
 	
+		// Handle escape first - always cancel binding
 		if (keyCode == KeyCode.ESCAPE) {
 			cancelBinding();
 			return;
 		}
 	
+		// Start binding with TAB
 		if (keyCode == BIND_KEY && !binding && !processingBinding && !closed) {
 			tab();
 			return;
 		}
 	
 		if (bindingMania) {
+			// Don't bind the TAB key itself or ESCAPE
 			if (keyCode == BIND_KEY || keyCode == KeyCode.ESCAPE) return;
-			
-			// Change mania key count with CTRL+LEFT/RIGHT
-			if (keyModifier.ctrl) {
-				if (keyCode == KeyCode.LEFT) {
-					maniaKeyCount = Math.max(1, maniaKeyCount - 1);
-					maniaCurrentLane = 0;
-					maniaSubBindNum = 0;
-					Main.current.playScrollSound();
-					if (bindBox != null) bindBox.text = "Mania Mode: $maniaKeyCountK\nBinding Lane ${maniaCurrentLane + 1}/$maniaKeyCount\nPress ESC to cancel";
-				} else if (keyCode == KeyCode.RIGHT) {
-					maniaKeyCount = Math.min(9, maniaKeyCount + 1);
-					maniaCurrentLane = 0;
-					maniaSubBindNum = 0;
-					Main.current.playScrollSound();
-					if (bindBox != null) bindBox.text = "Mania Mode: $maniaKeyCountK\nBinding Lane ${maniaCurrentLane + 1}/$maniaKeyCount\nPress ESC to cancel";
-				}
-				return;
-			}
-			
+	
 			applyManiaBinding(keyCode);
 			return;
 		}
 	
+		// Apply binding if we're in binding mode
 		if (binding && !processingBinding && !closed) {
+			// Same goes to here, as well
 			if (keyCode == BIND_KEY || keyCode == KeyCode.ESCAPE) return;
 			
+			// Debounce - prevent multiple rapid bindings
 			var now = haxe.Timer.stamp();
 			if (now - lastBindingTime < 0.5) return;
 			lastBindingTime = now;
 			
+			// Show the pressed key in bind box for immediate feedback
 			if (bindBox != null) bindBox.text = "Binding: " + KeyCodeConverter.getSimpleKeyName(keyCode) + "\nPress ESC to cancel";
 			
 			applyBinding(keyCode);
@@ -329,10 +326,11 @@ class ControlsDisplay implements IAlphabetScrollHost {
 	}
 
 	function applyBinding(keyCode:KeyCode) {
+		// Prevent duplicate processing
 		if (processingBinding) return;
 		processingBinding = true;
 		
-		if (bindingIndex < 0 || bindingIndex >= controlFields.length - 1) {
+		if (bindingIndex < 0 || bindingIndex >= controlFields.length) {
 			cancelBinding();
 			processingBinding = false;
 			return;
@@ -361,122 +359,118 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			Reflect.setProperty(SaveData.state.controls.game, name, keyCode);
 		}
 		
+		// Hide bind box now that binding is applied
 		if (bindBox != null) bindBox.removeProgram();
 		
+		// Clear binding state BEFORE saving to prevent event loops
 		binding = false;
 		bindingIndex = -1;
 		
 		SaveData.save();
+		
+		// Reload controls AFTER clearing binding state
 		Main.current.controls.reload();
 		
+		// Re-enable parent events after binding is complete
 		if (parent != null && parent.opened) {
 			parent.addEvents();
 			Application.current.window.onKeyDown.remove(onKeyDown);
 		}
 		
 		Main.current.playConfirmSound();
+		
+		// Reset processing flag
 		processingBinding = false;
 	}
 
+	//var originalKeysMania:Array<Array<KeyCode>> = [];
 	function applyManiaBinding(keyCode:KeyCode) {
-		var game = SaveData.state.controls.game;
-		
-		// DEBUG key toggles between primary/secondary
-		if (keyCode == game.debug) {
+		if (keyCode == SaveData.state.controls.game.debug) {
 			Main.current.playCancelSound();
-			maniaSubBindNum = (maniaSubBindNum + 1) % 2;
-			if (bindBox != null) {
-				bindBox.text = "Mania Mode: $maniaKeyCountK\nBinding Lane ${maniaCurrentLane + 1}/$maniaKeyCount\n" +
-					"Editing ${maniaSubBindNum == 0 ? "PRIMARY" : "SECONDARY"} key\nPress ESC to cancel";
-			}
+			maniaSubBindNum++;
+			maniaSubBindNum %= 2;
 			return;
 		}
 		
-		var keybindsForCount = game.keybindArray[maniaKeyCount - 1];
+		var id = Std.int(curSelectedTarget) - controlFields.length;
+		var keybindsArr = SaveData.state.controls.game.keybindArray[id];
+		//originalKeysMania = keybindsArr;
+		var keybindArr = keybindsArr[maniaBindNum];
 		
-		// BACK key resets all lanes for current mania count
 		if (keyCode == SaveData.state.controls.ui.back) {
 			Main.current.playCancelSound();
-			var defaultState = SaveData.getDefaultState();
-			game.keybindArray[maniaKeyCount - 1] = defaultState.controls.game.keybindArray[maniaKeyCount - 1];
+			SaveData.state.controls.game.keybindArray[id] = SaveData.getDefaultState().controls.game.keybindArray[id];
 			alertKeybindReset = true;
 			haxe.Timer.delay(() -> {alertKeybindReset = false;}, 3000);
+			maniaBindNum = 0;
 			SaveData.save();
-			cancelBinding();
+			// Hide bind box after reset
+			if (bindBox != null) bindBox.removeProgram();
 			return;
 		}
 		
-		// RESET key clears current key
-		if (keyCode == game.reset) {
+		if (keyCode == SaveData.state.controls.game.reset) keybindArr[maniaSubBindNum] = KeyCode.UNKNOWN;
+		else keybindArr[maniaSubBindNum] = keyCode;
+		//trace('maniabindnum before transition $maniaBindNum');
+		maniaBindNum++;
+		//trace('maniabindnum after transition $maniaBindNum');
+		if (maniaBindNum <= keybindsArr.length - 1) {
 			Main.current.playScrollSound();
-			keybindsForCount[maniaCurrentLane][maniaSubBindNum] = KeyCode.UNKNOWN;
-			cleanManiaKeys();
-			SaveData.save();
-			
-			// Move to next lane after reset
-			maniaCurrentLane++;
-			if (maniaCurrentLane >= maniaKeyCount) {
-				cancelBinding();
-				Main.current.playConfirmSound();
-			} else {
-				if (bindBox != null) {
-					bindBox.text = "Mania Mode: $maniaKeyCountK\nBinding Lane ${maniaCurrentLane + 1}/$maniaKeyCount\n" +
-						"Editing ${maniaSubBindNum == 0 ? "PRIMARY" : "SECONDARY"} key\nPress ESC to cancel";
-				}
-			}
 			return;
 		}
 		
-		// Bind the key
-		keybindsForCount[maniaCurrentLane][maniaSubBindNum] = keyCode;
-		cleanManiaKeys();
-		SaveData.save();
+		// Clear binding state BEFORE saving to prevent event loops
+		bindingMania = false;
+		maniaBindNum = 0;
 		
-		// Move to next lane
-		maniaCurrentLane++;
-		if (maniaCurrentLane >= maniaKeyCount) {
-			// Finished all lanes
-			cancelBinding();
-			Main.current.playConfirmSound();
-		} else {
-			Main.current.playScrollSound();
-			if (bindBox != null) {
-				bindBox.text = "Mania Mode: $maniaKeyCountK\nBinding Lane ${maniaCurrentLane + 1}/$maniaKeyCount\n" +
-					"Editing ${maniaSubBindNum == 0 ? "PRIMARY" : "SECONDARY"} key\nPress ESC to cancel";
-			}
+		fixMania();
+		
+		// Hide bind box now that mania binding completed
+		if (bindBox != null) bindBox.removeProgram();
+		
+		// Reload controls AFTER clearing binding state
+		Main.current.controls.reload();
+		
+		// Re-enable parent events after binding is complete
+		if (parent != null && parent.opened) {
+			parent.addEvents();
+			Application.current.window.onKeyDown.remove(onKeyDown);
 		}
+		
+		Main.current.playConfirmSound();
 	}
-	
-	function cleanManiaKeys() {
-		var keybinds = SaveData.state.controls.game.keybindArray;
-		for (i in 0...keybinds.length) {
-			for (j in 0...keybinds[i].length) {
-				// Remove UNKNOWN keys from arrays
-				for (k in 0...keybinds[i][j].length) {
-					if (keybinds[i][j][k] == KeyCode.UNKNOWN) {
-						keybinds[i][j].splice(k, 1);
-						k--;
-					}
-				}
-				// Ensure each lane has at least one key (add UNKNOWN if empty)
-				if (keybinds[i][j].length == 0) {
-					keybinds[i][j].push(KeyCode.UNKNOWN);
-				}
+
+	// This is to not persist any KeyCode.UNKNOWN
+	function fixMania() {
+		var id = Std.int(curSelectedTarget) - controlFields.length;
+		var keybindsArr = SaveData.state.controls.game.keybindArray[id];
+		for (i in 0...keybindsArr.length) {
+			for (j in 0...keybindsArr[i].length) {
+				if (keybindsArr[i][j] == KeyCode.UNKNOWN) keybindsArr[i].remove(keybindsArr[i][j]);
 			}
 		}
+		//originalKeysMania = keybindsArr;
+		var keybindArr = keybindsArr[maniaBindNum];
+		SaveData.save();
 	}
 
 	function destroyOptions() {
 		if (closed) return;
 		
 		closed = true;
+
 		removeTexts();
 		
-		if (binding) cancelBinding();
+		// Cancel any active binding first
+		if (binding) {
+			cancelBinding();
+		}
 		
+		// Reset host state before disposing alphabet
 		resetHostState();
 		
 		if (alphabet != null) {
+			// First remove from display, then dispose
 			alphabet.shutDown();
 			alphabet.dispose();
 			alphabet = null;
@@ -500,10 +494,10 @@ class ControlsDisplay implements IAlphabetScrollHost {
 
 	function alphabetItemTitle(index:Int):String {
 		if (index < 0 || index >= controlLabels.length) return "";
-		if (index < controlFields.length - 1) {
+		if (index < controlFields.length) {
 			return controlLabels[index] + " - " + keyNameForIndex(index);
 		}
-		return controlLabels[index] + " - " + maniaKeyCount + "K (Current Mode)";
+		return controlLabels[index];
 	}
 
 	function keyNameForIndex(index:Int):String {
