@@ -283,19 +283,19 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			if (keyCode == BIND_KEY || keyCode == KeyCode.ESCAPE) return;
 			
 			// Change mania key count with CTRL+LEFT/RIGHT
-			if (keyModifier == KeyModifier.LEFT_CTRL) {
+			if (keyModifier.ctrl) {
 				if (keyCode == KeyCode.LEFT) {
 					maniaKeyCount = Math.max(1, maniaKeyCount - 1);
 					maniaCurrentLane = 0;
 					maniaSubBindNum = 0;
 					Main.current.playScrollSound();
-					if (bindBox != null) bindBox.text = 'Mania Mode: $maniaKeyCountK\nBinding Lane ${maniaCurrentLane + 1}/$maniaKeyCount\nPress ESC to cancel';
+					if (bindBox != null) bindBox.text = "Mania Mode: $maniaKeyCountK\nBinding Lane ${maniaCurrentLane + 1}/$maniaKeyCount\nPress ESC to cancel";
 				} else if (keyCode == KeyCode.RIGHT) {
 					maniaKeyCount = Math.min(9, maniaKeyCount + 1);
 					maniaCurrentLane = 0;
 					maniaSubBindNum = 0;
 					Main.current.playScrollSound();
-					if (bindBox != null) bindBox.text = 'Mania Mode: $maniaKeyCountK\nBinding Lane ${maniaCurrentLane + 1}/$maniaKeyCount\nPress ESC to cancel';
+					if (bindBox != null) bindBox.text = "Mania Mode: $maniaKeyCountK\nBinding Lane ${maniaCurrentLane + 1}/$maniaKeyCount\nPress ESC to cancel";
 				}
 				return;
 			}
@@ -386,8 +386,8 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			Main.current.playCancelSound();
 			maniaSubBindNum = (maniaSubBindNum + 1) % 2;
 			if (bindBox != null) {
-				bindBox.text = 'Mania Mode: $maniaKeyCountK\nBinding Lane ${maniaCurrentLane + 1}/$maniaKeyCount\n' +
-					'Current Mode: ${maniaSubBindNum == 0 ? '#M1#KEY1#M1#': '#M2#KEY2#M2#'} key\nPress ESC to cancel';
+				bindBox.text = "Mania Mode: $maniaKeyCountK\nBinding Lane ${maniaCurrentLane + 1}/$maniaKeyCount\n" +
+					"Current Mode: ${maniaSubBindNum == 0 ? '#M1#KEY1#M1#': '#M2#KEY2#M2#'} key\nPress ESC to cancel";
 			}
 			return;
 		}
@@ -420,8 +420,8 @@ class ControlsDisplay implements IAlphabetScrollHost {
 				Main.current.playConfirmSound();
 			} else {
 				if (bindBox != null) {
-					bindBox.text = 'Mania Mode: $maniaKeyCountK\nBinding Lane ${maniaCurrentLane + 1}/$maniaKeyCount\n' +
-						'Current Mode: ${maniaSubBindNum == 0 ? '#M1#KEY1#M1#': '#M2#KEY2#M2#'} key\nPress ESC to cancel';
+					bindBox.text = "Mania Mode: $maniaKeyCountK\nBinding Lane ${maniaCurrentLane + 1}/$maniaKeyCount\n" +
+						"Editing ${maniaSubBindNum == 0 ? "PRIMARY" : "SECONDARY"} key\nPress ESC to cancel";
 				}
 			}
 			return;
@@ -442,7 +442,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			Main.current.playScrollSound();
 			if (bindBox != null) {
 				bindBox.text = "Mania Mode: $maniaKeyCountK\nBinding Lane ${maniaCurrentLane + 1}/$maniaKeyCount\n" +
-					'Current Mode: ${maniaSubBindNum == 0 ? '#M1#KEY1#M1#': '#M2#KEY2#M2#'} key\nPress ESC to cancel';
+					"Editing ${maniaSubBindNum == 0 ? "PRIMARY" : "SECONDARY"} key\nPress ESC to cancel";
 			}
 		}
 	}
