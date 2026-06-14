@@ -267,9 +267,9 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 		vm.set('curBeat', Main.conductor.curBeat);
 		vm.set('curStep', Main.conductor.curStep);
 
-		vm.set('score', playField.score);
-		vm.set('misses', playField.misses);
-		vm.set('combo', playField.combo);
+		vm.set('score', Tools.int64ToFloat(playField.score));
+		vm.set('misses', Tools.int64ToFloat(playField.misses));
+		vm.set('combo', Tools.int64ToFloat(playField.combo));
 		vm.set('deaths', playField.deathCounter);
 
 		vm.set('inGameOver', playField.field?.isInGameOver);

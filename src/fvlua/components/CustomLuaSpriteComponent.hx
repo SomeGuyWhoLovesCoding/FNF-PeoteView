@@ -707,6 +707,28 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 			var sprite = customTexts.get(elemName);
 			return sprite.alpha;
 		});
+		vm.addCallback("getTextWidth", (elemName:String) -> {
+			if (elemName == "" || elemName == null) {
+				return 1.0;
+			}
+			if (!customTexts.exists(elemName)) {
+				FunkinViewLua.error("Custom Text not found: " + elemName);
+				return 1.0;
+			}
+			var sprite = customTexts.get(elemName);
+			return sprite.width;
+		});
+		vm.addCallback("getTextHeight", (elemName:String) -> {
+			if (elemName == "" || elemName == null) {
+				return 1.0;
+			}
+			if (!customTexts.exists(elemName)) {
+				FunkinViewLua.error("Custom Text not found: " + elemName);
+				return 1.0;
+			}
+			var sprite = customTexts.get(elemName);
+			return sprite.height;
+		});
 		vm.addCallback("setTextFormatMarkerPairs", (textElem:String, colors:Array<Dynamic>) -> {
 			if (textElem == "" || textElem == null) {
 				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");

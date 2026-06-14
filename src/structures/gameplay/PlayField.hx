@@ -75,9 +75,9 @@ class PlayField {
 		]
 	]; // how this new modifiable system works: you simply just set this array to a new selection of ratings, however you want.
 
-	var score:Int128 = 0;
-	var misses:Int128 = 0;
-	var combo:Int128 = 0;
+	var score:Int64 = 0;
+	var misses:Int64 = 0;
+	var combo:Int64 = 0;
 	var accuracy(default, null):Accuracy = new Accuracy();
 	var health:Float = 0.5;
 	var healthGain:Array<Float>;
