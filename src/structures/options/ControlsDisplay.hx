@@ -419,7 +419,9 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		maniaBindNum++;
 
 		var playField = Main.current.playField;
-		if (playField != null) playField.inputSystem.reloadKeybinds(curManiaNum + 1); // now I remember this function is intended for use in the controls menu
+		if (playField != null) {
+			if (Chart.header.mania == curManiaNum + 1) playField.inputSystem.reloadKeybinds(curManiaNum + 1); // now I remember this function is intended for use in the controls menu
+		}
 
 		//trace('maniabindnum after transition $maniaBindNum');
 		if (maniaBindNum <= keybindsArr.length - 1) {
