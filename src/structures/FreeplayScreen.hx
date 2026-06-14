@@ -46,28 +46,33 @@ class FreeplayScreen implements IAlphabetScrollHost {
 	}
 
 	function reload(chapterName:String) {
-		// Ensure display is available
 		if (FreeplayMenu.display == null) {
 			throw "FreeplayMenu.display not initialized!";
 		}
 		
-		// Ensure previous instance is fully cleaned up
-		if (!disposed) {
-			unload();
-		}
+		clearSongIcons();
 		
-		// Create NEW instance
+		// Create once, reuse forever
 		if (alphabet == null) {
 			alphabet = new FreeplayAlphabet(this, display);
 			alphabet.ensurePrograms();
+			alphabet.reload();
+			alphabet.addPrograms();
+		} else {
+			// Reset existing alphabet without recreating
+			alphabet.unloadChars();        // Clear all characters
+			alphabet.host = this;          // Update host reference
+			alphabet.reload();             // Recreate characters
 		}
 
 		if (songIconsBuf == null) {
 			songIconsBuf = new Buffer<HealthBarSprite>(8, 8);
 			songIconsProg = new CustomProgram(songIconsBuf);
-
 			var tex = TextureSystem.getTexture("hbTex");
 			HealthBarSprite.init(songIconsProg, "hbTex", tex);
+		} else {
+			// Clear existing icons from buffer
+			songIconsBuf.clear();
 		}
 
 		chapter = chapterName;
@@ -75,26 +80,27 @@ class FreeplayScreen implements IAlphabetScrollHost {
 		var chapterData:ChapterData = haxe.Json.parse(sys.io.File.getContent(Paths.asset('assets/data/chapters/$chapter/data.json')));
 		var songs:Array<ChapterSong> = chapterData.songs;
 
-		songsAvailable = []; // Clear instead of pushing
+		songsAvailable = [];
 		for (i in 0...songs.length) {
-			var song = songs[i];
-			songsAvailable.push(song);
+			songsAvailable.push(songs[i]);
 		}
 
-		alphabet.reload();
+		// Create new icons
+		songIconGroup = [];
+		for (i in 0...7) {
+			var icon = new HealthBarSprite();
+			icon.type = HEALTH_ICON;
+			icon.alpha = 0.0;
+			songIconsBuf.addElement(icon);
+			songIconGroup.push(icon);
+		}
 
-		// Clear existing icons before creating new ones
-		clearSongIcons();
-		
-		songIconGroup = [
-			for (i in 0...7) {
-				var icon = new HealthBarSprite();
-				icon.type = HEALTH_ICON;
-				icon.alpha = 0.0;
-				songIconsBuf.addElement(icon);
-				icon;
-			}
-		];
+		// Reset state
+		alphaLerp = 0.0;
+		curSelectedLerp = parent.nav.value();
+		curSelectedTarget = parent.nav.value();
+		xLerp = 20 - (parent.nav.value() * 20);
+		xLerpPrev = xLerp;
 
 		disposed = false;
 	}

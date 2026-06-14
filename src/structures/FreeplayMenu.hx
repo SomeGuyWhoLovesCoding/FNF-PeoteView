@@ -47,6 +47,9 @@ class FreeplayMenu {
 			Controls.Action.UI_UP => { action: up },
 			Controls.Action.UI_DOWN => { action: down },
 			Controls.Action.UI_BACK => { action: back },
+			Controls.Action.UI_LEFT => { action: cast function (isDown:Bool, param:Int) {
+				reload('chapter1');
+			 } },
 			Controls.Action.UI_ACCEPT => { action: enter }
 		];
 	}

@@ -14,7 +14,7 @@ class FreeplayAlphabet {
 	var songTextCharGroup:Array<Array<Actor>> = [];
 	var spriteAnimState:Map<Actor, SpriteAnimState> = new Map();
 	
-	var host(default, null):IAlphabetScrollHost;
+	var host:IAlphabetScrollHost;
 	var display(default, null):CustomDisplay;
 	var _currentDeltaTime:Float = 0.0;
 	var isDisposed:Bool = false;
@@ -103,9 +103,6 @@ class FreeplayAlphabet {
 	function unload() {
 		if (isDisposed) return;
 		unloadChars();
-		if (songTextsBuf != null) {
-			songTextsBuf.clear();
-		}
 	}
 	
 	function dispose() {
@@ -113,29 +110,46 @@ class FreeplayAlphabet {
 		
 		isDisposed = true;
 		
-		// Clear instance-specific resources
-		unload();
-		
-		// Clear instance maps
-		spriteAnimState.clear();
-		
-		// Remove program from display
+		// First remove from display
 		shutDown();
 		
-		// Null out instance references
-		songTextsBuf = null;
+		// Clear all character sprites and their references
+		unloadChars();
+		
+		// Clear the buffer - this releases all Actor references
+		if (songTextsBuf != null) {
+			songTextsBuf = null;
+		}
+		
+		// Clear maps to release all references
+		spriteAnimState.clear();
+		spriteAnimState = null;
+		
+		// Clear arrays
+		songTextCharGroup = null;
+		
+		// Null out all references
 		songTextsProg = null;
-		songTextCharGroup = [];
 		host = null;
+		display = null;
+	}
+
+	// Also add a destructor-like method to ensure cleanup
+	function finalize() {
+		if (!isDisposed) {
+			dispose();
+		}
 	}
 	
-	function unloadChars() {
+	public function unloadChars() {
+		if (isDisposed) return;
 		while (songTextCharGroup.length != 0) {
 			var elements = songTextCharGroup.pop();
 			while (elements.length != 0) {
 				var elem = elements.pop();
 				if (elem != null) {
 					spriteAnimState.remove(elem);
+					songTextsBuf.removeElement(elem);
 					elem.dispose();
 				}
 			}

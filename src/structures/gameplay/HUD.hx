@@ -116,13 +116,12 @@ class HUD {
 			scoreTxt.addProgram();
 		}
 
-		scoreTxt.multiline = true;
 		scoreTxt.outlineColor = 0x000000FF;
 		scoreTxt.outlineSize = 1.25;
-		scoreTxt.color = 0xFFDC8CFF;
+		/*scoreTxt.color = 0xFFDC8CFF;
 		scoreTxt.setMarkerPairs([new TextFormatMarkerPair('#1#', Color.WHITE, Color.RED),
 			new TextFormatMarkerPair('#2#', Color.GREEN, Color.BLUE),
-			new TextFormatMarkerPair('#3#', Color.BLACK, Color.PURPLE)]);
+			new TextFormatMarkerPair('#3#', Color.BLACK, Color.PURPLE)]);*/
 
 		updateScoreText(0.0);
 
@@ -290,7 +289,7 @@ class HUD {
 		Updates the score text.
 	**/
 	function updateScoreText(deltaTime:Float) {
-		var scoreText = 'Score: #1#${parent.score}#1#\nMisses: #2#${parent.misses}#2#\nAccuracy: #3#${parent.accuracy.toString()}#3#';
+		var scoreText = 'Score: ${parent.score} | Misses: ${parent.misses} | Accuracy: ${parent.accuracy.toString()}';
 		if (scoreTxt.text != scoreText) scoreTxt.text = scoreText;
 		scoreTxt.scale = Tools.lerp(scoreTxt.scale, 1.0, Math.min(deltaTime * 0.02, 1.0));
 		scoreTxt.x = healthBar.bg.x + ((healthBar.bg.w - scoreTxt.width) * 0.5);
