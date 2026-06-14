@@ -41,7 +41,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 
 	inline static var INSTRUCTIONS_TEXT = "KEYBINDING Instructions:\nPress TAB to begin binding\nPress ESC to cancel binding\n\n" +
 		"MANIA Instructions:\nPress DEBUG to swap between #M1#KEY1#M1# and #M2#KEY2#M2# modes\n" +
-		"Press CTRL+Left or CTRL+Right to change MANIA\nPress BACK to reset currrent MANIA\nPress RESET to blank out binding"; // had to split it to multiple lines for readability and consistency
+		"Press CTRL+Left or CTRL+Right to change MANIA\nPress BACK to reset currrent MANIA\nPress RESET to remove binding (#M2#KEY2#M2# only)"; // had to split it to multiple lines for readability and consistency
 	inline static var DUPLICATE_BIND_ALERT_TEXT = 'Either it\'s the same key you entered, or\nanother keybind was already registered as\n' +
 		'the key you attempted to bind on.\nTry a different key first.';
 	inline static var RESET_BIND_ALERT_TEXT = 'Successfully reset current MANIA.';
@@ -414,7 +414,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			SaveData.save();
 			Main.current.playCancelSound();
 		} else {
-			if (keyCode == controls.game.reset) keybindArr[maniaSubBindNum] = KeyCode.UNKNOWN;
+			if (keyCode == controls.game.reset && maniaSubBindNum == 1) keybindArr[maniaSubBindNum] = KeyCode.UNKNOWN;
 			else keybindArr[maniaSubBindNum] = keyCode;
 			//trace('maniabindnum before transition $maniaBindNum');
 			maniaBindNum++;
