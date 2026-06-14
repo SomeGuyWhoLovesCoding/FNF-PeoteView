@@ -223,24 +223,27 @@ class ControlsDisplay implements IAlphabetScrollHost {
 	}
 
 	function cancelBinding() {
+		var removeEvents = false;
+
 		if (binding) {
 			binding = false;
 			bindingIndex = -1;
 			processingBinding = false;
+			removeEvents = true;
 		}
 
 		if (bindingMania) {
 			bindingMania = false;
 			maniaBindNum = 0;
+			removeEvents = true;
 		}
 
 		// Re-enable parent events
-		if (parent != null && parent.opened) {
+		if (parent != null && parent.opened && removeEvents) {
 			parent.addEvents();
 			Application.current.window.onKeyDown.remove(onKeyDown);
+			Main.current.playCancelSound();
 		}
-		
-		Main.current.playCancelSound();
 	}
 
 	function onKeyDown(keyCode:KeyCode, keyModifier:KeyModifier) {

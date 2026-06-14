@@ -47,26 +47,6 @@ class PlayField {
 	static var onRestartingForBackwardTimeSetting(default, null):Bool = false;
 	static var timeForRestartingBackwardTime(default, null):Float = 0;
 
-	var customSongName = "";
-
-	// helper function made for playfield
-	inline function formatCustomSongName(title:String) {
-		return customSongName == "" ? title : customSongName;
-	}
-
-	var customStage = "";
-
-	// helper function made for playfield
-	inline function formatCustomStage(stage:String) {
-		return customStage == "" ? stage : customStage;
-	}
-
-	inline function setCustomStage(stage:String) {
-		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('onChangeStage', stage);
-		#end
-	}
-
 	// https://github.com/ShadowMario/FNF-PsychEngine/blob/main/source/backend/Rating.hx#L29
 	var ratingJudgementList:Array<Judgement> = [
 		[
@@ -149,6 +129,23 @@ class PlayField {
 		return botplay = value;
 	}
 
+	@:isVar var mania(get, set):Int = 0;
+
+	inline function get_mania() {
+		return mania;
+	}
+
+	inline function set_mania(value:Int) {
+		if (mania >= 256) mania = 255;
+		if (mania < 0) mania = 0;
+
+		#if linc_luajit_funkinview
+		funkinviewlua.callFunction('postManiaChange', value);
+		#end
+
+		return mania = value;
+	}
+
 	var field(default, null):Field;
 	var inputSystem(default, null):InputSystem;
 	var noteSystem(default, null):NoteSystem;
@@ -205,12 +202,12 @@ class PlayField {
 	 * Creates the playfield.
 	 * @param roof The top display you want the playfield's pause screen to go to.
 	 * @param display The ui display you want the playfield's countdown display and hud to go to.
-	 * @param mania The amount of keys you want for your fnf song. (up to 256 supported) (This is configured by the song's header)
+	 * @param initialMania The amount of keys you want for your fnf song. (up to 256 supported) (This is configured by the song's header)
 	 */
-	function create(roof:CustomDisplay, display:CustomDisplay, mania:Int = 4) {
+	function create(roof:CustomDisplay, display:CustomDisplay, initialMania:Int = 4) {
 		AsyncInput.init();
 
-		if (mania > 256) mania = 256;
+		if (initialMania > 256) initialMania = 256;
 
 		healthLoss = [for (i in 0...128) 0.02];
 		healthGain = [for (i in 0...128) 0.025];
@@ -241,7 +238,7 @@ class PlayField {
 
 		field = new Field(this);
 
-		inputSystem = new InputSystem(mania, this);
+		inputSystem = new InputSystem(initialMania, this);
 
 		NoteSystem.init();
 		noteSystem = new NoteSystem(this);
@@ -812,6 +809,26 @@ class PlayField {
 		#end
 
 		deathCounter++;
+	}
+
+	var customSongName = "";
+
+	// helper function made for playfield
+	inline function formatCustomSongName(title:String) {
+		return customSongName == "" ? title : customSongName;
+	}
+
+	var customStage = "";
+
+	// helper function made for playfield
+	inline function formatCustomStage(stage:String) {
+		return customStage == "" ? stage : customStage;
+	}
+
+	inline function setCustomStage(stage:String) {
+		#if linc_luajit_funkinview
+		funkinviewlua.callFunction('onChangeStage', stage);
+		#end
 	}
 
 	/**
