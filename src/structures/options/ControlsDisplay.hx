@@ -42,7 +42,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 
 	inline static var INSTRUCTIONS_TEXT = "Press TAB to begin binding\nPress ESC to cancel binding\n\n" +
 		"During Mania binding:\nPress CTRL+LEFT/RIGHT to change key count (1K-9K)\n" +
-		"Press DEBUG to swap between #M1#PRIMARY#M1# and #M2#SECONDARY#M2# keys\n" +
+		"Press DEBUG to swap between #M1#KEY1#M1# and #M2#KEY2#M2# modes\n" +
 		"Press RESET to clear current key\nPress BACK to reset all keys for current Mania mode";
 	inline static var DUPLICATE_BIND_ALERT_TEXT = 'Either it\'s the same key you entered, or\nanother keybind was already registered as\n' +
 		'the key you attempted to bind on.\nTry a different key first.';
@@ -387,7 +387,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			maniaSubBindNum = (maniaSubBindNum + 1) % 2;
 			if (bindBox != null) {
 				bindBox.text = "Mania Mode: $maniaKeyCountK\nBinding Lane ${maniaCurrentLane + 1}/$maniaKeyCount\n" +
-					"Editing ${maniaSubBindNum == 0 ? "PRIMARY" : "SECONDARY"} key\nPress ESC to cancel";
+					"Current Mode: ${maniaSubBindNum == 0 ? '#M1#KEY1#M1#': '#M2#KEY2#M2#'} key\nPress ESC to cancel";
 			}
 			return;
 		}
