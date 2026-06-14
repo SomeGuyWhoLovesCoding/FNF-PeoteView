@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Preferences Mockup — Fast Scan</title>
+<style>
+  body{font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;background:#071021;color:#e6eef8;padding:24px}
+  .panel{max-width:640px;margin:0 auto;background:#0b1220;padding:16px;border-radius:12px;border:1px solid rgba(255,255,255,0.03)}
+  h1{font-size:18px;margin:0 0 12px}
+  .search{display:flex;gap:8px;margin-bottom:10px}
+  input{flex:1;padding:8px;border-radius:8px;border:1px solid #233240;background:#071826;color:#cfe7ff}
+  .list{display:grid;gap:6px}
+  .row{display:flex;align-items:center;justify-content:space-between;padding:10px;border-radius:8px;background:linear-gradient(180deg,rgba(255,255,255,0.01),transparent)}
+  .label{font-weight:700}
+  .glyph{font-weight:900;padding-left:12px}
+  .glyph.on{color:#53FF73}
+  .glyph.off{color:#94A3B8}
+  .section{margin-top:10px;color:#94a3b8;font-size:13px}
+</style>
+</head>
+<body>
+<div class="panel">
+  <h1>Preferences — Fast Scan Mockup</h1>
+  <div class="search"><input placeholder="Search preferences..." /></div>
+  <div class="section">Display</div>
+  <div class="list">
+    <div class="row"><div class="label">Hide HUD</div><div class="glyph on">✓</div></div>
+    <div class="row"><div class="label">Down Scroll</div><div class="glyph off">✕</div></div>
+    <div class="row"><div class="label">Smooth Health</div><div class="glyph on">✓</div></div>
+    <div class="row"><div class="label">Camera Zoom</div><div class="glyph on">✓</div></div>
+    <div class="row"><div class="label">Score Bop</div><div class="glyph off">✕</div></div>
+    <div class="row"><div class="label">Icon Bop</div><div class="glyph on">✓</div></div>
+    <div class="row"><div class="label">Rating Popup</div><div class="glyph off">✕</div></div>
+  </div>
+</div>
+</body>
+</html>
