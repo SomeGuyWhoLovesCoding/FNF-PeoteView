@@ -76,6 +76,8 @@ class ControlsDisplay implements IAlphabetScrollHost {
 
 	static var maniaKeybindTxt(default, null):Text;
 	static var instructionsTxt(default, null):Text;
+	// A central bind box that shows whenever a bind is active. This is the "box" the user requested.
+	static var bindBox(default, null):Text;
 
     var closed:Bool;
 
@@ -118,25 +120,40 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			instructionsTxt.x = Main.VARIABLE_WIDTH - (instructionsTxt.width + 4);
 		}
 
+		// Create bind box if it doesn't exist. This box will be shown/hidden when binding starts/ends.
+		if (bindBox == null) {
+			bindBox = new Text("FUNKIN_BIND_BOX", 0, 0, alphabet.display, "", "vcr");
+			bindBox.multiline = true;
+			bindBox.alignment = CENTER;
+			bindBox.alpha = 0;
+			bindBox.outlineColor = Color.BLACK;
+			bindBox.outlineSize = 1.6;
+			// initial pos - will be centered in update loop as needed
+			bindBox.x = (Main.VARIABLE_WIDTH * 0.5) - (bindBox.width * 0.5);
+			bindBox.y = (Main.VARIABLE_HEIGHT * 0.5) - (bindBox.height * 0.5);
+		}
+
 		if (!OptionsMenu.optionsDisplay.closed) showTexts();
         
-        // Reset state when reloading
-        resetHostState();
-        
-        // Reset binding state
-        binding = false;
-        bindingIndex = -1;
-        processingBinding = false;
+		// Reset state when reloading
+		resetHostState();
+		
+		// Reset binding state
+		binding = false;
+		bindingIndex = -1;
+		processingBinding = false;
 	}
 
 	function showTexts() {
 		if (maniaKeybindTxt != null) maniaKeybindTxt.addProgram();
 		if (instructionsTxt != null) instructionsTxt.addProgram();
+		// bindBox is intentionally not added here; it should only be shown while an active bind is open.
 	}
 
 	function removeTexts() {
 		if (maniaKeybindTxt != null) maniaKeybindTxt.removeProgram();
 		if (instructionsTxt != null) instructionsTxt.removeProgram();
+		if (bindBox != null) bindBox.removeProgram();
 	}
 	
 	function resetHostState() {
@@ -156,6 +173,13 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		// Temporarily disable parent events while binding
 		parent.removeEvents();
 		Application.current.window.onKeyDown.add(onKeyDown);
+		
+		// Show bind box to indicate binding is active
+		if (bindBox != null) {
+			if (bindingMania) bindBox.text = "Press a key to bind Mania lane\nPress ESC to cancel";
+			else bindBox.text = "Press a key to bind\nPress ESC to cancel";
+			bindBox.addProgram();
+		}
 		
 		Main.current.playScrollSound();
 	}
@@ -196,12 +220,21 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			}
 			maniaKeybindTxt.text = str;
 		} else {
-			if (alertDupebind) maniaKeybindTxt.text = '#M3#$DUPLICATE_BIND_ALERT_TEXT#M3#\n\n\n\n\n\n';
+			if (alertDupebind) maniaKeybindTxt.text = '#M3#$DUPLICATE_BIND_ALERT_TEXT#M3#\n\n\n\n\n';
 			else maniaKeybindTxt.text = "KEYBINDS\n...";
 		}
 		maniaKeybindTxt.x = Main.VARIABLE_WIDTH - (maniaKeybindTxt.width + 4);
 		maniaKeybindTxt.y = (Main.VARIABLE_HEIGHT * 0.5) - (maniaKeybindTxt.height * 0.5);
 		instructionsTxt.alpha = alphaLerp;
+
+		// Keep bind box centered while visible
+		if (bindBox != null) {
+			bindBox.x = (Main.VARIABLE_WIDTH * 0.5) - (bindBox.width * 0.5);
+			bindBox.y = (Main.VARIABLE_HEIGHT * 0.5) - (bindBox.height * 0.5);
+			// set alpha to 1 while binding, otherwise fade out
+			if (binding || bindingMania || alertDupebind) bindBox.alpha = Tools.lerp(bindBox.alpha, 1.0, ratio);
+			else bindBox.alpha = Tools.lerp(bindBox.alpha, 0.0, ratio);
+		}
 
 		alphabet.setDeltaTime(deltaTime);
 		var incrementBest = controlLabels.length > 7
@@ -227,6 +260,9 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			//SaveData.state.controls.game.keybindArray[Std.int(curSelectedTarget) - controlFields.length] = originalKeysMania;
 		}
 
+		// Hide bind box when cancelling binding
+		if (bindBox != null) bindBox.removeProgram();
+
 		// Re-enable parent events
 		if (parent != null && parent.opened) {
 			parent.addEvents();
@@ -240,27 +276,27 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		if (closed) return;
 		
 		var BIND_KEY = KeyCode.TAB;
-
+	
 		// Handle escape first - always cancel binding
 		if (keyCode == KeyCode.ESCAPE) {
 			cancelBinding();
 			return;
 		}
-
+	
 		// Start binding with TAB
 		if (keyCode == BIND_KEY && !binding && !processingBinding && !closed) {
 			tab();
 			return;
 		}
-
+	
 		if (bindingMania) {
 			// Don't bind the TAB key itself or ESCAPE
 			if (keyCode == BIND_KEY || keyCode == KeyCode.ESCAPE) return;
-
+	
 			applyManiaBinding(keyCode);
 			return;
 		}
-
+	
 		// Apply binding if we're in binding mode
 		if (binding && !processingBinding && !closed) {
 			// Same goes to here, as well
@@ -270,6 +306,9 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			var now = haxe.Timer.stamp();
 			if (now - lastBindingTime < 0.5) return;
 			lastBindingTime = now;
+			
+			// Show the pressed key in bind box for immediate feedback
+			if (bindBox != null) bindBox.text = "Binding: " + KeyCodeConverter.getSimpleKeyName(keyCode) + "\nPress ESC to cancel";
 			
 			applyBinding(keyCode);
 		}
@@ -302,7 +341,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 
 		var category = parts[0];
 		var name = parts[1];
-
+		
 		var isDupeBind = category == "game" ? game_isSameKeyOrDupe(keyCode) : ui_isSameKeyOrDupe(keyCode);
 		if (parts.length < 2 || isDupeBind) {
 			cancelBinding();
@@ -313,13 +352,16 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			}
 			return;
 		}
-
+		
 		if (category == "ui") {
 			Reflect.setProperty(SaveData.state.controls.ui, name, keyCode);
 		} else if (category == "game") {
 			Reflect.setProperty(SaveData.state.controls.game, name, keyCode);
 		}
-
+		
+		// Hide bind box now that binding is applied
+		if (bindBox != null) bindBox.removeProgram();
+		
 		// Clear binding state BEFORE saving to prevent event loops
 		binding = false;
 		bindingIndex = -1;
@@ -328,11 +370,6 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		
 		// Reload controls AFTER clearing binding state
 		Main.current.controls.reload();
-		
-		// Update the display to show the new key
-		if (alphabet != null && !closed) {
-			alphabet.updateBuffer();
-		}
 		
 		// Re-enable parent events after binding is complete
 		if (parent != null && parent.opened) {
@@ -354,12 +391,12 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			maniaSubBindNum %= 2;
 			return;
 		}
-
+		
 		var id = Std.int(curSelectedTarget) - controlFields.length;
 		var keybindsArr = SaveData.state.controls.game.keybindArray[id];
 		//originalKeysMania = keybindsArr;
 		var keybindArr = keybindsArr[maniaBindNum];
-
+		
 		if (keyCode == SaveData.state.controls.ui.back) {
 			Main.current.playCancelSound();
 			SaveData.state.controls.game.keybindArray[id] = SaveData.getDefaultState().controls.game.keybindArray[id];
@@ -367,9 +404,11 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			haxe.Timer.delay(() -> {alertKeybindReset = false;}, 3000);
 			maniaBindNum = 0;
 			SaveData.save();
+			// Hide bind box after reset
+			if (bindBox != null) bindBox.removeProgram();
 			return;
 		}
-
+		
 		if (keyCode == SaveData.state.controls.game.reset) keybindArr[maniaSubBindNum] = KeyCode.UNKNOWN;
 		else keybindArr[maniaSubBindNum] = keyCode;
 		//trace('maniabindnum before transition $maniaBindNum');
@@ -379,12 +418,15 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			Main.current.playScrollSound();
 			return;
 		}
-
+		
 		// Clear binding state BEFORE saving to prevent event loops
 		bindingMania = false;
 		maniaBindNum = 0;
 		
 		fixMania();
+		
+		// Hide bind box now that mania binding completed
+		if (bindBox != null) bindBox.removeProgram();
 		
 		// Reload controls AFTER clearing binding state
 		Main.current.controls.reload();
