@@ -406,29 +406,28 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		var keybindArr = keybindsArr[maniaBindNum];
 
 		if (keyCode == controls.ui.back) {
-			Main.current.playCancelSound();
 			var defaults = SaveData.getDefaultState();
 			controls.game.keybindArray[id] = defaults.controls.game.keybindArray[id];
 			alertKeybindReset = true;
 			haxe.Timer.delay(() -> {alertKeybindReset = false;}, 3000);
 			maniaBindNum = 0;
 			SaveData.save();
-			return;
+			Main.current.playCancelSound();
+		} else {
+			if (keyCode == controls.game.reset) keybindArr[maniaSubBindNum] = KeyCode.UNKNOWN;
+			else keybindArr[maniaSubBindNum] = keyCode;
+			//trace('maniabindnum before transition $maniaBindNum');
+			maniaBindNum++;
+			Main.current.playScrollSound();
 		}
-
-		if (keyCode == controls.game.reset) keybindArr[maniaSubBindNum] = KeyCode.UNKNOWN;
-		else keybindArr[maniaSubBindNum] = keyCode;
-		//trace('maniabindnum before transition $maniaBindNum');
-		maniaBindNum++;
 
 		var playField = Main.current.playField;
 		if (playField != null) {
-			if (Chart.header.mania == curManiaNum + 1) playField.inputSystem.reloadKeybinds(curManiaNum + 1); // now I remember this function is intended for use in the controls menu
+			if (playField.mania == curManiaNum + 1) playField.inputSystem.reloadKeybinds(curManiaNum + 1); // now I remember this function is intended for use in the controls menu
 		}
 
 		//trace('maniabindnum after transition $maniaBindNum');
 		if (maniaBindNum <= keybindsArr.length - 1) {
-			Main.current.playScrollSound();
 			return;
 		}
 
@@ -447,8 +446,6 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			parent.addEvents();
 			Application.current.window.onKeyDown.remove(onKeyDown);
 		}
-		
-		Main.current.playConfirmSound();
 	}
 
 	// This is to not persist any KeyCode.UNKNOWN

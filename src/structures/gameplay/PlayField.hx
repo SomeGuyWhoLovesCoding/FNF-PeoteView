@@ -129,6 +129,9 @@ class PlayField {
 		return botplay = value;
 	}
 
+	/**
+		Does not start at zero.
+	**/
 	@:isVar var mania(get, set):Int = 0;
 
 	inline function get_mania() {
@@ -136,12 +139,12 @@ class PlayField {
 	}
 
 	inline function set_mania(value:Int) {
-		if (mania >= 256) mania = 255;
-		if (mania < 0) mania = 0;
+		if (mania > 256) mania = 256;
+		if (mania < 1) mania = 1;
 
-		#if linc_luajit_funkinview
+		/*#if linc_luajit_funkinview
 		funkinviewlua.callFunction('postManiaChange', value);
-		#end
+		#end*/
 
 		return mania = value;
 	}
@@ -207,7 +210,7 @@ class PlayField {
 	function create(roof:CustomDisplay, display:CustomDisplay, initialMania:Int = 4) {
 		AsyncInput.init();
 
-		if (initialMania > 256) initialMania = 256;
+		mania = initialMania;
 
 		healthLoss = [for (i in 0...128) 0.02];
 		healthGain = [for (i in 0...128) 0.025];
