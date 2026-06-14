@@ -177,7 +177,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelectedTarget, ratio);
 		xLerp = 20 - (curSelectedLerp * 20);
 
-		maniaKeybindTxt.alpha = Tools.lerp(maniaKeybindTxt.alpha, (curSelectedTarget >= controlFields.length || alertDupebind || binding) ? 1.0 : 0.0, ratio);
+		maniaKeybindTxt.alpha = Tools.lerp(maniaKeybindTxt.alpha, !closed && (curSelectedTarget >= controlFields.length || alertDupebind || binding) ? 1.0 : 0.0, ratio);
 		if (bindingMania) {
 			var str = 'KEYBINDS\nUSING ${maniaSubBindNum == 1 ? "#M2#KEY2#M2#" : "#M1#KEY1#M1#"}\n';
 			if (alertKeybindReset) str += '#M3#$RESET_BIND_ALERT_TEXT#M3#\n';
@@ -417,6 +417,10 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		else keybindArr[maniaSubBindNum] = keyCode;
 		//trace('maniabindnum before transition $maniaBindNum');
 		maniaBindNum++;
+
+		var playField = Main.current.playField;
+		if (playField != null) playField.inputSystem.reloadKeybinds(); // now I remember this function is intended for use in the controls menu
+
 		//trace('maniabindnum after transition $maniaBindNum');
 		if (maniaBindNum <= keybindsArr.length - 1) {
 			Main.current.playScrollSound();
@@ -426,6 +430,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		// Clear binding state BEFORE saving to prevent event loops
 		bindingMania = false;
 		maniaBindNum = 0;
+		SaveData.save();
 		
 		fixMania();
 		
