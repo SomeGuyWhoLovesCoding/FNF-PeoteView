@@ -1,5 +1,6 @@
 package fvlua.components;
 
+import elements.text.TextAlign;
 import sys.FileSystem;
 
 using StringTools;
@@ -11,11 +12,14 @@ using StringTools;
 @:publicFields
 class CustomLuaSpriteComponent extends LuaComponentObject {
 	#if linc_luajit_funkinview
+	inline static var GLOBAL_SCORE_TXT = "FV_SCORE_099";
+	inline static var GLOBAL_WATMK_TXT = "FV_WATMK_099";
+
 	public var customBuffers(default, null):FakeStringMap<Buffer<LuaSprite>>;
 	public var customPrograms(default, null):FakeStringMap<LuaProgram>;
 	public var customTextures(default, null):FakeStringMap<Texture>;
 	public var customSprites(default, null):FakeStringMap<LuaSprite>;
-	public var customTexts(default, null):FakeStringMap<LuaText>;
+	public var customTexts(default, null):FakeStringMap<Text>;
 
 	public function new(_parent:FunkinViewLua) {
         super(_parent);
@@ -24,7 +28,7 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 		customPrograms = new FakeStringMap<LuaProgram>();
 		customTextures = new FakeStringMap<Texture>();
 		customSprites = new FakeStringMap<LuaSprite>();
-		customTexts = new FakeStringMap<LuaText>();
+		customTexts = new FakeStringMap<Text>();
 	}
 
 	// functions are a placeholder.
@@ -75,7 +79,7 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				FunkinViewLua.error("Display not found: " + toDisplay.toLowerCase());
 				return FunkinViewLua.Function_Stop;
 			}
-			var sprite = new LuaText(textElem, x, y, display, text, font);
+			var sprite = new Text(textElem, x, y, display, text, font);
 
 			sprite.color = FunkinViewLua.colorFromStringUtil(color);
 			sprite.outlineSize = outlineSize;
@@ -83,7 +87,27 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 			customTexts.set(textElem, sprite);
 
 			return FunkinViewLua.Function_Continue;
-		}); // note: text is automatically added in by init as shown in the `Text` class.
+		});
+
+		vm.addCallback("customTextHide", (textElem:String) -> {
+			if (textElem == "" || textElem == null) {
+				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = customTexts.get(textElem);
+			sprite.removeProgram();
+			return FunkinViewLua.Function_Continue;
+		});
+
+		vm.addCallback("customTextShow", (textElem:String) -> {
+			if (textElem == "" || textElem == null) {
+				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = customTexts.get(textElem);
+			sprite.addProgram();
+			return FunkinViewLua.Function_Continue;
+		}); // note: only call customTextShow and customTextHide if they're not removed.
 
 		// ADD
 		vm.addCallback("addElementToBuffer", (elemName:String, bufferName:String) -> {
@@ -286,6 +310,10 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;
 			}
+			if (!customTexts.exists(textElem)) {
+				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				return FunkinViewLua.Function_Stop;
+			}
 			var sprite = customTexts.get(textElem);
 			sprite.x = x;
 			sprite.y = y;
@@ -296,6 +324,10 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
 				return 0.0;
 			}
+			if (!customTexts.exists(textElem)) {
+				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				return FunkinViewLua.Function_Stop;
+			}
 			var sprite = customTexts.get(textElem);
 			return sprite.x;
 		});
@@ -304,8 +336,105 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
 				return 0.0;
 			}
+			if (!customTexts.exists(textElem)) {
+				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				return FunkinViewLua.Function_Stop;
+			}
 			var sprite = customTexts.get(textElem);
 			return sprite.y;
+		});
+		vm.addCallback("setTextMultiline", (textElem:String, value:Bool) -> {
+			if (textElem == "" || textElem == null) {
+				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customTexts.exists(textElem)) {
+				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = customTexts.get(textElem);
+			sprite.multiline = value;
+			return FunkinViewLua.Function_Continue;
+		});
+		vm.addCallback("getTextMultiline", (textElem:String) -> {
+			if (textElem == "" || textElem == null) {
+				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
+				return false;
+			}
+			if (!customTexts.exists(textElem)) {
+				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = customTexts.get(textElem);
+			return sprite.multiline;
+		});
+		vm.addCallback("setTextAlignment", (textElem:String, value:String) -> {
+			if (textElem == "" || textElem == null) {
+				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customTexts.exists(textElem)) {
+				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = customTexts.get(textElem);
+			var align:TextAlign = LEFT;
+			switch (value.toUpperCase()) {
+				case "CENTER":
+					align = CENTER;
+				case "RIGHT":
+					align = RIGHT;
+				default:
+					align = LEFT;
+			}
+			sprite.alignment = align;
+			return FunkinViewLua.Function_Continue;
+		});
+		vm.addCallback("getTextAlignment", (textElem:String) -> {
+			if (textElem == "" || textElem == null) {
+				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
+				return "";
+			}
+			if (!customTexts.exists(textElem)) {
+				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = customTexts.get(textElem);
+			var align:TextAlign = LEFT;
+			var value:String = "LEFT";
+			switch (sprite.alignment) {
+				case CENTER:
+					value = "CENTER";
+				case RIGHT:
+					value = "RIGHT";
+				default:
+			}
+			return value;
+		});
+		vm.addCallback("setTextSpacerPercent", (textElem:String, value:Float) -> {
+			if (textElem == "" || textElem == null) {
+				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customTexts.exists(textElem)) {
+				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = customTexts.get(textElem);
+			sprite.spacerPercent = value;
+			return FunkinViewLua.Function_Continue;
+		});
+		vm.addCallback("getTextSpacerPercent", (textElem:String) -> {
+			if (textElem == "" || textElem == null) {
+				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
+				return 0.0;
+			}
+			if (!customTexts.exists(textElem)) {
+				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				return FunkinViewLua.Function_Stop;
+			}
+			var sprite = customTexts.get(textElem);
+			return sprite.spacerPercent;
 		});
 		vm.addCallback("setElementCoordinate", (elemName:String, w:Float, h:Float) -> {
 			if (elemName == "" || elemName == null) {
@@ -347,6 +476,10 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;
 			}
+			if (!customTexts.exists(textElem)) {
+				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				return FunkinViewLua.Function_Stop;
+			}
 			var sprite = customTexts.get(textElem);
 			sprite.text = text;
 			return FunkinViewLua.Function_Continue;
@@ -354,6 +487,10 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 		vm.addCallback("getTextString", (textElem:String) -> {
 			if (textElem == "" || textElem == null) {
 				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
+				return "";
+			}
+			if (!customTexts.exists(textElem)) {
+				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
 				return "";
 			}
 			var sprite = customTexts.get(textElem);
@@ -388,6 +525,10 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;
 			}
+			if (!customTexts.exists(textElem)) {
+				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				return FunkinViewLua.Function_Stop;
+			}
 			var sprite = customTexts.get(textElem);
 			sprite.color = FunkinViewLua.colorFromStringUtil(color);
 			return FunkinViewLua.Function_Continue;
@@ -397,12 +538,20 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
 				return "0x00000000";
 			}
+			if (!customTexts.exists(textElem)) {
+				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				return "0x00000000";
+			}
 			var sprite = customTexts.get(textElem);
 			return "0x" + StringTools.hex(sprite.color, 8);
 		});
 		vm.addCallback("setTextOutlineColor", (textElem:String, color:String) -> {
 			if (textElem == "" || textElem == null) {
 				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customTexts.exists(textElem)) {
+				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
 				return FunkinViewLua.Function_Stop;
 			}
 			var sprite = customTexts.get(textElem);
@@ -414,12 +563,20 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
 				return "0x00000000";
 			}
+			if (!customTexts.exists(textElem)) {
+				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
+				return "0x00000000";
+			}
 			var sprite = customTexts.get(textElem);
 			return "0x" + StringTools.hex(sprite.outlineColor, 8);
 		});
 		vm.addCallback("setTextOutlineSize", (textElem:String, size:Float) -> {
 			if (textElem == "" || textElem == null) {
 				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
+				return FunkinViewLua.Function_Stop;
+			}
+			if (!customTexts.exists(textElem)) {
+				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
 				return FunkinViewLua.Function_Stop;
 			}
 			var sprite = customTexts.get(textElem);
@@ -429,6 +586,10 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 		vm.addCallback("getTextOutlineSize", (textElem:String) -> {
 			if (textElem == "" || textElem == null) {
 				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
+				return 0.0;
+			}
+			if (!customTexts.exists(textElem)) {
+				FunkinViewLua.error("Custom Text does not exist with the key " + textElem);
 				return 0.0;
 			}
 			var sprite = customTexts.get(textElem);
@@ -593,7 +754,6 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 			return FunkinViewLua.Function_Continue;
 		});
 
-		// OTHER STUFF
 		vm.addCallback("getTextureCoordinateX", (programName:String) -> {
 			if (programName == "" || programName == null) {
 				FunkinViewLua.error("Custom Program's Key cannot be empty or nil!");
@@ -610,6 +770,20 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 			}
 			var tex = customTextures.get(programName);
 			return tex.height;
+		});
+
+		vm.addCallback('getScoreText', function() {
+			if (HUD.scoreTxt != null && !customTexts.exists(GLOBAL_SCORE_TXT)) {
+				customTexts.set(GLOBAL_SCORE_TXT, HUD.scoreTxt);
+			}
+			return GLOBAL_SCORE_TXT;
+		});
+
+		vm.addCallback('getWatermarkText', function() {
+			if (HUD.watermarkTxt != null && !customTexts.exists(GLOBAL_WATMK_TXT)) {
+				customTexts.set(GLOBAL_WATMK_TXT, HUD.watermarkTxt);
+			}
+			return GLOBAL_WATMK_TXT;
 		});
 	}
 
@@ -652,7 +826,7 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 		customSprites = null;
 
 		for (customText in customTexts) {
-			if (customText != null) {
+			if (customText != null && (customText != customTexts.get(GLOBAL_SCORE_TXT) && customText != customTexts.get(GLOBAL_WATMK_TXT))) {
 				customText.dispose();
 				customText = null;
 			}

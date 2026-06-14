@@ -633,10 +633,10 @@ class Text {
 	}
 
 	function removeProgram() {
-		display.removeProgram(program);
+		if (program.isIn(display)) display.removeProgram(program);
 	}
 
 	function addProgram() {
-		display.addProgram(program);
+		if (!program.isIn(display)) display.addProgram(program);
 	}
 }
