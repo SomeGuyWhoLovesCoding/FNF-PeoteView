@@ -306,7 +306,6 @@ class Text {
 		var parsed = parseMarkup(raw);
 		var str = parsed.clean;
 		colorSpans = parsed.spans;
-		text = str;
 		
 		// Handle multiline - this now respects \n from parseMarkup
 		if (multiline) {
@@ -420,7 +419,7 @@ class Text {
 			}
 			
 			// Skip over newline characters in rawCharIdx for proper span tracking
-			var originalText = text;
+			var originalText = str;
 			while (rawCharIdx < originalText.length && originalText.charCodeAt(rawCharIdx) == 10) {
 				rawCharIdx++;
 			}
@@ -577,7 +576,7 @@ class Text {
 
 	// ── Constructor ───────────────────────────────────────────────────────────
 
-	function new(key:String, x:Float, y:Float, display:Display, text:String = "Sample text", font:String = "vcr") {
+	function new(key:String, x:Float, y:Float, display:Display, txt:String = "Sample text", font:String = "vcr") {
 		_key = key;
 		buffer = new Buffer<TextCharSprite>(32, 32);
 
@@ -603,8 +602,8 @@ class Text {
 		lineSpacing = 0;
 		maxWidth = 0;
 
-		if (text == null || text.length == 0) text = "Sample text";
-		this.text = text;
+		if (txt == null || txt.length == 0) txt = "Sample text";
+		text = txt;
 	}
 
 	// ── Utilities (updated) ───────────────────────────────────────────────────

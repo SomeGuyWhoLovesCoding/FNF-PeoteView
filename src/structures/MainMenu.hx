@@ -48,14 +48,6 @@ class MainMenu {
 		view.scroll.y = 0;
 		view.fov = 1.0;
 
-		if (watermarkTxt == null) {
-			watermarkTxt = new Text("mainMenuWatermarkTxt", 0, 0, view, 'Funkin\' View - Version $fnfpVer');
-			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height - 3;
-			watermarkTxt.x = 3;
-			watermarkTxt.outlineColor = 0x000000FF;
-			watermarkTxt.outlineSize = 1.25; // 0.06 - usually the default text+ outline size on DaVinci Resolve
-		}
-
 		if (optionBuf == null) {
 			optionBuf = new Buffer<Actor>(optionAnims.length);
 		}
@@ -75,6 +67,14 @@ class MainMenu {
 
 				backgroundBuf.updateElement(bg);
 			}
+		}
+
+		if (watermarkTxt == null) {
+			watermarkTxt = new Text("mainMenuWatermarkTxt", 0, 0, display, 'Funkin\' View - Version $fnfpVer');
+			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height - 3;
+			watermarkTxt.x = 3;
+			watermarkTxt.outlineColor = 0x000000FF;
+			watermarkTxt.outlineSize = 1.25; // 0.06 - usually the default text+ outline size on DaVinci Resolve
 		}
 
 		if (optionProg == null) {
@@ -109,8 +109,8 @@ class MainMenu {
 			}
 		}
 
-		display.addProgram(optionProg);
 		view.addProgram(backgroundProg);
+		display.addProgram(optionProg);
 
 		watermarkTxt.addProgram();
 
