@@ -1,12 +1,7 @@
 package structures.gameplay;
 
-import sys.thread.Thread;
-import sys.thread.Deque;
-import sys.thread.Mutex;
-
 /**
  * This is where notes behave when interconnected to the note system.
- * Uses multithreading for optimal performance with large note counts.
  * @since Development
  */
 @:publicFields
@@ -25,45 +20,17 @@ class NoteSpawner {
 	var curBottomNote(default, null):MetaNote;
 
 	var parent(default, null):NoteSystem;
-	
-	// Threading
-	var workerThreads:Array<Thread>;
-	var workQueue:Deque<ThreadWork>;
-	var resultQueue:Deque<ThreadResult>;
-	var threadMutex:Mutex;
-	var threadRunning:Bool = false;
-	var threadCount:Int;
-	var processingComplete:Bool = false;
-	
-	// Cache
-	var _cachedScrollSpeed:Float = 1.0;
-	var _cachedLatencyI64:Int64 = 0;
-	var _cachedLen:Int64 = 0;
-	
-	// Threshold for multithreading
-	static var MULTI_THREAD_THRESHOLD:Int64 = 500;
 
 	function new(parent:NoteSystem) {
 		this.parent = parent;
+
 		bottom = 0;
 		top = 0;
-		_cachedLen = File.getLength();
-		
-		// Initialize threading
-		threadCount = 4;
-		if (threadCount < 2) threadCount = 2;
-		
-		threadMutex = new Mutex();
-		workQueue = new Deque<ThreadWork>();
-		resultQueue = new Deque<ThreadResult>();
-		workerThreads = [];
-		threadRunning = true;
-		
-		// Start worker threads
-		for (i in 0...threadCount) {
-			var thread = Thread.create(() -> workerLoop());
-			workerThreads.push(thread);
-		}
+
+		/*for (i in 0...20) {
+			var note:MetaNote = File.getNote(i);
+			Sys.println('Is it judged? ${File.getJudgement(i)}. Note flag? ${note.flag}. Here\'s the position of the note for reference: ${(note.position + File.getTimeCorrectionForIndex(i))}');
+		}*/
 	}
 
 	var timeSpentOnIt:Float = 0;
@@ -72,10 +39,6 @@ class NoteSpawner {
 	function update(pos:Int64) {
 		_lastbottom = bottom;
 		_lasttop = top;
-
-		// Update cache
-		_cachedScrollSpeed = parent.parent.scrollSpeed;
-		_cachedLatencyI64 = MetaNote.floatToMetaNotePosition(Main.conductor.offset);
 
 		cullTop(pos);
 		cullBottom(pos);
@@ -92,204 +55,66 @@ class NoteSpawner {
 
 		processNotes(pos);
 	}
-	
-	function workerLoop() {
-		while (threadRunning) {
-			var work = workQueue.pop(false);
-			if (work == null) {
-				Sys.sleep(0.001); // Yield to prevent CPU hogging
-				continue;
-			}
-			
-			// Process the work chunk
-			var result = processNoteChunk(work);
-			
-			threadMutex.acquire();
-			resultQueue.push(result);
-			threadMutex.release();
-		}
-	}
-	
-	function processNoteChunk(work:ThreadWork):ThreadResult {
-		var result = new ThreadResult();
-		result.notes = [];
-		
-		var scrollSpeed = _cachedScrollSpeed;
-		var posWithLatency = work.pos + _cachedLatencyI64;
-		var strumlines = parent.strumlines;
-		var noteTypeFuncs = parent.noteTypeFunctionalityPre;
-		
-		var i = work.startIndex;
-		while (i < work.endIndex) {
-			var n = File.getNote(i);
-			var timeCorrection = File.getTimeCorrectionForIndex(i);
-			var n_position = n.position + timeCorrection;
-			
-			var lane = (noteTypeFuncs[n.type] != null) ? 1 : (n.type % strumlines.length);
-			var strumline = strumlines[lane];
-			var receptor = strumline.buffer[n.index];
-			
-			var diff = (MetaNote.metaNotePositionToSongTime(n_position - posWithLatency)) * scrollSpeed;
-			var newY = receptor.y + Math.floor(diff);
-			
-			// Store processed note data
-			result.notes.push({
-				index: i,
-				note: n,
-				diff: diff,
-				newY: newY,
-				lane: lane,
-				timeCorrection: timeCorrection,
-				position: n_position
-			});
-
-			++i;
-		}
-		
-		return result;
-	}
 
 	function processNotes(pos:Int64) {
-		var time = haxe.Timer.stamp();
-		
-		var startIndex = (minBottom != -1 && bottom < minBottom) ? minBottom : bottom;
-		var endIndex = top;
-		var totalNotes = endIndex - startIndex;
-		
-		if (totalNotes <= 0) {
-			timeSpentOnIt = 0;
-			return;
-		}
-		
-		// For small note counts, process on main thread
-		if (totalNotes < MULTI_THREAD_THRESHOLD) {
-			processNotesSingleThreaded(pos, startIndex, endIndex);
-		} else {
-			processNotesMultiThreaded(pos, startIndex, endIndex);
-		}
-		
-		timeSpentOnIt = haxe.Timer.stamp() - time;
-	}
-	
-	function processNotesSingleThreaded(pos:Int64, start:Int64, end:Int64) {
-		var scrollSpeed = _cachedScrollSpeed;
-		var posWithLatency = pos + _cachedLatencyI64;
-		var strumlines = parent.strumlines;
-		var noteTypeFuncs = parent.noteTypeFunctionalityPre;
-		var vb = parent.virtualNoteBuffer;
-		
+		var latency = Main.conductor.offset;
+		var latencyI64 = MetaNote.floatToMetaNotePosition(latency);
+
+		pos += latencyI64;
+
+		var i = (minBottom != -1 && bottom < minBottom) ? minBottom : bottom;
+		var scrollSpeed = parent.parent.scrollSpeed;
 		var prev:MetaNote = -1;
 		var prevTimeCorrection:Int64 = 0;
 		var noteSpr:VirtualNote = null;
-		
-		var i = start;
-		while (i < end) {
+		var j:Int = 0;
+
+		var time = haxe.Timer.stamp();
+		while (i < top) {
+			if (top - i < 50) Sys.println('[NOTESYSTEM] Print note $i');
 			var n = File.getNote(i);
+
+			var lane = parent.noteTypeFunctionalityPre[n.type] != null
+				? 1
+				: (n.type % parent.strumlines.length);
+			var receptor = parent.strumlines[lane].buffer[n.index];
+			var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
+
 			var timeCorrection = File.getTimeCorrectionForIndex(i);
 			var n_position = n.position + timeCorrection;
-			
-			var lane = (noteTypeFuncs[n.type] != null) ? 1 : (n.type % strumlines.length);
-			var strumline = strumlines[lane];
-			var receptor = strumline.buffer[n.index];
-			var fakeOverlapStorage = strumline.fakeOverlapStorage;
-			
-			var diff = (MetaNote.metaNotePositionToSongTime(n_position - posWithLatency)) * scrollSpeed;
+
+			var diff = (MetaNote.metaNotePositionToSongTime(n_position - pos)) * scrollSpeed;
 			var newY = receptor.y + Math.floor(diff);
-			
-			var ghost = prev != -1 && 
-				prev.position + prevTimeCorrection == n_position && 
-				prev.index == n.index && 
-				prev.type == n.type;
-			
-			var shouldOverlap = noteSpr != null && !ghost &&
-				shouldNotesOverlap(prev, n, noteSpr, receptor, newY,
-					fakeOverlapStorage[prev != -1 ? prev.index : -1]);
-			
-			fakeOverlapStorage[n.index] = Std.int(newY);
-			
+
+			var ghost = isGhostNote(prev, n, prevTimeCorrection, i);
+
+			var shouldOverlap = noteSpr != null && shouldNotesOverlap(prev, n, noteSpr, receptor, newY,
+				fakeOverlapStorage[prev != -1 ? prev.index : -1]) && !ghost;
+
+			fakeOverlapStorage[n.index] = newY;
+
 			if (shouldOverlap) {
 				mergeNoteIntoSprite(noteSpr, n);
-			} else if (!ghost) {
-				noteSpr = parent.drawNote(pos, n, diff, i);
-				if (noteSpr != null) {
-					vb.addNote(noteSpr);
+			} else {
+				if (!ghost) {
+					++j;
+					noteSpr = parent.drawNote(pos, n, diff, i);
 				}
 			}
-			
-			prev = n;
-			prevTimeCorrection = timeCorrection;
 
+			prev = n;
+			prevTimeCorrection = i;
 			++i;
 		}
-	}
-	
-	function processNotesMultiThreaded(pos:Int64, start:Int64, end:Int64) {
-		// Clear old results
-		threadMutex.acquire();
-		while (resultQueue.pop(false) != null) {}
-		threadMutex.release();
-		
-		var totalNotes = end - start;
-		var notesPerThread = totalNotes / threadCount;
-		if (notesPerThread < 50) notesPerThread = 50;
-		
-		var currentStart = start;
-		var workItems = [];
-		
-		// Distribute work to threads
-		for (i in 0...threadCount) {
-			if (currentStart >= end) break;
-			var chunkEnd = currentStart + notesPerThread;
-			if (chunkEnd > end) chunkEnd = end;
-			
-			var work = new ThreadWork();
-			work.startIndex = currentStart;
-			work.endIndex = chunkEnd;
-			work.pos = pos;
-			
-			workQueue.push(work);
-			workItems.push(work);
-			currentStart = chunkEnd;
-		}
-		
-		// Collect results with timeout
-		var completed = 0;
-		var expected = workItems.length;
-		var timeout = 0;
-		var maxTimeout = 50; // 50ms timeout
-		
-		while (completed < expected && timeout < maxTimeout) {
-			threadMutex.acquire();
-			var result = resultQueue.pop(false);
-			threadMutex.release();
-			
-			if (result != null) {
-				// Process results on main thread (draw notes)
-				for (noteData in result.notes) {
-					// Check if note is already judged
-					if (!File.getJudgement(noteData.index)) {
-						var noteSpr = parent.drawNote(pos, noteData.note, noteData.diff, noteData.index);
-						if (noteSpr != null) {
-							parent.virtualNoteBuffer.addNote(noteSpr);
-						}
-					}
-				}
-				completed++;
-			} else {
-				Sys.sleep(0);
-				timeout++;
-			}
-		}
-		
-		// Process remaining on main thread if timeout
-		if (currentStart < end) {
-			processNotesSingleThreaded(pos, currentStart, end);
-		}
+		timeSpentOnIt = haxe.Timer.stamp() - time;
+
+		pos -= latencyI64;
 	}
 
 	function cullTop(pos:Int64) {
-		var len = _cachedLen;
+		var len = File.getLength();
 
+		// === FORWARD: Include notes now within spawn range ===
 		while (top < len) {
 			var n = File.getNote(top);
 			var tc = File.getTimeCorrectionForIndex(top);
@@ -297,10 +122,10 @@ class NoteSpawner {
 			++top;
 		}
 
+		// === BACKWARD: Exclude notes now too far ahead ===
 		while (top > bottom) {
-			var idx = top - 1;
-			var n = File.getNote(idx);
-			var tc = File.getTimeCorrectionForIndex(idx);
+			var n = File.getNote(top - 1);
+			var tc = File.getTimeCorrectionForIndex(top - 1);
 			if ((n.position + tc) - pos < spawnDist) break;
 			--top;
 		}
@@ -309,8 +134,9 @@ class NoteSpawner {
 	}
 
 	function cullBottom(pos:Int64) {
-		var len = _cachedLen;
+		var len = File.getLength();
 
+		// === FORWARD: Exclude notes that have despawned ===
 		while (bottom < len) {
 			var n = File.getNote(bottom);
 			var tc = File.getTimeCorrectionForIndex(bottom);
@@ -322,10 +148,10 @@ class NoteSpawner {
 			++bottom;
 		}
 
+		// === BACKWARD: Include notes now back in range ===
 		while (bottom > 0 && bottom < top) {
-			var idx = bottom - 1;
-			var n = File.getNote(idx);
-			var tc = File.getTimeCorrectionForIndex(idx);
+			var n = File.getNote(bottom - 1);
+			var tc = File.getTimeCorrectionForIndex(bottom - 1);
 			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - (n.position + tc);
 			if (despawnCheck > despawnDist) break;
 			--bottom;
@@ -340,7 +166,7 @@ class NoteSpawner {
 
 		parent.notePool.reset();
 
-		var len = _cachedLen;
+		var len = File.getLength();
 		if (len <= 0) return;
 
 		var songPos = MetaNote.floatToMetaNotePosition(songPosition);
@@ -395,7 +221,9 @@ class NoteSpawner {
 
 	function renderVirtualNotes(notes:NoteVB, pos:Int64) {
 		var downScroll = parent.parent.downScroll;
+		var numIterations = 0;
 		var virtualNotes = notes.notes;
+		var averageNotesPerOne:Int64 = 0;
 		for (i in 0...virtualNotes.length) {
 			var lane = virtualNotes[i];
 			var strumline = parent.strumlines[i];
@@ -407,10 +235,11 @@ class NoteSpawner {
 				var k = 0;
 				if (length == 0) continue;
 				while (k < length) {
+					var increment = 1;
 					var virtualNote:VirtualNote = index[k];
 
 					if (virtualNote == null) {
-						k++;
+						k += increment;
 						continue;
 					}
 
@@ -427,7 +256,9 @@ class NoteSpawner {
 
 					regularNoteList.push(note);
 
-					k++;
+					k += increment;
+					numIterations++;
+					averageNotesPerOne += 1;
 				}
 			}
 
@@ -504,45 +335,5 @@ class NoteSpawner {
 		var alphaToAdd = n.flag ? Note.defaultMissAlpha : Note.defaultAlpha;
 		noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + alphaToAdd, 256);
 		noteSpr.notesInOne++;
-	}
-	
-	function dispose() {
-		threadRunning = false;
-		for (thread in workerThreads) {
-			try {
-				thread = null;
-			} catch (e) {}
-		}
-		workerThreads = [];
-		workQueue = null;
-		resultQueue = null;
-		threadMutex = null;
-	}
-}
-
-// Helper classes for thread communication
-@:publicFields
-class ThreadWork {
-	var startIndex:Int64;
-	var endIndex:Int64;
-	var pos:Int64;
-
-	function new() {}
-}
-
-@:publicFields
-class ThreadResult {
-	var notes:Array<{
-		index:Int64,
-		note:MetaNote,
-		diff:Float,
-		newY:Float,
-		lane:Int,
-		timeCorrection:Int64,
-		position:Int64
-	}>;
-	
-	function new() {
-		notes = [];
 	}
 }

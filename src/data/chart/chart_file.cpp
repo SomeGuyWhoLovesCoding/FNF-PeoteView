@@ -4,7 +4,7 @@
 #include "chart_file_core.cpp"
 
 // ============================================================================
-// Global API (C++ interface) 
+// Global API (C++ interface)
 // ============================================================================
 
 void loadChart(const char* path) {
