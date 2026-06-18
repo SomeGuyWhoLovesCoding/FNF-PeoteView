@@ -176,12 +176,10 @@ class NoteSystem {
 
 		var leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
 
-		// Judgement-gated state reads
+		// Judgement-gated state reads - now using bulk cache
 		var judged:Bool   = File.getJudgement(_id);
-		var isHit:Bool    = judged && !note.flag;   // judged + flag=false → hit
-		//if (_id == 1) Sys.println('NOTE 1 IS HIT? $isHit; but is note.flag hit (false)? ${note.flag}. Is it judged? $judged');
-		var isMissed:Bool = judged && note.flag;  // judged + flag=true → missed
-		// sustain resolution is tracked externally in strumline
+		var isHit:Bool    = judged && !note.flag;
+		var isMissed:Bool = judged && note.flag;
 		var isResolved:Bool = strumline.sustainsResolved[index];
 
 		var noteSprX = rec.x;
@@ -214,7 +212,7 @@ class NoteSystem {
 					} else {
 						var _pos = MetaNote.metaNotePositionToSongTime(
 							(noteToHit.position + strumline.getTimeCorrection[index]) - pos
-						) * _cachedScrollSpeed;  // Match diff's units
+						) * _cachedScrollSpeed;
 						if (strumline.notesToHit_indexes[index] != noteSpr.globalIndex && Math.abs(diff) < Math.abs(_pos)) {
 							strumline.notesToHit[index] = note;
 							strumline.notesToHit_indexes[index] = _id;
@@ -226,7 +224,7 @@ class NoteSystem {
 				if (diff < -_cachedHitbox - offset && !isMissed) {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
 					var n:Int64 = note.toNumber();
-					(n:MetaNote).flag = true;           // chosen to miss
+					(n:MetaNote).flag = true;
 					isMissed = true;
 					File.setJudgement(_id, true);
 
@@ -265,9 +263,7 @@ class NoteSystem {
 		else {
 			if (!isHit && diff < 0) {
 				var n:Int64 = note.toNumber();
-				// opponent hit: judged as hit (missed=false)
 				(n:MetaNote).flag = false;
-				// Re-read immediately so sustain/visual logic below uses correct state
 				isHit = true;
 				File.setJudgement(_id, true);
 
@@ -346,8 +342,6 @@ class NoteSystem {
 
 		if (!isHit)
 			virtualNoteBuffer.addNote(noteSpr);
-
-		//if (_id == 0 && playable) Sys.println('SET JUDGEMENT for $_id, readback: ${File.getJudgement(_id)}');
 
 		return noteSpr;
 	}

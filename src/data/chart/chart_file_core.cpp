@@ -11,6 +11,7 @@
 #include <cmath>
 #include <thread>
 #include <mutex>
+#include <shared_mutex>
 #include <future>
 #include <unordered_map>
 #include <cerrno>
@@ -306,7 +307,6 @@ public:
 
         mapLen = static_cast<size_t>(st.st_size);
         
-        // CRITICAL FIX: Use MAP_SHARED for read/write access
         void* ptr = mmap(nullptr, mapLen, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
         if (ptr == MAP_FAILED) { 
             std::cerr << "[MappedFileReader] mmap() failed for " << path 
@@ -385,7 +385,7 @@ public:
 };
 
 // ============================================================================
-// Sharded Chart Reader with Pooling System, Binary Search, and Async Preload
+// Thread-Safe Sharded Chart Reader with Pooling System
 // ============================================================================
 class ShardedChartReader {
 private:
@@ -410,7 +410,10 @@ private:
 
     int64_t correctionTime = 0;
 
-    std::mutex pendingMutex;
+    // Thread synchronization
+    mutable std::shared_mutex shardMutex;      // For activeShards, availableShards, shardStartIndices
+    mutable std::shared_mutex pendingMutex;    // For pendingLoads
+    
     std::unordered_map<uint64_t, std::future<ShardInfo*>> pendingLoads;
 
     struct AccessCache {
@@ -419,10 +422,16 @@ private:
         int64_t    localIndex = -1;
         int64_t    globalIndex = -1;
     };
-    AccessCache readCache;
-    AccessCache judgeCache;
+    // Thread-local cache (no mutex needed for individual threads)
+    static thread_local AccessCache readCache;
+    static thread_local AccessCache judgeCache;
+    static thread_local int64_t cachedShardStart;
+    static thread_local int64_t cachedShardEnd;
+    static thread_local uint64_t cachedShardId;
+    static thread_local ShardInfo* cachedShardInfo;
 
     int64_t getShardStartIndex(uint64_t shardId) const {
+        std::shared_lock<std::shared_mutex> lock(shardMutex);
         auto it = std::lower_bound(availableShards.begin(), availableShards.end(), shardId);
         if (it == availableShards.end() || *it != shardId) {
             throw std::runtime_error("Shard not found: " + std::to_string(shardId));
@@ -453,6 +462,7 @@ private:
         metaFile.close();
         
         // Build the shard lists
+        std::unique_lock<std::shared_mutex> lock(shardMutex);
         availableShards.clear();
         shardStartIndices.clear();
         availableShards.reserve(entryCount);
@@ -509,6 +519,7 @@ private:
                   [](const TempInfo& a, const TempInfo& b) { return a.shardId < b.shardId; });
         
         // Build indices
+        std::unique_lock<std::shared_mutex> lock(shardMutex);
         availableShards.clear();
         shardStartIndices.clear();
         int64_t cumulative = 0;
@@ -591,15 +602,15 @@ private:
         metaOut.close();
     }
     
-    // Keep loadShard() for actual note access (memory-mapped, stays open)
     void loadShard(uint64_t shardId) {
         {
-            std::lock_guard<std::mutex> lk(pendingMutex);
+            std::lock_guard<std::shared_mutex> lk(pendingMutex);
             auto it = pendingLoads.find(shardId);
             if (it != pendingLoads.end()) {
                 ShardInfo* info = it->second.get();
                 pendingLoads.erase(it);
                 if (info) {
+                    std::unique_lock<std::shared_mutex> lock(shardMutex);
                     if (activeShards.find(shardId) == activeShards.end()) {
                         activeShards.emplace(shardId, std::move(*info));
                     }
@@ -609,7 +620,10 @@ private:
             }
         }
         
-        if (activeShards.find(shardId) != activeShards.end()) return;
+        {
+            std::shared_lock<std::shared_mutex> lock(shardMutex);
+            if (activeShards.find(shardId) != activeShards.end()) return;
+        }
         
         std::string path = chartDir + "/" + std::to_string(shardId) + ".bin";
         
@@ -631,6 +645,7 @@ private:
         info.noteCount = info.reader.getNoteCount();
         info.endIndex  = info.startIndex + info.noteCount;
         
+        std::unique_lock<std::shared_mutex> lock(shardMutex);
         activeShards.emplace(shardId, std::move(info));
     }
 
@@ -650,24 +665,33 @@ private:
         if (globalIndex < 0 || globalIndex >= totalNotes)
             throw std::out_of_range("Global index out of range");
         
+        std::shared_lock<std::shared_mutex> lock(shardMutex);
+        
         auto it = std::upper_bound(shardStartIndices.begin(), shardStartIndices.end(), globalIndex);
         size_t shardPos = std::distance(shardStartIndices.begin(), it) - 1;
         uint64_t shardId = availableShards[shardPos];
 
         if (shardId != currentShardId && (shardId / 10 != currentShardId / 10)) {
             currentShardId = shardId;
+            // Unlock before managing pool (which needs its own locks)
+            lock.unlock();
             managePool(currentShardId);
+            lock.lock();
         }
 
         auto mapIt = activeShards.find(shardId);
         if (mapIt == activeShards.end()) {
+            lock.unlock();
             loadShard(shardId);
+            lock.lock();
             mapIt = activeShards.find(shardId);
         }
 
         cachedShardId    = shardId;
         cachedShardStart = shardStartIndices[shardPos];
-        cachedShardEnd   = mapIt->second.endIndex;
+        cachedShardEnd   = (shardPos + 1 < shardStartIndices.size())
+                         ? shardStartIndices[shardPos + 1]
+                         : totalNotes;
         cachedShardInfo  = &mapIt->second;
         
         cache.shardId = shardId;
@@ -677,9 +701,11 @@ private:
     }
 
     void asyncLoadShard(uint64_t shardId) {
+        std::shared_lock<std::shared_mutex> lock(shardMutex);
         if (activeShards.find(shardId) != activeShards.end()) return;
+        lock.unlock();
 
-        std::lock_guard<std::mutex> lk(pendingMutex);
+        std::lock_guard<std::shared_mutex> lk(pendingMutex);
         if (pendingLoads.find(shardId) != pendingLoads.end()) return;
 
         std::string path     = chartDir + "/" + std::to_string(shardId) + ".bin";
@@ -705,17 +731,20 @@ private:
     }
 
     void drainPending() {
-        std::lock_guard<std::mutex> lk(pendingMutex);
+        std::lock_guard<std::shared_mutex> lk(pendingMutex);
         for (auto it = pendingLoads.begin(); it != pendingLoads.end(); ) {
             if (it->second.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
                 ShardInfo* info = it->second.get();
-                if (info && activeShards.find(it->first) == activeShards.end()) {
-                    activeShards.emplace(
-                        std::piecewise_construct,
-                        std::forward_as_tuple(it->first),
-                        std::forward_as_tuple()
-                    );
-                    activeShards[it->first] = std::move(*info);
+                if (info) {
+                    std::unique_lock<std::shared_mutex> lock(shardMutex);
+                    if (activeShards.find(it->first) == activeShards.end()) {
+                        activeShards.emplace(
+                            std::piecewise_construct,
+                            std::forward_as_tuple(it->first),
+                            std::forward_as_tuple()
+                        );
+                        activeShards[it->first] = std::move(*info);
+                    }
                     delete info;
                 } else {
                     delete info;
@@ -729,7 +758,7 @@ private:
 
     void unloadShard(uint64_t shardId) {
         {
-            std::lock_guard<std::mutex> lk(pendingMutex);
+            std::lock_guard<std::shared_mutex> lk(pendingMutex);
             auto pit = pendingLoads.find(shardId);
             if (pit != pendingLoads.end()) {
                 pit->second.wait();
@@ -737,6 +766,7 @@ private:
             }
         }
 
+        std::unique_lock<std::shared_mutex> lock(shardMutex);
         auto it = activeShards.find(shardId);
         if (it != activeShards.end()) {
             activeShards.erase(it);
@@ -752,6 +782,7 @@ private:
         drainPending();
 
         std::vector<uint64_t> toRemove;
+        std::shared_lock<std::shared_mutex> lock(shardMutex);
         for (auto& pair : activeShards) {
             int64_t first = static_cast<int64_t>(pair.first);
             int64_t current = static_cast<int64_t>(currentShard);
@@ -761,10 +792,13 @@ private:
                 toRemove.push_back(pair.first);
             }
         }
+        lock.unlock();
+        
         for (uint64_t id : toRemove) unloadShard(id);
     }
 
     void rebuildShardStartIndices() {
+        std::unique_lock<std::shared_mutex> lock(shardMutex);
         shardStartIndices.clear();
         int64_t cumulative = 0;
         
@@ -828,6 +862,7 @@ private:
         file.close();
         
         // Add to availableShards if not already present
+        std::unique_lock<std::shared_mutex> lock(shardMutex);
         auto it = std::lower_bound(availableShards.begin(), availableShards.end(), shardId);
         if (it == availableShards.end() || *it != shardId) {
             availableShards.insert(it, shardId);
@@ -840,11 +875,13 @@ private:
             memset(entry.reserved, 0, sizeof(entry.reserved));
             shardMetadataCache[shardId] = entry;
             
+            lock.unlock();
             rebuildShardStartIndices();  // Rebuild all indices after adding new shard
         }
     }
 
     void remapShard(uint64_t shardId, int64_t newCapacity) {
+        std::unique_lock<std::shared_mutex> lock(shardMutex);
         auto it = activeShards.find(shardId);
         if (it == activeShards.end()) return;
         
@@ -902,11 +939,13 @@ private:
 public:
     std::vector<uint8_t> globalJudgement;
     bool globalJudgementInitialized = false;
+    mutable std::shared_mutex judgementMutex;  // For judgement array
     
     // Cache for shard metadata (noteCount, capacity, reserved)
     std::unordered_map<uint64_t, ShardMetaEntry> shardMetadataCache;
 
     void initGlobalJudgement() {
+        std::unique_lock<std::shared_mutex> lock(judgementMutex);
         if (globalJudgementInitialized) return;
         globalJudgement.assign((totalNotes + 7) >> 3, 0);
         globalJudgementInitialized = true;
@@ -921,19 +960,14 @@ public:
         // Update metadata file after rebuild
         writeMetadataFile();
 
-        std::lock_guard<std::mutex> lk(pendingMutex);
+        std::lock_guard<std::shared_mutex> lk(pendingMutex);
         for (auto& pair : pendingLoads) pair.second.wait();
         pendingLoads.clear();
         activeShards.clear();
     }
 
-    // Hot path cache
-    int64_t    cachedShardStart = -1;
-    int64_t    cachedShardEnd   = -1;
-    uint64_t   cachedShardId    = 0;
-    ShardInfo* cachedShardInfo  = nullptr;
-
     uint64_t findShardForGlobalIndex(int64_t globalIndex) const {
+        std::shared_lock<std::shared_mutex> lock(shardMutex);
         if (globalIndex >= cachedShardStart && globalIndex < cachedShardEnd)
             return cachedShardId;
         if (globalIndex < 0 || globalIndex >= totalNotes)
@@ -949,18 +983,24 @@ public:
         if (globalIndex < 0 || globalIndex >= totalNotes)
             throw std::out_of_range("Global index out of range");
 
+        std::shared_lock<std::shared_mutex> lock(shardMutex);
+        
         auto it = std::upper_bound(shardStartIndices.begin(), shardStartIndices.end(), globalIndex);
         size_t   shardPos = std::distance(shardStartIndices.begin(), it) - 1;
         uint64_t shardId  = availableShards[shardPos];
 
         if (shardId != currentShardId) {
             currentShardId = shardId;
+            lock.unlock();
             managePool(currentShardId);
+            lock.lock();
         }
 
         auto mapIt = activeShards.find(shardId);
         if (mapIt == activeShards.end()) {
+            lock.unlock();
             loadShard(shardId);
+            lock.lock();
             mapIt = activeShards.find(shardId);
         }
 
@@ -1001,6 +1041,7 @@ public:
         if (!globalJudgementInitialized) initGlobalJudgement();
         if (globalIndex < 0 || globalIndex >= totalNotes) return false;
         
+        std::shared_lock<std::shared_mutex> lock(judgementMutex);
         int64_t byteIndex = globalIndex >> 3;
         int     bitIndex  = globalIndex & 7;
         
@@ -1012,6 +1053,7 @@ public:
         if (!globalJudgementInitialized) initGlobalJudgement();
         if (globalIndex < 0 || globalIndex >= totalNotes) return;
 
+        std::unique_lock<std::shared_mutex> lock(judgementMutex);
         int64_t byteIndex = globalIndex >> 3;
         int     bitIndex  = globalIndex & 7;
         
@@ -1021,6 +1063,87 @@ public:
             globalJudgement[byteIndex] |=  (1 << bitIndex);
         else       
             globalJudgement[byteIndex] &= ~(1 << bitIndex);
+    }
+
+    // ============================================================================
+    // BULK OPERATIONS - Thread-safe with minimal locking
+    // ============================================================================
+    
+    void getNotesBulk(int64_t startIndex, int64_t count, uint64_t* outBuffer) {
+        if (startIndex < 0 || startIndex + count > totalNotes) {
+            throw std::out_of_range("getNotesBulk: range out of bounds");
+        }
+        
+        // Lock once for the entire bulk operation
+        std::shared_lock<std::shared_mutex> lock(shardMutex);
+        
+        for (int64_t i = 0; i < count; i++) {
+            int64_t idx = startIndex + i;
+            auto it = std::upper_bound(shardStartIndices.begin(), shardStartIndices.end(), idx);
+            size_t shardPos = std::distance(shardStartIndices.begin(), it) - 1;
+            uint64_t shardId = availableShards[shardPos];
+            
+            // Load shard if needed (but we need to unlock for loading)
+            lock.unlock();
+            
+            ShardInfo* info = getShardInfoFast(idx, readCache);
+            int64_t localIndex = idx - info->startIndex;
+            outBuffer[i] = info->reader.get(localIndex);
+            
+            lock.lock();
+        }
+    }
+    
+    void getNotesWithJudgementBulk(int64_t startIndex, int64_t count, 
+                                    uint64_t* noteBuffer, bool* judgementBuffer) {
+        if (startIndex < 0 || startIndex + count > totalNotes) {
+            throw std::out_of_range("getNotesWithJudgementBulk: range out of bounds");
+        }
+        
+        // Read all notes first (with shared lock)
+        {
+            std::shared_lock<std::shared_mutex> lock(shardMutex);
+            for (int64_t i = 0; i < count; i++) {
+                int64_t idx = startIndex + i;
+                auto it = std::upper_bound(shardStartIndices.begin(), shardStartIndices.end(), idx);
+                size_t shardPos = std::distance(shardStartIndices.begin(), it) - 1;
+                uint64_t shardId = availableShards[shardPos];
+                
+                lock.unlock();
+                
+                ShardInfo* info = getShardInfoFast(idx, readCache);
+                int64_t localIndex = idx - info->startIndex;
+                noteBuffer[i] = info->reader.get(localIndex);
+                
+                lock.lock();
+            }
+        }
+        
+        // Read judgements with separate lock
+        if (judgementBuffer) {
+            std::shared_lock<std::shared_mutex> lock(judgementMutex);
+            for (int64_t i = 0; i < count; i++) {
+                int64_t idx = startIndex + i;
+                int64_t byteIndex = idx >> 3;
+                int bitIndex = idx & 7;
+                judgementBuffer[i] = (globalJudgement[byteIndex] >> bitIndex) & 1;
+            }
+        }
+    }
+    
+    void getJudgementsBulk(int64_t startIndex, int64_t count, bool* outBuffer) {
+        if (!globalJudgementInitialized) initGlobalJudgement();
+        if (startIndex < 0 || startIndex + count > totalNotes) {
+            throw std::out_of_range("getJudgementsBulk: range out of bounds");
+        }
+        
+        std::shared_lock<std::shared_mutex> lock(judgementMutex);
+        for (int64_t i = 0; i < count; i++) {
+            int64_t idx = startIndex + i;
+            int64_t byteIndex = idx >> 3;
+            int bitIndex = idx & 7;
+            outBuffer[i] = (globalJudgement[byteIndex] >> bitIndex) & 1;
+        }
     }
 
     void insertNote(int64_t globalPosition, int duration, int index, int type) {
@@ -1042,8 +1165,10 @@ public:
         judgeCache.info = nullptr;
         
         // Get or create shard
+        std::unique_lock<std::shared_mutex> lock(shardMutex);
         auto mapIt = activeShards.find(shardId);
         if (mapIt == activeShards.end()) {
+            lock.unlock();
             std::string path = chartDir + "/" + std::to_string(shardId) + ".bin";
             std::ifstream test(path);
             bool exists = test.good();
@@ -1053,6 +1178,7 @@ public:
                 createShardFile(shardId, DEFAULT_SHARD_CAPACITY);
             }
             loadShard(shardId);
+            lock.lock();
             mapIt = activeShards.find(shardId);
             if (mapIt == activeShards.end())
                 throw std::runtime_error("Failed to load shard: " + std::to_string(shardId));
@@ -1063,8 +1189,10 @@ public:
         // Check capacity and grow if needed
         int64_t currentCapacity = shard.reader.size();
         if (shard.noteCount + 1 > currentCapacity) {
+            lock.unlock();
             int64_t newCapacity = std::max<int64_t>(currentCapacity + 64, (int64_t)(currentCapacity * 1.5));
             remapShard(shardId, newCapacity);
+            lock.lock();
             mapIt = activeShards.find(shardId);
         }
         
@@ -1078,8 +1206,11 @@ public:
         
         totalNotes++;
         
-        // Sort this shard (O(n) radix sort)
+        lock.unlock();
+        
+        // Sort this shard (O(n) radix sort) - needs its own lock
         sortShard(shardId);
+        lock.lock();
         
         // Update global indices
         auto it = std::lower_bound(availableShards.begin(), availableShards.end(), (uint64_t)shardId);
@@ -1108,6 +1239,7 @@ public:
     }
 
     void sortShard(uint64_t shardId) {
+        std::unique_lock<std::shared_mutex> lock(shardMutex);
         auto it = activeShards.find(shardId);
         if (it == activeShards.end()) return;
         
@@ -1120,9 +1252,12 @@ public:
             notes[i] = shard.reader.get(i);
         }
         
-        // Radix sort by local position (31 bits)
+        lock.unlock();
+        
+        // Radix sort by local position (31 bits) - no lock needed for sorting
         radixSortShardInPlace(notes);
         
+        lock.lock();
         // Write back sorted notes
         for (int64_t i = 0; i < shard.noteCount; i++) {
             shard.reader.set(i, notes[i]);
@@ -1187,6 +1322,8 @@ public:
         if (globalIndex < 0 || globalIndex >= totalNotes)
             throw std::out_of_range("Global index out of range");
         
+        std::unique_lock<std::shared_mutex> lock(shardMutex);
+        
         // Find which shard contains this global index
         auto it = std::upper_bound(shardStartIndices.begin(), shardStartIndices.end(), globalIndex);
         size_t shardPos = std::distance(shardStartIndices.begin(), it) - 1;
@@ -1194,7 +1331,9 @@ public:
         
         auto mapIt = activeShards.find(shardId);
         if (mapIt == activeShards.end()) {
+            lock.unlock();
             loadShard(shardId);
+            lock.lock();
             mapIt = activeShards.find(shardId);
         }
         
@@ -1263,6 +1402,7 @@ public:
     size_t  getShardCount() const { return availableShards.size(); }
 
     void printPoolStats() const {
+        std::shared_lock<std::shared_mutex> lock(shardMutex);
         std::cout << "[POOL] Active shards: " << activeShards.size()
                   << " / " << availableShards.size() << std::endl;
         int count = 0;
@@ -1277,56 +1417,140 @@ public:
 };
 
 // ============================================================================
-// Global API
+// Thread-Local Static Members
+// ============================================================================
+thread_local ShardedChartReader::AccessCache ShardedChartReader::readCache;
+thread_local ShardedChartReader::AccessCache ShardedChartReader::judgeCache;
+thread_local int64_t ShardedChartReader::cachedShardStart = -1;
+thread_local int64_t ShardedChartReader::cachedShardEnd = -1;
+thread_local uint64_t ShardedChartReader::cachedShardId = 0;
+thread_local ShardedChartReader::ShardInfo* ShardedChartReader::cachedShardInfo = nullptr;
+
+// ============================================================================
+// Thread-Safe Global API with Read-Write Lock
 // ============================================================================
 static ShardedChartReader* gReader = nullptr;
+static std::shared_mutex gReaderMutex;
+
+// ============================================================================
+// Thread-Safe Wrapper Functions
+// ============================================================================
+
+extern "C" {
 
 void core_loadChart(const char* path) {
+    std::unique_lock<std::shared_mutex> lock(gReaderMutex);
     if (gReader) { delete gReader; gReader = nullptr; }
     gReader = new ShardedChartReader(path);
 }
 
 void core_destroyChart() {
+    std::unique_lock<std::shared_mutex> lock(gReaderMutex);
     ShardedChartReader* old = gReader;
     gReader = nullptr;
     delete old;
 }
 
+// READ OPERATIONS - Use shared_lock for concurrent reads
 uint64_t core_getNote(int64_t index) {
+    std::shared_lock<std::shared_mutex> lock(gReaderMutex);
     if (!gReader) throw std::runtime_error("Chart not loaded");
     return gReader->getNote(index);
 }
 
-void core_setNote(int64_t index, uint64_t value) {
-    if (!gReader) throw std::runtime_error("Chart not loaded");
-    gReader->setNote(index, value);
-}
-
-void core_insertNote(int64_t globalPosition, int duration, int index, int type) {
-    if (!gReader) throw std::runtime_error("Chart not loaded");
-    gReader->insertNote(globalPosition, duration, index, type);
-}
-
-void core_removeNote(int64_t globalIndex) {
-    if (!gReader) throw std::runtime_error("Chart not loaded");
-    gReader->removeNote(globalIndex);
-}
-
-void core_printNoteInfo(int64_t index) {
-    if (!gReader) throw std::runtime_error("Chart not loaded");
-    gReader->printNoteInfo(index);
+bool core_getJudgement(int64_t index) {
+    std::shared_lock<std::shared_mutex> lock(gReaderMutex);
+    if (!gReader) return false;
+    return gReader->core_getJudgement(index);
 }
 
 int64_t core_getLength() {
-    if (!gReader) throw std::runtime_error("Chart not loaded");
+    std::shared_lock<std::shared_mutex> lock(gReaderMutex);
+    if (!gReader) return 0;
     return gReader->getLength();
 }
 
 size_t core_getShardCount() {
+    std::shared_lock<std::shared_mutex> lock(gReaderMutex);
     if (!gReader) return 0;
     return gReader->getShardCount();
 }
 
 void core_printPoolStats() {
+    std::shared_lock<std::shared_mutex> lock(gReaderMutex);
     if (gReader) gReader->printPoolStats();
 }
+
+// WRITE OPERATIONS - Use unique_lock for exclusive access
+void core_setNote(int64_t index, uint64_t value) {
+    std::unique_lock<std::shared_mutex> lock(gReaderMutex);
+    if (!gReader) throw std::runtime_error("Chart not loaded");
+    gReader->setNote(index, value);
+}
+
+void core_setJudgement(int64_t index, bool value) {
+    std::unique_lock<std::shared_mutex> lock(gReaderMutex);
+    if (!gReader) return;
+    gReader->core_setJudgement(index, value);
+}
+
+void core_insertNote(int64_t globalPosition, int duration, int index, int type) {
+    std::unique_lock<std::shared_mutex> lock(gReaderMutex);
+    if (!gReader) throw std::runtime_error("Chart not loaded");
+    gReader->insertNote(globalPosition, duration, index, type);
+}
+
+void core_removeNote(int64_t globalIndex) {
+    std::unique_lock<std::shared_mutex> lock(gReaderMutex);
+    if (!gReader) throw std::runtime_error("Chart not loaded");
+    gReader->removeNote(globalIndex);
+}
+
+void core_printNoteInfo(int64_t index) {
+    std::shared_lock<std::shared_mutex> lock(gReaderMutex);
+    if (!gReader) throw std::runtime_error("Chart not loaded");
+    gReader->printNoteInfo(index);
+}
+
+// ============================================================================
+// BULK OPERATIONS - Read multiple notes at once (optimized for hot path)
+// ============================================================================
+
+void core_getNotesBulk(int64_t startIndex, int64_t count, uint64_t* outBuffer) {
+    std::shared_lock<std::shared_mutex> lock(gReaderMutex);
+    if (!gReader) throw std::runtime_error("Chart not loaded");
+    gReader->getNotesBulk(startIndex, count, outBuffer);
+}
+
+void core_getNotesWithJudgementBulk(int64_t startIndex, int64_t count, 
+                                     uint64_t* noteBuffer, bool* judgementBuffer) {
+    std::shared_lock<std::shared_mutex> lock(gReaderMutex);
+    if (!gReader) throw std::runtime_error("Chart not loaded");
+    gReader->getNotesWithJudgementBulk(startIndex, count, noteBuffer, judgementBuffer);
+}
+
+void core_getJudgementsBulk(int64_t startIndex, int64_t count, bool* outBuffer) {
+    std::shared_lock<std::shared_mutex> lock(gReaderMutex);
+    if (!gReader) return;
+    gReader->getJudgementsBulk(startIndex, count, outBuffer);
+}
+
+// ============================================================================
+// Judgement Array Access (for Haxe binding)
+// ============================================================================
+
+const unsigned char* core_getJudgementArray() {
+    std::shared_lock<std::shared_mutex> lock(gReaderMutex);
+    if (!gReader) return nullptr;
+    if (!gReader->globalJudgementInitialized) return nullptr;
+    return gReader->globalJudgement.data();
+}
+
+size_t core_getJudgementArraySize() {
+    std::shared_lock<std::shared_mutex> lock(gReaderMutex);
+    if (!gReader) return 0;
+    if (!gReader->globalJudgementInitialized) return 0;
+    return gReader->globalJudgement.size();
+}
+
+} // extern "C"
