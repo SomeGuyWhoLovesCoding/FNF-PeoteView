@@ -154,7 +154,7 @@ class NoteSystem {
 	}
 
 	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64, 
-		pool:NotePool, strumline:Strumline):VirtualNote {
+		strumline:Strumline):VirtualNote {
 		
 		var index = note.index;
 		var lane = 0;
@@ -175,10 +175,10 @@ class NoteSystem {
 		var id = parent.inputSystem.receptorIds[index];
 
 		// Get note from pool
-		var noteSpr = pool.getNote(note, _id);
+		var noteSpr = notePool.getNote(note, _id);
 		if (noteSpr == null) return null;
 		
-		var sustainSpr = duration != 0 ? pool.getSustain(note, _id) : null;
+		var sustainSpr = duration != 0 ? notePool.getSustain(note, _id) : null;
 		var sustainExists = duration != 0;
 
 		var leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
