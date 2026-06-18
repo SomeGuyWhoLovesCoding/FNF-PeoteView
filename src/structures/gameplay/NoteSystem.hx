@@ -1,9 +1,9 @@
 package structures.gameplay;
 
 /**
- * This is where notes render when interconnected to the note spawner.
+ * Optimized note system with pooled rendering and generation-based management.
  * @since Development
- */
+**/
 @:publicFields
 class NoteSystem {
 	static var sustainProg(default, null):CustomProgram;
@@ -95,6 +95,7 @@ class NoteSystem {
 		if (delta < 0 || MetaNote.metaNotePositionToSongTime(delta) > 200)
 			_lastPos = pos;
 
+		// Use generation-based clear (O(1))
 		virtualNoteBuffer.clear();
 
 		if (noteSpawner != null)
@@ -114,6 +115,7 @@ class NoteSystem {
 	}
 
 	private function refreshRendering(pos:Int64) {
+		// Clear buffers
 		notesBuf.clear();
 		sustainsBuf.clear();
 
@@ -121,10 +123,12 @@ class NoteSystem {
 		if (delta < 0) delta = -delta;
 		var timeDelta = MetaNote.metaNotePositionToSongTime(delta) * 0.001;
 
-		for (i in 0...strumlines.length) {
-			var strumline = strumlines[i];
+		var strumlinesLocal = strumlines;
+		for (i in 0...strumlinesLocal.length) {
+			var strumline = strumlinesLocal[i];
 			var botTimers = strumline.botTimers;
 			var canMess = !strumline.playable || RenderingMode.enabled || parent.botplay;
+			
 			for (j in 0...botTimers.length) {
 				var rec = strumline.buffer[j];
 				if (parent.botplay) canMess = true;
@@ -149,7 +153,9 @@ class NoteSystem {
 		noteSpawner.renderNotes(pos);
 	}
 
-	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64):VirtualNote {
+	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64, 
+		pool:NotePool, strumline:Strumline):VirtualNote {
+		
 		var index = note.index;
 		var lane = 0;
 		var duration = note.duration;
@@ -165,23 +171,22 @@ class NoteSystem {
 			lane = 1;
 		}
 
-		var strumline = strumlines[lane];
 		var rec = strumline.buffer[index];
 		var id = parent.inputSystem.receptorIds[index];
 
-		var noteSpr = notePool.getNote(id, note, _id);
-		if (noteSpr == null) return noteSpr;
-		var sustainSpr = duration != 0 ? notePool.getSustain(id, note, _id) : null;
+		// Get note from pool
+		var noteSpr = pool.getNote(note, _id);
+		if (noteSpr == null) return null;
+		
+		var sustainSpr = duration != 0 ? pool.getSustain(note, _id) : null;
 		var sustainExists = duration != 0;
 
 		var leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
 
 		// Judgement-gated state reads
-		var judged:Bool   = File.getJudgement(_id);
-		var isHit:Bool    = judged && !note.flag;   // judged + flag=false → hit
-		//if (_id == 1) Sys.println('NOTE 1 IS HIT? $isHit; but is note.flag hit (false)? ${note.flag}. Is it judged? $judged');
-		var isMissed:Bool = judged && note.flag;  // judged + flag=true → missed
-		// sustain resolution is tracked externally in strumline
+		var judged:Bool = File.getJudgement(_id);
+		var isHit:Bool = judged && !note.flag;
+		var isMissed:Bool = judged && note.flag;
 		var isResolved:Bool = strumline.sustainsResolved[index];
 
 		var noteSprX = rec.x;
@@ -194,7 +199,6 @@ class NoteSystem {
 		noteSpr.globalIndex = _id;
 
 		var playable = strumline.playable && !(parent.botplay || RenderingMode.enabled);
-
 		var offset = Main.conductor.offset;
 
 		// --- Player side ---
@@ -214,7 +218,7 @@ class NoteSystem {
 					} else {
 						var _pos = MetaNote.metaNotePositionToSongTime(
 							(noteToHit.position + strumline.getTimeCorrection[index]) - pos
-						) * _cachedScrollSpeed;  // Match diff's units
+						) * _cachedScrollSpeed;
 						if (strumline.notesToHit_indexes[index] != noteSpr.globalIndex && Math.abs(diff) < Math.abs(_pos)) {
 							strumline.notesToHit[index] = note;
 							strumline.notesToHit_indexes[index] = _id;
@@ -226,7 +230,7 @@ class NoteSystem {
 				if (diff < -_cachedHitbox - offset && !isMissed) {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
 					var n:Int64 = note.toNumber();
-					(n:MetaNote).flag = true;           // chosen to miss
+					(n:MetaNote).flag = true;
 					isMissed = true;
 					File.setJudgement(_id, true);
 
@@ -265,9 +269,7 @@ class NoteSystem {
 		else {
 			if (!isHit && diff < 0) {
 				var n:Int64 = note.toNumber();
-				// opponent hit: judged as hit (missed=false)
 				(n:MetaNote).flag = false;
-				// Re-read immediately so sustain/visual logic below uses correct state
 				isHit = true;
 				File.setJudgement(_id, true);
 
@@ -344,11 +346,6 @@ class NoteSystem {
 				virtualNoteBuffer.addSustain(sustainSpr, noteSpr);
 		}
 
-		if (!isHit)
-			virtualNoteBuffer.addNote(noteSpr);
-
-		//if (_id == 0 && playable) Sys.println('SET JUDGEMENT for $_id, readback: ${File.getJudgement(_id)}');
-
 		return noteSpr;
 	}
 
@@ -391,7 +388,9 @@ class NoteSystem {
 	}
 
 	function dispose() {
-		virtualNoteBuffer.clear();
+		// Clear using generation reset
+		virtualNoteBuffer.reset();
+		
 		notesBuf.clear();
 		sustainsBuf.clear();
 
