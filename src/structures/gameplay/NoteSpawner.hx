@@ -1,10 +1,7 @@
 package structures.gameplay;
 
-import data.chart.File;
-import data.chart.MetaNote;
-
 /**
- * Optimized note spawner with focus on hot path performance.
+ * Optimized note spawner with caching and reduced computational overhead.
  * @since Development
 **/
 @:publicFields
@@ -24,36 +21,19 @@ class NoteSpawner {
 
 	var parent(default, null):NoteSystem;
 	
-	// --- CACHED VALUES FOR HOT PATH ---
-	var _cachedLen:Int64 = 0;
+	// Cached values to avoid repeated lookups
 	var _cachedScrollSpeed:Float = 1.0;
 	var _cachedOffset:Float = 0;
 	var _cachedLatencyI64:Int64 = 0;
-	var _cachedDownScroll:Bool = false;
 	
-	// --- PRE-ALLOCATED ARRAYS FOR NOTE CACHING ---
-	var _noteCache:Array<{note:MetaNote, timeCorrection:Int64, pos:Int64}>;
-	var _cacheIndex:Int = 0;
-	var _cacheSize:Int = 0;
-	
-	// --- STATS ---
-	var timeSpentOnIt:Float = 0;
-	var _lastProcessedTime:Float = 0;
+	// Preallocated local variables for loop optimization
+	var _timeSpentOnIt:Float = 0;
+	var _timeSpentOnItIncrement:Float = 0;
 
 	function new(parent:NoteSystem) {
 		this.parent = parent;
 		bottom = 0;
 		top = 0;
-		_cachedLen = File.getLength();
-		
-		// Pre-allocate cache for 5000 notes (adjust based on max visible notes)
-		_cacheSize = 5000;
-		_noteCache = [];
-		for (i in 0..._cacheSize) {
-			_noteCache.push({note: -1, timeCorrection: 0, pos: 0});
-		}
-		_cacheIndex = 0;
-		
 		updateCache();
 	}
 
@@ -61,13 +41,13 @@ class NoteSpawner {
 		_cachedScrollSpeed = parent.parent.scrollSpeed;
 		_cachedOffset = Main.conductor.offset;
 		_cachedLatencyI64 = MetaNote.floatToMetaNotePosition(_cachedOffset);
-		_cachedDownScroll = parent.parent.downScroll;
 	}
 
 	function update(pos:Int64) {
 		_lastbottom = bottom;
 		_lasttop = top;
 
+		// Update cached values
 		updateCache();
 
 		cullTop(pos);
@@ -89,36 +69,31 @@ class NoteSpawner {
 		processNotes(pos);
 	}
 
-	/**
-	 * CRITICAL HOT PATH: Process notes with minimal allocations
-	 */
 	function processNotes(pos:Int64) {
 		var time = haxe.Timer.stamp();
 		
 		// Apply latency compensation once
 		pos += _cachedLatencyI64;
 		
-		// Get local references for faster access
-		var strumlines = parent.strumlines;
+		var i = (minBottom != -1 && bottom < minBottom) ? minBottom : bottom;
+		var topLocal = top;
+		var len = File.getLength();
+		
+		// Local cache for hot variables
+		var file = File;
 		var noteTypeFuncs = parent.noteTypeFunctionalityPre;
+		var strumlines = parent.strumlines;
+		var notePool = parent.notePool;
 		var vb = parent.virtualNoteBuffer;
 		
-		// Cache frequently accessed values
-		var scrollSpeed = _cachedScrollSpeed;
-		var minBottomLocal = minBottom;
-		var bottomLocal = bottom;
-		var topLocal = top;
-		var len = _cachedLen;
-		
-		// Start from minBottom if set
-		var i = (minBottomLocal != -1 && bottomLocal < minBottomLocal) ? minBottomLocal : bottomLocal;
-		
-		// Pre-allocate local variables
 		var prev:MetaNote = -1;
+		var prevTimeCorrection:Int64 = 0;
 		var noteSpr:VirtualNote = null;
+		var j:Int = 0;
+		
+		// Preallocate variables to avoid allocations in loop
 		var n:MetaNote;
 		var lane:Int;
-		var strumline:Strumline;
 		var receptor:Note;
 		var fakeOverlapStorage:Array<Int>;
 		var timeCorrection:Int64;
@@ -129,18 +104,12 @@ class NoteSpawner {
 		var shouldOverlap:Bool;
 		var noteTypeCall:Int->Int->Bool->Void;
 		
-		// Pre-cache string values
-		var noteDefaultAlpha = Note.defaultAlpha;
-		var noteDefaultMissAlpha = Note.defaultMissAlpha;
-		
-		// --- MAIN LOOP: Process all visible notes ---
 		while (i < topLocal) {
-			// Get note data from file
-			n = File.getNote(i);
-			timeCorrection = File.getTimeCorrectionForIndex(i);
+			n = file.getNote(i);
+			timeCorrection = file.getTimeCorrectionForIndex(i);
 			n_position = n.position + timeCorrection;
 			
-			// Determine lane - optimized with local reference
+			// Determine lane efficiently
 			noteTypeCall = noteTypeFuncs[n.type];
 			if (noteTypeCall != null) {
 				lane = 1;
@@ -148,24 +117,22 @@ class NoteSpawner {
 				lane = n.type % strumlines.length;
 			}
 			
-			strumline = strumlines[lane];
+			var strumline = strumlines[lane];
 			receptor = strumline.buffer[n.index];
 			fakeOverlapStorage = strumline.fakeOverlapStorage;
 			
-			// Calculate position
-			diff = (MetaNote.metaNotePositionToSongTime(n_position - pos)) * scrollSpeed;
+			diff = (MetaNote.metaNotePositionToSongTime(n_position - pos)) * _cachedScrollSpeed;
 			newY = receptor.y + Math.floor(diff);
 			
-			// Ghost note check - optimized
+			// Quick ghost note check
 			if (prev != -1) {
-				ghost = (prev.position + prevTimeCorrection == n_position && 
-						 prev.index == n.index && 
-						 prev.type == n.type);
+				var prevCorrection = file.getTimeCorrectionForIndex(i - 1);
+				ghost = prev.position + prevCorrection == n_position && prev.index == n.index && prev.type == n.type;
 			} else {
 				ghost = false;
 			}
 			
-			// Overlap check - only if we have a sprite and not ghost
+			// Check overlap only if we have a previous note
 			if (noteSpr != null && !ghost) {
 				var prevY = fakeOverlapStorage[prev.index];
 				shouldOverlap = shouldNotesOverlap(prev, n, noteSpr, receptor, newY, prevY);
@@ -173,51 +140,47 @@ class NoteSpawner {
 				shouldOverlap = false;
 			}
 			
-			// Store Y for overlap detection
 			fakeOverlapStorage[n.index] = Std.int(newY);
 			
 			if (shouldOverlap) {
-				// Merge notes - no new sprite created
-				var alphaToAdd = n.flag ? noteDefaultMissAlpha : noteDefaultAlpha;
+				// Merge notes without creating new sprite
+				var alphaToAdd = n.flag ? Note.defaultMissAlpha : Note.defaultAlpha;
 				noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + alphaToAdd, 256);
 				noteSpr.notesInOne++;
 			} else if (!ghost) {
-				// Draw note - this creates the VirtualNote
-				noteSpr = parent.drawNote(pos, n, diff, i, strumline);
+				++j;
+				noteSpr = parent.drawNote(pos, n, diff, i, notePool, strumline);
 				if (noteSpr != null) {
 					vb.addNote(noteSpr);
 				}
 			}
 			
-			// Store for next iteration
 			prev = n;
 			prevTimeCorrection = timeCorrection;
 			++i;
 		}
 		
-		timeSpentOnIt = haxe.Timer.stamp() - time;
+		_timeSpentOnIt = haxe.Timer.stamp() - time;
 	}
 
-	// Store previous time correction for ghost detection
-	var prevTimeCorrection:Int64 = 0;
-
 	function cullTop(pos:Int64) {
-		var len = _cachedLen;
+		var len = File.getLength();
+		var spawnDistLocal = spawnDist;
 
-		// Forward: Include notes now within spawn range
+		// === FORWARD: Include notes now within spawn range ===
 		while (top < len) {
 			var n = File.getNote(top);
 			var tc = File.getTimeCorrectionForIndex(top);
-			if ((n.position + tc) - pos >= spawnDist) break;
+			if ((n.position + tc) - pos >= spawnDistLocal) break;
 			++top;
 		}
 
-		// Backward: Exclude notes now too far ahead
+		// === BACKWARD: Exclude notes now too far ahead ===
 		while (top > bottom) {
 			var idx = top - 1;
 			var n = File.getNote(idx);
 			var tc = File.getTimeCorrectionForIndex(idx);
-			if ((n.position + tc) - pos < spawnDist) break;
+			if ((n.position + tc) - pos < spawnDistLocal) break;
 			--top;
 		}
 
@@ -225,24 +188,62 @@ class NoteSpawner {
 	}
 
 	function cullBottom(pos:Int64) {
-		var len = _cachedLen;
+		var len = File.getLength();
+		var despawnDistLocal = despawnDist;
 
-		// Forward: Exclude notes that have despawned
+		// === FORWARD: Exclude notes that have despawned ===
 		while (bottom < len) {
 			var n = File.getNote(bottom);
 			var tc = File.getTimeCorrectionForIndex(bottom);
 			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - (n.position + tc);
-			if (despawnCheck <= despawnDist) break;
+			if (despawnCheck <= despawnDistLocal) break;
+			
+			// Get the virtual note and sustain from the buffer and return them to pool
+			var vb = parent.virtualNoteBuffer;
+			var lane = n.type % parent.strumlines.length;
+			var idx = n.index;
+			
+			// Get note from virtual buffer
+			if (vb.notes != null && lane < vb.notes.length && idx < vb.notes[lane].length) {
+				var notesInLane = vb.notes[lane][idx];
+				if (notesInLane != null) {
+					for (k in 0...notesInLane.length) {
+						var vn = notesInLane[k];
+						if (vn != null && vn.ref != NoteVB.INVALID_OR_EMPTY && vn.ref.position == n.position && vn.ref.index == n.index) {
+							parent.notePool.putNote(vn);
+							notesInLane[k] = null; // Clear reference
+							break;
+						}
+					}
+				}
+			}
+			
+			// Get sustain from virtual buffer
+			if (vb.sustains != null && lane < vb.sustains.length && idx < vb.sustains[lane].length) {
+				var sustainsInLane = vb.sustains[lane][idx];
+				if (sustainsInLane != null) {
+					for (k in 0...sustainsInLane.length) {
+						var vs = sustainsInLane[k];
+						if (vs != null && vs.ref != null && vs.ref.ref != NoteVB.INVALID_OR_EMPTY && 
+							vs.ref.ref.position == n.position && vs.ref.ref.index == n.index) {
+							parent.notePool.putSustain(vs);
+							sustainsInLane[k] = null; // Clear reference
+							break;
+						}
+					}
+				}
+			}
+			
 			++bottom;
 		}
 
-		// Backward: Include notes now back in range
+		// === BACKWARD: Include notes now back in range ===
 		while (bottom > 0 && bottom < top) {
 			var idx = bottom - 1;
 			var n = File.getNote(idx);
 			var tc = File.getTimeCorrectionForIndex(idx);
 			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - (n.position + tc);
-			if (despawnCheck > despawnDist) break;
+			if (despawnCheck > despawnDistLocal) break;
 			--bottom;
 		}
 
@@ -259,14 +260,19 @@ class NoteSpawner {
 		if (len <= 0) return;
 
 		var songPos = MetaNote.floatToMetaNotePosition(songPosition);
-		var minPos:Int64 = songPos;
-		var maxPos:Int64 = songPos - spawnDist;
-
+		
+		// Binary search with caching
+		var targetMin = songPos;
+		var targetMax = songPos - spawnDist;
+		
+		// Use local variables for faster access
+		var file = File;
+		
 		function lowerBound(target:Int64):Int64 {
 			var lo:Int64 = 0, hi:Int64 = len;
 			while (lo < hi) {
 				var mid = (lo + hi) >> 1;
-				if (File.getNote(mid).position + File.getTimeCorrectionForIndex(mid) < target)
+				if (file.getNote(mid).position + file.getTimeCorrectionForIndex(mid) < target)
 					lo = mid + 1;
 				else
 					hi = mid;
@@ -278,7 +284,7 @@ class NoteSpawner {
 			var lo:Int64 = 0, hi:Int64 = len;
 			while (lo < hi) {
 				var mid = (lo + hi) >> 1;
-				if (File.getNote(mid).position + File.getTimeCorrectionForIndex(mid) <= target)
+				if (file.getNote(mid).position + file.getTimeCorrectionForIndex(mid) <= target)
 					lo = mid + 1;
 				else
 					hi = mid;
@@ -286,37 +292,33 @@ class NoteSpawner {
 			return lo;
 		}
 
-		var newBottom = lowerBound(minPos);
-		var newTop = upperBound(maxPos);
+		var newBottom = lowerBound(targetMin);
+		var newTop = upperBound(targetMax);
 		minBottom = lowerBound(songPos + MetaNote.floatToMetaNotePosition(pushToOffset));
 
 		bottom = newBottom;
 		top = newTop;
 
-		curBottomNote = File.getNote(bottom);
-		curTopNote = File.getNote(top);
+		if (bottom < len) curBottomNote = file.getNote(bottom);
+		if (top < len) curTopNote = file.getNote(top);
 
 		parent.resetStrumlines();
 	}
 
-	/**
-	 * OPTIMIZED: Check overlap with minimal operations
-	 */
 	inline function shouldNotesOverlap(prev:MetaNote, current:MetaNote, noteSpr:VirtualNote,
 		receptor:Note, newY:Float, prevY:Float):Bool {
 
 		if (noteSpr == null || prev == -1) return false;
 
-		// Quick rejection - if types don't match, no overlap
-		if (prev.type != current.type || prev.duration != current.duration || prev.index != current.index) {
-			return false;
-		}
-
 		// Pixel threshold check with integer math
 		var scaleFactor = Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT;
 		var pixelDiff = Math.abs(Math.floor(newY / scaleFactor) - Math.floor(prevY / scaleFactor));
 
-		return pixelDiff <= 0 && noteSpr.scale == receptor.scale;
+		return pixelDiff <= 0
+			&& prev.type == current.type
+			&& noteSpr.scale == receptor.scale
+			&& prev.duration == current.duration
+			&& prev.index == current.index;
 	}
 
 	function renderNotes(pos:Int64) {
@@ -325,84 +327,63 @@ class NoteSpawner {
 		renderVirtualSustains(notes);
 	}
 
-	var regularNoteList:Array<Note> = [];
-
-	/**
-	 * OPTIMIZED: Render notes with pooling
-	 */
+	// Optimized note rendering with pooled objects
 	function renderVirtualNotes(notes:NoteVB, pos:Int64) {
-		var downScroll = _cachedDownScroll;
+		var downScroll = parent.parent.downScroll;
 		var virtualNotes = notes.notes;
 		var noteLength = notes.noteLength;
-		var generation = notes.generation;
 		var noteGen = notes.noteGen;
+		var generation = notes.generation;
 		
-		var strumlines = parent.strumlines;
-		var inputSystem = parent.parent.inputSystem;
-		var notesBuf = NoteSystem.notesBuf;
-		
+		// Only process notes from current generation
 		for (i in 0...virtualNotes.length) {
 			var lane = virtualNotes[i];
 			var lengths = noteLength[i];
 			var gens = noteGen[i];
-			var strumline = strumlines[i];
+			var strumline = parent.strumlines[i];
 			
 			for (j in 0...lane.length) {
-				// Skip if not from current generation
-				if (gens[j] != generation) continue;
-				
+				if (gens[j] != generation) continue; // Skip stale data
 				var len = lengths[j];
 				if (len == 0) continue;
 				
 				var notesInLane = lane[j];
-				var id = inputSystem.receptorIds[j];
+				var id = parent.parent.inputSystem.receptorIds[j];
 				var strumReceptor = strumline.buffer[j];
 				
 				for (k in 0...len) {
 					var virtualNote:VirtualNote = notesInLane[k];
 					if (virtualNote == null) continue;
-
-					// Create Note object
+					
+					// Create Note object using pooled approach
 					var note = new Note(virtualNote.Sx, virtualNote.Sy, 0, 0, 
 						virtualNote.scale, virtualNote.initialAlpha, virtualNote.addedAlpha);
 					note.diff = -virtualNote.diff;
 					note.scrollDirection = strumReceptor.scrollDirection;
 					if (downScroll) note.scrollDirection += 180;
-
 					note.changeID(id);
 					note.toNote();
-
-					var noteToHitIdx = strumline.notesToHit_indexes[j];
-					strumline.notesToHit_sprites[j] = noteToHitIdx == virtualNote.globalIndex ? note : null;
-
-					regularNoteList.push(note);
+					
+					// Batch add to buffer
+					NoteSystem.notesBuf.addElement(note);
 				}
 			}
-		}
-
-		// Batch add all notes
-		while (regularNoteList.length != 0) {
-			notesBuf.addElement(regularNoteList.pop());
 		}
 	}
 
 	function renderVirtualSustains(notes:NoteVB) {
-		var downScroll = _cachedDownScroll;
+		var downScroll = parent.parent.downScroll;
 		var virtualSustains = notes.sustains;
 		var sustainLength = notes.sustainLength;
 		var sustainGen = notes.sustainGen;
 		var generation = notes.generation;
 		var tailPoints = Sustain.tailPoints;
 		
-		var strumlines = parent.strumlines;
-		var inputSystem = parent.parent.inputSystem;
-		var sustainsBuf = NoteSystem.sustainsBuf;
-		
 		for (i in 0...virtualSustains.length) {
 			var lane = virtualSustains[i];
 			var lengths = sustainLength[i];
 			var gens = sustainGen[i];
-			var strumline = strumlines[i];
+			var strumline = parent.strumlines[i];
 			
 			for (j in 0...lane.length) {
 				if (gens[j] != generation) continue;
@@ -410,7 +391,7 @@ class NoteSpawner {
 				if (len == 0) continue;
 				
 				var sustainsInLane = lane[j];
-				var id = inputSystem.receptorIds[j];
+				var id = parent.parent.inputSystem.receptorIds[j];
 				var strumReceptor = strumline.buffer[j];
 				
 				for (k in 0...len) {
@@ -432,7 +413,7 @@ class NoteSpawner {
 						sustain.scrollDirection += 180;
 					}
 					sustain.changeID(id);
-					sustainsBuf.addElement(sustain);
+					NoteSystem.sustainsBuf.addElement(sustain);
 				}
 			}
 		}
