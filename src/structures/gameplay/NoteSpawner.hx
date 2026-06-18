@@ -71,6 +71,7 @@ class NoteSpawner {
 
 		var time = haxe.Timer.stamp();
 		while (i < top) {
+			Sys.println("[NOTESYSTEM] Print note $i");
 			var n = File.getNote(i);
 
 			var lane = parent.noteTypeFunctionalityPre[n.type] != null
