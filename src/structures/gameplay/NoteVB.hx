@@ -1,14 +1,18 @@
 package structures.gameplay;
 
 /**
- * Note virtual buffer to check the range of note "elements" that need to be rendered,
- * in order to do more complex optimization tricks like "greedy note merging".
- * The fake note overlap really helps solidify things, since you
- * don't normally render more than a million sprites anyway.
+ * Note virtual buffer with generation-based recycling for optimal performance.
  * @since Development
 **/
 @:publicFields
 class NoteVB {
+	inline static var INVALID_OR_EMPTY:Int64 = -1;
+
+	// Generation counter for quick clearing
+	var generation:Int = 0;
+	var lanes:Int;
+	var indexes:Int;
+	
 	/**
 	 * 3 dimensional note lengths, for convenience.
 	**/
@@ -24,27 +28,41 @@ class NoteVB {
 	 * And yes, they are 3 dimensional so they're easy to make note jack optimizations out of.
 	**/
 	var sustains(default, null):Array<Array<Array<VirtualSustain>>>;
-
 	var notes(default, null):Array<Array<Array<VirtualNote>>>;
+	
+	// Track which generation each slot was last written to
+	var noteGen(default, null):Array<Array<Int>>;
+	var sustainGen(default, null):Array<Array<Int>>;
 
 	/**
 	 * Initializes the virtual note and sustain buffer.
 	**/
 	function new(lanes:Int, indexes:Int) {
+		this.lanes = lanes;
+		this.indexes = indexes;
+		
 		notes = [];
 		sustains = [];
 		noteLength = [];
 		sustainLength = [];
+		noteGen = [];
+		sustainGen = [];
+		
 		for (lane in 0...lanes) {
 			notes[lane] = [];
 			sustains[lane] = [];
 			noteLength[lane] = [];
 			sustainLength[lane] = [];
+			noteGen[lane] = [];
+			sustainGen[lane] = [];
+			
 			for (idx in 0...indexes) {
 				notes[lane][idx] = [];
 				sustains[lane][idx] = [];
 				noteLength[lane][idx] = 0;
 				sustainLength[lane][idx] = 0;
+				noteGen[lane][idx] = 0;
+				sustainGen[lane][idx] = 0;
 			}
 		}
 	}
@@ -55,32 +73,86 @@ class NoteVB {
 	inline function addNote(note:VirtualNote) {
 		var ref = note.ref;
 		var lane = ref.type;
-		notes[lane][ref.index][
-			noteLength[note.ref.type][ref.index]
-		] = note;
-		noteLength[note.ref.type][ref.index]++;
+		var idx = ref.index;
+		var len = noteLength[lane][idx];
+		
+		// Check if this slot is from current generation
+		if (noteGen[lane][idx] != generation) {
+			noteGen[lane][idx] = generation;
+			noteLength[lane][idx] = 0;
+			len = 0;
+		}
+		
+		// Ensure array capacity
+		if (len >= notes[lane][idx].length) {
+			notes[lane][idx].push(note);
+		} else {
+			notes[lane][idx][len] = note;
+		}
+		
+		noteLength[lane][idx] = len + 1;
 	}
 
 	/**
-	 * @param note The virtual note you want to add.
+	 * @param sustain The virtual sustain you want to add.
 	**/
 	inline function addSustain(sustain:VirtualSustain, note:VirtualNote) {
 		var ref = note.ref;
 		var lane = ref.type;
-		sustains[note.ref.type][ref.index][
-			sustainLength[note.ref.type][ref.index]
-		] = sustain;
-		sustainLength[note.ref.type][ref.index]++;
+		var idx = ref.index;
+		var len = sustainLength[lane][idx];
+		
+		// Check if this slot is from current generation
+		if (sustainGen[lane][idx] != generation) {
+			sustainGen[lane][idx] = generation;
+			sustainLength[lane][idx] = 0;
+			len = 0;
+		}
+		
+		// Ensure array capacity
+		if (len >= sustains[lane][idx].length) {
+			sustains[lane][idx].push(sustain);
+		} else {
+			sustains[lane][idx][len] = sustain;
+		}
+		
+		sustainLength[lane][idx] = len + 1;
 	}
 
-	function clear() {
-    	for (i in 0...noteLength.length)
+	/**
+	 * Fast clear using generation counter - O(1) instead of O(n)
+	**/
+	inline function clear() {
+		generation++;
+		// Reset generation counter occasionally to prevent overflow
+		if (generation > 1000000) {
+			for (i in 0...noteGen.length)
+				for (j in 0...noteGen[i].length)
+					noteGen[i][j] = 0;
+			for (i in 0...sustainGen.length)
+				for (j in 0...sustainGen[i].length)
+					sustainGen[i][j] = 0;
+			generation = 0;
+		}
+	}
+	
+	/**
+	 * Full reset - use sparingly
+	**/
+	function reset() {
+		generation = 0;
+		for (i in 0...noteLength.length)
 			for (j in 0...noteLength[i].length)
 				noteLength[i][j] = 0;
-
 		for (i in 0...sustainLength.length)
 			for (j in 0...sustainLength[i].length)
 				sustainLength[i][j] = 0;
+		for (i in 0...noteGen.length)
+			for (j in 0...noteGen[i].length)
+				noteGen[i][j] = 0;
+		for (i in 0...sustainGen.length)
+			for (j in 0...sustainGen[i].length)
+				sustainGen[i][j] = 0;
 	}
 }
 
