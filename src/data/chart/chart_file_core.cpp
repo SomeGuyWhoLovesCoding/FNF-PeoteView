@@ -371,6 +371,17 @@ public:
         msync(headerPtr, sizeof(ShardHeader), MS_ASYNC);
 #endif
     }
+
+    void setCapacity(int64_t cap) {
+        header.capacity = cap;
+        void* headerPtr = static_cast<char*>(static_cast<void*>(mappedData)) - sizeof(ShardHeader);
+        memcpy(headerPtr, &header, sizeof(ShardHeader));
+#ifdef _WIN32
+        FlushViewOfFile(headerPtr, sizeof(ShardHeader));
+#else
+        msync(headerPtr, sizeof(ShardHeader), MS_ASYNC);
+#endif
+    }
 };
 
 // ============================================================================
@@ -875,6 +886,7 @@ private:
         
         // Update header with new capacity, preserve noteCount
         shard.reader.setNoteCount(oldNoteCount);
+        shard.reader.setCapacity(newCapacity);
         
         shard.noteCount = oldNoteCount;
         shard.capacity = newCapacity;
@@ -1074,14 +1086,14 @@ public:
         if (it != availableShards.end() && *it == (uint64_t)shardId) {
             size_t shardPos = std::distance(availableShards.begin(), it);
             
-            // Update shardStartIndices for this and subsequent shards
-            for (size_t i = shardPos; i < shardStartIndices.size(); i++) {
+            // Update shardStartIndices for subsequent shards
+            for (size_t i = shardPos + 1; i < shardStartIndices.size(); i++) {
                 shardStartIndices[i]++;
             }
             
-            // Update activeShards for this and subsequent shards
+            // Update activeShards for subsequent shards
             for (auto& pair : activeShards) {
-                if (pair.first >= (uint64_t)shardId) {
+                if (pair.first > (uint64_t)shardId) {
                     pair.second.startIndex++;
                     pair.second.endIndex++;
                 }
@@ -1206,6 +1218,14 @@ public:
         // Update shardStartIndices for all subsequent shards
         for (size_t i = shardPos + 1; i < availableShards.size(); i++) {
             shardStartIndices[i]--;
+        }
+        
+        // Update activeShards for all subsequent shards
+        for (auto& pair : activeShards) {
+            if (pair.first > (uint64_t)shardId) {
+                pair.second.startIndex--;
+                pair.second.endIndex--;
+            }
         }
         
         // Update metadata cache
