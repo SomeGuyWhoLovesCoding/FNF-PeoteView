@@ -74,7 +74,7 @@ class SaveData {
 				iconBopping: true
 			},
 			graphics: {
-				frameRate: 0,
+				frameRate: 60, //Application.current.window.displayMode.refreshRate, // 0 if unspecified or VRR
 				antialiasing: true,
 				customTitleBarColor: 0x3d3f4177, // RGB then opacity at the end. Except opacity doesn't work.
 				customWindowOutlineColor: 0x27292b77,
