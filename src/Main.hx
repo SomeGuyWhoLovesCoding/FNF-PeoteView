@@ -231,11 +231,21 @@ class Main extends Application
 	// UPSCALE CONDITION - WHENEVER YOU WANT YOUR GAME TO RUN LIKE COCK OR RUN LIKE WHEELS
 	var upscale:Bool = false;
 
+	inline function setFrameRate(update:Float, render:Float) {
+		Application.current.window.frameRate = update;
+		Application.current.window.renderFrameRate = render;
+	}
+
 	public function startSample(window:Window)
 	{
 		current = this;
 
 		SaveData.init(window);
+
+		var frameRate = SaveData.state.graphics.frameRate;
+
+		trace("Framerate: " + frameRate);
+		setFrameRate(frameRate, frameRate);
 		Tools.getIconGridMap('assets/images/ui');
 
 		peoteView = new PeoteView(window);
