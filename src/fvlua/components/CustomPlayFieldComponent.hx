@@ -147,6 +147,7 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 			var display = Reflect.field(playField, fromDisplay.toLowerCase());
 			if (display == null) {
 				FunkinViewLua.error("Display not found: " + fromDisplay.toLowerCase());
+				return FunkinViewLua.Function_Stop;
 			}
 			var shake:Point = null;
 			switch (fromDisplay.toLowerCase()) {
@@ -240,6 +241,32 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 			if (playField.hud.healthBar == null) return;
 			var colorArray:Array<Color> = Tools.hexesToOpaqueColor(right);
 			playField.hud.healthBar.healthIconColors[1] = Tools.convertToSixColors(colorArray);
+		});
+
+		// note movement callbacks
+
+		/*vm.addCallback('setCustomNoteMovementVar', function(name:String, value:Float) {
+			if (playField.noteSystem == null) return;
+			playField.noteSystem.customVariables.set(name, value);
+		});
+
+		vm.addCallback('getCustomNoteMovementVar', function(name:String) {
+			if (playField.noteSystem == null) return;
+			return playField.noteSystem.customVariables.get(name);
+		});*/
+
+		vm.addCallback('setCustomNoteMoveFormula', function(script:String) {
+			if (script == null) {
+				FunkinViewLua.error("Script cannot be nil. Use `resetCustomNoteMoveFormula` instead.");
+				return FunkinViewLua.Function_Stop;
+			}
+			parent.setNoteFormulaSource(script);
+			return FunkinViewLua.Function_Continue;
+		});
+
+		vm.addCallback('resetCustomNoteMoveFormula', function() {
+			parent.resetNoteFormulaSource();
+			return FunkinViewLua.Function_Continue;
 		});
 	}
 

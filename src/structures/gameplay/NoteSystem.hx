@@ -40,6 +40,7 @@ class NoteSystem {
 
 	var strumlines(default, null):Array<Strumline>;
 	var noteSpawner(default, null):NoteSpawner;
+	var noteMovement(default, null):NoteMovementSystem;
 	var notePool(default, null):NotePool;
 	var virtualNoteBuffer(default, null):NoteVB;
 
@@ -58,14 +59,10 @@ class NoteSystem {
 		display.addProgram(sustainProg);
 		display.addProgram(notesProg);
 
-		var inputSystem = parent.inputSystem;
-
-		notePool = new NotePool(this);
-		noteSpawner = new NoteSpawner(this);
-
-		var mania = Chart.header.mania;
-
 		strumlines = [];
+
+		var inputSystem = parent.inputSystem;
+		var mania = Chart.header.mania;
 
 		for (i in 0...2) {
 			var strumline = new Strumline(STRUMLINE_X_OFFSET + Std.int(Main.INITIAL_WIDTH * (i * 0.5)),
@@ -76,6 +73,10 @@ class NoteSystem {
 		}
 
 		virtualNoteBuffer = new NoteVB(strumlines.length, strumlines[0].buffer.length);
+
+		notePool = new NotePool(this);
+		noteSpawner = new NoteSpawner(this);
+		noteMovement = new NoteMovementSystem(this);
 
 		setScrollSpeed(Chart.header.speed);
 
@@ -187,9 +188,8 @@ class NoteSystem {
 		var noteSprX = rec.x;
 		var noteSprY = rec.y;
 
-		noteSpr.diff = Std.int(diff);
-		noteSpr.Sx = noteSprX;
-		noteSpr.Sy = noteSprY;
+		noteSpr.Sx = Std.int(noteSprX + (diff * Math.cos(strumline.scrollDirection * 0.01745329)));
+		noteSpr.Sy = Std.int(noteSprY + (diff * Math.sin(strumline.scrollDirection * 0.01745329)));
 		noteSpr.scale = rec.scale;
 		noteSpr.globalIndex = _id;
 
@@ -301,7 +301,7 @@ class NoteSystem {
 			sustainSpr.speed = parent.scrollSpeed;
 			sustainSpr.scale = rec.scale;
 			sustainSpr.length = sustainLength;
-			sustainSpr.followNote(rec.x, rec.y, id);
+			sustainSpr.followNote(noteSpr.Sx, noteSpr.Sy, id);
 			sustainSpr.diff = isHit ? 0 : Std.int(diff);
 
 			var sustainCompleted = pos > position + (MetaNote.floatToMetaNotePosition(sustainLength - 25));
@@ -339,8 +339,11 @@ class NoteSystem {
 
 			if (diff + sustainLength - 25 < 0)
 				strumline.sustainsActive[index] = !isResolved;
+		}
 
-			if (noteSpr != null)
+		if (noteSpr != null) {
+			noteMovement.run(this, noteSpr, sustainSpr, rec, index);
+			if (sustainExists)
 				virtualNoteBuffer.addSustain(sustainSpr, noteSpr);
 		}
 

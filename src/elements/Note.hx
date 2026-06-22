@@ -12,8 +12,8 @@ class Note implements Element
 	// position in pixel (relative to upper left corner of Display)
 	@varying @custom @formula("ox * scale") public var ox:Int;
 	@varying @custom @formula("oy * scale") public var oy:Int;
-	@posX @formula("uDisplayRotateX(((aPos + vec2(px, py) + vec2(ox, oy))) - vec2(diff * cos(scrollDirection * 0.01745329), (diff * sin(scrollDirection * 0.01745329))))") @set("properties") public var x:Int;
-	@posY @formula("uDisplayRotateY(((aPos + vec2(px, py) + vec2(ox, oy))) - vec2(diff * cos(scrollDirection * 0.01745329), (diff * sin(scrollDirection * 0.01745329))))") @set("properties") public var y:Int;
+	@posX @formula("uDisplayRotateX(aPos + vec2(px, py) + vec2(ox, oy))") @set("properties") public var x:Int;
+	@posY @formula("uDisplayRotateY(aPos + vec2(px, py) + vec2(ox, oy))") @set("properties") public var y:Int;
 
 	// size in pixel
 	@varying @sizeX @formula("w * scale") @set("properties") public var w:Int = 100;
@@ -39,8 +39,8 @@ class Note implements Element
 	@varying @custom @set("properties") public var addedAlpha:Float = 0.0;
 
 	// stuff that makes the note actually move
-	@varying @custom public var diff:Int = 0;
-	@varying @custom public var scrollDirection:Int = 90;
+	public var diff:Int = 0;
+	public var scrollDirection:Int = 90;
 
 	// extra tex attributes for clipping
 	@texX var clipX:Int = 0;

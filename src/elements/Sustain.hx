@@ -7,8 +7,8 @@ package elements;
 class Sustain implements Element
 {
 	// position in pixel (relative to upper left corner of Display)
-	@posX @formula("uDisplayRotateX(aPos + vec2(0.0, py) - vec2(diff * cos(scrollDirection * 0.01745329), (diff * sin(scrollDirection * 0.01745329))))") @set("properties") public var x:Int;
-	@posY @formula("uDisplayRotateY(aPos + vec2(0.0, py) - vec2(diff * cos(scrollDirection * 0.01745329), (diff * sin(scrollDirection * 0.01745329))))") @set("properties") public var y:Int;
+	@posX @formula("uDisplayRotateX(aPos + vec2(0.0, py))") @set("properties") public var x:Int;
+	@posY @formula("uDisplayRotateY(aPos + vec2(0.0, py))") @set("properties") public var y:Int;
 
 	// size in pixel
 	@varying @sizeX @formula("w * speed") @set("properties") public var w:Int;
@@ -35,8 +35,8 @@ class Sustain implements Element
 	@varying @custom @set("properties") public var tailPoint:Int = 43;
 
 	// stuff that makes the note actually move
-	@varying @custom public var diff:Int = 0;
-	@varying @custom public var scrollDirection:Int = 90;
+	public var diff:Int = 0;
+	public var scrollDirection:Int = 90;
 
 	/**
 		The parent of this note sprite.
@@ -91,11 +91,5 @@ class Sustain implements Element
 	inline public function changeID(id:Int) {
 		tile = id;
 		tailPoint = tailPoints[id];
-	}
-
-	inline public function followNote(note:Note) {
-		var offset = offsets[note.id];
-		x = note.x + (Math.floor(offset[0] * scale) >> 1);
-		y = note.y + (Math.floor(offset[1] * scale) >> 1);
 	}
 }

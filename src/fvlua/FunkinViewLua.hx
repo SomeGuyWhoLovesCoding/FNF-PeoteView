@@ -94,6 +94,96 @@ class FunkinViewLua {
 		return "unknown";
 	}
 
+	private var noteFormulaVM:State = null;
+	private var noteFormulaSource:String = null;
+	private var noteFormulaLoaded:Bool = false;
+	private var noteFormulaResult:Array<Float> = [];
+
+	function setNoteFormulaSource(source:String) {
+		if (noteFormulaSource == source) return;
+		noteFormulaSource = source;
+		noteFormulaLoaded = false;
+	}
+
+	function resetNoteFormulaSource() {
+		Lua.close(noteFormulaVM);
+		noteFormulaVM = null;
+		noteFormulaSource = null;
+		noteFormulaLoaded = false;
+	}
+
+	function ensureNoteFormulaVM():Bool {
+		if (noteFormulaSource == null) return false;
+
+		if (noteFormulaVM == null) {
+			noteFormulaVM = LuaL.newstate();
+			LuaL.openlibs(noteFormulaVM);
+			Lua.init_callbacks(noteFormulaVM);
+		}
+		
+		if (noteFormulaLoaded) return true;
+		if (noteFormulaSource == null) return false;
+		
+		var status:Int = LuaL.loadstring(noteFormulaVM, noteFormulaSource);
+		if (status != Lua.LUA_OK) {
+			error(getErrorMessage(noteFormulaVM, status) + " (loading noteFormula string)");
+			return false;
+		}
+		
+		status = Lua.pcall(noteFormulaVM, 0, 0, 0);
+		if (status != Lua.LUA_OK) {
+			error(getErrorMessage(noteFormulaVM, status) + " (running noteFormula string)");
+			return false;
+		}
+		
+		noteFormulaLoaded = true;
+		return true;
+	}
+
+	function callNoteFormula(diff:Float, scrollSpeed:Float, receptorX:Float, receptorY:Float, index:Float):Array<Float> {
+		if (!ensureNoteFormulaVM()) {
+			noteFormulaResult.resize(0);
+			return noteFormulaResult;
+		}
+		
+		var lua:State = noteFormulaVM;
+		
+		Lua.getglobal(lua, "noteFormula");
+		var type:Int = Lua.type(lua, -1);
+		
+		if (type != Lua.LUA_TFUNCTION) {
+			Lua.pop(lua, 1);
+			noteFormulaResult.resize(0);
+			return noteFormulaResult;
+		}
+		
+		Lua.pushnumber(lua, diff);
+		Lua.pushnumber(lua, scrollSpeed);
+		Lua.pushnumber(lua, receptorX);
+		Lua.pushnumber(lua, receptorY);
+		Lua.pushnumber(lua, index);
+		
+		var status:Int = Lua.pcall(lua, 4, 4, 0);
+		
+		if (status != Lua.LUA_OK) {
+			error(getErrorMessage(lua, status) + " (noteFormula)");
+			noteFormulaResult.resize(0);
+			return noteFormulaResult;
+		}
+		
+		inline function getNum(idx:Int):Float {
+			return Lua.type(lua, idx) == Lua.LUA_TNUMBER ? Lua.tonumber(lua, idx) : 0.0;
+		}
+		
+		noteFormulaResult[0] = getNum(-4);
+		noteFormulaResult[1] = getNum(-3);
+		noteFormulaResult[2] = getNum(-2);
+		noteFormulaResult[3] = getNum(-1);
+		
+		Lua.pop(lua, 4);
+		return noteFormulaResult;
+	}
+
 	private static var NO_ARGS(default, null):Array<Dynamic> = [];
 	private var returns(default, null):Array<Dynamic> = [];
 	function callFunction(fname:String, args:haxe.Rest<Dynamic>):Array<Dynamic> {
@@ -102,7 +192,7 @@ class FunkinViewLua {
 		for (script in vms) {
 			var lua:State = script.vm;
 
-			// this is a direct port from psych as a test.
+			// this is a direct port from psych.
 			if(disposed) return [Function_Continue];
 
 			try {
@@ -202,6 +292,15 @@ class FunkinViewLua {
 
 	function dispose() {
 		disposed = true;
+    
+		// Clean up note formula VM
+		if (noteFormulaVM != null) {
+			Lua.close(noteFormulaVM);
+			noteFormulaVM = null;
+		}
+		noteFormulaSource = null;
+		noteFormulaLoaded = false;
+
 		for (component in components) component.dispose();
 		components.resize(0);
 		components = null;
