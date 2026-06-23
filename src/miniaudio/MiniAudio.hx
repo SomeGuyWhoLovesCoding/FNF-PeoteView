@@ -39,9 +39,6 @@ extern class MiniAudio {
 	@:native("getGlobalVolume") static function getGlobalVolume():Float;
 	@:native("setGlobalVolume") static function setGlobalVolume(value:Float):Float;
 
-	@:native("wearingHeadphones") static function wearingHeadphones():Bool;
-	@:native("wearingPlugNPlay") static function wearingPlugNPlay():Bool;
-
 	// AND NOW THE BACKGROUND AND SOUND STUFF
 
 	@:native("loadBackgroundTrack") static function _loadBackgroundTrack(path:ConstCharStar):Int;
@@ -110,13 +107,6 @@ class MiniAudio {
 		return 0;
 	}
 
-	@:hlNative("ma_thing", "wearingHeadphones") public static function wearingHeadphones():Bool {
-		return false;
-	}
-	@:hlNative("ma_thing", "wearingPlugNPlay") public static function wearingPlugNPlay():Bool {
-		return false;
-	}
-
 	// AND NOW THE BACKGROUND AND SOUND STUFF
 
 	@:hlNative("ma_thing", "loadBackgroundTrack") public static function loadBackgroundTrack(path:String):Int {
@@ -182,13 +172,6 @@ class MiniAudio {
 	}
 	public static function setGlobalVolume(value:Float):Float {
 		return 0;
-	}
-
-	public static function wearingHeadphones():Bool {
-		return false;
-	}
-	public static function wearingPlugNPlay():Bool {
-		return false;
 	}
 
 	// AND NOW THE BACKGROUND AND SOUND STUFF

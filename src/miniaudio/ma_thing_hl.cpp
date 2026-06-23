@@ -52,14 +52,7 @@ HL_PRIM double HL_NAME(setGlobalVolume)(double value)            { return g_audi
 
 // Calls the underlying C++ functions directly — not the HL primitives above.
 HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
-#if HX_WINDOWS
-    int osMs = 50;
-#else
-    int osMs = 10;
-#endif
-    if (g_audioSystem.exists) {
-        osMs += g_audioSystem.getBluetoothLatency();
-    }
+    int osMs = 40;
     return osMs;
 }
 
@@ -81,23 +74,6 @@ HL_PRIM double HL_NAME(setMixerMasterVolume)(double volume)  { return g_mixer.se
 HL_PRIM double HL_NAME(getMixerMasterVolume)(_NO_ARG)       { return g_mixer.getMasterVolume(); }
 HL_PRIM void  HL_NAME(destroyMixer)(_NO_ARG)               { g_mixer.destroy(); }
 
-// these stay here
-HL_PRIM bool HL_NAME(wearingHeadphones)(_NO_ARG) {
-#ifdef HX_WINDOWS
-    return checkWindowsHeadphoneStatus();
-#else
-    return false;
-#endif
-}
-
-HL_PRIM bool HL_NAME(wearingPlugNPlay)(_NO_ARG) {
-#ifdef HX_WINDOWS
-    return checkIfPnPDevice();
-#else
-    return false;
-#endif
-}
-
 // ---- DEFINE_PRIM declarations --------------------------------------------
 
 DEFINE_PRIM(_VOID, loadFiles,              _ARR)
@@ -114,8 +90,6 @@ DEFINE_PRIM(_VOID, amplify_decoder,        _I32 _F64)
 DEFINE_PRIM(_VOID, setPlaybackRate,        _F64)
 DEFINE_PRIM(_F64,  getGlobalVolume,        _NO_ARG)
 DEFINE_PRIM(_F64,  setGlobalVolume,        _F64)
-DEFINE_PRIM(_BOOL, wearingHeadphones,      _NO_ARG)
-DEFINE_PRIM(_BOOL, wearingPlugNPlay,       _NO_ARG)
 DEFINE_PRIM(_I32,  detectLatency,          _NO_ARG)
 
 DEFINE_PRIM(_I32,  loadBackgroundTrack,       _STRING)

@@ -21,9 +21,6 @@ void loadFiles(std::vector<const char*> argv);
 double getGlobalVolume();
 double setGlobalVolume(double value);
 
-bool wearingHeadphones();
-bool wearingPlugNPlay();
-
 // And now the rest
 int loadBackgroundTrack(const char* path);
 void playBackgroundTrack(int index);

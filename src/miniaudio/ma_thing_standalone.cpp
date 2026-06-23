@@ -37,14 +37,7 @@ double getGlobalVolume()                       { return g_audioSystem.getGlobalV
 double setGlobalVolume(double value)           { return g_audioSystem.setGlobalVolume(value); }
 
 int detectLatency() {
-#if HX_WINDOWS
-    int osMs = 50;
-#else
-    int osMs = 10;
-#endif
-    if (g_audioSystem.exists) {
-        osMs += g_audioSystem.getBluetoothLatency();
-    }
+    int osMs = 40;
     return osMs;
 }
 
@@ -65,20 +58,3 @@ bool isSoundEffectPlaying(int index)                          { return g_mixer.i
 double setMixerMasterVolume(double volume)  { return g_mixer.setMasterVolume(volume); }
 double getMixerMasterVolume()              { return g_mixer.getMasterVolume(); }
 void  destroyMixer()                      { g_mixer.destroy(); }
-
-// these functions stay here
-bool wearingHeadphones() {
-#ifdef HX_WINDOWS
-    return checkWindowsHeadphoneStatus();
-#else
-    return false;
-#endif
-}
-
-bool wearingPlugNPlay() {
-#ifdef HX_WINDOWS
-    return checkIfPnPDevice();
-#else
-    return false;
-#endif
-}

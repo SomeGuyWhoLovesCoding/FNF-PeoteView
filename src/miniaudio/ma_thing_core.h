@@ -159,8 +159,7 @@ static bool refreshDeviceState() {
                     std::string id = newDeviceId;
                     std::transform(id.begin(), id.end(), id.begin(), ::tolower);
 
-                    const char* pnpPatterns[] = { "usb#", "bth#", "bthenum#", "swd#mmdevapi#",
-                                                  "bluetooth", "hid#", "uefi" };
+                    const char* pnpPatterns[] = { "usb#", "hid#", "uefi" };
 
                     for (const char* pat : pnpPatterns) {
                         if (id.find(pat) != std::string::npos) {
@@ -182,7 +181,7 @@ static bool refreshDeviceState() {
                             std::string s = wstring_to_string(var.pwszVal);
                             std::transform(s.begin(), s.end(), s.begin(), ::tolower);
 
-                            const char* kws[] = { "usb", "bluetooth", "bt", "wireless", "external",
+                            const char* kws[] = { "usb", "wireless", "external",
                                                   "hdmi", "digital audio", "digital output" };
 
                             for (const char* k : kws) {
@@ -199,7 +198,7 @@ static bool refreshDeviceState() {
                 std::string nameLower = newDeviceName;
                 std::transform(nameLower.begin(), nameLower.end(), nameLower.begin(), ::tolower);
                 const char* headphoneKws[] = { "headphone", "headset", "earphone", "earbud",
-                                               "airpod", "bluetooth", "bt", "wireless",
+                                               "airpod", "wireless",
                                                "ear piece", "usb audio speakers" };
                 for (const char* kw : headphoneKws) {
                     if (nameLower.find(kw) != std::string::npos) {
@@ -324,188 +323,6 @@ inline void stopAudioDeviceMonitoring() {
 }
 
 #endif // HX_WINDOWS
-
-// ---- Bluetooth codec detection -------------------------------------------
-
-#ifdef HX_WINDOWS
-
-static std::string getWindowsBluetoothCodec() {
-    static const struct { const char* guid; const char* name; } kCodecGuids[] = {
-        { "{00000000-0000-0000-0000-000000000000}", "SBC"           },
-        { "{f5d3e03a-3c3b-4b1c-b6f0-7a2a7a7e7db1}", "AAC"           },
-        { "{e0893fbc-bf36-4e70-a8b1-1b4e9b5c7e2f}", "aptX"          },
-        { "{f9b7c3e2-1d2a-4b5c-9e8f-3a1b2c4d5e6f}", "aptX-HD"       },
-        { "{a1b2c3d4-e5f6-7890-abcd-ef1234567890}", "aptX-LL"       },
-        { "{b3c4d5e6-f7a8-9012-bcde-f12345678901}", "aptX-Adaptive" },
-        { "{c4d5e6f7-a8b9-0123-cdef-123456789012}", "LDAC"          },
-    };
-
-    auto scanHive = [&](const char* regBase) -> std::string {
-        HKEY hBase = nullptr;
-        if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, regBase, 0, KEY_READ, &hBase) != ERROR_SUCCESS)
-            return "";
-
-        std::string result;
-        char  subkeyName[256];
-        DWORD subkeyLen = sizeof(subkeyName);
-        DWORD idx = 0;
-
-        while (RegEnumKeyExA(hBase, idx++, subkeyName, &subkeyLen,
-                             nullptr, nullptr, nullptr, nullptr) == ERROR_SUCCESS) {
-            subkeyLen = sizeof(subkeyName);
-
-            HKEY hSub = nullptr;
-            if (RegOpenKeyExA(hBase, subkeyName, 0, KEY_READ, &hSub) != ERROR_SUCCESS)
-                continue;
-
-            char  codecGuid[128] = {};
-            DWORD dataSize = sizeof(codecGuid);
-            DWORD dataType = 0;
-
-            if (RegQueryValueExA(hSub, "CodecUsed", nullptr, &dataType,
-                                 (LPBYTE)codecGuid, &dataSize) == ERROR_SUCCESS
-                && dataType == REG_SZ) {
-                std::string g(codecGuid);
-                std::transform(g.begin(), g.end(), g.begin(), ::tolower);
-
-                for (const auto& entry : kCodecGuids) {
-                    std::string eg(entry.guid);
-                    std::transform(eg.begin(), eg.end(), eg.begin(), ::tolower);
-                    if (g == eg) { result = entry.name; break; }
-                }
-                if (result.empty()) result = "Unknown-BT";
-                RegCloseKey(hSub);
-                break;
-            }
-            RegCloseKey(hSub);
-        }
-        RegCloseKey(hBase);
-        return result;
-    };
-
-    std::string codec = scanHive(
-        "SYSTEM\\CurrentControlSet\\Control\\Bluetooth\\Audio\\AVRCP\\CT");
-
-    if (codec.empty())
-        codec = scanHive(
-            "SYSTEM\\CurrentControlSet\\Services\\BthA2dp\\Parameters");
-
-    return codec.empty() ? "Unknown" : codec;
-}
-
-static inline std::string getBluetoothCodec() { return getWindowsBluetoothCodec(); }
-
-// Returns estimated codec latency in milliseconds.
-// Reads device type from the monitor thread's cache only — no COM, no refresh.
-// Safe to call from any thread, including the audio callback and detectLatency().
-static int getBluetoothCodecLatencyMs() {
-    // Read PnP status from cache only. If the cache is not yet populated
-    // (first call before the monitor thread has run), return a safe
-    // conservative default rather than blocking on a COM call.
-    {
-        std::lock_guard<std::mutex> lock(g_currentDeviceState.mutex);
-        if (g_currentDeviceState.isPnP)          return 0;
-        if (g_currentDeviceState.deviceId.empty()) return 50;
-    }
-
-    // getWindowsBluetoothCodec() reads only the registry — no COM, no
-    // apartment issues, safe to call from any thread.
-    std::string codec = getWindowsBluetoothCodec();
-    if (codec == "aptX-LL")       return  40;
-    if (codec == "aptX-Adaptive") return  50;
-    if (codec == "aptX")          return 120;
-    if (codec == "aptX-HD")       return 150;
-    if (codec == "AAC")           return 120;
-    if (codec == "LDAC")          return 200;
-    if (codec == "SBC")           return 220;
-    if (codec == "Unknown-BT")    return 150;
-    if (codec == "Unknown")       return  50;
-    return 0;
-}
-
-#elif defined(__linux__) && !defined(__ANDROID__)
-
-static std::string readBlueZCodecViaBluetoolctl() {
-    FILE* fp = popen(
-        "bluetoothctl -- list 2>/dev/null | head -1 | awk '{print $2}' | "
-        "xargs -I{} bluetoothctl -- info {} 2>/dev/null | "
-        "grep -i 'Codec' | head -1 | awk '{print $NF}'",
-        "r");
-    if (!fp) return "";
-
-    char buf[64] = {};
-    if (fgets(buf, sizeof(buf), fp))
-        buf[strcspn(buf, "\r\n")] = '\0';
-    pclose(fp);
-    return std::string(buf);
-}
-
-static std::string readBlueZCodecViaSysfs() {
-    const char* paths[] = {
-        "/sys/kernel/debug/bluetooth/hci0/a2dp_sink_codec",
-        "/sys/kernel/debug/bluetooth/hci0/a2dp_source_codec",
-    };
-    for (const char* p : paths) {
-        FILE* f = fopen(p, "r");
-        if (!f) continue;
-        char buf[64] = {};
-        if (fgets(buf, sizeof(buf), f)) {
-            buf[strcspn(buf, "\r\n")] = '\0';
-            fclose(f);
-            if (buf[0]) return std::string(buf);
-        }
-        fclose(f);
-    }
-    return "";
-}
-
-static std::string normaliseLinuxCodecName(const std::string& raw) {
-    std::string s = raw;
-    std::transform(s.begin(), s.end(), s.begin(), ::tolower);
-
-    if (s.find("aptx-ll")       != std::string::npos ||
-        s.find("aptx_ll")       != std::string::npos) return "aptX-LL";
-    if (s.find("aptx-adaptive") != std::string::npos ||
-        s.find("aptx_adaptive") != std::string::npos) return "aptX-Adaptive";
-    if (s.find("aptx-hd")       != std::string::npos ||
-        s.find("aptx_hd")       != std::string::npos) return "aptX-HD";
-    if (s.find("aptx")          != std::string::npos) return "aptX";
-    if (s.find("ldac")          != std::string::npos) return "LDAC";
-    if (s.find("aac")           != std::string::npos) return "AAC";
-    if (s.find("lc3")           != std::string::npos) return "LC3";
-    if (s.find("sbc-xq")        != std::string::npos) return "SBC-XQ";
-    if (s.find("sbc")           != std::string::npos) return "SBC";
-    if (!s.empty())                                   return "Unknown-BT";
-    return "Unknown";
-}
-
-static std::string getBluetoothCodec() {
-    std::string codec = readBlueZCodecViaBluetoolctl();
-    if (codec.empty() || codec == "Unknown")
-        codec = readBlueZCodecViaSysfs();
-    return normaliseLinuxCodecName(codec);
-}
-
-static int getBluetoothCodecLatencyMs() {
-    std::string codec = getBluetoothCodec();
-    if (codec == "Unknown")       return 0;
-    if (codec == "aptX-LL")       return  40;
-    if (codec == "aptX-Adaptive") return  50;
-    if (codec == "aptX")          return 120;
-    if (codec == "aptX-HD")       return 150;
-    if (codec == "LC3")           return  30;
-    if (codec == "SBC-XQ")        return 200;
-    if (codec == "AAC")           return 120;
-    if (codec == "LDAC")          return 200;
-    if (codec == "SBC")           return 220;
-    if (codec == "Unknown-BT")    return 150;
-    return 0;
-}
-
-#else
-static inline std::string getBluetoothCodec()        { return "Unknown"; }
-static int         getBluetoothCodecLatencyMs() { return 0; }
-#endif // HX_WINDOWS / __linux__ / other
 
 // ---- audio constants ------------------------------------------------------
 
@@ -1309,10 +1126,6 @@ public:
     double getDuration() const {
         if (streams.empty()) return 0.0;
         return (double)streams[longestDecoderIndex].decoderLength / (SAMPLE_RATE * 0.001);
-    }
-
-    int getBluetoothLatency() {
-        return getBluetoothCodecLatencyMs();
     }
 
 private:

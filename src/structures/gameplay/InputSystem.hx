@@ -77,17 +77,15 @@ class InputSystem {
 		var window = lime.app.Application.current.window;
 		#if !android
 		#if FV_LIME_FORK
-		#if !android
 		AsyncInput.inputPress.add(press);
 		AsyncInput.inputRelease.add(release);
+		haxe.Timer.delay(() -> {
+			window.onKeyDown.add(press_game);
+		}, 50); // prevent pause screen as the first frame here
+		#end
 		#else
 		window.onKeyDownPrecise.add(press);
 		window.onKeyUpPrecise.add(release);
-		#end
-		#else
-		window.onKeyDown.add(press);
-		window.onKeyUp.add(release);
-		#end
 		#end
 		Main.current.mouseDown = mousePress;
 	}
@@ -96,26 +94,22 @@ class InputSystem {
 		var window = lime.app.Application.current.window;
 		#if !android
 		#if FV_LIME_FORK
-		#if !android
 		AsyncInput.inputPress.remove(press);
 		AsyncInput.inputRelease.remove(release);
+		window.onKeyDown.remove(press_game);
 		#else
 		window.onKeyDownPrecise.remove(press);
 		window.onKeyUpPrecise.remove(release);
-		#end
-		#else
-		window.onKeyDown.remove(press);
-		window.onKeyUp.remove(release);
 		#end
 		#end
 		Main.current.mouseDown = null;
 	}
 
-	#if !android
+	function press_game(code:KeyCode, mod:KeyModifier) {
+		gameCondition(code);
+	}
+
 	function press(code:KeyCode, timestamp:Float)
-	#else
-	function press(code:KeyCode, mod:KeyModifier #if FV_LIME_FORK , timestamp:Float #end)
-	#end
 	{
 		var field = parent.field;
 		var isInGameOver = field.isInGameOver;
@@ -125,23 +119,9 @@ class InputSystem {
 
 		code = minimize(code);
 
-		if (parent.ready && code == game.pause
-			&& !parent.songEnded) {
-			if (!parent.paused) parent.pause();
-			return;
-		}
-
-		if (parent.ready && !parent.botplay
-			&& !isInGameOver && !parent.songEnded
-			&& !parent.paused && code == game.reset && !RenderingMode.enabled) {
-			parent.gameOver(Chart.header, 1);
-			return;
-		}
-
-		if (parent.ready && isInGameOver) {
-			field.endGameOver(code == ui.back);
-			return;
-		}
+		#if !FV_LIME_FORK
+		if (gameCondition(code)) return;
+		#end
 
 		if (parent.disposed || parent.botplay
 			|| isInGameOver
@@ -224,13 +204,42 @@ class InputSystem {
 		#end
 	}
 
+	function gameCondition(keyCode:KeyCode) {
+		var returnValue = false;
+		var game = SaveData.state.controls.game;
+
+		if (parent.ready && keyCode == game.pause
+			&& !parent.songEnded) {
+			if (!parent.paused) parent.pause();
+			return true;
+		}
+
+		var field = parent.field;
+		var isInGameOver = field.isInGameOver;
+
+		if (parent.ready && !parent.botplay
+			&& !isInGameOver && !parent.songEnded
+			&& !parent.paused && keyCode == game.reset && !RenderingMode.enabled) {
+			parent.gameOver(Chart.header, 1);
+			return true;
+		}
+
+		if (parent.ready && isInGameOver) {
+			field.endGameOver(keyCode == SaveData.state.controls.ui.back);
+			return true;
+		}
+
+		return false;
+	}
+
 	function mousePress(x:Float, y:Float, mouseButton:MouseButton) {
 		if (mouseButton != MouseButton.LEFT) return;
 		parent.pause();
 	}
 
-	// This is here to prevent invalid array index error because I chose to have an indexed two-dimensional array instead of a map. Another dumb yet smart microoptimization just in case lol
-	inline function minimize(code:Int) {
+	// This is here to prevent invalid array index error because I chose to have an indexed two-dimensional array instead of a map.
+	// Another dumb yet smart microoptimization for the fuck of it.
+	function minimize(code:Int) {
 		if (code > 0x40000000) {
 			code -= 0x40000000;
 			code += 0x1000;
