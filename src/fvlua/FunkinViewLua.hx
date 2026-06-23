@@ -147,6 +147,7 @@ class FunkinViewLua {
 			noteFormulaResult.y = 0;
 			noteFormulaResult.scale = 1;
 			noteFormulaResult.sustainRot = 0;
+			noteFormulaResult.scrollMultiplier = 1;
 			return null;
 		}
 		
@@ -159,6 +160,7 @@ class FunkinViewLua {
 			noteFormulaResult.y = 0;
 			noteFormulaResult.scale = 1;
 			noteFormulaResult.sustainRot = 0;
+			noteFormulaResult.scrollMultiplier = 1;
 			return null;
 		}
 		
@@ -169,7 +171,7 @@ class FunkinViewLua {
 		Lua.pushnumber(lua, index);
 		Lua.pushnumber(lua, type);
 
-		var status:Int = Lua.pcall(lua, 6, 4, 0);
+		var status:Int = Lua.pcall(lua, 6, 5, 0);
 
 		if (status != Lua.LUA_OK) {
 			error(getErrorMessage(lua, status) + " (noteFormula)");
@@ -177,11 +179,13 @@ class FunkinViewLua {
 			noteFormulaResult.y = 0;
 			noteFormulaResult.scale = 1;
 			noteFormulaResult.sustainRot = 0;
+			noteFormulaResult.scrollMultiplier = 1;
 			return null;
 		}
     
 		// If any return is nil, cancel
-		if (Lua.type(lua, -4) == Lua.LUA_TNIL ||
+		if (Lua.type(lua, -5) == Lua.LUA_TNIL ||
+			Lua.type(lua, -4) == Lua.LUA_TNIL ||
 			Lua.type(lua, -3) == Lua.LUA_TNIL ||
 			Lua.type(lua, -2) == Lua.LUA_TNIL ||
 			Lua.type(lua, -1) == Lua.LUA_TNIL) {
@@ -189,16 +193,18 @@ class FunkinViewLua {
 			return null;
 		}
 		
-		if (Lua.type(lua, -4) == Lua.LUA_TNUMBER) noteFormulaResult.x = Lua.tonumber(lua, -4);
+		if (Lua.type(lua, -5) == Lua.LUA_TNUMBER) noteFormulaResult.x = Lua.tonumber(lua, -5);
 		else noteFormulaResult.x = 0;
-		if (Lua.type(lua, -3) == Lua.LUA_TNUMBER) noteFormulaResult.y = Lua.tonumber(lua, -3);
+		if (Lua.type(lua, -4) == Lua.LUA_TNUMBER) noteFormulaResult.y = Lua.tonumber(lua, -4);
 		else noteFormulaResult.y = 0;
-		if (Lua.type(lua, -2) == Lua.LUA_TNUMBER) noteFormulaResult.scale = Lua.tonumber(lua, -2);
+		if (Lua.type(lua, -3) == Lua.LUA_TNUMBER) noteFormulaResult.scale = Lua.tonumber(lua, -3);
 		else noteFormulaResult.scale = 1;
-		if (Lua.type(lua, -1) == Lua.LUA_TNUMBER) noteFormulaResult.sustainRot = Lua.tonumber(lua, -1);
+		if (Lua.type(lua, -2) == Lua.LUA_TNUMBER) noteFormulaResult.sustainRot = Lua.tonumber(lua, -2);
 		else noteFormulaResult.sustainRot = 0;
+		if (Lua.type(lua, -1) == Lua.LUA_TNUMBER) noteFormulaResult.scrollMultiplier = Lua.tonumber(lua, -1);
+		else noteFormulaResult.scrollMultiplier = 0;
 		
-		Lua.pop(lua, 4);
+		Lua.pop(lua, 5);
 		return noteFormulaResult;
 	}
 
@@ -335,8 +341,9 @@ class FunkinViewLua {
 class NoteFormulaResult {
 	var x:Float = 0;
 	var y:Float = 0;
-	var scale:Float = 0;
+	var scale:Float = 1;
 	var sustainRot:Float = 0;
+	var scrollMultiplier:Float = 1;
 
 	function new() {}
 }

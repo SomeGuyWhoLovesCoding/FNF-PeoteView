@@ -186,9 +186,13 @@ class NoteSystem {
 		var noteSprX = rec.x;
 		var noteSprY = rec.y;
 
-		noteSpr.Sx = Std.int(noteSprX + (diff * Math.cos(strumline.scrollDirection * 0.01745329)));
-		noteSpr.Sy = Std.int(noteSprY + (diff * Math.sin(strumline.scrollDirection * 0.01745329)));
-		noteSpr.diff = Std.int(diff);
+		var d = Std.int(-diff);
+		if (parent.downScroll) d = -d;
+
+		noteSpr.diff = d;
+		noteSpr.Sx = Std.int(noteSprX + (d * Math.cos(strumline.scrollDirection * 0.01745329)));
+		noteSpr.Sy = Std.int(noteSprY + (d * Math.sin(strumline.scrollDirection * 0.01745329)));
+
 		noteSpr.scale = rec.scale;
 		noteSpr.globalIndex = _id;
 
@@ -353,14 +357,12 @@ class NoteSystem {
 
 	var _cachedScrollSpeed:Float = 0;
 	var _cachedHitbox:Float = 200;
-	var _cachedDownScroll:Bool = false;
 
 	function setScrollSpeed(value:Float) {
 		noteSpawner.spawnDist = MetaNote.floatToMetaNotePosition(1600 / value);
 		noteSpawner.despawnDist = MetaNote.floatToMetaNotePosition(360 / Math.min(Math.max(value, 0.0001), 1.0));
 		_cachedScrollSpeed = value;
 		_cachedHitbox = 200;
-		_cachedDownScroll = parent.downScroll;
 		return value;
 	}
 

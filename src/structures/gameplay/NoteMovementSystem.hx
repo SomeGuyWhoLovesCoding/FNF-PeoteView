@@ -19,15 +19,15 @@ class NoteMovementSystem {
 			var returnValue = lua.callNoteFormula(noteSpr.diff, parent.parent.scrollSpeed, receptor.x, receptor.y, index, type);
 			if (returnValue == null) return;
 
-			//if (index == 0) Sys.println('NOTE INDEX: $index - returnValue: $returnValue');
 			if (noteSpr != null) {
 				noteSpr.Sx = Std.int(returnValue.x);
-				//if (index == 0) Sys.println(noteSpr.Sx);
 				noteSpr.Sy = Std.int(returnValue.y);
 				noteSpr.scale = returnValue.scale;
+				if (returnValue.scrollMultiplier != 1) noteSpr.diff = Std.int(noteSpr.diff * returnValue.scrollMultiplier);
 			}
 			if (sustainSpr != null) {
 				sustainSpr.r = returnValue.sustainRot;
+				if (returnValue.scrollMultiplier != 1) sustainSpr.w = Std.int(sustainSpr.w * returnValue.scrollMultiplier);
 				sustainSpr.followNote(isHit ? receptor.x : noteSpr.Sx, isHit ? receptor.y : noteSpr.Sy, index);
 			}
 		}
