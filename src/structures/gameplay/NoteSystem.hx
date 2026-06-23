@@ -180,9 +180,7 @@ class NoteSystem {
 		// Judgement-gated state reads
 		var judged:Bool   = File.getJudgement(_id);
 		var isHit:Bool    = judged && !note.flag;   // judged + flag=false → hit
-		//if (_id == 1) Sys.println('NOTE 1 IS HIT? $isHit; but is note.flag hit (false)? ${note.flag}. Is it judged? $judged');
 		var isMissed:Bool = judged && note.flag;  // judged + flag=true → missed
-		// sustain resolution is tracked externally in strumline
 		var isResolved:Bool = strumline.sustainsResolved[index];
 
 		var noteSprX = rec.x;
@@ -190,6 +188,7 @@ class NoteSystem {
 
 		noteSpr.Sx = Std.int(noteSprX + (diff * Math.cos(strumline.scrollDirection * 0.01745329)));
 		noteSpr.Sy = Std.int(noteSprY + (diff * Math.sin(strumline.scrollDirection * 0.01745329)));
+		noteSpr.diff = Std.int(diff);
 		noteSpr.scale = rec.scale;
 		noteSpr.globalIndex = _id;
 
@@ -267,7 +266,6 @@ class NoteSystem {
 				var n:Int64 = note.toNumber();
 				// opponent hit: judged as hit (missed=false)
 				(n:MetaNote).flag = false;
-				// Re-read immediately so sustain/visual logic below uses correct state
 				isHit = true;
 				File.setJudgement(_id, true);
 
@@ -342,15 +340,13 @@ class NoteSystem {
 		}
 
 		if (noteSpr != null) {
-			noteMovement.run(this, noteSpr, sustainSpr, rec, index);
+			noteMovement.run(this, noteSpr, sustainSpr, rec, index, note.type, isHit);
 			if (sustainExists)
 				virtualNoteBuffer.addSustain(sustainSpr, noteSpr);
 		}
 
 		if (!isHit)
 			virtualNoteBuffer.addNote(noteSpr);
-
-		//if (_id == 0 && playable) Sys.println('SET JUDGEMENT for $_id, readback: ${File.getJudgement(_id)}');
 
 		return noteSpr;
 	}

@@ -97,7 +97,6 @@ class FunkinViewLua {
 	private var noteFormulaVM:State = null;
 	private var noteFormulaSource:String = null;
 	private var noteFormulaLoaded:Bool = false;
-	private var noteFormulaResult:Array<Float> = [];
 
 	function setNoteFormulaSource(source:String) {
 		if (noteFormulaSource == source) return;
@@ -140,21 +139,27 @@ class FunkinViewLua {
 		return true;
 	}
 
-	function callNoteFormula(diff:Float, scrollSpeed:Float, receptorX:Float, receptorY:Float, index:Float):Array<Float> {
+	private var noteFormulaResult:NoteFormulaResult = new NoteFormulaResult();
+
+	function callNoteFormula(diff:Float, scrollSpeed:Float, receptorX:Float, receptorY:Float, index:Float, type:Float):NoteFormulaResult {
 		if (!ensureNoteFormulaVM()) {
-			noteFormulaResult.resize(0);
-			return noteFormulaResult;
+			noteFormulaResult.x = 0;
+			noteFormulaResult.y = 0;
+			noteFormulaResult.scale = 1;
+			noteFormulaResult.sustainRot = 0;
+			return null;
 		}
 		
 		var lua:State = noteFormulaVM;
 		
 		Lua.getglobal(lua, "noteFormula");
-		var type:Int = Lua.type(lua, -1);
-		
-		if (type != Lua.LUA_TFUNCTION) {
+		if (Lua.type(lua, -1) != Lua.LUA_TFUNCTION) {
 			Lua.pop(lua, 1);
-			noteFormulaResult.resize(0);
-			return noteFormulaResult;
+			noteFormulaResult.x = 0;
+			noteFormulaResult.y = 0;
+			noteFormulaResult.scale = 1;
+			noteFormulaResult.sustainRot = 0;
+			return null;
 		}
 		
 		Lua.pushnumber(lua, diff);
@@ -162,23 +167,36 @@ class FunkinViewLua {
 		Lua.pushnumber(lua, receptorX);
 		Lua.pushnumber(lua, receptorY);
 		Lua.pushnumber(lua, index);
-		
-		var status:Int = Lua.pcall(lua, 4, 4, 0);
-		
+		Lua.pushnumber(lua, type);
+
+		var status:Int = Lua.pcall(lua, 6, 4, 0);
+
 		if (status != Lua.LUA_OK) {
 			error(getErrorMessage(lua, status) + " (noteFormula)");
-			noteFormulaResult.resize(0);
-			return noteFormulaResult;
+			noteFormulaResult.x = 0;
+			noteFormulaResult.y = 0;
+			noteFormulaResult.scale = 1;
+			noteFormulaResult.sustainRot = 0;
+			return null;
+		}
+    
+		// If any return is nil, cancel
+		if (Lua.type(lua, -4) == Lua.LUA_TNIL ||
+			Lua.type(lua, -3) == Lua.LUA_TNIL ||
+			Lua.type(lua, -2) == Lua.LUA_TNIL ||
+			Lua.type(lua, -1) == Lua.LUA_TNIL) {
+			Lua.pop(lua, 4);
+			return null;
 		}
 		
-		inline function getNum(idx:Int):Float {
-			return Lua.type(lua, idx) == Lua.LUA_TNUMBER ? Lua.tonumber(lua, idx) : 0.0;
-		}
-		
-		noteFormulaResult[0] = getNum(-4);
-		noteFormulaResult[1] = getNum(-3);
-		noteFormulaResult[2] = getNum(-2);
-		noteFormulaResult[3] = getNum(-1);
+		if (Lua.type(lua, -4) == Lua.LUA_TNUMBER) noteFormulaResult.x = Lua.tonumber(lua, -4);
+		else noteFormulaResult.x = 0;
+		if (Lua.type(lua, -3) == Lua.LUA_TNUMBER) noteFormulaResult.y = Lua.tonumber(lua, -3);
+		else noteFormulaResult.y = 0;
+		if (Lua.type(lua, -2) == Lua.LUA_TNUMBER) noteFormulaResult.scale = Lua.tonumber(lua, -2);
+		else noteFormulaResult.scale = 1;
+		if (Lua.type(lua, -1) == Lua.LUA_TNUMBER) noteFormulaResult.sustainRot = Lua.tonumber(lua, -1);
+		else noteFormulaResult.sustainRot = 0;
 		
 		Lua.pop(lua, 4);
 		return noteFormulaResult;
@@ -310,4 +328,15 @@ class FunkinViewLua {
 		vms = null;
 	}
 	#end
+}
+
+@:publicFields
+@:structInit
+class NoteFormulaResult {
+	var x:Float = 0;
+	var y:Float = 0;
+	var scale:Float = 0;
+	var sustainRot:Float = 0;
+
+	function new() {}
 }
