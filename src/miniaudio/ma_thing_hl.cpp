@@ -52,7 +52,8 @@ HL_PRIM double HL_NAME(setGlobalVolume)(double value)            { return g_audi
 
 // Calls the underlying C++ functions directly — not the HL primitives above.
 HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
-    int osMs = 40;
+    int osMs = 50;
+    osMs += 20; // due to buffer size
     return osMs;
 }
 
