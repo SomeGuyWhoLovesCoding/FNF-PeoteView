@@ -7,6 +7,10 @@
 *.so
 *.a
 *.out
+bin/
+obj/
+test/
+why/
 
 # Dependencies
 node_modules/
@@ -33,6 +37,7 @@ target/
 .idea/
 *.swp
 *.swo
+.vs/
 
 # System files
 .DS_Store

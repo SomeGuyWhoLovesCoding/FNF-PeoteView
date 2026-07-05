@@ -37,6 +37,8 @@
 
 	<!-- Allow working memory greater than 1 gigabyte -->
 	<haxedef name="HXCPP_GC_BIG_BLOCKS" />
+	<haxedef name="HXCPP_GC_NURSERY" />
+	<haxedef name="HX_MULTI_THREAD_MARKING" />
 
 	<!-- Compile-time feature functionality dedicated to Funkin' View -->
 	<haxedef name="HXCPP_TRACY" if="FV_PROFILE" />
