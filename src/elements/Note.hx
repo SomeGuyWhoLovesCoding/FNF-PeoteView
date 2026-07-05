@@ -84,7 +84,7 @@ class Note implements Element
 	 * @param addedAlpha Added alpha value
 	 * @return A Note instance from the pool or newly created
 	 */
-	static inline function acquire(x:Int = 0, y:Int = 0, w:Int = 100, h:Int = 100, scale:Float = 1.0, initialAlpha:Float = 1.0, addedAlpha:Float = 0.0):Note {
+	static public inline function acquire(x:Int = 0, y:Int = 0, w:Int = 100, h:Int = 100, scale:Float = 1.0, initialAlpha:Float = 1.0, addedAlpha:Float = 0.0):Note {
 		var note:Note = null;
 		if (poolSize > 0) {
 			note = pool[--poolSize];
@@ -102,7 +102,7 @@ class Note implements Element
 	 * The note should not be used after calling this method.
 	 * @param note The note to return to the pool
 	 */
-	static inline function release(note:Note):Void {
+	static public inline function release(note:Note):Void {
 		if (note != null) {
 			if (poolSize < pool.length) {
 				pool[poolSize++] = note;
@@ -116,7 +116,7 @@ class Note implements Element
 	/**
 	 * Clears all notes from the pool. Call this when disposing or resetting the game state.
 	 */
-	static inline function clearPool():Void {
+	static public inline function clearPool():Void {
 		pool = [];
 		poolSize = 0;
 	}
