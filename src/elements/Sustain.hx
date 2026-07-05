@@ -26,6 +26,10 @@ class Sustain implements Element
 
 	static public var defaultAlpha:Float = 0.6;
 	static public var defaultMissAlpha:Float = 0.3;
+	
+	// Object pool for reducing GC pressure
+	static var pool:Array<Sustain> = [];
+	static var poolSize:Int = 0;
 
 	public var length:Int;
 
@@ -84,8 +88,57 @@ class Sustain implements Element
 		program.setColorFormula( 'c * slice(${name}_ID, tailPoint)' );
 	}
 
-	inline public function new(x:Int, y:Int, w:Int, h:Int, r:Float, s:Float, sc:Float, tile:Int, tailPoint:Int) {
+	inline public function new(x:Int = 0, y:Int = 0, w:Int = 100, h:Int = 100, r:Float = 0, s:Float = 1.0, sc:Float = 1.0, tile:Int = 0, tailPoint:Int = 43) {
 		setProperties(x, y, w, h, r, s, sc, tile, tailPoint);
+	}
+	
+	/**
+	 * Acquires a Sustain from the object pool or creates a new one if pool is empty.
+	 * @param x X position
+	 * @param y Y position
+	 * @param w Width
+	 * @param h Height
+	 * @param r Rotation
+	 * @param s Speed
+	 * @param sc Scale factor
+	 * @param tile Tile ID
+	 * @param tailPoint Tail point for slicing
+	 * @return A Sustain instance from the pool or newly created
+	 */
+	static inline function acquire(x:Int = 0, y:Int = 0, w:Int = 100, h:Int = 100, r:Float = 0, s:Float = 1.0, sc:Float = 1.0, tile:Int = 0, tailPoint:Int = 43):Sustain {
+		var sustain:Sustain = null;
+		if (poolSize > 0) {
+			sustain = pool[--poolSize];
+			pool[poolSize] = null;
+		} else {
+			sustain = new Sustain();
+		}
+		sustain.setProperties(x, y, w, h, r, s, sc, tile, tailPoint);
+		return sustain;
+	}
+	
+	/**
+	 * Returns a Sustain to the object pool for reuse.
+	 * The sustain should not be used after calling this method.
+	 * @param sustain The sustain to return to the pool
+	 */
+	static inline function release(sustain:Sustain):Void {
+		if (sustain != null) {
+			if (poolSize < pool.length) {
+				pool[poolSize++] = sustain;
+			} else {
+				pool.push(sustain);
+				poolSize++;
+			}
+		}
+	}
+	
+	/**
+	 * Clears all sustains from the pool. Call this when disposing or resetting the game state.
+	 */
+	static inline function clearPool():Void {
+		pool = [];
+		poolSize = 0;
 	}
 
 	inline public function changeID(id:Int) {
