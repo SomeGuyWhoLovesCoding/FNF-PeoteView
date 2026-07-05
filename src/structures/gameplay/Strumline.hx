@@ -89,7 +89,7 @@ class Strumline {
 		for (i in 0...value) {
 			var rec = buffer[i];
 			if (rec == null) {
-				rec = Note.acquire(x, y, 0, 0);
+				rec = new Note(x, y, 0, 0);
 				rec.changeID(ids[i]);
 				rec.reset();
 				buffer[i] = rec;
