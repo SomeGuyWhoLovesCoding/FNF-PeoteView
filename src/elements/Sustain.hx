@@ -105,7 +105,7 @@ class Sustain implements Element
 	 * @param tailPoint Tail point for slicing
 	 * @return A Sustain instance from the pool or newly created
 	 */
-	static public inline function acquire(x:Int = 0, y:Int = 0, w:Int = 100, h:Int = 100, r:Float = 0, s:Float = 1.0, sc:Float = 1.0, tile:Int = 0, tailPoint:Int = 43):Sustain {
+	static inline function acquire(x:Int = 0, y:Int = 0, w:Int = 100, h:Int = 100, r:Float = 0, s:Float = 1.0, sc:Float = 1.0, tile:Int = 0, tailPoint:Int = 43):Sustain {
 		var sustain:Sustain = null;
 		if (poolSize > 0) {
 			sustain = pool[--poolSize];
@@ -122,7 +122,7 @@ class Sustain implements Element
 	 * The sustain should not be used after calling this method.
 	 * @param sustain The sustain to return to the pool
 	 */
-	static public inline function release(sustain:Sustain):Void {
+	static inline function release(sustain:Sustain):Void {
 		if (sustain != null) {
 			if (poolSize < pool.length) {
 				pool[poolSize++] = sustain;
@@ -136,7 +136,7 @@ class Sustain implements Element
 	/**
 	 * Clears all sustains from the pool. Call this when disposing or resetting the game state.
 	 */
-	static public inline function clearPool():Void {
+	static inline function clearPool():Void {
 		pool = [];
 		poolSize = 0;
 	}
