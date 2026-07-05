@@ -9,6 +9,10 @@ class Note implements Element
 	static public var defaultAlpha:Float = 1;
 	static public var defaultMissAlpha:Float = 0.5;
 
+	// Object pool for reducing GC pressure
+	static var pool:Array<Note> = [];
+	static var poolSize:Int = 0;
+
 	// position in pixel (relative to upper left corner of Display)
 	@varying @custom @formula("ox * scale") public var ox:Int;
 	@varying @custom @formula("oy * scale") public var oy:Int;
@@ -64,9 +68,57 @@ class Note implements Element
 
 	public var id:Int = 0;
 
-	inline public function new(x:Int, y:Int, w:Int, h:Int, scale:Float = 1.0, initialAlpha:Float = 1.0, addedAlpha:Float = 0.0) {
+	inline public function new(x:Int = 0, y:Int = 0, w:Int = 100, h:Int = 100, scale:Float = 1.0, initialAlpha:Float = 1.0, addedAlpha:Float = 0.0) {
 		reset();
 		setProperties(x, y, w, h, scale, initialAlpha, addedAlpha);
+	}
+	
+	/**
+	 * Acquires a Note from the object pool or creates a new one if pool is empty.
+	 * @param x X position
+	 * @param y Y position
+	 * @param w Width
+	 * @param h Height
+	 * @param scale Scale factor
+	 * @param initialAlpha Initial alpha value
+	 * @param addedAlpha Added alpha value
+	 * @return A Note instance from the pool or newly created
+	 */
+	static public inline function acquire(x:Int = 0, y:Int = 0, w:Int = 100, h:Int = 100, scale:Float = 1.0, initialAlpha:Float = 1.0, addedAlpha:Float = 0.0):Note {
+		var note:Note = null;
+		if (poolSize > 0) {
+			note = pool[--poolSize];
+			pool[poolSize] = null;
+		} else {
+			note = new Note();
+		}
+		note.setProperties(x, y, w, h, scale, initialAlpha, addedAlpha);
+		note.reset();
+		return note;
+	}
+	
+	/**
+	 * Returns a Note to the object pool for reuse.
+	 * The note should not be used after calling this method.
+	 * @param note The note to return to the pool
+	 */
+	static public inline function release(note:Note):Void {
+		if (note != null) {
+			if (poolSize < pool.length) {
+				pool[poolSize++] = note;
+			} else {
+				pool.push(note);
+				poolSize++;
+			}
+		}
+	}
+	
+	/**
+	 * Clears all notes from the pool. Call this when disposing or resetting the game state.
+	 */
+	static public inline function clearPool():Void {
+		pool = [];
+		poolSize = 0;
 	}
 
 	static public function init(program:CustomProgram, name:String, texture:Texture)

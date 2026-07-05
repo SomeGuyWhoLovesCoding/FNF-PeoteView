@@ -243,7 +243,7 @@ class NoteSpawner {
 						continue;
 					}
 
-					var note = new Note(virtualNote.Sx, virtualNote.Sy, 0, 0, virtualNote.scale, virtualNote.initialAlpha, virtualNote.addedAlpha);
+					var note = Note.acquire(virtualNote.Sx, virtualNote.Sy, 0, 0, virtualNote.scale, virtualNote.initialAlpha, virtualNote.addedAlpha);
 					note.diff = -virtualNote.diff;
 					note.scrollDirection = strumReceptor.scrollDirection;
 					if (downScroll) note.scrollDirection += 180;
@@ -284,7 +284,7 @@ class NoteSpawner {
 				for (k in 0...length) {
 					var virtualSustain:VirtualSustain = index[k];
 					if (virtualSustain == null) continue;
-					var sustain = new Sustain(virtualSustain.Sx, virtualSustain.Sy, virtualSustain.w, virtualSustain.h,
+					var sustain = Sustain.acquire(virtualSustain.Sx, virtualSustain.Sy, virtualSustain.w, virtualSustain.h,
 						virtualSustain.r, virtualSustain.speed, virtualSustain.scale, id, tailPoints[id]);
 					sustain.length = virtualSustain.length;
 					sustain.c.aF = virtualSustain.alpha;

@@ -416,5 +416,9 @@ class NoteSystem {
 		display.removeProgram(notesProg);
 
 		NoteSpawner.minBottom = 0;
+		
+		// Clear object pools to free memory
+		Note.clearPool();
+		Sustain.clearPool();
 	}
 }
