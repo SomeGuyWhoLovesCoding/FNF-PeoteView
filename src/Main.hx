@@ -74,12 +74,6 @@ class Main extends Application
 
 	override function onWindowCreate()
 	{
-		#if (cpp && !debug)
-		//cpp.vm.Gc.setTargetFreeSpacePercentage(50);
-		//cpp.vm.Gc.setMinimumWorkingMemory(256*1024*1024);
-		//new CustomFinalizer();
-		#end
-
 		var titleBarColor:Color = SaveData.state.graphics.customTitleBarColor;
 
 		#if (windows && customtitlebar)
@@ -430,13 +424,6 @@ class Main extends Application
 				storyMenu.update(newDeltaTime);
 			}
 		}
-
-		/*#if cpp
-		var drained = DeferredFinalizer.drain(256);
-		if (drained != 0) {
-			Sys.println('  [ GC Deferred Finalizer System ] Now it\'s $drained objects destroyed/finalized');
-		}
-		#end*/
 	}
 
 	override function render(context:RenderContext) {
