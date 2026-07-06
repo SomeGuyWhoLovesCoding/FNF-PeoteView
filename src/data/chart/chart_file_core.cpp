@@ -142,6 +142,7 @@ private:
     int64_t dirtyMax  = -1;
     bool   dataDirty  = false;
     int64_t diskElementCount = 0;
+    std::fstream fileHandle; // persistent handle, avoids open/close per flush
 
     void markDirty(int64_t index) {
         if (index < dirtyMin) dirtyMin = index;
@@ -159,16 +160,19 @@ private:
 
     void flushHeader() {
         if (!isOpen || !headerModified) return;
-        std::fstream file(filename, std::ios::binary | std::ios::in | std::ios::out);
-        if (!file) return;
-        file.seekp(0, std::ios::beg);
-        file.write(reinterpret_cast<const char*>(&header), sizeof(ShardHeader));
-        file.flush();
-        if (file) headerModified = false;
+        if (!fileHandle.is_open()) {
+            fileHandle.open(filename, std::ios::binary | std::ios::in | std::ios::out);
+            if (!fileHandle) return;
+        }
+        fileHandle.seekp(0, std::ios::beg);
+        fileHandle.write(reinterpret_cast<const char*>(&header), sizeof(ShardHeader));
+        fileHandle.flush();
+        if (fileHandle) headerModified = false;
     }
 
     void flushFull() {
         if (!isOpen) return;
+        if (fileHandle.is_open()) fileHandle.close(); // file gets truncated below
         std::ofstream file(filename, std::ios::binary | std::ios::trunc);
         if (!file) return;
         file.write(reinterpret_cast<const char*>(&header), sizeof(ShardHeader));
@@ -186,14 +190,16 @@ private:
 
     void flushPartial() {
         if (!dataDirty || dirtyMin > dirtyMax) return;
-        std::fstream file(filename, std::ios::binary | std::ios::in | std::ios::out);
-        if (!file) return;
+        if (!fileHandle.is_open()) {
+            fileHandle.open(filename, std::ios::binary | std::ios::in | std::ios::out);
+            if (!fileHandle) return;
+        }
         int64_t byteOff   = sizeof(ShardHeader) + dirtyMin * sizeof(uint64_t);
         int64_t byteCount = (dirtyMax - dirtyMin + 1) * sizeof(uint64_t);
-        file.seekp(byteOff, std::ios::beg);
-        file.write(reinterpret_cast<const char*>(&data[dirtyMin]), byteCount);
-        file.flush();
-        if (file) {
+        fileHandle.seekp(byteOff, std::ios::beg);
+        fileHandle.write(reinterpret_cast<const char*>(&data[dirtyMin]), byteCount);
+        fileHandle.flush();
+        if (fileHandle) {
             dataDirty = false;
             dirtyMin = INT64_MAX;
             dirtyMax = -1;
@@ -203,6 +209,7 @@ private:
 public:
     void closeMap() {
         if (isOpen && (dataDirty || headerModified)) flush();
+        if (fileHandle.is_open()) fileHandle.close();
         data.clear();
         data.shrink_to_fit();
         memset(&header, 0, sizeof(header));
@@ -223,6 +230,7 @@ public:
         : filename(std::move(other.filename)), data(std::move(other.data)), header(other.header)
         , headerModified(other.headerModified), isOpen(other.isOpen), dirtyMin(other.dirtyMin)
         , dirtyMax(other.dirtyMax), dataDirty(other.dataDirty), diskElementCount(other.diskElementCount)
+        , fileHandle(std::move(other.fileHandle))
     {
         other.isOpen = false; other.dataDirty = false; other.headerModified = false;
         other.dirtyMin = INT64_MAX; other.dirtyMax = -1; other.diskElementCount = 0;
@@ -235,6 +243,7 @@ public:
             filename = std::move(other.filename); data = std::move(other.data); header = other.header;
             headerModified = other.headerModified; isOpen = other.isOpen; dirtyMin = other.dirtyMin;
             dirtyMax = other.dirtyMax; dataDirty = other.dataDirty; diskElementCount = other.diskElementCount;
+            fileHandle = std::move(other.fileHandle);
             other.isOpen = false; other.dataDirty = false; other.headerModified = false;
             other.dirtyMin = INT64_MAX; other.dirtyMax = -1; other.diskElementCount = 0;
             memset(&other.header, 0, sizeof(other.header));
@@ -583,8 +592,8 @@ private:
     void unloadShard(uint64_t shardId) {
         {
             std::lock_guard<std::mutex> lk(pendingMutex);
-            auto pit = pendingLoads.find(shardId);
-            if (pit != pendingLoads.end()) { pit->second.wait(); pendingLoads.erase(pit); }
+            if (pendingLoads.find(shardId) != pendingLoads.end())
+                return; // still loading — don't block, try again next time
         }
         auto it = activeShards.find(shardId);
         if (it != activeShards.end()) {
