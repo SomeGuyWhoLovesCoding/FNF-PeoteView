@@ -678,6 +678,14 @@ public:
     void initGlobalJudgement() {
         if (globalJudgementInitialized) return;
         globalJudgement.assign(static_cast<size_t>((totalNotes + 7) >> 3), 0);
+
+        // Lock memory to prevent swapping/page faults
+        #if defined(_WIN32)
+                VirtualLock(globalJudgement.data(), globalJudgement.size());
+        #else
+                mlock(globalJudgement.data(), globalJudgement.size());
+        #endif
+
         globalJudgementInitialized = true;
     }
 

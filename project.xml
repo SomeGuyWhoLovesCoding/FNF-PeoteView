@@ -41,6 +41,8 @@
 	<!-- Latency-sensitive settings for funkin' view -->
 	<haxedef name="HX_MULTI_THREAD_MARKING" unless="debug" />
 	<haxedef name="HXCPP_GC_DYNAMIC_SIZE" />
+	<haxedef name="HXCPP_GC_GENERATIONAL" />
+
 	<!-- Compile-time feature functionality dedicated to Funkin' View -->
 	<haxedef name="HXCPP_TRACY" if="FV_PROFILE" />
 	<haxedef name="HXCPP_TELEMETRY" if="FV_PROFILE" />
