@@ -74,6 +74,10 @@ HL_PRIM void HL_NAME(setJudgement)(int64_t globalIndex, bool value) {
     gReader->core_setJudgement(globalIndex, value);
 }
 
+HL_PRIM void HL_NAME(setEditorMode)(bool value) {
+    core_setEditorMode(value);
+}
+
 // ============================================================================
 // Haxe bindings
 // ============================================================================
@@ -91,4 +95,5 @@ DEFINE_PRIM(_VOID, clearJudgementSlot, _I32)
 DEFINE_PRIM(_I32, getActiveJudgementSlot, _NO_ARG)*/
 DEFINE_PRIM(_BOOL, getJudgement, _I64)
 DEFINE_PRIM(_VOID, setJudgement, _I64 _BOOL)
+DEFINE_PRIM(_VOID, setEditorMode, _BOOL)
 //DEFINE_PRIM(_VOID, destroyAllJudgements, _NO_ARG)

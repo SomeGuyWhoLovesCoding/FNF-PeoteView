@@ -1,6 +1,6 @@
 #include <stdexcept>
 
-// Include the core implementation.
+// Include the core implementation. 
 #include "chart_file_core.cpp"
 
 // ============================================================================
@@ -50,3 +50,7 @@ void setJudgement(int64_t globalIndex, bool value) {
     if (!gReader) return;
     gReader->core_setJudgement(globalIndex, value);
 } 
+
+void setEditorMode(bool value) {
+    core_setEditorMode(value);
+}

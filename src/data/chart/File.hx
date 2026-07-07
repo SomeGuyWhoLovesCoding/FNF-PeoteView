@@ -33,6 +33,9 @@ extern class File {
 	@:native("getJudgement")          static function getJudgement(globalIndex:Int64):Bool;
 	@:native("setJudgement")          static function setJudgement(globalIndex:Int64, value:Bool):Void;
 	//@:native("destroyAllJudgements")  static function destroyAllJudgements():Void;
+
+	// Chart Editor Shit
+	@:native("setEditorMode")          static function setEditorMode(value:Bool):Void;
 }
 #elseif hl
 class File {
@@ -84,5 +87,9 @@ class File {
 
 	/*@:hlNative("chart_file", "destroyAllJudgements")
 	public static function destroyAllJudgements():Void {}*/
+
+	// Chart Editor Shit
+	@:hlNative("chart_file", "setEditorMode")
+	public static function setEditorMode(value:Bool):Void {};
 }
 #end

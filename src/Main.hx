@@ -92,6 +92,7 @@ class Main extends Application
 			// START CHART POFILE
 			Chart.load("assets/songs/god-eater");
 			var len = File.getLength();
+			File.setEditorMode(true);
 			trace('Chart Length ' + len);
 			var i:Int64 = 0;
 			while (i < len) {
@@ -114,7 +115,7 @@ class Main extends Application
 					var dur = 100 * 2;
 					var ind = i % 9;
 					var typ = 1;
-					trace('adding note ${i+1} (pos,dur,ind,type)',pos,dur,ind,typ);
+					//trace('adding note ${i+1} (pos,dur,ind,type)',pos,dur,ind,typ);
 					File.insertNote(pos, dur, /* Equal to `note.duration(ms) * 2`. */ ind, typ);
 				}
 				insertTime += haxe.Timer.stamp() - stamp2;
@@ -130,11 +131,12 @@ class Main extends Application
 				removalTime += haxe.Timer.stamp() - stamp3;*/
 				//Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp3) * 1000}ms');
 				//Sys.println('Inserting 1,000,000 notes fully done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
-				Sys.println('Iteration $i done');
+				//Sys.println('Iteration $i done');
 			}
 			// Average it out
 			Sys.println('Total insert time: ' + ((insertTime * 1000) / 1) + 'ms');
 			Sys.println('Total removal time: ' + ((removalTime * 1000) / 1) + 'ms');
+			File.setEditorMode(false);
 			Chart.destroy();
 		}, 8000);
 		#end

@@ -19,5 +19,6 @@ void setActiveJudgementSlot(int slot);
 int getActiveJudgementSlot(void);*/
 bool getJudgement(int64_t globalIndex);
 void setJudgement(int64_t globalIndex, bool value);
+void setEditorMode(bool value);
 //void destroyAllJudgements(void);
 #endif /* CHART_FILE_H */
