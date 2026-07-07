@@ -3506,7 +3506,9 @@ static void vorbis_cleanup_reversed_windows(stb_vorbis *f) {
    }
 }
 
-STBV_TARGET_AVX2_FMA
+#if (defined(__GNUC__) || defined(__clang__))
+__attribute__((target("avx2,fma")));
+#endif
 static int vorbis_finish_frame(stb_vorbis *f, int len, int left, int right)
 {
    int prev,i,j;
@@ -5320,14 +5322,6 @@ static int8 channel_position[7][6] =
    #include <immintrin.h>   // Master header for SSE2, SSE4.1, AVX, AVX2, FMA
   #define STB_VORBIS_SSE2
   #define STB_VORBIS_SSE4
-
-  // Allow AVX2/FMA intrinsics in specific functions without requiring 
-  // the whole translation unit to be compiled with -mavx2 -mfma
-  #if (defined(__GNUC__) || defined(__clang__)) && !defined(__INTEL_COMPILER)
-  #define STBV_TARGET_AVX2_FMA __attribute__((target("avx2,fma")))
-  #else
-  #define STBV_TARGET_AVX2_FMA
-  #endif
 #endif
 
 static void copy_samples(short *dest, float *src, int len)
@@ -5435,7 +5429,9 @@ int stb_vorbis_get_frame_short(stb_vorbis *f, int num_c, short **buffer, int num
    return len;
 }
 
-STBV_TARGET_AVX2_FMA
+#if (defined(__GNUC__) || defined(__clang__))
+__attribute__((target("avx2,fma")));
+#endif
 static void convert_channels_short_interleaved(int buf_c, short *buffer, int data_c, float **data, int d_offset, int len)
 {
    int i;
