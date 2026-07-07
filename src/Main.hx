@@ -104,7 +104,7 @@ class Main extends Application
 			var insertTime:Float = 0;
 			var removalTime:Float = 0;
 
-			for (i in 0...1) {
+			for (i in 0...1000) {
 				var stamp = haxe.Timer.stamp();
 				//trace("Insert 1,000,000 notes (array)");f
 				//Sys.println("Insert 1,000,000 notes (function)");
@@ -114,7 +114,7 @@ class Main extends Application
 					var dur = 100 * 2;
 					var ind = i % 9;
 					var typ = 1;
-					//trace('adding note ${i+1} (pos,dur,ind,type)',pos,dur,ind,typ);
+					trace('adding note ${i+1} (pos,dur,ind,type)',pos,dur,ind,typ);
 					File.insertNote(pos, dur, /* Equal to `note.duration(ms) * 2`. */ ind, typ);
 				}
 				insertTime += haxe.Timer.stamp() - stamp2;
@@ -123,11 +123,11 @@ class Main extends Application
 				var stamp3 = haxe.Timer.stamp();
 				//Sys.println("Remove 1,000,000 notes (function)");
 				//Sys.println(arr.length);
-				for (i in 5...6) {
+				/*for (i in 5...6) {
 					trace('removing note (index)',i);
 					File.removeNote(i);
 				}
-				removalTime += haxe.Timer.stamp() - stamp3;
+				removalTime += haxe.Timer.stamp() - stamp3;*/
 				//Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp3) * 1000}ms');
 				//Sys.println('Inserting 1,000,000 notes fully done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 				Sys.println('Iteration $i done');

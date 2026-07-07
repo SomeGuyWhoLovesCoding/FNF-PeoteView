@@ -311,8 +311,8 @@ public:
     int64_t size() const { return static_cast<int64_t>(data.size()); }
     int64_t getNoteCount() const { return header.noteCount; }
     int64_t getCapacity() const { return header.capacity; }
-    void setNoteCount(int64_t count) { header.noteCount = count; headerModified = true; flushHeader(); }
-    void setCapacity(int64_t cap) { header.capacity = cap; headerModified = true; flushHeader(); }
+    void setNoteCount(int64_t count) { header.noteCount = count; headerModified = true; }
+    void setCapacity(int64_t cap) { header.capacity = cap; headerModified = true; }
     void resizeData(int64_t newCapacity) {
         if (newCapacity > static_cast<int64_t>(data.size())) data.resize(static_cast<size_t>(newCapacity), 0);
         else if (newCapacity < static_cast<int64_t>(data.size())) data.resize(static_cast<size_t>(newCapacity));
@@ -337,6 +337,8 @@ private:
     std::vector<ShardMetaEntry> shardMeta;
     uint64_t currentShardId = 0;
     int64_t totalNotes = 0;
+    bool indicesDirty = false;
+    bool rebuilt = true;
 
     static constexpr int POOL_SIZE = 20;
     static constexpr int64_t DEFAULT_SHARD_CAPACITY = 32;
@@ -558,7 +560,33 @@ private:
         }
     }
 
+    
+
+    void rebuildStartIndicesIfDirty() {
+        if (!indicesDirty) return;
+        
+        shardStartIndices.clear();
+        int64_t cumulative = 0;
+        for (size_t i = 0; i < shardMeta.size(); i++) {
+            shardStartIndices.push_back(cumulative);
+            cumulative += shardMeta[i].noteCount;
+        }
+        totalNotes = cumulative;
+        
+        // Update active shards' local boundaries
+        for (auto& pair : activeShards) {
+            size_t idx = findShardArrayIndex(pair.first);
+            if (idx < shardStartIndices.size()) {
+                pair.second.startIndex = shardStartIndices[idx];
+                pair.second.endIndex = pair.second.startIndex + pair.second.noteCount;
+            }
+        }
+        indicesDirty = false;
+        rebuilt = true;
+    }
+
     ShardInfo* getShardInfoFast(int64_t globalIndex, AccessCache& cache) {
+        if (!rebuilt) rebuildStartIndicesIfDirty();
         if (cache.info && globalIndex >= cache.info->startIndex && globalIndex < cache.info->endIndex) return cache.info;
         if (globalIndex >= cachedShardStart && globalIndex < cachedShardEnd && cachedShardInfo) {
             cache.info = cachedShardInfo; cache.shardId = cachedShardId;
@@ -707,7 +735,8 @@ public:
 
     // --- RESTORED PUBLIC API METHODS ---
 
-    uint64_t findShardForGlobalIndex(int64_t globalIndex) const {
+    uint64_t findShardForGlobalIndex(int64_t globalIndex) {
+        if (!rebuilt) rebuildStartIndicesIfDirty();
         if (globalIndex >= cachedShardStart && globalIndex < cachedShardEnd) return cachedShardId;
         if (globalIndex < 0 || globalIndex >= totalNotes) throw std::out_of_range("Global index out of range");
         auto it = std::upper_bound(shardStartIndices.begin(), shardStartIndices.end(), globalIndex);
@@ -715,6 +744,7 @@ public:
     }
 
     ShardInfo* getShardInfo(int64_t globalIndex) {
+        if (!rebuilt) rebuildStartIndicesIfDirty();
         if (globalIndex >= cachedShardStart && globalIndex < cachedShardEnd && cachedShardInfo)
             return cachedShardInfo;
         drainPending();
@@ -772,6 +802,8 @@ public:
     }
 
     void insertNote(int64_t globalPosition, int duration, int index, int type) {
+        rebuildStartIndicesIfDirty(); // Good practice to keep indices fresh
+
         int64_t shardId  = globalPosition / 2000000000;
         int64_t localPos = globalPosition % 2000000000;
         uint64_t packedNote =
@@ -818,11 +850,19 @@ public:
         totalNotes++;
 
         size_t shardPos = findShardArrayIndex(shardId);
-        for (size_t i = shardPos + 1; i < shardStartIndices.size(); i++) shardStartIndices[i]++;
-        for (auto& pair : activeShards) {
-            if (pair.first > (uint64_t)shardId) { pair.second.startIndex++; pair.second.endIndex++; }
+        if (shardPos < shardMeta.size()) {
+            shardMeta[shardPos].noteCount = s.noteCount;
         }
-        if (shardPos < shardMeta.size()) shardMeta[shardPos].noteCount = s.noteCount;
+        indicesDirty = true; // Lazy rebuild
+        rebuilt = false;
+
+        // You can keep the activeShards loop since POOL_SIZE is small (20)
+        for (auto& pair : activeShards) {
+            if (pair.first > (uint64_t)shardId) { 
+                pair.second.startIndex++; 
+                pair.second.endIndex++; 
+            }
+        }
     }
 
     void sortShard(uint64_t shardId) {
@@ -856,23 +896,34 @@ public:
     }
 
     void removeNote(int64_t globalIndex) {
+        // CRITICAL: Rebuild indices if dirty BEFORE doing the binary search!
+        rebuildStartIndicesIfDirty(); 
+
         if (globalIndex < 0 || globalIndex >= totalNotes) throw std::out_of_range("Global index out of range");
         auto it = std::upper_bound(shardStartIndices.begin(), shardStartIndices.end(), globalIndex);
         size_t shardPos = static_cast<size_t>(std::distance(shardStartIndices.begin(), it) - 1);
         uint64_t shardId = availableShards[shardPos];
+        
         auto mapIt = activeShards.find(shardId);
         if (mapIt == activeShards.end()) { loadShard(shardId); mapIt = activeShards.find(shardId); }
+        
         ShardInfo& shard = mapIt->second;
         int64_t localIndex = globalIndex - shard.startIndex;
         int64_t remaining = shard.noteCount - localIndex - 1;
         if (remaining > 0) shard.reader.shiftLeft(localIndex, remaining);
-        shard.noteCount--; shard.endIndex--; shard.reader.setNoteCount(shard.noteCount);
+        
+        shard.noteCount--; 
+        // shard.endIndex--; // No longer needed, will be rebuilt lazily
+        shard.reader.setNoteCount(shard.noteCount);
         totalNotes--;
-        for (size_t i = shardPos + 1; i < availableShards.size(); i++) shardStartIndices[i]--;
-        for (auto& pair : activeShards) {
-            if (pair.first > shardId) { pair.second.startIndex--; pair.second.endIndex--; }
+
+        size_t shardPos_ = findShardArrayIndex(shardId);
+        if (shardPos_ < shardMeta.size()) {
+            shardMeta[shardPos_].noteCount = shard.noteCount;
         }
-        if (shardPos < shardMeta.size()) shardMeta[shardPos].noteCount = shard.noteCount;
+        
+        indicesDirty = true; // Mark for lazy rebuild
+        // REMOVED: The activeShards loop is no longer needed!
     }
 
     void printNoteInfo(int64_t globalIndex) {
