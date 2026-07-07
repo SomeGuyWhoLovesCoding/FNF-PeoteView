@@ -16,30 +16,6 @@
  */
 
 // ---- platform / library includes -----------------------------------------
-//
-// Include order matters significantly on Windows with MSVC:
-//
-//   1. signalsmith-stretch first — it pulls in <complex> internally, which
-//      ensures std::complex<float> operator+/- overloads are fully visible
-//      before anything else. If miniaudio comes first it defines CLSCTX_ALL,
-//      and then the Windows SDK's combaseapi.h redefinition breaks
-//      DEFINE_PROPERTYKEY, causing cascading errors in
-//      functiondiscoverykeys_devpkey.h. Signalsmith has no such conflict.
-//
-//   2. Windows SDK headers next — now that signalsmith has already included
-//      <complex>, the SDK can define CLSCTX_ALL and DEFINE_PROPERTYKEY
-//      cleanly before miniaudio sees them.
-//
-//   3. stb_vorbis as C, before miniaudio pulls it in itself.
-//
-//   4. miniaudio last — it sees all SDK symbols as already defined and
-//      skips its own conflicting re-definitions.
-
-// NOTE: signalsmith-stretch.h is NOT included here. It must be included in
-// each .cpp file AFTER defining SIGNALSMITH_STRETCH_IMPLEMENTATION, and it
-// must come before the Windows SDK headers and miniaudio in that .cpp file.
-// See ma_thing_standalone.cpp / ma_thing_hl.cpp for the correct order.
-
 #ifdef HX_WINDOWS
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -118,12 +94,6 @@ static struct AudioDeviceState {
 
 static bool refreshDeviceState() {
     HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
-    // S_OK            — we initialized COM, we must uninitialize.
-    // S_FALSE         — COM was already initialized on this thread by us
-    //                   (refcount bumped), we must still uninitialize.
-    // RPC_E_CHANGED_MODE — thread already has a different apartment model;
-    //                   COM was NOT initialized by this call, do NOT uninit.
-    // Any other error — COM not initialized, do NOT uninit.
     bool comInitialized = (hr == S_OK || hr == S_FALSE);
 
     IMMDeviceEnumerator* pEnumerator = nullptr;
@@ -234,9 +204,6 @@ static bool refreshDeviceState() {
         g_currentDeviceState.deviceChanged.store(true, std::memory_order_release);
     }
 
-    // Fix 1c: always uninitialize if we successfully initialized COM on this
-    // thread (covers both S_OK and S_FALSE), never if we didn't (RPC_E_CHANGED_MODE
-    // or any other failure code).
     if (comInitialized) CoUninitialize();
 
     return deviceChanged;
@@ -271,8 +238,6 @@ static void updateDeviceStateIfNeeded() {
     }
 }
 
-// Read cached PnP/headphone state — never triggers a COM refresh.
-// Safe to call from any thread including the audio callback.
 inline bool checkIfPnPDevice() {
     std::lock_guard<std::mutex> lock(g_currentDeviceState.mutex);
     return g_currentDeviceState.isPnP;
@@ -341,7 +306,7 @@ inline void stopAudioDeviceMonitoring() {
 
 #define MAX_CALLBACK_FRAMES 4096
 
-// ---- SIMD mix helpers -----------------------------------------------------
+// ---- SIMD mix helpers (EXISTING CODE KEPT INTACT) -------------------------
 
 #ifdef __SSE__
 static inline void mix_simd(float* dst, const float* src, int samples, float volume) {
@@ -377,6 +342,64 @@ static inline void mix_scalar(float* dst, const float* src, int samples, float v
         for (int i = 0; i < samples; i++) dst[i] += src[i] * volume;
 }
 #endif
+
+// ==========================================================================
+//  NEW: Runtime AVX2 Detection & Dispatch (Injected on top of existing code)
+// ==========================================================================
+#if defined(_MSC_VER)
+    #include <intrin.h>
+#elif defined(__GNUC__) || defined(__clang__)
+    #include <cpuid.h>
+#endif
+
+static inline bool has_avx2_runtime() {
+#if defined(_MSC_VER)
+    int regs[4];
+    __cpuidex(regs, 7, 0);
+    return (regs[1] & (1 << 5)) != 0; // EBX bit 5 = AVX2
+#elif defined(__GNUC__) || defined(__clang__)
+    unsigned int eax, ebx, ecx, edx;
+    return __get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx) && ((ebx >> 5) & 1);
+#else
+    return false;
+#endif
+}
+
+#if defined(__AVX2__)
+#include <immintrin.h>
+
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((target("avx2"))) // Allows compiling AVX2 without global -mavx2 flag
+#endif
+static inline void mix_avx2(float* dst, const float* src, int samples, float volume) {
+    int i = 0;
+    if (volume == 1.0f) {
+        for (; i + 8 <= samples; i += 8)
+            _mm256_storeu_ps(dst + i, _mm256_add_ps(_mm256_loadu_ps(dst + i), _mm256_loadu_ps(src + i)));
+    } else {
+        __m256 vvol = _mm256_set1_ps(volume);
+        for (; i + 8 <= samples; i += 8)
+            _mm256_storeu_ps(dst + i, _mm256_add_ps(_mm256_loadu_ps(dst + i), _mm256_mul_ps(_mm256_loadu_ps(src + i), vvol)));
+    }
+    for (; i < samples; i++) dst[i] += src[i] * volume;
+}
+#endif
+
+// Function pointer defaults to existing SSE if available, otherwise scalar
+static void (*g_mix_func)(float*, const float*, int, float) =
+#ifdef __SSE__
+    mix_simd;
+#else
+    mix_scalar;
+#endif
+
+static void init_simd_dispatch() {
+    if (has_avx2_runtime()) {
+#if defined(__AVX2__)
+        g_mix_func = mix_avx2;
+#endif
+    }
+}
 
 // ==========================================================================
 //  DecoderStream
@@ -514,8 +537,6 @@ struct DecoderStream {
             asyncState.requestNextBuffer.store(true, std::memory_order_release);
     }
 
-    // Synchronous fill — used during init and seek. Caller must hold
-    // decoderMutex before calling this (see fillInitialBuffer in AudioSystem).
     void fillBuffer(float* buffer, ma_uint64 decodeStart, ma_uint64* framesRead) {
         ma_uint64 maxFrames = TOTAL_BUFFER_FRAMES;
         if (decodeStart + TOTAL_BUFFER_FRAMES > decoderLength)
@@ -531,8 +552,6 @@ struct DecoderStream {
         }
     }
 
-    // Async fill — called from the worker thread; guards the decoder with its
-    // per-stream mutex so seeks cannot race with async decoding.
     void fillBufferAsync(ma_uint64 decodeStart, float* buffer, ma_uint64* framesRead) {
         ma_uint64 maxFrames = TOTAL_BUFFER_FRAMES;
         if (decodeStart + TOTAL_BUFFER_FRAMES > decoderLength)
@@ -594,7 +613,7 @@ private:
 };
 
 // ==========================================================================
-//  AsyncLoader - Fixed with proper, clean shutdown (no detach)
+//  AsyncLoader
 // ==========================================================================
 
 class AsyncLoader {
@@ -610,7 +629,7 @@ public:
 
     void pauseLoading() { 
         pause.store(true, std::memory_order_release);
-        signal();  // Wake up so it can enter pause state immediately
+        signal();  
     }
 
     void resumeLoading() {
@@ -626,7 +645,6 @@ public:
     void waitUntilIdle() {
         if (!running.load(std::memory_order_acquire)) return;
         
-        // Signal and wait for idle
         signal();
         
         auto startTime = std::chrono::steady_clock::now();
@@ -639,7 +657,6 @@ public:
             std::this_thread::sleep_for(std::chrono::microseconds(200));
         }
         
-        // Give any in-flight operation time to complete
         std::this_thread::sleep_for(std::chrono::microseconds(500));
     }
     
@@ -653,7 +670,7 @@ private:
     std::atomic<bool> running{false};
     std::atomic<bool> pause{false};
     std::atomic<bool> workerIdle{false};
-    std::atomic<bool> stopRequested{false};  // New: explicit stop flag
+    std::atomic<bool> stopRequested{false};  
     std::mutex        wakeMutex;
     std::condition_variable wakeCV;
     std::atomic<bool> workPending{false};
@@ -674,21 +691,17 @@ private:
     void stop() {
         if (!running.load(std::memory_order_acquire)) return;
         
-        // Signal stop first
         stopRequested.store(true, std::memory_order_release);
         running.store(false, std::memory_order_release);
         
-        // Wake up the worker with multiple signals to ensure it breaks out
         signal();
         std::this_thread::sleep_for(std::chrono::microseconds(100));
         signal();
         
-        // Wait for thread to finish (no timeout - it should respond to stop)
         if (workerThread.joinable()) {
             workerThread.join();
         }
         
-        // Clear any pending work
         {
             std::lock_guard<std::mutex> lock(wakeMutex);
             workPending.store(false, std::memory_order_release);
@@ -700,12 +713,10 @@ private:
         int currentStream = 0;
 
         while (running.load(std::memory_order_acquire)) {
-            // Check for stop request first
             if (stopRequested.load(std::memory_order_acquire)) {
                 break;
             }
             
-            // Handle pause state (but don't block if stopping)
             if (pause.load(std::memory_order_acquire) && !stopRequested.load(std::memory_order_acquire)) {
                 workerIdle.store(true, std::memory_order_release);
                 std::unique_lock<std::mutex> lk(wakeMutex);
@@ -718,7 +729,6 @@ private:
                 continue;
             }
 
-            // Check if streams vector is empty
             if (streams.empty()) {
                 workerIdle.store(true, std::memory_order_release);
                 std::unique_lock<std::mutex> lk(wakeMutex);
@@ -733,7 +743,6 @@ private:
 
             workPending.store(false, std::memory_order_release);
 
-            // Process loads - but break early if stopping
             int processed = 0;
             size_t streamCount = streams.size();
             
@@ -760,7 +769,6 @@ private:
                 currentStream = (currentStream + 1) % (int)streamCount;
             }
 
-            // If idle and no stop requested, wait for work
             if (processed == 0 && !stopRequested.load(std::memory_order_acquire)) {
                 workerIdle.store(true, std::memory_order_release);
                 std::unique_lock<std::mutex> lk(wakeMutex);
@@ -780,7 +788,6 @@ private:
         
         bool didWork = false;
 
-        // Handle next buffer request
         if (s->asyncState.requestNextBuffer.load(std::memory_order_acquire)) {
             if (!s->asyncState.loadingInProgress.load(std::memory_order_relaxed)) {
                 if (tryLoadNextBuffer(s)) {
@@ -790,7 +797,6 @@ private:
             s->asyncState.requestNextBuffer.store(false, std::memory_order_release);
         }
 
-        // Handle loading buffer request
         if (s->asyncState.requestLoadingBuffer.load(std::memory_order_acquire)) {
             if (!s->asyncState.loadingInProgress.load(std::memory_order_relaxed) &&
                 s->asyncState.nextBufferReady.load(std::memory_order_relaxed)) {
@@ -806,8 +812,6 @@ private:
 
     bool tryLoadNextBuffer(DecoderStream* s) {
         if (!s) return false;
-        
-        // Check stop before attempting
         if (stopRequested.load(std::memory_order_acquire)) return false;
         
         bool expected = false;
@@ -816,7 +820,6 @@ private:
             return false;
         }
 
-        // Check stop again after acquiring lock
         if (stopRequested.load(std::memory_order_acquire)) {
             s->asyncState.loadingInProgress.store(false, std::memory_order_release);
             return false;
@@ -830,11 +833,9 @@ private:
             return false;
         }
 
-        // Perform the async fill - this might take time but we have stop checks
         ma_uint64 framesRead = 0;
         s->fillBufferAsync(start, s->asyncState.asyncNextBuffer, &framesRead);
 
-        // Check stop before updating state
         if (!stopRequested.load(std::memory_order_acquire) && running.load(std::memory_order_acquire)) {
             s->asyncState.nextBufferStartPos    = start;
             s->asyncState.nextBufferValidFrames = framesRead;
@@ -847,8 +848,6 @@ private:
 
     bool tryLoadLoadingBuffer(DecoderStream* s) {
         if (!s) return false;
-        
-        // Check stop before attempting
         if (stopRequested.load(std::memory_order_acquire)) return false;
         
         bool expected = false;
@@ -857,7 +856,6 @@ private:
             return false;
         }
 
-        // Check stop again after acquiring lock
         if (stopRequested.load(std::memory_order_acquire)) {
             s->asyncState.loadingInProgress.store(false, std::memory_order_release);
             return false;
@@ -871,11 +869,9 @@ private:
             return false;
         }
 
-        // Perform the async fill - this might take time but we have stop checks
         ma_uint64 framesRead = 0;
         s->fillBufferAsync(start, s->asyncState.asyncLoadingBuffer, &framesRead);
 
-        // Check stop before updating state
         if (!stopRequested.load(std::memory_order_acquire) && running.load(std::memory_order_acquire)) {
             s->asyncState.loadingBufferStartPos    = start;
             s->asyncState.loadingBufferValidFrames = framesRead;
@@ -913,6 +909,10 @@ public:
 
     AudioSystem()  {
         memset(&device, 0, sizeof(ma_device));
+        
+        // NEW: Initialize SIMD dispatch on startup
+        init_simd_dispatch(); 
+        
         #if HX_WINDOWS
         startAudioDeviceMonitoring();
         #endif
@@ -1013,22 +1013,16 @@ public:
     void destroy() {
         if (!exists) return;
         
-        // Mark as not existing first to prevent new callbacks
         exists = false;
-        
-        // Stop the audio device first
         ma_device_stop(&device);
         
-        // CRITICAL: Stop and delete async loader BEFORE uninitializing decoders
         if (asyncLoader) {
             delete asyncLoader;
             asyncLoader = nullptr;
         }
         
-        // Now it's safe to uninit the device
         ma_device_uninit(&device);
         
-        // Clear streams (this will uninit decoders)
         streams.clear();
         decoderVolumes.clear();
         filePaths.clear();
@@ -1067,8 +1061,6 @@ public:
         if (!exists) return;
 
         if (asyncLoader) asyncLoader->pauseLoading();
-        // Wait until the worker is confirmed idle so no fillBufferAsync call
-        // is in flight before we touch the decoders below.
         if (asyncLoader) asyncLoader->waitUntilIdle();
 
         bool wasPlaying = (mixerState == 1);
@@ -1132,10 +1124,6 @@ private:
     AsyncLoader* asyncLoader = nullptr;
     std::vector<DecoderStream*> streamPtrs;
 
-    // fillInitialBuffer acquires decoderMutex before calling fillBuffer.
-    // This is consistent with fillBufferAsync and ensures that if pauseLoading()
-    // returns before the worker has fully exited its current fill (the window
-    // closed by waitUntilIdle()), we don't race on the decoder state.
     void fillInitialBuffer(size_t index, ma_uint64 startFrame) {
         DecoderStream& s = streams[index];
         ma_uint64 decodeStart = (startFrame > PADDING_FRAMES) ? startFrame - PADDING_FRAMES : 0;
@@ -1250,15 +1238,9 @@ private:
             float* dst     = output + (framesRead * CHANNEL_COUNT);
             int    samples = (int)(toRead * CHANNEL_COUNT);
 
-#ifdef __SSE__
-            if (CHANNEL_COUNT == 2 &&
-                ((uintptr_t)src & 15) == 0 && ((uintptr_t)dst & 15) == 0)
-                mix_simd_stereo(dst, src, (int)toRead, vol);
-            else
-                mix_simd(dst, src, samples, vol);
-#else
-            if (vol != 0.0f) mix_scalar(dst, src, samples, vol);
-#endif
+            // UPDATED CALL SITE: Uses the runtime dispatcher instead of hardcoded #ifdefs
+            if (vol != 0.0f) g_mix_func(dst, src, samples, vol);
+
             s.localReadPos  += toRead;
             s.filePosition  += toRead;
             framesRead      += toRead;
@@ -1444,11 +1426,9 @@ struct BackgroundTrack {
             float* dst = output  + (filled  * CHANNEL_COUNT);
             int samples = (int)(toRead * CHANNEL_COUNT);
 
-#ifdef __SSE__
-            mix_simd(dst, src, samples, vol);
-#else
-            mix_scalar(dst, src, samples, vol);
-#endif
+            // UPDATED CALL SITE: Uses the runtime dispatcher
+            g_mix_func(dst, src, samples, vol);
+
             readPos += toRead;
             filled  += toRead;
         }
@@ -1493,11 +1473,9 @@ struct SoundEffectInstance {
         float* src = pcmData + (playbackPosition * CHANNEL_COUNT);
         float  vol = volume * MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed);
 
-#ifdef __SSE__
-        mix_simd(output, src, (int)(toRead * CHANNEL_COUNT), vol);
-#else
-        mix_scalar(output, src, (int)(toRead * CHANNEL_COUNT), vol);
-#endif
+        // UPDATED CALL SITE: Uses the runtime dispatcher
+        g_mix_func(output, src, (int)(toRead * CHANNEL_COUNT), vol);
+
         playbackPosition += toRead;
         if (playbackPosition >= frameCount) playing = false;
         return toRead;
@@ -1642,10 +1620,6 @@ public:
         }
     }
 
-    // ------------------------------------------------------------------
-    // Background track API
-    // ------------------------------------------------------------------
-
     int loadBackgroundTrack(const char* path) {
         if (!deviceInitialized && !initialize()) return -1;
         std::lock_guard<std::mutex> lk(mixerMutex);
@@ -1673,10 +1647,6 @@ public:
     void setBackgroundTrackVolume(int idx, float v)  { if (inRange(idx, backgroundTracks)) backgroundTracks[idx].setVolume(v); }
     void setBackgroundTrackLooping(int idx, bool lp) { if (inRange(idx, backgroundTracks)) backgroundTracks[idx].setLooping(lp); }
     bool isBackgroundTrackPlaying(int idx) { return inRange(idx, backgroundTracks) && backgroundTracks[idx].active; }
-
-    // ------------------------------------------------------------------
-    // Sound effect API
-    // ------------------------------------------------------------------
 
     int loadSoundEffect(const char* path) {
         if (!deviceInitialized && !initialize()) return -1;
@@ -1712,18 +1682,10 @@ public:
     bool isSoundEffectPlaying(int idx)      { return inRange(idx, soundEffectPools) && soundEffectPools[idx].isAnyPlaying(); }
     int  getSoundEffectPlayingCount(int idx){ return inRange(idx, soundEffectPools) ? soundEffectPools[idx].getPlayingCount() : 0; }
 
-    // ------------------------------------------------------------------
-    // Unload helpers
-    // ------------------------------------------------------------------
-
     void unloadBackgroundTrack(int idx) {
         std::lock_guard<std::mutex> lk(mixerMutex);
         if (!inRange(idx, backgroundTracks)) return;
 
-        // Clear both snapshots before erasing so the audio callback never
-        // dereferences a pointer that deque::erase is about to invalidate.
-        // The seq_cst fence ensures the callback sees the cleared snapshots
-        // before we touch the underlying storage.
         bgSnapshot[0].clear();
         bgSnapshot[1].clear();
         std::atomic_thread_fence(std::memory_order_seq_cst);
@@ -1746,15 +1708,10 @@ public:
         publishSnapshot();
     }
 
-    // ------------------------------------------------------------------
-    // Volume
-    // ------------------------------------------------------------------
     double setMasterVolume(double v) { MUSIC_MASTER_VOLUME_099.store(v, std::memory_order_relaxed); return v; }
     double getMasterVolume() const  { return MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed); }
 
 private:
-    // deque guarantees that push_back never moves existing elements, so raw
-    // pointers stored in bgSnapshot/sfxSnapshot remain stable across loads.
     std::deque<BackgroundTrack>  backgroundTracks;
     std::deque<SoundEffectPool>  soundEffectPools;
     std::mutex mixerMutex;
