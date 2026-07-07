@@ -600,6 +600,44 @@ enum STBVorbisError
 
 #include <limits.h>
 
+#if defined(_MSC_VER) || defined(__INTEL_COMPILER)
+#include <intrin.h>
+#endif
+
+// SIMD Levels: 0 = Scalar, 1 = SSE2, 2 = SSE4.1, 3 = AVX2
+static int stb_vorbis_simd_level = 0;
+static int stb_vorbis_simd_initialized = 0;
+
+static void stb_vorbis_detect_simd(void) {
+    int has_sse2 = 0, has_sse41 = 0, has_avx2 = 0;
+
+#if defined(__GNUC__) || defined(__clang__)
+    has_sse2  = __builtin_cpu_supports("sse2");
+    has_sse41 = __builtin_cpu_supports("sse4.1");
+    has_avx2  = __builtin_cpu_supports("avx2");
+#elif defined(_MSC_VER) || defined(__INTEL_COMPILER)
+    int info[4];
+    __cpuid(info, 1);
+    has_sse2  = (info[3] >> 26) & 1;
+    has_sse41 = (info[2] >> 19) & 1;
+    __cpuidex(info, 7, 0);
+    has_avx2  = (info[1] >> 5) & 1;
+#endif
+
+    // Assign the highest supported level
+    if (has_avx2)       stb_vorbis_simd_level = 3;
+    else if (has_sse41) stb_vorbis_simd_level = 2;
+    else if (has_sse2)  stb_vorbis_simd_level = 1;
+    else                stb_vorbis_simd_level = 0;
+}
+
+static void stb_vorbis_ensure_simd_detected(void) {
+    if (!stb_vorbis_simd_initialized) {
+        stb_vorbis_detect_simd();
+        stb_vorbis_simd_initialized = 1;
+    }
+}
+
 #ifdef __MINGW32__
    // eff you mingw:
    //     "fixed":
@@ -3504,21 +3542,36 @@ static int vorbis_finish_frame(stb_vorbis *f, int len, int left, int right)
       for (i=0; i < f->channels; ++i) {
          float *cb = f->channel_buffers[i] + left;
          float *pw = f->previous_window[i];
-#ifdef STB_VORBIS_SSE2
-         int n4 = n & ~3;
-         for (j = 0; j < n4; j += 4) {
-            __m128 vcb = _mm_loadu_ps(cb + j);
-            __m128 vpw = _mm_loadu_ps(pw + j);
-            __m128 vwf = _mm_loadu_ps(w + j);
-            __m128 vwr = _mm_loadu_ps(w_rev + j);  // Direct load, no shuffle needed
-            _mm_storeu_ps(cb + j, _mm_add_ps(_mm_mul_ps(vcb, vwf), _mm_mul_ps(vpw, vwr)));
+         
+         stb_vorbis_ensure_simd_detected();
+
+         if (stb_vorbis_simd_level >= 3) {
+            int n8 = n & ~7;
+            for (j = 0; j < n8; j += 8) {
+               __m256 vcb = _mm256_loadu_ps(cb + j);
+               __m256 vpw = _mm256_loadu_ps(pw + j);
+               __m256 vwf = _mm256_loadu_ps(w + j);
+               __m256 vwr = _mm256_loadu_ps(w_rev + j);
+               __m256 res = _mm256_fmadd_ps(vcb, vwf, _mm256_mul_ps(vpw, vwr));
+               _mm256_storeu_ps(cb + j, res);
+            }
+            for (; j < n; ++j) cb[j] = cb[j]*w[j] + pw[j]*w_rev[j];
+         } else
+         if (stb_vorbis_simd_level >= 1) {
+            int n4 = n & ~3;
+            for (j = 0; j < n4; j += 4) {
+               __m128 vcb = _mm_loadu_ps(cb + j);
+               __m128 vpw = _mm_loadu_ps(pw + j);
+               __m128 vwf = _mm_loadu_ps(w + j);
+               __m128 vwr = _mm_loadu_ps(w_rev + j);
+               _mm_storeu_ps(cb + j, _mm_add_ps(_mm_mul_ps(vcb, vwf), _mm_mul_ps(vpw, vwr)));
+            }
+            for (; j < n; ++j) cb[j] = cb[j]*w[j] + pw[j]*w_rev[j];
+         } else
+         {
+            for (j=0; j < n; ++j)
+               cb[j] = cb[j]*w[j] + pw[j]*w_rev[j];
          }
-         for (; j < n; ++j)
-            cb[j] = cb[j]*w[j] + pw[j]*w_rev[j];
-#else
-         for (j=0; j < n; ++j)
-            cb[j] = cb[j]*w[j] + pw[j]*w_rev[j];
-#endif
       }
    }
 
@@ -5389,58 +5442,103 @@ static void convert_channels_short_interleaved(int buf_c, short *buffer, int dat
    } else {
       int limit = buf_c < data_c ? buf_c : data_c;
       int j;
-#ifdef STB_VORBIS_SSE4
-      // Fast path: stereo interleave using SSE4.1.
-      // _mm_cvtps_epi32 rounds float to int32 with IEEE round-to-nearest,
-      // _mm_packs_epi32 saturates two int32x4 -> int16x8 — giving us
-      // clamped rounding in ~3 instructions per 8 output samples.
+
+      stb_vorbis_ensure_simd_detected();
       if (limit == 2) {
-         float *chL = data[0] + d_offset;
-         float *chR = data[1] + d_offset;
-         // scale factor: 2^15 = 32768.0
-         __m128 scale = _mm_set1_ps(32768.0f);
-         // Process 4 stereo pairs (8 shorts) per iteration
-         int n4 = len & ~3;
-         for (j = 0; j < n4; j += 4) {
-            // Load 4 left and 4 right samples, scale to [-32768..32767] range
-            __m128 vl = _mm_mul_ps(_mm_loadu_ps(chL + j), scale);
-            __m128 vr = _mm_mul_ps(_mm_loadu_ps(chR + j), scale);
-            // Convert to int32 with round-to-nearest + saturation semantics
-            __m128i il = _mm_cvtps_epi32(vl);
-            __m128i ir = _mm_cvtps_epi32(vr);
-            // Saturate int32 -> int16 (packs uses signed saturation: clamps to [-32768,32767])
-            // Interleave L0 R0 L1 R1 L2 R2 L3 R3 by interleaving then packing
-            __m128i lo = _mm_unpacklo_epi32(il, ir); // { L0, R0, L1, R1 }
-            __m128i hi = _mm_unpackhi_epi32(il, ir); // { L2, R2, L3, R3 }
-            __m128i out = _mm_packs_epi32(lo, hi);   // saturate to int16x8: L0 R0 L1 R1 L2 R2 L3 R3
-            _mm_storeu_si128((__m128i*)buffer, out);
-            buffer += 8;
+         if (stb_vorbis_simd_level >= 3) {
+            float *chL = data[0] + d_offset;
+            float *chR = data[1] + d_offset;
+            
+            // scale factor: 2^15 = 32768.0
+            __m256 scale = _mm256_set1_ps(32768.0f);
+            
+            // Process 8 stereo pairs (16 shorts) per iteration
+            int n8 = len & ~7;
+            for (j = 0; j < n8; j += 8) {
+               // Load 8 left and 8 right samples, scale to [-32768..32767] range
+               __m256 vl = _mm256_mul_ps(_mm256_loadu_ps(chL + j), scale);
+               __m256 vr = _mm256_mul_ps(_mm256_loadu_ps(chR + j), scale);
+               
+               // Convert to int32 with round-to-nearest
+               __m256i il = _mm256_cvtps_epi32(vl); // { L0..L7 }
+               __m256i ir = _mm256_cvtps_epi32(vr); // { R0..R7 }
+               
+               // Interleave 32-bit integers within 128-bit lanes
+               __m256i lo = _mm256_unpacklo_epi32(il, ir); // { L0,R0,L1,R1 | L4,R4,L5,R5 }
+               __m256i hi = _mm256_unpackhi_epi32(il, ir); // { L2,R2,L3,R3 | L6,R6,L7,R7 }
+               
+               // Pack to int16 with saturation. 
+               // Because packs operates on 128-bit lanes independently, it seamlessly 
+               // combines the halves into the correct contiguous interleaved order!
+               __m256i out = _mm256_packs_epi32(lo, hi); 
+               _mm256_storeu_si256((__m256i*)buffer, out);
+               buffer += 16;
+            }
+            
+            // Scalar tail
+            for (; j < len; ++j) {
+               FASTDEF(temp);
+               int v;
+               v = FAST_SCALED_FLOAT_TO_INT(temp, chL[j], 15);
+               if ((unsigned int)(v + 32768) > 65535) v = v < 0 ? -32768 : 32767;
+               *buffer++ = v;
+               v = FAST_SCALED_FLOAT_TO_INT(temp, chR[j], 15);
+               if ((unsigned int)(v + 32768) > 65535) v = v < 0 ? -32768 : 32767;
+               *buffer++ = v;
+            }
+            return;
+         } else if (stb_vorbis_simd_level >= 2) {
+         // Fast path: stereo interleave using SSE4.1.
+         // _mm_cvtps_epi32 rounds float to int32 with IEEE round-to-nearest,
+         // _mm_packs_epi32 saturates two int32x4 -> int16x8 — giving us
+         // clamped rounding in ~3 instructions per 8 output samples.
+            float *chL = data[0] + d_offset;
+            float *chR = data[1] + d_offset;
+            // scale factor: 2^15 = 32768.0
+            __m128 scale = _mm_set1_ps(32768.0f);
+            // Process 4 stereo pairs (8 shorts) per iteration
+            int n4 = len & ~3;
+            for (j = 0; j < n4; j += 4) {
+               // Load 4 left and 4 right samples, scale to [-32768..32767] range
+               __m128 vl = _mm_mul_ps(_mm_loadu_ps(chL + j), scale);
+               __m128 vr = _mm_mul_ps(_mm_loadu_ps(chR + j), scale);
+               // Convert to int32 with round-to-nearest + saturation semantics
+               __m128i il = _mm_cvtps_epi32(vl);
+               __m128i ir = _mm_cvtps_epi32(vr);
+               // Saturate int32 -> int16 (packs uses signed saturation: clamps to [-32768,32767])
+               // Interleave L0 R0 L1 R1 L2 R2 L3 R3 by interleaving then packing
+               __m128i lo = _mm_unpacklo_epi32(il, ir); // { L0, R0, L1, R1 }
+               __m128i hi = _mm_unpackhi_epi32(il, ir); // { L2, R2, L3, R3 }
+               __m128i out = _mm_packs_epi32(lo, hi);   // saturate to int16x8: L0 R0 L1 R1 L2 R2 L3 R3
+               _mm_storeu_si128((__m128i*)buffer, out);
+               buffer += 8;
+            }
+            // Scalar tail
+            for (; j < len; ++j) {
+               FASTDEF(temp);
+               int v;
+               v = FAST_SCALED_FLOAT_TO_INT(temp, chL[j], 15);
+               if ((unsigned int)(v + 32768) > 65535) v = v < 0 ? -32768 : 32767;
+               *buffer++ = v;
+               v = FAST_SCALED_FLOAT_TO_INT(temp, chR[j], 15);
+               if ((unsigned int)(v + 32768) > 65535) v = v < 0 ? -32768 : 32767;
+               *buffer++ = v;
+            }
+            return;
          }
-         // Scalar tail
-         for (; j < len; ++j) {
-            FASTDEF(temp);
-            int v;
-            v = FAST_SCALED_FLOAT_TO_INT(temp, chL[j], 15);
-            if ((unsigned int)(v + 32768) > 65535) v = v < 0 ? -32768 : 32767;
-            *buffer++ = v;
-            v = FAST_SCALED_FLOAT_TO_INT(temp, chR[j], 15);
-            if ((unsigned int)(v + 32768) > 65535) v = v < 0 ? -32768 : 32767;
-            *buffer++ = v;
+
+         for (j=0; j < len; ++j) {
+            for (i=0; i < limit; ++i) {
+               FASTDEF(temp);
+               float f = data[i][d_offset+j];
+               int v = FAST_SCALED_FLOAT_TO_INT(temp, f,15);
+               if ((unsigned int) (v + 32768) > 65535)
+                  v = v < 0 ? -32768 : 32767;
+               *buffer++ = v;
+            }
+            for (   ; i < buf_c; ++i)
+               *buffer++ = 0;
          }
-         return;
-      }
-#endif
-      for (j=0; j < len; ++j) {
-         for (i=0; i < limit; ++i) {
-            FASTDEF(temp);
-            float f = data[i][d_offset+j];
-            int v = FAST_SCALED_FLOAT_TO_INT(temp, f,15);
-            if ((unsigned int) (v + 32768) > 65535)
-               v = v < 0 ? -32768 : 32767;
-            *buffer++ = v;
-         }
-         for (   ; i < buf_c; ++i)
-            *buffer++ = 0;
       }
    }
 }

@@ -365,13 +365,15 @@ static inline bool has_avx2_runtime() {
 #endif
 }
 
-#if defined(__AVX2__)
+#if __SSE__
 #include <immintrin.h>
+#endif
 
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((target("avx2"))) // Allows compiling AVX2 without global -mavx2 flag
 #endif
 static inline void mix_avx2(float* dst, const float* src, int samples, float volume) {
+    //printf("Hi AVX2 penis\n");
     int i = 0;
     if (volume == 1.0f) {
         for (; i + 8 <= samples; i += 8)
@@ -383,7 +385,6 @@ static inline void mix_avx2(float* dst, const float* src, int samples, float vol
     }
     for (; i < samples; i++) dst[i] += src[i] * volume;
 }
-#endif
 
 // Function pointer defaults to existing SSE if available, otherwise scalar
 static void (*g_mix_func)(float*, const float*, int, float) =
@@ -395,9 +396,7 @@ static void (*g_mix_func)(float*, const float*, int, float) =
 
 static void init_simd_dispatch() {
     if (has_avx2_runtime()) {
-#if defined(__AVX2__)
         g_mix_func = mix_avx2;
-#endif
     }
 }
 
