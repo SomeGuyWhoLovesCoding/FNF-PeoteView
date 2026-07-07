@@ -13,6 +13,7 @@
 #include <mutex>
 #include <future>
 #include <unordered_map>
+#include <unordered_set>
 #include <cerrno>
 #include <climits>
 #include <queue>
@@ -297,6 +298,7 @@ private:
     int64_t correctionTime = 0;
 
     std::mutex pendingMutex;
+    std::unordered_set<uint64_t> pendingLoads; // Track shards currently in queue or being loaded
     
     // --- Persistent Background Worker Thread ---
     std::thread workerThread;
@@ -335,6 +337,7 @@ private:
                 {
                     std::lock_guard<std::mutex> lk(pendingMutex);
                     completedLoads[shardId] = info;
+                    pendingLoads.erase(shardId); // Remove from pending set
                 }
             }
         });
@@ -465,8 +468,10 @@ private:
                 if (info) activeShards.emplace(shardId, std::move(*info));
                 delete info;
                 completedLoads.erase(it);
+                pendingLoads.erase(shardId); // Clean up
                 return;
             }
+            pendingLoads.erase(shardId); // Fallback to sync load, remove from pending
         }
         std::string path = chartDir + "/" + std::to_string(shardId) + ".bin";
         ShardInfo info;
@@ -534,6 +539,7 @@ private:
         {
             std::lock_guard<std::mutex> lk(pendingMutex);
             if (completedLoads.find(shardId) != completedLoads.end()) return;
+            if (pendingLoads.find(shardId) != pendingLoads.end()) return; // Already queued/loading
         }
         {
             std::lock_guard<std::mutex> lk(queueMutex);
