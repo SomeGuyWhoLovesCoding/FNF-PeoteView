@@ -118,6 +118,61 @@ std::string formatTime(double ms, bool showMS = false) {
     return time;
 }
 
+static bool readFileDataSequential(const std::string& path, ShardHeader& header, std::vector<uint64_t>& data) {
+#ifdef _WIN32
+    // FILE_FLAG_SEQUENTIAL_SCAN tells Windows to not bloat the Standby List
+    HANDLE hFile = CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_FLAG_SEQUENTIAL_SCAN, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) return false;
+    
+    DWORD bytesRead;
+    if (!ReadFile(hFile, &header, sizeof(ShardHeader), &bytesRead, NULL) || bytesRead != sizeof(ShardHeader)) {
+        CloseHandle(hFile); return false;
+    }
+    if (header.noteCount < 0 || header.capacity <= 0 || header.noteCount > header.capacity) {
+        CloseHandle(hFile); return false;
+    }
+    
+    LARGE_INTEGER fileSize;
+    if (!GetFileSizeEx(hFile, &fileSize)) { CloseHandle(hFile); return false; }
+    size_t count = (fileSize.QuadPart - sizeof(ShardHeader)) / sizeof(uint64_t);
+    data.resize(count);
+    
+    if (count > 0) {
+        if (!ReadFile(hFile, data.data(), static_cast<DWORD>(count * sizeof(uint64_t)), &bytesRead, NULL) || bytesRead != count * sizeof(uint64_t)) {
+            CloseHandle(hFile); return false;
+        }
+    }
+    CloseHandle(hFile);
+    return true;
+#else
+    int fd = ::open(path.c_str(), O_RDONLY);
+    if (fd < 0) return false;
+    
+    // POSIX_FADV_SEQUENTIAL tells Linux to aggressively drop pages from cache
+    posix_fadvise(fd, 0, 0, POSIX_FADV_SEQUENTIAL);
+    
+    if (::read(fd, &header, sizeof(ShardHeader)) != sizeof(ShardHeader)) {
+        ::close(fd); return false;
+    }
+    if (header.noteCount < 0 || header.capacity <= 0 || header.noteCount > header.capacity) {
+        ::close(fd); return false;
+    }
+    
+    struct stat st;
+    if (fstat(fd, &st) < 0) { ::close(fd); return false; }
+    size_t count = (st.st_size - sizeof(ShardHeader)) / sizeof(uint64_t);
+    data.resize(count);
+    
+    if (count > 0) {
+        if (::read(fd, data.data(), count * sizeof(uint64_t)) != count * sizeof(uint64_t)) {
+            ::close(fd); return false;
+        }
+    }
+    ::close(fd);
+    return true;
+#endif
+}
+
 // ============================================================================
 // Optimized File Reader
 // ============================================================================
@@ -226,22 +281,12 @@ public:
     }
     bool open(const char* path) {
         closeMap(); filename = path;
-        std::ifstream file(path, std::ios::binary);
-        if (!file) return false;
-        file.seekg(0, std::ios::end);
-        auto fileSize = file.tellg();
-        file.seekg(0, std::ios::beg);
-        if (fileSize < 0 || static_cast<std::streamoff>(sizeof(ShardHeader)) > fileSize) return false;
-        file.read(reinterpret_cast<char*>(&header), sizeof(ShardHeader));
-        if (!file || header.noteCount < 0 || header.capacity <= 0 || header.noteCount > header.capacity) return false;
-        size_t count = (static_cast<size_t>(fileSize) - sizeof(ShardHeader)) / sizeof(uint64_t);
-        data.resize(count);
-        if (count > 0) {
-            file.read(reinterpret_cast<char*>(data.data()), count * sizeof(uint64_t));
-            if (!file) return false;
-        }
+        
+        // Use the OS-level sequential reader to prevent file cache bloat
+        if (!readFileDataSequential(path, header, data)) return false;
+
         isOpen = true; dataDirty = false; headerModified = false;
-        dirtyMin = INT64_MAX; dirtyMax = -1; diskElementCount = static_cast<int64_t>(count);
+        dirtyMin = INT64_MAX; dirtyMax = -1; diskElementCount = static_cast<int64_t>(data.size());
         return true;
     }
     uint64_t get(int64_t index) const { return data[static_cast<size_t>(index)]; }
@@ -486,9 +531,15 @@ private:
     }
 
     void prefetchShards(uint64_t currentShardId) {
+        size_t idx = findShardArrayIndex(currentShardId);
+        if (idx >= availableShards.size()) return;
+        
+        // Prefetch the actual next 5 shards in the array, regardless of their ID values
         for (int i = 1; i <= 5; i++) {
-            uint64_t nextId = currentShardId + i;
-            if (findShardArrayIndex(nextId) < availableShards.size()) asyncLoadShard(nextId);
+            size_t nextIdx = idx + i;
+            if (nextIdx < availableShards.size()) {
+                asyncLoadShard(availableShards[nextIdx]);
+            }
         }
     }
 
@@ -539,7 +590,8 @@ private:
         {
             std::lock_guard<std::mutex> lk(pendingMutex);
             if (completedLoads.find(shardId) != completedLoads.end()) return;
-            if (pendingLoads.find(shardId) != pendingLoads.end()) return; // Already queued/loading
+            if (pendingLoads.find(shardId) != pendingLoads.end()) return; // Prevent duplicate queueing
+            pendingLoads.insert(shardId);
         }
         {
             std::lock_guard<std::mutex> lk(queueMutex);
