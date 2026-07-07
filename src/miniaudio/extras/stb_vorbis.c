@@ -5315,14 +5315,10 @@ static int8 channel_position[7][6] =
 // Enabled automatically when targeting SSE4.1 or better. Define
 // STB_VORBIS_NO_SIMD to disable. Requires a little-endian platform (already
 // assumed elsewhere in this file).
-#if !defined(STB_VORBIS_NO_SIMD)
-  #include <smmintrin.h>   // SSE4.1 (_mm_cvtps_epi32, _mm_packus_epi32, _mm_blendv_ps)
-  #include <emmintrin.h>   // SSE2
-  #define STB_VORBIS_SSE4
-#elif !defined(STB_VORBIS_NO_SIMD) && \
-    (defined(__SSE2__) || defined(_M_X64) || defined(_M_AMD64))
-  #include <emmintrin.h>
+#if (defined(__SSE2__) || defined(_M_X64) || defined(_M_AMD64))
+   #include <immintrin.h>   // Master header for SSE2, SSE4.1, AVX, AVX2, FMA
   #define STB_VORBIS_SSE2
+  #define STB_VORBIS_SSE4
 #endif
 
 static void copy_samples(short *dest, float *src, int len)
