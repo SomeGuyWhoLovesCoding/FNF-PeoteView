@@ -615,7 +615,7 @@ static void stb_vorbis_detect_simd(void) {
     has_sse2  = __builtin_cpu_supports("sse2");
     has_sse41 = __builtin_cpu_supports("sse4.1");
     has_avx2  = __builtin_cpu_supports("avx2");
-#elif defined(_MSC_VER) || defined(__INTEL_COMPILER)
+#elif defined(_MSC_VER)
     int info[4];
     __cpuid(info, 1);
     has_sse2  = (info[3] >> 26) & 1;
@@ -5315,8 +5315,7 @@ static int8 channel_position[7][6] =
 // Enabled automatically when targeting SSE4.1 or better. Define
 // STB_VORBIS_NO_SIMD to disable. Requires a little-endian platform (already
 // assumed elsewhere in this file).
-#if !defined(STB_VORBIS_NO_SIMD) && \
-    (defined(__SSE4_1__) || (defined(_M_IX86_FP) && _M_IX86_FP >= 2))
+#if !defined(STB_VORBIS_NO_SIMD)
   #include <smmintrin.h>   // SSE4.1 (_mm_cvtps_epi32, _mm_packus_epi32, _mm_blendv_ps)
   #include <emmintrin.h>   // SSE2
   #define STB_VORBIS_SSE4
