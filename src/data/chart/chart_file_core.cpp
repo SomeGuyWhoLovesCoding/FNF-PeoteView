@@ -441,7 +441,25 @@ private:
         std::string songName = (lastSlash == std::string::npos) ? songDir : songDir.substr(lastSlash + 1);
         
         out << "Instrumental: assets/songs/" << songName << "/Inst.ogg\n";
-        out << "Voices: assets/songs/" << songName << "/Voices-Player.ogg, assets/songs/" << songName << "/Voices-Opponent.ogg\n";
+
+        std::ifstream voicesPlayer("Voices: assets/songs/" + songName + "/Voices-Player.ogg");
+        std::ifstream voicesOpponent("Voices: assets/songs/" + songName + "/Voices-Opponent.ogg");
+        bool useTwoVoiceFiles = false;
+
+        if (voicesPlayer.good()) {
+            voicesPlayer.close();
+            useTwoVoiceFiles = true;
+        }
+        if (voicesOpponent.good()) {
+            voicesOpponent.close();
+            useTwoVoiceFiles = true;
+        }
+
+        if (useTwoVoiceFiles) {
+            out << "Voices: assets/songs/" << songName << "/Voices-Player.ogg, assets/songs/" << songName << "/Voices-Opponent.ogg\n";
+        } else {
+            out << "Voices: assets/songs/" << songName << "/Voices.ogg\n";
+        }
         
         // Use the dynamically detected mania instead of a hardcoded 4!
         out << "Mania: " << totalColumns << "\n";
@@ -557,7 +575,7 @@ private:
         }
 
         if (totalColumns < 4) {
-            totalColumns = ammo[0]; 
+            totalColumns = ammo[totalColumns]; 
         }
         
         std::cout << "[Transpiler] Detected Mania/Key Count: " << totalColumns << "K" << std::endl;
@@ -689,14 +707,86 @@ public:
         closeMapInternal();
     }
 
+    // ========================================================================
+    // Header-Only JSON Parser (Used when .fvc exists but header.txt is missing)
+    // ========================================================================
+    void generateHeaderOnly(const char* jsonPath, const std::string& songDir) {
+        std::ifstream ifs(jsonPath);
+        if (!ifs) {
+            std::cerr << "[Transpiler] Failed to open JSON for header generation: " << jsonPath << std::endl;
+            return;
+        }
+
+        rapidjson::IStreamWrapper isw(ifs);
+        rapidjson::Document doc;
+        doc.ParseStream(isw);
+        ifs.close();
+
+        if (doc.HasParseError()) {
+            std::cerr << "[Transpiler] JSON Parse Error at offset " << doc.GetErrorOffset() << std::endl;
+            return;
+        }
+
+        bool isPsych = doc.HasMember("song");
+        bool isVSlice = doc.HasMember("chart");
+
+        // Detect Mania
+        int ammo[] = {4, 6, 7, 9}; 
+        int totalColumns = 4;        
+
+        if (isPsych) {
+            const auto& song = doc["song"];
+            if (song.HasMember("mania") && song["mania"].IsInt()) {
+                totalColumns = song["mania"].GetInt();
+            }
+        } else if (isVSlice) {
+            if (doc.HasMember("mania") && doc["mania"].IsInt()) {
+                totalColumns = doc["mania"].GetInt();
+            }
+        }
+
+        if (totalColumns < 4) {
+            totalColumns = ammo[0]; 
+        }
+
+        // Generate the header using your existing EOF-proof logic
+        writeHeaderFile(songDir, doc, totalColumns);
+        std::cout << "[Transpiler] Generated missing header.txt from " << jsonPath << std::endl;
+    }
+
     bool open(const char* path) {
         std::string pathStr(path);
         
-        // If it's a JSON file, transpile it to .fvc first!
         if (pathStr.length() >= 5 && pathStr.substr(pathStr.length() - 5) == ".json") {
-            transpileJsonToFvc(pathStr.c_str());
-            // The transpiler updates the internal 'filename' variable to the .fvc path
-            path = filename.c_str(); 
+            std::string fvcPath = pathStr.substr(0, pathStr.length() - 5) + ".fvc";
+            
+            size_t lastSlash = pathStr.find_last_of("/\\");
+            std::string songDir = (lastSlash == std::string::npos) ? "." : pathStr.substr(0, lastSlash);
+            std::string headerPath = songDir + "/header.txt";
+
+            // Check if .fvc exists
+            std::ifstream fvcTest(fvcPath);
+            bool fvcExists = fvcTest.good();
+            fvcTest.close();
+
+            // Check if header.txt exists
+            std::ifstream headerTest(headerPath);
+            bool headerExists = headerTest.good();
+            headerTest.close();
+
+            if (fvcExists && headerExists) {
+                // Both exist! Skip JSON parsing entirely for maximum efficiency.
+                filename = fvcPath;
+            } else if (fvcExists && !headerExists) {
+                // .fvc exists, but header.txt is missing.
+                // Open JSON again just to read header properties.
+                generateHeaderOnly(pathStr.c_str(), songDir);
+                filename = fvcPath;
+            } else {
+                // .fvc does not exist. Full transpilation needed.
+                transpileJsonToFvc(pathStr.c_str());
+                path = filename.c_str();
+            }
         } else {
             filename = pathStr;
         }
