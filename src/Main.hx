@@ -97,8 +97,8 @@ class Main extends Application
 			var i:Int64 = 0;
 			while (i < len) {
 				var note = File.getNote(i);
-				var noteTime = MetaNote.metaNotePositionToSongTime(note.position + File.getTimeCorrectionForIndex(i));
-				//trace("Processed time: " + noteTime + " | Note time (combined): " + (note.position + File.getTimeCorrectionForIndex(i)) + " | Note time: " + note.position + " | Correction time: " + File.getTimeCorrectionForIndex(i));
+				var noteTime = MetaNote.metaNotePositionToSongTime(note.position);
+				//trace("Processed time: " + noteTime + " | Note time (combined): " + (note.position) + " | Note time: " + note.position);
 				i++;
 			}
 			// Start initializing total time variables

@@ -154,8 +154,7 @@ class NoteSystem {
 		var index = note.index;
 		var lane = 0;
 		var duration = note.duration;
-		var timeCorrection = File.getTimeCorrectionForIndex(_id);
-		var position = note.position + timeCorrection;
+		var position = note.position;
 
 		var noteTypeCall:Int->Int->Bool->Void = noteTypeFunctionalityPre[note.type];
 		var noteTypeCallExists = noteTypeCall != null;
@@ -179,8 +178,8 @@ class NoteSystem {
 
 		// Judgement-gated state reads
 		var judged:Bool   = File.getJudgement(_id);
-		var isHit:Bool    = judged && !note.flag;   // judged + flag=false → hit
-		var isMissed:Bool = judged && note.flag;  // judged + flag=true → missed
+		var isHit:Bool    = judged && !File.getHitFlag(_id);   // judged + flag=false → hit
+		var isMissed:Bool = judged && File.getHitFlag(_id);  // judged + flag=true → missed
 		var isResolved:Bool = strumline.sustainsResolved[index];
 
 		var noteSprX = rec.x;
@@ -213,23 +212,20 @@ class NoteSystem {
 					if (!noteToHitExists) {
 						strumline.notesToHit[index] = note;
 						strumline.notesToHit_indexes[index] = noteSpr.globalIndex;
-						strumline.getTimeCorrection[index] = timeCorrection;
 					} else {
 						var _pos = MetaNote.metaNotePositionToSongTime(
-							(noteToHit.position + strumline.getTimeCorrection[index]) - pos
+							noteToHit.position - pos
 						) * _cachedScrollSpeed;  // Match diff's units
 						if (strumline.notesToHit_indexes[index] != noteSpr.globalIndex && Math.abs(diff) < Math.abs(_pos)) {
 							strumline.notesToHit[index] = note;
 							strumline.notesToHit_indexes[index] = _id;
-							strumline.getTimeCorrection[index] = timeCorrection;
 						}
 					}
 				}
 
 				if (diff < -_cachedHitbox - offset && !isMissed) {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
-					var n:Int64 = note.toNumber();
-					(n:MetaNote).flag = true;           // chosen to miss
+					File.setHitFlag(_id, true);           // chosen to miss
 					isMissed = true;
 					File.setJudgement(_id, true);
 
@@ -258,8 +254,6 @@ class NoteSystem {
 					if (SaveData.state.preferences.ratingPopup && hud != null) {
 						hud.hideRatingPopup();
 					}
-
-					File.setNote(_id, n);
 				}
 			}
 		}
@@ -267,9 +261,8 @@ class NoteSystem {
 		// --- Opponent side ---
 		else {
 			if (!isHit && diff < 0) {
-				var n:Int64 = note.toNumber();
 				// opponent hit: judged as hit (missed=false)
-				(n:MetaNote).flag = false;
+				File.setHitFlag(_id, false);
 				isHit = true;
 				File.setJudgement(_id, true);
 
@@ -280,7 +273,7 @@ class NoteSystem {
 
 				if (sustainExists) {
 					strumline.sustainsActive[index] = true;
-					strumline.sustainsToHold_duration[index] = note.duration >> 1;
+					strumline.sustainsToHold_duration[index] = note.duration;
 					sustainSpr.followNote(rec.x, rec.y, id);
 					sustainSpr.w = sustainSpr.length - leftover;
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
@@ -291,13 +284,11 @@ class NoteSystem {
 				if (parent.field != null)
 					parent.field.hitNote(note, 0, noteSpr.notesInOne);
 				parent.hitNote(note, 0, noteSpr.notesInOne, _id);
-
-				File.setNote(_id, n);
 			}
 		}
 
 		// --- Sustain handling ---
-		var sustainLength = (duration >> 1) - 40;
+		var sustainLength = duration - 20;
 		if (sustainExists) {
 			sustainSpr.ref = noteSpr;
 			sustainSpr.speed = parent.scrollSpeed;

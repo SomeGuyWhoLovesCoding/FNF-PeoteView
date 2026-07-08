@@ -12,12 +12,11 @@ import lime._internal.backend.native.NativeCFFI;
 #end
 @:publicFields
 class Strumline {
-	var notesToHit(default, null):Array<Null<MetaNote>>;
+	var notesToHit(default, null):Array<MetaNote>;
 	var notesToHit_sprites(default, null):Array<Note>;
 	var notesToHit_indexes(default, null):Array<Int64>;
-	var getTimeCorrection(default, null):Array<Int64>;
 
-	var sustainsToHold(default, null):Array<Null<MetaNote>>;
+	var sustainsToHold(default, null):Array<MetaNote>;
 	var sustainsToHold_indexes(default, null):Array<Int64>;
 	var sustainsToHold_duration(default, null):Array<Int>;
 	var botHitsToCheck(default, null):Array<Bool>;
@@ -72,7 +71,6 @@ class Strumline {
 		notesToHit.resize(value);
 		notesToHit_sprites.resize(value);
 		notesToHit_indexes.resize(value);
-		getTimeCorrection.resize(value);
 		sustainsToHold.resize(value);
 		sustainsToHold_indexes.resize(value);
 		sustainsToHold_duration.resize(value);
@@ -107,7 +105,6 @@ class Strumline {
 		notesToHit = [];
 		notesToHit_sprites = [];
 		notesToHit_indexes = [];
-		getTimeCorrection = [];
 		sustainsToHold = [];
 		sustainsToHold_duration = [];
 		sustainsToHold_indexes = [];
@@ -162,22 +159,20 @@ class Strumline {
 				notesToHit_sprites[index] = null;
 			}
 
-			var n:Int64 = noteToHit.toNumber();
 			// mark as hit: missed=false, then set judgement
-			(n:MetaNote).flag = false;
-			File.setNote(noteIndex, n);
+			File.setHitFlag(noteIndex, false);
 			File.setJudgement(noteIndex, true);
 
 			sustainsToHold_duration[index] = noteToHit.duration;
 			sustainsResolved[index] = false;
 
 			if (noteToHit.duration > 20) {
-				sustainsToHold[index] = n;
+				sustainsToHold[index] = noteToHit;
 				sustainsToHold_indexes[index] = noteIndex;
 			}
 
 			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + (Main.conductor.offset * 2.0));
-			var _timing = MetaNote.metaNotePositionToSongTime((noteToHit.position + File.getTimeCorrectionForIndex(noteIndex)) - posWithLatency);
+			var _timing = MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency);
 			#if (FV_LIME_FORK && lime_cffi)
 			var _timingCompare:Float = @:privateAccess NativeCFFI.lime_asynckey_timestamp();
 			var _timingDiffSubtract = timestamp - _timingCompare;
@@ -208,10 +203,11 @@ class Strumline {
 		var sustainIndex = sustainsToHold_indexes[index];
 
 		// Sustain release fires if: note exists, correct lane, was hit, and not yet resolved
+		var hitflag = File.getHitFlag(sustainIndex);
 		var sustainReleaseCallbackCanRun = sustainToRelease != null
 			&& sustainToRelease.index == index
 			&& File.getJudgement(sustainIndex)
-			&& !sustainToRelease.flag
+			&& !hitflag
 			&& !sustainsResolved[index];
 
 		if (sustainReleaseCallbackCanRun) {
@@ -247,7 +243,6 @@ class Strumline {
 	function resetInputs() {
 		notesToHit.resize(0);
 		notesToHit_indexes.resize(0);
-		getTimeCorrection.resize(0);
 		sustainsToHold.resize(0);
 		sustainsToHold_indexes.resize(0);
 		sustainsToHold_duration.resize(0);
@@ -258,7 +253,6 @@ class Strumline {
 		sustainsResolved.resize(0);
 		notesToHit.resize(length);
 		notesToHit_indexes.resize(length);
-		getTimeCorrection.resize(length);
 		sustainsToHold.resize(length);
 		sustainsToHold_indexes.resize(length);
 		sustainsToHold_duration.resize(length);
@@ -283,10 +277,8 @@ class Strumline {
 		if (notesToHit != null) {
 			while (notesToHit.pop() != null) {}
 			while (notesToHit_indexes.pop() != null) {}
-			while (getTimeCorrection.pop() != null) {}
 			notesToHit = null;
 			notesToHit_indexes = null;
-			getTimeCorrection = null;
 		}
 		if (sustainsToHold != null) {
 			while (sustainsToHold.pop() != null) {}

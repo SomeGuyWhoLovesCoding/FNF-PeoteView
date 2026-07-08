@@ -1,25 +1,14 @@
 #include <iostream>
-#include <cstdint>
-#include <stdexcept>
-#include <cstring>
-#include <algorithm>
-#include <map>
-#include <string>
-#include <vector>
 #include <fstream>
-#include <iomanip>
-#include <cmath>
+#include <vector>
+#include <string>
+#include <cstdint>
+#include <cstring>
 #include <thread>
 #include <mutex>
-#include <future>
-#include <unordered_map>
-#include <unordered_set>
-#include <cerrno>
-#include <climits>
-#include <queue>
 #include <condition_variable>
 #include <chrono>
-#include <memory>
+#include <emmintrin.h> // SSE2 Intrinsics
 
 #ifdef _WIN32
 #define NOMINMAX
@@ -30,119 +19,164 @@
 #include <sys/stat.h>
 #include <sys/mman.h>
 #include <fcntl.h>
-#include <dirent.h>
 #include <unistd.h>
 #endif
 
-struct ShardHeader {
-    int64_t noteCount;
-    int64_t capacity;
-    int64_t reserved[6];
-};
+// RapidJSON includes (Ensure rapidjson/ is in your include path)
+#include "./rapidjson/document.h"
+#include "./rapidjson/istreamwrapper.h"
+#include "./rapidjson/error/en.h"
 
-struct ShardMetaEntry {
-    uint64_t shardId;
-    int64_t noteCount;
-    int64_t capacity;
-    int64_t reserved[6];
-};
-
-static int64_t getFileSize(const std::string& path) {
-#ifdef _WIN32
-    WIN32_FILE_ATTRIBUTE_DATA info;
-    if (!GetFileAttributesExA(path.c_str(), GetFileExInfoStandard, &info)) return -1;
-    return ((int64_t)info.nFileSizeHigh << 32) | info.nFileSizeLow;
-#else
-    struct stat st;
-    if (stat(path.c_str(), &st) != 0) return -1;
-    return (int64_t)st.st_size;
-#endif
-}
-
-static std::string getStem(const std::string& filename) {
-    size_t dot = filename.rfind('.');
-    return (dot == std::string::npos) ? filename : filename.substr(0, dot);
-}
-
-static std::string getExtension(const std::string& filename) {
-    size_t dot = filename.rfind('.');
-    return (dot == std::string::npos) ? "" : filename.substr(dot);
-}
-
-static void listFiles(const std::string& dir, std::vector<std::string>& out) {
-#ifdef _WIN32
-    WIN32_FIND_DATAA ffd;
-    std::string pattern = dir + "\\*";
-    HANDLE hFind = FindFirstFileA(pattern.c_str(), &ffd);
-    if (hFind == INVALID_HANDLE_VALUE) return;
-    do {
-        if (!(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)) out.push_back(ffd.cFileName);
-    } while (FindNextFileA(hFind, &ffd));
-    FindClose(hFind);
-#else
-    DIR* d = opendir(dir.c_str());
-    if (!d) return;
-    struct dirent* entry;
-    while ((entry = readdir(d)) != nullptr) {
-        if (entry->d_type == DT_REG) {
-            out.push_back(entry->d_name);
-        } else if (entry->d_type == DT_UNKNOWN) {
-            struct stat st;
-            std::string full = dir + "/" + entry->d_name;
-            if (::stat(full.c_str(), &st) == 0 && S_ISREG(st.st_mode)) out.push_back(entry->d_name);
+// ============================================================================
+// 1-Bit Dynamic Flag Array (Strictly 1 bit per element in RAM)
+// ============================================================================
+class BitArray {
+    std::vector<uint8_t> data;
+    size_t count = 0;
+public:
+    void init(size_t n) {
+        count = n;
+        data.assign((n + 7) / 8, 0);
+    }
+    bool get(size_t i) const {
+        if (i >= count) return false;
+        return (data[i >> 3] >> (i & 7)) & 1;
+    }
+    void set(size_t i, bool val) {
+        if (i >= count) return;
+        if (val) data[i >> 3] |= (1 << (i & 7));
+        else data[i >> 3] &= ~(1 << (i & 7));
+    }
+    void insert(size_t i, bool val) {
+        if (i > count) i = count;
+        size_t newCount = count + 1;
+        size_t newBytes = (newCount + 7) / 8;
+        if (data.size() < newBytes) data.push_back(0);
+        
+        // Shift bits right to make room
+        for (int64_t j = (int64_t)count - 1; j >= (int64_t)i; --j) {
+            set(j + 1, get(j));
+        }
+        set(i, val);
+        count = newCount;
+    }
+    void erase(size_t i) {
+        if (i >= count) return;
+        // Shift bits left to fill the gap
+        for (size_t j = i; j < count - 1; ++j) {
+            set(j, get(j + 1));
+        }
+        count--;
+        if (count % 8 != 0) {
+            set(count, false); // Clear the orphaned bit
+        } else if (!data.empty()) {
+            data.pop_back(); // Shrink the byte array
         }
     }
-    closedir(d);
-#endif
-}
+    size_t size() const { return count; }
+};
 
-std::string formatTime(double ms, bool showMS = false) {
-    if (std::isnan(ms)) return "null";
-    int milliseconds = static_cast<int>(ms * 0.1) % 100;
-    int seconds = static_cast<int>(ms * 0.001);
-    int hours = seconds / 3600; seconds %= 3600;
-    int minutes = seconds / 60; seconds %= 60;
-    std::string time;
-    if (hours > 0) time += std::to_string(hours) + ":";
-    if (minutes < 10 && hours > 0) time += "0" + std::to_string(minutes) + ":";
-    else time += std::to_string(minutes) + ":";
-    if (seconds < 10) time += "0";
-    time += std::to_string(seconds);
-    if (showMS) {
-        time += ".";
-        if (milliseconds < 10) time += "0";
-        time += std::to_string(milliseconds);
+// ============================================================================
+// 10-Byte Packed Note Struct
+// ============================================================================
+#pragma pack(push, 1)
+struct ChartNote {
+    uint64_t first8; // [0..47] Position (50ns), [48..63] Duration (1ms)
+    uint16_t last2;  // [0..7] Index, [8..15] Type
+};
+#pragma pack(pop)
+
+static_assert(sizeof(ChartNote) == 10, "ChartNote must be exactly 10 bytes!");
+
+// ============================================================================
+// 16-Byte Aligned Struct for SSE2 Sorting (Internal Use Only)
+// ============================================================================
+struct alignas(16) SortNote {
+    uint64_t first8;
+    uint16_t last2;
+    uint8_t judgeFlag; // 1-bit judgement state
+    uint8_t hitFlag;   // 1-bit hit state
+    uint16_t pad[2];   // Padding to reach exactly 16 bytes for SSE2 alignment
+};
+
+// Helper function to sort an array of ChartNote in-place
+static void radix_sort_notes_inplace(ChartNote* notes, size_t n) {
+    if (n <= 1) return;
+    std::vector<ChartNote> buffer(n);
+    ChartNote* src = notes;
+    ChartNote* dst = buffer.data();
+
+    // Find max position
+    uint64_t maxVal = 0;
+    for (size_t i = 0; i < n; ++i) {
+        uint64_t pos = src[i].first8 & 0x0000FFFFFFFFFFFFULL;
+        if (pos > maxVal) maxVal = pos;
     }
-    return time;
+    if (maxVal == 0) return;
+
+    int passes = 0;
+    while (maxVal > 0) { passes++; maxVal >>= 8; }
+    if (passes > 6) passes = 6;
+
+    // LSD Radix Sort
+    for (int shift = 0; shift < passes * 8; shift += 8) {
+        uint32_t counts[256] = {0};
+        for (size_t i = 0; i < n; ++i) {
+            uint64_t val = src[i].first8 & 0x0000FFFFFFFFFFFFULL;
+            counts[(val >> shift) & 0xFF]++;
+        }
+        for (int j = 1; j < 256; ++j) counts[j] += counts[j-1];
+        for (int64_t j = (int64_t)n - 1; j >= 0; --j) {
+            uint64_t val = src[j].first8 & 0x0000FFFFFFFFFFFFULL;
+            uint8_t idx = (val >> shift) & 0xFF;
+            dst[--counts[idx]] = src[j];
+        }
+        std::swap(src, dst);
+    }
+
+    if (src != notes) {
+        std::memcpy(notes, src, n * sizeof(ChartNote));
+    }
 }
 
-class MappedFileReader {
+// ============================================================================
+// Single-File Chart Reader (.fvc format)
+// ============================================================================
+class ChartFileReader {
 private:
     std::string filename;
-    uint64_t* mappedData = nullptr;
-    int64_t mappedCount = 0;
-    ShardHeader header;
-    
-    static constexpr size_t BUFFER_ELEMENTS = 4096; // 32KB
-    mutable uint64_t buffer[BUFFER_ELEMENTS]; 
+    uint8_t* mappedData = nullptr;
+    int64_t diskCapacity = 0; 
+    int64_t diskCount = 0;    
+    int64_t totalNotes = 0;   
+
+    static constexpr size_t NOTE_SIZE = sizeof(ChartNote); // Exactly 10
+    static constexpr size_t BUFFER_ELEMENTS = 3276; // 3276 * 10 = 32760 bytes (Just under 32KB)
+    mutable uint8_t buffer[BUFFER_ELEMENTS * NOTE_SIZE];
     mutable int64_t bufferBase = -1;
     mutable bool bufferDirty = false;
 
-    void flushBufferToDisk() const {
-        if (bufferDirty && bufferBase >= 0 && mappedData) {
-            int64_t count = std::min<int64_t>((int64_t)BUFFER_ELEMENTS, mappedCount - bufferBase);
-            std::memcpy(mappedData + bufferBase, buffer, count * sizeof(uint64_t));
-            bufferDirty = false;
-        }
-    }
+    std::vector<uint64_t> overflowFirst8;
+    std::vector<uint16_t> overflowLast2;
 
-    void loadBufferFromDisk(int64_t baseIndex) const {
-        flushBufferToDisk();
-        bufferBase = baseIndex;
-        int64_t count = std::min<int64_t>((int64_t)BUFFER_ELEMENTS, mappedCount - baseIndex);
-        std::memcpy(buffer, mappedData + baseIndex, count * sizeof(uint64_t));
-    }
-    
+    // ========================================================================
+    // GLOBAL 1-BIT FLAG SYSTEMS (Stored in RAM only)
+    // ========================================================================
+    BitArray judgeFlags;
+    BitArray hitFlags;
+
+    std::mutex dataMutex;
+    std::thread maintenanceThread;
+    std::mutex maintenanceMutex;
+    std::condition_variable maintenanceCV;
+    bool stopMaintenance = false;
+
+    bool editorMode = false;
+    bool isApplyingNotes = false;
+    bool pendingSortAfterApply = false;
+    std::chrono::steady_clock::time_point lastInsertTime;
+    std::chrono::steady_clock::time_point applyEndTime;
+
 #ifdef _WIN32
     HANDLE hFile = INVALID_HANDLE_VALUE;
     HANDLE hMap = NULL;
@@ -151,112 +185,80 @@ private:
     size_t mapLen = 0;
 #endif
 
-public:
-    void closeMap() {
+    void flushBufferToDisk() const {
+        if (bufferDirty && bufferBase >= 0 && mappedData) {
+            int64_t count = std::min<int64_t>(BUFFER_ELEMENTS, diskCapacity - bufferBase);
+            std::memcpy(mappedData + (bufferBase * NOTE_SIZE), buffer, count * NOTE_SIZE);
+            bufferDirty = false;
+        }
+    }
+
+    void loadBufferFromDisk(int64_t baseIndex) const {
+        flushBufferToDisk();
+        bufferBase = baseIndex;
+        int64_t count = std::min<int64_t>(BUFFER_ELEMENTS, diskCapacity - baseIndex);
+        std::memcpy(buffer, mappedData + (baseIndex * NOTE_SIZE), count * NOTE_SIZE);
+    }
+
+    void closeMapInternal() {
         flushBufferToDisk();
 #ifdef _WIN32
-        if (mappedData) {
-            void* headerPtr = static_cast<char*>(static_cast<void*>(mappedData)) - sizeof(ShardHeader);
-            UnmapViewOfFile(headerPtr);
-        }
+        if (mappedData) { UnmapViewOfFile(mappedData); }
         if (hMap != NULL) { CloseHandle(hMap); hMap = NULL; }
         if (hFile != INVALID_HANDLE_VALUE) { CloseHandle(hFile); hFile = INVALID_HANDLE_VALUE; }
 #else
-        if (mappedData) {
-            void* headerPtr = static_cast<char*>(static_cast<void*>(mappedData)) - sizeof(ShardHeader);
-            munmap(headerPtr, mapLen);
-        }
+        if (mappedData) { munmap(mappedData, mapLen); }
         if (fd >= 0) { ::close(fd); fd = -1; }
         mapLen = 0;
 #endif
         mappedData = nullptr;
-        mappedCount = 0;
+        diskCapacity = 0;
         bufferBase = -1;
         bufferDirty = false;
-        memset(&header, 0, sizeof(header));
     }
 
-    MappedFileReader() = default;
-    ~MappedFileReader() { closeMap(); }
+    void remapFile(int64_t newCapacity) {
+        int64_t oldTotalNotes = totalNotes;
+        int64_t oldDiskCount = diskCount;
+        
+        closeMapInternal();
+        std::string path = filename;
+        int64_t newFileSize = newCapacity * NOTE_SIZE;
 
-    MappedFileReader(const MappedFileReader&) = delete;
-    MappedFileReader& operator=(const MappedFileReader&) = delete;
-
-    MappedFileReader(MappedFileReader&& other) noexcept
-        : filename(std::move(other.filename)), mappedData(other.mappedData),
-          mappedCount(other.mappedCount), header(other.header),
-          bufferBase(other.bufferBase), bufferDirty(other.bufferDirty)
 #ifdef _WIN32
-          , hFile(other.hFile), hMap(other.hMap)
+        hFile = CreateFileA(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (hFile == INVALID_HANDLE_VALUE) return;
+        LARGE_INTEGER li; li.QuadPart = newFileSize;
+        SetFilePointerEx(hFile, li, nullptr, FILE_BEGIN);
+        if (!SetEndOfFile(hFile)) { CloseHandle(hFile); return; }
+        CloseHandle(hFile);
 #else
-          , fd(other.fd), mapLen(other.mapLen)
+        if (truncate(path.c_str(), newFileSize) != 0) return;
 #endif
-    {
-        std::memcpy(buffer, other.buffer, sizeof(buffer));
-        other.mappedData = nullptr; other.mappedCount = 0;
-        other.bufferBase = -1; other.bufferDirty = false;
-        memset(&other.header, 0, sizeof(other.header));
-#ifdef _WIN32
-        other.hFile = INVALID_HANDLE_VALUE; other.hMap = NULL;
-#else
-        other.fd = -1; other.mapLen = 0;
-#endif
+        openInternal(path.c_str(), true);
+        
+        // Restore counts so we don't lose track of overflow notes!
+        totalNotes = oldTotalNotes;
+        diskCount = oldDiskCount;
     }
 
-    MappedFileReader& operator=(MappedFileReader&& other) noexcept {
-        if (this != &other) {
-            closeMap();
-            filename = std::move(other.filename); mappedData = other.mappedData;
-            mappedCount = other.mappedCount; header = other.header;
-            bufferBase = other.bufferBase; bufferDirty = other.bufferDirty;
-            std::memcpy(buffer, other.buffer, sizeof(buffer));
+    bool openInternal(const char* path, bool isRemap = false) {
 #ifdef _WIN32
-            hFile = other.hFile; hMap = other.hMap;
-#else
-            fd = other.fd; mapLen = other.mapLen;
-#endif
-            other.mappedData = nullptr; other.mappedCount = 0;
-            other.bufferBase = -1; other.bufferDirty = false;
-            memset(&other.header, 0, sizeof(other.header));
-#ifdef _WIN32
-            other.hFile = INVALID_HANDLE_VALUE; other.hMap = NULL;
-#else
-            other.fd = -1; other.mapLen = 0;
-#endif
-        }
-        return *this;
-    }
-
-    bool open(const char* path) {
-        closeMap();
-        filename = path;
-
-#ifdef _WIN32
-        hFile = CreateFileA(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, nullptr,
-                            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        hFile = CreateFileA(path, GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
         if (hFile == INVALID_HANDLE_VALUE) return false;
-
         LARGE_INTEGER sz;
-        if (!GetFileSizeEx(hFile, &sz)) { closeMap(); return false; }
-        if (sz.QuadPart < sizeof(ShardHeader)) { closeMap(); return false; }
-
+        if (!GetFileSizeEx(hFile, &sz)) { closeMapInternal(); return false; }
         hMap = CreateFileMappingA(hFile, nullptr, PAGE_READWRITE, 0, 0, nullptr);
-        if (!hMap) { closeMap(); return false; }
-
+        if (!hMap) { closeMapInternal(); return false; }
         void* ptr = MapViewOfFile(hMap, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0);
-        if (!ptr) { closeMap(); return false; }
-
-        memcpy(&header, ptr, sizeof(ShardHeader));
-        mappedData = (uint64_t*)(static_cast<char*>(ptr) + sizeof(ShardHeader));
-        mappedCount = (sz.QuadPart - sizeof(ShardHeader)) / sizeof(uint64_t);
+        if (!ptr) { closeMapInternal(); return false; }
+        mappedData = (uint8_t*)ptr;
+        diskCapacity = sz.QuadPart / NOTE_SIZE;
 #else
         fd = ::open(path, O_RDWR);
         if (fd < 0) return false;
-
         struct stat st;
-        if (fstat(fd, &st) != 0) { closeMap(); return false; }
-        if (st.st_size < (off_t)sizeof(ShardHeader)) { closeMap(); return false; }
-
+        if (fstat(fd, &st) != 0) { closeMapInternal(); return false; }
         mapLen = static_cast<size_t>(st.st_size);
         
         #ifdef __linux__
@@ -264,241 +266,87 @@ public:
         #else
         void* ptr = mmap(nullptr, mapLen, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
         #endif
-        
-        if (ptr == MAP_FAILED) { closeMap(); return false; }
-
-        memcpy(&header, ptr, sizeof(ShardHeader));
-        if (header.noteCount < 0 || header.capacity <= 0 || header.noteCount > header.capacity) {
-            munmap(ptr, mapLen); closeMap(); return false;
-        }
-        
-        mappedData = (uint64_t*)(static_cast<char*>(ptr) + sizeof(ShardHeader));
-        mappedCount = (st.st_size - sizeof(ShardHeader)) / sizeof(uint64_t);
+        if (ptr == MAP_FAILED) { closeMapInternal(); return false; }
+        mappedData = (uint8_t*)ptr;
+        diskCapacity = st.st_size / NOTE_SIZE;
 #endif
+        
+        if (!isRemap) {
+            diskCount = diskCapacity; 
+            totalNotes = diskCount;
+            judgeFlags.init(totalNotes);
+            hitFlags.init(totalNotes);
+        }
         return true;
     }
 
-    uint64_t get(int64_t index) const {
-        if (index < 0 || index >= header.noteCount || index >= mappedCount) return 0;
+    void setFirst8(int64_t index, uint64_t value) {
+        if (index < 0 || index >= diskCapacity) return;
         int64_t base = (index / BUFFER_ELEMENTS) * BUFFER_ELEMENTS;
         if (base != bufferBase) loadBufferFromDisk(base);
-        return buffer[index - base];
-    }
-
-    void set(int64_t index, uint64_t value) {
-        if (index < 0 || index >= mappedCount) return;
-        int64_t base = (index / BUFFER_ELEMENTS) * BUFFER_ELEMENTS;
-        if (base != bufferBase) loadBufferFromDisk(base);
-        buffer[index - base] = value;
+        std::memcpy(buffer + (index - base) * NOTE_SIZE, &value, 8);
         bufferDirty = true;
     }
 
-    void getRange(int64_t index, int64_t count, uint64_t* out) const {
-        if (index < 0 || count <= 0 || index >= mappedCount) return;
-        count = std::min<int64_t>(count, mappedCount - index);
+    void setLast2(int64_t index, uint16_t value) {
+        if (index < 0 || index >= diskCapacity) return;
         int64_t base = (index / BUFFER_ELEMENTS) * BUFFER_ELEMENTS;
-        if (base == bufferBase && (index + count) <= (bufferBase + BUFFER_ELEMENTS)) {
-            std::memcpy(out, buffer + (index - base), count * sizeof(uint64_t));
-        } else {
-            flushBufferToDisk();
-            std::memcpy(out, mappedData + index, count * sizeof(uint64_t));
+        if (base != bufferBase) loadBufferFromDisk(base);
+        std::memcpy(buffer + (index - base) * NOTE_SIZE + 8, &value, 2);
+        bufferDirty = true;
+    }
+
+    void flushOverflowToDisk() {
+        if (overflowFirst8.empty()) return;
+        int64_t neededCap = diskCount + overflowFirst8.size();
+        if (neededCap > diskCapacity) {
+            int64_t newCap = std::max<int64_t>(neededCap, diskCapacity * 2);
+            remapFile(newCap);
         }
-    }
-
-    void setRange(int64_t index, int64_t count, const uint64_t* in) {
-        if (index < 0 || count <= 0 || index >= mappedCount) return;
-        count = std::min<int64_t>(count, mappedCount - index);
-        int64_t base = (index / BUFFER_ELEMENTS) * BUFFER_ELEMENTS;
-        if (base == bufferBase && (index + count) <= (bufferBase + BUFFER_ELEMENTS)) {
-            std::memcpy(buffer + (index - base), in, count * sizeof(uint64_t));
-            bufferDirty = true;
-        } else {
-            flushBufferToDisk();
-            std::memcpy(mappedData + index, in, count * sizeof(uint64_t));
-            bufferBase = -1; 
+        for (size_t i = 0; i < overflowFirst8.size(); ++i) {
+            setFirst8(diskCount + i, overflowFirst8[i]);
+            setLast2(diskCount + i, overflowLast2[i]);
         }
+        diskCount += overflowFirst8.size();
+        overflowFirst8.clear();
+        overflowLast2.clear();
     }
 
-    void shiftLeft(int64_t from, int64_t count) {
-        if (from < 0 || count <= 0 || from + count >= mappedCount) return;
-        int64_t base = (from / BUFFER_ELEMENTS) * BUFFER_ELEMENTS;
-        if (base == bufferBase && (from + count) < (bufferBase + BUFFER_ELEMENTS)) {
-            std::memmove(buffer + from - base, buffer + from + 1 - base, count * sizeof(uint64_t));
-            bufferDirty = true;
-            return;
-        }
-        flushBufferToDisk();
-        bufferBase = -1;
-        std::memmove(mappedData + from, mappedData + from + 1, count * sizeof(uint64_t));
-    }
-
-    void shiftRight(int64_t from, int64_t count) {
-        if (from < 0 || count <= 0 || from + count >= mappedCount) return;
-        int64_t base = (from / BUFFER_ELEMENTS) * BUFFER_ELEMENTS;
-        if (base == bufferBase && (from + count) < (bufferBase + BUFFER_ELEMENTS)) {
-            std::memmove(buffer + from + 1 - base, buffer + from - base, count * sizeof(uint64_t));
-            bufferDirty = true;
-            return;
-        }
-        flushBufferToDisk();
-        bufferBase = -1;
-        std::memmove(mappedData + from + 1, mappedData + from, count * sizeof(uint64_t));
-    }
-
-    int64_t size() const { return mappedCount; }
-    int64_t getNoteCount() const { return header.noteCount; }
-    int64_t getCapacity() const { return header.capacity; }
-    
-    void flushHeader() {
-        if (!mappedData) return;
-        flushBufferToDisk();
-        void* headerPtr = static_cast<char*>(static_cast<void*>(mappedData)) - sizeof(ShardHeader);
-        memcpy(headerPtr, &header, sizeof(ShardHeader));
-#ifdef _WIN32
-        FlushViewOfFile(headerPtr, sizeof(ShardHeader));
-#else
-        msync(headerPtr, sizeof(ShardHeader), MS_ASYNC); 
-#endif
-    }
-
-    void setNoteCount(int64_t count) { header.noteCount = count; }
-    void setCapacity(int64_t cap) { header.capacity = cap; }
-
-    void prefaultRange(int64_t startIndex, int64_t count) {
-        if (!mappedData || startIndex < 0 || count <= 0) return;
-        count = std::min<int64_t>(count, mappedCount - startIndex);
-        void* addr = static_cast<char*>(static_cast<void*>(mappedData + startIndex));
-        size_t byteCount = count * sizeof(uint64_t);
-#ifdef __linux__
-        madvise(addr, byteCount, MADV_WILLNEED);
-#else
-        volatile uint8_t* p = reinterpret_cast<volatile uint8_t*>(mappedData + startIndex);
-        for (size_t i = 0; i < byteCount; i += 4096) (void)p[i];
-        if (byteCount > 0) (void)p[byteCount - 1];
-#endif
-    }
-};
-
-class ShardedChartReader {
-private:
-    struct ShardInfo {
-        std::mutex mtx; // PER-SHARD LOCK! Prevents global stalls during sorting.
-        MappedFileReader reader;
-        int64_t noteCount = 0, capacity = 0, startIndex = 0, endIndex = 0;
-        uint64_t shardId = 0;
-        int64_t prefaultedUpTo = 0;
-        uint64_t lastAccessMs = 0;
-        bool isPinned = false;
-        std::vector<uint64_t> overflowNotes;
-
-        ShardInfo() = default;
-        ShardInfo(ShardInfo&& other) noexcept
-            : reader(std::move(other.reader)), noteCount(other.noteCount), capacity(other.capacity),
-              startIndex(other.startIndex), endIndex(other.endIndex), shardId(other.shardId),
-              prefaultedUpTo(other.prefaultedUpTo), lastAccessMs(other.lastAccessMs), isPinned(other.isPinned),
-              overflowNotes(std::move(other.overflowNotes)) {}
+    void radixSortInPlace() {
+        if (totalNotes <= 1) return;
         
-        ShardInfo& operator=(ShardInfo&& other) noexcept {
-            if (this != &other) {
-                reader = std::move(other.reader);
-                noteCount = other.noteCount; capacity = other.capacity;
-                startIndex = other.startIndex; endIndex = other.endIndex;
-                shardId = other.shardId; prefaultedUpTo = other.prefaultedUpTo;
-                lastAccessMs = other.lastAccessMs; isPinned = other.isPinned;
-                overflowNotes = std::move(other.overflowNotes);
+        std::vector<SortNote> notes(totalNotes);
+        for (int64_t i = 0; i < totalNotes; ++i) {
+            if (i < diskCount) {
+                int64_t base = (i / BUFFER_ELEMENTS) * BUFFER_ELEMENTS;
+                if (base != bufferBase) loadBufferFromDisk(base);
+                std::memcpy(&notes[i].first8, buffer + (i - base) * NOTE_SIZE, 8);
+                std::memcpy(&notes[i].last2, buffer + (i - base) * NOTE_SIZE + 8, 2);
+            } else {
+                notes[i].first8 = overflowFirst8[i - diskCount];
+                notes[i].last2 = overflowLast2[i - diskCount];
             }
-            return *this;
+            notes[i].judgeFlag = judgeFlags.get((size_t)i) ? 1 : 0;
+            notes[i].hitFlag = hitFlags.get((size_t)i) ? 1 : 0;
+            notes[i].pad[0] = notes[i].pad[1] = 0;
         }
-    };
 
-    std::string chartDir;
-    mutable std::mutex shardsMutex;
-    // Changed to unique_ptr so memory addresses of ShardInfo remain stable!
-    std::unordered_map<uint64_t, std::unique_ptr<ShardInfo>> activeShards;
-    
-    std::vector<uint64_t> availableShards;
-    std::vector<int64_t> shardStartIndices;
-    std::vector<ShardMetaEntry> shardMeta;
-    uint64_t currentShardId = 0;
-    int64_t totalNotes = 0;
+        //sse2_radix_sort(notes);
 
-    static constexpr int POOL_SIZE = 20;
-    static constexpr int64_t DEFAULT_SHARD_CAPACITY = 32;
-    static constexpr int64_t PREFAULT_CHUNK_SIZE = 8192;
-    int64_t correctionTime = 0;
-
-    bool editorMode = false;
-
-    bool isApplyingNotes = false;
-    std::chrono::steady_clock::time_point lastInsertTime;
-    int insertsInLast10ms = 0;
-    bool pendingSortAfterApply = false;
-    std::chrono::steady_clock::time_point applyEndTime;
-    std::unordered_set<uint64_t> dirtyShards;
-
-    std::mutex pendingMutex;
-    std::unordered_set<uint64_t> pendingLoads;
-    
-    std::thread workerThread;
-    std::queue<uint64_t> loadQueue;
-    std::mutex queueMutex;
-    std::condition_variable queueCV;
-    std::unordered_map<uint64_t, ShardInfo*> completedLoads;
-    bool canStopWorker = false;
-
-    std::thread maintenanceThread;
-    std::mutex maintenanceMutex;
-    std::condition_variable maintenanceCV;
-    bool stopMaintenance = false;
-
-    void startWorker() {
-        workerThread = std::thread([this] {
-            while (true) {
-                uint64_t shardId;
-                {
-                    std::unique_lock<std::mutex> lk(queueMutex);
-                    queueCV.wait(lk, [this] { return canStopWorker || !loadQueue.empty(); });
-                    if (canStopWorker && loadQueue.empty()) return;
-                    shardId = loadQueue.front();
-                    loadQueue.pop();
-                }
-
-                ShardInfo* info = new ShardInfo();
-                info->shardId = shardId;
-                info->startIndex = getShardStartIndex(shardId);
-                size_t idx = findShardArrayIndex(shardId);
-                if (idx < shardMeta.size()) info->capacity = shardMeta[idx].capacity;
-
-                std::string path = chartDir + "/" + std::to_string(shardId) + ".bin";
-                if (!info->reader.open(path.c_str())) {
-                    delete info; info = nullptr;
-                } else {
-                    info->noteCount = info->reader.getNoteCount();
-                    info->endIndex = info->startIndex + info->noteCount;
-                    info->prefaultedUpTo = 0;
-                    auto now = std::chrono::steady_clock::now().time_since_epoch();
-                    info->lastAccessMs = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
-                }
-
-                {
-                    std::lock_guard<std::mutex> lk(pendingMutex);
-                    completedLoads[shardId] = info;
-                    pendingLoads.erase(shardId);
-                }
-            }
-        });
-    }
-
-    void stopWorker() {
-        {
-            std::lock_guard<std::mutex> lk(queueMutex);
-            canStopWorker = true;
+        if (totalNotes > diskCapacity) {
+            int64_t newCap = std::max<int64_t>(totalNotes, diskCapacity * 2);
+            remapFile(newCap);
         }
-        queueCV.notify_one();
-        if (workerThread.joinable()) workerThread.join();
-        std::lock_guard<std::mutex> lk(pendingMutex);
-        for (auto& pair : completedLoads) delete pair.second;
-        completedLoads.clear();
+
+        for (int64_t i = 0; i < totalNotes; ++i) {
+            setFirst8(i, notes[i].first8);
+            setLast2(i, notes[i].last2);
+            judgeFlags.set((size_t)i, notes[i].judgeFlag != 0);
+            hitFlags.set((size_t)i, notes[i].hitFlag != 0);
+        }
+        diskCount = totalNotes;
+        overflowFirst8.clear();
+        overflowLast2.clear();
     }
 
     void startMaintenance() {
@@ -509,63 +357,7 @@ private:
                     if (maintenanceCV.wait_for(lk, std::chrono::milliseconds(10), [this] { return stopMaintenance; })) break;
                 }
                 
-                auto now = std::chrono::steady_clock::now();
-                std::vector<ShardInfo*> shardsToSort;
-
-                bool shouldSort = false;
-                if (pendingSortAfterApply) {
-                    if (std::chrono::duration_cast<std::chrono::milliseconds>(now - applyEndTime).count() >= 10) {
-                        shouldSort = true;
-                        pendingSortAfterApply = false;
-                    }
-                } else if (!editorMode) {
-                    if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastInsertTime).count() >= 10) {
-                        shouldSort = true;
-                    }
-                }
-
-                if (shouldSort) {
-                    {
-                        std::lock_guard<std::mutex> lk(shardsMutex);
-                        for (uint64_t sid : dirtyShards) {
-                            auto it = activeShards.find(sid);
-                            if (it != activeShards.end()) shardsToSort.push_back(it->second.get());
-                        }
-                        dirtyShards.clear();
-                    }
-
-                    // LOCK-FREE SORTING STRATEGY
-                    for (ShardInfo* s : shardsToSort) {
-                        std::vector<uint64_t> notes;
-                        {
-                            std::lock_guard<std::mutex> slk(s->mtx);
-                            if (s->noteCount <= 1) continue;
-                            if (!s->overflowNotes.empty()) flushOverflowInternal(s);
-                            notes.resize(s->noteCount);
-                            s->reader.getRange(0, s->noteCount, notes.data());
-                        } // UNLOCKED! Main thread can access this shard now.
-
-                        radixSortShardInPlace(notes); // Heavy sort happens with ZERO locks!
-
-                        {
-                            std::lock_guard<std::mutex> slk(s->mtx);
-                            s->reader.setRange(0, s->noteCount, notes.data());
-                        }
-                    }
-                }
-
-                if (editorMode) {
-                    uint64_t nowMs = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count();
-                    std::lock_guard<std::mutex> lk(shardsMutex);
-                    for (auto& pair : activeShards) {
-                        ShardInfo& info = *pair.second;
-                        if (info.isPinned && nowMs - info.lastAccessMs >= 500) {
-                            std::lock_guard<std::mutex> slk(info.mtx);
-                            info.reader.flushHeader();
-                            info.isPinned = false;
-                        }
-                    }
-                }
+                //hmmmm.....
             }
         });
     }
@@ -579,381 +371,372 @@ private:
         if (maintenanceThread.joinable()) maintenanceThread.join();
     }
 
-    struct AccessCache {
-        uint64_t shardId = UINT64_MAX;
-        ShardInfo* info = nullptr;
-        int64_t localIndex = -1, globalIndex = -1;
-    };
-    AccessCache readCache, judgeCache;
-
-    static inline uint32_t getLocalPos(uint64_t note) { return static_cast<uint32_t>(note & 0x7FFFFFFF); }
-
-    size_t findShardArrayIndex(uint64_t shardId) const {
-        auto it = std::lower_bound(availableShards.begin(), availableShards.end(), shardId);
-        if (it != availableShards.end() && *it == shardId) return static_cast<size_t>(std::distance(availableShards.begin(), it));
-        return availableShards.size();
+    // ========================================================================
+    // Integrated JSON Transpiler
+    // ========================================================================
+    static void addNote(std::vector<ChartNote>& notes, double time_ms, int lane, double sustain_ms, int type) {
+        if (lane < 0) return; 
+        
+        uint64_t pos = (uint64_t)(time_ms * 100000.0); // 10ns ticks
+        uint16_t dur = (uint16_t)(sustain_ms);         // 1ms ticks
+        
+        ChartNote n;
+        n.first8 = (pos & 0xFFFFFFFFFFFFULL) | ((uint64_t)(dur & 0xFFFF) << 48);
+        n.last2 = (uint16_t)(lane & 0xFF) | ((uint16_t)(type & 0xFF) << 8);
+        notes.push_back(n);
     }
 
-    int64_t getShardStartIndex(uint64_t shardId) const {
-        size_t idx = findShardArrayIndex(shardId);
-        if (idx >= shardStartIndices.size()) throw std::runtime_error("Shard not found: " + std::to_string(shardId));
-        return shardStartIndices[idx];
-    }
-
-    bool loadMetadataFromFile() {
-        std::string metaPath = chartDir + "/shardMeta.bin";
-        std::ifstream metaFile(metaPath, std::ios::binary);
-        if (!metaFile) return false;
-        uint64_t entryCount;
-        metaFile.read(reinterpret_cast<char*>(&entryCount), sizeof(entryCount));
-        if (!metaFile) return false;
-        std::vector<ShardMetaEntry> entries(entryCount);
-        metaFile.read(reinterpret_cast<char*>(entries.data()), entryCount * sizeof(ShardMetaEntry));
-        if (!metaFile) return false;
-        metaFile.close();
-
-        availableShards.clear(); shardStartIndices.clear(); shardMeta.clear();
-        availableShards.reserve(entryCount); shardStartIndices.reserve(entryCount); shardMeta.reserve(entryCount);
-        int64_t cumulative = 0;
-        for (size_t i = 0; i < entryCount; i++) {
-            availableShards.push_back(entries[i].shardId);
-            shardStartIndices.push_back(cumulative);
-            shardMeta.push_back(entries[i]);
-            cumulative += entries[i].noteCount;
+    // ========================================================================
+    // Header File Generator (Backup Plan)
+    // ========================================================================
+    void writeHeaderFile(const std::string& songDir, const rapidjson::Document& doc) {
+        std::string headerPath = songDir + "/header.txt";
+        
+        // If the header already exists, do nothing
+        std::ifstream test(headerPath);
+        if (test.good()) {
+            test.close();
+            return;
         }
-        totalNotes = cumulative;
-        return true;
-    }
+        test.close();
 
-    void scanShardsFallback() {
-        std::vector<std::string> files;
-        listFiles(chartDir, files);
-        struct TempInfo { uint64_t shardId; int64_t noteCount, capacity; };
-        std::vector<TempInfo> tempInfos; tempInfos.reserve(files.size());
-        for (const auto& name : files) {
-            if (getExtension(name) != ".bin" || name == "shardMeta.bin") continue;
-            std::string stem = getStem(name);
-            uint64_t shardId; try { shardId = std::stoull(stem); } catch (...) { continue; }
-            ShardHeader hdr = readHeaderOnly(shardId);
-            tempInfos.push_back({shardId, hdr.noteCount, hdr.capacity});
+        std::string title = "N/A";
+        std::string artist = "N/A";
+        std::string genre = "N/A";
+        double speed = 1.0;
+        double bpm = 100.0;
+        std::string stage = "stage";
+        std::string player1 = "dad"; // Opponent
+        std::string player2 = "bf";  // Player
+        std::string gf = "gf";
+
+        if (doc.HasMember("song") && doc["song"].IsObject()) {
+            const auto& song = doc["song"];
+            if (song.HasMember("song") && song["song"].IsString()) title = song["song"].GetString();
+            if (song.HasMember("bpm") && song["bpm"].IsNumber()) bpm = song["bpm"].GetDouble();
+            if (song.HasMember("speed") && song["speed"].IsNumber()) speed = song["speed"].GetDouble();
+            if (song.HasMember("player1") && song["player1"].IsString()) player1 = song["player1"].GetString();
+            if (song.HasMember("player2") && song["player2"].IsString()) player2 = song["player2"].GetString();
+            if (song.HasMember("gfVersion") && song["gfVersion"].IsString()) gf = song["gfVersion"].GetString();
+            if (song.HasMember("stage") && song["stage"].IsString()) stage = song["stage"].GetString();
         }
-        std::sort(tempInfos.begin(), tempInfos.end(), [](const TempInfo& a, const TempInfo& b) { return a.shardId < b.shardId; });
-        availableShards.clear(); shardStartIndices.clear(); shardMeta.clear();
-        int64_t cumulative = 0;
-        for (const auto& info : tempInfos) {
-            availableShards.push_back(info.shardId);
-            shardStartIndices.push_back(cumulative);
-            cumulative += info.noteCount;
-            ShardMetaEntry entry; entry.shardId = info.shardId; entry.noteCount = info.noteCount; entry.capacity = info.capacity;
-            memset(entry.reserved, 0, sizeof(entry.reserved));
-            shardMeta.push_back(entry);
+
+        // Divide scroll speed by 0.45 for your AA FNF framework
+        speed /= 0.45;
+
+        std::ofstream out(headerPath);
+        if (!out) return;
+
+        out << "Title: " << title << "\n";
+        out << "Artist: " << artist << "\n";
+        out << "Genre: " << genre << "\n";
+        out << "Speed: " << speed << "\n";
+        out << "BPM: " << bpm << "\n";
+        out << "Time Signature: 4/4\n";
+        out << "Stage: " << stage << "\n";
+        
+        size_t lastSlash = songDir.find_last_of("/\\");
+        std::string songName = (lastSlash == std::string::npos) ? songDir : songDir.substr(lastSlash + 1);
+        
+        out << "Instrumental: assets/songs/" << songName << "/Inst.ogg\n";
+        out << "Voices: assets/songs/" << songName << "/Voices-Player.ogg, assets/songs/" << songName << "/Voices-Opponent.ogg\n";
+        out << "Mania: 4\n";
+        out << "Difficulty: #8\n";
+        out << "Game Over:\n";
+        out << "Theme: vanilla\n";
+        out << "BPM: " << bpm << "\n";
+        out << "Characters:\n";
+        
+        out << player1 << ", enemy\n";
+        out << "pos -700 300\n";
+        out << "cam 0 45\n";
+        
+        out << gf << ", other\n";
+        out << "pos -100 300\n";
+        out << "cam 0 45\n";
+        
+        out << player2 << ", player\n";
+        out << "pos 200 300\n";
+        out << "cam 0 45\n";
+
+        out.close();
+        std::cout << "[Transpiler] Generated header.txt for " << title << std::endl;
+    }
+
+    // ========================================================================
+    // Zero-Overhead Note Writer (Format-Accurate)
+    // ========================================================================
+    inline void writeNote(ChartNote* mappedNotes, size_t& writeIndex, double time_ms, int lane, double sustain_ms, bool mustHitSection, bool isPsychV1, bool isVSlice) {
+        if (lane < 0) return;
+        
+        int type;
+        if (isVSlice) {
+            // V-Slice: 4-7 are player notes
+            type = (lane >= 4) ? 1 : 0;
+        } else if (isPsychV1) {
+            // Modern Psych Engine: 0-3 are strictly player notes (mustHitSection is ignored for ownership)
+            type = (lane < 4) ? 1 : 0;
+        } else {
+            // Old Kade/Vanilla: mustHitSection flips ownership
+            bool gottaHitNote = (lane < 4) ? mustHitSection : !mustHitSection;
+            type = gottaHitNote ? 1 : 0;
         }
-        totalNotes = cumulative;
+        
+        int index = lane % 4; // Clamp to 0-3 for visual strumline
+        
+        uint64_t pos = (uint64_t)(time_ms * 100000.0); // 100ns ticks
+        uint16_t dur = (uint16_t)(sustain_ms);           // Solid 1ms duration
+        
+        mappedNotes[writeIndex].first8 = (pos & 0xFFFFFFFFFFFFULL) | ((uint64_t)(dur & 0xFFFF) << 48);
+        mappedNotes[writeIndex].last2 = (uint16_t)(index & 0xFF) | ((uint16_t)(type & 0xFF) << 8);
+        writeIndex++;
     }
 
-    ShardHeader readHeaderOnly(uint64_t shardId) const {
-        std::string path = chartDir + "/" + std::to_string(shardId) + ".bin";
-        std::ifstream file(path, std::ios::binary);
-        if (!file) throw std::runtime_error("Cannot open shard: " + path);
-        ShardHeader header;
-        file.read(reinterpret_cast<char*>(&header), sizeof(ShardHeader));
-        return header;
-    }
+    // ========================================================================
+    // Main Transpiler
+    // ========================================================================
+    void transpileJsonToFvc(const char* jsonPath) {
+        std::ifstream ifs(jsonPath);
+        if (!ifs) {
+            std::cerr << "[Transpiler] Failed to open JSON: " << jsonPath << std::endl;
+            return;
+        }
 
-    void scanShards() {
-        if (loadMetadataFromFile()) return;
-        std::cout << "[ShardedChartReader] shardMeta.bin not found, scanning shard files...\n";
-        scanShardsFallback();
-        writeMetadataFile();
-    }
+        rapidjson::IStreamWrapper isw(ifs);
+        rapidjson::Document doc;
+        doc.ParseStream(isw);
+        ifs.close();
 
-    void writeMetadataFile() {
-        std::string metaPath = chartDir + "/shardMeta.bin";
-        std::ofstream metaOut(metaPath, std::ios::binary);
-        if (!metaOut) return;
-        uint64_t entryCount = availableShards.size();
-        metaOut.write(reinterpret_cast<const char*>(&entryCount), sizeof(entryCount));
-        for (size_t i = 0; i < shardMeta.size(); i++) metaOut.write(reinterpret_cast<const char*>(&shardMeta[i]), sizeof(ShardMetaEntry));
-    }
+        if (doc.HasParseError()) {
+            std::cerr << "[Transpiler] JSON Parse Error at offset " << doc.GetErrorOffset() << std::endl;
+            return;
+        }
 
-    void loadShard(uint64_t shardId) {
-        if (activeShards.find(shardId) != activeShards.end()) return;
-        {
-            std::lock_guard<std::mutex> lk(pendingMutex);
-            auto it = completedLoads.find(shardId);
-            if (it != completedLoads.end()) {
-                ShardInfo* info = it->second;
-                if (info) {
-                    std::lock_guard<std::mutex> slk(shardsMutex);
-                    activeShards.emplace(shardId, std::unique_ptr<ShardInfo>(info));
-                } else {
-                    delete info;
+        // Determine song directory for the header file
+        std::string jsonStr(jsonPath);
+        size_t lastSlash = jsonStr.find_last_of("/\\");
+        std::string songDir = (lastSlash == std::string::npos) ? "." : jsonStr.substr(0, lastSlash);
+        
+        // Generate header.txt if it doesn't already exist
+        writeHeaderFile(songDir, doc);
+
+        bool isVSlice = doc.HasMember("chart");
+        bool isPsych = doc.HasMember("song");
+        bool isPsychV1 = false;
+
+        // Detect if this is a modern Psych Engine chart
+        if (isPsych) {
+            const auto& song = doc["song"];
+            if (song.HasMember("format") && song["format"].IsString()) {
+                std::string fmt = song["format"].GetString();
+                if (fmt.find("psych_v1") != std::string::npos) {
+                    isPsychV1 = true;
                 }
-                completedLoads.erase(it); pendingLoads.erase(shardId);
+            }
+        }
+
+        // ====================================================================
+        // MANIA DETECTION & LEGACY KADE/SHAGGY MOD LOGIC
+        // SOURCE: https://github.com/GithubSPerez/the-shaggy-mod/blob/bec0c925221b4ade0181e60e8aedaddfb81fee58/source/Main.hx
+        // ====================================================================
+        int ammo[] = {4, 6, 7, 9}; // Legacy Kade Engine mania selection
+        int totalColumns = 4;        // Default to 4K
+
+        if (isPsych) {
+            const auto& song = doc["song"];
+            // Check if the chart explicitly defines a mania/key count
+            if (song.HasMember("mania") && song["mania"].IsInt()) {
+                totalColumns = song["mania"].GetInt();
+            }
+        } else if (isVSlice) {
+            // V-Slice might define mania differently, but we default to 4 if not found
+            if (doc.HasMember("mania") && doc["mania"].IsInt()) {
+                totalColumns = doc["mania"].GetInt();
+            }
+        }
+
+        // If the mania is under 4, choose from the legacy selection (defaults to 4)
+        if (totalColumns < 4) {
+            totalColumns = ammo[0]; 
+        }
+        
+        std::cout << "[Transpiler] Detected Mania/Key Count: " << totalColumns << "K" << std::endl;
+        // ====================================================================
+
+        std::vector<ChartNote> tempNotes; // Only for initial count
+        
+        // --- FIRST PASS: Count notes to determine file size ---
+        if (isVSlice) {
+            const auto& chart = doc["chart"];
+            if (chart.HasMember("notes") && chart["notes"].IsObject()) {
+                for (auto& diff : chart["notes"].GetObject()) {
+                    if (diff.value.IsArray()) {
+                        tempNotes.reserve(tempNotes.size() + diff.value.Size());
+                        for (const auto& note : diff.value.GetArray()) {
+                            if (note.IsObject() && note.HasMember("t") && note.HasMember("d")) {
+                                int d = note["d"].GetInt();
+                                if (d >= 0) tempNotes.push_back({});
+                            }
+                        }
+                    }
+                }
+            }
+        } else if (isPsych) {
+            const auto& song = doc["song"];
+            if (song.HasMember("notes") && song["notes"].IsArray()) {
+                for (const auto& section : song["notes"].GetArray()) {
+                    if (section.IsObject() && section.HasMember("sectionNotes") && section["sectionNotes"].IsArray()) {
+                        tempNotes.reserve(tempNotes.size() + section["sectionNotes"].Size());
+                        for (const auto& note : section["sectionNotes"].GetArray()) {
+                            if (note.IsArray() && note.Size() >= 3) {
+                                int lane = note[1].GetInt();
+                                if (lane >= 0) tempNotes.push_back({});
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        size_t totalNoteCount = tempNotes.size();
+        if (totalNoteCount == 0) {
+            std::cerr << "[Transpiler] No valid notes found." << std::endl;
+            return;
+        }
+
+        // --- CREATE AND INITIALIZE THE .fvc FILE ---
+        std::string fvcPath = std::string(jsonPath);
+        size_t dot = fvcPath.find_last_of('.');
+        if (dot != std::string::npos) fvcPath = fvcPath.substr(0, dot);
+        fvcPath += ".fvc";
+
+        {
+            std::ofstream out(fvcPath, std::ios::binary | std::ios::trunc);
+            if (!out) {
+                std::cerr << "[Transpiler] Failed to create .fvc file." << std::endl;
                 return;
             }
-            pendingLoads.erase(shardId);
+            std::vector<uint8_t> zeros(totalNoteCount * sizeof(ChartNote), 0);
+            out.write(reinterpret_cast<const char*>(zeros.data()), zeros.size());
+            out.close();
         }
-        std::string path = chartDir + "/" + std::to_string(shardId) + ".bin";
-        auto info = std::make_unique<ShardInfo>();
-        info->shardId = shardId;
-        info->startIndex = getShardStartIndex(shardId);
-        size_t idx = findShardArrayIndex(shardId);
-        if (idx < shardMeta.size()) info->capacity = shardMeta[idx].capacity;
-        if (!info->reader.open(path.c_str())) throw std::runtime_error("Failed to open shard: " + std::to_string(shardId));
-        info->noteCount = info->reader.getNoteCount();
-        info->endIndex = info->startIndex + info->noteCount;
-        info->prefaultedUpTo = 0;
-        auto now = std::chrono::steady_clock::now().time_since_epoch();
-        info->lastAccessMs = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
-        std::lock_guard<std::mutex> slk(shardsMutex);
-        activeShards.emplace(shardId, std::move(info));
-    }
 
-    void prefetchShards(uint64_t currentShardId) {
-        size_t idx = findShardArrayIndex(currentShardId);
-        if (idx >= availableShards.size()) return;
-        for (int i = 1; i <= 5; i++) {
-            size_t nextIdx = idx + i;
-            if (nextIdx < availableShards.size()) asyncLoadShard(availableShards[nextIdx]);
-        }
-    }
+        // --- MAP MEMORY FOR DIRECT WRITING ---
+#ifdef _WIN32
+        HANDLE hFile = CreateFileA(fvcPath.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (hFile == INVALID_HANDLE_VALUE) return;
+        HANDLE hMap = CreateFileMappingA(hFile, nullptr, PAGE_READWRITE, 0, 0, nullptr);
+        if (!hMap) { CloseHandle(hFile); return; }
+        ChartNote* mappedNotes = (ChartNote*)MapViewOfFile(hMap, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0);
+        if (!mappedNotes) { CloseHandle(hMap); CloseHandle(hFile); return; }
+#else
+        int fd = ::open(fvcPath.c_str(), O_RDWR);
+        if (fd < 0) return;
+        size_t mapLen = totalNoteCount * sizeof(ChartNote);
+        ChartNote* mappedNotes = (ChartNote*)mmap(nullptr, mapLen, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+        if (mappedNotes == MAP_FAILED) { ::close(fd); return; }
+#endif
 
-    void drainPending() {
-        std::lock_guard<std::mutex> lk(pendingMutex);
-        if (completedLoads.empty()) return;
-        std::lock_guard<std::mutex> slk(shardsMutex);
-        for (auto it = completedLoads.begin(); it != completedLoads.end(); ) {
-            ShardInfo* info = it->second;
-            if (info && activeShards.find(it->first) == activeShards.end()) {
-                activeShards.emplace(it->first, std::unique_ptr<ShardInfo>(info));
-            } else { delete info; }
-            it = completedLoads.erase(it);
-        }
-    }
+        size_t writeIndex = 0;
 
-    void rebuildShardStartIndices() {
-        shardStartIndices.clear();
-        int64_t cumulative = 0;
-        std::lock_guard<std::mutex> lk(shardsMutex);
-        for (size_t i = 0; i < availableShards.size(); i++) {
-            shardStartIndices.push_back(cumulative);
-            auto activeIt = activeShards.find(availableShards[i]);
-            cumulative += (activeIt != activeShards.end()) ? activeIt->second->noteCount : shardMeta[i].noteCount;
-        }
-        totalNotes = cumulative;
-        for (auto& pair : activeShards) {
-            size_t idx = findShardArrayIndex(pair.first);
-            if (idx < shardStartIndices.size()) {
-                pair.second->startIndex = shardStartIndices[idx];
-                pair.second->endIndex = pair.second->startIndex + pair.second->noteCount;
+        // --- SECOND PASS: WRITE NOTES DIRECTLY USING THE INLINE FUNCTION ---
+        if (isVSlice) {
+            const auto& chart = doc["chart"];
+            if (chart.HasMember("notes") && chart["notes"].IsObject()) {
+                for (auto& diff : chart["notes"].GetObject()) {
+                    if (diff.value.IsArray()) {
+                        for (const auto& note : diff.value.GetArray()) {
+                            if (note.IsObject() && note.HasMember("t") && note.HasMember("d")) {
+                                double t = note["t"].GetDouble();
+                                int d = note["d"].GetInt();
+                                double l = note.HasMember("l") && note["l"].IsNumber() ? note["l"].GetDouble() : 0;
+                                if (d >= 0) writeNote(mappedNotes, writeIndex, t, d, l, true, false, true);
+                            }
+                        }
+                    }
+                }
             }
-        }
-    }
+        } else if (isPsych) {
+            const auto& song = doc["song"];
+            if (song.HasMember("notes") && song["notes"].IsArray()) {
+                for (const auto& section : song["notes"].GetArray()) {
+                    if (section.IsObject() && section.HasMember("sectionNotes") && section["sectionNotes"].IsArray()) {
+                        bool mustHit = true;
+                        if (section.HasMember("mustHitSection")) {
+                            mustHit = section["mustHitSection"].GetBool();
+                        }
 
-    inline void touchShard(ShardInfo* info) {
-        if (editorMode) {
-            info->isPinned = true;
-            auto now = std::chrono::steady_clock::now().time_since_epoch();
-            info->lastAccessMs = std::chrono::duration_cast<std::chrono::milliseconds>(now).count();
-        }
-    }
-
-    ShardInfo* getShardInfoFast(int64_t globalIndex, AccessCache& cache) {
-        if (cache.info && globalIndex >= cache.info->startIndex && globalIndex < cache.info->endIndex) {
-            touchShard(cache.info); return cache.info;
-        }
-        if (globalIndex >= cachedShardStart && globalIndex < cachedShardEnd && cachedShardInfo) {
-            touchShard(cachedShardInfo); cache.info = cachedShardInfo; cache.shardId = cachedShardId; return cachedShardInfo;
-        }
-        drainPending();
-        if (globalIndex < 0 || globalIndex >= totalNotes) return nullptr;
-        auto it = std::upper_bound(shardStartIndices.begin(), shardStartIndices.end(), globalIndex);
-        size_t shardPos = static_cast<size_t>(std::distance(shardStartIndices.begin(), it) - 1);
-        uint64_t shardId = availableShards[shardPos];
-        if (shardId != currentShardId && (shardId / 10 != currentShardId / 10)) {
-            currentShardId = shardId; managePool(currentShardId);
-        }
-        ShardInfo* result = nullptr;
-        {
-            std::lock_guard<std::mutex> lk(shardsMutex);
-            auto mapIt = activeShards.find(shardId);
-            if (mapIt != activeShards.end()) { touchShard(mapIt->second.get()); result = mapIt->second.get(); }
-        }
-        if (!result) { asyncLoadShard(shardId); prefetchShards(shardId); return nullptr; }
-        
-        {
-            std::lock_guard<std::mutex> slk(result->mtx);
-            int64_t localIndex = globalIndex - result->startIndex;
-            if (localIndex >= result->prefaultedUpTo) {
-                int64_t prefaultStart = result->prefaultedUpTo;
-                int64_t prefaultCount = std::min<int64_t>(PREFAULT_CHUNK_SIZE * 4, result->noteCount - prefaultStart);
-                if (prefaultCount > 0) {
-                    result->reader.prefaultRange(prefaultStart, prefaultCount);
-                    result->prefaultedUpTo = prefaultStart + prefaultCount;
+                        for (const auto& note : section["sectionNotes"].GetArray()) {
+                            if (note.IsArray() && note.Size() >= 3) {
+                                double t = note[0].GetDouble();
+                                int lane = note[1].GetInt();
+                                double sustain = note[2].GetDouble();
+                                
+                                // Pass the detected format flags to the inline function!
+                                writeNote(mappedNotes, writeIndex, t, lane, sustain, mustHit, isPsychV1, false);
+                            }
+                        }
+                    }
                 }
             }
         }
 
-        cachedShardId = shardId; cachedShardStart = shardStartIndices[shardPos];
-        cachedShardEnd = result->endIndex; cachedShardInfo = result;
-        cache.shardId = shardId; cache.info = cachedShardInfo;
-        return cachedShardInfo;
-    }
+        // --- SORT THE NOTES IN-PLACE ---
+        std::cout << "[Transpiler] Sorting " << totalNoteCount << " notes via LSD Radix Sort..." << std::endl;
+        radix_sort_notes_inplace(mappedNotes, totalNoteCount);
 
-    void asyncLoadShard(uint64_t shardId) {
-        if (activeShards.find(shardId) != activeShards.end()) return;
-        {
-            std::lock_guard<std::mutex> lk(pendingMutex);
-            if (completedLoads.find(shardId) != completedLoads.end()) return;
-            if (pendingLoads.find(shardId) != pendingLoads.end()) return;
-            pendingLoads.insert(shardId);
-        }
-        std::lock_guard<std::mutex> lk(queueMutex);
-        loadQueue.push(shardId); queueCV.notify_one();
-    }
-
-    void unloadShard(uint64_t shardId) {
-        std::lock_guard<std::mutex> lk(shardsMutex);
-        auto it = activeShards.find(shardId);
-        if (it != activeShards.end()) {
-            std::lock_guard<std::mutex> slk(it->second->mtx);
-            it->second->reader.flushHeader();
-            activeShards.erase(it);
-            if (shardId == cachedShardId) { cachedShardInfo = nullptr; cachedShardStart = -1; cachedShardEnd = -1; }
-        }
-    }
-
-    void managePool(uint64_t currentShard) {
-        drainPending();
-        std::vector<uint64_t> toRemove;
-        {
-            std::lock_guard<std::mutex> lk(shardsMutex);
-            for (auto& pair : activeShards) {
-                if (editorMode && pair.second->isPinned) continue;
-                int64_t first = static_cast<int64_t>(pair.first);
-                int64_t dist = (first > static_cast<int64_t>(currentShard)) ? (first - static_cast<int64_t>(currentShard)) : (static_cast<int64_t>(currentShard) - first);
-                if (dist > POOL_SIZE) toRemove.push_back(pair.first);
-            }
-        }
-        for (size_t i = 0; i < toRemove.size(); i++) unloadShard(toRemove[i]);
-    }
-
-    void createShardFile(uint64_t shardId, int64_t initialCapacity = DEFAULT_SHARD_CAPACITY) {
-        std::string path = chartDir + "/" + std::to_string(shardId) + ".bin";
-        ShardHeader header; header.noteCount = 0; header.capacity = initialCapacity;
-        memset(header.reserved, 0, sizeof(header.reserved));
-        std::vector<uint64_t> zeros(static_cast<size_t>(initialCapacity), 0);
-        std::ofstream file(path, std::ios::binary | std::ios::trunc);
-        if (!file) throw std::runtime_error("Failed to create shard: " + path);
-        file.write(reinterpret_cast<const char*>(&header), sizeof(ShardHeader));
-        file.write(reinterpret_cast<const char*>(zeros.data()), static_cast<size_t>(initialCapacity) * sizeof(uint64_t));
-        size_t insertPos = findShardArrayIndex(shardId);
-        if (insertPos == availableShards.size() || availableShards[insertPos] != shardId) {
-            ShardMetaEntry entry; entry.shardId = shardId; entry.noteCount = 0; entry.capacity = initialCapacity;
-            memset(entry.reserved, 0, sizeof(entry.reserved));
-            availableShards.insert(availableShards.begin() + insertPos, shardId);
-            shardMeta.insert(shardMeta.begin() + insertPos, entry);
-            rebuildShardStartIndices();
-        }
-    }
-
-    void remapShardInternal(ShardInfo* s, int64_t newCapacity) {
-        int64_t oldDiskNoteCount = s->reader.getNoteCount(); 
-        s->reader.closeMap();
-        std::string path = chartDir + "/" + std::to_string(s->shardId) + ".bin";
-        int64_t newFileSize = sizeof(ShardHeader) + newCapacity * sizeof(uint64_t);
+        // --- CLEANUP ---
 #ifdef _WIN32
-        HANDLE hFile = CreateFileA(path.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (hFile == INVALID_HANDLE_VALUE) return;
-        LARGE_INTEGER li; li.QuadPart = newFileSize; SetFilePointerEx(hFile, li, nullptr, FILE_BEGIN);
-        if (!SetEndOfFile(hFile)) { CloseHandle(hFile); return; }
+        UnmapViewOfFile(mappedNotes);
+        CloseHandle(hMap);
         CloseHandle(hFile);
 #else
-        if (truncate(path.c_str(), newFileSize) != 0) return;
+        munmap(mappedNotes, mapLen);
+        ::close(fd);
 #endif
-        if (!s->reader.open(path.c_str())) return;
-        s->reader.setNoteCount(oldDiskNoteCount);
-        s->reader.setCapacity(newCapacity);
-        s->capacity = newCapacity;
-        size_t idx = findShardArrayIndex(s->shardId);
-        if (idx < shardMeta.size()) shardMeta[idx].capacity = newCapacity;
-    }
 
-    void flushOverflowInternal(ShardInfo* s) {
-        if (s->overflowNotes.empty()) return;
-        int64_t diskCount = s->reader.getNoteCount();
-        int64_t currentCap = s->reader.size();
-        int64_t neededCap = diskCount + s->overflowNotes.size();
-        if (neededCap > currentCap) {
-            int64_t newCap = std::max<int64_t>(neededCap, currentCap * 2);
-            remapShardInternal(s, newCap);
-        }
-        if (!s->overflowNotes.empty()) {
-            s->reader.setRange(diskCount, s->overflowNotes.size(), s->overflowNotes.data());
-            s->overflowNotes.clear();
-        }
-        s->reader.setNoteCount(s->noteCount);
-    }
-
-    void radixSortShardInPlace(std::vector<uint64_t>& notes) {
-        if (notes.size() <= 1) return;
-        uint32_t maxPos = 0;
-        for (size_t i = 0; i < notes.size(); i++) { uint32_t p = getLocalPos(notes[i]); if (p > maxPos) maxPos = p; }
-        if (maxPos == 0) return;
-        int maxBits = 0; while (maxPos > 0) { maxBits++; maxPos >>= 1; }
-        int passes = (maxBits + 7) / 8;
-        static thread_local std::vector<uint64_t> buffer;
-        buffer.resize(notes.size());
-        for (int shift = 0; shift < passes * 8; shift += 8) {
-            int counts[256] = {0};
-            for (size_t i = 0; i < notes.size(); i++) counts[(getLocalPos(notes[i]) >> shift) & 0xFF]++;
-            for (int i = 1; i < 256; i++) counts[i] += counts[i - 1];
-            for (int i = static_cast<int>(notes.size()) - 1; i >= 0; i--)
-                buffer[--counts[(getLocalPos(notes[i]) >> shift) & 0xFF]] = notes[i];
-            notes.swap(buffer);
-        }
+        std::cout << "[Transpiler] Successfully transpiled, sorted, and generated header for " << fvcPath << std::endl;
+        filename = fvcPath;
     }
 
 public:
-    std::vector<uint8_t> globalJudgement;
-    bool globalJudgementInitialized = false;
-
-    void initGlobalJudgement() {
-        if (globalJudgementInitialized) return;
-        size_t initialSize = static_cast<size_t>((totalNotes + 7) >> 3);
-        globalJudgement.reserve(std::max<size_t>(initialSize * 2, static_cast<size_t>(1024))); 
-        globalJudgement.assign(initialSize, 0);
-        globalJudgementInitialized = true;
+    ChartFileReader() = default;
+    
+    ~ChartFileReader() {
+        stopMaintenanceThread();
+        std::lock_guard<std::mutex> lk(dataMutex);
+        closeMapInternal();
     }
 
-    ShardedChartReader(const char* path) : chartDir(path) {
-        scanShards(); initGlobalJudgement();
-        startWorker(); startMaintenance();
-    }
-
-    ~ShardedChartReader() {
-        setEditorMode(false); writeMetadataFile();
-        stopMaintenanceThread(); stopWorker();
-        std::lock_guard<std::mutex> lk(shardsMutex);
-        for (auto& pair : activeShards) {
-            std::lock_guard<std::mutex> slk(pair.second->mtx);
-            pair.second->reader.flushHeader();
+    bool open(const char* path) {
+        std::string pathStr(path);
+        
+        // If it's a JSON file, transpile it to .fvc first!
+        if (pathStr.length() >= 5 && pathStr.substr(pathStr.length() - 5) == ".json") {
+            transpileJsonToFvc(pathStr.c_str());
+            // The transpiler updates the internal 'filename' variable to the .fvc path
+            path = filename.c_str(); 
+        } else {
+            filename = pathStr;
         }
-        activeShards.clear();
+
+        if (!openInternal(path)) return false;
+        startMaintenance();
+        return true;
     }
 
-    void setEditorMode(bool enabled) {
-        editorMode = enabled;
-        if (!enabled) {
-            std::lock_guard<std::mutex> lk(shardsMutex);
-            for (auto& pair : activeShards) {
-                std::lock_guard<std::mutex> slk(pair.second->mtx);
-                if (pair.second->isPinned) { pair.second->reader.flushHeader(); pair.second->isPinned = false; }
-            }
-        }
+    void createNew(const char* path, int64_t initialCapacity = 4096) {
+        filename = path;
+        std::ofstream file(path, std::ios::binary | std::ios::trunc);
+        if (!file) return;
+        std::vector<uint8_t> zeros(initialCapacity * NOTE_SIZE, 0);
+        file.write(reinterpret_cast<const char*>(zeros.data()), zeros.size());
+        file.close();
+        openInternal(path);
+        startMaintenance();
     }
 
+    void setEditorMode(bool enabled) { editorMode = enabled; }
     void setApplyingNotes(bool enabled) {
         isApplyingNotes = enabled;
         if (!enabled) {
@@ -962,292 +745,171 @@ public:
         }
     }
 
-    int64_t cachedShardStart = -1, cachedShardEnd = -1;
-    uint64_t cachedShardId = 0;
-    ShardInfo* cachedShardInfo = nullptr;
-
-    uint64_t findShardForGlobalIndex(int64_t globalIndex) {
-        if (globalIndex >= cachedShardStart && globalIndex < cachedShardEnd) return cachedShardId;
-        if (globalIndex < 0 || globalIndex >= totalNotes) return UINT64_MAX;
-        auto it = std::upper_bound(shardStartIndices.begin(), shardStartIndices.end(), globalIndex);
-        return availableShards[static_cast<size_t>(std::distance(shardStartIndices.begin(), it) - 1)];
-    }
-
-    ShardInfo* getShardInfo(int64_t globalIndex) {
-        if (globalIndex >= cachedShardStart && globalIndex < cachedShardEnd && cachedShardInfo) return cachedShardInfo;
-        drainPending();
-        if (globalIndex < 0 || globalIndex >= totalNotes) return nullptr;
-        auto it = std::upper_bound(shardStartIndices.begin(), shardStartIndices.end(), globalIndex);
-        size_t shardPos = static_cast<size_t>(std::distance(shardStartIndices.begin(), it) - 1);
-        uint64_t shardId = availableShards[shardPos];
-        if (shardId != currentShardId) { currentShardId = shardId; managePool(currentShardId); }
-        ShardInfo* result = nullptr;
-        {
-            std::lock_guard<std::mutex> lk(shardsMutex);
-            auto mapIt = activeShards.find(shardId);
-            if (mapIt != activeShards.end()) { touchShard(mapIt->second.get()); result = mapIt->second.get(); }
-        }
-        if (!result) { 
-            loadShard(shardId); 
-            std::lock_guard<std::mutex> lk(shardsMutex);
-            auto mapIt = activeShards.find(shardId);
-            if (mapIt != activeShards.end()) { touchShard(mapIt->second.get()); result = mapIt->second.get(); }
-        }
-        if (result) {
-            cachedShardId = shardId; cachedShardStart = shardStartIndices[shardPos];
-            cachedShardEnd = (shardPos + 1 < shardStartIndices.size()) ? shardStartIndices[shardPos + 1] : totalNotes;
-            cachedShardInfo = result;
-        }
-        return cachedShardInfo;
-    }
-
-    uint64_t getNote(int64_t globalIndex) {
-        if (globalIndex < 0 || globalIndex >= totalNotes) return 0;
-        ShardInfo* info = getShardInfoFast(globalIndex, readCache);
-        if (!info) return 0; 
-        
-        std::lock_guard<std::mutex> slk(info->mtx);
-        int64_t localIndex = globalIndex - info->startIndex;
-        if (localIndex < 0 || localIndex >= info->noteCount) return 0;
-        
-        int64_t diskCount = info->reader.getNoteCount();
-        if (localIndex < diskCount) {
-            return info->reader.get(localIndex);
+    uint64_t getNote_first8(int64_t index) {
+        if (index < 0 || index >= totalNotes) return 0;
+        std::lock_guard<std::mutex> lk(dataMutex);
+        if (index < diskCount) {
+            int64_t base = (index / BUFFER_ELEMENTS) * BUFFER_ELEMENTS;
+            if (base != bufferBase) loadBufferFromDisk(base);
+            uint64_t val;
+            std::memcpy(&val, buffer + (index - base) * NOTE_SIZE, 8);
+            return val;
         } else {
-            return info->overflowNotes[localIndex - diskCount];
+            return overflowFirst8[index - diskCount];
         }
     }
 
-    void setNote(int64_t globalIndex, uint64_t value) {
-        ShardInfo* info = getShardInfoFast(globalIndex, readCache);
-        if (!info) return; 
-        touchShard(info);
-        
-        std::lock_guard<std::mutex> slk(info->mtx);
-        int64_t localIndex = globalIndex - info->startIndex;
-        if (localIndex < 0 || localIndex >= info->noteCount) return;
-        
-        int64_t diskCount = info->reader.getNoteCount();
-        if (localIndex < diskCount) {
-            info->reader.set(localIndex, value);
+    uint16_t getNote_last2(int64_t index) {
+        if (index < 0 || index >= totalNotes) return 0;
+        std::lock_guard<std::mutex> lk(dataMutex);
+        if (index < diskCount) {
+            int64_t base = (index / BUFFER_ELEMENTS) * BUFFER_ELEMENTS;
+            if (base != bufferBase) loadBufferFromDisk(base);
+            uint16_t val;
+            std::memcpy(&val, buffer + (index - base) * NOTE_SIZE + 8, 2);
+            return val;
         } else {
-            info->overflowNotes[localIndex - diskCount] = value;
+            return overflowLast2[index - diskCount];
         }
     }
 
-    bool core_getJudgement(int64_t globalIndex) {
-        if (!globalJudgementInitialized) initGlobalJudgement();
-        if (globalIndex < 0 || globalIndex >= totalNotes) return false;
-        int64_t byteIndex = globalIndex >> 3; int bitIndex = globalIndex & 7;
-        if (byteIndex >= static_cast<int64_t>(globalJudgement.size())) return false;
-        return (globalJudgement[static_cast<size_t>(byteIndex)] >> bitIndex) & 1;
+    // ========================================================================
+    // GLOBAL FLAG SYSTEM API
+    // ========================================================================
+    bool getJudgement(int64_t index) {
+        if (index < 0 || index >= totalNotes) return false;
+        return judgeFlags.get((size_t)index);
     }
 
-    void core_setJudgement(int64_t globalIndex, bool value) {
-        if (globalIndex < 0) return;
-        int64_t byteIndex = globalIndex >> 3; 
-        if (byteIndex >= static_cast<int64_t>(globalJudgement.size())) {
-            size_t needed = static_cast<size_t>(byteIndex + 1);
-            if (needed > globalJudgement.capacity()) globalJudgement.reserve(std::max<size_t>(needed, globalJudgement.capacity() * 2));
-            globalJudgement.resize(needed, 0);
-            globalJudgementInitialized = true;
-        }
-        int bitIndex = globalIndex & 7;
-        if (value) globalJudgement[static_cast<size_t>(byteIndex)] |=  (1 << bitIndex);
-        else       globalJudgement[static_cast<size_t>(byteIndex)] &= ~(1 << bitIndex);
+    void setJudgement(int64_t index, bool value) {
+        if (index < 0 || index >= totalNotes) return;
+        judgeFlags.set((size_t)index, value);
     }
 
-    void insertNote(int64_t globalPosition, int duration, int index, int type) {
-        int64_t shardId  = globalPosition / 2000000000;
-        int64_t localPos = globalPosition % 2000000000;
-        uint64_t packedNote = ((uint64_t)(localPos & 0x7FFFFFFF) << 0)  | ((uint64_t)(duration & 0x1FFFF) << 31) | ((uint64_t)(index & 0xFF) << 48) | ((uint64_t)(type & 0x7F) << 56);
+    bool getHitFlag(int64_t index) {
+        if (index < 0 || index >= totalNotes) return false;
+        return hitFlags.get((size_t)index);
+    }
+
+    void setHitFlag(int64_t index, bool value) {
+        if (index < 0 || index >= totalNotes) return;
+        hitFlags.set((size_t)index, value);
+    }
+
+    void insertNote(uint64_t pos, uint16_t dur, uint8_t idx, uint8_t type) {
+        uint64_t first8 = (pos & 0xFFFFFFFFFFFFULL) | ((uint64_t)(dur & 0xFFFF) << 48);
+        uint16_t last2 = (uint16_t)(idx & 0xFF) | ((uint16_t)(type & 0xFF) << 8);
         
-        cachedShardInfo = nullptr; cachedShardStart = -1; cachedShardEnd = -1;
-        readCache.info = nullptr; judgeCache.info = nullptr;
+        std::lock_guard<std::mutex> lk(dataMutex);
 
-        auto now = std::chrono::steady_clock::now();
-        if (std::chrono::duration_cast<std::chrono::milliseconds>(now - lastInsertTime).count() > 10) {
-            insertsInLast10ms = 0;
+        // Insert false into both global flag arrays at the new index
+        judgeFlags.insert((size_t)totalNotes, false);
+        hitFlags.insert((size_t)totalNotes, false);
+
+        if (editorMode || isApplyingNotes) {
+            overflowFirst8.push_back(first8);
+            overflowLast2.push_back(last2);
+        } else {
+            if (totalNotes >= diskCapacity) {
+                int64_t newCap = std::max<int64_t>(totalNotes * 2, diskCapacity + 4096);
+                remapFile(newCap);
+            }
+            setFirst8(totalNotes, first8);
+            setLast2(totalNotes, last2);
+            diskCount++;
         }
-        lastInsertTime = now;
-        insertsInLast10ms++;
+        
+        totalNotes++;
+        lastInsertTime = std::chrono::steady_clock::now();
+    }
 
-        ShardInfo* s_ptr = nullptr;
-        {
-            std::lock_guard<std::mutex> lk(shardsMutex);
-            auto mapIt = activeShards.find(shardId);
-            if (mapIt != activeShards.end()) s_ptr = mapIt->second.get();
+    void removeNote(int64_t index) {
+        if (index < 0 || index >= totalNotes) return;
+        std::lock_guard<std::mutex> lk(dataMutex);
+
+        if (!overflowFirst8.empty()) {
+            flushOverflowToDisk();
         }
 
-        if (!s_ptr) {
-            std::string path = chartDir + "/" + std::to_string(shardId) + ".bin";
-            if (getFileSize(path) < 0) createShardFile(shardId, DEFAULT_SHARD_CAPACITY);
-            loadShard(shardId); 
-            std::lock_guard<std::mutex> lk(shardsMutex);
-            auto mapIt = activeShards.find(shardId);
-            if (mapIt != activeShards.end()) s_ptr = mapIt->second.get();
-        }
-        if (!s_ptr) return;
-
-        size_t shardPos = 0;
-        {
-            std::lock_guard<std::mutex> slk(s_ptr->mtx);
-            touchShard(s_ptr); 
-            
-            int64_t currentCap = s_ptr->reader.size();
-            if (editorMode && s_ptr->noteCount + 1 > currentCap) {
-                s_ptr->overflowNotes.push_back(packedNote);
+        int64_t remaining = diskCount - index - 1;
+        if (remaining > 0) {
+            int64_t base = (index / BUFFER_ELEMENTS) * BUFFER_ELEMENTS;
+            if (base == bufferBase && (index + remaining) < (bufferBase + BUFFER_ELEMENTS)) {
+                std::memmove(buffer + (index - base) * NOTE_SIZE, buffer + (index + 1 - base) * NOTE_SIZE, remaining * NOTE_SIZE);
+                bufferDirty = true;
             } else {
-                if (!s_ptr->overflowNotes.empty()) {
-                    flushOverflowInternal(s_ptr);
-                }
-                if (s_ptr->noteCount + 1 > s_ptr->reader.size()) {
-                    int64_t newCap = std::max<int64_t>(s_ptr->reader.size() * 2, s_ptr->reader.size() + 4096);
-                    remapShardInternal(s_ptr, newCap);
-                }
-                s_ptr->reader.set(s_ptr->noteCount, packedNote);
-            }
-            
-            s_ptr->noteCount++;
-            s_ptr->endIndex++;
-            totalNotes++;
-
-            shardPos = findShardArrayIndex(shardId);
-            if (shardPos < shardMeta.size()) {
-                shardMeta[shardPos].noteCount = s_ptr->noteCount;
-            }
-            
-            for (size_t i = shardPos + 1; i < shardStartIndices.size(); i++) {
-                shardStartIndices[i]++;
-            }
-            
-            dirtyShards.insert(shardId);
-        }
-
-        if (!editorMode) {
-            if (insertsInLast10ms <= 256) {
-                std::vector<ShardInfo*> toSort;
-                {
-                    std::lock_guard<std::mutex> lk(shardsMutex);
-                    for (uint64_t sid : dirtyShards) {
-                        auto it = activeShards.find(sid);
-                        if (it != activeShards.end()) toSort.push_back(it->second.get());
-                    }
-                    dirtyShards.clear();
-                }
-                for (ShardInfo* s : toSort) {
-                    std::vector<uint64_t> notes;
-                    {
-                        std::lock_guard<std::mutex> lk2(s->mtx);
-                        if (s->noteCount <= 1) continue;
-                        if (!s->overflowNotes.empty()) flushOverflowInternal(s);
-                        notes.resize(s->noteCount);
-                        s->reader.getRange(0, s->noteCount, notes.data());
-                    }
-                    radixSortShardInPlace(notes);
-                    {
-                        std::lock_guard<std::mutex> lk2(s->mtx);
-                        s->reader.setRange(0, s->noteCount, notes.data());
-                    }
-                }
+                flushBufferToDisk();
+                bufferBase = -1;
+                std::memmove(mappedData + (index * NOTE_SIZE), mappedData + ((index + 1) * NOTE_SIZE), remaining * NOTE_SIZE);
             }
         }
-    }
-
-    void removeNote(int64_t globalIndex) {
-        if (globalIndex < 0 || globalIndex >= totalNotes) return;
-        auto it = std::upper_bound(shardStartIndices.begin(), shardStartIndices.end(), globalIndex);
-        size_t shardPos = static_cast<size_t>(std::distance(shardStartIndices.begin(), it) - 1);
-        uint64_t shardId = availableShards[shardPos];
         
-        ShardInfo* s_ptr = nullptr;
-        {
-            std::lock_guard<std::mutex> lk(shardsMutex);
-            auto mapIt = activeShards.find(shardId);
-            if (mapIt != activeShards.end()) s_ptr = mapIt->second.get();
-        }
-        if (!s_ptr) { 
-            loadShard(shardId); 
-            std::lock_guard<std::mutex> lk(shardsMutex);
-            auto mapIt = activeShards.find(shardId);
-            if (mapIt != activeShards.end()) s_ptr = mapIt->second.get();
-        }
-        if (!s_ptr) return;
+        // Erase the flags from the global arrays (shifts subsequent bits automatically)
+        judgeFlags.erase((size_t)index);
+        hitFlags.erase((size_t)index);
 
-        {
-            std::lock_guard<std::mutex> slk(s_ptr->mtx);
-            touchShard(s_ptr);
-
-            if (!s_ptr->overflowNotes.empty()) {
-                flushOverflowInternal(s_ptr);
-            }
-
-            int64_t localIndex = globalIndex - s_ptr->startIndex;
-            int64_t remaining = s_ptr->noteCount - localIndex - 1;
-            if (remaining > 0) s_ptr->reader.shiftLeft(localIndex, remaining);
-            
-            s_ptr->noteCount--; 
-            s_ptr->reader.setNoteCount(s_ptr->noteCount);
-            totalNotes--;
-
-            size_t shardPos_ = findShardArrayIndex(shardId);
-            if (shardPos_ < shardMeta.size()) shardMeta[shardPos_].noteCount = s_ptr->noteCount;
-            
-            for (size_t i = shardPos_ + 1; i < shardStartIndices.size(); i++) {
-                shardStartIndices[i]--;
-            }
-            
-            dirtyShards.insert(shardId);
-        }
-    }
-
-    void printNoteInfo(int64_t globalIndex) {
-        uint64_t note = getNote(globalIndex);
-        uint32_t positionTicks  = (note >>  0) & 0x7FFFFFFF;
-        uint32_t durationHalfMs = (note >> 31) & 0x1FFFF;
-        uint8_t  index          = (note >> 48) & 0xFF;
-        uint8_t  type           = (note >> 56) & 0x7F;
-        bool     missed         = (note >> 63) & 1;
-        bool     judged         = core_getJudgement(globalIndex);
-        double timeMs     = positionTicks / 4000000.0;
-        double durationMs = durationHalfMs * 0.5;
-        std::cout << "  Note " << globalIndex << ": "
-                  << "time="   << formatTime(timeMs, true) << " pos="   << positionTicks  << "ticks"
-                  << " dur="   << durationMs     << "ms" << " idx="   << (int)index
-                  << " type="  << (int)type << " judged="<< (judged ? "Y" : "N")
-                  << " missed="<< (missed ? "Y" : "N") << " raw=0x" << std::hex << note << std::dec << std::endl;
+        diskCount--;
+        totalNotes--;
+        lastInsertTime = std::chrono::steady_clock::now();
     }
 
     int64_t getLength() const { return totalNotes; }
-    size_t getShardCount() const { return availableShards.size(); }
-
-    void printPoolStats() const {
-        std::lock_guard<std::mutex> lk(shardsMutex);
-        std::cout << "[POOL] Active shards: " << activeShards.size() << " / " << availableShards.size() << std::endl;
-        int count = 0;
-        for (auto& pair : activeShards) {
-            if (count++ >= 10) { std::cout << "  ... and " << (activeShards.size() - 10) << " more" << std::endl; break; }
-            std::cout << "  Shard " << pair.first << ": " << pair.second->noteCount << " notes" 
-                      << (pair.second->isPinned ? " [PINNED]" : "") << std::endl;
-        }
-    }
 };
 
-static ShardedChartReader* gReader = nullptr;
+// ============================================================================
+// Global API
+// ============================================================================
+static ChartFileReader* gReader = nullptr;
 
 void core_loadChart(const char* path) {
     if (gReader) { delete gReader; gReader = nullptr; }
-    gReader = new ShardedChartReader(path);
+    gReader = new ChartFileReader();
+    gReader->open(path); // Automatically handles .json -> .fvc transpilation!
 }
-void core_destroyChart() { ShardedChartReader* old = gReader; gReader = nullptr; delete old; }
+
+void core_createChart(const char* path) {
+    if (gReader) { delete gReader; gReader = nullptr; }
+    gReader = new ChartFileReader();
+    gReader->createNew(path);
+}
+
+void core_destroyChart() {
+    if (gReader) { delete gReader; gReader = nullptr; }
+}
+
 void core_setEditorMode(bool enabled) { if (gReader) gReader->setEditorMode(enabled); }
 void core_setApplyingNotes(bool enabled) { if (gReader) gReader->setApplyingNotes(enabled); }
 
-uint64_t core_getNote(int64_t index) { if (!gReader) return 0; return gReader->getNote(index); }
-void core_setNote(int64_t index, uint64_t value) { if (!gReader) return; gReader->setNote(index, value); }
-void core_insertNote(int64_t globalPosition, int duration, int index, int type) { if (!gReader) return; gReader->insertNote(globalPosition, duration, index, type); }
+int64_t core_getNote_first8(int64_t index) { if (!gReader) return 0; return gReader->getNote_first8(index); }
+int core_getNote_last2(int64_t index) { if (!gReader) return 0; return gReader->getNote_last2(index); }
+
+void core_insertNote(int64_t globalPosition, int duration, int index, int type) {
+    if (!gReader) return;
+    gReader->insertNote(static_cast<uint64_t>(globalPosition), static_cast<uint16_t>(duration), static_cast<uint8_t>(index), static_cast<uint8_t>(type));
+}
+
 void core_removeNote(int64_t globalIndex) { if (!gReader) return; gReader->removeNote(globalIndex); }
-void core_printNoteInfo(int64_t index) { if (!gReader) return; gReader->printNoteInfo(index); }
 int64_t core_getLength() { if (!gReader) return 0; return gReader->getLength(); }
-size_t core_getShardCount() { if (!gReader) return 0; return gReader->getShardCount(); }
-void core_printPoolStats() { if (gReader) gReader->printPoolStats(); }
+
+// ============================================================================
+// GLOBAL FLAG SYSTEM API
+// ============================================================================
+bool core_getJudgement(int64_t globalIndex) {
+    if (!gReader) return false;
+    return gReader->getJudgement(globalIndex);
+}
+
+void core_setJudgement(int64_t globalIndex, bool value) {
+    if (!gReader) return;
+    gReader->setJudgement(globalIndex, value);
+}
+
+bool core_getHitFlag(int64_t globalIndex) {
+    if (!gReader) return false;
+    return gReader->getHitFlag(globalIndex);
+}
+
+void core_setHitFlag(int64_t globalIndex, bool value) {
+    if (!gReader) return;
+    gReader->setHitFlag(globalIndex, value);
+}

@@ -29,7 +29,7 @@ class NoteSpawner {
 
 		/*for (i in 0...20) {
 			var note:MetaNote = File.getNote(i);
-			Sys.println('Is it judged? ${File.getJudgement(i)}. Note flag? ${note.flag}. Here\'s the position of the note for reference: ${(note.position + File.getTimeCorrectionForIndex(i))}');
+			Sys.println('Is it judged? ${File.getJudgement(i)}. Note flag? ${File.getHitFlag(i)}. Here\'s the position and index and type of the note for reference: ${note.position},${note.index},${note.type}');
 		}*/
 	}
 
@@ -64,8 +64,7 @@ class NoteSpawner {
 
 		var i = (minBottom != -1 && bottom < minBottom) ? minBottom : bottom;
 		var scrollSpeed = parent.parent.scrollSpeed;
-		var prev:MetaNote = -1;
-		var prevTimeCorrection:Int64 = 0;
+		var prev:MetaNote = null;
 		var noteSpr:VirtualNote = null;
 		var j:Int = 0;
 
@@ -80,21 +79,20 @@ class NoteSpawner {
 			var receptor = parent.strumlines[lane].buffer[n.index];
 			var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
 
-			var timeCorrection = File.getTimeCorrectionForIndex(i);
-			var n_position = n.position + timeCorrection;
+			var n_position = n.position;
 
 			var diff = (MetaNote.metaNotePositionToSongTime(n_position - pos)) * scrollSpeed;
 			var newY = receptor.y + Math.floor(diff);
 
-			var ghost = isGhostNote(prev, n, prevTimeCorrection, i);
+			var ghost = isGhostNote(prev, n);
 
 			var shouldOverlap = noteSpr != null && shouldNotesOverlap(prev, n, noteSpr, receptor, newY,
-				fakeOverlapStorage[prev != -1 ? prev.index : -1]) && !ghost;
+				fakeOverlapStorage[prev != null ? prev.index : 0]) && !ghost;
 
 			fakeOverlapStorage[n.index] = newY;
 
 			if (shouldOverlap) {
-				mergeNoteIntoSprite(noteSpr, n);
+				mergeNoteIntoSprite(noteSpr, i);
 			} else {
 				if (!ghost) {
 					++j;
@@ -103,7 +101,6 @@ class NoteSpawner {
 			}
 
 			prev = n;
-			prevTimeCorrection = i;
 			++i;
 		}
 		timeSpentOnIt = haxe.Timer.stamp() - time;
@@ -117,16 +114,14 @@ class NoteSpawner {
 		// === FORWARD: Include notes now within spawn range ===
 		while (top < len) {
 			var n = File.getNote(top);
-			var tc = File.getTimeCorrectionForIndex(top);
-			if ((n.position + tc) - pos >= spawnDist) break;
+			if (n.position - pos >= spawnDist) break;
 			++top;
 		}
 
 		// === BACKWARD: Exclude notes now too far ahead ===
 		while (top > bottom) {
 			var n = File.getNote(top - 1);
-			var tc = File.getTimeCorrectionForIndex(top - 1);
-			if ((n.position + tc) - pos < spawnDist) break;
+			if (n.position - pos < spawnDist) break;
 			--top;
 		}
 
@@ -139,8 +134,7 @@ class NoteSpawner {
 		// === FORWARD: Exclude notes that have despawned ===
 		while (bottom < len) {
 			var n = File.getNote(bottom);
-			var tc = File.getTimeCorrectionForIndex(bottom);
-			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - (n.position + tc);
+			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - n.position;
 			if (despawnCheck <= despawnDist) break;
 			var notePool = parent.notePool;
 			notePool.putNote(n, bottom);
@@ -151,8 +145,7 @@ class NoteSpawner {
 		// === BACKWARD: Include notes now back in range ===
 		while (bottom > 0 && bottom < top) {
 			var n = File.getNote(bottom - 1);
-			var tc = File.getTimeCorrectionForIndex(bottom - 1);
-			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - (n.position + tc);
+			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - n.position;
 			if (despawnCheck > despawnDist) break;
 			--bottom;
 		}
@@ -177,7 +170,7 @@ class NoteSpawner {
 			var lo:Int64 = 0, hi:Int64 = len;
 			while (lo < hi) {
 				var mid = (lo + hi) >> 1;
-				if (File.getNote(mid).position + File.getTimeCorrectionForIndex(mid) < target)
+				if (File.getNote(mid).position < target)
 					lo = mid + 1;
 				else
 					hi = mid;
@@ -189,7 +182,7 @@ class NoteSpawner {
 			var lo:Int64 = 0, hi:Int64 = len;
 			while (lo < hi) {
 				var mid = (lo + hi) >> 1;
-				if (File.getNote(mid).position + File.getTimeCorrectionForIndex(mid) <= target)
+				if (File.getNote(mid).position <= target)
 					lo = mid + 1;
 				else
 					hi = mid;
@@ -303,11 +296,9 @@ class NoteSpawner {
 		}
 	}
 
-	inline function isGhostNote(prev:MetaNote, current:MetaNote, prevIndex:Int64, curIndex:Int64):Bool {
-		var prevCorrection = File.getTimeCorrectionForIndex(prevIndex);
-		var curCorrection = File.getTimeCorrectionForIndex(curIndex);
-		return prev != -1
-			&& prev.position + prevCorrection == current.position + curCorrection
+	inline function isGhostNote(prev:MetaNote, current:MetaNote):Bool {
+		return prev != null
+			&& prev.position == current.position
 			&& prev.index == current.index
 			&& prev.type == current.type;
 	}
@@ -315,7 +306,7 @@ class NoteSpawner {
 	inline function shouldNotesOverlap(prev:MetaNote, current:MetaNote, noteSpr:VirtualNote,
 		receptor:Note, newY:Float, prevY:Float):Bool {
 
-		if (noteSpr == null || prev == -1) return false;
+		if (noteSpr == null || prev == null) return false;
 
 		var OVERLAP_PIXEL_THRESHOLD = 0;
 
@@ -331,8 +322,8 @@ class NoteSpawner {
 			&& prev.index == current.index;
 	}
 
-	inline function mergeNoteIntoSprite(noteSpr:VirtualNote, n:MetaNote) {
-		var alphaToAdd = n.flag ? Note.defaultMissAlpha : Note.defaultAlpha;
+	inline function mergeNoteIntoSprite(noteSpr:VirtualNote, i:Int64) {
+		var alphaToAdd = File.getHitFlag(i) ? Note.defaultMissAlpha : Note.defaultAlpha;
 		noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + alphaToAdd, 256);
 		noteSpr.notesInOne++;
 	}

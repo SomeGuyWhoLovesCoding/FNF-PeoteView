@@ -42,6 +42,7 @@
 	<haxedef name="HX_MULTI_THREAD_MARKING" unless="debug" />
 	<haxedef name="HXCPP_GC_DYNAMIC_SIZE" />
 	<haxedef name="HXCPP_GC_GENERATIONAL" />
+	<haxedef name="HXCPP_FUTURE_GC" />
 
 	<!-- Compile-time feature functionality dedicated to Funkin' View -->
 	<haxedef name="HXCPP_TRACY" if="FV_PROFILE" />

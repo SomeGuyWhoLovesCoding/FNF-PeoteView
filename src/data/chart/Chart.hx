@@ -28,15 +28,13 @@ class Chart {
 		destroyed = false;
 		Sys.println('  [ Chart System ]  Parsing chart(s) from folder...');
 
-		if (FileSystem.exists('$path/chart.json') && (!FileSystem.exists('$path/chart.cbin')) || FileSystem.exists('$path/charts')) {
-			ChartConverter.baseGame(path);
-		}
+		var preferredPath = '$path/chart.json';
+		if (FileSystem.exists('$path/chart.fvc')) preferredPath = '$path/chart.fvc';
+		var stamp = haxe.Timer.stamp();
+		File.loadChart(preferredPath);
+		Sys.println('  [ Chart System ]  Done! Took ${Tools.formatTime((haxe.Timer.stamp() - stamp) * 1000.0, true)} to load.');
 
 		header = Tools.parseHeader(path);
-
-		var stamp = haxe.Timer.stamp();
-		File.loadChart('$path/chart');
-		Sys.println('  [ Chart System ]  Done! Took ${Tools.formatTime((haxe.Timer.stamp() - stamp) * 1000.0, true)} to load.');
 	}
 
 	/**

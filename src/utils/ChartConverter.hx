@@ -32,7 +32,7 @@ class ChartConverter
 		Converts a base-game chart file to Funkin' View's chart format.
 	**/
 	static function baseGame(path:String) {
-		if (!multichartMode) {
+	/*	if (!multichartMode) {
 			Sys.println("Welcome to the Funkin' View chart converter!");
 			Sys.println("Converting base-game chart to CBIN...");
 			Sys.println("Parsing json(s)...");
@@ -106,14 +106,14 @@ class ChartConverter
 			chart = null;
 			metaNotes = [];
 			alreadywroteheader = false;
-		}
+		}*/
 	}
 
 	/**
 		Extracted logic to process a single chart JSON
 	**/
 	private static function processChart(content:String, path:String) {
-		var json = Json.parse(content);
+		/*var json = Json.parse(content);
 		var song = json.song;
 
 		// Defaults
@@ -174,12 +174,12 @@ class ChartConverter
 			Sys.println('Finished processing chart \'$path\', total notes so far: ${metaNotes.length}');
 		} catch (e:Dynamic) {
 			Sys.println('Error processing chart $path: $e');
-		}
+		}*/
 	}
 
 	// Write header file
 	private static function writeHeaderString(path:String, song:Dynamic, stage:String, gfVersion:String, mania:Int) {
-		var instPath:String = '$path/Inst.ogg';
+		/*var instPath:String = '$path/Inst.ogg';
 		if (!FileSystem.exists(instPath)) throw 'No inst path! $instPath not found.';
 		//var voicesPaths:Array<String> = ['$path/Voices-Opponent.ogg','$path/Voices-Player.ogg'];
 		var searchingForMultiVoicePaths = true;
@@ -223,7 +223,7 @@ pos -100 300
 cam 0 45
 ${song.player1}, player
 pos 200 300
-cam 0 45');
+cam 0 45');*/
 	}
 }
 

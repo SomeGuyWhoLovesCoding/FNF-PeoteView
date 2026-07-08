@@ -512,30 +512,15 @@ abstract Int128(__Int128) from __Int128 to __Int128 {
 	specific platforms.
 **/
 private typedef __Int128 = ___Int128;
-typedef __Int128Vec = haxe.ds.Vector<Int64>;
 
-private abstract ___Int128(__Int128Vec) from __Int128Vec to __Int128Vec {
-	public var high(get, set):Int64;
-	public var low(get, set):Int64;
-
-	inline function get_high() {
-		return this[0];
-	}
-
-	inline function set_high(value:Int64) {
-		return this[0] = value;
-	}
-
-	inline function get_low() {
-		return this[1];
-	}
-
-	inline function set_low(value:Int64) {
-		return this[1] = value;
-	}
+@:structInit
+private class ___Int128 {
+	public var high:Int64;
+	public var low:Int64;
 
 	public inline function new(high, low) {
-		this = __Int128Vec.fromData([high, low]);
+		this.high = high;
+		this.low = low;
 	}
 
 	/**
