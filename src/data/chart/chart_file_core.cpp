@@ -386,17 +386,18 @@ private:
         notes.push_back(n);
     }
 
-    // ========================================================================
+     // ========================================================================
     // Header File Generator (Backup Plan)
     // ========================================================================
-    void writeHeaderFile(const std::string& songDir, const rapidjson::Document& doc) {
+    void writeHeaderFile(const std::string& songDir, const rapidjson::Document& doc, int totalColumns) {
         std::string headerPath = songDir + "/header.txt";
+        std::cout << headerPath << std::endl;
         
-        // If the header already exists, do nothing
+        // Backup plan: If the header already exists, do nothing
         std::ifstream test(headerPath);
         if (test.good()) {
             test.close();
-            return;
+            return; 
         }
         test.close();
 
@@ -421,12 +422,13 @@ private:
             if (song.HasMember("stage") && song["stage"].IsString()) stage = song["stage"].GetString();
         }
 
-        // Divide scroll speed by 0.45 for your AA FNF framework
-        speed /= 0.45;
+        // Multiply scroll speed by 0.45 for Funkin' Vieew
+        speed *= 0.45;
 
         std::ofstream out(headerPath);
         if (!out) return;
 
+        // Write exactly what the Haxe parser expects, line by line
         out << "Title: " << title << "\n";
         out << "Artist: " << artist << "\n";
         out << "Genre: " << genre << "\n";
@@ -440,56 +442,62 @@ private:
         
         out << "Instrumental: assets/songs/" << songName << "/Inst.ogg\n";
         out << "Voices: assets/songs/" << songName << "/Voices-Player.ogg, assets/songs/" << songName << "/Voices-Opponent.ogg\n";
-        out << "Mania: 4\n";
+        
+        // Use the dynamically detected mania instead of a hardcoded 4!
+        out << "Mania: " << totalColumns << "\n";
         out << "Difficulty: #8\n";
+        
+        // Game Over block (Haxe reads and ignores the first line, then reads Theme and BPM)
         out << "Game Over:\n";
         out << "Theme: vanilla\n";
         out << "BPM: " << bpm << "\n";
+        
+        // Characters block (Haxe reads and ignores the first line, then reads actors)
         out << "Characters:\n";
         
+        // Actor 1 (Opponent) - Exactly 3 lines
         out << player1 << ", enemy\n";
         out << "pos -700 300\n";
         out << "cam 0 45\n";
         
+        // Actor 2 (GF) - Exactly 3 lines
         out << gf << ", other\n";
         out << "pos -100 300\n";
         out << "cam 0 45\n";
         
+        // Actor 3 (Player) - Exactly 3 lines
         out << player2 << ", player\n";
         out << "pos 200 300\n";
-        out << "cam 0 45\n";
+        out << "cam 0 45";
 
         out.close();
         std::cout << "[Transpiler] Generated header.txt for " << title << std::endl;
     }
 
     // ========================================================================
-    // Zero-Overhead Note Writer (Format-Accurate)
+    // Zero-Overhead Note Writer (Format & Mania Accurate)
     // ========================================================================
-    inline void writeNote(ChartNote* mappedNotes, size_t& writeIndex, double time_ms, int lane, double sustain_ms, bool mustHitSection, bool isPsychV1, bool isVSlice) {
-        if (lane < 0) return;
+    inline bool writeNote(ChartNote& outNote, double time_ms, int lane, double sustain_ms, bool mustHitSection, bool isPsychV1, bool isVSlice, int totalColumns) {
+        if (lane < 0) return false;
         
         int type;
         if (isVSlice) {
-            // V-Slice: 4-7 are player notes
-            type = (lane >= 4) ? 1 : 0;
+            type = (lane >= totalColumns) ? 1 : 0;
         } else if (isPsychV1) {
-            // Modern Psych Engine: 0-3 are strictly player notes (mustHitSection is ignored for ownership)
-            type = (lane < 4) ? 1 : 0;
+            type = (lane < totalColumns) ? 1 : 0;
         } else {
-            // Old Kade/Vanilla: mustHitSection flips ownership
-            bool gottaHitNote = (lane < 4) ? mustHitSection : !mustHitSection;
+            bool gottaHitNote = (lane < totalColumns) ? mustHitSection : !mustHitSection;
             type = gottaHitNote ? 1 : 0;
         }
         
-        int index = lane % 4; // Clamp to 0-3 for visual strumline
+        int index = lane % totalColumns; 
         
         uint64_t pos = (uint64_t)(time_ms * 100000.0); // 100ns ticks
         uint16_t dur = (uint16_t)(sustain_ms);           // Solid 1ms duration
         
-        mappedNotes[writeIndex].first8 = (pos & 0xFFFFFFFFFFFFULL) | ((uint64_t)(dur & 0xFFFF) << 48);
-        mappedNotes[writeIndex].last2 = (uint16_t)(index & 0xFF) | ((uint16_t)(type & 0xFF) << 8);
-        writeIndex++;
+        outNote.first8 = (pos & 0xFFFFFFFFFFFFULL) | ((uint64_t)(dur & 0xFFFF) << 48);
+        outNote.last2 = (uint16_t)(index & 0xFF) | ((uint16_t)(type & 0xFF) << 8);
+        return true;
     }
 
     // ========================================================================
@@ -516,15 +524,11 @@ private:
         std::string jsonStr(jsonPath);
         size_t lastSlash = jsonStr.find_last_of("/\\");
         std::string songDir = (lastSlash == std::string::npos) ? "." : jsonStr.substr(0, lastSlash);
-        
-        // Generate header.txt if it doesn't already exist
-        writeHeaderFile(songDir, doc);
 
         bool isVSlice = doc.HasMember("chart");
         bool isPsych = doc.HasMember("song");
         bool isPsychV1 = false;
 
-        // Detect if this is a modern Psych Engine chart
         if (isPsych) {
             const auto& song = doc["song"];
             if (song.HasMember("format") && song["format"].IsString()) {
@@ -537,25 +541,21 @@ private:
 
         // ====================================================================
         // MANIA DETECTION & LEGACY KADE/SHAGGY MOD LOGIC
-        // SOURCE: https://github.com/GithubSPerez/the-shaggy-mod/blob/bec0c925221b4ade0181e60e8aedaddfb81fee58/source/Main.hx
         // ====================================================================
-        int ammo[] = {4, 6, 7, 9}; // Legacy Kade Engine mania selection
-        int totalColumns = 4;        // Default to 4K
+        int ammo[] = {4, 6, 7, 9}; 
+        int totalColumns = 4;        
 
         if (isPsych) {
             const auto& song = doc["song"];
-            // Check if the chart explicitly defines a mania/key count
             if (song.HasMember("mania") && song["mania"].IsInt()) {
                 totalColumns = song["mania"].GetInt();
             }
         } else if (isVSlice) {
-            // V-Slice might define mania differently, but we default to 4 if not found
             if (doc.HasMember("mania") && doc["mania"].IsInt()) {
                 totalColumns = doc["mania"].GetInt();
             }
         }
 
-        // If the mania is under 4, choose from the legacy selection (defaults to 4)
         if (totalColumns < 4) {
             totalColumns = ammo[0]; 
         }
@@ -563,83 +563,24 @@ private:
         std::cout << "[Transpiler] Detected Mania/Key Count: " << totalColumns << "K" << std::endl;
         // ====================================================================
 
-        std::vector<ChartNote> tempNotes; // Only for initial count
-        
-        // --- FIRST PASS: Count notes to determine file size ---
-        if (isVSlice) {
-            const auto& chart = doc["chart"];
-            if (chart.HasMember("notes") && chart["notes"].IsObject()) {
-                for (auto& diff : chart["notes"].GetObject()) {
-                    if (diff.value.IsArray()) {
-                        tempNotes.reserve(tempNotes.size() + diff.value.Size());
-                        for (const auto& note : diff.value.GetArray()) {
-                            if (note.IsObject() && note.HasMember("t") && note.HasMember("d")) {
-                                int d = note["d"].GetInt();
-                                if (d >= 0) tempNotes.push_back({});
-                            }
-                        }
-                    }
-                }
-            }
-        } else if (isPsych) {
-            const auto& song = doc["song"];
-            if (song.HasMember("notes") && song["notes"].IsArray()) {
-                for (const auto& section : song["notes"].GetArray()) {
-                    if (section.IsObject() && section.HasMember("sectionNotes") && section["sectionNotes"].IsArray()) {
-                        tempNotes.reserve(tempNotes.size() + section["sectionNotes"].Size());
-                        for (const auto& note : section["sectionNotes"].GetArray()) {
-                            if (note.IsArray() && note.Size() >= 3) {
-                                int lane = note[1].GetInt();
-                                if (lane >= 0) tempNotes.push_back({});
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        size_t totalNoteCount = tempNotes.size();
-        if (totalNoteCount == 0) {
-            std::cerr << "[Transpiler] No valid notes found." << std::endl;
-            return;
-        }
-
         // --- CREATE AND INITIALIZE THE .fvc FILE ---
         std::string fvcPath = std::string(jsonPath);
         size_t dot = fvcPath.find_last_of('.');
         if (dot != std::string::npos) fvcPath = fvcPath.substr(0, dot);
         fvcPath += ".fvc";
 
-        {
-            std::ofstream out(fvcPath, std::ios::binary | std::ios::trunc);
-            if (!out) {
-                std::cerr << "[Transpiler] Failed to create .fvc file." << std::endl;
-                return;
-            }
-            std::vector<uint8_t> zeros(totalNoteCount * sizeof(ChartNote), 0);
-            out.write(reinterpret_cast<const char*>(zeros.data()), zeros.size());
-            out.close();
+        std::ofstream out(fvcPath, std::ios::binary | std::ios::trunc);
+        if (!out) {
+            std::cerr << "[Transpiler] Failed to create .fvc file." << std::endl;
+            return;
         }
 
-        // --- MAP MEMORY FOR DIRECT WRITING ---
-#ifdef _WIN32
-        HANDLE hFile = CreateFileA(fvcPath.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-        if (hFile == INVALID_HANDLE_VALUE) return;
-        HANDLE hMap = CreateFileMappingA(hFile, nullptr, PAGE_READWRITE, 0, 0, nullptr);
-        if (!hMap) { CloseHandle(hFile); return; }
-        ChartNote* mappedNotes = (ChartNote*)MapViewOfFile(hMap, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0);
-        if (!mappedNotes) { CloseHandle(hMap); CloseHandle(hFile); return; }
-#else
-        int fd = ::open(fvcPath.c_str(), O_RDWR);
-        if (fd < 0) return;
-        size_t mapLen = totalNoteCount * sizeof(ChartNote);
-        ChartNote* mappedNotes = (ChartNote*)mmap(nullptr, mapLen, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-        if (mappedNotes == MAP_FAILED) { ::close(fd); return; }
-#endif
-
         size_t writeIndex = 0;
+        ChartNote currentNote;
 
-        // --- SECOND PASS: WRITE NOTES DIRECTLY USING THE INLINE FUNCTION ---
+        // ====================================================================
+        // SINGLE PASS: COUNT AND WRITE NOTES DIRECTLY TO DISK
+        // ====================================================================
         if (isVSlice) {
             const auto& chart = doc["chart"];
             if (chart.HasMember("notes") && chart["notes"].IsObject()) {
@@ -650,7 +591,12 @@ private:
                                 double t = note["t"].GetDouble();
                                 int d = note["d"].GetInt();
                                 double l = note.HasMember("l") && note["l"].IsNumber() ? note["l"].GetDouble() : 0;
-                                if (d >= 0) writeNote(mappedNotes, writeIndex, t, d, l, true, false, true);
+                                
+                                // Write directly to disk if valid
+                                if (writeNote(currentNote, t, d, l, true, false, true, totalColumns)) {
+                                    out.write(reinterpret_cast<const char*>(&currentNote), sizeof(ChartNote));
+                                    writeIndex++;
+                                }
                             }
                         }
                     }
@@ -672,14 +618,49 @@ private:
                                 int lane = note[1].GetInt();
                                 double sustain = note[2].GetDouble();
                                 
-                                // Pass the detected format flags to the inline function!
-                                writeNote(mappedNotes, writeIndex, t, lane, sustain, mustHit, isPsychV1, false);
+                                // Write directly to disk if valid
+                                if (writeNote(currentNote, t, lane, sustain, mustHit, isPsychV1, false, totalColumns)) {
+                                    out.write(reinterpret_cast<const char*>(&currentNote), sizeof(ChartNote));
+                                    writeIndex++;
+                                }
                             }
                         }
                     }
                 }
             }
         }
+
+        out.close();
+
+        if (writeIndex == 0) {
+            std::cerr << "[Transpiler] No valid notes found." << std::endl;
+            std::remove(fvcPath.c_str()); // Clean up the empty file
+            return;
+        }
+        
+        std::cout << "[Transpiler] Wrote " << writeIndex << " notes directly to disk in a single pass." << std::endl;
+        // ====================================================================
+        
+        // Generate header.txt if it doesn't already exist
+        writeHeaderFile(songDir, doc, totalColumns);
+
+        size_t totalNoteCount = writeIndex;
+
+        // --- MAP MEMORY FOR IN-PLACE SORTING ---
+#ifdef _WIN32
+        HANDLE hFile = CreateFileA(fvcPath.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (hFile == INVALID_HANDLE_VALUE) return;
+        HANDLE hMap = CreateFileMappingA(hFile, nullptr, PAGE_READWRITE, 0, 0, nullptr);
+        if (!hMap) { CloseHandle(hFile); return; }
+        ChartNote* mappedNotes = (ChartNote*)MapViewOfFile(hMap, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0);
+        if (!mappedNotes) { CloseHandle(hMap); CloseHandle(hFile); return; }
+#else
+        int fd = ::open(fvcPath.c_str(), O_RDWR);
+        if (fd < 0) return;
+        size_t mapLen = totalNoteCount * sizeof(ChartNote);
+        ChartNote* mappedNotes = (ChartNote*)mmap(nullptr, mapLen, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+        if (mappedNotes == MAP_FAILED) { ::close(fd); return; }
+#endif
 
         // --- SORT THE NOTES IN-PLACE ---
         std::cout << "[Transpiler] Sorting " << totalNoteCount << " notes via LSD Radix Sort..." << std::endl;
