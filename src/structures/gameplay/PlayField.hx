@@ -150,9 +150,12 @@ class PlayField {
 	}
 
 	var field(default, null):Field;
+	var hud(default, null):HUD;
+
 	var inputSystem(default, null):InputSystem;
 	var noteSystem(default, null):NoteSystem;
-	var hud(default, null):HUD;
+	var eventSystem(default, null):EventSystem;
+
 	var countdownDisp(default, null):CountdownDisplay;
 	var pauseScreen(default, null):PauseScreen;
 
@@ -241,6 +244,9 @@ class PlayField {
 
 		field = new Field(this);
 
+		HUD.init();
+		if (!SaveData.state.preferences.hideHUD) hud = new HUD(display, this);
+
 		inputSystem = new InputSystem(initialMania, this);
 
 		NoteSystem.init();
@@ -248,8 +254,7 @@ class PlayField {
 
 		Mixer.init(Chart.header);
 
-		HUD.init();
-		if (!SaveData.state.preferences.hideHUD) hud = new HUD(display, this);
+		eventSystem = new EventSystem(this);
 
 		CountdownDisplay.init(roof);
 		countdownDisp = new CountdownDisplay();
@@ -303,6 +308,36 @@ class PlayField {
 			hud.update(Math.POSITIVE_INFINITY);
 			hud.updateBuffers();
 		}
+	}
+
+	/**
+		Scans the song for an event file.
+	**/
+	function scanForEventFile(e:EventSystem) {
+		var eventsPath = '$chartPath/eventList.json';
+		if (!sys.FileSystem.exists(eventsPath)) {
+			Sys.println("  [ Event System ] No event json file, but go on anyway.");
+			return false;
+		}
+		Sys.println("  [ Event System ] Event json file found, parsing...");
+
+		var content = sys.io.File.getContent(eventsPath);
+		var rawJsonParent = haxe.Json.parse(content);
+
+		//rawJsonParent.events.sort((a, b) -> a.evTime > b.evTime);
+
+		var rawJson:Array<EventSystem.RawEventObject> = rawJsonParent.events;
+
+		for (event in rawJson) {
+			e.parsedObjects.push({
+				evName: event.evName,
+				value1: event.value1,
+				value2: event.value2 != null ? event.value2 : "",
+				evTime: event.evTime
+			});
+		}
+
+		return true;
 	}
 
 	/**

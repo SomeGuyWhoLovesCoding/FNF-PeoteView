@@ -25,6 +25,8 @@
 // RapidJSON includes (Ensure rapidjson/ is in your include path)
 #include "./rapidjson/document.h"
 #include "./rapidjson/istreamwrapper.h"
+#include "./rapidjson/ostreamwrapper.h"  // <--- ADD THIS
+#include "./rapidjson/prettywriter.h"    // <--- ADD THIS
 #include "./rapidjson/error/en.h"
 
 // ============================================================================
@@ -391,7 +393,7 @@ private:
     // ========================================================================
     void writeHeaderFile(const std::string& songDir, const rapidjson::Document& doc, int totalColumns) {
         std::string headerPath = songDir + "/header.txt";
-        std::cout << headerPath << std::endl;
+        //std::cout << headerPath << std::endl;
         
         // Backup plan: If the header already exists, do nothing
         std::ifstream test(headerPath);
@@ -440,10 +442,10 @@ private:
         size_t lastSlash = songDir.find_last_of("/\\");
         std::string songName = (lastSlash == std::string::npos) ? songDir : songDir.substr(lastSlash + 1);
         
-        out << "Instrumental: assets/songs/" << songName << "/Inst.ogg\n";
+        out << "Instrumental: " << songDir << "/Inst.ogg\n";
 
-        std::ifstream voicesPlayer("Voices: assets/songs/" + songName + "/Voices-Player.ogg");
-        std::ifstream voicesOpponent("Voices: assets/songs/" + songName + "/Voices-Opponent.ogg");
+        std::ifstream voicesPlayer(songDir + "/Voices-Player.ogg");
+        std::ifstream voicesOpponent(songDir + "/Voices-Opponent.ogg");
         bool useTwoVoiceFiles = false;
 
         if (voicesPlayer.good()) {
@@ -456,9 +458,11 @@ private:
         }
 
         if (useTwoVoiceFiles) {
-            out << "Voices: assets/songs/" << songName << "/Voices-Player.ogg, assets/songs/" << songName << "/Voices-Opponent.ogg\n";
+            std::cout << "  [ Transpiler ] Detected Voices-Player.ogg/Voices-Opponent.ogg for " << title << std::endl;
+            out << "Voices: " << songDir << "/Voices-Player.ogg, " << songDir << "/Voices-Opponent.ogg\n";
         } else {
-            out << "Voices: assets/songs/" << songName << "/Voices.ogg\n";
+            std::cout << "  [ Transpiler ] Detected Voices.ogg for " << title << std::endl;
+            out << "Voices: " << songDir << "/Voices.ogg\n";
         }
         
         // Use the dynamically detected mania instead of a hardcoded 4!
@@ -489,7 +493,124 @@ private:
         out << "cam 0 45";
 
         out.close();
-        std::cout << "[Transpiler] Generated header.txt for " << title << std::endl;
+        std::cout << "  [ Transpiler ] Generated header.txt for " << title << std::endl;
+    }
+
+    // ========================================================================
+    // Event JSON Generator (100% Assertion-Free)
+    // ========================================================================
+    void generateEventJson(const std::string& songDir, const rapidjson::Document& doc) {
+        std::string eventsPath = songDir + "/eventList.json";
+        
+        // Backup plan: If the eventList.json already exists, do nothing
+        std::ifstream test(eventsPath);
+        if (test.good()) {
+            test.close();
+            return;
+        }
+        test.close();
+
+        rapidjson::Document outDoc;
+        outDoc.SetObject();
+        rapidjson::Document::AllocatorType& allocator = outDoc.GetAllocator();
+
+        rapidjson::Value eventsArray(rapidjson::kArrayType);
+
+        // Safely check if the document has a "song" object
+        if (doc.IsObject() && doc.HasMember("song") && doc["song"].IsObject()) {
+            const auto& song = doc["song"];
+            
+            // 1. Parse Standard Psych Engine Events (song.events)
+            if (song.HasMember("events") && song["events"].IsArray()) {
+                const auto& psychEvents = song["events"];
+                
+                // SAFETY: We know psychEvents is an array, so GetArray() is safe
+                for (auto& eventGroup : psychEvents.GetArray()) {
+                    // SAFETY: Check if eventGroup is an array before accessing []
+                    if (!eventGroup.IsArray() || eventGroup.Size() < 2) continue;
+                    
+                    double time_ms = 0.0;
+                    if (eventGroup[0].IsNumber()) time_ms = eventGroup[0].GetDouble();
+                    
+                    // SAFETY: Check if eventGroup[1] is an array before calling GetArray()
+                    if (!eventGroup[1].IsArray()) continue;
+                    
+                    for (auto& subEvent : eventGroup[1].GetArray()) {
+                        // SAFETY: Check if subEvent is an array before accessing []
+                        if (!subEvent.IsArray() || subEvent.Size() < 1) continue;
+                        
+                        std::string evName = subEvent[0].IsString() ? subEvent[0].GetString() : "";
+                        std::string val1 = "";
+                        std::string val2 = "";
+                        
+                        if (subEvent.Size() > 1 && subEvent[1].IsString()) val1 = subEvent[1].GetString();
+                        else if (subEvent.Size() > 1 && subEvent[1].IsNumber()) {
+                            val1 = subEvent[1].IsInt() ? std::to_string(subEvent[1].GetInt()) : std::to_string(subEvent[1].GetDouble());
+                        }
+                        
+                        if (subEvent.Size() > 2 && subEvent[2].IsString()) val2 = subEvent[2].GetString();
+                        else if (subEvent.Size() > 2 && subEvent[2].IsNumber()) {
+                            val2 = subEvent[2].IsInt() ? std::to_string(subEvent[2].GetInt()) : std::to_string(subEvent[2].GetDouble());
+                        }
+                        
+                        rapidjson::Value newEventObj(rapidjson::kObjectType);
+                        newEventObj.AddMember("evName", rapidjson::Value(evName.c_str(), allocator).Move(), allocator);
+                        newEventObj.AddMember("value1", rapidjson::Value(val1.c_str(), allocator).Move(), allocator);
+                        newEventObj.AddMember("value2", rapidjson::Value(val2.c_str(), allocator).Move(), allocator);
+                        newEventObj.AddMember("evTime", time_ms, allocator);
+                        
+                        eventsArray.PushBack(newEventObj, allocator);
+                    }
+                }
+            }
+
+            // 2. Parse Legacy Psych/Kade Events embedded in sectionNotes
+            if (song.HasMember("notes") && song["notes"].IsArray()) {
+                // SAFETY: We know song["notes"] is an array
+                for (auto& section : song["notes"].GetArray()) {
+                    // SAFETY: Check if section is an object and has sectionNotes as an array
+                    if (!section.IsObject() || !section.HasMember("sectionNotes") || !section["sectionNotes"].IsArray()) continue;
+                    
+                    // SAFETY: We know section["sectionNotes"] is an array
+                    for (auto& note : section["sectionNotes"].GetArray()) {
+                        // SAFETY: Check if note is an array before accessing []
+                        if (!note.IsArray() || note.Size() < 3) continue;
+                        
+                        // SAFETY: Check if note[1] is a number before calling GetDouble()
+                        if (note[1].IsNumber() && note[1].GetDouble() == -1.0) {
+                            double time_ms = note[0].IsNumber() ? note[0].GetDouble() : 0.0;
+                            std::string evName = note[2].IsString() ? note[2].GetString() : "";
+                            
+                            std::string val1 = (note.Size() > 3 && note[3].IsString()) ? note[3].GetString() : "";
+                            std::string val2 = (note.Size() > 4 && note[4].IsString()) ? note[4].GetString() : "";
+                            
+                            rapidjson::Value newEventObj(rapidjson::kObjectType);
+                            newEventObj.AddMember("evName", rapidjson::Value(evName.c_str(), allocator).Move(), allocator);
+                            newEventObj.AddMember("value1", rapidjson::Value(val1.c_str(), allocator).Move(), allocator);
+                            newEventObj.AddMember("value2", rapidjson::Value(val2.c_str(), allocator).Move(), allocator);
+                            newEventObj.AddMember("evTime", time_ms, allocator);
+                            
+                            eventsArray.PushBack(newEventObj, allocator);
+                        }
+                    }
+                }
+            }
+        }
+
+        // do this before it gets invalidated by closure
+        size_t eventCount = eventsArray.Size();
+
+        outDoc.AddMember("events", eventsArray, allocator);
+
+        std::ofstream ofs(eventsPath);
+        if (!ofs) return;
+
+        rapidjson::OStreamWrapper osw(ofs);
+        rapidjson::PrettyWriter<rapidjson::OStreamWrapper> writer(osw);
+        outDoc.Accept(writer);
+        
+        ofs.close();
+        std::cout << "  [ Transpiler ] Generated eventList.json with " << eventCount << " events." << std::endl;
     }
 
     // ========================================================================
@@ -510,7 +631,7 @@ private:
         
         int index = lane % totalColumns; 
         
-        uint64_t pos = (uint64_t)(time_ms * 100000.0); // 100ns ticks
+        uint64_t pos = (uint64_t)(time_ms * 100000.0);   // 10ns ticks
         uint16_t dur = (uint16_t)(sustain_ms);           // Solid 1ms duration
         
         outNote.first8 = (pos & 0xFFFFFFFFFFFFULL) | ((uint64_t)(dur & 0xFFFF) << 48);
@@ -524,7 +645,7 @@ private:
     void transpileJsonToFvc(const char* jsonPath) {
         std::ifstream ifs(jsonPath);
         if (!ifs) {
-            std::cerr << "[Transpiler] Failed to open JSON: " << jsonPath << std::endl;
+            std::cerr << "  [ Transpiler ] Failed to open JSON: " << jsonPath << std::endl;
             return;
         }
 
@@ -534,7 +655,7 @@ private:
         ifs.close();
 
         if (doc.HasParseError()) {
-            std::cerr << "[Transpiler] JSON Parse Error at offset " << doc.GetErrorOffset() << std::endl;
+            std::cerr << "  [ Transpiler ] JSON Parse Error at offset " << doc.GetErrorOffset() << std::endl;
             return;
         }
 
@@ -578,7 +699,7 @@ private:
             totalColumns = ammo[totalColumns]; 
         }
         
-        std::cout << "[Transpiler] Detected Mania/Key Count: " << totalColumns << "K" << std::endl;
+        std::cout << "  [ Transpiler ] Detected Mania/Key Count: " << totalColumns << "K" << std::endl;
         // ====================================================================
 
         // --- CREATE AND INITIALIZE THE .fvc FILE ---
@@ -589,7 +710,7 @@ private:
 
         std::ofstream out(fvcPath, std::ios::binary | std::ios::trunc);
         if (!out) {
-            std::cerr << "[Transpiler] Failed to create .fvc file." << std::endl;
+            std::cerr << "  [ Transpiler ] Failed to create .fvc file." << std::endl;
             return;
         }
 
@@ -626,15 +747,23 @@ private:
                 for (const auto& section : song["notes"].GetArray()) {
                     if (section.IsObject() && section.HasMember("sectionNotes") && section["sectionNotes"].IsArray()) {
                         bool mustHit = true;
-                        if (section.HasMember("mustHitSection")) {
+                        // SAFETY: Check IsBool() before calling GetBool()
+                        if (section.HasMember("mustHitSection") && section["mustHitSection"].IsBool()) {
                             mustHit = section["mustHitSection"].GetBool();
                         }
 
                         for (const auto& note : section["sectionNotes"].GetArray()) {
                             if (note.IsArray() && note.Size() >= 3) {
-                                double t = note[0].GetDouble();
-                                int lane = note[1].GetInt();
-                                double sustain = note[2].GetDouble();
+                                // ====================================================================
+                                // CRITICAL FIX: Skip legacy events (lane == -1)
+                                // If we don't skip them, note[2].GetDouble() will assert on "Hey!"
+                                // ====================================================================
+                                if (note[1].IsNumber() && note[1].GetInt() == -1) continue;
+
+                                // SAFETY: Check IsNumber() before calling GetDouble()/GetInt()
+                                double t = note[0].IsNumber() ? note[0].GetDouble() : 0.0;
+                                int lane = note[1].IsNumber() ? note[1].GetInt() : 0;
+                                double sustain = note[2].IsNumber() ? note[2].GetDouble() : 0.0;
                                 
                                 // Write directly to disk if valid
                                 if (writeNote(currentNote, t, lane, sustain, mustHit, isPsychV1, false, totalColumns)) {
@@ -651,16 +780,42 @@ private:
         out.close();
 
         if (writeIndex == 0) {
-            std::cerr << "[Transpiler] No valid notes found." << std::endl;
+            std::cerr << "  [ Transpiler ] No valid notes found." << std::endl;
             std::remove(fvcPath.c_str()); // Clean up the empty file
             return;
         }
         
-        std::cout << "[Transpiler] Wrote " << writeIndex << " notes directly to disk in a single pass." << std::endl;
+        std::cout << "  [ Transpiler ] Wrote " << writeIndex << " notes directly to disk in a single pass." << std::endl;
         // ====================================================================
         
         // Generate header.txt if it doesn't already exist
         writeHeaderFile(songDir, doc, totalColumns);
+
+        // ====================================================================
+        // EVENT PARSING ROUTING
+        // ====================================================================
+        // Check if a standard events.json exists in the song directory
+        std::string evtPath = songDir + "/events.json";
+        std::ifstream ifs_(evtPath);
+        
+        if (!ifs_) {
+            // events.json doesn't exist. Extract legacy events from the main chart doc.
+            generateEventJson(songDir, doc);
+        } else {
+            // events.json exists! Parse it and convert it to eventList.json.
+            rapidjson::IStreamWrapper jsw(ifs_);
+            rapidjson::Document evtDoc;
+            evtDoc.ParseStream(jsw);
+            ifs_.close();
+
+            if (evtDoc.HasParseError()) {
+                std::cerr << "  [ Transpiler ] JSON Parse Error in events.json at offset " << evtDoc.GetErrorOffset() << std::endl;
+                return;
+            }
+
+            // Pass the parsed events.json document to the generator
+            generateEventJson(songDir, evtDoc);
+        }
 
         size_t totalNoteCount = writeIndex;
 
@@ -681,7 +836,7 @@ private:
 #endif
 
         // --- SORT THE NOTES IN-PLACE ---
-        std::cout << "[Transpiler] Sorting " << totalNoteCount << " notes via LSD Radix Sort..." << std::endl;
+        std::cout << "  [ Transpiler ] Sorting " << totalNoteCount << " notes via LSD Radix Sort..." << std::endl;
         radix_sort_notes_inplace(mappedNotes, totalNoteCount);
 
         // --- CLEANUP ---
@@ -694,7 +849,7 @@ private:
         ::close(fd);
 #endif
 
-        std::cout << "[Transpiler] Successfully transpiled, sorted, and generated header for " << fvcPath << std::endl;
+        std::cout << "  [ Transpiler ] Successfully transpiled, sorted, and generated header for " << fvcPath << std::endl;
         filename = fvcPath;
     }
 
@@ -713,7 +868,7 @@ public:
     void generateHeaderOnly(const char* jsonPath, const std::string& songDir) {
         std::ifstream ifs(jsonPath);
         if (!ifs) {
-            std::cerr << "[Transpiler] Failed to open JSON for header generation: " << jsonPath << std::endl;
+            std::cerr << "  [ Transpiler ] Failed to open JSON for header generation: " << jsonPath << std::endl;
             return;
         }
 
@@ -723,7 +878,7 @@ public:
         ifs.close();
 
         if (doc.HasParseError()) {
-            std::cerr << "[Transpiler] JSON Parse Error at offset " << doc.GetErrorOffset() << std::endl;
+            std::cerr << "  [ Transpiler ] JSON Parse Error at offset " << doc.GetErrorOffset() << std::endl;
             return;
         }
 
@@ -751,44 +906,70 @@ public:
 
         // Generate the header using your existing EOF-proof logic
         writeHeaderFile(songDir, doc, totalColumns);
-        std::cout << "[Transpiler] Generated missing header.txt from " << jsonPath << std::endl;
+        
+        // Generate eventList.json if it doesn't already exist
+        generateEventJson(songDir, doc);
+
+        std::cout << "  [ Transpiler ] Generated missing header.txt from " << jsonPath << std::endl;
+    }
+
+    bool ends_with(const std::string& str, const std::string& suffix) {
+        if (suffix.size() > str.size()) return false;
+        
+        // Compare str's substring (starting at the end minus suffix length) with suffix
+        return str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
     }
 
     bool open(const char* path) {
         std::string pathStr(path);
-        
-        if (pathStr.length() >= 5 && pathStr.substr(pathStr.length() - 5) == ".json") {
-            std::string fvcPath = pathStr.substr(0, pathStr.length() - 5) + ".fvc";
-            
-            size_t lastSlash = pathStr.find_last_of("/\\");
-            std::string songDir = (lastSlash == std::string::npos) ? "." : pathStr.substr(0, lastSlash);
-            std::string headerPath = songDir + "/header.txt";
 
-            // Check if .fvc exists
+        size_t lastSlash = pathStr.find_last_of("/\\");
+        std::string songDir = (lastSlash == std::string::npos) ? "." : pathStr.substr(0, lastSlash);
+        
+        // Check for header.txt once at the top level
+        std::string headerPath = songDir + "/header.txt";
+        std::ifstream headerTest(headerPath);
+        bool headerExists = headerTest.good();
+        headerTest.close();
+
+        if (ends_with(pathStr, ".fvc")) {
+            filename = pathStr;
+
+            if (!headerExists) {
+                // Derive the JSON path by replacing .fvc with .json
+                std::string jsonPath = pathStr.substr(0, pathStr.length() - 4) + ".json";
+                
+                std::ifstream jsonTest(jsonPath);
+                bool jsonExists = jsonTest.good();
+                jsonTest.close();
+
+                if (jsonExists) {
+                    // Pass the DERIVED json path, not the .fvc path!
+                    generateHeaderOnly(jsonPath.c_str(), songDir);
+                } else {
+                    std::cerr << "[Transpiler] Cannot generate header.txt: " << jsonPath << " not found." << std::endl;
+                }
+            }
+        } else {
+            // Input is a .json file
+            std::string fvcPath = pathStr.substr(0, pathStr.length() - 5) + ".fvc";
+
             std::ifstream fvcTest(fvcPath);
             bool fvcExists = fvcTest.good();
             fvcTest.close();
 
-            // Check if header.txt exists
-            std::ifstream headerTest(headerPath);
-            bool headerExists = headerTest.good();
-            headerTest.close();
-
-            if (fvcExists && headerExists) {
-                // Both exist! Skip JSON parsing entirely for maximum efficiency.
+            if (fvcExists) {
                 filename = fvcPath;
-            } else if (fvcExists && !headerExists) {
-                // .fvc exists, but header.txt is missing.
-                // Open JSON again just to read header properties.
-                generateHeaderOnly(pathStr.c_str(), songDir);
-                filename = fvcPath;
+                
+                if (!headerExists) {
+                    // We already have the JSON path (pathStr), so pass it directly!
+                    generateHeaderOnly(pathStr.c_str(), songDir);
+                }
             } else {
                 // .fvc does not exist. Full transpilation needed.
                 transpileJsonToFvc(pathStr.c_str());
                 path = filename.c_str();
             }
-        } else {
-            filename = pathStr;
         }
 
         if (!openInternal(path)) return false;
