@@ -182,6 +182,8 @@ class PlayField {
 		if (value < songPosition) {
 			onRestartingForBackwardTimeSetting = true;
 			timeForRestartingBackwardTime = value;
+
+			while (eventTimers.pop() != null) {} // immediately clear out any event timers to prevent them flooding the rest of the song through
 			
 			#if linc_luajit_funkinview
 			funkinviewlua.callFunction('preTimeChange', timeForRestartingBackwardTime, Chart.header);
@@ -335,7 +337,10 @@ class PlayField {
 				value2: event.value2 != null ? event.value2 : "",
 				evTime: event.evTime
 			});
+			//trace(event.evName,event.value1,event.value2,event.evTime);
 		}
+
+		e.init();
 
 		return true;
 	}
@@ -343,12 +348,9 @@ class PlayField {
 	/**
 		Updates the playfield.
 	**/
-	var lastsongpos:Float = 0;
-	//var deltaTimeincremenetal:Float = 0;
+	var eventTimers:Array<EventTimer> = [];
 	function update(deltaTime:Float) {
 		if (disposed || paused) return;
-
-		//trace("Update",deltaTime);
 
 		#if linc_luajit_funkinview
 		funkinviewlua.updateVariablesList();
@@ -367,22 +369,16 @@ class PlayField {
 		view.shake(viewShake.x, viewShake.y);
 
 		if (field != null) field.update(deltaTime);
-		if (countdownDisp != null) countdownDisp.update(deltaTime);
 
 		var ratio = Math.max(Math.min((deltaTime * 0.01), 1), 0);
 		if (display.fov != 1) display.fov = Tools.lerp(display.fov, 1, ratio);
 		if (view.fov != 1) view.fov = Tools.lerp(view.fov, 1, ratio);
 
-		//view.r = Math.sin(songPosition / 600) * 6;
-		//display.r = -view.r;
-		//view.r = 15;
-
-		//deltaTimeincremenetal += deltaTime;
+		if (countdownDisp != null) countdownDisp.update(deltaTime);
 
 		if (!died) {
 			if (startedCountdown) {
 				Mixer.update(this, deltaTime);
-				//Sys.println('$songPosition' + (((lastsongpos - songPosition) > 50) ? " (CHANGE ALERT! CHANGE ALERT! CHANGE!)" : ""));
 
 				#if !FV_LIME_FORK
 				// If the song hasn't started yet, update the countdown conductor only.
@@ -411,19 +407,16 @@ class PlayField {
 
 			if (noteSystem != null) {
 				noteSystem.update(pos);
+			}
 
-				var noteSpawner = noteSystem.noteSpawner;
-				//if (HUD.scoreTxt != null) HUD.scoreTxt.text = ((noteSpawner.timeSpentOnIt * 1000000000) / Tools.int64ToFloat(noteSpawner.top - noteSpawner.bottom)) + "ns";
-				//if (HUD.scoreTxt != null) HUD.scoreTxt.text = (noteSpawner.timeSpentOnIt * 1000) + "ms";
-				//if (HUD.scoreTxt != null) HUD.scoreTxt.text = Std.string(deltaTimeincremenetal);
+			if (eventSystem != null) {
+				eventSystem.update(deltaTime, songPosition);
 			}
 
 			if (startedCountdown) {
 				songPosition += latencyCompensation;
 				songPosition += Mixer.latency();
 			}
-
-			lastsongpos = songPosition;
 
 			#if linc_luajit_funkinview
 			funkinviewlua.callFunction('updatePost', deltaTime);

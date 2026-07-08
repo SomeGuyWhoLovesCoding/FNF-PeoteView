@@ -7,6 +7,7 @@ using StringTools;
 
 /**
     A mimimal event system for Funkin' View, only using struct objects.
+    @since 0.94
 **/
 @:publicFields
 class EventSystem {
@@ -59,7 +60,7 @@ class EventSystem {
             
             for (i in (lastTriggeredIndex + 1)...cutoffIndex) {
                 var ev = parsedObjects[i];
-                triggerEvent(ev.evName, ev.value1, ev.value2);
+                triggerEvent(ev);
             }
             
             lastTriggeredIndex = cutoffIndex - 1;
@@ -86,27 +87,42 @@ class EventSystem {
         }
     }
 
-    function triggerEvent(evName:String, value1:String, value2:String) {
-        Sys.println('$evName triggered [$value1, $value2]');
-        switch(evName) {
+    function triggerEvent(ev:EventObject) {
+        //Sys.println('$evName triggered [$value1, $value2]');
+        switch(ev.evName) {
             case "Hey!":
-                var value:Int = 2;
-                switch(value1.toLowerCase().trim()) {
-                    case 'bf' | 'boyfriend' | '0': value = 0;
-                    case 'gf' | 'girlfriend' | '1': value = 1;
+                if (parent.field == null) return;
+                var field = parent.field;
+
+                var charsToDoIt:Array<Actor> = [field.player, field.spectator];
+                switch(ev.value1.toLowerCase().trim()) {
+                    case 'bf' | 'boyfriend' | '0': charsToDoIt.pop();
+                    case 'gf' | 'girlfriend' | '1': charsToDoIt.shift();
                 }
 
-                var time:Float = Std.parseFloat(value2);
+                var time:Float = Std.parseFloat(ev.value2);
                 if(Math.isNaN(time) || time <= 0) time = 0.6;
 
-                // ... trigger animations ...
+                parent.eventTimers.push({
+                    startTime: ev.evTime,
+                    endTime: ev.evTime + time * 1000.0,
+                    finishCallback: (ev) -> {
+                        for (chars in charsToDoIt) chars.
+                    }
+                });
 
             case "Camera Zoom" | "Add Camera Zoom":
-                // ...
                 
-            case "Change Character":
-                // ...
         }
+			
+        #if linc_luajit_funkinview
+        if (parent.funkinviewlua == null) return;
+        parent.funkinviewlua.callFunction('triggerEvent', evName, value1, value2);
+        #end
+    }
+
+    function processEventTimer(evName:String) {
+        
     }
 }
 
@@ -120,13 +136,6 @@ class EventObject {
     var value1:Value1;
     var value2:Value2;
     var evTime:Double;
-
-    function new(evName:String, value1:Value1, value2:Value2, evTime:Double) {
-        this.evName = evName;
-        this.value1 = value1;
-        this.value2 = value2;
-        this.evTime = evTime;
-    }
 }
 
 @:publicFields
