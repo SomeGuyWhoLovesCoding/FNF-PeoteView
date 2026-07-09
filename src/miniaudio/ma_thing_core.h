@@ -311,7 +311,7 @@ inline void stopAudioDeviceMonitoring() {
 
 #define MAX_CALLBACK_FRAMES 4096
 
-// ---- SIMD mix helpers (EXISTING CODE KEPT INTACT) -------------------------
+// ---- SIMD mix helpers -------------------------
 
 #ifdef __SSE__
 static inline void mix_simd(float* dst, const float* src, int samples, float volume) {
@@ -357,7 +357,7 @@ static inline void mix_scalar(float* dst, const float* src, int samples, float v
 #endif
 
 // ==========================================================================
-//  NEW: Runtime AVX2 Detection & Dispatch (Injected on top of existing code)
+//  Runtime AVX2 Detection & Dispatch (Injected on top of existing code)
 // ==========================================================================
 #if defined(_MSC_VER)
     #include <intrin.h>
