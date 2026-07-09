@@ -3507,9 +3507,9 @@ static void vorbis_cleanup_reversed_windows(stb_vorbis *f) {
 }
 
 #if (defined(__GNUC__) || defined(__clang__))
-__attribute__((target("avx2,fma")))
+__attribute__((target("avx2")))
 #endif
-static int vorbis_finish_frame(stb_vorbis *f, int len, int left, int right)
+static inline int vorbis_finish_frame(stb_vorbis *f, int len, int left, int right)
 {
    int prev,i,j;
    // we use right&left (the start of the right- and left-window sin()-regions)
@@ -5428,9 +5428,9 @@ int stb_vorbis_get_frame_short(stb_vorbis *f, int num_c, short **buffer, int num
 }
 
 #if (defined(__GNUC__) || defined(__clang__))
-__attribute__((target("avx2,fma")))
+__attribute__((target("avx2")))
 #endif
-static void convert_channels_short_interleaved(int buf_c, short *buffer, int data_c, float **data, int d_offset, int len)
+static inline void convert_channels_short_interleaved(int buf_c, short *buffer, int data_c, float **data, int d_offset, int len)
 {
    int i;
    check_endianness();
