@@ -536,8 +536,7 @@ struct DecoderStream {
 
     bool shouldSwapBuffers() const {
         if (localReadPos >= validFrames) return true;
-        if (localReadPos >= (PADDING_FRAMES + HALF_BUFFER_FRAMES) &&
-            asyncState.nextBufferReady.load(std::memory_order_acquire))
+        if (localReadPos >= (PADDING_FRAMES + HALF_BUFFER_FRAMES))
             return true;
         return false;
     }
@@ -921,6 +920,8 @@ public:
     float pitchStretchedOut[MAX_CALLBACK_FRAMES * CHANNEL_COUNT]  = {};
 
     static constexpr int BG_LOAD_CHECK_INTERVAL = 8;
+    ma_uint64 totalFramesProcessed = 0;  // Track total frames for time-based loading
+    ma_uint64 lastLoadFrame = 0;         // Last frame when background load was triggered
     int bgLoadCounter = 0;
 
     AudioSystem()  {
@@ -1226,10 +1227,33 @@ private:
         DecoderStream& s = streams[index];
         if (!s.active) return 0;
 
-        if (s.shouldSwapBuffers() || s.isBufferLow()) s.trySwapBuffers();
+        // Cache volume calculation to avoid repeated atomic loads and multiplications
+        static thread_local double cachedMasterVolume = -1.0;
+        static thread_local std::vector<float> precomputedVolumes;
+
+        if (precomputedVolumes.size() != decoderVolumes.size()) {
+            precomputedVolumes.resize(decoderVolumes.size(), 0.0f);
+            cachedMasterVolume = -1.0;  // Force recalculation on size change
+        }
+
+        double currentMasterVolume = MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed);
+        bool volumesChanged = (currentMasterVolume != cachedMasterVolume);
+
+        if (volumesChanged) {
+            cachedMasterVolume = currentMasterVolume;
+            for (size_t i = 0; i < decoderVolumes.size(); i++) {
+                precomputedVolumes[i] = decoderVolumes[i] * (float)cachedMasterVolume;
+            }
+        }
+
+        float vol = precomputedVolumes[index];
+
+        // Cache async state flags to reduce atomic loads in the hot loop
+        bool nextBufferReady = s.asyncState.nextBufferReady.load(std::memory_order_acquire);
+
+        if (nextBufferReady && s.shouldSwapBuffers() || s.isBufferLow()) s.trySwapBuffers();
 
         ma_uint32 framesRead = 0;
-        float vol = decoderVolumes[index] * MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed);
 
         while (framesRead < requestedFrames && s.active) {
             ma_uint64 available = (s.localReadPos < s.validFrames)
@@ -1274,9 +1298,13 @@ private:
         float* out = (float*)pOutput;
         memset(out, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
 
-        sys->bgLoadCounter++;
-        if (sys->bgLoadCounter >= BG_LOAD_CHECK_INTERVAL) {
-            sys->bgLoadCounter = 0;
+        // UPDATED: Use frame-count-based timing for more precise background load intervals
+        sys->totalFramesProcessed += frameCount;
+        ma_uint64 framesSinceLastLoad = sys->totalFramesProcessed - sys->lastLoadFrame;
+        ma_uint64 loadIntervalFrames = (SAMPLE_RATE * BG_LOAD_CHECK_INTERVAL) / 1000;
+
+        if (framesSinceLastLoad >= loadIntervalFrames) {
+            sys->lastLoadFrame = sys->totalFramesProcessed;
             sys->doBackgroundLoading();
         }
 
@@ -1302,9 +1330,17 @@ private:
 
             float* inputMix       = sys->pitchInputMix;
             float* stretchedOutput = sys->pitchStretchedOut;
-            memset(inputMix,        0, sizeof(float) * frameCount * CHANNEL_COUNT);
+
+            // UPDATED: Add accumulated error correction to prevent playback rate drift
+            static double positionError = 0;
+            double exactRead = frameCount * sys->playbackRate + positionError;
+            ma_uint32 maxToRead = (ma_uint32)exactRead;
+
+            // FIX: Clear maxToRead frames for input, not frameCount
+            memset(inputMix,        0, sizeof(float) * maxToRead * CHANNEL_COUNT);
             memset(stretchedOutput, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
-            ma_uint32 maxToRead = (ma_uint32)(frameCount * sys->playbackRate);
+
+            positionError = exactRead - maxToRead;  // Carry fractional error forward
 
             for (size_t i = 0; i < sys->streams.size(); i++) {
                 if (!sys->streams[i].active) continue;
@@ -1348,6 +1384,12 @@ private:
         other.longestDecoderIndex = 0;  other.playbackRate   = 1.0f;
         other.mixerState     = 3;
         other.exists = false;
+
+        // Move frame tracking state for background loading
+        totalFramesProcessed = other.totalFramesProcessed;
+        lastLoadFrame        = other.lastLoadFrame;
+        other.totalFramesProcessed = 0;
+        other.lastLoadFrame        = 0;
     }
 };
 
