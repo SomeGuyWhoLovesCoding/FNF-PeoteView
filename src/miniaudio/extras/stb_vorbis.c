@@ -600,9 +600,17 @@ enum STBVorbisError
 
 #include <limits.h>
 
+// SSE2/SSE4.1 acceleration for float-to-int16 conversion and overlap-add.
+// Enabled automatically when targeting SSE4.1 or better. Define
+// STB_VORBIS_NO_SIMD to disable. Requires a little-endian platform (already
+// assumed elsewhere in this file).
 #if defined(_MSC_VER) || defined(__INTEL_COMPILER)
 #include <intrin.h>
+#elif defined(__GNUC__) || defined(__clang__)
+#include <immintrin.h>
 #endif
+#define STB_VORBIS_SSE2
+#define STB_VORBIS_SSE4
 
 // SIMD Levels: 0 = Scalar, 1 = SSE2, 2 = SSE4.1, 3 = AVX2
 static int stb_vorbis_simd_level = 0;
@@ -5313,14 +5321,6 @@ static int8 channel_position[7][6] =
    #define check_endianness()
    #define FASTDEF(x)
 #endif
-
-// SSE2/SSE4.1 acceleration for float-to-int16 conversion and overlap-add.
-// Enabled automatically when targeting SSE4.1 or better. Define
-// STB_VORBIS_NO_SIMD to disable. Requires a little-endian platform (already
-// assumed elsewhere in this file).
-#include <immintrin.h>   // Master header for SSE2, SSE4.1, AVX, AVX2, FMA
-#define STB_VORBIS_SSE2
-#define STB_VORBIS_SSE4
 
 static void copy_samples(short *dest, float *src, int len)
 {
