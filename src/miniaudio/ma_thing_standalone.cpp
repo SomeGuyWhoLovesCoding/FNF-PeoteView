@@ -1,5 +1,5 @@
 /*
- * ma_thing_standalone.cpp 
+ * ma_thing_standalone.cpp
  * Plain C++ global interface — links against ma_thing_core.h.
  * No HashLink dependency.
  */

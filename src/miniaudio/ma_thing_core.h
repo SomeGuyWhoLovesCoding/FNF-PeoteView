@@ -31,6 +31,10 @@
 #include <windows.h>
 #endif
 
+#if __SSE__
+#include <immintrin.h>
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -364,10 +368,6 @@ static inline bool has_avx2_runtime() {
     return false;
 #endif
 }
-
-#if __SSE__
-#include <immintrin.h>
-#endif
 
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((target("avx2"))) // Allows compiling AVX2 without global -mavx2 flag

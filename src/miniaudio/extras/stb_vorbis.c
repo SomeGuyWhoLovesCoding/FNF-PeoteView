@@ -600,17 +600,11 @@ enum STBVorbisError
 
 #include <limits.h>
 
-// SSE2/SSE4.1 acceleration for float-to-int16 conversion and overlap-add.
-// Enabled automatically when targeting SSE4.1 or better. Define
-// STB_VORBIS_NO_SIMD to disable. Requires a little-endian platform (already
-// assumed elsewhere in this file).
 #if defined(_MSC_VER) || defined(__INTEL_COMPILER)
 #include <intrin.h>
 #elif defined(__GNUC__) || defined(__clang__)
-#include <immintrin.h>
+#include <immintrin.h>  // <--- ADD THIS LINE
 #endif
-#define STB_VORBIS_SSE2
-#define STB_VORBIS_SSE4
 
 // SIMD Levels: 0 = Scalar, 1 = SSE2, 2 = SSE4.1, 3 = AVX2
 static int stb_vorbis_simd_level = 0;
@@ -3515,9 +3509,9 @@ static void vorbis_cleanup_reversed_windows(stb_vorbis *f) {
 }
 
 #if (defined(__GNUC__) || defined(__clang__))
-__attribute__((target("avx2")))
+__attribute__((target("avx2,fma")))
 #endif
-static inline int vorbis_finish_frame(stb_vorbis *f, int len, int left, int right)
+static int vorbis_finish_frame(stb_vorbis *f, int len, int left, int right)
 {
    int prev,i,j;
    // we use right&left (the start of the right- and left-window sin()-regions)
@@ -5322,6 +5316,14 @@ static int8 channel_position[7][6] =
    #define FASTDEF(x)
 #endif
 
+// SSE2/SSE4.1 acceleration for float-to-int16 conversion and overlap-add.
+// Enabled automatically when targeting SSE4.1 or better. Define
+// STB_VORBIS_NO_SIMD to disable. Requires a little-endian platform (already
+// assumed elsewhere in this file).
+#include <immintrin.h>   // Master header for SSE2, SSE4.1, AVX, AVX2, FMA
+#define STB_VORBIS_SSE2
+#define STB_VORBIS_SSE4
+
 static void copy_samples(short *dest, float *src, int len)
 {
    int i;
@@ -5428,9 +5430,9 @@ int stb_vorbis_get_frame_short(stb_vorbis *f, int num_c, short **buffer, int num
 }
 
 #if (defined(__GNUC__) || defined(__clang__))
-__attribute__((target("avx2")))
+__attribute__((target("avx2,fma")))
 #endif
-static inline void convert_channels_short_interleaved(int buf_c, short *buffer, int data_c, float **data, int d_offset, int len)
+static void convert_channels_short_interleaved(int buf_c, short *buffer, int data_c, float **data, int d_offset, int len)
 {
    int i;
    check_endianness();
