@@ -41,13 +41,10 @@ class File {
 	public static function loadChart(inFile:String):Void {}
 
 	@:hlNative("chart_file", "getNote_first8")
-	public static function getNote_first8(atIndex:hl.I64):MetaNote { return 0; }
+	public static function getNote_first8(atIndex:hl.I64):hl.I64 { return 0; }
 
 	@:hlNative("chart_file", "getNote_last2")
 	public static function getNote_last2(atIndex:hl.I64):Int { return 0; }
-
-	@:hlNative("chart_file", "setNote")
-	public static function setNote(atIndex:hl.I64, value:hl.I64):Void {}
 
 	@:runtime inline public static function getNote(atIndex:Int64):MetaNote {
 		return new MetaNote.MetaNoteImpl(getNote_first8(atIndex), Int64.toInt(getNote_last2(atIndex)));

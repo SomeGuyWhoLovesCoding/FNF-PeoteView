@@ -9,5 +9,6 @@ package structures.gameplay;
 class EventTimer {
     var startTime:Float;
     var endTime:Float;
+    var eventObject:EventSystem.EventObject;
     var finishCallback:EventSystem.EventObject->Void;
 }

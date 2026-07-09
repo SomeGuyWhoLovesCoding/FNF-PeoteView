@@ -22,12 +22,12 @@
 #include <unistd.h>
 #endif
 
-// RapidJSON includes (Ensure rapidjson/ is in your include path)
-#include "./rapidjson/document.h"
-#include "./rapidjson/istreamwrapper.h"
-#include "./rapidjson/ostreamwrapper.h"  // <--- ADD THIS
-#include "./rapidjson/prettywriter.h"    // <--- ADD THIS
-#include "./rapidjson/error/en.h"
+// RapidJSON
+#include "./include/rapidjson/document.h"
+#include "./include/rapidjson/istreamwrapper.h"
+#include "./include/rapidjson/ostreamwrapper.h"
+#include "./include/rapidjson/prettywriter.h"
+#include "./include/rapidjson/error/en.h"
 
 // ============================================================================
 // 1-Bit Dynamic Flag Array (Strictly 1 bit per element in RAM)
@@ -89,17 +89,6 @@ struct ChartNote {
 #pragma pack(pop)
 
 static_assert(sizeof(ChartNote) == 10, "ChartNote must be exactly 10 bytes!");
-
-// ============================================================================
-// 16-Byte Aligned Struct for SSE2 Sorting (Internal Use Only)
-// ============================================================================
-struct alignas(16) SortNote {
-    uint64_t first8;
-    uint16_t last2;
-    uint8_t judgeFlag; // 1-bit judgement state
-    uint8_t hitFlag;   // 1-bit hit state
-    uint16_t pad[2];   // Padding to reach exactly 16 bytes for SSE2 alignment
-};
 
 // Helper function to sort an array of ChartNote in-place
 static void radix_sort_notes_inplace(ChartNote* notes, size_t n) {
@@ -317,38 +306,7 @@ private:
     void radixSortInPlace() {
         if (totalNotes <= 1) return;
         
-        std::vector<SortNote> notes(totalNotes);
-        for (int64_t i = 0; i < totalNotes; ++i) {
-            if (i < diskCount) {
-                int64_t base = (i / BUFFER_ELEMENTS) * BUFFER_ELEMENTS;
-                if (base != bufferBase) loadBufferFromDisk(base);
-                std::memcpy(&notes[i].first8, buffer + (i - base) * NOTE_SIZE, 8);
-                std::memcpy(&notes[i].last2, buffer + (i - base) * NOTE_SIZE + 8, 2);
-            } else {
-                notes[i].first8 = overflowFirst8[i - diskCount];
-                notes[i].last2 = overflowLast2[i - diskCount];
-            }
-            notes[i].judgeFlag = judgeFlags.get((size_t)i) ? 1 : 0;
-            notes[i].hitFlag = hitFlags.get((size_t)i) ? 1 : 0;
-            notes[i].pad[0] = notes[i].pad[1] = 0;
-        }
-
-        //sse2_radix_sort(notes);
-
-        if (totalNotes > diskCapacity) {
-            int64_t newCap = std::max<int64_t>(totalNotes, diskCapacity * 2);
-            remapFile(newCap);
-        }
-
-        for (int64_t i = 0; i < totalNotes; ++i) {
-            setFirst8(i, notes[i].first8);
-            setLast2(i, notes[i].last2);
-            judgeFlags.set((size_t)i, notes[i].judgeFlag != 0);
-            hitFlags.set((size_t)i, notes[i].hitFlag != 0);
-        }
-        diskCount = totalNotes;
-        overflowFirst8.clear();
-        overflowLast2.clear();
+        // ... this needs done soon just in case the chart editor is finally being developed
     }
 
     void startMaintenance() {

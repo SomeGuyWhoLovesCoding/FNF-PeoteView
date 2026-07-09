@@ -71,10 +71,20 @@ class CustomDisplay extends RotatableDisplay {
 
 	function shake(x:Float, y:Float) {
 		if (x == 0) return;
-		var shakeX = Math.random() * (x * 16);
+		var shakeX = (Math.random() - 0.5) * (x * 16);
 		xOffset += shakeX;
 		if (y == 0) return;
-		var shakeY = Math.random() * (x * 16);
+		var shakeY = (Math.random() - 0.5) * (y * 16);
 		yOffset += shakeY;
+	}
+
+	function shakeValue(x:Float, y:Float):Point {
+		if (x == 0 || y == 0) return {x: 0, y: 0};
+		var point:Point = {x: 0, y: 0};
+		var shakeX = (Math.random() - 0.5) * (x * 16);
+		point.x = shakeX;
+		var shakeY = (Math.random() - 0.5) * (y * 16);
+		point.y = shakeY;
+		return point;
 	}
 }

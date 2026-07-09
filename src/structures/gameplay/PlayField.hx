@@ -90,6 +90,10 @@ class PlayField {
 	var dispShake:Point = {x: 0, y: 0};
 	var viewShake:Point = {x: 0, y: 0};
 
+	// For Screen Shake event
+	var additiveDispShake:Point = {x: 0, y: 0, isSmooth: true};
+	var additiveViewShake:Point = {x: 0, y: 0, isSmooth: true};
+
 	var scrollSpeed(default, set):Float = 1.0;
 	function set_scrollSpeed(value:Float) {
 		if (noteSystem != null) noteSystem.setScrollSpeed(scrollSpeed = value);
@@ -183,7 +187,7 @@ class PlayField {
 			onRestartingForBackwardTimeSetting = true;
 			timeForRestartingBackwardTime = value;
 
-			while (eventTimers.pop() != null) {} // immediately clear out any event timers to prevent them flooding the rest of the song through
+			if (eventSystem != null) eventSystem.clearEventTimers(); // immediately clear out any event timers to prevent them flooding the rest of the song through
 			
 			#if linc_luajit_funkinview
 			funkinviewlua.callFunction('preTimeChange', timeForRestartingBackwardTime, Chart.header);
@@ -365,8 +369,10 @@ class PlayField {
 		display.update();
 		view.update();
 
-		display.shake(dispShake.x, dispShake.y);
-		view.shake(viewShake.x, viewShake.y);
+		additiveDispShake.x = 0;
+		additiveDispShake.y = 0;
+		additiveViewShake.x = 0;
+		additiveViewShake.y = 0;
 
 		if (field != null) field.update(deltaTime);
 
@@ -375,6 +381,13 @@ class PlayField {
 		if (view.fov != 1) view.fov = Tools.lerp(view.fov, 1, ratio);
 
 		if (countdownDisp != null) countdownDisp.update(deltaTime);
+
+		if (eventSystem != null && !died) {
+			eventSystem.update(deltaTime, songPosition);
+		}
+
+		display.shake(dispShake.x + additiveDispShake.x, dispShake.y + additiveDispShake.y);
+		if (field != null) field.updateCamera(deltaTime);
 
 		if (!died) {
 			if (startedCountdown) {
@@ -407,10 +420,6 @@ class PlayField {
 
 			if (noteSystem != null) {
 				noteSystem.update(pos);
-			}
-
-			if (eventSystem != null) {
-				eventSystem.update(deltaTime, songPosition);
 			}
 
 			if (startedCountdown) {

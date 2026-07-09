@@ -85,7 +85,7 @@ class Field {
 
 		Main.conductor.onBeat.add(beatHit);
 
-		parent.view.scroll.y = -100;
+		scrollCamera.y = -100;
 		targetCamera.x = 0;
 		targetCamera.y = 0;
 	}
@@ -105,19 +105,23 @@ class Field {
 	}
 
 	var targetCamera:Point = {x: 0, y: 0};
+	var scrollCamera:Point = {x: 0, y: 0};
 
-	function update(deltaTime:Float) {
+	inline function updateCamera(deltaTime:Float) {
+		var ratio = Math.min(deltaTime * 0.01, 1.0);
 		var view = parent.view;
 
-		var sc = view.scroll;
-		var ratio = Math.min(deltaTime * 0.01, 1.0);
-
 		var shake = parent.viewShake;
+		var additiveShake = parent.additiveViewShake;
 
-		view.scroll.x = Tools.lerp(sc.x, targetCamera.x, ratio);
-		view.scroll.y = Tools.lerp(sc.y, targetCamera.y, ratio);
-		view.shake(shake.x, shake.y);
+		scrollCamera.x = Tools.lerp(scrollCamera.x, targetCamera.x, ratio);
+		scrollCamera.y = Tools.lerp(scrollCamera.y, targetCamera.y, ratio);
+		view.scroll.x = scrollCamera.x;
+		view.scroll.y = scrollCamera.y;
+		view.shake(shake.x + additiveShake.x, shake.y + additiveShake.y);
+	}
 
+	function update(deltaTime:Float) {
 		for (actor in actors) {
 			if (isInGameOver) {
 				if (actor != actorOnGameOver) {

@@ -17,9 +17,12 @@ class EventSystem {
     var nextEventTime:Float = Math.POSITIVE_INFINITY;
     var lastTriggeredIndex:Int = -1;
 
+    var eventTimers(default, null):Array<EventTimer>;
+
     function new(parent:PlayField) {
         this.parent = parent;
         parsedObjects = [];
+        eventTimers = [];
         parent.scanForEventFile(this);
     }
 
@@ -71,6 +74,11 @@ class EventSystem {
                 nextEventTime = Math.POSITIVE_INFINITY; // No more events left in the song
             }
         }
+
+        for (timer in eventTimers) {
+            if (songTime < timer.startTime || songTime > timer.endTime) continue;
+            processEventTimer(timer);
+        }
     }
 
     /**
@@ -87,48 +95,107 @@ class EventSystem {
         }
     }
 
+    var persistentShake:Point;
+
     function triggerEvent(ev:EventObject) {
-        //Sys.println('$evName triggered [$value1, $value2]');
+        Sys.println('${ev.evName} triggered [${ev.value1}, ${ev.value2}]');
+        var value1 = Std.parseFloat(ev.value1.trim());
+        var value2 = Std.parseFloat(ev.value2.trim());
+
+        #if linc_luajit_funkinview
+        if (parent.funkinviewlua != null) parent.funkinviewlua.callFunction('preTriggerEvent', ev.evName, ev.value1, ev.value2);
+        #end
+
+        if (parent.display == null) return;
+        var display = parent.display;
+        if (parent.view == null) return;
+        var view = parent.view;
+
         switch(ev.evName) {
-            case "Hey!":
-                if (parent.field == null) return;
-                var field = parent.field;
+            case "Camera Zoom" | "Add Camera Zoom":
+                view.fov += Math.isNaN(value1) ? 0.015 : value1;
+                display.fov += Math.isNaN(value2) ? 0.003 : value2;
 
-                var charsToDoIt:Array<Actor> = [field.player, field.spectator];
-                switch(ev.value1.toLowerCase().trim()) {
-                    case 'bf' | 'boyfriend' | '0': charsToDoIt.pop();
-                    case 'gf' | 'girlfriend' | '1': charsToDoIt.shift();
-                }
+			case 'Change Scroll Speed':
+                if (Math.isNaN(value1)) value1 = 1;
+                parent.scrollSpeed = value1;
 
-                var time:Float = Std.parseFloat(ev.value2);
-                if(Math.isNaN(time) || time <= 0) time = 0.6;
+            case "Screen Shake":
+                //if (Math.isNaN(value1)) value1 = 0;
+                //if (Math.isNaN(value2)) value2 = 0;
 
-                parent.eventTimers.push({
+                var time = Std.parseFloat(ev.value2.split(',')[0]);
+                if (Math.isNaN(time)) time = 0;
+
+                eventTimers.push({
                     startTime: ev.evTime,
-                    endTime: ev.evTime + time * 1000.0,
+                    endTime: ev.evTime + (time * 1000.0),
+                    eventObject: ev,
                     finishCallback: (ev) -> {
-                        for (chars in charsToDoIt) chars.
+                        Sys.println('  [ Event System ] Screen shake is done! It lasted about ${Math.round(value2/1000)} seconds.');
                     }
                 });
-
-            case "Camera Zoom" | "Add Camera Zoom":
-                
         }
-			
+
         #if linc_luajit_funkinview
         if (parent.funkinviewlua == null) return;
-        parent.funkinviewlua.callFunction('triggerEvent', evName, value1, value2);
+        parent.funkinviewlua.callFunction('triggerEvent', ev.evName, ev.value1, ev.value2);
         #end
     }
 
-    function processEventTimer(evName:String) {
-        
+	// For Screen Shake event
+	var additiveDispShake:Point = {x: 0, y: 0, isSmooth: true};
+	var additiveViewShake:Point = {x: 0, y: 0, isSmooth: true};
+
+    function processEventTimer(eventTimer:EventTimer) {
+        var ev = eventTimer.eventObject;
+        var value1 = ev.value1;
+        var value2 = ev.value2;
+        //trace("Event timer screen shake?");
+
+        switch (ev.evName) {
+            case "Screen Shake":
+                if (parent.display == null) return;
+                var display = parent.display;
+                if (parent.view == null) return;
+                var view = parent.view;
+
+                var v1split = value1.split(',');
+                var v2split = value2.split(',');
+                var dispSplit:Float = Std.parseFloat(v1split[1].trim());
+                var viewSplit:Float = Std.parseFloat(v2split[1].trim());
+                if (Math.isNaN(dispSplit)) dispSplit = 0;
+                if (Math.isNaN(viewSplit)) viewSplit = 0;
+
+                var xAxesDisp = v1split.length == 4 ? v1split[2] != null ? -1 : 0 : -1;
+                var yAxesDisp = v1split.length == 4 ? v1split[3] != null ? -1 : 0 : -1;
+                var xAxesView = v2split.length == 4 ? v2split[2] != null ? -1 : 0 : -1;
+                var yAxesView = v2split.length == 4 ? v2split[3] != null ? -1 : 0 : -1;
+
+                // &ing 0 turns every value you and into zero and I think that's sick
+                var axesXDisp = (dispSplit / 16) * (display.width & xAxesDisp);
+                var axesYDisp = (dispSplit / 16) * (display.height & yAxesDisp);
+                var axesXView = (viewSplit / 16) * (view.width & xAxesView);
+                var axesYView = (viewSplit / 16) * (view.height & yAxesView);
+
+                parent.additiveDispShake.x += axesXDisp;
+                parent.additiveDispShake.y += axesYDisp;
+                parent.additiveViewShake.x += axesXView;
+                parent.additiveViewShake.y += axesYView;
+        }
+    }
+
+    function clearEventTimers() {
+        while (eventTimers.pop() != null) {}
     }
 }
 
 /**
     Small event object made into a struct.
 **/
+#if cpp
+@:unreflective
+#end
 @:structInit
 @:publicFields
 class EventObject {

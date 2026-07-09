@@ -39,7 +39,7 @@ HL_PRIM void HL_NAME(destroyChart)(_NO_ARG) {
 }
 
 HL_PRIM bool HL_NAME(getJudgement)(int64_t globalIndex) {
-    core_getJudgement(globalIndex);
+    return core_getJudgement(globalIndex);
 }
 
 HL_PRIM void HL_NAME(setJudgement)(int64_t globalIndex, bool value) {
@@ -47,7 +47,7 @@ HL_PRIM void HL_NAME(setJudgement)(int64_t globalIndex, bool value) {
 }
 
 HL_PRIM bool HL_NAME(getHitFlag)(int64_t globalIndex) {
-    core_getHitFlag(globalIndex);
+    return core_getHitFlag(globalIndex);
 }
 
 HL_PRIM void HL_NAME(setHitFlag)(int64_t globalIndex, bool value) {
@@ -63,16 +63,13 @@ HL_PRIM void HL_NAME(setEditorMode)(bool value) {
 // ============================================================================
 DEFINE_PRIM(_VOID, loadChart, _STRING)
 DEFINE_PRIM(_I64,  getNote_first8, _I64)
-DEFINE_PRIM(_I64,  getNote_last2, _I64)
+DEFINE_PRIM(_I32,  getNote_last2, _I64)
 DEFINE_PRIM(_VOID,  insertNote, _I64 _I32 _I32 _I32)
 DEFINE_PRIM(_VOID, removeNote, _I64)
 DEFINE_PRIM(_I64,  getLength, _NO_ARG)
 DEFINE_PRIM(_VOID, destroyChart, _NO_ARG)
-/*DEFINE_PRIM(_VOID, allocJudgementSlot, _I32 _I64)
-DEFINE_PRIM(_VOID, setActiveJudgementSlot, _I32)
-DEFINE_PRIM(_VOID, clearJudgementSlot, _I32)
-DEFINE_PRIM(_I32, getActiveJudgementSlot, _NO_ARG)*/
 DEFINE_PRIM(_BOOL, getJudgement, _I64)
 DEFINE_PRIM(_VOID, setJudgement, _I64 _BOOL)
+DEFINE_PRIM(_BOOL, getHitFlag, _I64)
+DEFINE_PRIM(_VOID, setHitFlag, _I64 _BOOL)
 DEFINE_PRIM(_VOID, setEditorMode, _BOOL)
-//DEFINE_PRIM(_VOID, destroyAllJudgements, _NO_ARG)

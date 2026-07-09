@@ -122,21 +122,21 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 			playField.field.targetCamera.y = y;
 		});
 		vm.addCallback("setCameraFollowPoint", function(x:Float, y:Float) {
-			playField.view.scroll.x = x;
-			playField.view.scroll.x = y;
+			playField.field.scrollCamera.x = x;
+			playField.field.scrollCamera.x = y;
 		});
 		vm.addCallback("addCameraScroll", function(x:Float = 0, y:Float = 0) {
 			playField.field.targetCamera.x += x;
 			playField.field.targetCamera.y += y;
 		});
 		vm.addCallback("addCameraFollowPoint", function(x:Float = 0, y:Float = 0) {
-			playField.view.scroll.x += x;
-			playField.view.scroll.y += y;
+			playField.field.scrollCamera.x += x;
+			playField.field.scrollCamera.y += y;
 		});
 		vm.addCallback("getCameraScrollX", () -> playField.field.targetCamera.x);
 		vm.addCallback("getCameraScrollY", () -> playField.field.targetCamera.y);
-		vm.addCallback("getCameraFollowX", () -> playField.view.scroll.x);
-		vm.addCallback("getCameraFollowY", () -> playField.view.scroll.y);
+		vm.addCallback("getCameraFollowX", () -> playField.field.scrollCamera.x);
+		vm.addCallback("getCameraFollowY", () -> playField.field.scrollCamera.y);
 
 		vm.addCallback("setCameraShake", function(camera:String, x:Float, y:Float) {
 			var shake = playField.viewShake;
