@@ -2461,32 +2461,32 @@ static void imdct_step3_iter0_loop(int n, float *e, int i_off, int k_off, float 
       k01_21  = ee0[-1] - ee2[-1];
       ee0[ 0] += ee2[ 0];//ee0[ 0] = ee0[ 0] + ee2[ 0];
       ee0[-1] += ee2[-1];//ee0[-1] = ee0[-1] + ee2[-1];
-      ee2[ 0] = k00_20 * A[0] - k01_21 * A[1];
-      ee2[-1] = k01_21 * A[0] + k00_20 * A[1];
+      ee2[ 0] = fmaf(k00_20,A[0],-k01_21 * A[1]);
+      ee2[-1] = fmaf(k01_21,A[0], k00_20 * A[1]);
       A += 8;
 
       k00_20  = ee0[-2] - ee2[-2];
       k01_21  = ee0[-3] - ee2[-3];
       ee0[-2] += ee2[-2];//ee0[-2] = ee0[-2] + ee2[-2];
       ee0[-3] += ee2[-3];//ee0[-3] = ee0[-3] + ee2[-3];
-      ee2[-2] = k00_20 * A[0] - k01_21 * A[1];
-      ee2[-3] = k01_21 * A[0] + k00_20 * A[1];
+      ee2[-2] = fmaf(k00_20,A[0],-k01_21 * A[1]);
+      ee2[-3] = fmaf(k01_21,A[0], k00_20 * A[1]);
       A += 8;
 
       k00_20  = ee0[-4] - ee2[-4];
       k01_21  = ee0[-5] - ee2[-5];
       ee0[-4] += ee2[-4];//ee0[-4] = ee0[-4] + ee2[-4];
       ee0[-5] += ee2[-5];//ee0[-5] = ee0[-5] + ee2[-5];
-      ee2[-4] = k00_20 * A[0] - k01_21 * A[1];
-      ee2[-5] = k01_21 * A[0] + k00_20 * A[1];
+      ee2[-4] = fmaf(k00_20,A[0],-k01_21 * A[1]);
+      ee2[-5] = fmaf(k01_21,A[0], k00_20 * A[1]);
       A += 8;
 
       k00_20  = ee0[-6] - ee2[-6];
       k01_21  = ee0[-7] - ee2[-7];
       ee0[-6] += ee2[-6];//ee0[-6] = ee0[-6] + ee2[-6];
       ee0[-7] += ee2[-7];//ee0[-7] = ee0[-7] + ee2[-7];
-      ee2[-6] = k00_20 * A[0] - k01_21 * A[1];
-      ee2[-7] = k01_21 * A[0] + k00_20 * A[1];
+      ee2[-6] = fmaf(k00_20,A[0],-k01_21 * A[1]);
+      ee2[-7] = fmaf(k01_21,A[0], k00_20 * A[1]);
       A += 8;
       ee0 -= 8;
       ee2 -= 8;
@@ -2506,8 +2506,8 @@ static void imdct_step3_inner_r_loop(int lim, float *e, int d0, int k_off, float
       k01_21 = e0[-1] - e2[-1];
       e0[-0] += e2[-0];//e0[-0] = e0[-0] + e2[-0];
       e0[-1] += e2[-1];//e0[-1] = e0[-1] + e2[-1];
-      e2[-0] = (k00_20)*A[0] - (k01_21) * A[1];
-      e2[-1] = (k01_21)*A[0] + (k00_20) * A[1];
+      e2[-0] = fmaf(k00_20,A[0],-k01_21 * A[1]);
+      e2[-1] = fmaf(k01_21,A[0], k00_20 * A[1]);
 
       A += k1;
 
@@ -2515,8 +2515,8 @@ static void imdct_step3_inner_r_loop(int lim, float *e, int d0, int k_off, float
       k01_21 = e0[-3] - e2[-3];
       e0[-2] += e2[-2];//e0[-2] = e0[-2] + e2[-2];
       e0[-3] += e2[-3];//e0[-3] = e0[-3] + e2[-3];
-      e2[-2] = (k00_20)*A[0] - (k01_21) * A[1];
-      e2[-3] = (k01_21)*A[0] + (k00_20) * A[1];
+      e2[-2] = fmaf(k00_20,A[0],-k01_21 * A[1]);
+      e2[-3] = fmaf(k01_21,A[0], k00_20 * A[1]);
 
       A += k1;
 
@@ -2524,8 +2524,8 @@ static void imdct_step3_inner_r_loop(int lim, float *e, int d0, int k_off, float
       k01_21 = e0[-5] - e2[-5];
       e0[-4] += e2[-4];//e0[-4] = e0[-4] + e2[-4];
       e0[-5] += e2[-5];//e0[-5] = e0[-5] + e2[-5];
-      e2[-4] = (k00_20)*A[0] - (k01_21) * A[1];
-      e2[-5] = (k01_21)*A[0] + (k00_20) * A[1];
+      e2[-4] = fmaf(k00_20,A[0],-k01_21 * A[1]);
+      e2[-5] = fmaf(k01_21,A[0], k00_20 * A[1]);
 
       A += k1;
 
@@ -2533,8 +2533,8 @@ static void imdct_step3_inner_r_loop(int lim, float *e, int d0, int k_off, float
       k01_21 = e0[-7] - e2[-7];
       e0[-6] += e2[-6];//e0[-6] = e0[-6] + e2[-6];
       e0[-7] += e2[-7];//e0[-7] = e0[-7] + e2[-7];
-      e2[-6] = (k00_20)*A[0] - (k01_21) * A[1];
-      e2[-7] = (k01_21)*A[0] + (k00_20) * A[1];
+      e2[-6] = fmaf(k00_20,A[0],-k01_21 * A[1]);
+      e2[-7] = fmaf(k01_21,A[0], k00_20 * A[1]);
 
       e0 -= 8;
       e2 -= 8;
@@ -2565,29 +2565,29 @@ static void imdct_step3_inner_s_loop(int n, float *e, int i_off, int k_off, floa
       k11     = ee0[-1] - ee2[-1];
       ee0[ 0] =  ee0[ 0] + ee2[ 0];
       ee0[-1] =  ee0[-1] + ee2[-1];
-      ee2[ 0] = (k00) * A0 - (k11) * A1;
-      ee2[-1] = (k11) * A0 + (k00) * A1;
+      ee2[ 0] = fmaf((k00),A0,-(k11) * A1);
+      ee2[-1] = fmaf((k11),A0, (k00) * A1);
 
       k00     = ee0[-2] - ee2[-2];
       k11     = ee0[-3] - ee2[-3];
       ee0[-2] =  ee0[-2] + ee2[-2];
       ee0[-3] =  ee0[-3] + ee2[-3];
-      ee2[-2] = (k00) * A2 - (k11) * A3;
-      ee2[-3] = (k11) * A2 + (k00) * A3;
+      ee2[-2] = fmaf((k00),A2,-(k11) * A3);
+      ee2[-3] = fmaf((k11),A2, (k00) * A3);
 
       k00     = ee0[-4] - ee2[-4];
       k11     = ee0[-5] - ee2[-5];
       ee0[-4] =  ee0[-4] + ee2[-4];
       ee0[-5] =  ee0[-5] + ee2[-5];
-      ee2[-4] = (k00) * A4 - (k11) * A5;
-      ee2[-5] = (k11) * A4 + (k00) * A5;
+      ee2[-4] = fmaf((k00),A4,-(k11) * A5);
+      ee2[-5] = fmaf((k11),A4, (k00) * A5);
 
       k00     = ee0[-6] - ee2[-6];
       k11     = ee0[-7] - ee2[-7];
       ee0[-6] =  ee0[-6] + ee2[-6];
       ee0[-7] =  ee0[-7] + ee2[-7];
-      ee2[-6] = (k00) * A6 - (k11) * A7;
-      ee2[-7] = (k11) * A6 + (k00) * A7;
+      ee2[-6] = fmaf((k00),A6,-(k11) * A7);
+      ee2[-7] = fmaf((k11),A6, (k00) * A7);
 
       ee0 -= k0;
       ee2 -= k0;
@@ -2685,7 +2685,6 @@ static void inverse_mdct(float *buffer, int n, vorb *f, int blocktype)
 
    // kernel from paper
 
-
    // merged:
    //   copy and reflect spectral data
    //   step 0
@@ -2706,8 +2705,8 @@ static void inverse_mdct(float *buffer, int n, vorb *f, int blocktype)
       e = &buffer[0];
       e_stop = &buffer[n2];
       while (e != e_stop) {
-         d[1] = (e[0] * AA[0] - e[2]*AA[1]);
-         d[0] = (e[0] * AA[1] + e[2]*AA[0]);
+         d[1] = fmaf(e[0], AA[0], -e[2] * AA[1]);
+         d[0] = fmaf(e[0], AA[1],  e[2] * AA[0]);
          d -= 2;
          AA += 2;
          e += 4;
@@ -2715,8 +2714,8 @@ static void inverse_mdct(float *buffer, int n, vorb *f, int blocktype)
 
       e = &buffer[n2-3];
       while (d >= buf2) {
-         d[1] = (-e[2] * AA[0] - -e[0]*AA[1]);
-         d[0] = (-e[2] * AA[1] + -e[0]*AA[0]);
+         d[1] = fmaf(e[0], AA[1], -e[2] * AA[0]);
+         d[0] = fmaf(-e[2], AA[1], -e[0] * AA[0]);
          d -= 2;
          AA += 2;
          e -= 4;
@@ -2750,15 +2749,15 @@ static void inverse_mdct(float *buffer, int n, vorb *f, int blocktype)
          v40_20 = e0[0] - e1[0];
          d0[1]  = e0[1] + e1[1];
          d0[0]  = e0[0] + e1[0];
-         d1[1]  = v41_21*AA[4] - v40_20*AA[5];
-         d1[0]  = v40_20*AA[4] + v41_21*AA[5];
+         d1[1]  = fmaf(v41_21, AA[4], -v40_20 * AA[5]);
+         d1[0]  = fmaf(v40_20, AA[4],  v41_21 * AA[5]);
 
          v41_21 = e0[3] - e1[3];
          v40_20 = e0[2] - e1[2];
          d0[3]  = e0[3] + e1[3];
          d0[2]  = e0[2] + e1[2];
-         d1[3]  = v41_21*AA[0] - v40_20*AA[1];
-         d1[2]  = v40_20*AA[0] + v41_21*AA[1];
+         d1[3]  = fmaf(v41_21, AA[0], -v40_20 * AA[1]);
+         d1[2]  = fmaf(v40_20, AA[0],  v41_21 * AA[1]);
 
          AA -= 8;
 
@@ -2854,7 +2853,6 @@ static void inverse_mdct(float *buffer, int n, vorb *f, int blocktype)
    }
    // (paper output is u, now v)
 
-
    // data must be in buf2
    assert(v == buf2);
 
@@ -2873,8 +2871,8 @@ static void inverse_mdct(float *buffer, int n, vorb *f, int blocktype)
          a02 = d[0] - e[2];
          a11 = d[1] + e[3];
 
-         b0 = C[1]*a02 + C[0]*a11;
-         b1 = C[1]*a11 - C[0]*a02;
+         b0 = fmaf(C[1], a02, C[0] * a11);
+         b1 = fmaf(C[1], a11, -C[0] * a02);
 
          b2 = d[0] + e[ 2];
          b3 = d[1] - e[ 3];
@@ -2887,8 +2885,8 @@ static void inverse_mdct(float *buffer, int n, vorb *f, int blocktype)
          a02 = d[2] - e[0];
          a11 = d[3] + e[1];
 
-         b0 = C[3]*a02 + C[2]*a11;
-         b1 = C[3]*a11 - C[2]*a02;
+         b0 = fmaf(C[3], a02, C[2] * a11);
+         b1 = fmaf(C[3], a11, -C[2] * a02);
 
          b2 = d[2] + e[ 0];
          b3 = d[3] - e[ 1];
@@ -2905,7 +2903,6 @@ static void inverse_mdct(float *buffer, int n, vorb *f, int blocktype)
    }
 
    // data must be in buf2
-
 
    // step 8+decode   (paper output is X, now buffer)
    // this generates pairs of data a la 8 and pushes them directly through
@@ -2926,32 +2923,32 @@ static void inverse_mdct(float *buffer, int n, vorb *f, int blocktype)
       while (e >= v) {
          float p0,p1,p2,p3;
 
-         p3 =  e[6]*B[7] - e[7]*B[6];
-         p2 = -e[6]*B[6] - e[7]*B[7];
+         p3 = fmaf(e[6], B[7], -e[7] * B[6]);
+         p2 = fmaf(-e[6], B[6], -e[7] * B[7]);
 
          d0[0] =   p3;
          d1[3] = - p3;
          d2[0] =   p2;
          d3[3] =   p2;
 
-         p1 =  e[4]*B[5] - e[5]*B[4];
-         p0 = -e[4]*B[4] - e[5]*B[5];
+         p1 = fmaf(e[4], B[5], -e[5] * B[4]);
+         p0 = fmaf(-e[4], B[4], -e[5] * B[5]);
 
          d0[1] =   p1;
          d1[2] = - p1;
          d2[1] =   p0;
          d3[2] =   p0;
 
-         p3 =  e[2]*B[3] - e[3]*B[2];
-         p2 = -e[2]*B[2] - e[3]*B[3];
+         p3 = fmaf(e[2], B[3], -e[3] * B[2]);
+         p2 = fmaf(-e[2], B[2], -e[3] * B[3]);
 
          d0[2] =   p3;
          d1[1] = - p3;
          d2[2] =   p2;
          d3[1] =   p2;
 
-         p1 =  e[0]*B[1] - e[1]*B[0];
-         p0 = -e[0]*B[0] - e[1]*B[1];
+         p1 = fmaf(e[0], B[1], -e[1] * B[0]);
+         p0 = fmaf(-e[0], B[0], -e[1] * B[1]);
 
          d0[3] =   p1;
          d1[0] = - p1;
