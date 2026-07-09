@@ -15,12 +15,12 @@ class CustomAnimationComponent extends LuaComponentObject {
 	inline static var GLOBAL_GF = "FV_GF_099";
 	inline static var GLOBAL_OP = "FV_OP_099";
 
-	public var customActors(default, null):Map<String, Actor>;
+	public var customActors(default, null):FakeStringMap<Actor>;
 
 	public function new(_parent:FunkinViewLua) {
         super(_parent);
 
-		customActors = new Map<String, Actor>();
+		customActors = new FakeStringMap<Actor>();
 	}
 
 	// functions are a placeholder.
@@ -273,7 +273,7 @@ class CustomAnimationComponent extends LuaComponentObject {
 		for (customActor in customActors) {
 			if (customActor != null) {
 				// they will all dispose naturally since playfield's going to be disposed
-				if (customActors[GLOBAL_BF] != customActor && customActors[GLOBAL_GF] != customActor && customActors[GLOBAL_OP] != customActor)
+				if (customActors.get(GLOBAL_BF) != customActor && customActors.get(GLOBAL_GF) != customActor && customActors.get(GLOBAL_OP) != customActor)
 					customActor.dispose();
 				customActor = null;
 			}

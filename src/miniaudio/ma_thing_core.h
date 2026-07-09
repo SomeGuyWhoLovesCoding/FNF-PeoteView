@@ -59,6 +59,7 @@ extern "C" {
 #include <unordered_map>
 #include <vector>
 #include <iostream>
+#include <cmath> // Required for std::fma
 
 #ifdef __SSE__
 #include <emmintrin.h>
@@ -333,17 +334,25 @@ static inline void mix_simd(float* dst, const float* src, int samples, float vol
         for (; i < samples - 3; i += 4)
             _mm_storeu_ps(dst + i, _mm_add_ps(_mm_loadu_ps(dst + i), _mm_mul_ps(_mm_loadu_ps(src + i), vvol)));
     }
-    for (; i < samples; i++) dst[i] += src[i] * volume;
+
+    // Tail loop: std::fma works perfectly here on SSE2
+    for (; i < samples; i++) {
+        dst[i] = std::fma(src[i], volume, dst[i]);
+    }
 }
 static inline void mix_simd_stereo(float* dst, const float* src, int frames, float volume) {
     mix_simd(dst, src, frames * 2, volume);
 }
 #else
 static inline void mix_scalar(float* dst, const float* src, int samples, float volume) {
-    if (volume == 1.0f)
+    if (volume == 1.0f) {
         for (int i = 0; i < samples; i++) dst[i] += src[i];
-    else
-        for (int i = 0; i < samples; i++) dst[i] += src[i] * volume;
+    } else {
+        for (int i = 0; i < samples; i++) {
+            // std::fma ensures (src[i] * volume) + dst[i] is rounded only once
+            dst[i] = std::fma(src[i], volume, dst[i]); 
+        }
+    }
 }
 #endif
 
@@ -370,20 +379,28 @@ static inline bool has_avx2_runtime() {
 }
 
 #if defined(__GNUC__) || defined(__clang__)
-__attribute__((target("avx2"))) // Allows compiling AVX2 without global -mavx2 flag
+__attribute__((target("avx2,fma")))
 #endif
 static inline void mix_avx2(float* dst, const float* src, int samples, float volume) {
-    //printf("Hi AVX2 penis\n");
     int i = 0;
     if (volume == 1.0f) {
+        // No multiplication here, so FMA doesn't apply
         for (; i + 8 <= samples; i += 8)
             _mm256_storeu_ps(dst + i, _mm256_add_ps(_mm256_loadu_ps(dst + i), _mm256_loadu_ps(src + i)));
     } else {
         __m256 vvol = _mm256_set1_ps(volume);
-        for (; i + 8 <= samples; i += 8)
-            _mm256_storeu_ps(dst + i, _mm256_add_ps(_mm256_loadu_ps(dst + i), _mm256_mul_ps(_mm256_loadu_ps(src + i), vvol)));
+        for (; i + 8 <= samples; i += 8) {
+            __m256 vdst = _mm256_loadu_ps(dst + i);
+            __m256 vsrc = _mm256_loadu_ps(src + i);
+            
+            // REPLACED: _mm256_add_ps + _mm256_mul_ps
+            // WITH: _mm256_fmadd_ps (computes a * b + c)
+            _mm256_storeu_ps(dst + i, _mm256_fmadd_ps(vsrc, vvol, vdst));
+        }
     }
-    for (; i < samples; i++) dst[i] += src[i] * volume;
+    
+    // Tail loop: Use std::fma for precision and potential auto-vectorization
+    for (; i < samples; i++) dst[i] = std::fma(src[i], volume, dst[i]);
 }
 
 // Function pointer defaults to existing SSE if available, otherwise scalar
