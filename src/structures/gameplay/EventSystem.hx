@@ -204,7 +204,7 @@ class EventObject {
     var value2:Value2;
     var evTime:Double;
 
-    function new(v1:String, v2:Value1, v3:Value2, evTime:Double) {
+    function new(v1:String, v2:Value1, v3:Value2, v4:Double) {
         evName = v1;
         value1 = v2;
         value2 = v3;
