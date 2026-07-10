@@ -127,14 +127,14 @@ class EventSystem {
                 var time = Std.parseFloat(ev.value2.split(',')[0]);
                 if (Math.isNaN(time)) time = 0;
 
-                eventTimers.push({
-                    startTime: ev.evTime,
-                    endTime: ev.evTime + (time * 1000.0),
-                    eventObject: ev,
-                    finishCallback: (ev) -> {
+                eventTimers.push(new EventTimer(
+                    ev.evTime,
+                    ev.evTime + (time * 1000.0),
+                    ev,
+                    (ev) -> {
                         Sys.println('  [ Event System ] Screen shake is done! It lasted about ${Math.round(value2/1000)} seconds.');
                     }
-                });
+                ));
         }
 
         #if linc_luajit_funkinview
@@ -203,6 +203,13 @@ class EventObject {
     var value1:Value1;
     var value2:Value2;
     var evTime:Double;
+
+    function new(v1:String, v2:Value1, v3:Value2, evTime:Double) {
+        evName = v1;
+        value1 = v2;
+        value2 = v3;
+        evTime = v4;
+    }
 }
 
 @:publicFields

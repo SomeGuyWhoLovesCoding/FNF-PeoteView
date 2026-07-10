@@ -335,12 +335,12 @@ class PlayField {
 		var rawJson:Array<EventSystem.RawEventObject> = rawJsonParent.events;
 
 		for (event in rawJson) {
-			e.parsedObjects.push({
-				evName: event.evName,
-				value1: event.value1,
-				value2: event.value2 != null ? event.value2 : "",
-				evTime: event.evTime
-			});
+			e.parsedObjects.push(new EventSystem.EventObject(
+				event.evName,
+				event.value1,
+				event.value2 != null ? event.value2 : "",
+				event.evTime
+			));
 			//trace(event.evName,event.value1,event.value2,event.evTime);
 		}
 
