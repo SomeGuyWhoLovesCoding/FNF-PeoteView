@@ -85,7 +85,7 @@ class NoteVB {
 }
 
 /**
- * This object is the POD of the note element. 48-byte class.
+ * This object is the POD of the note element. 56-byte class.
  * @since Development
 **/
 #if cpp
@@ -181,7 +181,7 @@ class VirtualSustain {
 	// the duration of the sustain (4 bytes)
 	var length:Int;
 
-	// the reference to the sustain (48 bytes)
+	// the reference to the sustain (56 bytes)
 	var ref:VirtualNote;
 
 	// the rotation of the sustain (8 bytes)
