@@ -5,7 +5,7 @@ package structures.gameplay;
     @since 0.94
 **/
 @:publicFields
-@:structInit
+@:struct
 class EventTimer {
     var startTime:Float;
     var endTime:Float;

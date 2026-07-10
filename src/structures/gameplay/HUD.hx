@@ -235,7 +235,7 @@ class HUD {
 	function updateComboNumbers() {
 		if (parent.disposed || parent.died) return;
 
-		var numStr = Int128.toStr(parent.combo);
+		var numStr = Int64.toStr(parent.combo);
 
 		var comboNumberStrLen = numStr.length;
 

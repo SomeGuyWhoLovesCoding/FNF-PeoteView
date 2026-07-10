@@ -196,7 +196,7 @@ class EventSystem {
 #if cpp
 @:unreflective
 #end
-@:structInit
+@:struct
 @:publicFields
 class EventObject {
     var evName:String;
