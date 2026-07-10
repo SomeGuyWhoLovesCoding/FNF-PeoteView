@@ -92,6 +92,7 @@ class NoteVB {
 @:unreflective
 #end
 @:publicFields
+@:struct
 class VirtualNote {
 	// the amount of same notes within a line, combined (8 bytes)
 	var notesInOne:Int64;
@@ -166,6 +167,7 @@ class VirtualNote {
 @:unreflective
 #end
 @:publicFields
+@:struct
 class VirtualSustain {
 	// the alpha of sustain (8 bytes)
 	var alpha:Float;

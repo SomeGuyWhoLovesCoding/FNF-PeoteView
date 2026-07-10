@@ -98,7 +98,7 @@ abstract MetaNote(MetaNoteImpl) from MetaNoteImpl to MetaNoteImpl {
 #if cpp
 @:unreflective
 #end
-@:structInit
+@:struct
 class MetaNoteImpl {
 	public var high:Int64;
 	public var low:#if cpp cpp.UInt16 #elseif hl hl.UI16 #else Int #end;

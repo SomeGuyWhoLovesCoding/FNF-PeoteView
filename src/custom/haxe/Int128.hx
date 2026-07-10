@@ -513,7 +513,7 @@ abstract Int128(__Int128) from __Int128 to __Int128 {
 **/
 private typedef __Int128 = ___Int128;
 
-@:structInit
+@:struct
 private class ___Int128 {
 	public var high:Int64;
 	public var low:Int64;
