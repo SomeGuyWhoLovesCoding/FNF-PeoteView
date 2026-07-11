@@ -293,11 +293,7 @@ class RenderingMode {
 		songName = Chart.header.title;
 
 		Application.current.window.resizable = false;
-		#if FV_LIME_FORK
-		Application.current.window.uncappedFrameRate = true;
-		#else
 		Application.current.window.frameRate = 1000;
-		#end
 
 		var encoderSettings = getBestEncoder();
 		var args = [
@@ -389,11 +385,7 @@ class RenderingMode {
 		freeList = [];
 		frameQueue = [];
 
-		#if FV_LIME_FORK
-		Application.current.window.uncappedFrameRate = false;
-		#else
 		Application.current.window.frameRate = SaveData.state.graphics.frameRate;
-		#end
 		Application.current.window.resizable = true;
 		
 		cleanupLock = false;

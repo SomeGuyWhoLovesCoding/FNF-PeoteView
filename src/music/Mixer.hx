@@ -34,7 +34,7 @@ import lime.ui.Window;
 	- `loadFiles()` – Initialize music from file paths
 	- `startMusic()` / `stopMusic()` – Control playback
 	- `destroyMusic()` – Clean up resources
-	- `updateSmoothMusicTime()` – Simulate smooth audio time by subloop tick & prevent timing drift
+	- `updateSmoothMusicTime()` – Simulate smooth audio time & prevent timing drift
 
 	---
 
@@ -55,10 +55,6 @@ import lime.ui.Window;
 	- Acts as a **high-level abstraction** for music playback
 	@since Development
  */
-#if (FV_LIME_FORK && lime_cffi)
-import lime._internal.backend.native.NativeCFFI;
-@:access(lime._internal.backend.native.NativeCFFI)
-#end
 @:publicFields
 @:noDebug
 class Mixer {
@@ -76,8 +72,6 @@ class Mixer {
 	static var length(default, null):Float;
 
 	static var speed(default, set):Float = 1;
-
-	private static var hasSubLoopTick(default, null):Bool;
 
 	static function set_speed(value:Float) {
 		speed = Math.max(value, 0.1);
@@ -104,35 +98,7 @@ class Mixer {
 		trackCount = files.length;
 		length = MiniAudio.getDuration();
 		Sys.println("  [ Audio Pipeline ]   Song initialized. (Length: " + Tools.formatTime(length, true) + ")");
-		enableSubLoop();
 	}
-
-	inline static function enableSubLoop() {
-		#if FV_LIME_FORK
-		hasSubLoopTick = true;
-		#if lime_cffi
-		var backend = @:privateAccess lime.app.Application.current.__backend;
-		@:privateAccess NativeCFFI.lime_subloop_event_manager_register(subLoopTick_init, backend.subLoopTickEventInfo);
-		#end
-		#end
-	}
-
-	inline static function disableSubLoop() {
-		#if FV_LIME_FORK
-		hasSubLoopTick = false;
-		#if lime_cffi
-		var backend = @:privateAccess lime.app.Application.current.__backend;
-		@:privateAccess NativeCFFI.lime_subloop_event_manager_register(backend.handleSubLoopEvent, backend.subLoopTickEventInfo);
-		#end
-		#end
-	}
-
-	#if (FV_LIME_FORK && lime_cffi)
-	inline static function subLoopTick_init() {
-		var backend = @:privateAccess lime.app.Application.current.__backend;
-		@:privateAccess subLoopTick(backend.subLoopTickEventInfo.timestamp);
-	}
-	#end
 
 	static public function startMusic():Void {
 		MiniAudio.start();
@@ -143,7 +109,6 @@ class Mixer {
 	}
 
 	static public function destroyMusic():Void {
-		disableSubLoop();
 		MiniAudio.destroy();
 		while (loadedFiles.pop() != null) {}
 		loadedFiles = null; // Clean up
@@ -165,12 +130,8 @@ class Mixer {
 			} else {
 				playfield.songPosition += deltaTime * speed;
 
-				#if FV_LIME_FORK
-				var smoothedTimeMult:Float = (deltaTime / (1000 / window.renderFrameRate)) * speed;
-				#else
 				var refreshRate = window.displayMode.refreshRate; // integer version if you're on vanilla lime
 				var smoothedTimeMult:Float = ((1000 / window.frameRate) / (1000 / refreshRate)) * speed;
-				#end
 				if (RenderingMode.enabled) smoothedTimeMult = 1;
 
 				var diff = ogSongPos - rawPlaybackPosition;
@@ -207,59 +168,6 @@ class Mixer {
 		}
 	}
 
-	#if FV_LIME_FORK
-	static var lastTimestamp:Int64 = 0;
-	static var lastTimestamp1s:Int64 = 0;
-	static function subLoopTick(timestamp:Int64):Void {
-		var window = lime.app.Application.current.window;
-		var renderDelta = 1000 / window.renderFrameRate;
-		var playField = Main.current.playField;
-		if (lastTimestamp == 0) lastTimestamp = timestamp;
-		if (lastTimestamp1s == 0) lastTimestamp1s = timestamp;
-		var deltaTime:Float = Tools.int64ToFloat(timestamp - lastTimestamp) / 100000;
-		if (deltaTime < 0.0001) deltaTime = 0.0001;
-		if (deltaTime >= 100) deltaTime = 100;
-		if (RenderingMode.enabled) deltaTime = 1000 / RenderingMode.frameRate;
-		if (playField != null) {
-			var field = playField.field;
-			if (field != null) {
-				if (!field.isInGameOver) {
-					// If the song hasn't started yet, update the countdown conductor only.
-					// Do NOT apply latency compensation here — countdownDisp.conductor must see a pure musical timeline.
-					if (playField.startedCountdown) {
-						if (!playField.songStarted && !playField.songEnded) {
-							// Mixer already advanced playfield.songPosition during pre-start,
-							// so simply push that time to the countdown conductor.
-							if (playField.countdownDisp != null) {
-								if (playField.countdownDisp.conductor != null)
-									playField.countdownDisp.conductor.time = playField.songPosition;
-							}
-						}
-						var songNotActive = !playField.songStarted || playField.songEnded || RenderingMode.enabled;
-						if (!playField.paused) {
-							if (songNotActive) {
-								if (deltaTime > renderDelta && !RenderingMode.enabled) deltaTime = renderDelta;
-								playField.songPosition += deltaTime * Mixer.speed;
-							} else {
-								updateSmoothMusicTime(deltaTime, playField, window);
-							}
-						}
-
-						Main.conductor.time = playField.songPosition + (playField.latencyCompensation - Mixer.latency());
-					}
-				} else {
-					field.updateGameOver(deltaTime);
-				}
-			}
-		}
-
-		if (timestamp - lastTimestamp1s > 100000000) {
-			lastTimestamp1s = timestamp;
-		}
-		lastTimestamp = timestamp;
-	}
-	#end
-
 	static function isPlaying():Bool {
 		return MiniAudio.getMixerState() == MixerState.PLAYING;
 	}
@@ -290,14 +198,12 @@ class Mixer {
 				}
 			}
 
-			#if !FV_LIME_FORK
 			if (!playField.songStarted || playField.songEnded || RenderingMode.enabled) {
 				playField.songPosition += deltaTime * Mixer.speed;
 			} else {
 				var window = lime.app.Application.current.window;
 				updateSmoothMusicTime(deltaTime, playField, window);
 			}
-			#end
 		}
 	}
 

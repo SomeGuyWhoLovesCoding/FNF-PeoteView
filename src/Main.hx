@@ -254,6 +254,7 @@ class Main extends Application
 			prepareGameplayState();
 
 			#if (!html5)
+			trace("Is es3? " + PeoteGL.Version.isES3);
 			if (PeoteGL.Version.isES3) window.context.gl.disable(0x8DB9); // GL_FRAMEBUFFER_SRGB_EXT
 			#end
 
