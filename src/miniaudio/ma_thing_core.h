@@ -1114,19 +1114,23 @@ public:
         memset(&device, 0, sizeof(ma_device));
     }
 
-    void start() {
+        void start() {
         if (!exists.load(std::memory_order_acquire)) return;
         if (mixerState.load(std::memory_order_acquire) == 3) seekToPCMFrame(0);
         if (asyncLoader) asyncLoader->resumeLoading();
+        
+        // FIX: Set to playing BEFORE starting the device so the callback immediately knows the state
+        mixerState.store(1, std::memory_order_release); 
         ma_device_start(&device);
-        mixerState.store(1, std::memory_order_release);
     }
 
     void stop() {
         if (!exists.load(std::memory_order_acquire)) return;
+        
+        // FIX: Set to paused BEFORE stopping the device to prevent the callback from overwriting it
+        mixerState.store(2, std::memory_order_release); 
         if (asyncLoader) asyncLoader->pauseLoading();
         ma_device_stop(&device);
-        mixerState.store(2, std::memory_order_release);
     }
 
     bool stopped() const { return mixerState.load(std::memory_order_acquire) == 3; }
@@ -1134,10 +1138,16 @@ public:
     void seekToPCMFrame(int64_t pos) {
         if (!exists.load(std::memory_order_acquire)) return;
 
+        bool wasPlaying = (mixerState.load(std::memory_order_acquire) == 1);
+        
+        // FIX: Pause immediately to lock the state before touching the decoder/device
+        if (wasPlaying) {
+            mixerState.store(2, std::memory_order_release); 
+        }
+
         if (asyncLoader) asyncLoader->pauseLoading();
         if (asyncLoader) asyncLoader->waitUntilIdle();
 
-        bool wasPlaying = (mixerState.load(std::memory_order_acquire) == 1);
         if (wasPlaying) ma_device_stop(&device);
 
         for (size_t i = 0; i < streams.size(); i++) {
@@ -1161,8 +1171,8 @@ public:
 
         if (wasPlaying && mixerState.load(std::memory_order_acquire) == 2) {
             if (asyncLoader) asyncLoader->resumeLoading();
+            mixerState.store(1, std::memory_order_release); // Set state before starting device
             ma_device_start(&device);
-            mixerState.store(1, std::memory_order_release);
         }
     }
 
@@ -1359,7 +1369,6 @@ private:
         float* out = (float*)pOutput;
         memset(out, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
 
-        // UPDATED: Use frame-count-based timing for more precise background load intervals
         sys->totalFramesProcessed += frameCount;
         ma_uint64 framesSinceLastLoad = sys->totalFramesProcessed - sys->lastLoadFrame;
         ma_uint64 loadIntervalFrames = (SAMPLE_RATE * BG_LOAD_CHECK_INTERVAL) / 1000;
@@ -1385,7 +1394,9 @@ private:
                           "MAX_CALLBACK_FRAMES too small for pitched playback buffers");
 
             if (frameCount > MAX_CALLBACK_FRAMES) {
-                sys->mixerState.store(anyActive ? 1 : 3, std::memory_order_release);
+                // FIX: Check state before overwriting
+                int currentState = sys->mixerState.load(std::memory_order_acquire);
+                if (currentState != 2) sys->mixerState.store(anyActive ? 1 : 3, std::memory_order_release);
                 (void)pInput;
                 return;
             }
@@ -1393,16 +1404,14 @@ private:
             float* inputMix       = sys->pitchInputMix;
             float* stretchedOutput = sys->pitchStretchedOut;
 
-            // UPDATED: Add accumulated error correction to prevent playback rate drift
             static double positionError = 0;
             double exactRead = frameCount * rate + positionError;
             ma_uint32 maxToRead = (ma_uint32)exactRead;
 
-            // FIX: Clear maxToRead frames for input, not frameCount
             memset(inputMix,        0, sizeof(float) * maxToRead * CHANNEL_COUNT);
             memset(stretchedOutput, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
 
-            positionError = exactRead - maxToRead;  // Carry fractional error forward
+            positionError = exactRead - maxToRead;
 
             for (size_t i = 0; i < sys->streams.size(); i++) {
                 if (!sys->streams[i].active.load(std::memory_order_acquire)) continue;
@@ -1422,7 +1431,13 @@ private:
             }
         }
 
-        sys->mixerState.store(anyActive ? 1 : 3, std::memory_order_release);
+        // FIX: Only update mixerState if we are not paused.
+        // This prevents the callback from accidentally "un-pausing" the engine while ma_device_stop is finishing.
+        int currentState = sys->mixerState.load(std::memory_order_acquire);
+        if (currentState != 2) {
+            sys->mixerState.store(anyActive ? 1 : 3, std::memory_order_release);
+        }
+        
         (void)pInput;
     }
 

@@ -6,55 +6,6 @@ import miniaudio.StdVectorString;
 import utils.Tools;
 import lime.ui.Window;
 
-/**
-	# Music Playback Helper (Haxe + MiniAudio)
-
-	This Haxe class is a **helper for managing music playback** using the **MiniAudio** library. It is tailored for **real-time applications**, such as games, and is designed with **performance and simplicity** in mind.
-
-	---
-
-	## 🎵 Core Features
-
-	- Loads and manages **music files**
-	- Allows starting and stopping of **music playback**
-	- Tracks and adjusts **current playback time** to prevent drift
-	- Smoothly updates playback time using **delta time**
-
-	---
-
-	## ⚙️ Design Details
-
-	- Uses a default **sample rate of 44100 Hz** (can be adjusted)
-	- Maintains:
-	- Current **playback position**
-	- Total **length** of the track
-	- Utilizes the `MiniAudio` class for **low-level audio operations**
-
-	### Main Methods:
-	- `loadFiles()` – Initialize music from file paths
-	- `startMusic()` / `stopMusic()` – Control playback
-	- `destroyMusic()` – Clean up resources
-	- `updateWithAudioTime()` – Simulate smooth audio time internally & prevent timing drift
-
-	---
-
-	## 🧠 Usage Considerations
-
-	- Designed for **single-threaded use** (not thread-safe)
-	- Optimized for **performance** (minimal overhead)
-	- Intended for **real-time** playback (e.g., game loop)
-	- Requires `MiniAudio` to be **properly initialized**
-	- Should be used alongside other **music modules**
-	- Handle **errors gracefully**, especially with file operations
-	- Always call `destroyMusic()` when playback is no longer needed
-
-	---
-
-	## 📌 Notes
-
-	- Acts as a **high-level abstraction** for music playback
-	@since Development
- */
 @:publicFields
 @:noDebug
 class Mixer {
@@ -113,10 +64,16 @@ class Mixer {
 
 	static public function startMusic():Void {
 		MiniAudio.start();
+		// FIX: Clear the window to prevent stale timestamps from affecting the resume
+		audioTimeWindow = [];
+		windowIndex = 0;
 	}
 
 	static public function stopMusic():Void {
 		MiniAudio.stop();
+		// FIX: Clear the window to prevent stale timestamps from affecting the next pause
+		audioTimeWindow = [];
+		windowIndex = 0;
 	}
 
 	static public function destroyMusic():Void {
@@ -134,7 +91,6 @@ class Mixer {
 	//  Audio Time Window System (100ms / 4000 Timestamps)
 	// =========================================================================
 	
-	/** Circular buffer storing the last ~4000 audio timestamps (approx 100ms at 44.1kHz) */
 	static var audioTimeWindow:Array<Float> = [];
 	static var windowIndex:Int = 0;
 	static var accumulatedTime:Float = 0;
@@ -147,8 +103,9 @@ class Mixer {
 			// 1. Accumulate audio time based on delta time (prediction)
 			accumulatedTime += deltaTime * speed;
 			
-			// 2. Get the actual audio playback position
-			var audioTime = MiniAudio.getPlaybackPosition();
+			// 2. FIX: Get the actual AUDIBLE audio playback position by subtracting OS latency.
+			// We clamp to 0 to prevent negative values at the very start of playback.
+			var audioTime = Math.max(0, MiniAudio.getPlaybackPosition());
 			
 			// 3. Store the real timestamp in our 4000-size circular buffer
 			if (audioTimeWindow.length < WINDOW_SIZE) {
@@ -159,11 +116,9 @@ class Mixer {
 			windowIndex = (windowIndex + 1) % WINDOW_SIZE;
 			
 			// 4. Choose the best timestamp from the window
-			// We find the timestamp in the buffer that is closest to our accumulated prediction
 			var bestTime = audioTime;
 			var minDiff = Math.POSITIVE_INFINITY;
 			
-			// Note: Iterating 4000 floats in Haxe takes <0.1ms, so this is extremely lightweight
 			for (i in 0...audioTimeWindow.length) {
 				var t = audioTimeWindow[i];
 				var diff = Math.abs(t - accumulatedTime);
@@ -181,7 +136,7 @@ class Mixer {
 				accumulatedTime = bestTime;
 			} else {
 				// Small drift: apply smooth correction to eliminate jitter without going overboard
-				accumulatedTime += drift * 0.1; // Adjust 0.1 to change correction strength
+				accumulatedTime += drift * 0.1; 
 			}
 			
 			playfield.songPosition = accumulatedTime;
@@ -240,12 +195,6 @@ class Mixer {
 	}
 }
 
-/**
-	- `0` - Undefined
-	- `1` - Playing
-	- `2` - Paused
-	- `3` - Finished
-*/
 enum abstract MixerState(Int) from Int to Int {
 	var PLAYING = 1;
 	var STOPPED = 2;

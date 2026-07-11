@@ -1,7 +1,7 @@
 /*
  * ma_thing_standalone.cpp
  * Plain C++ global interface — links against ma_thing_core.h.
- * No HashLink dependency. 
+ * No HashLink dependency.
  */
 
 // These implementation macros must be defined in exactly one translation unit.
@@ -37,7 +37,7 @@ double getGlobalVolume()                       { return g_audioSystem.getGlobalV
 double setGlobalVolume(double value)           { return g_audioSystem.setGlobalVolume(value); }
 
 int detectLatency() {
-    int osMs = 30;
+    int osMs = 50;
     return osMs;
 }
 
