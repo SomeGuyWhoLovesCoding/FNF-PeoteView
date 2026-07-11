@@ -6,10 +6,6 @@ import lime.system.System;
  * The home of inputs, whether you own it or not.
  * @since Development
 **/
-#if (FV_LIME_FORK && lime_cffi)
-import lime._internal.backend.native.NativeCFFI;
-@:access(lime._internal.backend.native.NativeCFFI)
-#end
 @:publicFields
 class Strumline {
 	var notesToHit(default, null):Array<MetaNote>;
@@ -173,13 +169,8 @@ class Strumline {
 
 			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + (Main.conductor.offset * 2.0));
 			var _timing = MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency);
-			#if (FV_LIME_FORK && lime_cffi)
-			var _timingCompare:Float = @:privateAccess NativeCFFI.lime_asynckey_timestamp();
-			var _timingDiffSubtract = timestamp - _timingCompare;
-			_timing += _timingDiffSubtract;
 			//trace('timing: $_timing | timestamp: $timestamp | posWithLatency: $posWithLatency | timingCompare: $_timingCompare | timingDiffSubtract: $_timingDiffSubtract');
 			//Sys.println('note timing:$_timing, note index:$index');
-			#end
 			var timing = (_timing / parent._cachedHitbox) * 0.9;
 
 			if (@:privateAccess pf.onNoteHit.__listeners.length != 0)

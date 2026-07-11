@@ -76,14 +76,6 @@ class InputSystem {
 	function addEvents() {
 		var window = lime.app.Application.current.window;
 		#if !android
-		#if FV_LIME_FORK
-		AsyncInput.inputPress.add(press);
-		AsyncInput.inputRelease.add(release);
-		haxe.Timer.delay(() -> {
-			window.onKeyDown.add(press_game);
-		}, 50); // prevent pause screen as the first frame here
-		#end
-		#else
 		window.onKeyDownPrecise.add(press);
 		window.onKeyUpPrecise.add(release);
 		#end
@@ -93,23 +85,13 @@ class InputSystem {
 	function removeEvents() {
 		var window = lime.app.Application.current.window;
 		#if !android
-		#if FV_LIME_FORK
-		AsyncInput.inputPress.remove(press);
-		AsyncInput.inputRelease.remove(release);
-		window.onKeyDown.remove(press_game);
-		#else
 		window.onKeyDownPrecise.remove(press);
 		window.onKeyUpPrecise.remove(release);
-		#end
 		#end
 		Main.current.mouseDown = null;
 	}
 
-	function press_game(code:KeyCode, mod:KeyModifier) {
-		gameCondition(code);
-	}
-
-	function press(code:KeyCode, timestamp:Float)
+	function press(code:KeyCode, mod:KeyModifier, timestamp:Float)
 	{
 		var field = parent.field;
 		var isInGameOver = field.isInGameOver;
@@ -119,9 +101,7 @@ class InputSystem {
 
 		code = minimize(code);
 
-		#if !FV_LIME_FORK
 		if (gameCondition(code)) return;
-		#end
 
 		if (parent.disposed || parent.botplay
 			|| isInGameOver
@@ -159,12 +139,7 @@ class InputSystem {
 		#end
 	}
 
-	
-	#if !android
-	function release(code:KeyCode, timestamp:Float)
-	#else
-	function release(code:KeyCode, mod:KeyModifier #if FV_LIME_FORK , timestamp:Float #end)
-	#end
+	function release(code:KeyCode, mod:KeyModifier, timestamp:Float)
 	{
 		if (parent.disposed || parent.botplay
 			|| parent.field.isInGameOver
@@ -208,24 +183,24 @@ class InputSystem {
 		var returnValue = false;
 		var game = SaveData.state.controls.game;
 
+		var field = parent.field;
+		var isInGameOver = field.isInGameOver;
+
+		if (parent.ready && isInGameOver) {
+			field.endGameOver(keyCode == SaveData.state.controls.ui.back);
+			return true;
+		}
+
 		if (parent.ready && keyCode == game.pause
 			&& !parent.songEnded) {
 			if (!parent.paused) parent.pause();
 			return true;
 		}
 
-		var field = parent.field;
-		var isInGameOver = field.isInGameOver;
-
 		if (parent.ready && !parent.botplay
 			&& !isInGameOver && !parent.songEnded
 			&& !parent.paused && keyCode == game.reset && !RenderingMode.enabled) {
 			parent.gameOver(Chart.header, 1);
-			return true;
-		}
-
-		if (parent.ready && isInGameOver) {
-			field.endGameOver(keyCode == SaveData.state.controls.ui.back);
 			return true;
 		}
 

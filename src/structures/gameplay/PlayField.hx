@@ -217,8 +217,6 @@ class PlayField {
 	 * @param initialMania The amount of keys you want for your fnf song. (up to 256 supported) (This is configured by the song's header)
 	 */
 	function create(roof:CustomDisplay, display:CustomDisplay, initialMania:Int = 4) {
-		AsyncInput.init();
-
 		mania = initialMania;
 
 		healthLoss = [for (i in 0...128) 0.02];
@@ -875,8 +873,6 @@ class PlayField {
 		Disposes the playfield.
 	**/
 	function dispose() {
-		AsyncInput.shutdown();
-
 		ready = false;
 		disposed = true;
 
