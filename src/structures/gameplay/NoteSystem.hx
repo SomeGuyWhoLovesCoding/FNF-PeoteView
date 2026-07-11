@@ -72,7 +72,7 @@ class NoteSystem {
 			strumlines.push(strumline);
 		}
 
-		virtualNoteBuffer = new NoteVB(strumlines.length, strumlines[0].buffer.length);
+		virtualNoteBuffer = new NoteVB(strumlines.length, strumlines[0].receptors.length);
 
 		notePool = new NotePool(this);
 		noteSpawner = new NoteSpawner(this);
@@ -124,18 +124,18 @@ class NoteSystem {
 
 		for (i in 0...strumlines.length) {
 			var strumline = strumlines[i];
-			var botTimers = strumline.botTimers;
 			var canMess = !strumline.playable || RenderingMode.enabled || parent.botplay;
-			for (j in 0...botTimers.length) {
-				var rec = strumline.buffer[j];
+			for (j in 0...strumline.receptors.length) {
+				var receptor = strumline.receptors[j];
+				var rec = receptor.note;
 				if (parent.botplay) canMess = true;
 				if (canMess) {
-					if (!strumline.sustainsActive[j]) {
-						if (strumline.botTimers[j] < 0 && !strumline.sustainsActive[j]) {
+					if (!receptor.sustainActive) {
+						if (receptor.botTimer < 0 && !receptor.sustainActive) {
 							rec.reset();
-							strumline.botTimers[j] = 0;
+							receptor.botTimer = 0;
 						}
-						strumline.botTimers[j] -= timeDelta;
+						receptor.botTimer -= timeDelta;
 					}
 				}
 			}
@@ -166,7 +166,8 @@ class NoteSystem {
 		}
 
 		var strumline = strumlines[lane];
-		var rec = strumline.buffer[index];
+		var receptor = strumline.receptors[index];
+		var rec = receptor.note;
 		var id = parent.inputSystem.receptorIds[index];
 
 		var noteSpr = notePool.getNote(id, note, _id);
@@ -180,7 +181,7 @@ class NoteSystem {
 		var judged:Bool   = File.getJudgement(_id);
 		var isHit:Bool    = judged && !File.getHitFlag(_id);   // judged + flag=false → hit
 		var isMissed:Bool = judged && File.getHitFlag(_id);  // judged + flag=true → missed
-		var isResolved:Bool = strumline.sustainsResolved[index];
+		var isResolved:Bool = receptor.sustainResolved;
 
 		var noteSprX = rec.x;
 		var noteSprY = rec.y;
@@ -206,19 +207,19 @@ class NoteSystem {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
 
 				if (!isMissed && diff < _cachedHitbox - offset) {
-					var noteToHit = strumline.notesToHit[index];
+					var noteToHit = receptor.noteToHit;
 					var noteToHitExists = noteToHit != null;
 
 					if (!noteToHitExists) {
-						strumline.notesToHit[index] = note;
-						strumline.notesToHit_indexes[index] = noteSpr.globalIndex;
+						receptor.noteToHit = note;
+						receptor.noteToHit_index = noteSpr.globalIndex;
 					} else {
 						var _pos = MetaNote.metaNotePositionToSongTime(
 							noteToHit.position - pos
 						) * _cachedScrollSpeed;  // Match diff's units
-						if (strumline.notesToHit_indexes[index] != noteSpr.globalIndex && Math.abs(diff) < Math.abs(_pos)) {
-							strumline.notesToHit[index] = note;
-							strumline.notesToHit_indexes[index] = _id;
+						if (receptor.noteToHit_index != noteSpr.globalIndex && Math.abs(diff) < Math.abs(_pos)) {
+							receptor.noteToHit = note;
+							receptor.noteToHit_index = _id;
 						}
 					}
 				}
@@ -242,13 +243,13 @@ class NoteSystem {
 
 					if (sustainExists && !isResolved) {
 						sustainSpr.alpha = Sustain.defaultMissAlpha;
-						strumline.sustainsResolved[index] = true;
+						receptor.sustainResolved = true;
 						isResolved = true;
 						parent.onSustainRelease.dispatch(note);
 					}
 
-					strumline.notesToHit[index] = null;
-					strumline.notesToHit_indexes[index] = 0;
+					receptor.noteToHit = null;
+					receptor.noteToHit_index = 0;
 
 					var hud = parent.hud;
 					if (SaveData.state.preferences.ratingPopup && hud != null) {
@@ -268,12 +269,12 @@ class NoteSystem {
 
 				if (!rec.confirmed()) rec.confirm();
 
-				strumline.botTimers[index] = 0.045;
-				strumline.sustainsToHold_duration[index] = 0;
+				receptor.botTimer = 0.045;
+				receptor.sustainToHold_duration = 0;
 
 				if (sustainExists) {
-					strumline.sustainsActive[index] = true;
-					strumline.sustainsToHold_duration[index] = note.duration;
+					receptor.sustainActive = true;
+					receptor.sustainToHold_duration = note.duration;
 					sustainSpr.followNote(rec.x, rec.y, id);
 					sustainSpr.w = sustainSpr.length - leftover;
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
@@ -313,14 +314,14 @@ class NoteSystem {
 
 				if (sustainCompleted && !isResolved) {
 					if (!movingBackward) {
-						strumline.sustainsResolved[index] = true;
+						receptor.sustainResolved = true;
 						isResolved = true;
 					}
 
 					if (playable && rec.confirmed()) rec.press();
 
-					strumline.sustainsToHold[index] = null;
-					strumline.sustainsToHold_indexes[index] = 0;
+					receptor.sustainToHold = null;
+					receptor.sustainToHold_index = 0;
 
 					if (@:privateAccess parent.onSustainComplete.__listeners.length != 0)
 						parent.onSustainComplete.dispatch(note);
@@ -331,7 +332,7 @@ class NoteSystem {
 			}
 
 			if (diff + sustainLength - 25 < 0)
-				strumline.sustainsActive[index] = !isResolved;
+				receptor.sustainActive = !isResolved;
 		}
 
 		if (noteSpr != null) {

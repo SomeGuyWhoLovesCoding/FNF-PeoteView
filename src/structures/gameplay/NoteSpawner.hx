@@ -26,11 +26,6 @@ class NoteSpawner {
 
 		bottom = 0;
 		top = 0;
-
-		/*for (i in 0...20) {
-			var note:MetaNote = File.getNote(i);
-			Sys.println('Is it judged? ${File.getJudgement(i)}. Note flag? ${File.getHitFlag(i)}. Here\'s the position and index and type of the note for reference: ${note.position},${note.index},${note.type}');
-		}*/
 	}
 
 	var timeSpentOnIt:Float = 0;
@@ -46,9 +41,10 @@ class NoteSpawner {
 		if (parent.movingBackward) {
 			for (i in 0...parent.strumlines.length) {
 				var strumline = parent.strumlines[i];
-				for (j in 0...strumline.notesToHit.length) {
-					strumline.notesToHit[j] = null;
-					strumline.notesToHit_indexes[j] = 0;
+				for (j in 0...strumline.receptors.length) {
+					var receptor = strumline.receptors[j];
+					receptor.noteToHit = null;
+					receptor.noteToHit_index = 0;
 				}
 			}
 		}
@@ -70,26 +66,30 @@ class NoteSpawner {
 
 		var time = haxe.Timer.stamp();
 		while (i < top) {
-			//if (top - i < 50) Sys.println('[NOTESYSTEM] Print note $i');
 			var n = File.getNote(i);
 
 			var lane = parent.noteTypeFunctionalityPre[n.type] != null
 				? 1
 				: (n.type % parent.strumlines.length);
-			var receptor = parent.strumlines[lane].buffer[n.index];
-			var fakeOverlapStorage = parent.strumlines[lane].fakeOverlapStorage;
+			var receptor = parent.strumlines[lane].receptors[n.index];
+			var rec = receptor.note;
 
 			var n_position = n.position;
 
 			var diff = (MetaNote.metaNotePositionToSongTime(n_position - pos)) * scrollSpeed;
-			var newY = receptor.y + Math.floor(diff);
+			var newY = rec.y + Math.floor(diff);
 
 			var ghost = isGhostNote(prev, n);
 
-			var shouldOverlap = noteSpr != null && shouldNotesOverlap(prev, n, noteSpr, receptor, newY,
-				fakeOverlapStorage[prev != null ? prev.index : 0]) && !ghost;
+			var prevY:Float = 0;
+			if (prev != null) {
+				var prevReceptor = parent.strumlines[lane].receptors[prev.index];
+				prevY = prevReceptor.fakeOverlapStorage;
+			}
 
-			fakeOverlapStorage[n.index] = newY;
+			var shouldOverlap = noteSpr != null && shouldNotesOverlap(prev, n, noteSpr, rec, newY, prevY) && !ghost;
+
+			receptor.fakeOverlapStorage = newY;
 
 			if (shouldOverlap) {
 				mergeNoteIntoSprite(noteSpr, i);
@@ -224,7 +224,8 @@ class NoteSpawner {
 				var index = lane[j];
 				var length = notes.noteLength[i][j];
 				var id = parent.parent.inputSystem.receptorIds[j];
-				var strumReceptor = strumline.buffer[j];
+				var receptor = strumline.receptors[j];
+				var strumReceptor = receptor.note;
 				var k = 0;
 				if (length == 0) continue;
 				while (k < length) {
@@ -244,8 +245,8 @@ class NoteSpawner {
 					note.changeID(id);
 					note.toNote();
 
-					var noteToHitIdx = strumline.notesToHit_indexes[j];
-					strumline.notesToHit_sprites[j] = noteToHitIdx == virtualNote.globalIndex ? note : null;
+					var noteToHitIdx = receptor.noteToHit_index;
+					receptor.noteToHit_sprite = noteToHitIdx == virtualNote.globalIndex ? note : null;
 
 					regularNoteList.push(note);
 
@@ -273,7 +274,8 @@ class NoteSpawner {
 				var index = lane[j];
 				var length = notes.sustainLength[i][j];
 				var id = parent.parent.inputSystem.receptorIds[j];
-				var strumReceptor = strumline.buffer[j];
+				var receptor = strumline.receptors[j];
+				var strumReceptor = receptor.note;
 				for (k in 0...length) {
 					var virtualSustain:VirtualSustain = index[k];
 					if (virtualSustain == null) continue;

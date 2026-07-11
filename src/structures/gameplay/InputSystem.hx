@@ -125,8 +125,9 @@ class InputSystem {
 
 		if (noteSystem != null) {
 			var strumline = noteSystem.strumlines[lane];
-			if (!strumline.playerHitsToCheck[index]) {
-				strumline.playerHitsToCheck[index] = true;
+			var receptor = strumline.receptors[index];
+			if (!receptor.playerHitToCheck) {
+				receptor.playerHitToCheck = true;
 				strumline.press(index);
 			}
 		}
@@ -165,8 +166,9 @@ class InputSystem {
 
 		if (noteSystem != null) {
 			var strumline = noteSystem.strumlines[lane];
-			if (strumline.playerHitsToCheck[index]) {
-				strumline.playerHitsToCheck[index] = false;
+			var receptor = strumline.receptors[index];
+			if (receptor.playerHitToCheck) {
+				receptor.playerHitToCheck = false;
 				strumline.release(index);
 			}
 		}

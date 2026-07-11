@@ -8,22 +8,7 @@ import lime.system.System;
 **/
 @:publicFields
 class Strumline {
-	var notesToHit(default, null):Array<MetaNote>;
-	var notesToHit_sprites(default, null):Array<Note>;
-	var notesToHit_indexes(default, null):Array<Int64>;
-
-	var sustainsToHold(default, null):Array<MetaNote>;
-	var sustainsToHold_indexes(default, null):Array<Int64>;
-	var sustainsToHold_duration(default, null):Array<Int>;
-	var botHitsToCheck(default, null):Array<Bool>;
-	var playerHitsToCheck(default, null):Array<Bool>;
-	var fakeOverlapStorage(default, null):Array<Int>;
-
-	var botTimers(default, null):Array<Float>;
-	var sustainsActive(default, null):Array<Bool>;
-	// Replaces the held bit — tracks whether a sustain has been resolved (completed or released early)
-	var sustainsResolved(default, null):Array<Bool>;
-	var buffer(default, null):Array<Note>;
+	var receptors(default, null):Array<Receptor>;
 
 	var x(default, set):Int;
 	var y(default, set):Int;
@@ -34,7 +19,7 @@ class Strumline {
 
 	function set_x(value:Int) {
 		for (i in 0...length) {
-			buffer[i].x = value + Math.floor(gap * i);
+			receptors[i].note.x = value + Math.floor(gap * i);
 		}
 		return x = value;
 	}
@@ -42,7 +27,7 @@ class Strumline {
 	function set_y(value:Int) {
 		if (value != y) {
 			for (i in 0...length) {
-				buffer[i].y = value;
+				receptors[i].note.y = value;
 			}
 		}
 		return y = value;
@@ -51,7 +36,7 @@ class Strumline {
 	function set_scale(value:Float) {
 		if (value != scale) {
 			for (i in 0...length) {
-				buffer[i].scale = value;
+				receptors[i].note.scale = value;
 			}
 		}
 		return scale = value;
@@ -64,29 +49,17 @@ class Strumline {
 	}
 
 	function set_length(value:Int) {
-		notesToHit.resize(value);
-		notesToHit_sprites.resize(value);
-		notesToHit_indexes.resize(value);
-		sustainsToHold.resize(value);
-		sustainsToHold_indexes.resize(value);
-		sustainsToHold_duration.resize(value);
-		sustainsActive.resize(value);
-		sustainsResolved.resize(value);
-		botHitsToCheck.resize(value);
-		playerHitsToCheck.resize(value);
-		fakeOverlapStorage.resize(value);
-		botTimers.resize(value);
-		buffer.resize(value);
+		receptors.resize(value);
 
 		var ids = parent.parent.inputSystem.receptorIds;
 
 		for (i in 0...value) {
-			var rec = buffer[i];
+			var rec = receptors[i];
 			if (rec == null) {
-				rec = new Note(x, y, 0, 0);
-				rec.changeID(ids[i]);
-				rec.reset();
-				buffer[i] = rec;
+				var note = new Note(x, y, 0, 0);
+				note.changeID(ids[i]);
+				note.reset();
+				receptors[i] = new Receptor(note);
 			}
 		}
 
@@ -98,19 +71,7 @@ class Strumline {
 	var parent(default, null):NoteSystem;
 
 	function new(x:Int, y:Int, gap:Int, scale:Float, length:Int, parent:NoteSystem) {
-		notesToHit = [];
-		notesToHit_sprites = [];
-		notesToHit_indexes = [];
-		sustainsToHold = [];
-		sustainsToHold_duration = [];
-		sustainsToHold_indexes = [];
-		botHitsToCheck = [];
-		playerHitsToCheck = [];
-		fakeOverlapStorage = [];
-		botTimers = [];
-		sustainsActive = [];
-		sustainsResolved = [];
-		buffer = [];
+		receptors = [];
 
 		this.parent = parent;
 
@@ -123,14 +84,15 @@ class Strumline {
 
 	function draw(buf:Buffer<Note>) {
 		for (i in 0...length) {
-			buf.addElement(buffer[i]);
+			buf.addElement(receptors[i].note);
 		}
 	}
 
 	function press(index:Int) {
-		var noteToHit = notesToHit[index];
-		var rec = buffer[index];
-		var noteIndex = notesToHit_indexes[index];
+		var rec = receptors[index];
+		var noteToHit = rec.noteToHit;
+		var note = rec.note;
+		var noteIndex = rec.noteToHit_index;
 
 		if (noteToHit != null && !File.getJudgement(noteIndex)) {
 			var pf = parent.parent;
@@ -143,33 +105,32 @@ class Strumline {
 				noteTypeCall(index, type, false);
 			}
 
-			if (!rec.confirmed()) {
-				rec.confirm();
+			if (!note.confirmed()) {
+				note.confirm();
 			}
 
-			var sprite = notesToHit_sprites[index];
+			var sprite = rec.noteToHit_sprite;
 			if (sprite != null) {
 				sprite.initialAlpha = 0;
 				if (@:privateAccess sprite.bytePos != -1)
 					NoteSystem.notesBuf.updateElement(sprite);
-				notesToHit_sprites[index] = null;
+				rec.noteToHit_sprite = null;
 			}
 
 			// mark as hit: missed=false, then set judgement
 			File.setHitFlag(noteIndex, false);
 			File.setJudgement(noteIndex, true);
 
-			sustainsToHold_duration[index] = noteToHit.duration;
-			sustainsResolved[index] = false;
+			rec.sustainToHold_duration = noteToHit.duration;
+			rec.sustainResolved = false;
 
 			if (noteToHit.duration > 20) {
-				sustainsToHold[index] = noteToHit;
-				sustainsToHold_indexes[index] = noteIndex;
+				rec.sustainToHold = noteToHit;
+				rec.sustainToHold_index = noteIndex;
 			}
 
 			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + Main.conductor.offset);
 			var _timing = MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency);
-			//Sys.println('note timing:$_timing, note index:$index');
 			var timing = (_timing / parent._cachedHitbox) * 0.9;
 
 			if (@:privateAccess pf.onNoteHit.__listeners.length != 0)
@@ -178,19 +139,20 @@ class Strumline {
 				pf.field.hitNote(noteToHit, timing, 1);
 			pf.hitNote(noteToHit, timing, 1, noteIndex);
 
-			notesToHit[index] = null;
-			notesToHit_indexes[index] = noteIndex = 0;
+			rec.noteToHit = null;
+			rec.noteToHit_index = 0;
 		} else {
-			if (!rec.pressed()) {
-				rec.press();
+			if (!note.pressed()) {
+				note.press();
 			}
 		}
 	}
 
 	function release(index:Int) {
-		var sustainToRelease = sustainsToHold[index];
-		var rec = buffer[index];
-		var sustainIndex = sustainsToHold_indexes[index];
+		var rec = receptors[index];
+		var sustainToRelease = rec.sustainToHold;
+		var note = rec.note;
+		var sustainIndex = rec.sustainToHold_index;
 
 		// Sustain release fires if: note exists, correct lane, was hit, and not yet resolved
 		var hitflag = File.getHitFlag(sustainIndex);
@@ -198,12 +160,12 @@ class Strumline {
 			&& sustainToRelease.index == index
 			&& File.getJudgement(sustainIndex)
 			&& !hitflag
-			&& !sustainsResolved[index];
+			&& !rec.sustainResolved;
 
 		if (sustainReleaseCallbackCanRun) {
 			var pf = parent.parent;
 
-			sustainsResolved[index] = true;
+			rec.sustainResolved = true;
 
 			if (@:privateAccess pf.onSustainRelease.__listeners.length != 0)
 				pf.onSustainRelease.dispatch(sustainToRelease);
@@ -211,9 +173,9 @@ class Strumline {
 				pf.field.releaseSustain(sustainToRelease);
 			pf.releaseSustain(sustainToRelease, sustainIndex);
 
-			sustainsToHold[index] = null;
-			sustainsToHold_indexes[index] = sustainIndex = 0;
-			sustainsToHold_duration[index] = 0;
+			rec.sustainToHold = null;
+			rec.sustainToHold_index = 0;
+			rec.sustainToHold_duration = 0;
 
 			var hud = pf.hud;
 			if (SaveData.state.preferences.ratingPopup && hud != null) {
@@ -221,42 +183,28 @@ class Strumline {
 			}
 		}
 
-		if (!rec.idle()) {
-			rec.reset();
+		if (!note.idle()) {
+			note.reset();
 		}
 	}
 
 	inline function confirmed(index:Int) {
-		return buffer[index].confirmed();
+		return receptors[index].note.confirmed();
 	}
 
 	function resetInputs() {
-		notesToHit.resize(0);
-		notesToHit_indexes.resize(0);
-		sustainsToHold.resize(0);
-		sustainsToHold_indexes.resize(0);
-		sustainsToHold_duration.resize(0);
-		botHitsToCheck.resize(0);
-		playerHitsToCheck.resize(0);
-		botTimers.resize(0);
-		sustainsActive.resize(0);
-		sustainsResolved.resize(0);
-		notesToHit.resize(length);
-		notesToHit_indexes.resize(length);
-		sustainsToHold.resize(length);
-		sustainsToHold_indexes.resize(length);
-		sustainsToHold_duration.resize(length);
-		botHitsToCheck.resize(length);
-		playerHitsToCheck.resize(length);
-		botTimers.resize(length);
-		sustainsActive.resize(length);
-		sustainsResolved.resize(length);
+		for (i in 0...length) {
+            var rec = receptors[i];
+            if (rec != null) {
+                rec.resetState();
+            }
+        }
 	}
 
 	function resetAnimations() {
 		for (i in 0...length) {
-			var rec = buffer[i];
-			rec.reset();
+			var rec = receptors[i];
+			rec.note.reset();
 		}
 		try {
 			NoteSystem.notesBuf.update();
@@ -264,23 +212,17 @@ class Strumline {
 	}
 
 	function dispose() {
-		if (notesToHit != null) {
-			while (notesToHit.pop() != null) {}
-			while (notesToHit_indexes.pop() != null) {}
-			notesToHit = null;
-			notesToHit_indexes = null;
-		}
-		if (sustainsToHold != null) {
-			while (sustainsToHold.pop() != null) {}
-			while (sustainsToHold_indexes.pop() != null) {}
-			while (sustainsToHold_duration.pop() != null) {}
-			sustainsToHold = null;
-			sustainsToHold_indexes = null;
-			sustainsToHold_duration = null;
-		}
-		if (sustainsResolved != null) {
-			sustainsResolved.resize(0);
-			sustainsResolved = null;
+		if (receptors != null) {
+			while (receptors.length > 0) {
+				var rec = receptors.pop();
+				if (rec != null) {
+					rec.note = null;
+					rec.noteToHit = null;
+					rec.noteToHit_sprite = null;
+					rec.sustainToHold = null;
+				}
+			}
+			receptors = null;
 		}
 	}
 }
