@@ -37,7 +37,7 @@ double getGlobalVolume()                       { return g_audioSystem.getGlobalV
 double setGlobalVolume(double value)           { return g_audioSystem.setGlobalVolume(value); }
 
 int detectLatency() {
-    int osMs = 50;
+    int osMs = 30;
     return osMs;
 }
 
