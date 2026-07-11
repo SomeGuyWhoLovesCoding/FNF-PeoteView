@@ -233,11 +233,6 @@ class Main extends Application
 	// UPSCALE CONDITION - WHENEVER YOU WANT YOUR GAME TO RUN LIKE COCK OR RUN LIKE WHEELS
 	var upscale:Bool = false;
 
-	inline function setFrameRate(update:Float, render:Float) {
-		Application.current.window.frameRate = update;
-		Application.current.window.renderFrameRate = render;
-	}
-
 	public function startSample(window:Window)
 	{
 		current = this;
@@ -247,8 +242,7 @@ class Main extends Application
 		var frameRate = SaveData.state.graphics.frameRate;
 
 		trace("Framerate: " + frameRate);
-		setFrameRate(frameRate, frameRate);
-		Tools.getIconGridMap('assets/images/ui');
+		FunkinMainLoop.run(frameRate);
 
 		peoteView = new PeoteView(window);
 
@@ -328,6 +322,8 @@ class Main extends Application
 		var stamp = haxe.Timer.stamp();
 		Sys.println("Preloading textures...");
 
+		Tools.getIconGridMap('assets/images/ui');
+
 		HealthBarSprite.healthBarProperties = Tools.parseHealthBarConfig('assets/images/ui');
 		UISprite.timeBarProperties = Tools.parseTimeBarConfig('assets/images/ui');
 		Tools.parseNoteskinData('assets/images/notes');
@@ -383,7 +379,7 @@ class Main extends Application
 
 	var newDeltaTime:Float = 0;
 
-	override function update(deltaTime:Int) {
+	override function update(deltaTime:Float) {
 		Tools.profileFrame();
 		//Sys.println(deltaTime);
 		//FrameLogger.log(deltaTime);
@@ -391,17 +387,8 @@ class Main extends Application
 		var lastTitle = Application.current.window.title;
 
 		if (_started) {
-			#if FV_LIME_FORK
-			newDeltaTime = deltaTime * 0.00001;
-			#else
-			newDeltaTime = 1000 / Application.current.window.frameRate;
-			#end
+			newDeltaTime = 1000.0 / FunkinMainLoop.FRAMERATE;
 			//trace(newDeltaTime);
-
-			if (Application.current.window.uncappedFrameRate && !RenderingMode.enabled) {
-				var mult = (1000 / Application.current.window.frameRate) / newDeltaTime;
-				newDeltaTime *= mult;
-			}
 
 			if (mainMenu != null && !mainMenu.disposed) {
 				mainMenu.update(newDeltaTime);
@@ -431,17 +418,8 @@ class Main extends Application
 	override function render(context:RenderContext) {
 		super.render(context);
 
-		#if FV_LIME_FORK
-		var renderFrameRate = Application.current.window.renderFrameRate;
-		var refreshRate:Float = Application.current.window.displayMode.refreshRate;
-		if (refreshRate == 0) refreshRate = 60;
-		if (renderFrameRate == 0) renderFrameRate = Application.current.window.renderFrameRate = refreshRate;
-		var renderRate = newDeltaTime; // Render is set directly after updating so this is the solution
-		//trace(renderRate);
-		#else
 		var renderFrameRate = Application.current.window.frameRate;
 		var renderRate = 1000 / renderFrameRate;
-		#end
 
 		if (playField != null) {
 			if (!playField.paused) {

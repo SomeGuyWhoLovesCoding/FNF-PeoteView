@@ -76,8 +76,8 @@ class InputSystem {
 	function addEvents() {
 		var window = lime.app.Application.current.window;
 		#if !android
-		window.onKeyDownPrecise.add(press);
-		window.onKeyUpPrecise.add(release);
+		window.onKeyDown.add(press);
+		window.onKeyUp.add(release);
 		#end
 		Main.current.mouseDown = mousePress;
 	}
@@ -85,13 +85,13 @@ class InputSystem {
 	function removeEvents() {
 		var window = lime.app.Application.current.window;
 		#if !android
-		window.onKeyDownPrecise.remove(press);
-		window.onKeyUpPrecise.remove(release);
+		window.onKeyDown.remove(press);
+		window.onKeyUp.remove(release);
 		#end
 		Main.current.mouseDown = null;
 	}
 
-	function press(code:KeyCode, mod:KeyModifier, timestamp:Float)
+	function press(code:KeyCode, mod:KeyModifier)
 	{
 		var field = parent.field;
 		var isInGameOver = field.isInGameOver;
@@ -127,7 +127,7 @@ class InputSystem {
 			var strumline = noteSystem.strumlines[lane];
 			if (!strumline.playerHitsToCheck[index]) {
 				strumline.playerHitsToCheck[index] = true;
-				strumline.press(index #if FV_LIME_FORK , timestamp #end);
+				strumline.press(index);
 			}
 		}
 
@@ -139,7 +139,7 @@ class InputSystem {
 		#end
 	}
 
-	function release(code:KeyCode, mod:KeyModifier, timestamp:Float)
+	function release(code:KeyCode, mod:KeyModifier)
 	{
 		if (parent.disposed || parent.botplay
 			|| parent.field.isInGameOver
