@@ -125,7 +125,7 @@ class Mixer {
 			// That was the cause of the "glitch" halfwheat wanted fixed desperately
 			// so instead I just set it on the note system class where everything processes.
 			var rawPlaybackPosition = MiniAudio.getPlaybackPosition();
-			if (playfield.songPosition - rawPlaybackPosition > 5 && rawPlaybackPosition < #if FV_LIME_FORK 25 #else 50 #end) {
+			if (playfield.songPosition - rawPlaybackPosition > 5 && rawPlaybackPosition < 50) {
 				playfield.songPosition = ogSongPos;
 			} else {
 				playfield.songPosition += deltaTime * speed;
