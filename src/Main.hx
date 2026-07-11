@@ -10,32 +10,6 @@ import lime.ui.Window;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 
-// generated from claude.ai
-class FrameLogger {
-    static var last:Float = 0;
-    static var buf:StringBuf = new StringBuf();
-    static var size:Int = 0;
-    static var file:sys.io.FileOutput;
-
-    public static function log(deltaTime:Int64/*, deltaTimeINGAME:Float*/) {
-		if (file == null) {
-			file = sys.io.File.append("frametimes.log", false);
-			Application.current.window.onClose.add(flush);
-		}
-        var line = 'Raw: $deltaTime'/* + ', In-game: $deltaTimeINGAME'*/ + '\n';
-		buf.add(line);
-		size += line.length;
-		if (size >= 16384) flush();
-    }
-
-    public static function flush() {
-        file.writeString(buf.toString());
-        file.flush();
-        buf = new StringBuf();
-        size = 0;
-    }
-}
-
 private enum abstract StateSelection(Int) {
 	var NONE;
 	var MAIN_MENU;
@@ -240,9 +214,7 @@ class Main extends Application
 		SaveData.init(window);
 
 		var frameRate = SaveData.state.graphics.frameRate;
-
-		trace("Framerate: " + frameRate);
-		FunkinMainLoop.run(frameRate);
+		FunkinMainLoop.run(frameRate, false);
 
 		peoteView = new PeoteView(window);
 
@@ -382,14 +354,11 @@ class Main extends Application
 
 	override function update(deltaTime:Float) {
 		Tools.profileFrame();
-		//Sys.println(deltaTime);
-		//FrameLogger.log(deltaTime);
 
 		var lastTitle = Application.current.window.title;
 
 		if (_started) {
 			newDeltaTime = 1000.0 / FunkinMainLoop.FRAMERATE;
-			//trace(newDeltaTime);
 
 			if (mainMenu != null && !mainMenu.disposed) {
 				mainMenu.update(newDeltaTime);
@@ -433,9 +402,6 @@ class Main extends Application
 				freeplayMenu.render(renderRate);
 			}
 		}
-
-		//Sys.println('Uncapped framerate: ${Application.current.window.uncappedFrameRate}');
-		//Sys.println('Delta time: $newDeltaTime');
 	}
 
 	function popupOptionsMenu() {

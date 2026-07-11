@@ -34,7 +34,7 @@ import lime.ui.Window;
 	- `loadFiles()` – Initialize music from file paths
 	- `startMusic()` / `stopMusic()` – Control playback
 	- `destroyMusic()` – Clean up resources
-	- `updateSmoothMusicTime()` – Simulate smooth audio time & prevent timing drift
+	- `updateWithAudioTime()` – Simulate smooth audio time internally & prevent timing drift
 
 	---
 
@@ -115,56 +115,11 @@ class Mixer {
 	}
 
 	private static var ogLatencyForImmediateChange(default, null):Int = 100;
-	static public function updateSmoothMusicTime(deltaTime:Float, playfield:PlayField, window:Window):Void {
+	static public function updateWithAudioTime(deltaTime:Float, playfield:PlayField, window:Window):Void {
 		if (playfield == null) return;
 		if (isPlaying()) {
-			var ogSongPos = playfield.songPosition + (deltaTime * speed);
-			var latency = playfield.latencyCompensation - Mixer.latency();
-			// note: do not add latency to rawPlaybackPosition.
-			// and for the part where you set songPosition to ogSongPos, do not add latency to it as well.
-			// That was the cause of the "glitch" halfwheat wanted fixed desperately
-			// so instead I just set it on the note system class where everything processes.
-			var rawPlaybackPosition = MiniAudio.getPlaybackPosition();
-			if (playfield.songPosition - rawPlaybackPosition > 5 && rawPlaybackPosition < 50) {
-				playfield.songPosition = ogSongPos;
-			} else {
-				playfield.songPosition += deltaTime * speed;
-
-				var refreshRate = window.displayMode.refreshRate; // integer version if you're on vanilla lime
-				var smoothedTimeMult:Float = ((1000 / window.frameRate) / (1000 / refreshRate)) * speed;
-				if (RenderingMode.enabled) smoothedTimeMult = 1;
-
-				var diff = ogSongPos - rawPlaybackPosition;
-				var absDiff = Math.abs(diff);
-
-				var smallest:Float = 3.75 * speed;
-				var small:Float = 8.5 * speed;
-				var big:Float = 17.5 * speed;
-				var biggest:Float = 40 * speed;
-
-				// Determine correction strength based on drift magnitude
-				var multiply:Float = 0.05;
-				var delayIsDifferent = ogLatencyForImmediateChange != __cachedLatency;
-				if (delayIsDifferent) {
-					multiply = 1.0; // immediately change if latency has changed
-					playfield.songPosition = rawPlaybackPosition;
-				} else {
-					if (absDiff > smallest) multiply = 0.1 * smoothedTimeMult;
-					if (absDiff > small) multiply = 0.325 * smoothedTimeMult;
-					if (absDiff > big) multiply = 0.975 * smoothedTimeMult;
-					if (absDiff > biggest) multiply = 1.0;
-
-					var subtract = diff * multiply;
-					ogSongPos -= Math.min(subtract, biggest); // Math.min here to prevent supernova from gc
-					playfield.songPosition = ogSongPos;
-				}
-			}
-
-			if (ogLatencyForImmediateChange != __cachedLatency) {
-				playfield.songPosition = rawPlaybackPosition + deltaTime;
-			}
-
-			ogLatencyForImmediateChange = __cachedLatency;
+			playfield.songPosition = MiniAudio.getPlaybackPosition() - Mixer.latency();
+			//Sys.println(playfield.songPosition);
 		}
 	}
 
@@ -202,7 +157,7 @@ class Mixer {
 				playField.songPosition += deltaTime * Mixer.speed;
 			} else {
 				var window = lime.app.Application.current.window;
-				updateSmoothMusicTime(deltaTime, playField, window);
+				updateWithAudioTime(deltaTime, playField, window);
 			}
 		}
 	}

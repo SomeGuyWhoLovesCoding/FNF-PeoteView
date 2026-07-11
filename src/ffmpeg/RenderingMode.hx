@@ -14,8 +14,7 @@ import cpp.NativeProcess;
 #end
 
 /**
-	* TODO: IMPLEMENT ES3 SUPPORTED LOGIC INTO THIS
-	* Flagged, because it's not supported on ES3 yet. Would have to make a literal lime API based off that, which would be quite the testament.
+	* This class will become an extern and will work so much better and practically more stable than it was before.
 	* @since Development
 **/
 @:publicFields
@@ -293,7 +292,7 @@ class RenderingMode {
 		songName = Chart.header.title;
 
 		Application.current.window.resizable = false;
-		Application.current.window.frameRate = 1000;
+		FunkinMainLoop.run(SaveData.state.graphics.frameRate, true);
 
 		var encoderSettings = getBestEncoder();
 		var args = [
@@ -385,7 +384,7 @@ class RenderingMode {
 		freeList = [];
 		frameQueue = [];
 
-		Application.current.window.frameRate = SaveData.state.graphics.frameRate;
+		FunkinMainLoop.run(SaveData.state.graphics.frameRate, false);
 		Application.current.window.resizable = true;
 		
 		cleanupLock = false;

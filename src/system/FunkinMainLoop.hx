@@ -12,14 +12,17 @@ import lime.app.VSyncMode;
 **/
 @:publicFields
 class FunkinMainLoop {
-    static var FRAMERATE:Float = 60;
-    static var FRAMEOPTS:FrameOptions = {
-        timePrecision: TimePrecision.HighResolution,
-        busyWait: BusyWaitMode.On,
-        uncapMode: UncapMode.Off
-    };
+    static var FRAMERATE:Float  =  60;
+    static var FRAMEOPTS:FrameOptions;
 
-    static function run(frameRate:Float) {
+    static function run(frameRate:Float, uncapped:Bool) {
+        FRAMEOPTS = {
+            timePrecision: TimePrecision.HighResolution,
+            busyWait: BusyWaitMode.On,
+            uncapMode: uncapped ? UncapMode.Soft : UncapMode.Off
+        };
+        var uncappedModeStr:String = uncapped ? "Soft" : "Off";
+		Sys.println('[ System ] Framerate set to $frameRate with uncapped mode set to ${uncappedModeStr}');
         Application.current.configureFrameTiming(FrameProfile.Precision, FRAMEOPTS, VSyncMode.Adaptive);
     }
 }
