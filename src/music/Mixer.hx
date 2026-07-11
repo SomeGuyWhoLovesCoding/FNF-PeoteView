@@ -85,6 +85,11 @@ class Mixer {
 		if (playfield != null) {
 			if (playfield.songEnded) playfield.songPosition = MiniAudio.getPlaybackPosition();
 		}
+		
+		// Reset the window system when seeking to prevent stale data
+		accumulatedTime = value;
+		audioTimeWindow = [];
+		windowIndex = 0;
 	}
 
 	static var loadedFiles:Array<String>;
@@ -97,6 +102,12 @@ class Mixer {
 		MiniAudio.loadFiles(files);
 		trackCount = files.length;
 		length = MiniAudio.getDuration();
+		
+		// Initialize window system state
+		accumulatedTime = 0;
+		audioTimeWindow = [];
+		windowIndex = 0;
+		
 		Sys.println("  [ Audio Pipeline ]   Song initialized. (Length: " + Tools.formatTime(length, true) + ")");
 	}
 
@@ -112,14 +123,68 @@ class Mixer {
 		MiniAudio.destroy();
 		while (loadedFiles.pop() != null) {}
 		loadedFiles = null; // Clean up
+		
+		// Clean up window system state
+		accumulatedTime = 0;
+		audioTimeWindow = [];
+		windowIndex = 0;
 	}
 
-	private static var ogLatencyForImmediateChange(default, null):Int = 100;
+	// =========================================================================
+	//  Audio Time Window System (100ms / 4000 Timestamps)
+	// =========================================================================
+	
+	/** Circular buffer storing the last ~4000 audio timestamps (approx 100ms at 44.1kHz) */
+	static var audioTimeWindow:Array<Float> = [];
+	static var windowIndex:Int = 0;
+	static var accumulatedTime:Float = 0;
+	static inline var WINDOW_SIZE:Int = 4000;
+	
 	static public function updateWithAudioTime(deltaTime:Float, playfield:PlayField, window:Window):Void {
 		if (playfield == null) return;
+		
 		if (isPlaying()) {
-			playfield.songPosition = MiniAudio.getPlaybackPosition() - Mixer.latency();
-			//Sys.println(playfield.songPosition);
+			// 1. Accumulate audio time based on delta time (prediction)
+			accumulatedTime += deltaTime * speed;
+			
+			// 2. Get the actual audio playback position
+			var audioTime = MiniAudio.getPlaybackPosition();
+			
+			// 3. Store the real timestamp in our 4000-size circular buffer
+			if (audioTimeWindow.length < WINDOW_SIZE) {
+				audioTimeWindow.push(audioTime);
+			} else {
+				audioTimeWindow[windowIndex] = audioTime;
+			}
+			windowIndex = (windowIndex + 1) % WINDOW_SIZE;
+			
+			// 4. Choose the best timestamp from the window
+			// We find the timestamp in the buffer that is closest to our accumulated prediction
+			var bestTime = audioTime;
+			var minDiff = Math.POSITIVE_INFINITY;
+			
+			// Note: Iterating 4000 floats in Haxe takes <0.1ms, so this is extremely lightweight
+			for (i in 0...audioTimeWindow.length) {
+				var t = audioTimeWindow[i];
+				var diff = Math.abs(t - accumulatedTime);
+				if (diff < minDiff) {
+					minDiff = diff;
+					bestTime = t;
+				}
+			}
+			
+			// 5. Smoothly correct the accumulated time towards the chosen timestamp
+			var drift = bestTime - accumulatedTime;
+			
+			if (Math.abs(drift) > 50.0) {
+				// Large drift (e.g., after a manual seek), snap directly to prevent desync
+				accumulatedTime = bestTime;
+			} else {
+				// Small drift: apply smooth correction to eliminate jitter without going overboard
+				accumulatedTime += drift * 0.1; // Adjust 0.1 to change correction strength
+			}
+			
+			playfield.songPosition = accumulatedTime;
 		}
 	}
 
@@ -163,10 +228,7 @@ class Mixer {
 	}
 
 	private static var __cachedLatency(default, null):Int = 100;
-
-	// This is for optimization to reduce cpu usage. And yes, this is necessary because playback device connection times are not instant.
 	private static var __cachedLatency_times(default, null):Int;
-	//
 
 	static inline function latency():Int {
 		__cachedLatency_times++;

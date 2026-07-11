@@ -758,9 +758,6 @@ class PlayField {
 
 		if (!RenderingMode.enabled) {
 			Mixer.startMusic();
-			var attempts = 0;
-			while (MiniAudio.getPlaybackPosition() <= 0 && attempts++ < 500) {}
-			songPosition = MiniAudio.getPlaybackPosition() + latencyCompensation + Mixer.latency();
 		}
 
 		songStarted = true;

@@ -8,11 +8,11 @@
  *
  * Triple-buffered sliding window implementation with proper continuity.
  * RAII implementation - Resources manage their own lifetimes.
- *
- * LOCK-FREE TIMESTAMP PREDICTION:
- * - Microsecond-precise future timing for audio samples
- * - No mutexes in the audio processing path
- * - Exact microsecond-smooth playback position interpolation via predictor state
+ * 
+ * LOCK-FREE ARCHITECTURE:
+ * - All OS-level mutexes and condition variables have been removed from hot paths.
+ * - Cross-thread state is communicated via atomic variables and lock-free triple buffers.
+ * - The audio callback is 100% wait-free and lock-free.
  *
  * stb_vorbis is optimized specifically for funkin' view's audio format needs
  * (OGG) whilst leaving WAV, MP3, and FLAC aside.  The modified version also
@@ -55,43 +55,23 @@ extern "C" {
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <chrono>
-#include <condition_variable>
 #include <deque>
-#include <mutex>
-#include <queue>
 #include <string>
 #include <thread>
 #include <unordered_map>
 #include <vector>
 #include <iostream>
 #include <cmath> // Required for std::fma
+#include <chrono>
 
 #ifdef __SSE__
 #include <emmintrin.h>
 #include <xmmintrin.h>
 #endif
 
-// ---- Lock-free spinlock guard --------------------------------------------
-struct SpinLockGuard {
-    bool acquired = false;
-    SpinLockGuard(std::atomic<bool>& f) : flag(f) { 
-        bool expected = false;
-        acquired = flag.compare_exchange_strong(expected, true, std::memory_order_acq_rel);
-    }
-    ~SpinLockGuard() { 
-        if (acquired) flag.store(false, std::memory_order_release); 
-    }
-    explicit operator bool() const { return acquired; }
-private:
-    std::atomic<bool>& flag;
-    SpinLockGuard(const SpinLockGuard&) = delete;
-    SpinLockGuard& operator=(const SpinLockGuard&) = delete;
-};
-
 std::atomic<double> MUSIC_MASTER_VOLUME_099{1.0f};
 
-// ---- Windows audio-device helpers with change detection -----------------
+// ---- Windows audio-device helpers with change detection (LOCK-FREE) -----
 
 #ifdef HX_WINDOWS
 
@@ -108,14 +88,21 @@ static std::string wstring_to_string(const std::wstring& wstr) {
     return strTo;
 }
 
+// Lock-free triple buffer for device state to avoid std::mutex
 static struct AudioDeviceState {
-    bool isPnP = false;
-    bool isHeadphones = false;
-    std::string deviceName;
-    std::string deviceId;
+    struct DeviceInfo {
+        std::string deviceName;
+        std::string deviceId;
+        bool isPnP = false;
+        bool isHeadphones = false;
+    };
+    
+    DeviceInfo infoBuffers[3];
+    std::atomic<int> infoReaderIndex{0};
+    std::atomic<int> infoNewestIndex{1};
+    
     std::atomic<int64_t> lastCheckTime{0};
     std::atomic<bool> deviceChanged{false};
-    std::atomic<bool> mutexHeld{false};
 } g_currentDeviceState;
 
 #define DEVICE_CHECK_COOLDOWN_MS 500
@@ -212,29 +199,41 @@ static bool refreshDeviceState() {
         pEnumerator->Release();
     }
 
-    SpinLockGuard lock(g_currentDeviceState.mutexHeld);
-    if (!lock) {
-        if (comInitialized) CoUninitialize();
-        return false;
+    // Lock-free triple buffer update
+    int n = g_currentDeviceState.infoNewestIndex.load(std::memory_order_acquire);
+    int r = g_currentDeviceState.infoReaderIndex.load(std::memory_order_acquire);
+    
+    // The free buffer is the one that is neither the reader's nor the newest.
+    // If the reader has caught up to the newest (r == n), we have two free buffers.
+    int next;
+    if (r == n) {
+        next = (r + 1) % 3;
+    } else {
+        next = 3 - r - n;
     }
-
-    bool deviceChanged = (newIsPnP != g_currentDeviceState.isPnP) ||
-                         (newIsHeadphones != g_currentDeviceState.isHeadphones) ||
-                         (newDeviceName != g_currentDeviceState.deviceName) ||
-                         (newDeviceId != g_currentDeviceState.deviceId);
+    
+    AudioDeviceState::DeviceInfo& newInfo = g_currentDeviceState.infoBuffers[next];
+    newInfo.isPnP = newIsPnP;
+    newInfo.isHeadphones = newIsHeadphones;
+    newInfo.deviceName = newDeviceName;
+    newInfo.deviceId = newDeviceId;
+    
+    // Compare against the LAST PUBLISHED state (n), not the reader's state (r)
+    AudioDeviceState::DeviceInfo& oldInfo = g_currentDeviceState.infoBuffers[n];
+    bool deviceChanged = (newInfo.isPnP != oldInfo.isPnP) ||
+                         (newInfo.isHeadphones != oldInfo.isHeadphones) ||
+                         (newInfo.deviceName != oldInfo.deviceName) ||
+                         (newInfo.deviceId != oldInfo.deviceId);
 
     if (deviceChanged) {
         printf("[Audio] Device changed: %s (PnP: %s, Headphones: %s)\n",
                newDeviceName.c_str(),
                newIsPnP ? "Yes" : "No",
                newIsHeadphones ? "Yes" : "No");
-
-        g_currentDeviceState.isPnP = newIsPnP;
-        g_currentDeviceState.isHeadphones = newIsHeadphones;
-        g_currentDeviceState.deviceName = newDeviceName;
-        g_currentDeviceState.deviceId = newDeviceId;
         g_currentDeviceState.deviceChanged.store(true, std::memory_order_release);
     }
+
+    g_currentDeviceState.infoNewestIndex.store(next, std::memory_order_release);
 
     if (comInitialized) CoUninitialize();
 
@@ -270,19 +269,26 @@ static void updateDeviceStateIfNeeded() {
     }
 }
 
+inline int getDeviceInfoIndex() {
+    int r = g_currentDeviceState.infoReaderIndex.load(std::memory_order_relaxed);
+    int n = g_currentDeviceState.infoNewestIndex.load(std::memory_order_acquire);
+    if (r != n) {
+        g_currentDeviceState.infoReaderIndex.store(n, std::memory_order_release);
+        return n;
+    }
+    return r;
+}
+
 inline bool checkIfPnPDevice() {
-    SpinLockGuard lock(g_currentDeviceState.mutexHeld);
-    return lock ? g_currentDeviceState.isPnP : false;
+    return g_currentDeviceState.infoBuffers[getDeviceInfoIndex()].isPnP;
 }
 
 inline bool checkWindowsHeadphoneStatus() {
-    SpinLockGuard lock(g_currentDeviceState.mutexHeld);
-    return lock ? g_currentDeviceState.isHeadphones : false;
+    return g_currentDeviceState.infoBuffers[getDeviceInfoIndex()].isHeadphones;
 }
 
 inline std::string getCurrentAudioDeviceName() {
-    SpinLockGuard lock(g_currentDeviceState.mutexHeld);
-    return lock ? g_currentDeviceState.deviceName : "Unknown";
+    return g_currentDeviceState.infoBuffers[getDeviceInfoIndex()].deviceName;
 }
 
 inline bool didAudioDeviceChange() {
@@ -338,105 +344,6 @@ inline void stopAudioDeviceMonitoring() {
 
 #define MAX_CALLBACK_FRAMES 4096
 
-// ---- High-Resolution Clock & Timestamp Primitives -------------------------
-#if defined(__linux__) || defined(__ANDROID__)
-#include <time.h>
-#elif defined(__APPLE__)
-#include <mach/mach_time.h>
-#endif
-
-using AudioTimestampNs = int64_t;
-using AudioTimestampUs = int64_t;
-
-constexpr AudioTimestampNs NANOS_PER_SECOND     = 1000000000LL;
-constexpr AudioTimestampNs NANOS_PER_MICROSECOND = 1000LL;
-constexpr double          MICROSECONDS_PER_SAMPLE = 1000000.0 / SAMPLE_RATE;
-
-inline constexpr AudioTimestampNs usToNs(AudioTimestampUs us) { return us * NANOS_PER_MICROSECOND; }
-inline constexpr AudioTimestampUs nsToUs(AudioTimestampNs ns) { return ns / NANOS_PER_MICROSECOND; }
-
-#if defined(_WIN32)
-struct AudioClock {
-    static inline double getFrequencyHz() {
-        static double freq = []() {
-            LARGE_INTEGER f;
-            QueryPerformanceFrequency(&f);
-            return (double)f.QuadPart;
-        }();
-        return freq;
-    }
-    static inline AudioTimestampNs now() {
-        static const double freq = getFrequencyHz();
-        LARGE_INTEGER counter;
-        QueryPerformanceCounter(&counter);
-        return (AudioTimestampNs)((double)counter.QuadPart * (NANOS_PER_SECOND / freq));
-    }
-    static inline AudioTimestampUs nowUs() { return nsToUs(now()); }
-};
-#elif defined(__APPLE__)
-struct AudioClock {
-    static inline AudioTimestampNs now() {
-        static mach_timebase_info_data_t timebase = []() {
-            mach_timebase_info_data_t tb;
-            mach_timebase_info(&tb);
-            return tb;
-        }();
-        return (AudioTimestampNs)(mach_absolute_time() * timebase.numer / timebase.denom);
-    }
-    static inline AudioTimestampUs nowUs() { return nsToUs(now()); }
-};
-#elif defined(__linux__) || defined(__ANDROID__)
-struct AudioClock {
-    static inline AudioTimestampNs now() {
-        struct timespec ts;
-        clock_gettime(CLOCK_MONOTONIC_RAW, &ts);
-        return (AudioTimestampNs)ts.tv_sec * NANOS_PER_SECOND + ts.tv_nsec;
-    }
-    static inline AudioTimestampUs nowUs() { return nsToUs(now()); }
-};
-#else
-struct AudioClock {
-    static inline AudioTimestampNs now() {
-        return (AudioTimestampNs)std::chrono::steady_clock::now().time_since_epoch().count();
-    }
-    static inline AudioTimestampUs nowUs() { return nsToUs(now()); }
-};
-#endif
-
-// ---- Timestamp Predictor --------------------------------------------------
-struct TimestampPredictor {
-    std::atomic<ma_uint32> deviceLatencyFrames{0};
-    std::atomic<ma_uint64> currentCallbackFilePos{0};
-    std::atomic<AudioTimestampNs> currentCallbackTimestamp{0};
-
-    inline void init(ma_uint32 estimatedLatencyMs = 10) {
-        deviceLatencyFrames.store((ma_uint32)((SAMPLE_RATE * estimatedLatencyMs) / 1000), std::memory_order_release);
-    }
-
-    inline void updatePreRead(ma_uint64 currentFilePos) {
-        AudioTimestampNs now = AudioClock::now();
-        AudioTimestampNs latencyNs = (AudioTimestampNs)((double)deviceLatencyFrames.load(std::memory_order_acquire) * (double)NANOS_PER_SECOND / (double)SAMPLE_RATE);
-        AudioTimestampNs playTime = now + latencyNs;
-        
-        currentCallbackFilePos.store(currentFilePos, std::memory_order_release);
-        currentCallbackTimestamp.store(playTime, std::memory_order_release);
-    }
-
-    inline AudioTimestampNs predictFrameOutputTime(ma_uint64 globalFrame) const {
-        AudioTimestampNs baseTime = currentCallbackTimestamp.load(std::memory_order_acquire);
-        ma_uint64 baseFrame = currentCallbackFilePos.load(std::memory_order_acquire);
-        
-        if (baseTime == 0 || globalFrame < baseFrame) return 0; 
-        ma_uint64 framesAhead = globalFrame - baseFrame;
-        double offsetNs = (double)framesAhead * (double)NANOS_PER_SECOND / (double)SAMPLE_RATE;
-        return baseTime + (AudioTimestampNs)offsetNs;
-    }
-
-    inline AudioTimestampUs predictFrameOutputTimeUs(ma_uint64 globalFrame) const {
-        return nsToUs(predictFrameOutputTime(globalFrame));
-    }
-};
-
 // ---- SIMD mix helpers -------------------------
 
 #ifdef __SSE__
@@ -461,6 +368,7 @@ static inline void mix_simd(float* dst, const float* src, int samples, float vol
             _mm_storeu_ps(dst + i, _mm_add_ps(_mm_loadu_ps(dst + i), _mm_mul_ps(_mm_loadu_ps(src + i), vvol)));
     }
 
+    // Tail loop: std::fma works perfectly here on SSE2
     for (; i < samples; i++) {
         dst[i] = std::fma(src[i], volume, dst[i]);
     }
@@ -474,6 +382,7 @@ static inline void mix_scalar(float* dst, const float* src, int samples, float v
         for (int i = 0; i < samples; i++) dst[i] += src[i];
     } else {
         for (int i = 0; i < samples; i++) {
+            // std::fma ensures (src[i] * volume) + dst[i] is rounded only once
             dst[i] = std::fma(src[i], volume, dst[i]); 
         }
     }
@@ -508,6 +417,7 @@ __attribute__((target("avx2,fma")))
 static inline void mix_avx2(float* dst, const float* src, int samples, float volume) {
     int i = 0;
     if (volume == 1.0f) {
+        // No multiplication here, so FMA doesn't apply
         for (; i + 8 <= samples; i += 8)
             _mm256_storeu_ps(dst + i, _mm256_add_ps(_mm256_loadu_ps(dst + i), _mm256_loadu_ps(src + i)));
     } else {
@@ -515,13 +425,18 @@ static inline void mix_avx2(float* dst, const float* src, int samples, float vol
         for (; i + 8 <= samples; i += 8) {
             __m256 vdst = _mm256_loadu_ps(dst + i);
             __m256 vsrc = _mm256_loadu_ps(src + i);
+            
+            // REPLACED: _mm256_add_ps + _mm256_mul_ps
+            // WITH: _mm256_fmadd_ps (computes a * b + c)
             _mm256_storeu_ps(dst + i, _mm256_fmadd_ps(vsrc, vvol, vdst));
         }
     }
     
+    // Tail loop: Use std::fma for precision and potential auto-vectorization
     for (; i < samples; i++) dst[i] = std::fma(src[i], volume, dst[i]);
 }
 
+// Function pointer defaults to existing SSE if available, otherwise scalar
 static void (*g_mix_func)(float*, const float*, int, float) =
 #ifdef __SSE__
     mix_simd;
@@ -536,7 +451,7 @@ static void init_simd_dispatch() {
 }
 
 // ==========================================================================
-//  DecoderStream
+//  DecoderStream (LOCK-FREE)
 // ==========================================================================
 
 struct DecoderStream {
@@ -548,13 +463,7 @@ struct DecoderStream {
     float* nextBuffer    = nullptr;
     float* loadingBuffer = nullptr;
 
-    int activeBufferIdx  = 0;
-    int nextBufferIdx    = 1;
-    int loadingBufferIdx = 2;
-
-    std::atomic<AudioTimestampNs> bufferTimestampBase[3] = {0, 0, 0};
-
-    ma_uint64 filePosition   = 0;
+    std::atomic<ma_uint64> filePosition{0};
     ma_uint64 bufferStartPos = 0;
     ma_uint64 localReadPos   = 0;
     ma_uint64 validFrames    = 0;
@@ -576,11 +485,9 @@ struct DecoderStream {
         float* asyncLoadingBuffer = nullptr;
     } asyncState;
 
-    bool      active        = false;
+    std::atomic<bool> active{false};
     ma_decoder decoder;
     ma_uint64 decoderLength = 0;
-
-    std::atomic<bool> decoderBusy{false};
 
     DecoderStream()  { memset(&decoder, 0, sizeof(ma_decoder)); }
     ~DecoderStream() { cleanup(); }
@@ -593,33 +500,6 @@ struct DecoderStream {
     DecoderStream(const DecoderStream&)            = delete;
     DecoderStream& operator=(const DecoderStream&) = delete;
 
-    inline bool tryAcquireDecoder() {
-        bool expected = false;
-        return decoderBusy.compare_exchange_strong(expected, true, std::memory_order_acq_rel);
-    }
-
-    inline void releaseDecoder() {
-        decoderBusy.store(false, std::memory_order_release);
-    }
-
-    inline AudioTimestampNs getCurrentFrameTimestamp() const {
-        AudioTimestampNs base = bufferTimestampBase[activeBufferIdx].load(std::memory_order_acquire);
-        double offsetNs = (double)localReadPos * (double)NANOS_PER_SECOND / (double)SAMPLE_RATE;
-        return base + (AudioTimestampNs)offsetNs;
-    }
-    
-    inline AudioTimestampUs getCurrentFrameTimestampUs() const {
-        return nsToUs(getCurrentFrameTimestamp());
-    }
-    
-    inline AudioTimestampNs getFrameDeltaFromNow() const {
-        return getCurrentFrameTimestamp() - AudioClock::now();
-    }
-    
-    inline AudioTimestampUs getFrameDeltaFromNowUs() const {
-        return nsToUs(getFrameDeltaFromNow());
-    }
-
     bool trySwapBuffers() {
         if (!asyncState.nextBufferReady.load(std::memory_order_acquire))
             return false;
@@ -630,17 +510,9 @@ struct DecoderStream {
         float* oldNext    = nextBuffer;
         float* oldLoading = loadingBuffer;
 
-        int oldActiveIdx  = activeBufferIdx;
-        int oldNextIdx    = nextBufferIdx;
-        int oldLoadingIdx = loadingBufferIdx;
-
         activeBuffer  = oldNext;
         nextBuffer    = oldLoading;
         loadingBuffer = oldActive;
-
-        activeBufferIdx  = oldNextIdx;
-        nextBufferIdx    = oldLoadingIdx;
-        loadingBufferIdx = oldActiveIdx;
 
         bufferStartPos = asyncState.nextBufferStartPos;
         validFrames    = asyncState.nextBufferValidFrames;
@@ -686,17 +558,12 @@ struct DecoderStream {
         asyncState.nextBufferStartPos       = 0;
         asyncState.loadingBufferStartPos    = 0;
 
-        filePosition = bufferStartPos = localReadPos = validFrames = 0;
-
-        activeBufferIdx  = 0;
-        nextBufferIdx    = 1;
-        loadingBufferIdx = 2;
+        filePosition.store(0, std::memory_order_release);
+        bufferStartPos = localReadPos = validFrames = 0;
 
         if (pcmBufferA) memset(pcmBufferA, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
         if (pcmBufferB) memset(pcmBufferB, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
         if (pcmBufferC) memset(pcmBufferC, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
-
-        for(int i=0; i<3; i++) bufferTimestampBase[i].store(0, std::memory_order_release);
     }
 
     bool shouldSwapBuffers() const {
@@ -717,7 +584,7 @@ struct DecoderStream {
             asyncState.requestNextBuffer.store(true, std::memory_order_release);
     }
 
-    void fillBuffer(float* buffer, ma_uint64 decodeStart, ma_uint64* framesRead, int bufferIndex = 0, TimestampPredictor* predictor = nullptr) {
+    void fillBuffer(float* buffer, ma_uint64 decodeStart, ma_uint64* framesRead) {
         ma_uint64 maxFrames = TOTAL_BUFFER_FRAMES;
         if (decodeStart + TOTAL_BUFFER_FRAMES > decoderLength)
             maxFrames = decoderLength - decodeStart;
@@ -729,15 +596,10 @@ struct DecoderStream {
             ma_decoder_read_pcm_frames(&decoder, buffer, maxFrames, framesRead);
         } else {
             *framesRead = 0;
-        }
-
-        AudioTimestampNs ts = predictor ? predictor->predictFrameOutputTime(decodeStart) : 0;
-        if (bufferIndex >= 0 && bufferIndex < 3) {
-            bufferTimestampBase[bufferIndex].store(ts, std::memory_order_release);
         }
     }
 
-    void fillBufferAsync(ma_uint64 decodeStart, float* buffer, ma_uint64* framesRead, int bufferIndex = 0, TimestampPredictor* predictor = nullptr) {
+    void fillBufferAsync(ma_uint64 decodeStart, float* buffer, ma_uint64* framesRead) {
         ma_uint64 maxFrames = TOTAL_BUFFER_FRAMES;
         if (decodeStart + TOTAL_BUFFER_FRAMES > decoderLength)
             maxFrames = decoderLength - decodeStart;
@@ -745,20 +607,10 @@ struct DecoderStream {
         memset(buffer, 0, maxFrames * CHANNEL_COUNT * sizeof(float));
 
         if (maxFrames > 0) {
-            if (!tryAcquireDecoder()) {
-                *framesRead = 0;
-                return;
-            }
             ma_decoder_seek_to_pcm_frame(&decoder, decodeStart);
             ma_decoder_read_pcm_frames(&decoder, buffer, maxFrames, framesRead);
-            releaseDecoder();
         } else {
             *framesRead = 0;
-        }
-
-        AudioTimestampNs ts = predictor ? predictor->predictFrameOutputTime(decodeStart) : 0;
-        if (bufferIndex >= 0 && bufferIndex < 3) {
-            bufferTimestampBase[bufferIndex].store(ts, std::memory_order_release);
         }
     }
 
@@ -783,21 +635,13 @@ private:
         nextBuffer    = other.nextBuffer;
         loadingBuffer = other.loadingBuffer;
 
-        activeBufferIdx  = other.activeBufferIdx;
-        nextBufferIdx    = other.nextBufferIdx;
-        loadingBufferIdx = other.loadingBufferIdx;
-
-        for(int i=0; i<3; i++) {
-            bufferTimestampBase[i].store(other.bufferTimestampBase[i].load(std::memory_order_relaxed), std::memory_order_relaxed);
-        }
-
         memcpy(&decoder, &other.decoder, sizeof(ma_decoder));
 
-        filePosition   = other.filePosition;
+        filePosition.store(other.filePosition.load(std::memory_order_relaxed), std::memory_order_relaxed);
         bufferStartPos = other.bufferStartPos;
         localReadPos   = other.localReadPos;
         validFrames    = other.validFrames;
-        active         = other.active;
+        active.store(other.active.load(std::memory_order_relaxed), std::memory_order_relaxed);
         decoderLength  = other.decoderLength;
 
         asyncState.nextBufferStartPos       = other.asyncState.nextBufferStartPos;
@@ -815,13 +659,13 @@ private:
 };
 
 // ==========================================================================
-//  AsyncLoader
+//  AsyncLoader (LOCK-FREE)
 // ==========================================================================
 
 class AsyncLoader {
 public:
-    explicit AsyncLoader(std::vector<DecoderStream*>& streamRefs, TimestampPredictor* predictor = nullptr)
-        : streams(streamRefs), predictor(predictor) { 
+    explicit AsyncLoader(std::vector<DecoderStream*>& streamRefs)
+        : streams(streamRefs) { 
         start(); 
     }
 
@@ -841,7 +685,6 @@ public:
 
     void signal() {
         workPending.store(true, std::memory_order_release);
-        wakeCV.notify_one();
     }
 
     void waitUntilIdle() {
@@ -852,11 +695,16 @@ public:
         auto startTime = std::chrono::steady_clock::now();
         const auto timeout = std::chrono::milliseconds(100);
         
+        int yieldCount = 0;
         while (!workerIdle.load(std::memory_order_acquire)) {
             if (std::chrono::steady_clock::now() - startTime > timeout) {
                 break;
             }
-            std::this_thread::sleep_for(std::chrono::microseconds(200));
+            if (yieldCount++ < 100) {
+                std::this_thread::yield();
+            } else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
         }
         
         std::this_thread::sleep_for(std::chrono::microseconds(500));
@@ -868,14 +716,11 @@ public:
 
 private:
     std::vector<DecoderStream*>& streams;
-    TimestampPredictor* predictor;
     std::thread       workerThread;
     std::atomic<bool> running{false};
     std::atomic<bool> pause{false};
     std::atomic<bool> workerIdle{false};
     std::atomic<bool> stopRequested{false};  
-    std::mutex        wakeMutex;
-    std::condition_variable wakeCV;
     std::atomic<bool> workPending{false};
 
     void start() {
@@ -905,10 +750,7 @@ private:
             workerThread.join();
         }
         
-        {
-            std::lock_guard<std::mutex> lock(wakeMutex);
-            workPending.store(false, std::memory_order_release);
-        }
+        workPending.store(false, std::memory_order_release);
     }
 
     void worker() {
@@ -922,24 +764,42 @@ private:
             
             if (pause.load(std::memory_order_acquire) && !stopRequested.load(std::memory_order_acquire)) {
                 workerIdle.store(true, std::memory_order_release);
-                std::unique_lock<std::mutex> lk(wakeMutex);
-                wakeCV.wait_for(lk, std::chrono::milliseconds(10), [this] {
-                    return !pause.load(std::memory_order_acquire) ||
-                           stopRequested.load(std::memory_order_acquire) ||
-                           !running.load(std::memory_order_acquire);
-                });
+                
+                auto start = std::chrono::steady_clock::now();
+                int yieldCount = 0;
+                while (pause.load(std::memory_order_acquire) &&
+                       !stopRequested.load(std::memory_order_acquire) &&
+                       running.load(std::memory_order_acquire)) {
+                    
+                    if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(10)) break;
+                    
+                    if (yieldCount++ < 100) {
+                        std::this_thread::yield();
+                    } else {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    }
+                }
                 workerIdle.store(false, std::memory_order_release);
                 continue;
             }
 
             if (streams.empty()) {
                 workerIdle.store(true, std::memory_order_release);
-                std::unique_lock<std::mutex> lk(wakeMutex);
-                wakeCV.wait_for(lk, std::chrono::milliseconds(10), [this] {
-                    return !streams.empty() || 
-                           stopRequested.load(std::memory_order_acquire) ||
-                           !running.load(std::memory_order_acquire);
-                });
+                
+                auto start = std::chrono::steady_clock::now();
+                int yieldCount = 0;
+                while (streams.empty() && 
+                       !stopRequested.load(std::memory_order_acquire) &&
+                       running.load(std::memory_order_acquire)) {
+                    
+                    if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(10)) break;
+                    
+                    if (yieldCount++ < 100) {
+                        std::this_thread::yield();
+                    } else {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    }
+                }
                 workerIdle.store(false, std::memory_order_release);
                 continue;
             }
@@ -961,7 +821,7 @@ private:
                     s = streams[idx];
                 }
                 
-                if (s && s->active) {
+                if (s && s->active.load(std::memory_order_acquire)) {
                     if (processStreamLoad(s)) {
                         processed++;
                     }
@@ -972,15 +832,24 @@ private:
                 currentStream = (currentStream + 1) % (int)streamCount;
             }
 
+            // FIX: Removed `&& pause` from this condition to prevent infinite tight loop
             if (processed == 0 && !stopRequested.load(std::memory_order_acquire)) {
                 workerIdle.store(true, std::memory_order_release);
-                std::unique_lock<std::mutex> lk(wakeMutex);
-                wakeCV.wait_for(lk, std::chrono::milliseconds(5), [this] {
-                    return workPending.load(std::memory_order_acquire) ||
-                           stopRequested.load(std::memory_order_acquire) ||
-                           !running.load(std::memory_order_acquire) ||
-                           pause.load(std::memory_order_acquire);
-                });
+                
+                auto start = std::chrono::steady_clock::now();
+                int yieldCount = 0;
+                while (!workPending.load(std::memory_order_acquire) &&
+                       !stopRequested.load(std::memory_order_acquire) &&
+                       running.load(std::memory_order_acquire)) {
+                    
+                    if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(5)) break;
+                    
+                    if (yieldCount++ < 100) {
+                        std::this_thread::yield();
+                    } else {
+                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                    }
+                }
                 workerIdle.store(false, std::memory_order_release);
             }
         }
@@ -1037,7 +906,7 @@ private:
         }
 
         ma_uint64 framesRead = 0;
-        s->fillBufferAsync(start, s->asyncState.asyncNextBuffer, &framesRead, s->nextBufferIdx, predictor);
+        s->fillBufferAsync(start, s->asyncState.asyncNextBuffer, &framesRead);
 
         if (!stopRequested.load(std::memory_order_acquire) && running.load(std::memory_order_acquire)) {
             s->asyncState.nextBufferStartPos    = start;
@@ -1073,7 +942,7 @@ private:
         }
 
         ma_uint64 framesRead = 0;
-        s->fillBufferAsync(start, s->asyncState.asyncLoadingBuffer, &framesRead, s->loadingBufferIdx, predictor);
+        s->fillBufferAsync(start, s->asyncState.asyncLoadingBuffer, &framesRead);
 
         if (!stopRequested.load(std::memory_order_acquire) && running.load(std::memory_order_acquire)) {
             s->asyncState.loadingBufferStartPos    = start;
@@ -1087,7 +956,7 @@ private:
 };
 
 // ==========================================================================
-//  AudioSystem
+//  AudioSystem (LOCK-FREE)
 // ==========================================================================
 
 class AudioSystem {
@@ -1100,25 +969,23 @@ public:
     signalsmith::stretch::SignalsmithStretch* stretch = nullptr;
 
     int   longestDecoderIndex = 0;
-    float playbackRate        = 1.0f;
-    int   mixerState          = 3;
-    bool  exists              = false;
+    std::atomic<float> playbackRate{1.0f};
+    std::atomic<int> mixerState{3};
+    std::atomic<bool> exists{false};
 
     float pitchInputMix[MAX_CALLBACK_FRAMES * CHANNEL_COUNT]      = {};
     float pitchStretchedOut[MAX_CALLBACK_FRAMES * CHANNEL_COUNT]  = {};
 
     static constexpr int BG_LOAD_CHECK_INTERVAL = 8;
-    ma_uint64 totalFramesProcessed = 0;
-    ma_uint64 lastLoadFrame = 0;
+    ma_uint64 totalFramesProcessed = 0;  // Track total frames for time-based loading
+    ma_uint64 lastLoadFrame = 0;         // Last frame when background load was triggered
     int bgLoadCounter = 0;
-
-    TimestampPredictor timestampPredictor;
 
     AudioSystem()  {
         memset(&device, 0, sizeof(ma_device));
         
+        // NEW: Initialize SIMD dispatch on startup
         init_simd_dispatch(); 
-        timestampPredictor.init(10);
         
         #if HX_WINDOWS
         startAudioDeviceMonitoring();
@@ -1161,7 +1028,7 @@ public:
                 for (size_t j = 0; j < i; j++) ma_decoder_uninit(&streams[j].decoder);
                 streams.clear(); decoderVolumes.clear(); filePaths.clear();
                 printf("Failed to load %s.\n", argv[i]);
-                exists = false;
+                exists.store(false, std::memory_order_release);
                 return;
             }
 
@@ -1183,7 +1050,7 @@ public:
 
             fillInitialBuffer(i, 0);
 
-            if (s.active) {
+            if (s.active.load(std::memory_order_acquire)) {
                 loadNextBufferSync(i);
                 if (s.asyncState.nextBufferReady.load(std::memory_order_relaxed))
                     loadLoadingBufferSync(i);
@@ -1198,7 +1065,7 @@ public:
         streamPtrs.clear();
         for (auto& s : streams) streamPtrs.push_back(&s);
         if (asyncLoader) delete asyncLoader;
-        asyncLoader = new AsyncLoader(streamPtrs, &timestampPredictor);
+        asyncLoader = new AsyncLoader(streamPtrs);
 
         ma_device_config deviceConfig = ma_device_config_init(ma_device_type_playback);
         deviceConfig.playback.format   = SAMPLE_FORMAT;
@@ -1213,14 +1080,14 @@ public:
             return;
         }
 
-        exists    = true;
-        mixerState = 3;
+        exists.store(true, std::memory_order_release);
+        mixerState.store(3, std::memory_order_release);
     }
 
     void destroy() {
-        if (!exists) return;
+        if (!exists.load(std::memory_order_acquire)) return;
         
-        exists = false;
+        exists.store(false, std::memory_order_release);
         ma_device_stop(&device);
         
         if (asyncLoader) {
@@ -1241,36 +1108,36 @@ public:
         }
         
         longestDecoderIndex = 0;
-        playbackRate = 1.0f;
-        mixerState = 3;
+        playbackRate.store(1.0f, std::memory_order_release);
+        mixerState.store(3, std::memory_order_release);
         
         memset(&device, 0, sizeof(ma_device));
     }
 
     void start() {
-        if (!exists) return;
-        if (mixerState == 3) seekToPCMFrame(0);
+        if (!exists.load(std::memory_order_acquire)) return;
+        if (mixerState.load(std::memory_order_acquire) == 3) seekToPCMFrame(0);
         if (asyncLoader) asyncLoader->resumeLoading();
         ma_device_start(&device);
-        mixerState = 1;
+        mixerState.store(1, std::memory_order_release);
     }
 
     void stop() {
-        if (!exists) return;
+        if (!exists.load(std::memory_order_acquire)) return;
         if (asyncLoader) asyncLoader->pauseLoading();
         ma_device_stop(&device);
-        mixerState = 2;
+        mixerState.store(2, std::memory_order_release);
     }
 
-    bool stopped() const { return mixerState == 3; }
+    bool stopped() const { return mixerState.load(std::memory_order_acquire) == 3; }
 
     void seekToPCMFrame(int64_t pos) {
-        if (!exists) return;
+        if (!exists.load(std::memory_order_acquire)) return;
 
         if (asyncLoader) asyncLoader->pauseLoading();
         if (asyncLoader) asyncLoader->waitUntilIdle();
 
-        bool wasPlaying = (mixerState == 1);
+        bool wasPlaying = (mixerState.load(std::memory_order_acquire) == 1);
         if (wasPlaying) ma_device_stop(&device);
 
         for (size_t i = 0; i < streams.size(); i++) {
@@ -1280,28 +1147,28 @@ public:
 
             s.resetState();
             fillInitialBuffer(i, target);
-            if (s.active && target < s.decoderLength) s.filePosition = target;
+            if (s.active.load(std::memory_order_acquire) && target < s.decoderLength) 
+                s.filePosition.store(target, std::memory_order_release);
 
-            if (s.active) {
+            if (s.active.load(std::memory_order_acquire)) {
                 loadNextBufferSync(i);
                 if (s.asyncState.nextBufferReady.load(std::memory_order_relaxed))
                     loadLoadingBufferSync(i);
             }
         }
 
-        mixerState = (pos < (int64_t)streams[longestDecoderIndex].decoderLength) ? 2 : 3;
+        mixerState.store((pos < (int64_t)streams[longestDecoderIndex].decoderLength) ? 2 : 3, std::memory_order_release);
 
-        if (wasPlaying && mixerState == 2) {
-            timestampPredictor.updatePreRead((ma_uint64)pos);
+        if (wasPlaying && mixerState.load(std::memory_order_acquire) == 2) {
             if (asyncLoader) asyncLoader->resumeLoading();
             ma_device_start(&device);
-            mixerState = 1;
+            mixerState.store(1, std::memory_order_release);
         }
     }
 
     void deactivate_decoder(int index) {
         if (index >= 0 && index < (int)streams.size())
-            streams[index].active = false;
+            streams[index].active.store(false, std::memory_order_release);
     }
 
     void amplify_decoder(int index, double volume) {
@@ -1309,102 +1176,23 @@ public:
             decoderVolumes[index] = (float)volume;
     }
 
-    void   setPlaybackRate(float value) { playbackRate = value; }
+    void   setPlaybackRate(float value) { playbackRate.store(value, std::memory_order_release); }
     double getGlobalVolume() const      { return MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed); }
     double setGlobalVolume(double v)    { MUSIC_MASTER_VOLUME_099.store(v, std::memory_order_relaxed); return v; }
-    int    getMixerState() const        { return mixerState; }
+    int    getMixerState() const        { return mixerState.load(std::memory_order_acquire); }
 
     double getPlaybackPosition() const {
-        if (streams.empty()) return 0.0;
-        const DecoderStream& s = streams[longestDecoderIndex];
-        
-        if (!s.active) {
-            return (double)s.decoderLength / (SAMPLE_RATE * 0.001);
-        }
-        
-        // Fallback for pitched playback since time/frame ratio changes
-        if (playbackRate != 1.0f) {
-            return (double)s.filePosition / (SAMPLE_RATE * 0.001);
-        }
-        
-        AudioTimestampNs baseTime = timestampPredictor.currentCallbackTimestamp.load(std::memory_order_acquire);
-        ma_uint64 baseFrame = timestampPredictor.currentCallbackFilePos.load(std::memory_order_acquire);
-        
-        // Before the first audio callback fires, fallback to raw position
-        if (baseTime == 0) {
-            return (double)s.filePosition / (SAMPLE_RATE * 0.001);
-        }
-        
-        AudioTimestampNs now = AudioClock::now();
-        AudioTimestampNs elapsed = now - baseTime;
-        
-        // Extrapolate the exact fractional position
-        double precisePos = (double)baseFrame + (double)elapsed * (double)SAMPLE_RATE / (double)NANOS_PER_SECOND;
-        
-        // Clamp to valid boundaries. 
-        // If elapsed is negative (e.g. just started or just resumed before the latency period passes),
-        // clamp to baseFrame. This perfectly freezes the time at the exact pause/start point
-        // instead of jumping backwards to 0 or extrapolating into the future.
-        if (precisePos < 0.0) precisePos = (double)baseFrame;
-        double maxPos = (double)s.filePosition;
-        if (precisePos > maxPos) precisePos = maxPos;
-        
-        return precisePos / (SAMPLE_RATE * 0.001);
+        ma_uint64 pos = 0;
+        if (!streams.empty() && streams[longestDecoderIndex].active.load(std::memory_order_acquire))
+            pos = streams[longestDecoderIndex].filePosition.load(std::memory_order_acquire);
+        else if (!streams.empty())
+            pos = streams[longestDecoderIndex].decoderLength;
+        return (double)pos / (SAMPLE_RATE * 0.001);
     }
 
     double getDuration() const {
         if (streams.empty()) return 0.0;
         return (double)streams[longestDecoderIndex].decoderLength / (SAMPLE_RATE * 0.001);
-    }
-
-    // ======================================================================
-    //  PRECISE TIMESTAMP API
-    // ======================================================================
-    
-    AudioTimestampUs getPlaybackPositionUs() const {
-        if (streams.empty()) return 0;
-        const DecoderStream& s = streams[longestDecoderIndex];
-        return (AudioTimestampUs)((double)s.filePosition * MICROSECONDS_PER_SAMPLE);
-    }
-    
-    AudioTimestampNs getCurrentFrameOutputTimestamp() const {
-        if (streams.empty()) return 0;
-        return streams[longestDecoderIndex].getCurrentFrameTimestamp();
-    }
-    
-    AudioTimestampUs getCurrentFrameOutputTimestampUs() const {
-        return nsToUs(getCurrentFrameOutputTimestamp());
-    }
-    
-    AudioTimestampNs getCurrentFrameDeltaFromNow() const {
-        if (streams.empty()) return 0;
-        return streams[longestDecoderIndex].getFrameDeltaFromNow();
-    }
-    
-    AudioTimestampUs getCurrentFrameDeltaFromNowUs() const {
-        return nsToUs(getCurrentFrameDeltaFromNow());
-    }
-    
-    AudioTimestampUs predictFrameOutputTimeUs(ma_uint64 globalFrame) const {
-        return timestampPredictor.predictFrameOutputTimeUs(globalFrame);
-    }
-    
-    AudioTimestampUs predictFutureFrameTimeUs(ma_uint64 framesAhead) const {
-        if (streams.empty()) return 0;
-        AudioTimestampNs base = streams[longestDecoderIndex].getCurrentFrameTimestamp();
-        double offsetNs = (double)framesAhead * (double)NANOS_PER_SECOND / (double)SAMPLE_RATE;
-        return nsToUs(base + (AudioTimestampNs)offsetNs);
-    }
-    
-    AudioTimestampUs getStreamFrameTimestampUs(int streamIndex) const {
-        if (streamIndex < 0 || streamIndex >= (int)streams.size()) return 0;
-        return streams[streamIndex].getCurrentFrameTimestampUs();
-    }
-    
-    AudioTimestampUs getStreamSyncDeltaUs(int streamA, int streamB) const {
-        if (streamA < 0 || streamA >= (int)streams.size()) return 0;
-        if (streamB < 0 || streamB >= (int)streams.size()) return 0;
-        return nsToUs(streams[streamA].getCurrentFrameTimestamp() - streams[streamB].getCurrentFrameTimestamp());
     }
 
 private:
@@ -1416,10 +1204,7 @@ private:
         ma_uint64 decodeStart = (startFrame > PADDING_FRAMES) ? startFrame - PADDING_FRAMES : 0;
 
         ma_uint64 framesRead = 0;
-        if (s.tryAcquireDecoder()) {
-            s.fillBuffer(s.activeBuffer, decodeStart, &framesRead, s.activeBufferIdx, &timestampPredictor);
-            s.releaseDecoder();
-        }
+        s.fillBuffer(s.activeBuffer, decodeStart, &framesRead);
 
         s.bufferStartPos = decodeStart;
         s.validFrames    = framesRead;
@@ -1428,21 +1213,21 @@ private:
         if (s.localReadPos >= TOTAL_BUFFER_FRAMES)
             s.localReadPos = TOTAL_BUFFER_FRAMES - 1;
 
-        s.filePosition = startFrame;
-        s.active       = (startFrame < s.decoderLength && framesRead > 0);
+        s.filePosition.store(startFrame, std::memory_order_release);
+        s.active.store((startFrame < s.decoderLength && framesRead > 0), std::memory_order_release);
         s.asyncState.needsLoad.store(false, std::memory_order_release);
     }
 
     void loadNextBufferSync(size_t index) {
         DecoderStream& s = streams[index];
-        if (!s.active || s.asyncState.nextBufferReady.load(std::memory_order_relaxed)) return;
+        if (!s.active.load(std::memory_order_acquire) || s.asyncState.nextBufferReady.load(std::memory_order_relaxed)) return;
 
         ma_uint64 start = s.bufferStartPos + HALF_BUFFER_FRAMES;
         if (start > PADDING_FRAMES) start -= PADDING_FRAMES;
         if (start >= s.decoderLength) return;
 
         ma_uint64 framesRead = 0;
-        s.fillBuffer(s.nextBuffer, start, &framesRead, s.nextBufferIdx, &timestampPredictor);
+        s.fillBuffer(s.nextBuffer, start, &framesRead);
         s.asyncState.nextBufferStartPos    = start;
         s.asyncState.nextBufferValidFrames = framesRead;
         s.asyncState.nextBufferReady.store(true, std::memory_order_release);
@@ -1450,7 +1235,7 @@ private:
 
     void loadLoadingBufferSync(size_t index) {
         DecoderStream& s = streams[index];
-        if (!s.active ||
+        if (!s.active.load(std::memory_order_acquire) ||
              s.asyncState.loadingBufferReady.load(std::memory_order_relaxed) ||
             !s.asyncState.nextBufferReady.load(std::memory_order_relaxed)) return;
 
@@ -1459,7 +1244,7 @@ private:
         if (start >= s.decoderLength) return;
 
         ma_uint64 framesRead = 0;
-        s.fillBuffer(s.loadingBuffer, start, &framesRead, s.loadingBufferIdx, &timestampPredictor);
+        s.fillBuffer(s.loadingBuffer, start, &framesRead);
         s.asyncState.loadingBufferStartPos    = start;
         s.asyncState.loadingBufferValidFrames = framesRead;
         s.asyncState.loadingBufferReady.store(true, std::memory_order_release);
@@ -1469,7 +1254,7 @@ private:
         bool anyRequested = false;
         for (size_t i = 0; i < streams.size(); i++) {
             DecoderStream& s = streams[i];
-            if (!s.active) continue;
+            if (!s.active.load(std::memory_order_acquire)) continue;
 
             if (!s.asyncState.nextBufferReady.load(std::memory_order_acquire) &&
                 !s.asyncState.loadingInProgress.load(std::memory_order_acquire)) {
@@ -1495,14 +1280,15 @@ private:
 
     ma_uint32 readFromBuffer(size_t index, float* output, ma_uint32 requestedFrames) {
         DecoderStream& s = streams[index];
-        if (!s.active) return 0;
+        if (!s.active.load(std::memory_order_acquire)) return 0;
 
+        // Cache volume calculation to avoid repeated atomic loads and multiplications
         static thread_local double cachedMasterVolume = -1.0;
         static thread_local std::vector<float> precomputedVolumes;
 
         if (precomputedVolumes.size() != decoderVolumes.size()) {
             precomputedVolumes.resize(decoderVolumes.size(), 0.0f);
-            cachedMasterVolume = -1.0;
+            cachedMasterVolume = -1.0;  // Force recalculation on size change
         }
 
         double currentMasterVolume = MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed);
@@ -1517,18 +1303,20 @@ private:
 
         float vol = precomputedVolumes[index];
 
+        // Cache async state flags to reduce atomic loads in the hot loop
         bool nextBufferReady = s.asyncState.nextBufferReady.load(std::memory_order_acquire);
+        bool isActive = s.active.load(std::memory_order_acquire);
 
         if (nextBufferReady && s.shouldSwapBuffers() || s.isBufferLow()) s.trySwapBuffers();
 
         ma_uint32 framesRead = 0;
 
-        while (framesRead < requestedFrames && s.active) {
+        while (framesRead < requestedFrames && isActive) {
             ma_uint64 available = (s.localReadPos < s.validFrames)
                                 ? s.validFrames - s.localReadPos : 0;
 
             if (available == 0) {
-                if (s.filePosition < s.decoderLength) {
+                if (s.filePosition.load(std::memory_order_acquire) < s.decoderLength) {
                     if (s.asyncState.nextBufferReady.load(std::memory_order_acquire)) {
                         s.trySwapBuffers();
                         continue;
@@ -1536,7 +1324,8 @@ private:
                     s.asyncState.needsLoad.store(true, std::memory_order_release);
                     break;
                 }
-                s.active = false;
+                s.active.store(false, std::memory_order_release);
+                isActive = false;
                 break;
             }
 
@@ -1546,13 +1335,18 @@ private:
             float* dst     = output + (framesRead * CHANNEL_COUNT);
             int    samples = (int)(toRead * CHANNEL_COUNT);
 
+            // UPDATED CALL SITE: Uses the runtime dispatcher instead of hardcoded #ifdefs
             if (vol != 0.0f) g_mix_func(dst, src, samples, vol);
 
             s.localReadPos  += toRead;
-            s.filePosition  += toRead;
+            s.filePosition.fetch_add(toRead, std::memory_order_relaxed);
             framesRead      += toRead;
 
-            if (s.filePosition >= s.decoderLength) { s.active = false; break; }
+            if (s.filePosition.load(std::memory_order_relaxed) >= s.decoderLength) { 
+                s.active.store(false, std::memory_order_release); 
+                isActive = false;
+                break; 
+            }
         }
         return framesRead;
     }
@@ -1560,11 +1354,12 @@ private:
     static void data_callback(ma_device* pDevice, void* pOutput,
                               const void* pInput, ma_uint32 frameCount) {
         AudioSystem* sys = static_cast<AudioSystem*>(pDevice->pUserData);
-        if (!sys || !sys->exists) return;
+        if (!sys || !sys->exists.load(std::memory_order_acquire)) return;
 
         float* out = (float*)pOutput;
         memset(out, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
 
+        // UPDATED: Use frame-count-based timing for more precise background load intervals
         sys->totalFramesProcessed += frameCount;
         ma_uint64 framesSinceLastLoad = sys->totalFramesProcessed - sys->lastLoadFrame;
         ma_uint64 loadIntervalFrames = (SAMPLE_RATE * BG_LOAD_CHECK_INTERVAL) / 1000;
@@ -1574,63 +1369,89 @@ private:
             sys->doBackgroundLoading();
         }
 
-        // Update predictor state BEFORE reading so time smoothly matches the real world
-        if (!sys->streams.empty() && sys->streams[sys->longestDecoderIndex].active) {
-            sys->timestampPredictor.updatePreRead(sys->streams[sys->longestDecoderIndex].filePosition);
-        }
-
         bool anyActive = false;
+        float rate = sys->playbackRate.load(std::memory_order_acquire);
 
-        if (sys->playbackRate == 1.0f) {
+        if (rate == 1.0f) {
             for (size_t i = 0; i < sys->streams.size(); i++) {
-                if (!sys->streams[i].active) continue;
+                if (!sys->streams[i].active.load(std::memory_order_acquire)) continue;
                 ma_uint32 read = sys->readFromBuffer(i, out, frameCount);
                 if (read > 0) anyActive = true;
-                if (read < frameCount && sys->streams[i].active)
+                if (read < frameCount && sys->streams[i].active.load(std::memory_order_acquire))
                     sys->streams[i].asyncState.needsLoad.store(true, std::memory_order_release);
             }
         } else {
             static_assert(MAX_CALLBACK_FRAMES >= 4096,
-                          "MAX_CALLBACK_FRAMES too small for pitched playback");
-            // Pitched playback path logic continues here identically...
+                          "MAX_CALLBACK_FRAMES too small for pitched playback buffers");
+
+            if (frameCount > MAX_CALLBACK_FRAMES) {
+                sys->mixerState.store(anyActive ? 1 : 3, std::memory_order_release);
+                (void)pInput;
+                return;
+            }
+
+            float* inputMix       = sys->pitchInputMix;
+            float* stretchedOutput = sys->pitchStretchedOut;
+
+            // UPDATED: Add accumulated error correction to prevent playback rate drift
+            static double positionError = 0;
+            double exactRead = frameCount * rate + positionError;
+            ma_uint32 maxToRead = (ma_uint32)exactRead;
+
+            // FIX: Clear maxToRead frames for input, not frameCount
+            memset(inputMix,        0, sizeof(float) * maxToRead * CHANNEL_COUNT);
+            memset(stretchedOutput, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
+
+            positionError = exactRead - maxToRead;  // Carry fractional error forward
+
+            for (size_t i = 0; i < sys->streams.size(); i++) {
+                if (!sys->streams[i].active.load(std::memory_order_acquire)) continue;
+                ma_uint32 read = sys->readFromBuffer(i, inputMix, maxToRead);
+                if (read > 0) anyActive = true;
+                if (read < maxToRead && sys->streams[i].active.load(std::memory_order_acquire))
+                    sys->streams[i].asyncState.needsLoad.store(true, std::memory_order_release);
+            }
+
+            if (anyActive) {
+                if (!sys->stretch) {
+                    sys->stretch = new signalsmith::stretch::SignalsmithStretch();
+                    sys->stretch->presetCheaper(CHANNEL_COUNT, SAMPLE_RATE);
+                }
+                sys->stretch->process(inputMix, maxToRead, stretchedOutput, frameCount);
+                memcpy(out, stretchedOutput, sizeof(float) * frameCount * CHANNEL_COUNT);
+            }
         }
 
-        if (!anyActive && sys->mixerState == 1) {
-            sys->mixerState = 3;
-        }
+        sys->mixerState.store(anyActive ? 1 : 3, std::memory_order_release);
+        (void)pInput;
     }
 
     void moveFrom(AudioSystem&& other) noexcept {
-        streams = std::move(other.streams);
+        streams        = std::move(other.streams);
         decoderVolumes = std::move(other.decoderVolumes);
-        filePaths = std::move(other.filePaths);
-        streamPtrs = std::move(other.streamPtrs);
-        
+        filePaths      = std::move(other.filePaths);
+        streamPtrs     = std::move(other.streamPtrs);
+        stretch        = other.stretch;
+        asyncLoader    = other.asyncLoader;
+
         memcpy(&device, &other.device, sizeof(ma_device));
-        stretch = other.stretch;
-        other.stretch = nullptr;
-        
-        longestDecoderIndex = other.longestDecoderIndex;
-        playbackRate = other.playbackRate;
-        mixerState = other.mixerState;
-        exists = other.exists;
-        
-        totalFramesProcessed = other.totalFramesProcessed;
-        lastLoadFrame = other.lastLoadFrame;
-        bgLoadCounter = other.bgLoadCounter;
-        
-        timestampPredictor.deviceLatencyFrames.store(other.timestampPredictor.deviceLatencyFrames.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        timestampPredictor.currentCallbackFilePos.store(other.timestampPredictor.currentCallbackFilePos.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        timestampPredictor.currentCallbackTimestamp.store(other.timestampPredictor.currentCallbackTimestamp.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        
-        asyncLoader = other.asyncLoader;
-        other.asyncLoader = nullptr;
-        
         memset(&other.device, 0, sizeof(ma_device));
-        other.exists = false;
-        other.longestDecoderIndex = 0;
-        other.playbackRate = 1.0f;
-        other.mixerState = 3;
+
+        longestDecoderIndex = other.longestDecoderIndex;
+        playbackRate.store(other.playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        mixerState.store(other.mixerState.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        exists.store(other.exists.load(std::memory_order_relaxed), std::memory_order_relaxed);
+
+        other.stretch = nullptr;  other.asyncLoader    = nullptr;
+        other.longestDecoderIndex = 0;  other.playbackRate.store(1.0f, std::memory_order_relaxed);
+        other.mixerState.store(3, std::memory_order_relaxed);
+        other.exists.store(false, std::memory_order_relaxed);
+
+        // Move frame tracking state for background loading
+        totalFramesProcessed = other.totalFramesProcessed;
+        lastLoadFrame        = other.lastLoadFrame;
+        other.totalFramesProcessed = 0;
+        other.lastLoadFrame        = 0;
     }
 };
 
@@ -1643,7 +1464,7 @@ struct BackgroundTrack {
     ma_uint64  frameCount = 0;
     ma_uint64  readPos    = 0;
     float      volume     = 1.0f;
-    bool       active     = false;
+    std::atomic<bool> active{false};
     bool       looping    = true;
     std::string filePath;
 
@@ -1661,7 +1482,8 @@ struct BackgroundTrack {
     void cleanup() {
         if (pcmData) { free(pcmData); pcmData = nullptr; }
         frameCount = 0; readPos = 0; volume = 1.0f;
-        active = false; looping = true; filePath.clear();
+        active.store(false, std::memory_order_release);
+        looping = true; filePath.clear();
     }
 
     bool load(const char* path) {
@@ -1695,28 +1517,28 @@ struct BackgroundTrack {
         }
         frameCount = framesRead;
         filePath   = path;
-        active     = false;
+        active.store(false, std::memory_order_release);
         looping    = true;
         readPos    = 0;
         return true;
     }
 
-    void play()  { if (pcmData) { readPos = 0; active = true; } }
-    void stop()  { active = false; readPos = 0; }
+    void play()  { if (pcmData) { readPos = 0; active.store(true, std::memory_order_release); } }
+    void stop()  { active.store(false, std::memory_order_release); readPos = 0; }
     void setVolume(float v)  { volume = v; }
     void setLooping(bool lp) { looping = lp; }
 
     ma_uint64 readFrames(float* output, ma_uint32 requestedFrames) {
-        if (!active || !pcmData || frameCount == 0) return 0;
+        if (!active.load(std::memory_order_acquire) || !pcmData || frameCount == 0) return 0;
 
-        float vol = volume * MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed);;
+        float vol = volume * MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed);
         ma_uint32 filled = 0;
 
         while (filled < requestedFrames) {
             ma_uint64 remaining = frameCount - readPos;
             if (remaining == 0) {
                 if (looping) { readPos = 0; remaining = frameCount; }
-                else         { active = false; break; }
+                else         { active.store(false, std::memory_order_release); break; }
             }
 
             ma_uint32 toRead = (ma_uint32)std::min<ma_uint64>(remaining,
@@ -1738,10 +1560,11 @@ private:
     void moveFrom(BackgroundTrack&& other) noexcept {
         pcmData    = other.pcmData;    frameCount = other.frameCount;
         readPos    = other.readPos;    volume     = other.volume;
-        active     = other.active;     looping    = other.looping;
+        active.store(other.active.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        looping    = other.looping;
         filePath   = std::move(other.filePath);
         other.pcmData = nullptr; other.frameCount = 0; other.readPos = 0;
-        other.active = false;
+        other.active.store(false, std::memory_order_relaxed);
     }
 };
 
@@ -1754,7 +1577,7 @@ struct SoundEffectInstance {
     ma_uint64 frameCount      = 0;
     ma_uint64 playbackPosition = 0;
     double     volume          = 1.0f;
-    bool      playing         = false;
+    std::atomic<bool> playing{false};
 
     SoundEffectInstance() = default;
 
@@ -1762,11 +1585,47 @@ struct SoundEffectInstance {
         : pcmData(data), frameCount(frames), playbackPosition(0),
           volume(vol), playing(true) {}
 
+    // FIX: Explicit move constructor to handle std::atomic<bool>
+    SoundEffectInstance(SoundEffectInstance&& other) noexcept
+        : pcmData(other.pcmData),
+          frameCount(other.frameCount),
+          playbackPosition(other.playbackPosition),
+          volume(other.volume),
+          playing(other.playing.load(std::memory_order_relaxed))
+    {
+        other.pcmData = nullptr;
+        other.frameCount = 0;
+        other.playbackPosition = 0;
+        other.volume = 1.0f;
+        other.playing.store(false, std::memory_order_relaxed);
+    }
+
+    // FIX: Explicit move assignment operator
+    SoundEffectInstance& operator=(SoundEffectInstance&& other) noexcept {
+        if (this != &other) {
+            pcmData = other.pcmData;
+            frameCount = other.frameCount;
+            playbackPosition = other.playbackPosition;
+            volume = other.volume;
+            playing.store(other.playing.load(std::memory_order_relaxed), std::memory_order_relaxed);
+
+            other.pcmData = nullptr;
+            other.frameCount = 0;
+            other.playbackPosition = 0;
+            other.volume = 1.0f;
+            other.playing.store(false, std::memory_order_relaxed);
+        }
+        return *this;
+    }
+
+    SoundEffectInstance(const SoundEffectInstance&) = delete;
+    SoundEffectInstance& operator=(const SoundEffectInstance&) = delete;
+
     ma_uint64 readFrames(float* output, ma_uint32 requestedFrames) {
-        if (!playing || !pcmData) return 0;
+        if (!playing.load(std::memory_order_acquire) || !pcmData) return 0;
 
         ma_uint64 remaining = frameCount - playbackPosition;
-        if (remaining == 0) { playing = false; return 0; }
+        if (remaining == 0) { playing.store(false, std::memory_order_release); return 0; }
 
         ma_uint32 toRead = (ma_uint32)std::min<ma_uint64>(remaining, requestedFrames);
         float* src = pcmData + (playbackPosition * CHANNEL_COUNT);
@@ -1776,11 +1635,11 @@ struct SoundEffectInstance {
         g_mix_func(output, src, (int)(toRead * CHANNEL_COUNT), vol);
 
         playbackPosition += toRead;
-        if (playbackPosition >= frameCount) playing = false;
+        if (playbackPosition >= frameCount) playing.store(false, std::memory_order_release);
         return toRead;
     }
 
-    bool isPlaying() const { return playing; }
+    bool isPlaying() const { return playing.load(std::memory_order_acquire); }
 };
 
 class SoundEffectPool {
@@ -1837,7 +1696,7 @@ public:
         if (!pcmData || frameCount == 0) return;
         for (auto& inst : instances) {
             if (!inst.isPlaying()) {
-                inst.playbackPosition = 0; inst.volume = volume; inst.playing = true;
+                inst.playbackPosition = 0; inst.volume = volume; inst.playing.store(true, std::memory_order_release);
                 ++playingCount;
                 return;
             }
@@ -1864,7 +1723,7 @@ public:
     }
 
     bool  isAnyPlaying()  const { return playingCount > 0; }
-    void  stopAll()             { for (auto& i : instances) { i.playing = false; i.playbackPosition = 0; } playingCount = 0; }
+    void  stopAll()             { for (auto& i : instances) { i.playing.store(false, std::memory_order_release); i.playbackPosition = 0; } playingCount = 0; }
     int   getPlayingCount() const { return playingCount; }
 
 private:
@@ -1884,7 +1743,7 @@ private:
 };
 
 // ==========================================================================
-//  AudioMixerManager
+//  AudioMixerManager (LOCK-FREE)
 // ==========================================================================
 
 class AudioMixerManager {
@@ -1909,11 +1768,13 @@ public:
     }
 
     void destroy() {
-        if (deviceInitialized) { ma_device_uninit(&device); deviceInitialized = false; }
-        std::lock_guard<std::mutex> lk(mixerMutex);
+        if (deviceInitialized) { 
+            ma_device_uninit(&device); 
+            deviceInitialized = false; 
+        }
         backgroundTracks.clear(); soundEffectPools.clear();
         backgroundTrackMap.clear(); soundEffectMap.clear();
-        for (int b = 0; b < 2; b++) {
+        for (int b = 0; b < 3; b++) {
             bgSnapshot[b].clear();
             sfxSnapshot[b].clear();
         }
@@ -1921,7 +1782,6 @@ public:
 
     int loadBackgroundTrack(const char* path) {
         if (!deviceInitialized && !initialize()) return -1;
-        std::lock_guard<std::mutex> lk(mixerMutex);
         std::string key = path;
         auto it = backgroundTrackMap.find(key);
         if (it != backgroundTrackMap.end()) return it->second;
@@ -1935,7 +1795,6 @@ public:
     }
 
     int  findBackgroundTrack(const char* path) {
-        std::lock_guard<std::mutex> lk(mixerMutex);
         auto it = backgroundTrackMap.find(std::string(path));
         return (it != backgroundTrackMap.end()) ? it->second : -1;
     }
@@ -1945,11 +1804,10 @@ public:
     void stopBackgroundTrack(int idx)  { if (inRange(idx, backgroundTracks)) backgroundTracks[idx].stop(); }
     void setBackgroundTrackVolume(int idx, float v)  { if (inRange(idx, backgroundTracks)) backgroundTracks[idx].setVolume(v); }
     void setBackgroundTrackLooping(int idx, bool lp) { if (inRange(idx, backgroundTracks)) backgroundTracks[idx].setLooping(lp); }
-    bool isBackgroundTrackPlaying(int idx) { return inRange(idx, backgroundTracks) && backgroundTracks[idx].active; }
+    bool isBackgroundTrackPlaying(int idx) { return inRange(idx, backgroundTracks) && backgroundTracks[idx].active.load(std::memory_order_acquire); }
 
     int loadSoundEffect(const char* path) {
         if (!deviceInitialized && !initialize()) return -1;
-        std::lock_guard<std::mutex> lk(mixerMutex);
         std::string key = path;
         auto it = soundEffectMap.find(key);
         if (it != soundEffectMap.end()) return it->second;
@@ -1963,7 +1821,6 @@ public:
     }
 
     int  findSoundEffect(const char* path) {
-        std::lock_guard<std::mutex> lk(mixerMutex);
         auto it = soundEffectMap.find(std::string(path));
         return (it != soundEffectMap.end()) ? it->second : -1;
     }
@@ -1982,12 +1839,7 @@ public:
     int  getSoundEffectPlayingCount(int idx){ return inRange(idx, soundEffectPools) ? soundEffectPools[idx].getPlayingCount() : 0; }
 
     void unloadBackgroundTrack(int idx) {
-        std::lock_guard<std::mutex> lk(mixerMutex);
         if (!inRange(idx, backgroundTracks)) return;
-
-        bgSnapshot[0].clear();
-        bgSnapshot[1].clear();
-        std::atomic_thread_fence(std::memory_order_seq_cst);
 
         eraseAndFixup(backgroundTrackMap, idx);
         backgroundTracks.erase(backgroundTracks.begin() + idx);
@@ -1995,12 +1847,7 @@ public:
     }
 
     void unloadSoundEffect(int idx) {
-        std::lock_guard<std::mutex> lk(mixerMutex);
         if (!inRange(idx, soundEffectPools)) return;
-
-        sfxSnapshot[0].clear();
-        sfxSnapshot[1].clear();
-        std::atomic_thread_fence(std::memory_order_seq_cst);
 
         eraseAndFixup(soundEffectMap, idx);
         soundEffectPools.erase(soundEffectPools.begin() + idx);
@@ -2013,7 +1860,6 @@ public:
 private:
     std::deque<BackgroundTrack>  backgroundTracks;
     std::deque<SoundEffectPool>  soundEffectPools;
-    std::mutex mixerMutex;
 
     std::unordered_map<std::string, int> backgroundTrackMap;
     std::unordered_map<std::string, int> soundEffectMap;
@@ -2021,17 +1867,31 @@ private:
     ma_device device;
     bool  deviceInitialized = false;
 
-    std::vector<BackgroundTrack*> bgSnapshot[2];
-    std::vector<SoundEffectPool*> sfxSnapshot[2];
-    std::atomic<int> snapshotIndex{0};
+    // Lock-free triple buffer for snapshots
+    std::vector<BackgroundTrack*> bgSnapshot[3];
+    std::vector<SoundEffectPool*> sfxSnapshot[3];
+    
+    std::atomic<int> readerIndex{0};
+    std::atomic<int> newestIndex{1};
 
     void publishSnapshot() {
-        int next = 1 - snapshotIndex.load(std::memory_order_relaxed);
+        int r = readerIndex.load(std::memory_order_acquire);
+        int n = newestIndex.load(std::memory_order_acquire);
+        
+        // FIX: Robust triple buffer index calculation
+        int next;
+        if (r == n) {
+            next = (r + 1) % 3;
+        } else {
+            next = 3 - r - n;
+        }
+        
         bgSnapshot[next].clear();
         for (auto& t : backgroundTracks) bgSnapshot[next].push_back(&t);
         sfxSnapshot[next].clear();
         for (auto& p : soundEffectPools)  sfxSnapshot[next].push_back(&p);
-        snapshotIndex.store(next, std::memory_order_release);
+        
+        newestIndex.store(next, std::memory_order_release);
     }
 
     template<typename Vec>
@@ -2054,12 +1914,18 @@ private:
         float* out = (float*)pOutput;
         memset(out, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
 
-        int snap = mixer->snapshotIndex.load(std::memory_order_acquire);
+        // Lock-free snapshot read
+        int r = mixer->readerIndex.load(std::memory_order_relaxed);
+        int n = mixer->newestIndex.load(std::memory_order_acquire);
+        if (r != n) {
+            mixer->readerIndex.store(n, std::memory_order_release);
+            r = n;
+        }
 
-        for (BackgroundTrack* track : mixer->bgSnapshot[snap])
-            if (track->active) track->readFrames(out, frameCount);
+        for (BackgroundTrack* track : mixer->bgSnapshot[r])
+            if (track->active.load(std::memory_order_acquire)) track->readFrames(out, frameCount);
 
-        for (SoundEffectPool* pool : mixer->sfxSnapshot[snap])
+        for (SoundEffectPool* pool : mixer->sfxSnapshot[r])
             pool->readFrames(out, frameCount);
 
         (void)pInput;
