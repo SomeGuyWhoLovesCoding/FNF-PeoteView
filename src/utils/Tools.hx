@@ -44,6 +44,8 @@ class Tools {
 		if (floatKeys != Std.int(floatKeys)) throw "Noteskin not supported! KEYS is not integral!";
 		Note.KEYS = Std.int(floatKeys);
 
+		applyNoteskinSaveData();
+
 		// these two lines were there because I forgot for all this time that I SPECIFICALLY needed to include it inside here before the sustain note texture.
 		TextureSystem.disposeTexture("noteTex");
 		TextureSystem.createTexture("noteTex", '$path/noteSheet.png', false, true);
@@ -67,6 +69,19 @@ class Tools {
 			Sustain.offsets.push([x, y]);
 			Sustain.tailPoints.push(w - t);
 		}
+	}
+
+	static function applyNoteskinSaveData() {
+		var noteskin = SaveData.state.noteskin;
+		if (noteskin == null) return;
+		Note.loadFramesFrom(noteskin.frames);
+	}
+
+	static function persistNoteskinFrames() {
+		var noteskin = SaveData.state.noteskin;
+		if (noteskin == null) return;
+		Note.copyFramesTo(noteskin.frames);
+		SaveData.save();
 	}
 
 	static function parseHealthBarConfig(path:String) {

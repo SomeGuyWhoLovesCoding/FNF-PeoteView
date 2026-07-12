@@ -14,7 +14,7 @@ import lime.ui.MouseButton;
 @:publicFields
 class InputSystem {
 	// i just realized that this change absolutely feels good.
-	private static var MANIA_CONFIGS(default, null):Array<Null<{receptorIds:Array<Int>, xOffset:Int, scale:Float}>> = [
+	public static var MANIA_CONFIGS(default, null):Array<Null<{receptorIds:Array<Int>, xOffset:Int, scale:Float}>> = [
 		null,                                                                                              // 0 - unused
 		{ receptorIds: [0],                                                   xOffset: 0,   scale: 1.05   }, // 1
 		{ receptorIds: [0, 3],                                                xOffset: 111, scale: 1.0    }, // 2

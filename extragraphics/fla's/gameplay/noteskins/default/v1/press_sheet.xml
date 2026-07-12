@@ -1,0 +1,9 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TextureAtlas imagePath="press_sheet.png">
+	<!-- Created with Adobe Animate version 21.0.6.41649 -->
+	<!-- http://www.adobe.com/products/animate.html -->
+	<SubTexture name="down press0000" x="6" y="111" width="99" height="98"/>
+	<SubTexture name="left press0000" x="113" y="6" width="99" height="100"/>
+	<SubTexture name="right press0000" x="111" y="112" width="97" height="99"/>
+	<SubTexture name="up press0000" x="6" y="6" width="101" height="99"/>
+</TextureAtlas>

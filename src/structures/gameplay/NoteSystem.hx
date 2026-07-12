@@ -19,8 +19,8 @@ class NoteSystem {
 	static var SUSTAIN_TAIL = 20;
 	static var SUSTAIN_TAIL_END = 25;
 
-	static var NOTE_HOLD_THRESHOLD = 19;
-	static var NOTE_HOLD_THRESHOLD_SUSTAIN = 17;
+	static var NOTE_HOLD_THRESHOLD = 17;
+	static var NOTE_HOLD_THRESHOLD_SUSTAIN = 18;
 
 	// === Dynamic hold-threshold tuning ===
 	// Absolute floor for the dynamic threshold so the confirm window is never
@@ -33,11 +33,11 @@ class NoteSystem {
 	// Multiplier on `baseThreshold` used to define what counts as "far enough
 	// in time" that no shortening is needed. At and beyond this gap the dynamic
 	// threshold equals the base threshold.
-	static var NOTE_HOLD_TIME_FAR_FACTOR = 2.0;
+	static var NOTE_HOLD_TIME_FAR_FACTOR = 4.0;
 
 	static function init() {
 		if (notesBuf == null) {
-			notesBuf = new Buffer<Note>(32, 32, true);
+			notesBuf = new Buffer<Note>(16, 16, true);
 		}
 
 		if (notesProg == null) {
@@ -47,7 +47,7 @@ class NoteSystem {
 		}
 
 		if (sustainsBuf == null) {
-			sustainsBuf = new Buffer<Sustain>(32, 32, true);
+			sustainsBuf = new Buffer<Sustain>(16, 16, true);
 		}
 
 		if (sustainProg == null) {
@@ -170,8 +170,8 @@ class NoteSystem {
 	 *     two-away, etc.
 	 *   - The combined `proximity = timeProximity * indexProximity` interpolates
 	 *     the threshold between `baseThreshold` and `NOTE_HOLD_THRESHOLD_MIN`.
-	 *   - A hard cap is applied when the next note is on the same lane
-	 *     (`Δindex == 0`): the threshold can never exceed
+	 *   - A hard cap is applied based on the next note on the SAME LANE (scanning 
+	 *     forward past any interleaved notes): the threshold can never exceed
 	 *     `availableTime - NOTE_HOLD_RESET_BUFFER`, guaranteeing the receptor
 	 *     has time to reset before the next press.
 	 *
@@ -222,15 +222,53 @@ class NoteSystem {
 		var dynamicThreshold = baseThreshold
 			- (baseThreshold - NOTE_HOLD_THRESHOLD_MIN) * proximity;
 
-		// Hard cap on same-lane successors: never let the hold bleed into the
-		// next note's confirm window. We reserve a small reset buffer so the
-		// receptor has visible idle time between presses.
-		if (indexGap == 0) {
-			var maxThreshold = Math.max(
-				NOTE_HOLD_THRESHOLD_MIN,
-			availableTime - NOTE_HOLD_RESET_BUFFER
-			);
-			if (dynamicThreshold > maxThreshold) dynamicThreshold = maxThreshold;
+		// === Hard cap for same-lane successors ===
+		// We must scan forward to find the next note on the SAME LANE, because
+		// the immediate next note might be on a different lane (e.g. in a jack
+		// with interleaved notes). If we only check the immediate next note,
+		// the hard cap would be skipped, causing the receptor to hold across
+		// the jack and feel like a single long note.
+		//
+		// We only need to scan notes that arrive within the maximum possible
+		// threshold window. Beyond this, the hard cap cannot possibly reduce
+		// the dynamicThreshold (since it never exceeds baseThreshold).
+		var maxScanGapMs = baseThreshold + sustainDuration + NOTE_HOLD_RESET_BUFFER + 1.0;
+		var nextSameLaneId = nextId;
+		var foundSameLane = false;
+		var sameLaneTimeGap = 0.0;
+
+		while (nextSameLaneId < len) {
+			var n = File.getNote(nextSameLaneId);
+			var gapMs = MetaNote.metaNotePositionToSongTime(n.position - currentNote.position);
+			
+			// Stop scanning if we've passed the window where the cap could matter
+			if (gapMs >= maxScanGapMs) {
+				break;
+			}
+			
+			if (n.index == currentNote.index) {
+				foundSameLane = true;
+				sameLaneTimeGap = gapMs;
+				break;
+			}
+			nextSameLaneId++;
+		}
+
+		if (foundSameLane) {
+			var sameLaneAvailableTime = sameLaneTimeGap - sustainDuration;
+
+			if (sameLaneAvailableTime > 0) {
+				var maxThreshold = Math.max(
+					NOTE_HOLD_THRESHOLD_MIN,
+					sameLaneAvailableTime - NOTE_HOLD_RESET_BUFFER
+				);
+				if (dynamicThreshold > maxThreshold) {
+					dynamicThreshold = maxThreshold;
+				}
+			} else {
+				// Overlapping same-lane notes (shouldn't happen, but handle gracefully)
+				dynamicThreshold = NOTE_HOLD_THRESHOLD_MIN;
+			}
 		}
 
 		return dynamicThreshold;

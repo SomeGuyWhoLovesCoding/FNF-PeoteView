@@ -1,0 +1,9 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TextureAtlas imagePath="color_sheet.png">
+	<!-- Created with Adobe Animate version 21.0.6.41649 -->
+	<!-- http://www.adobe.com/products/animate.html -->
+	<SubTexture name="blue0000" x="6" y="6" width="112" height="110"/>
+	<SubTexture name="green0000" x="6" y="122" width="112" height="110"/>
+	<SubTexture name="purple0000" x="124" y="6" width="108" height="110"/>
+	<SubTexture name="red0000" x="124" y="122" width="108" height="110"/>
+</TextureAtlas>

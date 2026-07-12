@@ -76,9 +76,14 @@ class SaveData {
 			graphics: {
 				frameRate: 60, //Application.current.window.displayMode.refreshRate, // 0 if unspecified or VRR
 				antialiasing: true,
+				compressTextures: true,
 				customTitleBarColor: 0x3d3f4177, // RGB then opacity at the end. Except opacity doesn't work.
 				customWindowOutlineColor: 0x27292b77,
 				customTitleTextFont: "Inconsolata"
+			},
+			noteskin: {
+				skinIndex: 1,
+				frames: []
 			}
 		};
 	}
@@ -102,6 +107,8 @@ class SaveData {
 			return;
 		}
 		trace('Savedata file loaded...');
+		if (result.noteskin == null) result.noteskin = getDefaultState().noteskin;
+		if (result.graphics.compressTextures == null) result.graphics.compressTextures = getDefaultState().graphics.compressTextures;
 		state = result;
 	}
 
@@ -118,6 +125,7 @@ class SaveData {
 	var controls:SaveData_Controls;
 	var preferences:SaveData_Preferences;
 	var graphics:SaveData_Graphics;
+	var noteskin:SaveData_Noteskin;
 }
 
 /**
@@ -125,6 +133,7 @@ class SaveData {
 	@since Development
 **/
 @:structInit
+@:struct
 @:publicFields
 class SaveData_Controls {
 	var ui:Controls_UI;
@@ -137,6 +146,7 @@ class SaveData_Controls {
 	@since Development
 **/
 @:structInit
+@:struct
 @:publicFields
 class Controls_UI {
 	var left:Int;
@@ -152,6 +162,7 @@ class Controls_UI {
 	@since Development
 **/
 @:structInit
+@:struct
 @:publicFields
 class Controls_Game {
 	var keybindArray:Array<Array<Array<KeyCode>>>;
@@ -166,6 +177,7 @@ class Controls_Game {
 	@since Development
 **/
 @:structInit
+@:struct
 @:publicFields
 class SaveData_Preferences {
 	var downScroll:Bool;
@@ -182,11 +194,25 @@ class SaveData_Preferences {
 	@since Development
 **/
 @:structInit
+@:struct
 @:publicFields
 class SaveData_Graphics {
 	var frameRate:Float;
 	var antialiasing:Bool;
+	var compressTextures:Bool;
 	var customTitleBarColor:Int;
 	var customWindowOutlineColor:Int;
 	var customTitleTextFont:String;
+}
+
+/**
+	The save data noteskin category.
+	@since Development
+**/
+@:structInit
+@:struct
+@:publicFields
+class SaveData_Noteskin {
+	var skinIndex:Int;
+	var frames:Array<Int>;
 }

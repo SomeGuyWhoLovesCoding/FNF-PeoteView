@@ -15,7 +15,7 @@ private enum abstract StateSelection(Int) {
 	var MAIN_MENU;
 	var GAMEPLAY;
 	var AWARDS;
-	var CREDITS;
+	var NOTE_VIEW;
 }
 
 /**
@@ -142,7 +142,7 @@ class Main extends Application
 				instance.playField.dispose();
 				instance.playField = null;
 			case AWARDS:
-			case CREDITS:
+			case NOTE_VIEW:
 			case NONE:
 		}
 
@@ -157,7 +157,7 @@ class Main extends Application
 				instance.playField.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
 				instance.playField.downScroll = SaveData.state.preferences.downScroll;
 			case AWARDS:
-			case CREDITS:
+			case NOTE_VIEW:
 			case NONE:
 		}
 

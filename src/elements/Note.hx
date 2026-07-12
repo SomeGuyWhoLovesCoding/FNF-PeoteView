@@ -4,6 +4,7 @@ package elements;
 	The note sprite of the note system. This is also used for the receptor.
 	@since Development
 **/
+@:publicFields
 class Note implements Element
 {
 	static public var defaultAlpha:Float = 1;
@@ -155,5 +156,32 @@ class Note implements Element
 
 	inline static function arrayLengthOfNoteSkin_main() {
 		return Std.int(Math.ffloor(offsetAndSizeFrames.length) / KEYS);
+	}
+
+	inline static function frameSlotCount():Int {
+		return Std.int(offsetAndSizeFrames.length / 6);
+	}
+
+	inline static function frameSlotForKey(keyId:Int, glow:Bool):Int {
+		return keyId * 4 + (glow ? 3 : 0);
+	}
+
+	inline static function readFrameField(slot:Int, field:Int):Int {
+		return offsetAndSizeFrames[slot * 6 + field];
+	}
+
+	inline static function writeFrameField(slot:Int, field:Int, value:Int) {
+		offsetAndSizeFrames[slot * 6 + field] = value;
+	}
+
+	inline static function copyFramesTo(target:Array<Int>) {
+		target.resize(0);
+		for (v in offsetAndSizeFrames) target.push(v);
+	}
+
+	inline static function loadFramesFrom(source:Array<Int>) {
+		if (source == null || source.length == 0) return;
+		if (source.length != offsetAndSizeFrames.length) return;
+		for (i in 0...source.length) offsetAndSizeFrames[i] = source[i];
 	}
 }
