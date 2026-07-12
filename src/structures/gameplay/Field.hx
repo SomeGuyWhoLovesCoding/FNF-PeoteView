@@ -96,6 +96,9 @@ class Field {
 		for (actor in actors) {
 			if (actor.singAnimationRunning) {
 				//actor.singStepElapsed++;
+				// ok yea this is it
+				// this is how psych did its sustain note play
+				// 
 				if (actor.shake)
 					actor.singDurationElapsed = 0;
 			}

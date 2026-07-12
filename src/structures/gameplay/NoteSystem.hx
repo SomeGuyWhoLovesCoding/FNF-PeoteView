@@ -19,8 +19,8 @@ class NoteSystem {
 	static var SUSTAIN_TAIL = 20;
 	static var SUSTAIN_TAIL_END = 25;
 
-	static var NOTE_HOLD_THRESHOLD = 26;
-	static var NOTE_HOLD_THRESHOLD_SUSTAIN = 18;
+	static var NOTE_HOLD_THRESHOLD = 19;
+	static var NOTE_HOLD_THRESHOLD_SUSTAIN = 17;
 
 	// === Dynamic hold-threshold tuning ===
 	// Absolute floor for the dynamic threshold so the confirm window is never
@@ -33,11 +33,11 @@ class NoteSystem {
 	// Multiplier on `baseThreshold` used to define what counts as "far enough
 	// in time" that no shortening is needed. At and beyond this gap the dynamic
 	// threshold equals the base threshold.
-	static var NOTE_HOLD_TIME_FAR_FACTOR = 4.0;
+	static var NOTE_HOLD_TIME_FAR_FACTOR = 2.0;
 
 	static function init() {
 		if (notesBuf == null) {
-			notesBuf = new Buffer<Note>(128, 128, false);
+			notesBuf = new Buffer<Note>(32, 32, true);
 		}
 
 		if (notesProg == null) {
@@ -47,7 +47,7 @@ class NoteSystem {
 		}
 
 		if (sustainsBuf == null) {
-			sustainsBuf = new Buffer<Sustain>(128, 128, false);
+			sustainsBuf = new Buffer<Sustain>(32, 32, true);
 		}
 
 		if (sustainProg == null) {

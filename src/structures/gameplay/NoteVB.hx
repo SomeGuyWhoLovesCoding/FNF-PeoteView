@@ -260,8 +260,8 @@ class VirtualSustain {
 	 */
 	inline public function followNote(cX:Int, cY:Int, id:Int) {
 		var offset = Sustain.offsets[id];
-		Sx = cX + (Math.floor(offset[0] * scale) >> 1);
-		Sy = cY + (Math.floor(offset[1] * scale) >> 1);
+		Sx = cX + (Math.floor((offset[0] * scale) * 0.5));
+		Sy = cY + (Math.floor((offset[1] * scale) * 0.5));
 	}
 
 	inline function new(Sx:Int, Sy:Int, w:Int, h:Int) {
