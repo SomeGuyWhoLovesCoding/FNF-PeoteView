@@ -80,10 +80,6 @@ class SaveData {
 				customTitleBarColor: 0x3d3f4177, // RGB then opacity at the end. Except opacity doesn't work.
 				customWindowOutlineColor: 0x27292b77,
 				customTitleTextFont: "Inconsolata"
-			},
-			noteskin: {
-				skinIndex: 1,
-				frames: []
 			}
 		};
 	}
@@ -107,8 +103,6 @@ class SaveData {
 			return;
 		}
 		trace('Savedata file loaded...');
-		if (result.noteskin == null) result.noteskin = getDefaultState().noteskin;
-		if (result.graphics.compressTextures == null) result.graphics.compressTextures = getDefaultState().graphics.compressTextures;
 		state = result;
 	}
 
@@ -125,7 +119,6 @@ class SaveData {
 	var controls:SaveData_Controls;
 	var preferences:SaveData_Preferences;
 	var graphics:SaveData_Graphics;
-	var noteskin:SaveData_Noteskin;
 }
 
 /**
@@ -203,16 +196,4 @@ class SaveData_Graphics {
 	var customTitleBarColor:Int;
 	var customWindowOutlineColor:Int;
 	var customTitleTextFont:String;
-}
-
-/**
-	The save data noteskin category.
-	@since Development
-**/
-@:structInit
-@:struct
-@:publicFields
-class SaveData_Noteskin {
-	var skinIndex:Int;
-	var frames:Array<Int>;
 }

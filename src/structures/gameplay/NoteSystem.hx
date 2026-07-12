@@ -1,7 +1,7 @@
 package structures.gameplay;
 
 /**
- * This is where notes render when interconnected to the note spawner.
+ * This is where notes and strumlines render in accordance to the note spawner.
  * @since Development
  */
 @:publicFields

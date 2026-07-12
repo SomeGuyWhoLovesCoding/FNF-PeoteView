@@ -1,8 +1,6 @@
 package structures;
 
 import input2action.ActionMap;
-import lime.ui.KeyCode;
-import lime.ui.KeyModifier;
 import lime.ui.MouseButton;
 import lime.ui.MouseWheelMode;
 
@@ -121,7 +119,8 @@ class MainMenu {
 			Controls.Action.UI_UP => { action: up },
 			Controls.Action.UI_LEFT => { action: left },
 			Controls.Action.UI_RIGHT => { action: right },
-			Controls.Action.UI_ACCEPT => { action: accept }
+			Controls.Action.UI_ACCEPT => { action: accept },
+			Controls.Action.GAME_DEBUG => { action: goToNoteskinDebug }
 		];
 	}
 
@@ -261,6 +260,11 @@ class MainMenu {
 			&& i == nav.value())
 				doIt();
 		}
+	}
+
+	function goToNoteskinDebug(isDown:Bool, param:Int) {
+		if (!isDown) return;
+		Main.switchState(NOTE_VIEW);
 	}
 
 	function addEvents() {

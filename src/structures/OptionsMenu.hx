@@ -94,14 +94,14 @@ class OptionsMenu {
 	}
 
 	function addEvents() {
-		haxe.Timer.delay(() -> {
+		Tools.forSync(() -> {
 			var window = lime.app.Application.current.window;
 			Main.current.controls.bindTo(actions);
 			
 			Main.current.mouseDown = mousePress;
 			window.onMouseWheel.add(moveCategory_mouse);
 			window.onKeyDown.add(handleKeyDown);
-		}, 1);
+		});
 	}
 
 	function removeEvents() {
@@ -143,9 +143,6 @@ class OptionsMenu {
 		if (optionsDisplay.controlsDisplay.binding) {
 			optionsDisplay.controlsDisplay.cancelBinding();
 		}
-		if (optionsDisplay.noteskinDisplay.editing) {
-			optionsDisplay.noteskinDisplay.cancelEditing();
-		}
 		
 		removeEvents();
 
@@ -177,17 +174,16 @@ class OptionsMenu {
 			case PREFERENCES:
 				result = PreferencesDisplay.prefsStr.length;
 			case GAMEPLAY:
-				result = optionsDisplay.noteskinDisplay.alphabetListLength();
+				//result = GraphicsDisplay.graphicsStr.length;
+				result = 0; // TODO
 		}
 
 		return result;
 	}
 
 	inline function isInvalidKeyState() {
-		if (optionsDisplay == null || optionsDisplay.closed) return false;
-		if (optionsDisplay.noteskinDisplay != null && optionsDisplay.noteskinDisplay.editing && !optionsDisplay.noteskinDisplay.closed) return true;
 		var disp = optionsDisplay.controlsDisplay;
-		return disp.binding && !disp.closed;
+		return optionsDisplay != null && (disp.binding && !disp.closed && !optionsDisplay.closed);
 	}
 
 	function down(isDown:Bool, param:Int) {
@@ -230,11 +226,6 @@ class OptionsMenu {
 	}
 
 	function handleKeyDown(keyCode:KeyCode, keyModifier:KeyModifier) {
-		var noteskin = optionsDisplay.noteskinDisplay;
-		if (noteskin != null && !noteskin.closed && !optionsDisplay.closed) {
-			noteskin.onKeyDown(keyCode, keyModifier);
-		}
-
 		var disp = optionsDisplay.controlsDisplay;
 		if (disp != null && !disp.closed && !optionsDisplay.closed) {
 			disp.onKeyDown(keyCode, keyModifier);

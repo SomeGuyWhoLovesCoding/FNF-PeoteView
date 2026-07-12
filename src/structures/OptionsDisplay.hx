@@ -25,7 +25,7 @@ class OptionsDisplay {
 	var options(default, null):Array<OptionsSprite> = [];
 
 	var preferencesDisplay(default, null):PreferencesDisplay;
-	var noteskinDisplay(default, null):NoteskinDisplay;
+	var graphicsDisplay(default, null):GraphicsDisplay;
 	var controlsDisplay(default, null):ControlsDisplay;
 
 	var closed:Bool = true;
@@ -33,7 +33,7 @@ class OptionsDisplay {
 	function new(parent:OptionsMenu) {
 		this.parent = parent;
 		preferencesDisplay = new PreferencesDisplay(parent);
-		noteskinDisplay = new NoteskinDisplay(parent);
+		graphicsDisplay = new GraphicsDisplay(parent);
 		controlsDisplay = new ControlsDisplay(parent);
 	}
 
@@ -46,7 +46,7 @@ class OptionsDisplay {
 			case PREFERENCES:
 				preferencesDisplay.reload();
 			case GAMEPLAY:
-				noteskinDisplay.reload();
+				graphicsDisplay.reload();
 		}
 	}
 
@@ -56,7 +56,7 @@ class OptionsDisplay {
 			case PREFERENCES:
 				preferencesDisplay.enter();
 			case GAMEPLAY:
-				//noteskinDisplay.enter();
+				graphicsDisplay.enter();
 			default:
 		}
 	}
@@ -71,7 +71,7 @@ class OptionsDisplay {
 		
 		controlsDisplay.update(deltaTime);
 		preferencesDisplay.update(deltaTime);
-		noteskinDisplay.update(deltaTime);
+		graphicsDisplay.update(deltaTime);
 	}
 
 	function destroyOptions() {
@@ -84,14 +84,14 @@ class OptionsDisplay {
 		
 		controlsDisplay.destroyOptions();
 		preferencesDisplay.destroyOptions();
-		noteskinDisplay.destroyOptions();
+		graphicsDisplay.destroyOptions();
 	}
 
 	function dispose() {
 		destroyOptions();
 		controlsDisplay.dispose();
 		preferencesDisplay.dispose();
-		noteskinDisplay.dispose();
+		graphicsDisplay.dispose();
 	}
 }
 

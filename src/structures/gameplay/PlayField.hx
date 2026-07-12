@@ -531,7 +531,7 @@ class PlayField {
 
 		pauseScreen.close();
 		if (!RenderingMode.enabled && songStarted && !songEnded) Mixer.startMusic();
-		if (inputSystem != null) haxe.Timer.delay(inputSystem.addEvents, 1);
+		if (inputSystem != null) Tools.forSync(inputSystem.addEvents);
 
 		paused = false;
 

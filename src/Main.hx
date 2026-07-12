@@ -134,15 +134,18 @@ class Main extends Application
 
 		switch (instance.currentState) {
 			case MAIN_MENU:
-				trace('dispose the main menu');
+				Sys.println('dispose the main menu');
 				instance.mainMenu.dispose();
 				instance.mainMenu = null;
 			case GAMEPLAY:
-				trace('dispose the gameplay menu');
+				Sys.println('dispose the gameplay menu');
 				instance.playField.dispose();
 				instance.playField = null;
 			case AWARDS:
 			case NOTE_VIEW:
+				Sys.println('dispose the noteskin editor menu');
+				instance.noteskinEditor.dispose();
+				instance.noteskinEditor = null;
 			case NONE:
 		}
 
@@ -150,14 +153,19 @@ class Main extends Application
 
 		switch (newState) {
 			case MAIN_MENU:
+				Sys.println('create the main menu');
 				instance.mainMenu = new MainMenu();
 				instance.mainMenu.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
 			case GAMEPLAY:
+				Sys.println('create the gameplay menu');
 				instance.playField = new PlayField(songChosen);
 				instance.playField.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
 				instance.playField.downScroll = SaveData.state.preferences.downScroll;
 			case AWARDS:
 			case NOTE_VIEW:
+				Sys.println('create the noteskin editor menu');
+				instance.noteskinEditor = new NoteskinEditor();
+				instance.noteskinEditor.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
 			case NONE:
 		}
 
@@ -187,6 +195,7 @@ class Main extends Application
 	var currentState:StateSelection;
 	var mainMenu:MainMenu;
 	var playField:PlayField;
+	var noteskinEditor:NoteskinEditor;
 
 	// MENUS
 	var optionsMenu(default, null):OptionsMenu;

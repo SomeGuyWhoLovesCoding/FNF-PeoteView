@@ -57,7 +57,7 @@ class InputSystem {
 
 		strumlinePlayable = [false, true];
 
-		haxe.Timer.delay(addEvents, 1); // Just for a single millisecond the event doesn't get added until next frame
+		Tools.forSync(addEvents);
 	}
 
 	function reloadKeybinds(mania:Int = 4) {
