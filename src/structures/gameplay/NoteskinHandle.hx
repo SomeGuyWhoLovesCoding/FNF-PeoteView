@@ -1,5 +1,8 @@
 package structures.gameplay;
 
+import haxe.Json;
+import sys.io.File;
+
 /**
     Noteskin handle class.
     Barely documented because idk if this will ever make it as necessity into funkin' view or not so apparently I just have this class for no reason
@@ -13,76 +16,92 @@ class NoteskinHandle {
     function new(skin:String) {
         // hmmmmmmm
         folder = 'assets/images/noteskins/$skin';
-        var path = Path.asset('$folder/data.json');
-        var content = sys.File.getContent(path);
+        var path = Paths.asset('$folder/data.json');
+        var content = File.getContent(path);
         var rawData = Json.parse(content);
 
-        data = {
-            name: rawData.name,
-            sparrowImg,
-            rawData.sparrowImg,
-            configMania: {
-                offsetX: 0,
-                offsetY: 0,
-                gap: 112,
-                clip: []
-            }
-        };
-
+        // Parse configMania properly
         var rawConfigMania:Array<Dynamic> = rawData.configMania;
-        var i = 0;
-        while (i < rawConfigMania.length - 1) {
-            var configManiaPiece = data.configMania[i];
-
-            data.configMania.offsetX = configManiaPiece.offsetX;
-            data.configMania.offsetY = configManiaPiece.offsetY;
-            data.configMania.gap = configManiaPiece.gap;
-
-            var j = 0;
-            while (j < rawConfigMania.clip.length - 1) {
-                var clip = rawConfigMania.clip[i];
-                // oh here we go with this
-                data.configMania.clip.push({
+        var configs:Array<NoteskinConfig> = [];
+            
+        // Parse clips
+        var rawClips:Array<Dynamic> = rawData.clip;
+        var clips:Array<NoteskinReceptorProperties> = [];
+        
+        // Only parse clips if they exist
+        if (rawClips != null) {
+            for (rawClip in rawClips) {
+                clips.push({
                     idle: {
-                        clipX: clip.idle.clipX,
-                        clipY: clip.idle.clipY,
-                        clipW: clip.idle.clipW,
-                        clipH: clip.idle.clipH
+                        clipX: rawClip.idle.clipX,
+                        clipY: rawClip.idle.clipY,
+                        clipW: rawClip.idle.clipW,
+                        clipH: rawClip.idle.clipH,
+                        offsX: rawClip.idle.offsX,
+                        offsY: rawClip.idle.offsY
                     },
                     press: {
-                        clipX: clip.press.clipX,
-                        clipY: clip.press.clipY,
-                        clipW: clip.press.clipW,
-                        clipH: clip.press.clipH
+                        clipX: rawClip.press.clipX,
+                        clipY: rawClip.press.clipY,
+                        clipW: rawClip.press.clipW,
+                        clipH: rawClip.press.clipH,
+                        offsX: rawClip.press.offsX,
+                        offsY: rawClip.press.offsY
                     },
                     color: {
-                        clipX: clip.color.clipX,
-                        clipY: clip.color.clipY,
-                        clipW: clip.color.clipW,
-                        clipH: clip.color.clipH
+                        clipX: rawClip.color.clipX,
+                        clipY: rawClip.color.clipY,
+                        clipW: rawClip.color.clipW,
+                        clipH: rawClip.color.clipH,
+                        offsX: rawClip.color.offsX,
+                        offsY: rawClip.color.offsY
                     },
                     confirm: {
-                        clipX: clip.confirm.clipX,
-                        clipY: clip.confirm.clipY,
-                        clipW: clip.confirm.clipW,
-                        clipH: clip.confirm.clipH
+                        clipX: rawClip.confirm.clipX,
+                        clipY: rawClip.confirm.clipY,
+                        clipW: rawClip.confirm.clipW,
+                        clipH: rawClip.confirm.clipH,
+                        offsX: rawClip.confirm.offsX,
+                        offsY: rawClip.confirm.offsY
                     },
                     holdBody: {
-                        clipX: clip.holdBody.clipX,
-                        clipY: clip.holdBody.clipY,
-                        clipW: clip.holdBody.clipW,
-                        clipH: clip.holdBody.clipH
+                        clipX: rawClip.holdBody.clipX,
+                        clipY: rawClip.holdBody.clipY,
+                        clipW: rawClip.holdBody.clipW,
+                        clipH: rawClip.holdBody.clipH,
+                        offsX: rawClip.holdBody.offsX,
+                        offsY: rawClip.holdBody.offsY
                     },
                     holdTail: {
-                        clipX: clip.holdTail.clipX,
-                        clipY: clip.holdTail.clipY,
-                        clipW: clip.holdTail.clipW,
-                        clipH: clip.holdTail.clipH
+                        clipX: rawClip.holdTail.clipX,
+                        clipY: rawClip.holdTail.clipY,
+                        clipW: rawClip.holdTail.clipW,
+                        clipH: rawClip.holdTail.clipH,
+                        offsX: rawClip.holdTail.offsX,
+                        offsY: rawClip.holdTail.offsY
                     }
                 });
             }
-            i++;
         }
+        
+        // Parse configs
+        if (rawConfigMania != null) {
+            for (rawConfig in rawConfigMania) {
+                configs.push({
+                    offsetX: rawConfig.offsetX,
+                    offsetY: rawConfig.offsetY,
+                    gap: rawConfig.gap,
+                    indexes: rawConfig.indexes != null ? rawConfig.indexes : []
+                });
+            }
+        }
+
+        data = {
+            name: rawData.name != null ? rawData.name : "default",
+            sparrowImg: rawData.sparrowImg != null ? rawData.sparrowImg : "notes.png",
+            configMania: configs,
+            clip: clips
+        };
     }
 }
 
@@ -90,8 +109,9 @@ class NoteskinHandle {
 @:structInit
 class NoteskinData {
     var name:String;
-    var sparrowImg:String; //?
+    var sparrowImg:String;
     var configMania:Array<NoteskinConfig>;
+    var clip:Array<NoteskinReceptorProperties>; // this is reserved for index-to-clipping, not mania!
 }
 
 @:publicFields
@@ -99,8 +119,8 @@ class NoteskinData {
 class NoteskinConfig {
     var offsetX:Int;
     var offsetY:Int;
-    var gap:Int; // default is usually 112
-    var clip:Array<NoteskinReceptorProperties>;
+    var gap:Int;
+    var indexes:Array<Int>;
 }
 
 @:publicFields
@@ -121,4 +141,6 @@ class BasicNoteskinClip {
     var clipY:Int;
     var clipW:Int;
     var clipH:Int;
+    var offsX:Int;
+    var offsY:Int;
 }

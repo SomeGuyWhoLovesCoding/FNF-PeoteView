@@ -4,6 +4,7 @@ package elements;
 	The note sprite of the note system. This is also used for the receptor.
 	@since Development
 **/
+@:publicFields
 class Note implements Element
 {
 	static public var defaultAlpha:Float = 1;
@@ -63,6 +64,9 @@ class Note implements Element
 	static public var offsetAndSizeFrames:Array<Int> = [];
 
 	public var id:Int = 0;
+
+	// taken from https://github.com/maitag/peote-view-samples/blob/22eca676920b92f864c0996e68b4dabc669a3399/texture/src/TextureSimple.hx#L49
+	var OPTIONS = { texRepeatX:true, texRepeatY:true, blend:true };
 
 	inline public function new(x:Int, y:Int, w:Int, h:Int, scale:Float = 1.0, initialAlpha:Float = 1.0, addedAlpha:Float = 0.0) {
 		reset();
