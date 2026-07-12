@@ -59,7 +59,11 @@ class Actor extends ActorElement
 	var startingShakeFrame:Int;
 	var endingShakeFrame:Int;
 
+	var singDurationElapsed:Float = 0;
+	//var singAnimationFinished:Bool; //you set this manually on completeSustain
+
 	var animationRunning(default, null):Bool;
+	var singAnimationRunning(default, null):Bool;
 
 	// ── Precomputed pose caches ──────────────────────────────────────────────
 
@@ -200,6 +204,9 @@ class Actor extends ActorElement
 		var symbolName = animData != null ? animData.name : animKey;
 		this.name      = symbolName;
 
+		singAnimationRunning = false;
+		singDurationElapsed = 0;
+
 		var sparrowRange = sparrowRangeFor(symbolName);
 		setupAnimation(symbolName, animData, sparrowRange);
 	}
@@ -212,6 +219,9 @@ class Actor extends ActorElement
 		if (animData == null) return;
 		this.name = animData.name;
 
+		singAnimationRunning = true;
+		singDurationElapsed = 0;
+
 		setupAnimation(animData.name, animData, precomputedSingPoses_range[id]);
 	}
 
@@ -223,11 +233,15 @@ class Actor extends ActorElement
 		if (animData == null) return;
 		this.name = animData.name;
 
+		singAnimationRunning = false;
+		singDurationElapsed = 0;
+
 		setupAnimation(animData.name, animData, precomputedMissPoses_range[id]);
 	}
 
 	function stopAnimation() {
 		animationRunning = false;
+		singAnimationRunning = false;
 	}
 
 	/** Override to return the Sparrow frame range for a symbol (null for Animate). */
@@ -236,12 +250,14 @@ class Actor extends ActorElement
 	// ── Update / render ──────────────────────────────────────────────────────
 
 	function endOfAnimation():Bool {
-		if (frameIndex >= endingFrameIndex - startingFrameIndex) {
+		if (frameIndex >= endingFrameIndex - startingFrameIndex
+			|| (!data.disableSingDur && singDurationElapsed > data.singDur * Main.conductor.stepCrochet)) {
 			animationRunning = false;
 			if (finishAnim != "") {
 				if (finishCallback != null) { finishCallback(); finishCallback = null; }
 				playAnimation(finishAnim);
 				finishAnim = "";
+				singDurationElapsed = 0;
 			}
 			return true;
 		}
@@ -250,6 +266,13 @@ class Actor extends ActorElement
 
 	function update(deltaTime:Float) {
 		if (!animationRunning) return;
+
+		// i think this is how psych engine does sing duration
+		// but i'm not entirely sure on that since this is
+		// an entirely different architecture
+		// but it should be pretty easy anyway so no worries
+		if (singAnimationRunning)
+			singDurationElapsed += deltaTime;
 
 		frameTimeRemaining -= deltaTime;
 		if (frameTimeRemaining <= 0) {

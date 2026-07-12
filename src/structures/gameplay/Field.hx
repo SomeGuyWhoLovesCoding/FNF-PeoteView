@@ -83,11 +83,23 @@ class Field {
 		player.finishAnim = "idle";
 		player.addToBuffer();
 
+		Main.conductor.onStep.add(stepHit);
 		Main.conductor.onBeat.add(beatHit);
 
 		scrollCamera.y = -100;
 		targetCamera.x = 0;
 		targetCamera.y = 0;
+	}
+
+	function stepHit(step:Float) {
+		if (isInGameOver) return;
+		for (actor in actors) {
+			if (actor.singAnimationRunning) {
+				//actor.singStepElapsed++;
+				if (actor.shake)
+					actor.singDurationElapsed = 0;
+			}
+		}
 	}
 
 	function beatHit(beat:Float) {
@@ -99,8 +111,10 @@ class Field {
 		}
 
 		var beatIsEven = beat % 2 == 0;
-		if (!opponent.animationRunning && beatIsEven) opponent.playAnimation("idle");
-		if (!player.animationRunning && beatIsEven) player.playAnimation("idle");
+		for (actor in actors) {
+			if (actor == spectator) continue;
+			if (!actor.animationRunning && beatIsEven) actor.playAnimation("idle");
+		}
 		spectator.playAnimation(beatIsEven ? "danceLeft" : "danceRight");
 	}
 
@@ -174,6 +188,10 @@ class Field {
 	var defaultCameraXpos:Array<Float> = [-50, 50];
 	var defaultCameraYpos:Array<Float> = [0, 0];
 
+	inline function charFromNoteType(type:Int) {
+		return (type == 0 ? opponent : player);
+	}
+
 	inline function hitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
 		sing(note.index, (note.type == 0 ? opponent : player), false, note.duration > 80 && timing < parent.hitbox * 0.5);
 
@@ -186,15 +204,19 @@ class Field {
 	}
 
 	inline function missNote(note:MetaNote, notesInOne:Int64) {
-		sing(note.index, (note.type == 0 ? opponent : player), true, false);
+		var char = charFromNoteType(note.type);
+		sing(note.index, char, true, false);
 	}
 
 	inline function completeSustain(note:MetaNote) {
-		sing(note.index, (note.type == 0 ? opponent : player), false, false, true);
+		var char = charFromNoteType(note.type);
+		//char.singAnimationFinished = true;
+		sing(note.index, char, false, false, true);
 	}
 
 	inline function releaseSustain(note:MetaNote) {
-		sing(note.index, (note.type == 0 ? opponent : player), true, false);
+		var char = charFromNoteType(note.type);
+		sing(note.index, char, true, false);
 	}
 
 	function dispose() {
@@ -204,6 +226,7 @@ class Field {
 		parent.view.scroll.x = parent.view.scroll.y = 0;
 		parent.view.fov = 1.0;
 
+		Main.conductor.onStep.remove(stepHit);
 		Main.conductor.onBeat.remove(beatHit);
 	}
 

@@ -125,6 +125,7 @@ class Strumline {
 			rec.sustainResolved = false;
 
 			if (noteToHit.duration > 20) {
+				rec.sustainResolved = false;
 				rec.sustainToHold = noteToHit;
 				rec.sustainToHold_index = noteIndex;
 			}

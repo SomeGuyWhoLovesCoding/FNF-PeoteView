@@ -21,7 +21,7 @@ class Receptor {
     var playerHitToCheck:Bool;
     var fakeOverlapStorage:Float;
     
-    var botTimer:Float;
+    var confirmTimer:ReceptorTimer;
     var sustainActive:Bool;
     var sustainResolved:Bool;
     
@@ -43,8 +43,21 @@ class Receptor {
         playerHitToCheck = false;
         fakeOverlapStorage = 0;
         
-        botTimer = 0;
+        confirmTimer = new ReceptorTimer(Math.POSITIVE_INFINITY, Math.POSITIVE_INFINITY, Math.POSITIVE_INFINITY);
         sustainActive = false;
         sustainResolved = false;
+    }
+
+    inline function updateAnimation(songPosition:Float) {
+        if (songPosition > confirmTimer.tailTime) {
+            note.press();
+            confirmTimer.tailTime = Math.POSITIVE_INFINITY;
+        }
+
+        if (songPosition > confirmTimer.endTime) {
+            note.reset();
+            confirmTimer.startTime = Math.POSITIVE_INFINITY;
+            confirmTimer.endTime = Math.POSITIVE_INFINITY;
+        }
     }
 }

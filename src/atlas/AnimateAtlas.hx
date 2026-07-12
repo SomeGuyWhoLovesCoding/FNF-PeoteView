@@ -8,7 +8,10 @@ import haxe.Json;
  * world-space 2-D affine transform (parent chain multiplied in).
  * @since Development
  */
-typedef ResolvedLeaf = {
+@:structInit
+@:struct
+@:publicFields
+class ResolvedLeaf {
 	var sprite:AnimateSprite;
 	var a:Float;   // 2×2 rotation/scale matrix
 	var b:Float;
@@ -31,14 +34,15 @@ typedef ResolvedFrame = Array<ResolvedLeaf>;
  * @since Development
  */
 @:publicFields
+@:struct
 class AnimateAtlas {
 	// Raw parsed data
-	var sprites:Map<String, AnimateSprite> = [];
-	var animations:Map<String, AnimateAnimation> = [];
+	var sprites:FakeStringMap<AnimateSprite> = new FakeStringMap<AnimateSprite>();
+	var animations:FakeStringMap<AnimateAnimation> = new FakeStringMap<AnimateAnimation>();
 	var meta:AnimateMeta;
 
 	// Pre-resolved: symbol name -> array of ResolvedFrame (one per display frame)
-	var resolvedAnimations:Map<String, Array<ResolvedFrame>> = [];
+	var resolvedAnimations:FakeStringMap<Array<ResolvedFrame>> = new FakeStringMap<Array<ResolvedFrame>>();
 
 	var imagePath:String;
 
@@ -214,7 +218,7 @@ class AnimateAtlas {
 	function resolveAllAnimations() {
 		// Only resolve top-level "anim" symbols (those referenced from charData),
 		// not every leaf symbol — but resolving all is harmless and simpler.
-		for (animName in animations.keys()) {
+		for (animName in animations.keys) {
 			var resolved = buildResolvedFrames(animName);
 			if (resolved != null) resolvedAnimations.set(animName, resolved);
 		}
@@ -346,6 +350,7 @@ class AnimateAtlas {
  * @since Development
 **/
 @:structInit
+@:struct
 class AnimateSprite {
 	public var name:String;
 	public var x:Int;
@@ -363,6 +368,7 @@ class AnimateSprite {
  * @since Development
 **/
 @:structInit
+@:struct
 class AnimateAnimation {
 	public var name:String;
 	public var frames:Array<AnimateFrame>;
@@ -372,6 +378,7 @@ class AnimateAnimation {
  * @since Development
 **/
 @:structInit
+@:struct
 class AnimateFrame {
 	public var index:Int;
 	public var duration:Int;
@@ -382,6 +389,7 @@ class AnimateFrame {
  * @since Development
 **/
 @:structInit
+@:struct
 class AnimateFrameElement {
 	public var instanceName:String;
 	public var symbolName:String;
@@ -397,6 +405,7 @@ class AnimateFrameElement {
  * @since Development
 **/
 @:structInit
+@:struct
 class AnimateMatrix {
 	public var a:Float;
 	public var b:Float;
@@ -410,6 +419,7 @@ class AnimateMatrix {
  * @since Development
 **/
 @:structInit
+@:struct
 class AnimateTransform {
 	public var x:Float;
 	public var y:Float;
@@ -419,6 +429,7 @@ class AnimateTransform {
  * @since Development
 **/
 @:structInit
+@:struct
 class AnimateMeta {
 	public var app:String;
 	public var version:String;

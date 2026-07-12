@@ -5,6 +5,7 @@ package elements.actor;
 	* @since Development
 **/
 @:structInit
+@:struct
 @:publicFields
 class ActorData {
 	var flip:Bool;
@@ -17,6 +18,9 @@ class ActorData {
 	var camPos:Array<Float>;
 
 	var data:FakeStringMap<ActorAnimationData>;
+
+	var disableSingDur:Bool;
+	var singDur:Float;
 
 	/**
 	 * Converts a psych engine character data json to an `ActorData`.
@@ -38,7 +42,9 @@ class ActorData {
 				offsets: animData.offsets,
 				indices: animData.indices,
 				fps: animData.fps,
-				loop: animData.loop
+				loop: animData.loop,
+				// startShakeFrame: 0,
+				// endShakeFrame: 1
 			});
 		}
 
@@ -51,6 +57,8 @@ class ActorData {
 			healthIcon: json.healthicon,
 			adjPos: json.position,
 			camPos: json.camera_position,
+			disableSingDur: json.disableSingDuration,
+			singDur: json.singDuration ?? 4,
 			data: _data
 		}
 

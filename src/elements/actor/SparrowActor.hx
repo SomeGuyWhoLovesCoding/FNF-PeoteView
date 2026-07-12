@@ -93,17 +93,17 @@ class SparrowActor extends Actor
 	// ── Pose precomputation ───────────────────────────────────────────────────
 
 	override private function precomputeSingRange(i:Int, animData:ActorAnimationData) {
-		precomputedSingPoses_range[i] = sparrowAtlas.animMap[animData.name];
+		precomputedSingPoses_range[i] = sparrowAtlas.animMap.get(animData.name);
 	}
 
 	override private function precomputeMissRange(i:Int, animData:ActorAnimationData) {
-		precomputedMissPoses_range[i] = sparrowAtlas.animMap[animData.name];
+		precomputedMissPoses_range[i] = sparrowAtlas.animMap.get(animData.name);
 	}
 
 	// ── Atlas range resolution ────────────────────────────────────────────────
 
 	override private function sparrowRangeFor(symbolName:String):Array<Int> {
-		return sparrowAtlas.animMap[symbolName];
+		return sparrowAtlas.animMap.get(symbolName);
 	}
 
 	override private function resolveAnimationRange(symbolName:String, sparrowRange:Array<Int>) {
