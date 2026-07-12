@@ -1,8 +1,5 @@
 package structures.gameplay;
 
-import lime.media.AudioBuffer;
-import lime.media.AudioSource;
-
 /**
 	The countdown display.
 	Inspired from defective engine's countdown class.
@@ -52,7 +49,9 @@ class CountdownDisplay {
 	function setupSounds(suffix:String = "") {
 		CountdownDisplay.suffix = suffix;
 		for (i in 0...4) {
-			sounds.push(MiniAudio.loadSoundEffect(Paths.asset('assets/sounds/countdown/${3 - i}${suffix != "" ? '-$suffix' : ''}.ogg')));
+			var sfxPath = Paths.asset('assets/sounds/countdown/${3 - i}${suffix != "" ? '-$suffix' : ''}.ogg');
+			var sound = MiniAudio.loadSoundEffect(sfxPath);
+			sounds.push(sound);
 		}
 	}
 

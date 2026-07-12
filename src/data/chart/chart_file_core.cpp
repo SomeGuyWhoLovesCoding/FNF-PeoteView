@@ -142,7 +142,7 @@ private:
     int64_t totalNotes = 0;   
 
     static constexpr size_t NOTE_SIZE = sizeof(ChartNote); // Exactly 10
-    static constexpr size_t BUFFER_ELEMENTS = 3276; // 3276 * 10 = 32760 bytes (Just under 32KB)
+    static constexpr size_t BUFFER_ELEMENTS = 104857; // 1mb
     mutable uint8_t buffer[BUFFER_ELEMENTS * NOTE_SIZE];
     mutable int64_t bufferBase = -1;
     mutable bool bufferDirty = false;
