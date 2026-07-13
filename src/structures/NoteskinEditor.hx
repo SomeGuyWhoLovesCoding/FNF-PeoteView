@@ -1053,7 +1053,7 @@ class NoteskinEditor {
                 dragMode = 0;
                 setCursor(MouseCursor.MOVE);
             }
-        } else if (editMode == 1) { // Size mode - clipW/H
+        } else if (editMode == 1) {
             if (nearRight && nearBottom) {
                 dragMode = 3;
                 setCursor(MouseCursor.RESIZE_NWSE);
@@ -1064,19 +1064,18 @@ class NoteskinEditor {
                 dragMode = 2;
                 setCursor(MouseCursor.RESIZE_NS);
             } else {
-                dragMode = 1;
-                setCursor(MouseCursor.RESIZE_WE);
+                dragMode = 3;
+                setCursor(MouseCursor.RESIZE_NWSE);
             }
-        } else if (editMode == 2) { // Offset mode - offsX/Y
-            // If near edges, allow single-axis adjustment; else move both axes
+        } else if (editMode == 2) {
             if (nearRight) {
-                dragMode = 4; // Offset X only
+                dragMode = 4;
                 setCursor(MouseCursor.RESIZE_WE);
             } else if (nearBottom) {
-                dragMode = 5; // Offset Y only
+                dragMode = 5;
                 setCursor(MouseCursor.RESIZE_NS);
             } else {
-                dragMode = 6; // Move both axes
+                dragMode = 6;
                 setCursor(MouseCursor.MOVE);
             }
         } else {
@@ -1159,15 +1158,15 @@ class NoteskinEditor {
                     
                 case 1: // Size mode - clipW/H
                     switch(dragMode) {
-                        case 1: // Resize right
+                        case 1: // Resize right - only W
                             var newW = Std.int(Math.max(1, dragStartClipW + dx));
                             clip.clipW = newW;
                             selectedProperty = "clipW";
-                        case 2: // Resize bottom
+                        case 2: // Resize bottom - only H
                             var newH = Std.int(Math.max(1, dragStartClipH + dy));
                             clip.clipH = newH;
                             selectedProperty = "clipH";
-                        case 3: // Corner resize
+                        case 3: // Corner resize - both W and H
                             var newW = Std.int(Math.max(1, dragStartClipW + dx));
                             var newH = Std.int(Math.max(1, dragStartClipH + dy));
                             clip.clipW = newW;
@@ -1230,8 +1229,9 @@ class NoteskinEditor {
         } else {
             // Hover state - update cursor (only if not in spritesheet mode)
             if (!spriteSheetMode) {
-                var sx = note.x;
-                var sy = note.y;
+                var clip = getSelectedClip();
+                var sx = note.x + clip.offsX;
+                var sy = note.y + clip.offsY;
                 var sw = note.w;
                 var sh = note.h;
                 var margin = 6;
@@ -1260,7 +1260,7 @@ class NoteskinEditor {
                             } else if (nearBottom) {
                                 setCursor(MouseCursor.RESIZE_NS);
                             } else {
-                                setCursor(MouseCursor.MOVE);
+                                setCursor(MouseCursor.RESIZE_NWSE);
                             }
                         case 2:
                             if (nearRight) {
