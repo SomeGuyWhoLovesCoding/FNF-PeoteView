@@ -102,7 +102,9 @@ class NoteskinEditorUI {
             (!state.spriteSheetMode && state.editMode != GLOBAL_TRANSFORM ? "SHIFT+LEFT/RIGHT: Switch receptor index\n" : "") +
             (!state.spriteSheetMode && state.editMode == GLOBAL_TRANSFORM ? "LEFT/RIGHT: Adjust offset/scale\n" : "") +
             "Hold Click: Toggle spritesheet view\n" +
-            "Mouse Drag: Modify current properties\n" +
+            (!state.spriteSheetMode && state.editMode == GLOBAL_TRANSFORM && !state.globalScaleMode ?
+                "Mouse Drag: Move strumline offset X/Y\n" :
+                "Mouse Drag: Modify current properties\n") +
             "ESC: Close editor\n" +
             (state.spriteSheetMode ? "#M9#[SPRITESHEET MODE - Mouse only!]\n" +
             "Drag to pan view | Press ESC or hold click to exit#M9#\n" :
@@ -118,12 +120,16 @@ class NoteskinEditorUI {
     function updateInstructionsText() {
         if (state.instructionsText != null && state.showEditor) {
             // If popup is active, don't update with normal instructions
-            if (state.createManiaPopupActive) return;
+            if (state.createManiaPopupActive) {
+                state.instructionsText.alignment = LEFT;
+                return;
+            }
 
             var newText = buildInstructionsText();
             if (state.instructionsText.text != newText) {
                 state.instructionsText.text = newText;
             }
+            state.instructionsText.alignment = RIGHT;
             state.instructionsText.scale = 0.7;
             positionInstructionsTextTopRight();
             state.instructionsText.alpha = 1;
@@ -148,7 +154,7 @@ class NoteskinEditorUI {
 
         // Build popup text
         var popupText =
-            "    #M6#=== CREATE NEW MANIA ===#M6#\n" +
+            "   #M6#=== CREATE NEW MANIA ===#M6#\n" +
             "How many keys this time?\n" +
             "(Enter a number 1-64)\n\n" +
             '#M5#Keys: ${state.createManiaInput}#M5#\n';

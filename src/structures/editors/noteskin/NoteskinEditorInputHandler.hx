@@ -82,7 +82,8 @@ class NoteskinEditorInputHandler {
 
         switch(key) {
             case KeyCode.SPACE:
-                if (state.isCtrlPressed && state.isShiftPressed) {
+                if (state.isCtrlPressed && state.isShiftPressed
+                    && state.currentManiaIndex < state.availableManiaConfigs.length) {
                     state.maniaManager.createNewMania();
                 } else if (!state.spriteSheetMode && state.editMode != GLOBAL_TRANSFORM) {
                     state.clipEditor.toggleAxisProperty();
@@ -331,6 +332,21 @@ class NoteskinEditorInputHandler {
             case CLIP_ID:
                 state.dragMode = -1;
                 setCursor(MouseCursor.ARROW);
+            case GLOBAL_TRANSFORM:
+                if (state.globalScaleMode) {
+                    // Scale sub-mode — mouse drag doesn't apply (1D value on a
+                    // 2D drag is ambiguous). Use arrow keys instead.
+                    state.dragMode = -1;
+                    setCursor(MouseCursor.ARROW);
+                } else {
+                    // Offset sub-mode — drag anywhere moves the whole strumline.
+                    // Reuse dragStartOffsX/Y to capture the global offset at
+                    // drag start (semantically identical: "offset at drag start").
+                    state.dragMode = 0;
+                    state.dragStartOffsX = state.currentConfig.offsetX;
+                    state.dragStartOffsY = state.currentConfig.offsetY;
+                    setCursor(MouseCursor.MOVE);
+                }
             default:
                 state.dragMode = 0;
                 setCursor(MouseCursor.MOVE);
@@ -438,6 +454,16 @@ class NoteskinEditorInputHandler {
                         default:
                     }
 
+                case GLOBAL_TRANSFORM:
+                    // Global offset drag — move the whole strumline by the
+                    // mouse delta. Only applies in offset sub-mode; scale
+                    // sub-mode is handled by arrow keys.
+                    if (state.globalScaleMode) return;
+                    state.currentConfig.offsetX = Std.int(state.dragStartOffsX + dx);
+                    state.currentConfig.offsetY = Std.int(state.dragStartOffsY + dy);
+                    state.renderer.updateGlobalTransform();
+                    setCursor(MouseCursor.MOVE);
+                    return;
                 default:
                     return;
             }
@@ -470,6 +496,14 @@ class NoteskinEditorInputHandler {
         } else {
             // Hover state - update cursor
             if (!state.spriteSheetMode) {
+                // Global offset drag works anywhere on screen, so show MOVE
+                // cursor everywhere (not just on a sprite) when in offset
+                // sub-mode. Scale sub-mode has no drag — show ARROW.
+                if (state.editMode == GLOBAL_TRANSFORM) {
+                    setCursor(state.globalScaleMode ? MouseCursor.ARROW : MouseCursor.MOVE);
+                    return;
+                }
+
                 var clip = state.clipEditor.getSelectedClip();
                 var sx = note.x + clip.offsX;
                 var sy = note.y + clip.offsY;

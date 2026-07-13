@@ -163,7 +163,7 @@ class NoteskinEditorManiaManager {
         return {
             offsetX: 0,
             offsetY: 0,
-            gap: 120,
+            gap: 114,
             scale: 1.0,
             indexes: indexes
         };

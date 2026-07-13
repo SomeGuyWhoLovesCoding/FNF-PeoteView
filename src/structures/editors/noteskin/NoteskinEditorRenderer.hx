@@ -196,6 +196,36 @@ class NoteskinEditorRenderer {
         }
     }
 
+    // Preview-clips mode lays receptors out in rows of 9 so a noteskin with
+    // dozens of clips stays readable. Normal manias keep the single-row layout.
+    static inline var PREVIEW_COLS:Int = 11;
+
+    function isPreviewMania():Bool {
+        return state.currentManiaIndex >= state.availableManiaConfigs.length;
+    }
+
+    function getReceptorPosition(i:Int, gap:Float, offsetX:Float, offsetY:Float):{x:Float, y:Float} {
+        if (isPreviewMania()) {
+            var col = i % PREVIEW_COLS;
+            var row = Math.floor(i / PREVIEW_COLS);
+            var totalRows = Math.ceil(state.maxReceptors / PREVIEW_COLS);
+            // Each row is centered independently so a short final row doesn't
+            // sit flush-left under a full row of 9.
+            var receptorsInThisRow = Math.min(PREVIEW_COLS, state.maxReceptors - row * PREVIEW_COLS);
+            var startX = (Main.INITIAL_WIDTH - (receptorsInThisRow * gap)) / 2 + offsetX;
+            // Vertically center the whole block of rows around the usual y baseline.
+            var centerY = Main.INITIAL_HEIGHT / 2.36 + offsetY;
+            var rowHeight = gap; // square grid
+            var x = startX + (col * gap);
+            var y = centerY + (row - (totalRows - 1) / 2) * rowHeight;
+            return {x: x, y: y};
+        } else {
+            var startX = (Main.INITIAL_WIDTH - (state.maxReceptors * gap)) / 2 + offsetX;
+            var y = Main.INITIAL_HEIGHT / 1.4 + offsetY;
+            return {x: startX + (i * gap), y: y};
+        }
+    }
+
     function createReceptors() {
         for (sprite in state.receptorSprites) {
             state.noteBuf.removeElement(sprite);
@@ -205,14 +235,13 @@ class NoteskinEditorRenderer {
         var gap = state.currentConfig.gap != 0 ? state.currentConfig.gap : 112;
         var offsetX = state.currentConfig.offsetX;
         var offsetY = state.currentConfig.offsetY;
-        var startX = (Main.INITIAL_WIDTH - (state.maxReceptors * gap)) / 2 + offsetX;
-        var y = Main.INITIAL_HEIGHT / 2 + offsetY;
         var scale = state.currentConfig.scale;
 
         for (i in 0...state.maxReceptors) {
+            var pos = getReceptorPosition(i, gap, offsetX, offsetY);
             var note = new Note(
-                Std.int(startX + (i * gap)),
-                Std.int(y),
+                Std.int(pos.x),
+                Std.int(pos.y),
                 100, 100,
                 scale,
                 scale,
@@ -274,11 +303,9 @@ class NoteskinEditorRenderer {
         var gap = state.currentConfig.gap != 0 ? state.currentConfig.gap : 112;
         var offsetX = state.currentConfig.offsetX;
         var offsetY = state.currentConfig.offsetY;
-        var startX = (Main.INITIAL_WIDTH - (state.maxReceptors * gap)) / 2 + offsetX;
-        var y = Main.INITIAL_HEIGHT / 2 + offsetY;
         var scale = state.currentConfig.scale;
 
-        var isPreview = state.currentManiaIndex >= state.availableManiaConfigs.length;
+        var isPreview = isPreviewMania();
 
         for (i in 0...state.receptorSprites.length) {
             var note = state.receptorSprites[i];
@@ -286,8 +313,9 @@ class NoteskinEditorRenderer {
             var clipIndex = state.clipEditor.getClipIndexForReceptor(i);
             var clip = state.clipEditor.getClipForIndex(clipIndex);
 
-            note.x = Std.int(startX + (i * gap));
-            note.y = Std.int(y);
+            var pos = getReceptorPosition(i, gap, offsetX, offsetY);
+            note.x = Std.int(pos.x);
+            note.y = Std.int(pos.y);
             note.scale = scale;
 
             if (state.spriteSheetMode && i == state.spritesheetSelectedIndex) {

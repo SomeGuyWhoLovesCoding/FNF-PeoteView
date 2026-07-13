@@ -6,6 +6,8 @@ import structures.gameplay.NoteskinHandle.BasicNoteskinClip;
 
 @:publicFields
 class NoteskinEditorClipEditor {
+    private inline static var MAX_KEYS = 64;
+
     var state:NoteskinEditorState;
 
     public function new(state:NoteskinEditorState) {
@@ -79,9 +81,11 @@ class NoteskinEditorClipEditor {
         if (state.spriteSheetMode) return;
 
         // Check if we're in preview clips mode and trying to modify clipIndex
-        if (state.selectedProperty == "clipIndex" && state.currentManiaIndex >= state.availableManiaConfigs.length) {
-            trace('CLIPINDEX: Please back out of preview clip mania first, so that way you don\'t get a garbage render from it.');
-            return;
+        if (state.selectedProperty == "clipIndex") {
+            if (state.currentManiaIndex >= state.availableManiaConfigs.length) {
+                trace('CLIPINDEX: Please back out of preview clip mania first, so that way you don\'t get a garbage render from it.');
+                return;
+            }
         }
 
         var clipIndex = getClipIndexForReceptor(state.selectedIndex);
@@ -105,12 +109,17 @@ class NoteskinEditorClipEditor {
                 while (state.currentConfig.indexes.length <= state.selectedIndex) {
                     state.currentConfig.indexes.push(state.currentConfig.indexes.length);
                 }
+                if (state.currentConfig.indexes[state.selectedIndex] + amount >= MAX_KEYS) {
+                    state.currentConfig.indexes[state.selectedIndex] = MAX_KEYS - 1;
+                    trace('CLIPINDEX: Max indexes reached. (attempted $MAX_KEYS+1)');
+                    return;
+                }
                 state.currentConfig.indexes[state.selectedIndex] += amount;
                 if (state.currentConfig.indexes[state.selectedIndex] < 0) {
                     state.currentConfig.indexes[state.selectedIndex] = 0;
                 }
                 // Create new clip if index exceeds clip count
-                while (state.noteskinData.clip.length <= state.currentConfig.indexes[state.selectedIndex]) {
+                while (state.noteskinData.clip.length <= state.currentConfig.indexes[state.selectedIndex] && state.noteskinData.clip.length < MAX_KEYS) {
                     var defaultClip:NoteskinReceptorProperties = {
                         idle: {clipX: 3, clipY: 116, clipW: 109, clipH: 111, offsX: 0, offsY: 0},
                         press: {clipX: 115, clipY: 229, clipW: 99, clipH: 100, offsX: 0, offsY: 0},
