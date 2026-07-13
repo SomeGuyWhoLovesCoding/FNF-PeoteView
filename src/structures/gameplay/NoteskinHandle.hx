@@ -92,6 +92,7 @@ class NoteskinHandle {
                     offsetX: rawConfig.offsetX,
                     offsetY: rawConfig.offsetY,
                     gap: rawConfig.gap,
+                    scale: rawConfig.scale,
                     indexes: rawConfig.indexes != null ? rawConfig.indexes : []
                 });
             }
@@ -121,6 +122,7 @@ class NoteskinConfig {
     var offsetX:Int;
     var offsetY:Int;
     var gap:Int;
+    var scale:Float;
     var indexes:Array<Int>;
 }
 

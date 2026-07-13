@@ -17,9 +17,25 @@ import haxe.Json;
 import sys.io.File as Sys_Fili;
 import sys.FileSystem;
 
+enum abstract EditState(Int) from Int to Int {
+    var IDLE;
+    var NOTE;
+    var PRESS;
+    var CONFIRM;
+}
+
+enum abstract EditMode(Int) from Int to Int {
+    var CLIP_POS;
+    var CLIP_SIZE;
+    var OFFSET;
+    var CLIP_ID;
+    var GLOBAL_TRANSFORM;
+}
+
 /**
     Noteskin editor debug that's accessed from Main Menu (Debug Keybind).
     Shows a live strumline preview via `NoteSystem.notesBuf` and exposes per-index clip/offset editing.
+    Also shows a grid for visual reference of how the strumline would look ingame for clip.
     @since 0.94
 **/
 @:publicFields
@@ -37,12 +53,16 @@ class NoteskinEditor {
     var createManiaInput:String = "";
     var createManiaError:String = "";
     var createManiaKeyCount:Int = 0;
-    var currentState:Int = 0; // 0=idle, 1=toNote, 2=press, 3=confirm
+    var currentState:EditState = IDLE;
     var currentReceptorIndex:Int = 0;
     var currentLane:Int = 0;
     var selectedIndex:Int = 0;
     var maxReceptors:Int = 4; // Default mania 4
-    var editMode:Int = 0; // 0 = clipX/clipY, 1 = clipW/clipH, 2 = offsX/offsY, 3 = clipIndex
+    var editMode:EditMode = CLIP_POS;
+    var isCtrlPressed:Bool = false;
+    var isShiftPressed:Bool = false;
+    var isAltPressed:Bool = false;
+    var globalScaleMode:Bool = false; // false = offset, true = scale
 
     // Noteskin data
     var noteskinHandle:NoteskinHandle;
@@ -69,6 +89,7 @@ class NoteskinEditor {
     var propertyValue:Int = 0;
     var editingValue:Bool = false;
     var needsRender:Bool = false;
+    var popupBackground:RepeatSprite = null;
 
     // Mouse state
     var isDragging:Bool = false;
@@ -196,28 +217,19 @@ class NoteskinEditor {
     }
 
     function buildInstructionsText():String {
-        // If popup is active, don't build normal instructions
         if (createManiaPopupActive) return "";
         
         var stateName = getStateName(currentState);
         var stateColor = switch(currentState) {
-            case 0: "#M1#";
-            case 1: "#M2#";
-            case 2: "#M3#";
-            case 3: "#M4#";
+            case IDLE: "#M1#";
+            case NOTE: "#M2#";
+            case PRESS: "#M3#";
+            case CONFIRM: "#M4#";
             default: "";
         };
         
-        // Get the current clip value
         var clip = getClipForIndex(selectedIndex);
-        var basicClip:BasicNoteskinClip;
-        switch(currentState) {
-            case 0: basicClip = clip.idle;
-            case 1: basicClip = clip.press;
-            case 2: basicClip = clip.press;
-            case 3: basicClip = clip.confirm;
-            default: basicClip = clip.idle;
-        }
+        var basicClip:BasicNoteskinClip = getBasicClipForState(clip, currentState);
         var currentValue = getClipValue(basicClip);
         
         var editModeName = getEditModeName(editMode);
@@ -229,18 +241,36 @@ class NoteskinEditor {
             "";
         
         var maniaText = 'Mania: #M5#[${currentManiaIndex + 1}/${availableManiaConfigs.length + 1} - ${maxReceptors}K]#M5#\n';
+        var gapText = 'Gap: #M5#[${currentConfig.gap}]#M5#\n';
+        
+        var globalText = "";
+        if (editMode == GLOBAL_TRANSFORM) {
+            var modeName = globalScaleMode ? "Scale" : "Offset";
+            var modeColor = globalScaleMode ? "#M4#" : "#M6#";
+            globalText = 'Global Transform: ${modeColor}$modeName${modeColor}\n';
+            if (globalScaleMode) {
+                globalText += '#M5#Scale: ${Math.round(currentConfig.scale * 100) / 100}#M5#\n';
+            } else {
+                globalText += '#M5#Offset X: ${currentConfig.offsetX}, Y: ${currentConfig.offsetY}#M5#\n';
+            }
+            globalText += "#M1#CTRL+SPACE: Toggle Offset/Scale#M1#\n";
+        }
         
         return 
             "NOTESKIN EDITOR INSTRUCTIONS:\n" +
-            (!spriteSheetMode ? "TAB: Cycle animation state (SHIFT+TAB to go backwards)\n" : "") +
+            (!spriteSheetMode ? "TAB or Mouse Wheel: Cycle animation state (SHIFT+TAB to go backwards)\n" : "") +
             "CTRL+TAB: Toggle edit mode\n" +
             "SHIFT+CTRL+TAB: Switch mania\n" +
             "CTRL+SHIFT+SPACE: Create new mania\n" +
-            "Mouse Wheel: Cycle animation state\n" +
-            (spriteSheetMode ? "Arrow Keys or TAB: Switch receptor index\n" :
-            "Arrow Keys: Edit X/Y values\n") +
-            "CTRL+Arrow Keys: Adjust value (10)\n" +
-            (!spriteSheetMode ? "SHIFT+LEFT/RIGHT: Switch receptor index\n" : "") +
+            "ALT+LEFT/RIGHT or ALT+MouseWheel: Adjust gap\n" +
+            "CTRL+ALT+LEFT/RIGHT or CTRL+ALT+MouseWheel: Adjust gap (10x)\n" +
+            (editMode == GLOBAL_TRANSFORM ? 
+                "Arrow Keys: Adjust Offset/Scale\n" :
+                (spriteSheetMode ? "Arrow Keys or TAB: Switch receptor index\n" :
+                "Arrow Keys: Edit X/Y values\n")) +
+            "CTRL+Arrow Keys: Adjust value (+10)\n" +
+            (!spriteSheetMode && editMode != GLOBAL_TRANSFORM ? "SHIFT+LEFT/RIGHT: Switch receptor index\n" : "") +
+            (editMode == GLOBAL_TRANSFORM ? "LEFT/RIGHT: Adjust scale\n" : "") +
             "Hold Click (400ms): Toggle spritesheet view\n" +
             "Mouse Drag: Modify current properties\n" +
             "ESC: Close editor\n" +
@@ -248,10 +278,23 @@ class NoteskinEditor {
             "Drag to pan view | Press ESC or Hold click (400ms) to exit#M9#\n" : 
             "") +
             maniaText +
+            gapText +
+            globalText +
             'Current State: ${stateColor}${stateName}${stateColor}\n' +
-            'Selected Receptor: #M5#[${selectedIndex + 1}/${maxReceptors}]#M5#\n' +
-            'Edit Mode: ${editModeColor}${editModeName}${editModeColor}\n' +
-            'Editing: #M5#${selectedProperty} = ${currentValue}#M5#';
+            'Selected Receptor: #M5#[${selectedIndex + 1}/${maxReceptors}]#M5#' +
+            (editMode != GLOBAL_TRANSFORM ? '\nEdit Mode: ${editModeColor}${editModeName}${editModeColor}\n' +
+            'Editing: #M5#${selectedProperty} = ${currentValue}#M5#'
+             : '');
+    }
+
+    function getBasicClipForState(clip:NoteskinReceptorProperties, state:EditState):BasicNoteskinClip {
+        return switch(state) {
+            case IDLE: clip.idle;
+            case NOTE: clip.press;
+            case PRESS: clip.press;
+            case CONFIRM: clip.confirm;
+            default: clip.idle;
+        }
     }
 
     function loadNoteskin(skinName:String) {
@@ -277,6 +320,7 @@ class NoteskinEditor {
                     offsetX: 0,
                     offsetY: 0,
                     gap: 112,
+                    scale: 1.0,
                     indexes: [0, 1, 2, 3]
                 });
             }
@@ -329,6 +373,7 @@ class NoteskinEditor {
                     offsetX: 0,
                     offsetY: 0,
                     gap: 112,
+                    scale: 1.0,
                     indexes: [0, 1, 2, 3]
                 }],
                 clip: [
@@ -400,6 +445,7 @@ class NoteskinEditor {
             offsetX: 0,
             offsetY: 0,
             gap: 120,
+            scale: 1.0,
             indexes: indexes
         };
     }
@@ -465,6 +511,13 @@ class NoteskinEditor {
         createManiaInput = "";
         createManiaError = "";
         createManiaKeyCount = 0;
+        
+        // Remove any existing popup background just in case
+        if (popupBackground != null) {
+            gridBuf.removeElement(popupBackground);
+            popupBackground = null;
+        }
+        
         trace('Create Mania popup opened - Enter number of keys');
     }
 
@@ -476,6 +529,7 @@ class NoteskinEditor {
                 offsetX: 0,
                 offsetY: 0,
                 gap: 112,
+                scale: 1.0,
                 indexes: [0, 1, 2, 3]
             }],
             clip: []
@@ -526,6 +580,7 @@ class NoteskinEditor {
             offsetX: 0,
             offsetY: 0,
             gap: 112,
+            scale: 1.0,
             indexes: indexes
         };
         
@@ -565,10 +620,19 @@ class NoteskinEditor {
             trace('Created new mania with $keyCount keys');
         }
         
-        // Close the popup immediately
+        // Close the popup immediately and remove background
         createManiaPopupActive = false;
         createManiaInput = "";
         createManiaError = "";
+        
+        if (popupBackground != null) {
+            gridBuf.removeElement(popupBackground);
+            popupBackground = null;
+            gridBuf.update();
+        }
+        
+        // Restore instructions text
+        updateInstructionsText();
     }
 
     function fillMissingManias(maxKeys:Int) {
@@ -595,6 +659,7 @@ class NoteskinEditor {
                 offsetX: 0,
                 offsetY: 0,
                 gap: 112,
+                scale: 1.0,
                 indexes: indexes
             };
             
@@ -607,6 +672,14 @@ class NoteskinEditor {
         createManiaPopupActive = false;
         createManiaInput = "";
         createManiaError = "";
+        
+        // Remove popup background
+        if (popupBackground != null) {
+            gridBuf.removeElement(popupBackground);
+            popupBackground = null;
+            gridBuf.update();
+        }
+        
         trace('Create Mania cancelled');
     }
 
@@ -645,26 +718,6 @@ class NoteskinEditor {
                 gridProg = new CustomProgram(gridBuf);
             }
 
-            // Create grid sprites for each receptor
-            var gap = currentConfig.gap != 0 ? currentConfig.gap : 112;
-            var startX = (Main.INITIAL_WIDTH - (maxReceptors * gap)) / 2;
-            var y = Main.INITIAL_HEIGHT / 2;
-
-            for (i in 0...maxReceptors) {
-                var gridSprite = new RepeatSprite(
-                    Std.int(startX + (i * gap)),
-                    Std.int(y),
-                    100, 100
-                );
-                
-                // Set color with low alpha
-                gridSprite.c.aF = 0.125;
-                gridSprite.c.luminanceF = 0.125;
-                
-                gridSprites.push(gridSprite);
-                gridBuf.addElement(gridSprite);
-            }
-
             view.addProgram(gridProg);
         } catch (e) {
             trace('Failed to create grid: $e');
@@ -672,38 +725,46 @@ class NoteskinEditor {
     }
 
     function updateGridPosition() {
-        for (i in 0...gridSprites.length) {
-            var gridSprite = gridSprites[i];
-            
-            if (i < receptorSprites.length) {
-                var receptor = receptorSprites[i];
-
-                var clipIndex = getClipIndexForReceptor(i);
-                var clip = getClipForIndex(clipIndex);
-                
-                var basicClip:BasicNoteskinClip;
-                switch(currentState) {
-                    case 0: basicClip = clip.idle;
-                    case 1: basicClip = clip.press;
-                    case 2: basicClip = clip.press;
-                    case 3: basicClip = clip.confirm;
-                    default: basicClip = clip.idle;
-                }
-
-                gridSprite.x = receptor.x + basicClip.offsX;
-                gridSprite.y = receptor.y + basicClip.offsY;
-                gridSprite.w = basicClip.clipW;
-                gridSprite.h = basicClip.clipH;
-                gridSprite.c.aF = 0.25;
-
-                if (spriteSheetMode && i == spritesheetSelectedIndex) {
-                    gridSprite.x += SPRITESHEET_VIEW_OFFSET;
-                    gridSprite.y += SPRITESHEET_VIEW_OFFSET;
-                }
-            }
-            
-            gridBuf.updateElement(gridSprite);
+        for (sprite in gridSprites) {
+            gridBuf.removeElement(sprite);
         }
+        gridSprites = [];
+
+        var gap = currentConfig.gap != 0 ? currentConfig.gap : 112;
+        var offsetX = currentConfig.offsetX;
+        var offsetY = currentConfig.offsetY;
+        var startX = (Main.INITIAL_WIDTH - (maxReceptors * gap)) / 2 + offsetX;
+        var y = Main.INITIAL_HEIGHT / 2 + offsetY;
+        var scale = currentConfig.scale;
+
+        for (i in 0...maxReceptors) {
+            if (i >= receptorSprites.length) break;
+            
+            var receptor = receptorSprites[i];
+            var clipIndex = getClipIndexForReceptor(i);
+            var clip = getClipForIndex(clipIndex);
+            var basicClip = getBasicClipForState(clip, currentState);
+
+            var gridSprite = new RepeatSprite(
+                Math.round(receptor.x + basicClip.offsX),
+                Math.round(receptor.y + basicClip.offsY),
+                Math.round(basicClip.clipW * scale),
+                Math.round(basicClip.clipH * scale)
+            );
+            
+            gridSprite.c.aF = 0.125;
+            gridSprite.c.luminanceF = 0.125;
+
+            if (spriteSheetMode && i == spritesheetSelectedIndex) {
+                // In spritesheet mode, the grid should follow the spritesheet view with scale applied
+                gridSprite.x += Math.round(SPRITESHEET_VIEW_OFFSET * scale);
+                gridSprite.y += Math.round(SPRITESHEET_VIEW_OFFSET * scale);
+            }
+
+            gridSprites.push(gridSprite);
+            gridBuf.addElement(gridSprite);
+        }
+
         gridBuf.update();
     }
 
@@ -834,16 +895,19 @@ class NoteskinEditor {
         receptorSprites = [];
 
         var gap = currentConfig.gap != 0 ? currentConfig.gap : 112;
-        var startX = (Main.INITIAL_WIDTH - (maxReceptors * gap)) / 2;
-        var y = Main.INITIAL_HEIGHT / 2;
+        var offsetX = currentConfig.offsetX;
+        var offsetY = currentConfig.offsetY;
+        var startX = (Main.INITIAL_WIDTH - (maxReceptors * gap)) / 2 + offsetX;
+        var y = Main.INITIAL_HEIGHT / 2 + offsetY;
+        var scale = currentConfig.scale;
 
         for (i in 0...maxReceptors) {
             var note = new Note(
                 Std.int(startX + (i * gap)),
                 Std.int(y),
                 100, 100,
-                1.0,
-                1.0,
+                scale,
+                scale,
                 0.0
             );
             
@@ -852,7 +916,6 @@ class NoteskinEditor {
             applyClipToNote(note, currentState, clip);
             note.changeID(clipIndex);
             
-            // Color coding for preview mania
             if (currentManiaIndex >= availableManiaConfigs.length) {
                 note.initialAlpha = 0.9;
             }
@@ -886,16 +949,12 @@ class NoteskinEditor {
         };
     }
 
-    function applyClipToNote(note:Note, state:Int, clip:NoteskinReceptorProperties) {
-        var basicClip:BasicNoteskinClip;
-        
-        switch(state) {
-            case 0: basicClip = clip.idle;
-            case 1: basicClip = clip.press;
-            case 2: basicClip = clip.press;
-            case 3: basicClip = clip.confirm;
-            default: basicClip = clip.idle;
-        }
+    function applyClipToNote(note:Note, state:EditState, clip:NoteskinReceptorProperties) {
+        var basicClip = getBasicClipForState(clip, state);
+
+        var scale = currentConfig.scale;
+        var scaledWidth = Std.int(basicClip.clipW * scale);
+        var scaledHeight = Std.int(basicClip.clipH * scale);
 
         note.clipX = basicClip.clipX;
         note.clipY = basicClip.clipY;
@@ -909,12 +968,29 @@ class NoteskinEditor {
         note.h = basicClip.clipH;
         note.ox = basicClip.offsX;
         note.oy = basicClip.offsY;
+        note.scale = scale;
+    }
+
+    function updateGlobalTransform() {
+        // Recreate all receptors with new global transform
+        createReceptors();
+        updateReceptorVisuals();
+        updateInstructionsText();
+        var modeName = globalScaleMode ? "Scale" : "Offset";
+        if (globalScaleMode) {
+            trace('Global Scale: ${currentConfig.scale}');
+        } else {
+            trace('Global Offset: (${currentConfig.offsetX}, ${currentConfig.offsetY})');
+        }
     }
 
     function updateReceptorVisuals() {
         var gap = currentConfig.gap != 0 ? currentConfig.gap : 112;
-        var startX = (Main.INITIAL_WIDTH - (maxReceptors * gap)) / 2;
-        var y = Main.INITIAL_HEIGHT / 2;
+        var offsetX = currentConfig.offsetX;
+        var offsetY = currentConfig.offsetY;
+        var startX = (Main.INITIAL_WIDTH - (maxReceptors * gap)) / 2 + offsetX;
+        var y = Main.INITIAL_HEIGHT / 2 + offsetY;
+        var scale = currentConfig.scale;
 
         var isPreview = currentManiaIndex >= availableManiaConfigs.length;
 
@@ -924,50 +1000,41 @@ class NoteskinEditor {
             var clipIndex = getClipIndexForReceptor(i);
             var clip = getClipForIndex(clipIndex);
             
-            // Update position
             note.x = Std.int(startX + (i * gap));
             note.y = Std.int(y);
+            note.scale = scale;
             
             if (spriteSheetMode && i == spritesheetSelectedIndex) {
-                // Only the selected receptor shows the spritesheet
-                var basicClip:BasicNoteskinClip;
-                switch(currentState) {
-                    case 0: basicClip = clip.idle;
-                    case 1: basicClip = clip.press;
-                    case 2: basicClip = clip.press;
-                    case 3: basicClip = clip.confirm;
-                    default: basicClip = clip.idle;
-                }
+                var basicClip = getBasicClipForState(clip, currentState);
                 
-                // Half-transparent magenta tint using initialAlpha
-                note.c = 0xFF00FFFF; // Magenta (full color, alpha controlled separately)
-                note.initialAlpha = 0.5; // 50% transparency
+                note.c = 0xFF00FFFF;
+                note.initialAlpha = 0.5;
                 
-                // Use the user's corrected spritesheet visual code
+                // The clipX/Y should be the actual clip position minus the offset to show the full texture
+                // The width/height should be the full texture size
                 note.clipX = basicClip.clipX - SPRITESHEET_VIEW_OFFSET;
                 note.clipY = basicClip.clipY - SPRITESHEET_VIEW_OFFSET;
                 note.clipWidth = texture.width + SPRITESHEET_VIEW_OFFSET;
                 note.clipHeight = texture.height + SPRITESHEET_VIEW_OFFSET;
                 note.clipSizeX = texture.width + SPRITESHEET_VIEW_OFFSET;
                 note.clipSizeY = texture.height + SPRITESHEET_VIEW_OFFSET;
+                // note.w and note.h are automatically scaled, so we just set the base size
                 note.w = texture.width + SPRITESHEET_VIEW_OFFSET;
                 note.h = texture.height + SPRITESHEET_VIEW_OFFSET;
                 note.ox = basicClip.offsX;
                 note.oy = basicClip.offsY;
-                note.x -= SPRITESHEET_VIEW_OFFSET;
-                note.y -= SPRITESHEET_VIEW_OFFSET;
+                // Position offset for the spritesheet view - scaled to match the visual size
+                note.x -= Math.round(SPRITESHEET_VIEW_OFFSET * scale);
+                note.y -= Math.round(SPRITESHEET_VIEW_OFFSET * scale);
             } else {
-                // Normal mode
                 if (i == selectedIndex) {
-                    note.c = 0x00FF00FF; // Yellow highlight
+                    note.c = 0x00FF00FF;
                 } else {
-                    note.c = 0xFFFFFFFF; // White normal
+                    note.c = 0xFFFFFFFF;
                 }
-                // Reset initialAlpha to 1.0 for normal mode if not preview
                 if (!isPreview) {
                     note.initialAlpha = 1.0;
                 }
-                // Re-apply the clip from the noteskin data
                 applyClipToNote(note, currentState, clip);
             }
             
@@ -980,7 +1047,7 @@ class NoteskinEditor {
         updateInstructionsText();
     }
 
-    function updateReceptorState(state:Int) {
+    function updateReceptorState(state:EditState) {
         currentState = state;
         updateReceptorVisuals();
         updateInstructionsText();
@@ -1014,91 +1081,103 @@ class NoteskinEditor {
             }
             return;
         }
-        currentState = currentState + increment;
-        if (currentState < 0) currentState = 3;
-        if (currentState >= 4) currentState = 0;
-        updateReceptorState(currentState);
+        var newState:Int = currentState + increment;
+        if (newState < 0) newState = 3;
+        if (newState >= 4) newState = 0;
+        updateReceptorState(newState);
         trace('State changed to: ${getStateName(currentState)}');
     }
 
-    function getStateName(state:Int):String {
-        switch(state) {
-            case 0: return "IDLE";
-            case 1: return "TO NOTE";
-            case 2: return "PRESS";
-            case 3: return "CONFIRM";
-            default: return "unknown";
+    function getStateName(state:EditState):String {
+        return switch(state) {
+            case IDLE: "IDLE";
+            case NOTE: "TO NOTE";
+            case PRESS: "PRESS";
+            case CONFIRM: "CONFIRM";
+            default: "unknown";
         }
     }
 
     function toggleEditMode() {
-        if (spriteSheetMode) return; // Disable edit mode toggle in spritesheet mode
-        editMode = (editMode + 1) % 4;
+        if (spriteSheetMode) return;
+        
+        // Store the current mode before changing
+        var previousMode = editMode;
+        var newMode:Int = editMode + 1;
+        if (newMode > 4) newMode = 0;
+        editMode = newMode;
+        
+        // Reset global transform mode when leaving GLOBAL_TRANSFORM
+        if (editMode != GLOBAL_TRANSFORM) {
+            globalScaleMode = false;
+        }
+        
+        // Check if we're trying to enter CLIP_ID while in preview clips mode
+        if (editMode == CLIP_ID && currentManiaIndex >= availableManiaConfigs.length) {
+            trace('CLIPINDEX: Please back out of preview clip mania first, so that way you don\'t get a garbage render from it.');
+            // Revert to the previous mode instead of forcing to CLIP_POS
+            editMode = previousMode;
+            updateInstructionsText();
+            return;
+        }
+        
         switch(editMode) {
-            case 0:
-                if (selectedProperty == "clipW") selectedProperty = "clipX";
-                if (selectedProperty == "clipH") selectedProperty = "clipY";
-                if (selectedProperty == "offsX") selectedProperty = "clipX";
-                if (selectedProperty == "offsY") selectedProperty = "clipY";
-                if (selectedProperty == "clipIndex") selectedProperty = "clipX";
-            case 1:
-                if (selectedProperty == "clipX") selectedProperty = "clipW";
-                if (selectedProperty == "clipY") selectedProperty = "clipW";
-                if (selectedProperty == "offsX") selectedProperty = "clipW";
-                if (selectedProperty == "offsY") selectedProperty = "clipW";
-                if (selectedProperty == "clipIndex") selectedProperty = "clipW";
-            case 2:
-                if (selectedProperty == "clipX") selectedProperty = "offsX";
-                if (selectedProperty == "clipY") selectedProperty = "offsX";
-                if (selectedProperty == "clipW") selectedProperty = "offsX";
-                if (selectedProperty == "clipH") selectedProperty = "offsX";
-                if (selectedProperty == "clipIndex") selectedProperty = "offsX";
-            case 3:
-                if (selectedProperty == "clipX") selectedProperty = "clipIndex";
-                if (selectedProperty == "clipY") selectedProperty = "clipIndex";
-                if (selectedProperty == "clipW") selectedProperty = "clipIndex";
-                if (selectedProperty == "clipH") selectedProperty = "clipIndex";
-                if (selectedProperty == "offsX") selectedProperty = "clipIndex";
-                if (selectedProperty == "offsY") selectedProperty = "clipIndex";
+            case CLIP_POS:
+                if (selectedProperty == "clipW" || selectedProperty == "clipH" || 
+                    selectedProperty == "offsX" || selectedProperty == "offsY" || 
+                    selectedProperty == "clipIndex") selectedProperty = "clipX";
+            case CLIP_SIZE:
+                if (selectedProperty == "clipX" || selectedProperty == "clipY" || 
+                    selectedProperty == "offsX" || selectedProperty == "offsY" || 
+                    selectedProperty == "clipIndex") selectedProperty = "clipW";
+            case OFFSET:
+                if (selectedProperty == "clipX" || selectedProperty == "clipY" || 
+                    selectedProperty == "clipW" || selectedProperty == "clipH" || 
+                    selectedProperty == "clipIndex") selectedProperty = "offsX";
+            case CLIP_ID:
+                if (selectedProperty == "clipX" || selectedProperty == "clipY" || 
+                    selectedProperty == "clipW" || selectedProperty == "clipH" || 
+                    selectedProperty == "offsX" || selectedProperty == "offsY") selectedProperty = "clipIndex";
+            case GLOBAL_TRANSFORM:
+                selectedProperty = "global";
         }
         trace('Edit mode: ${getEditModeName(editMode)}');
         updateInstructionsText();
     }
 
-    function getEditModeName(mode:Int):String {
-        switch(mode) {
-            case 0: return "Position (clipX/Y)";
-            case 1: return "Size (clipW/H)";
-            case 2: return "Offset (offsX/Y)";
-            case 3: return "Clip Index";
-            default: return "Unknown";
+    function getEditModeName(mode:EditMode):String {
+        return switch(mode) {
+            case CLIP_POS: "Position (clipX/Y)";
+            case CLIP_SIZE: "Size (clipW/H)";
+            case OFFSET: "Offset (offsX/Y)";
+            case CLIP_ID: "Clip Index";
+            case GLOBAL_TRANSFORM: "Thanks for playing";
+            default: "Unknown";
         }
     }
 
-    function getEditModeColor(mode:Int):String {
-        switch(mode) {
-            case 0: return "#M6#";
-            case 1: return "#M4#";
-            case 2: return "#M7#";
-            case 3: return "#M8#";
-            default: return "#M5#";
+    function getEditModeColor(mode:EditMode):String {
+        return switch(mode) {
+            case CLIP_POS: "#M6#";
+            case CLIP_SIZE: "#M4#";
+            case OFFSET: "#M7#";
+            case CLIP_ID: "#M8#";
+            default: "#M5#";
         }
     }
 
     function adjustSelectedValue(amount:Int) {
-        if (spriteSheetMode) return; // No editing in spritesheet mode
+        if (spriteSheetMode) return;
+        
+        // Check if we're in preview clips mode and trying to modify clipIndex
+        if (selectedProperty == "clipIndex" && currentManiaIndex >= availableManiaConfigs.length) {
+            trace('CLIPINDEX: Please back out of preview clip mania first, so that way you don\'t get a garbage render from it.');
+            return;
+        }
         
         var clipIndex = getClipIndexForReceptor(selectedIndex);
         var clip = getClipForIndex(clipIndex);
-        var basicClip:BasicNoteskinClip;
-        
-        switch(currentState) {
-            case 0: basicClip = clip.idle;
-            case 1: basicClip = clip.press;
-            case 2: basicClip = clip.press;
-            case 3: basicClip = clip.confirm;
-            default: basicClip = clip.idle;
-        }
+        var basicClip = getBasicClipForState(clip, currentState);
 
         var isClipIndexProperty = false;
 
@@ -1170,21 +1249,22 @@ class NoteskinEditor {
         }
     }
 
-    function updateClipInConfig(index:Int, state:Int, clip:BasicNoteskinClip) {
+    function updateClipInConfig(index:Int, state:EditState, clip:BasicNoteskinClip) {
         var clips = noteskinData.clip;
         if (clips != null && index < clips.length) {
             var currentClip = clips[index];
             switch(state) {
-                case 0: currentClip.idle = clip;
-                case 1: currentClip.press = clip;
-                case 2: currentClip.press = clip;
-                case 3: currentClip.confirm = clip;
+                case IDLE: currentClip.idle = clip;
+                case NOTE: currentClip.press = clip;
+                case PRESS: currentClip.press = clip;
+                case CONFIRM: currentClip.confirm = clip;
+                default:
             }
         }
     }
 
     function toggleProperty() {
-        if (spriteSheetMode) return; // No property toggling in spritesheet mode
+        if (spriteSheetMode) return;
         var properties = getPropertiesForMode(editMode);
         var currentIndex = properties.indexOf(selectedProperty);
         selectedProperty = properties[(currentIndex + 1) % properties.length];
@@ -1192,14 +1272,27 @@ class NoteskinEditor {
         updateInstructionsText();
     }
 
-    function getPropertiesForMode(mode:Int):Array<String> {
-        switch(mode) {
-            case 0: return ["clipX", "clipY"];
-            case 1: return ["clipW", "clipH"];
-            case 2: return ["offsX", "offsY"];
-            case 3: return ["clipIndex"];
-            default: return ["clipX", "clipY"];
+    function getPropertiesForMode(mode:EditMode):Array<String> {
+        return switch(mode) {
+            case CLIP_POS: ["clipX", "clipY"];
+            case CLIP_SIZE: ["clipW", "clipH"];
+            case OFFSET: ["offsX", "offsY"];
+            case CLIP_ID: ["clipIndex"];
+            default: ["clipX", "clipY"];
         }
+    }
+
+    function adjustGap(amount:Int) {
+        if (currentConfig == null) return;
+        currentConfig.gap += amount;
+        if (currentConfig.gap < 1) currentConfig.gap = 1;
+        if (currentConfig.gap > 500) currentConfig.gap = 500;
+        
+        // Update all receptors with new gap
+        createReceptors();
+        updateReceptorVisuals();
+        updateInstructionsText();
+        trace('Gap adjusted to: ${currentConfig.gap}');
     }
 
     function updateInstructionsText() {
@@ -1227,13 +1320,7 @@ class NoteskinEditor {
     function getSelectedClip():BasicNoteskinClip {
         var clipIndex = getClipIndexForReceptor(selectedIndex);
         var clip = getClipForIndex(clipIndex);
-        switch(currentState) {
-            case 0: return clip.idle;
-            case 1: return clip.press;
-            case 2: return clip.press;
-            case 3: return clip.confirm;
-            default: return clip.idle;
-        }
+        return getBasicClipForState(clip, currentState);
     }
 
     function toggleSpritesheetMode() {
@@ -1241,10 +1328,6 @@ class NoteskinEditor {
         if (spriteSheetMode) {
             spritesheetSelectedIndex = selectedIndex;
             trace('Spritesheet mode enabled - showing full texture for receptor ${selectedIndex + 1}');
-            // Reset clip values to their original positions when entering
-            // This prevents any weird offset from previous usage
-            var clip = getSelectedClip();
-            // Don't reset - keep the current values
         } else {
             spritesheetSelectedIndex = -1;
             trace('Spritesheet mode disabled - returning to normal view');
@@ -1339,45 +1422,43 @@ class NoteskinEditor {
         dragStartOffsY = clip.offsY;
         
         // Determine drag mode based on edit mode and position
-        if (editMode == 0) { // Position mode - clipX/Y
-            if (nearRight || nearLeft) {
-                dragMode = 0;
-                setCursor(MouseCursor.RESIZE_WE);
-            } else if (nearBottom || nearTop) {
-                dragMode = 0;
-                setCursor(MouseCursor.RESIZE_NS);
-            } else {
+        switch(editMode) {
+            case CLIP_POS:
+                if (nearRight || nearLeft || nearBottom || nearTop) {
+                    dragMode = 0;
+                }
+                setCursor(MouseCursor.MOVE);
+            case CLIP_SIZE:
+                if (nearRight && nearBottom) {
+                    dragMode = 3;
+                    setCursor(MouseCursor.RESIZE_NWSE);
+                } else if (nearRight) {
+                    dragMode = 1;
+                    setCursor(MouseCursor.RESIZE_WE);
+                } else if (nearBottom) {
+                    dragMode = 2;
+                    setCursor(MouseCursor.RESIZE_NS);
+                } else {
+                    dragMode = 3;
+                    setCursor(MouseCursor.RESIZE_NWSE);
+                }
+            case OFFSET:
+                if (nearRight) {
+                    dragMode = 4;
+                    setCursor(MouseCursor.RESIZE_WE);
+                } else if (nearBottom) {
+                    dragMode = 5;
+                    setCursor(MouseCursor.RESIZE_NS);
+                } else {
+                    dragMode = 6;
+                    setCursor(MouseCursor.MOVE);
+                }
+            case CLIP_ID:
+                dragMode = -1;
+                setCursor(MouseCursor.ARROW);
+            default:
                 dragMode = 0;
                 setCursor(MouseCursor.MOVE);
-            }
-        } else if (editMode == 1) {
-            if (nearRight && nearBottom) {
-                dragMode = 3;
-                setCursor(MouseCursor.RESIZE_NWSE);
-            } else if (nearRight) {
-                dragMode = 1;
-                setCursor(MouseCursor.RESIZE_WE);
-            } else if (nearBottom) {
-                dragMode = 2;
-                setCursor(MouseCursor.RESIZE_NS);
-            } else {
-                dragMode = 3;
-                setCursor(MouseCursor.RESIZE_NWSE);
-            }
-        } else if (editMode == 2) {
-            if (nearRight) {
-                dragMode = 4;
-                setCursor(MouseCursor.RESIZE_WE);
-            } else if (nearBottom) {
-                dragMode = 5;
-                setCursor(MouseCursor.RESIZE_NS);
-            } else {
-                dragMode = 6;
-                setCursor(MouseCursor.MOVE);
-            }
-        } else {
-            dragMode = -1;
-            setCursor(MouseCursor.ARROW);
         }
     }
 
@@ -1389,9 +1470,6 @@ class NoteskinEditor {
         isHoldingMouse = false;
         isLongPress = false;
         
-        // If we were in spritesheet mode and not dragging, we don't want to exit here
-        // The exit happens in update() via long press detection
-        
         isDragging = false;
         setCursor(MouseCursor.ARROW);
         dragMode = 0;
@@ -1401,7 +1479,6 @@ class NoteskinEditor {
         if (!showEditor) return;
         if (Application.current.window == null) return;
         
-        // Always update mouse position for cursor changes
         var note = getSelectedNote();
         if (note == null) return;
         
@@ -1410,9 +1487,7 @@ class NoteskinEditor {
             var dx = Math.abs(mouseX - mouseDownX);
             var dy = Math.abs(mouseY - mouseDownY);
             if (dx > 10 || dy > 10) {
-                // Cancel long press
                 isHoldingMouse = false;
-                // Start dragging if in spritesheet mode or if we're in normal edit mode
                 startDrag(mouseX, mouseY);
                 return;
             }
@@ -1431,11 +1506,8 @@ class NoteskinEditor {
                 clip.clipY = newY;
                 selectedProperty = "clipX";
                 
-                // Update the clip in config
                 var clipIndex = getClipIndexForReceptor(selectedIndex);
                 updateClipInConfig(clipIndex, currentState, clip);
-                
-                // Update the visual display
                 updateReceptorVisuals();
                 updateInstructionsText();
                 setCursor(MouseCursor.MOVE);
@@ -1446,24 +1518,24 @@ class NoteskinEditor {
             var clip = getSelectedClip();
             
             switch(editMode) {
-                case 0: // Position mode - clipX/Y
+                case CLIP_POS:
                     var newX = Std.int(dragStartClipX - dx);
                     var newY = Std.int(dragStartClipY - dy);
                     clip.clipX = newX;
                     clip.clipY = newY;
                     selectedProperty = "clipX";
                     
-                case 1: // Size mode - clipW/H
+                case CLIP_SIZE:
                     switch(dragMode) {
-                        case 1: // Resize right - only W
+                        case 1:
                             var newW = Std.int(Math.max(1, dragStartClipW + dx));
                             clip.clipW = newW;
                             selectedProperty = "clipW";
-                        case 2: // Resize bottom - only H
+                        case 2:
                             var newH = Std.int(Math.max(1, dragStartClipH + dy));
                             clip.clipH = newH;
                             selectedProperty = "clipH";
-                        case 3: // Corner resize - both W and H
+                        case 3:
                             var newW = Std.int(Math.max(1, dragStartClipW + dx));
                             var newH = Std.int(Math.max(1, dragStartClipH + dy));
                             clip.clipW = newW;
@@ -1472,17 +1544,17 @@ class NoteskinEditor {
                         default:
                     }
                     
-                case 2: // Offset mode - offsX/Y
+                case OFFSET:
                     switch(dragMode) {
-                        case 4: // Offset X only
+                        case 4:
                             var newX = Std.int(dragStartOffsX + dx);
                             clip.offsX = newX;
                             selectedProperty = "offsX";
-                        case 5: // Offset Y only
+                        case 5:
                             var newY = Std.int(dragStartOffsY + dy);
                             clip.offsY = newY;
                             selectedProperty = "offsY";
-                        case 6: // Move both axes
+                        case 6:
                             var newX = Std.int(dragStartOffsX + dx);
                             var newY = Std.int(dragStartOffsY + dy);
                             clip.offsX = newX;
@@ -1495,26 +1567,23 @@ class NoteskinEditor {
                     return;
             }
             
-            // Update the clip in config
             var clipIndex = getClipIndexForReceptor(selectedIndex);
             updateClipInConfig(clipIndex, currentState, clip);
-            
-            // Update the visual display
             updateReceptorVisuals();
             updateInstructionsText();
             
             // Update cursor based on drag mode
             switch(editMode) {
-                case 0:
+                case CLIP_POS:
                     setCursor(MouseCursor.MOVE);
-                case 1:
+                case CLIP_SIZE:
                     switch(dragMode) {
                         case 1: setCursor(MouseCursor.RESIZE_WE);
                         case 2: setCursor(MouseCursor.RESIZE_NS);
                         case 3: setCursor(MouseCursor.RESIZE_NWSE);
                         default:
                     }
-                case 2:
+                case OFFSET:
                     switch(dragMode) {
                         case 4: setCursor(MouseCursor.RESIZE_WE);
                         case 5: setCursor(MouseCursor.RESIZE_NS);
@@ -1524,7 +1593,7 @@ class NoteskinEditor {
                 default:
             }
         } else {
-            // Hover state - update cursor (only if not in spritesheet mode)
+            // Hover state - update cursor
             if (!spriteSheetMode) {
                 var clip = getSelectedClip();
                 var sx = note.x + clip.offsX;
@@ -1539,17 +1608,15 @@ class NoteskinEditor {
                 var nearTop = Math.abs(mouseY - sy) <= margin;
                 var inSprite = mouseX >= sx && mouseX <= sx + sw && mouseY >= sy && mouseY <= sy + sh;
                 
-                if (inSprite && editMode != 3) {
+                if (inSprite && editMode != CLIP_ID) {
                     switch(editMode) {
-                        case 0:
-                            if (nearRight || nearLeft) {
-                                setCursor(MouseCursor.RESIZE_WE);
-                            } else if (nearBottom || nearTop) {
-                                setCursor(MouseCursor.RESIZE_NS);
+                        case CLIP_POS:
+                            if (nearRight || nearLeft || nearBottom || nearTop) {
+                                setCursor(MouseCursor.MOVE);
                             } else {
                                 setCursor(MouseCursor.MOVE);
                             }
-                        case 1:
+                        case CLIP_SIZE:
                             if (nearRight && nearBottom) {
                                 setCursor(MouseCursor.RESIZE_NWSE);
                             } else if (nearRight) {
@@ -1559,7 +1626,7 @@ class NoteskinEditor {
                             } else {
                                 setCursor(MouseCursor.RESIZE_NWSE);
                             }
-                        case 2:
+                        case OFFSET:
                             if (nearRight) {
                                 setCursor(MouseCursor.RESIZE_WE);
                             } else if (nearBottom) {
@@ -1574,17 +1641,12 @@ class NoteskinEditor {
                     setCursor(MouseCursor.ARROW);
                 }
             } else {
-                // In spritesheet mode, show move cursor on the selected receptor
                 var sx = note.x;
                 var sy = note.y;
                 var sw = note.w;
                 var sh = note.h;
                 var inSprite = mouseX >= sx && mouseX <= sx + sw && mouseY >= sy && mouseY <= sy + sh;
-                if (inSprite) {
-                    setCursor(MouseCursor.MOVE);
-                } else {
-                    setCursor(MouseCursor.ARROW);
-                }
+                setCursor(inSprite ? MouseCursor.MOVE : MouseCursor.ARROW);
             }
         }
     }
@@ -1592,17 +1654,20 @@ class NoteskinEditor {
     function handleMouseWheel(deltaX:Float, deltaY:Float, mode:MouseWheelMode) {
         if (!showEditor) return;
         
-        // Mouse wheel controls TAB functionality
+        // ALT+MouseWheel: Adjust gap
+        if (isAltPressed) {
+            var amount = deltaY > 0 ? (isCtrlPressed ? 10 : 1) : (isCtrlPressed ? -10 : -1);
+            adjustGap(amount);
+            return;
+        }
+        
         if (deltaY > 0) {
-            // Scroll up - cycle forward (like TAB)
             if (spriteSheetMode) {
-                // In spritesheet mode, scroll changes the selected receptor index
                 selectNextIndex();
             } else {
                 toggleState(1);
             }
         } else if (deltaY < 0) {
-            // Scroll down - cycle backward (like SHIFT+TAB)
             if (spriteSheetMode) {
                 selectPreviousIndex();
             } else {
@@ -1613,7 +1678,11 @@ class NoteskinEditor {
 
     // Key handling
     public function handleKeyDown(key:KeyCode, modifier:KeyModifier) {
-        // If the create mania popup is active, handle input differently
+        // Track modifier states
+        isCtrlPressed = (modifier & KeyModifier.CTRL) != 0;
+        isShiftPressed = (modifier & KeyModifier.SHIFT) != 0;
+        isAltPressed = (modifier & KeyModifier.ALT) != 0;
+        
         if (createManiaPopupActive) {
             handleCreateManiaPopupInput(key);
             return;
@@ -1621,7 +1690,6 @@ class NoteskinEditor {
         
         if (key == KeyCode.ESCAPE) {
             if (spriteSheetMode) {
-                // Exit spritesheet mode first
                 toggleSpritesheetMode();
                 return;
             }
@@ -1631,80 +1699,173 @@ class NoteskinEditor {
 
         if (!showEditor) return;
 
-        var isShift = (modifier & KeyModifier.SHIFT) != 0;
-        var isCtrl = (modifier & KeyModifier.CTRL) != 0;
-        var isAlt = (modifier & KeyModifier.ALT) != 0;
+        // CTRL+SPACE toggles global transform mode (X/Y vs Scale)
+        if (key == KeyCode.SPACE && isCtrlPressed && !isShiftPressed) {
+            if (editMode == GLOBAL_TRANSFORM) {
+                globalScaleMode = !globalScaleMode;
+                var modeName = globalScaleMode ? "Scale" : "Offset";
+                trace('Global transform mode: $modeName');
+                updateInstructionsText();
+            }
+            return;
+        }
 
         switch(key) {
             case KeyCode.SPACE:
-                if (isCtrl && isShift) {
-                    // CTRL+SHIFT+SPACE: Create new mania
+                if (isCtrlPressed && isShiftPressed) {
                     createNewMania();
-                } else if (!spriteSheetMode) {
-                    // SPACE toggles between X and Y properties
+                } else if (!spriteSheetMode && editMode != GLOBAL_TRANSFORM) {
                     toggleAxisProperty();
                 }
             case KeyCode.UP:
                 if (spriteSheetMode) {
-                    // In spritesheet mode, UP changes receptor index
                     selectPreviousIndex();
-                } else if (isCtrl && editMode != 3) {
+                } else if (isCtrlPressed && editMode != CLIP_ID && editMode != GLOBAL_TRANSFORM) {
                     adjustAxisValue(-10, "Y");
+                } else if (editMode == GLOBAL_TRANSFORM) {
+                    if (globalScaleMode) {
+                        // Scale mode - UP increases scale
+                        currentConfig.scale += 0.05;
+                        updateGlobalTransform();
+                    } else {
+                        // Offset mode - UP decreases Y
+                        currentConfig.offsetY -= isCtrlPressed ? 10 : 1;
+                        updateGlobalTransform();
+                    }
                 } else {
-                    // Edit Y axis - decrease value (up = less Y)
                     adjustAxisValue(-1, "Y");
                 }
             case KeyCode.DOWN:
                 if (spriteSheetMode) {
-                    // In spritesheet mode, DOWN changes receptor index
                     selectNextIndex();
-                } else if (isCtrl && editMode != 3) {
+                } else if (isCtrlPressed && editMode != CLIP_ID && editMode != GLOBAL_TRANSFORM) {
                     adjustAxisValue(10, "Y");
+                } else if (editMode == GLOBAL_TRANSFORM) {
+                    if (globalScaleMode) {
+                        // Scale mode - DOWN decreases scale
+                        currentConfig.scale -= 0.05;
+                        if (currentConfig.scale < 0.1) currentConfig.scale = 0.1;
+                        updateGlobalTransform();
+                    } else {
+                        // Offset mode - DOWN increases Y
+                        currentConfig.offsetY += isCtrlPressed ? 10 : 1;
+                        updateGlobalTransform();
+                    }
                 } else {
-                    // Edit Y axis - increase value (down = more Y)
                     adjustAxisValue(1, "Y");
                 }
             case KeyCode.LEFT:
                 if (spriteSheetMode) {
-                    // In spritesheet mode, LEFT changes receptor index
                     selectPreviousIndex();
-                } else if (isShift) {
+                } else if (isAltPressed) {
+                    adjustGap(isCtrlPressed ? -10 : -1);
+                } else if (isShiftPressed) {
                     selectPreviousIndex();
-                } else if (isCtrl && editMode != 3) {
+                } else if (isCtrlPressed && editMode != CLIP_ID && editMode != GLOBAL_TRANSFORM) {
                     adjustAxisValue(-10, "X");
+                } else if (editMode == GLOBAL_TRANSFORM) {
+                    if (globalScaleMode) {
+                        // Scale mode - LEFT decreases scale
+                        currentConfig.scale -= 0.05;
+                        if (currentConfig.scale < 0.1) currentConfig.scale = 0.1;
+                        updateGlobalTransform();
+                    } else {
+                        // Offset mode - LEFT decreases X
+                        currentConfig.offsetX -= isCtrlPressed ? 10 : 1;
+                        updateGlobalTransform();
+                    }
                 } else {
-                    // Edit X axis - decrease value (left = less X)
                     adjustAxisValue(-1, "X");
                 }
             case KeyCode.RIGHT:
                 if (spriteSheetMode) {
-                    // In spritesheet mode, RIGHT changes receptor index
                     selectNextIndex();
-                } else if (isShift) {
+                } else if (isAltPressed) {
+                    adjustGap(isCtrlPressed ? 10 : 1);
+                } else if (isShiftPressed) {
                     selectNextIndex();
-                } else if (isCtrl && editMode != 3) {
+                } else if (isCtrlPressed && editMode != CLIP_ID && editMode != GLOBAL_TRANSFORM) {
                     adjustAxisValue(10, "X");
+                } else if (editMode == GLOBAL_TRANSFORM) {
+                    if (globalScaleMode) {
+                        // Scale mode - RIGHT increases scale
+                        currentConfig.scale += 0.05;
+                        updateGlobalTransform();
+                    } else {
+                        // Offset mode - RIGHT increases X
+                        currentConfig.offsetX += isCtrlPressed ? 10 : 1;
+                        updateGlobalTransform();
+                    }
                 } else {
-                    // Edit X axis - increase value (right = more X)
                     adjustAxisValue(1, "X");
                 }
             case KeyCode.TAB:
-                if (isCtrl && isShift) {
-                    // SHIFT+CTRL+TAB switches mania
+                if (isCtrlPressed && isShiftPressed) {
                     switchMania(1);
-                } else if (isCtrl) {
+                } else if (isCtrlPressed) {
                     if (!spriteSheetMode) toggleEditMode();
                 } else {
-                    toggleState(isShift ? -1 : 1);
+                    toggleState(isShiftPressed ? -1 : 1);
                 }
             default:
         }
     }
 
+    function renderCreateManiaPopup() {
+        if (!createManiaPopupActive || instructionsText == null) return;
+        
+        // Create or update popup background
+        if (popupBackground == null) {
+            popupBackground = new RepeatSprite(0, 0, 0, 0);
+            popupBackground.c = 0x000000FF; // Black
+            popupBackground.c.aF = 0.6; // 60% opacity
+            gridBuf.addElement(popupBackground);
+        }
+        
+        // Build popup text
+        var popupText = 
+            "    #M6#=== CREATE NEW MANIA ===#M6#\n" +
+            "How many keys this time?\n" +
+            "(Enter a number 1-64)\n\n" +
+            '#M5#Keys: $createManiaInput#M5#\n';
+        
+        if (createManiaError != "") {
+            popupText += '#M2#$createManiaError#M2#\n';
+        }
+        
+        popupText += 
+            "\n#M1#[ENTER] Confirm#M1#   #M3#[ESC] Cancel#M3#";
+        
+        // Update instructions text
+        instructionsText.text = popupText;
+        instructionsText.scale = 1.2;
+        instructionsText.alpha = 1;
+        
+        // Force the text to recalculate its dimensions by calling update
+        // This ensures width/height are correct before positioning
+        instructionsText.refresh();
+        
+        // Center the text on screen
+        instructionsText.x = (Main.INITIAL_WIDTH - instructionsText.width) / 2;
+        instructionsText.y = (Main.INITIAL_HEIGHT - instructionsText.height) / 2;
+        
+        // Update popup background to match instructions text bounds
+        var padding = 20;
+        popupBackground.x = Std.int(instructionsText.x - padding);
+        popupBackground.y = Std.int(instructionsText.y - padding);
+        popupBackground.w = Std.int(instructionsText.width + padding * 2);
+        popupBackground.h = Std.int(instructionsText.height + padding * 2);
+        gridBuf.updateElement(popupBackground);
+        gridBuf.update();
+    }
+
     function handleCreateManiaPopupInput(key:KeyCode) {
         switch(key) {
             case KeyCode.ESCAPE:
+                // ESC cancels the popup without closing the editor
                 cancelCreateMania();
+                // Restore instructions text after cancel
+                updateInstructionsText();
             case KeyCode.RETURN:
                 confirmCreateMania();
             case KeyCode.BACKSPACE:
@@ -1726,51 +1887,19 @@ class NoteskinEditor {
         }
     }
 
-    function renderCreateManiaPopup() {
-        if (!createManiaPopupActive || instructionsText == null) return;
-        
-        // Build popup text
-        var popupText = 
-            "#M6#=== CREATE NEW MANIA ===#M6#\n" +
-            "How many keys this time?\n" +
-            "(Enter a number 1-64)\n\n" +
-            '#M5#Keys: $createManiaInput#M5#\n';
-        
-        if (createManiaError != "") {
-            popupText += '#M2#$createManiaError#M2#\n';
-        }
-        
-        popupText += 
-            "\n#M1#[ENTER] Confirm#M1#   #M3#[ESC] Cancel#M3#";
-        
-        // Display the popup as the instructions text temporarily
-        instructionsText.text = popupText;
-        instructionsText.x = (Main.INITIAL_WIDTH - instructionsText.width) / 2;
-        instructionsText.y = (Main.INITIAL_HEIGHT - instructionsText.height) / 2;
-        instructionsText.scale = 1.2;
-        instructionsText.alpha = 1;
-    }
-
-    /**
-        Adjust the current axis value based on the edit mode.
-        @param amount - The amount to adjust (positive = increase, negative = decrease)
-        @param axis - "X" or "Y" to determine which property to edit
-    **/
     function adjustAxisValue(amount:Int, axis:String) {
         if (spriteSheetMode) return;
         
-        // Determine which property to edit based on edit mode and axis
         var propertyToEdit:String;
         
         switch(editMode) {
-            case 0: // Position mode - clipX/Y
+            case CLIP_POS:
                 propertyToEdit = axis == "X" ? "clipX" : "clipY";
-            case 1: // Size mode - clipW/H
+            case CLIP_SIZE:
                 propertyToEdit = axis == "X" ? "clipW" : "clipH";
-            case 2: // Offset mode - offsX/Y
+            case OFFSET:
                 propertyToEdit = axis == "X" ? "offsX" : "offsY";
-            case 3: // Clip Index mode - doesn't use X/Y
-                // In clip index mode, adjust the index value
+            case CLIP_ID:
                 selectedProperty = "clipIndex";
                 adjustSelectedValue(amount);
                 return;
@@ -1778,35 +1907,24 @@ class NoteskinEditor {
                 return;
         }
         
-        // Set the property and adjust it
         selectedProperty = propertyToEdit;
         adjustSelectedValue(amount);
     }
 
-    /**
-        Toggle between X and Y properties for the current edit mode.
-    **/
     function toggleAxisProperty() {
         if (spriteSheetMode) return;
         
         var properties = getPropertiesForMode(editMode);
-        
-        // Skip if only one property (like clipIndex mode)
         if (properties.length <= 1) return;
         
-        // Determine which axis property we're currently on
         var currentAxis = selectedProperty.charAt(selectedProperty.length - 1);
         var newAxis = currentAxis == "X" ? "Y" : "X";
-        
-        // Build the new property name
         var baseName = selectedProperty.substring(0, selectedProperty.length - 1);
         var newProperty = baseName + newAxis;
         
-        // Check if this property exists in the current mode's properties
         if (properties.indexOf(newProperty) != -1) {
             selectedProperty = newProperty;
         } else {
-            // Fallback to first property in the list
             selectedProperty = properties[0];
         }
         
@@ -1832,7 +1950,6 @@ class NoteskinEditor {
                 view.addProgram(noteProg);
             }
             
-            // Reset spritesheet mode when opening
             spriteSheetMode = false;
             spritesheetSelectedIndex = -1;
             updateReceptorVisuals();
@@ -1871,6 +1988,12 @@ class NoteskinEditor {
         removeEvents();
 
         if (showEditor) toggleEditor();
+
+        // Remove popup background if it exists
+        if (popupBackground != null) {
+            gridBuf.removeElement(popupBackground);
+            popupBackground = null;
+        }
 
         if (noteProg != null && noteProg.isIn(display)) {
             display.removeProgram(noteProg);
