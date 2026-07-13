@@ -198,7 +198,7 @@ class NoteskinEditor {
             instructionsText.scale = 0.7;
             instructionsText.alpha = 0; // Start hidden
             instructionsText.multiline = true;
-            instructionsText.alignment = LEFT;
+            instructionsText.alignment = RIGHT;
             instructionsText.spacerPercent = -0.1;
             instructionsText.outlineColor = Color.BLACK;
             instructionsText.outlineSize = 1;
@@ -207,9 +207,8 @@ class NoteskinEditor {
             // Set initial text
             instructionsText.text = buildInstructionsText();
             
-            // Position at bottom-left
-            instructionsText.x = 4;
-            instructionsText.y = Main.INITIAL_HEIGHT - (instructionsText.height + 4);
+            // Position at top-right
+            positionInstructionsTextTopRight();
             
             // Add to display immediately (but keep alpha 0 so it's hidden)
             instructionsText.addProgram();
@@ -237,7 +236,7 @@ class NoteskinEditor {
         
         var spritesheetText = spriteSheetMode ? 
             "#M9#[SPRITESHEET MODE - Mouse only!]\n" +
-            "Drag to pan view | Press ESC or Hold click (400ms) to exit#M9#\n" : 
+            "Drag to pan view | Press ESC or Hold click to exit#M9#\n" : 
             "";
         
         var maniaText = 'Mania: #M5#[${currentManiaIndex + 1}/${availableManiaConfigs.length + 1} - ${maxReceptors}K]#M5#\n';
@@ -264,27 +263,25 @@ class NoteskinEditor {
             "CTRL+SHIFT+SPACE: Create new mania\n" +
             "ALT+LEFT/RIGHT or ALT+MouseWheel: Adjust gap\n" +
             "CTRL+ALT+LEFT/RIGHT or CTRL+ALT+MouseWheel: Adjust gap (10x)\n" +
-            (editMode == GLOBAL_TRANSFORM ? 
+            (!spriteSheetMode && editMode == GLOBAL_TRANSFORM ? 
                 "Arrow Keys: Adjust Offset/Scale\n" :
                 (spriteSheetMode ? "Arrow Keys or TAB: Switch receptor index\n" :
                 "Arrow Keys: Edit X/Y values\n")) +
             "CTRL+Arrow Keys: Adjust value (+10)\n" +
             (!spriteSheetMode && editMode != GLOBAL_TRANSFORM ? "SHIFT+LEFT/RIGHT: Switch receptor index\n" : "") +
-            (editMode == GLOBAL_TRANSFORM ? "LEFT/RIGHT: Adjust scale\n" : "") +
-            "Hold Click (400ms): Toggle spritesheet view\n" +
+            (!spriteSheetMode && editMode == GLOBAL_TRANSFORM ? "LEFT/RIGHT: Adjust offset/scale\n" : "") +
+            "Hold Click: Toggle spritesheet view\n" +
             "Mouse Drag: Modify current properties\n" +
             "ESC: Close editor\n" +
             (spriteSheetMode ? "#M9#[SPRITESHEET MODE - Mouse only!]\n" +
-            "Drag to pan view | Press ESC or Hold click (400ms) to exit#M9#\n" : 
+            "Drag to pan view | Press ESC or hold click to exit#M9#\n" : 
             "") +
             maniaText +
             gapText +
             globalText +
             'Current State: ${stateColor}${stateName}${stateColor}\n' +
             'Selected Receptor: #M5#[${selectedIndex + 1}/${maxReceptors}]#M5#' +
-            (editMode != GLOBAL_TRANSFORM ? '\nEdit Mode: ${editModeColor}${editModeName}${editModeColor}\n' +
-            'Editing: #M5#${selectedProperty} = ${currentValue}#M5#'
-             : '');
+            (editMode != GLOBAL_TRANSFORM ? '\nEdit Mode: ${editModeColor}${editModeName}${editModeColor}' : '');
     }
 
     function getBasicClipForState(clip:NoteskinReceptorProperties, state:EditState):BasicNoteskinClip {
@@ -752,6 +749,7 @@ class NoteskinEditor {
                 Math.round(basicClip.clipH * scale)
             );
             
+            gridSprite.c.setFloatRGB(0, 1, 1);
             gridSprite.c.aF = 0.125;
             gridSprite.c.luminanceF = 0.125;
 
@@ -1105,6 +1103,7 @@ class NoteskinEditor {
         var previousMode = editMode;
         var newMode:Int = editMode + 1;
         if (newMode > 4) newMode = 0;
+
         editMode = newMode;
         
         // Reset global transform mode when leaving GLOBAL_TRANSFORM
@@ -1112,14 +1111,7 @@ class NoteskinEditor {
             globalScaleMode = false;
         }
         
-        // Check if we're trying to enter CLIP_ID while in preview clips mode
-        if (editMode == CLIP_ID && currentManiaIndex >= availableManiaConfigs.length) {
-            trace('CLIPINDEX: Please back out of preview clip mania first, so that way you don\'t get a garbage render from it.');
-            // Revert to the previous mode instead of forcing to CLIP_POS
-            editMode = previousMode;
-            updateInstructionsText();
-            return;
-        }
+        checkInvalidClipIDPlace();
         
         switch(editMode) {
             case CLIP_POS:
@@ -1143,6 +1135,15 @@ class NoteskinEditor {
         }
         trace('Edit mode: ${getEditModeName(editMode)}');
         updateInstructionsText();
+    }
+
+    function checkInvalidClipIDPlace() {
+        // Check if we're trying to enter CLIP_ID while in preview clips mode
+        if (editMode == CLIP_ID && currentManiaIndex >= availableManiaConfigs.length) {
+            trace('CLIPINDEX: Please back out of preview clip mania first for this mode, that way you don\'t render garbage data.');
+            // Go to the next mode instead of forcing to CLIP_POS
+            editMode++;
+        }
     }
 
     function getEditModeName(mode:EditMode):String {
@@ -1305,10 +1306,14 @@ class NoteskinEditor {
                 instructionsText.text = newText;
             }
             instructionsText.scale = 0.7;
-            instructionsText.x = 4;
-            instructionsText.y = Main.INITIAL_HEIGHT - (instructionsText.height + 4);
+            positionInstructionsTextTopRight();
             instructionsText.alpha = 1;
         }
+    }
+    
+    function positionInstructionsTextTopRight() {
+        instructionsText.y = 4;
+        instructionsText.x = Main.INITIAL_WIDTH - (instructionsText.width + 4);
     }
 
     // === Mouse Handling ===
@@ -1802,6 +1807,7 @@ class NoteskinEditor {
             case KeyCode.TAB:
                 if (isCtrlPressed && isShiftPressed) {
                     switchMania(1);
+                    checkInvalidClipIDPlace();
                 } else if (isCtrlPressed) {
                     if (!spriteSheetMode) toggleEditMode();
                 } else {
@@ -1838,6 +1844,7 @@ class NoteskinEditor {
         
         // Update instructions text
         instructionsText.text = popupText;
+        instructionsText.alignment = LEFT;
         instructionsText.scale = 1.2;
         instructionsText.alpha = 1;
         
