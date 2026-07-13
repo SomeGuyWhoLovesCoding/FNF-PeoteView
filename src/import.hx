@@ -28,11 +28,31 @@ import interfaces.*;
 #if FV_DEBUG import debug.*; #end
 import miniaudio.*;
 import music.*;
+
+// main structures
 import structures.*;
+
+// editor structures
+import structures.editors.*;
+
+// noteskin editor
+import structures.editors.noteskin.*;
+
+// chart editor
+import structures.editors.chart.*;
+
+// story mode editor
+import structure.editors.storymode.*;
+
+// gameplay structures
 import structures.gameplay.*;
 import structures.gameplay.NoteVB.VirtualNote;
 import structures.gameplay.NoteVB.VirtualSustain;
+
+// and now the option structures
 import structures.options.*;
+
+// and then the rest of the imports
 import system.*;
 import tests.*;
 import utils.*;

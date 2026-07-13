@@ -1,4 +1,4 @@
-package structures;
+package structures.options;
 
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;

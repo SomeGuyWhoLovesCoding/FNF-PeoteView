@@ -1,6 +1,6 @@
 package structures;
 
-import structures.OptionsDisplay.OptionsCategorySelection;
+import structures.options.OptionsDisplay.OptionsCategorySelection;
 import input2action.ActionMap;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
