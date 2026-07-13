@@ -368,7 +368,7 @@ class Main extends Application
 
 		if (_started) {
 			newDeltaTime = 1000.0 / FunkinMainLoop.FRAMERATE;
-			if (deltaTime > 50) newDeltaTime = deltaTime;
+			//if (deltaTime > 50) newDeltaTime = deltaTime;
 
 			if (mainMenu != null && !mainMenu.disposed) {
 				mainMenu.update(newDeltaTime);
@@ -383,6 +383,10 @@ class Main extends Application
 				if (!playField.paused && !RenderingMode.enabled) {
 					playField.update(newDeltaTime);
 				}
+			}
+
+			if (noteskinEditor != null && !noteskinEditor.disposed) {
+				noteskinEditor.update(newDeltaTime);
 			}
 
 			if (optionsMenu.active) {

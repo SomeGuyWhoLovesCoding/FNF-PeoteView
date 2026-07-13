@@ -1,26 +1,18 @@
 package structures;
 
-import data.SaveData;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
+import lime.ui.MouseCursor;
+import lime.ui.MouseWheelMode;
 import lime.graphics.Image;
 import lime.math.Vector2;
 import lime.math.Rectangle;
 import lime.app.Application;
 import lime.ui.MouseButton;
-import elements.Note;
-import elements.Sprite;
-import elements.RepeatSprite;
-import elements.Text;
-import elements.TextFormatMarkerPair;
-import elements.text.TextAlign;
-import elements.text.ColorSpan;
-import structures.gameplay.NoteskinHandle;
 import structures.gameplay.NoteskinHandle.NoteskinData;
 import structures.gameplay.NoteskinHandle.NoteskinConfig;
 import structures.gameplay.NoteskinHandle.NoteskinReceptorProperties;
 import structures.gameplay.NoteskinHandle.BasicNoteskinClip;
-import system.TextureSystem;
 import haxe.Json;
 import sys.io.File as Sys_Fili;
 import sys.FileSystem;
@@ -32,6 +24,8 @@ import sys.FileSystem;
 **/
 @:publicFields
 class NoteskinEditor {
+    var disposed(default, null):Bool;
+
     var roof(default, null):CustomDisplay;
     var display(default, null):CustomDisplay;
     var view(default, null):CustomDisplay;
@@ -58,7 +52,6 @@ class NoteskinEditor {
     // Grid overlay
     var gridBuf:Buffer<RepeatSprite>;
     var gridProg:CustomProgram;
-    var gridTexture:Texture;
     var gridSprites:Array<RepeatSprite> = [];
 
     // Receptor preview
@@ -70,6 +63,34 @@ class NoteskinEditor {
     var propertyValue:Int = 0;
     var editingValue:Bool = false;
     var needsRender:Bool = false;
+
+    // Mouse state
+    var isDragging:Bool = false;
+    var dragStartX:Float = 0;
+    var dragStartY:Float = 0;
+    var lastDragX:Float = 0;
+    var lastDragY:Float = 0;
+    var dragStartClipX:Int = 0;
+    var dragStartClipY:Int = 0;
+    var dragStartClipW:Int = 0;
+    var dragStartClipH:Int = 0;
+    var dragStartOffsX:Int = 0;
+    var dragStartOffsY:Int = 0;
+    var dragMode:Int = 0; // 0 = move (clipX/Y), 1 = resize right (clipW), 2 = resize bottom (clipH), 3 = resize corner (clipW/H), 4 = offset X, 5 = offset Y, 6 = offset both
+    
+    // Long press state for spritesheet mode
+    var isHoldingMouse:Bool = false;
+    var isLongPress:Bool = false;
+    var longPressTimer:Float = 0;
+    var longPressThreshold:Float = 400; // milliseconds
+    var mouseDownX:Float = 0;
+    var mouseDownY:Float = 0;
+    var spriteSheetMode:Bool = false;
+    var longPressTriggered:Bool = false;
+    var spritesheetSelectedIndex:Int = -1;
+    
+    // Spritesheet view offset (extra space above to see what's outside)
+    static inline var SPRITESHEET_VIEW_OFFSET:Int = 300;
 
     // Texture name constants
     static inline var NOTESKIN_TEXTURE_NAME:String = "noteskinTexV2";
@@ -84,6 +105,8 @@ class NoteskinEditor {
     }
 
     public function init(roof:CustomDisplay, display:CustomDisplay, view:CustomDisplay) {
+        disposed = false;
+
         this.roof = roof;
         this.display = display;
         this.view = view;
@@ -104,6 +127,10 @@ class NoteskinEditor {
         #if !android
         var window = Application.current.window;
         window.onKeyDown.add(handleKeyDown);
+        window.onMouseDown.add(handleMouseDown);
+        window.onMouseUp.add(handleMouseUp);
+        window.onMouseMove.add(handleMouseMove);
+        window.onMouseWheel.add(handleMouseWheel);
         #end
     }
 
@@ -111,7 +138,18 @@ class NoteskinEditor {
         #if !android
         var window = Application.current.window;
         window.onKeyDown.remove(handleKeyDown);
+        window.onMouseDown.remove(handleMouseDown);
+        window.onMouseUp.remove(handleMouseUp);
+        window.onMouseMove.remove(handleMouseMove);
+        window.onMouseWheel.remove(handleMouseWheel);
         #end
+    }
+
+    function setCursor(cursor:MouseCursor) {
+        var window = Application.current.window;
+        if (window != null) {
+            window.cursor = cursor;
+        }
     }
 
     function initInstructionsText() {
@@ -124,7 +162,8 @@ class NoteskinEditor {
                 new TextFormatMarkerPair('#M5#', Color.YELLOW),
                 new TextFormatMarkerPair('#M6#', 0xFFFF9933), // Orange for edit mode
                 new TextFormatMarkerPair('#M7#', 0xFFFF33FF), // Pink for offset mode
-                new TextFormatMarkerPair('#M8#', 0xFF33FF33) // Green for clip index mode
+                new TextFormatMarkerPair('#M8#', 0xFF33FF33), // Green for clip index mode
+                new TextFormatMarkerPair('#M9#', 0xFFFF00FF) // Magenta for spritesheet mode
             ];
             
             // Create text with the display
@@ -175,16 +214,22 @@ class NoteskinEditor {
         var editModeName = getEditModeName(editMode);
         var editModeColor = getEditModeColor(editMode);
         
+        var spritesheetText = spriteSheetMode ? "#M9#[SPRITESHEET MODE - Receptor ${spritesheetSelectedIndex + 1}]#M9#\n" : "";
+        
         return 
             "NOTESKIN EDITOR INSTRUCTIONS:\n" +
             "TAB: Cycle animation state (SHIFT+TAB to go backwards)\n" +
             "CTRL+TAB: Toggle edit mode\n" +
+            "Mouse Wheel: Cycle animation state\n" +
             "UP/DOWN: Adjust selected value (±1)\n" +
             "LEFT/RIGHT: Switch between X/Y (or W/H)\n" +
             "CTRL+LEFT/RIGHT: Adjust value (±10)\n" +
             "SHIFT+LEFT/RIGHT: Switch receptor index\n" +
             "SPACE: Cycle property\n" +
+            "Hold Click (400ms): Open spritesheet view\n" +
+            "Mouse Drag: Modify current properties\n" +
             "ESC: Close editor\n\n" +
+            spritesheetText +
             'Current State: ${stateColor}${stateName}${stateColor}\n' +
             'Selected Receptor: #M5#[${selectedIndex + 1}/${maxReceptors}]#M5#\n' +
             'Edit Mode: ${editModeColor}${editModeName}${editModeColor}\n' +
@@ -330,87 +375,14 @@ class NoteskinEditor {
         }
     }
 
-    function createGridTexture():Texture {
-        // Check if texture already exists
-        var existingTex = TextureSystem.getTexture(GRID_TEXTURE_NAME);
-        if (existingTex != null) {
-            return existingTex;
-        }
-
-        try {
-            // Create 24x24 grid texture
-            var gridSize = 24;
-            var data = haxe.io.Bytes.alloc(gridSize * gridSize * 4);
-            
-            // Fill with dark gray (fully opaque)
-            for (i in 0...data.length >> 2) {
-                data.setInt32(i << 2, 0xFF404040);
-            }
-            
-            // Draw grid lines (every 8 pixels) - fully opaque colors
-            for (y in 0...gridSize) {
-                for (x in 0...gridSize) {
-                    var isGridLine = (x % 8 == 0 || y % 8 == 0);
-                    var isMajorGrid = (x % 8 == 0 && y % 8 == 0);
-                    var idx = (y * gridSize + x) << 2;
-                    
-                    if (isGridLine) {
-                        if (isMajorGrid) {
-                            // Red for major intersections
-                            data.setInt32(idx, 0xFFFF4444);
-                        } else {
-                            // Light gray for grid lines
-                            data.setInt32(idx, 0xFF888888);
-                        }
-                    }
-                }
-            }
-
-            // Create texture data with RGBA format (already opaque, no premult needed)
-            var textureData = new TextureData(gridSize, gridSize, TextureFormat.RGBA);
-            textureData.bytes = data;
-
-            var texture = new Texture(textureData.width, textureData.height, null, {
-                format: TextureFormat.RGBA,
-                powerOfTwo: false,
-                smoothExpand: false,
-                smoothShrink: false
-            });
-            texture.setData(textureData);
-
-            // Store in texture pool
-            TextureSystem.pool[GRID_TEXTURE_NAME] = texture;
-            
-            return texture;
-        } catch (e) {
-            trace('Failed to create grid texture: $e');
-            return createBlankTexture();
-        }
-    }
-
     function createGrid() {
         try {
-            // Create grid texture
-            gridTexture = createGridTexture();
-            
-            if (gridTexture == null) {
-                trace('Grid texture is null, creating blank');
-                gridTexture = createBlankTexture();
-            }
-            
-            if (gridTexture == null) {
-                trace('Failed to create grid texture, skipping grid');
-                return;
-            }
-            
             if (gridBuf == null) {
                 gridBuf = new Buffer<RepeatSprite>(16, 16, true);
             }
 
             if (gridProg == null) {
                 gridProg = new CustomProgram(gridBuf);
-                gridProg.setTexture(gridTexture, GRID_TEXTURE_NAME);
-                gridProg.setColorFormula('c * getTextureColor(${GRID_TEXTURE_NAME}_ID, vTexCoord)');
             }
 
             // Create grid sprites for each receptor
@@ -426,33 +398,14 @@ class NoteskinEditor {
                 );
                 
                 // Set color with low alpha
-                gridSprite.c = 0x44FFFFFF; // Semi-transparent white
-                
-                // IMPORTANT: For RepeatSprite, clipX and clipY should be 0
-                // and clipWidth/clipHeight should match the texture size
-                // The repeat will handle tiling across the sprite
-                gridSprite.clipX = 0;
-                gridSprite.clipY = 0;
-                gridSprite.clipWidth = gridTexture.width;
-                gridSprite.clipHeight = gridTexture.height;
-                gridSprite.clipPosX = 0;
-                gridSprite.clipPosY = 0;
-                gridSprite.clipSizeX = gridTexture.width;
-                gridSprite.clipSizeY = gridTexture.height;
-                
-                // Set the tile - this tells the shader which tile of the texture to use
-                gridSprite.tile = 0;
-                gridSprite.slot = 0;
+                gridSprite.c.aF = 0.125;
+                gridSprite.c.luminanceF = 0.125;
                 
                 gridSprites.push(gridSprite);
                 gridBuf.addElement(gridSprite);
             }
 
-            // Update buffer once after adding all elements
-            gridBuf.update();
-
-            // Add to roof (behind everything)
-            roof.addProgram(gridProg);
+            view.addProgram(gridProg);
         } catch (e) {
             trace('Failed to create grid: $e');
         }
@@ -462,20 +415,31 @@ class NoteskinEditor {
         for (i in 0...gridSprites.length) {
             var gridSprite = gridSprites[i];
             
-            // Match the size and position of the receptor
             if (i < receptorSprites.length) {
                 var receptor = receptorSprites[i];
-                gridSprite.x = receptor.x;
-                gridSprite.y = receptor.y;
-                gridSprite.w = receptor.w;
-                gridSprite.h = receptor.h;
-                gridSprite.clipWidth = gridSprite.clipSizeX = receptor.w;
-                gridSprite.clipHeight = gridSprite.clipSizeY = receptor.h;
+
+                var clipIndex = getClipIndexForReceptor(i);
+                var clip = getClipForIndex(clipIndex);
                 
-                // IMPORTANT: Don't change clipX/clipY here!
-                // Keep them at 0 so the texture tiles properly
-                // Only update the sprite size
+                var basicClip:BasicNoteskinClip;
+                switch(currentState) {
+                    case 0: basicClip = clip.idle;
+                    case 1: basicClip = clip.press;
+                    case 2: basicClip = clip.press;
+                    case 3: basicClip = clip.confirm;
+                    default: basicClip = clip.idle;
+                }
+
+                gridSprite.x = receptor.x + basicClip.offsX;
+                gridSprite.y = receptor.y + basicClip.offsY;
+                gridSprite.w = basicClip.clipW;
+                gridSprite.h = basicClip.clipH;
                 gridSprite.c.aF = 0.25;
+
+                if (spriteSheetMode && i == spritesheetSelectedIndex) {
+                    gridSprite.x += SPRITESHEET_VIEW_OFFSET;
+                    gridSprite.y += SPRITESHEET_VIEW_OFFSET;
+                }
             }
             
             gridBuf.updateElement(gridSprite);
@@ -484,7 +448,6 @@ class NoteskinEditor {
     }
 
     function initRendering() {
-        // Create or get texture using TextureSystem
         texture = getCombinedNoteskinTexture();
         
         if (noteBuf == null) {
@@ -496,12 +459,10 @@ class NoteskinEditor {
             Note.init(noteProg, NOTESKIN_TEXTURE_NAME, texture);
         }
         
-        // Then add note program (on top)
-        display.addProgram(noteProg);
+        view.addProgram(noteProg);
     }
 
     function getCombinedNoteskinTexture():Texture {
-        // Check if texture already exists in pool
         var existingTex = TextureSystem.getTexture(NOTESKIN_TEXTURE_NAME);
         if (existingTex != null) {
             return existingTex;
@@ -510,16 +471,13 @@ class NoteskinEditor {
         try {
             var skinFolder = 'assets/images/noteskins/$currentSkinName';
             
-            // Load both images
             var notesPath = Paths.asset('$skinFolder/notes.png');
             var confirmPath = Paths.asset('$skinFolder/confirm.png');
 
-            // Check if files exist
             var notesExists = FileSystem.exists(notesPath);
             var confirmExists = FileSystem.exists(confirmPath);
 
             if (!notesExists && !confirmExists) {
-                // Try default path
                 notesPath = Paths.asset('assets/images/noteskins/default/notes.png');
                 confirmPath = Paths.asset('assets/images/noteskins/default/confirm.png');
                 notesExists = FileSystem.exists(notesPath);
@@ -534,28 +492,23 @@ class NoteskinEditor {
             var notesImage = Image.fromFile(notesPath);
             var confirmImage = confirmExists ? Image.fromFile(confirmPath) : null;
 
-            // Create combined image
             var combinedWidth = notesImage.width + (confirmImage != null ? confirmImage.width : 0);
             var combinedHeight = Std.int(Math.max(notesImage.height, confirmImage != null ? confirmImage.height : 0));
             
             var combinedImage = new Image(null, 0, 0, combinedWidth, combinedHeight, 0x00000000);
             
-            // Copy notes.png to the left
             var sourceRect = new Rectangle(0, 0, notesImage.width, notesImage.height);
             var destPoint = new Vector2(0, 0);
             combinedImage.copyPixels(notesImage, sourceRect, destPoint);
             
-            // Copy confirm.png to the right if it exists
             if (confirmImage != null) {
                 var confirmRect = new Rectangle(0, 0, confirmImage.width, confirmImage.height);
                 var confirmDest = new Vector2(notesImage.width, 0);
                 combinedImage.copyPixels(confirmImage, confirmRect, confirmDest);
             }
 
-            // Get the raw pixel data from the combined image
             var pixelData = combinedImage.getPixels(new Rectangle(0, 0, combinedWidth, combinedHeight), RGBA32);
             
-            // Premultiply alpha
             var premultipliedData = haxe.io.Bytes.alloc(pixelData.length);
             for (i in 0...pixelData.length >> 2) {
                 var fullARGB = pixelData.getInt32(i << 2);
@@ -565,7 +518,6 @@ class NoteskinEditor {
                 var g = (fullARGB >>> 8)  & 0xFF;
                 var b = (fullARGB)        & 0xFF;
                 
-                // Scale RGB by alpha
                 r = (r * a) >> 8;
                 g = (g * a) >> 8;
                 b = (b * a) >> 8;
@@ -574,11 +526,9 @@ class NoteskinEditor {
                 premultipliedData.setInt32(i << 2, premul);
             }
             
-            // Create texture data with RGBA format (premultiplied)
             var textureData = new TextureData(combinedWidth, combinedHeight, TextureFormat.RGBA);
             textureData.bytes = premultipliedData;
 
-            // Create texture with combined dimensions
             var texture = new Texture(textureData.width, textureData.height, null, {
                 format: TextureFormat.RGBA,
                 powerOfTwo: false,
@@ -587,7 +537,6 @@ class NoteskinEditor {
             });
             texture.setData(textureData);
 
-            // Store in texture pool
             TextureSystem.pool[NOTESKIN_TEXTURE_NAME] = texture;
             
             return texture;
@@ -601,7 +550,6 @@ class NoteskinEditor {
         try {
             var blankData = new TextureData(500, 500, TextureFormat.RGBA);
             blankData.bytes = haxe.io.Bytes.alloc(500 * 500 * 4);
-            // Fill with white (premultiplied)
             for (i in 0...blankData.bytes.length >> 2) {
                 blankData.bytes.setInt32(i << 2, 0xFFFFFFFF);
             }
@@ -620,7 +568,6 @@ class NoteskinEditor {
     }
 
     function createReceptors() {
-        // Clear existing sprites from buffer
         for (sprite in receptorSprites) {
             noteBuf.removeElement(sprite);
         }
@@ -640,14 +587,9 @@ class NoteskinEditor {
                 0.0
             );
             
-            // Get the clip index for this receptor
             var clipIndex = getClipIndexForReceptor(i);
-            
-            // Get the clip data from the noteskin data using the clip index
             var clip = getClipForIndex(clipIndex);
             applyClipToNote(note, currentState, clip);
-            
-            // Set the note's ID to the clip index
             note.changeID(clipIndex);
             
             receptorSprites.push(note);
@@ -669,7 +611,6 @@ class NoteskinEditor {
         if (clips != null && index < clips.length) {
             return clips[index];
         }
-        // Return default clip
         return {
             idle: {clipX: 3, clipY: 116, clipW: 109, clipH: 111, offsX: 0, offsY: 0},
             press: {clipX: 115, clipY: 229, clipW: 99, clipH: 100, offsX: 0, offsY: 0},
@@ -684,19 +625,13 @@ class NoteskinEditor {
         var basicClip:BasicNoteskinClip;
         
         switch(state) {
-            case 0: // idle
-                basicClip = clip.idle;
-            case 1: // toNote
-                basicClip = clip.press; // Using press as toNote
-            case 2: // press
-                basicClip = clip.press;
-            case 3: // confirm
-                basicClip = clip.confirm;
-            default:
-                basicClip = clip.idle;
+            case 0: basicClip = clip.idle;
+            case 1: basicClip = clip.press;
+            case 2: basicClip = clip.press;
+            case 3: basicClip = clip.confirm;
+            default: basicClip = clip.idle;
         }
 
-        // Set clip properties directly - no reset needed
         note.clipX = basicClip.clipX;
         note.clipY = basicClip.clipY;
         note.clipWidth = basicClip.clipW;
@@ -719,36 +654,61 @@ class NoteskinEditor {
         for (i in 0...receptorSprites.length) {
             var note = receptorSprites[i];
             
-            // Get the clip index for this receptor
             var clipIndex = getClipIndexForReceptor(i);
-            
-            // Get the clip data from the noteskin data using the clip index
             var clip = getClipForIndex(clipIndex);
-            
-            // Apply the clip based on current state
-            applyClipToNote(note, currentState, clip);
             
             // Update position
             note.x = Std.int(startX + (i * gap));
             note.y = Std.int(y);
             
-            // Highlight selected receptor
-            if (i == selectedIndex) {
-                note.c = 0xFFFF00FF; // Yellow highlight
+            if (spriteSheetMode && i == spritesheetSelectedIndex) {
+                // Only the selected receptor shows the spritesheet
+                var basicClip:BasicNoteskinClip;
+                switch(currentState) {
+                    case 0: basicClip = clip.idle;
+                    case 1: basicClip = clip.press;
+                    case 2: basicClip = clip.press;
+                    case 3: basicClip = clip.confirm;
+                    default: basicClip = clip.idle;
+                }
+                
+                // Half-transparent magenta tint using initialAlpha
+                note.c = 0xFFFF00FF; // Magenta (full color, alpha controlled separately)
+                note.initialAlpha = 0.5; // 50% transparency
+                
+                // Use the user's corrected spritesheet visual code
+                note.clipX = basicClip.clipX - SPRITESHEET_VIEW_OFFSET;
+                note.clipY = basicClip.clipY - SPRITESHEET_VIEW_OFFSET;
+                note.clipWidth = texture.width + SPRITESHEET_VIEW_OFFSET;
+                note.clipHeight = texture.height + SPRITESHEET_VIEW_OFFSET;
+                note.clipSizeX = texture.width + SPRITESHEET_VIEW_OFFSET;
+                note.clipSizeY = texture.height + SPRITESHEET_VIEW_OFFSET;
+                note.w = texture.width + SPRITESHEET_VIEW_OFFSET;
+                note.h = texture.height + SPRITESHEET_VIEW_OFFSET;
+                note.ox = basicClip.offsX;
+                note.oy = basicClip.offsY;
+                note.x -= SPRITESHEET_VIEW_OFFSET;
+                note.y -= SPRITESHEET_VIEW_OFFSET;
             } else {
-                note.c = 0xFFFFFFFF; // White normal
+                // Normal mode
+                if (i == selectedIndex) {
+                    note.c = 0xFFFF00FF; // Yellow highlight
+                } else {
+                    note.c = 0xFFFFFFFF; // White normal
+                }
+                // Reset initialAlpha to 1.0 for normal mode
+                note.initialAlpha = 1.0;
+                // Re-apply the clip from the noteskin data
+                applyClipToNote(note, currentState, clip);
             }
             
-            // Set the note's ID to the clip index
             note.changeID(clipIndex);
-            
             noteBuf.updateElement(note);
         }
 
         noteBuf.update();
-        
-        // Update grid positions to match receptors
         updateGridPosition();
+        updateInstructionsText();
     }
 
     function updateReceptorState(state:Int) {
@@ -759,17 +719,32 @@ class NoteskinEditor {
 
     function selectNextIndex() {
         selectedIndex = (selectedIndex + 1) % maxReceptors;
+        if (spriteSheetMode) {
+            spritesheetSelectedIndex = selectedIndex;
+        }
         updateReceptorVisuals();
         updateInstructionsText();
     }
 
     function selectPreviousIndex() {
         selectedIndex = (selectedIndex - 1 + maxReceptors) % maxReceptors;
+        if (spriteSheetMode) {
+            spritesheetSelectedIndex = selectedIndex;
+        }
         updateReceptorVisuals();
         updateInstructionsText();
     }
 
     function toggleState(increment:Int) {
+        if (spriteSheetMode) {
+            // In spritesheet mode, TAB controls the selected receptor index
+            if (increment > 0) {
+                selectNextIndex();
+            } else {
+                selectPreviousIndex();
+            }
+            return;
+        }
         currentState = currentState + increment;
         if (currentState < 0) currentState = 3;
         if (currentState >= 4) currentState = 0;
@@ -788,28 +763,28 @@ class NoteskinEditor {
     }
 
     function toggleEditMode() {
-        editMode = (editMode + 1) % 4; // Now 4 modes
-        // Update selected property based on edit mode
+        if (spriteSheetMode) return; // Disable edit mode toggle in spritesheet mode
+        editMode = (editMode + 1) % 4;
         switch(editMode) {
-            case 0: // Position mode - clipX/clipY
+            case 0:
                 if (selectedProperty == "clipW") selectedProperty = "clipX";
                 if (selectedProperty == "clipH") selectedProperty = "clipY";
                 if (selectedProperty == "offsX") selectedProperty = "clipX";
                 if (selectedProperty == "offsY") selectedProperty = "clipY";
                 if (selectedProperty == "clipIndex") selectedProperty = "clipX";
-            case 1: // Size mode - clipW/clipH
+            case 1:
                 if (selectedProperty == "clipX") selectedProperty = "clipW";
                 if (selectedProperty == "clipY") selectedProperty = "clipW";
                 if (selectedProperty == "offsX") selectedProperty = "clipW";
                 if (selectedProperty == "offsY") selectedProperty = "clipW";
                 if (selectedProperty == "clipIndex") selectedProperty = "clipW";
-            case 2: // Offset mode - offsX/offsY
+            case 2:
                 if (selectedProperty == "clipX") selectedProperty = "offsX";
                 if (selectedProperty == "clipY") selectedProperty = "offsX";
                 if (selectedProperty == "clipW") selectedProperty = "offsX";
                 if (selectedProperty == "clipH") selectedProperty = "offsX";
                 if (selectedProperty == "clipIndex") selectedProperty = "offsX";
-            case 3: // Clip Index mode
+            case 3:
                 if (selectedProperty == "clipX") selectedProperty = "clipIndex";
                 if (selectedProperty == "clipY") selectedProperty = "clipIndex";
                 if (selectedProperty == "clipW") selectedProperty = "clipIndex";
@@ -842,6 +817,8 @@ class NoteskinEditor {
     }
 
     function adjustSelectedValue(amount:Int) {
+        if (spriteSheetMode) return; // No editing in spritesheet mode
+        
         var clipIndex = getClipIndexForReceptor(selectedIndex);
         var clip = getClipForIndex(clipIndex);
         var basicClip:BasicNoteskinClip;
@@ -856,17 +833,15 @@ class NoteskinEditor {
 
         var isClipIndexProperty = false;
 
-        // UP/DOWN adjusts the value of the selected property
         switch(selectedProperty) {
-            case "clipX": basicClip.clipX += amount;
-            case "clipY": basicClip.clipY += amount;
+            case "clipX": basicClip.clipX -= amount;
+            case "clipY": basicClip.clipY -= amount;
             case "clipW": basicClip.clipW += amount;
             case "clipH": basicClip.clipH += amount;
             case "offsX": basicClip.offsX += amount;
             case "offsY": basicClip.offsY += amount;
             case "clipIndex":
                 isClipIndexProperty = true;
-                // Adjust the clip index in the config
                 if (currentConfig.indexes == null) {
                     currentConfig.indexes = [];
                 }
@@ -877,9 +852,7 @@ class NoteskinEditor {
                 if (currentConfig.indexes[selectedIndex] < 0) {
                     currentConfig.indexes[selectedIndex] = 0;
                 }
-                // Ensure the clip index references a valid clip
                 while (noteskinData.clip.length <= currentConfig.indexes[selectedIndex]) {
-                    // Push a new default clip
                     var defaultClip:NoteskinReceptorProperties = {
                         idle: {clipX: 3, clipY: 116, clipW: 109, clipH: 111, offsX: 0, offsY: 0},
                         press: {clipX: 115, clipY: 229, clipW: 99, clipH: 100, offsX: 0, offsY: 0},
@@ -893,14 +866,11 @@ class NoteskinEditor {
             default: selectedProperty = "clipX";
         }
 
-        // Update the clip in config (only for non-clipIndex properties)
         if (!isClipIndexProperty) {
-            // Get the clip at the current clipIndex and update it
             var currentClipIndex = getClipIndexForReceptor(selectedIndex);
             updateClipInConfig(currentClipIndex, currentState, basicClip);
         }
         
-        // Always update the visual display
         updateReceptorVisuals();
 
         trace('${getStateName(currentState)}.$selectedProperty = ${getClipValue(basicClip)}');
@@ -938,7 +908,7 @@ class NoteskinEditor {
     }
 
     function toggleProperty() {
-        // LEFT/RIGHT switches between the two properties in the current mode
+        if (spriteSheetMode) return; // No property toggling in spritesheet mode
         var properties = getPropertiesForMode(editMode);
         var currentIndex = properties.indexOf(selectedProperty);
         selectedProperty = properties[(currentIndex + 1) % properties.length];
@@ -962,36 +932,414 @@ class NoteskinEditor {
             if (instructionsText.text != newText) {
                 instructionsText.text = newText;
             }
-            
-            // Reposition in case height changed
             instructionsText.x = 4;
             instructionsText.y = Main.INITIAL_HEIGHT - (instructionsText.height + 4);
             instructionsText.alpha = 1;
         }
     }
 
+    // === Mouse Handling ===
+
+    function getSelectedNote():Note {
+        return receptorSprites[selectedIndex];
+    }
+
+    function getSelectedClip():BasicNoteskinClip {
+        var clipIndex = getClipIndexForReceptor(selectedIndex);
+        var clip = getClipForIndex(clipIndex);
+        switch(currentState) {
+            case 0: return clip.idle;
+            case 1: return clip.press;
+            case 2: return clip.press;
+            case 3: return clip.confirm;
+            default: return clip.idle;
+        }
+    }
+
+    function toggleSpritesheetMode() {
+        spriteSheetMode = !spriteSheetMode;
+        if (spriteSheetMode) {
+            spritesheetSelectedIndex = selectedIndex;
+            trace('Spritesheet mode enabled - showing full texture for receptor ${selectedIndex + 1}');
+        } else {
+            spritesheetSelectedIndex = -1;
+            trace('Spritesheet mode disabled - returning to normal view');
+        }
+        updateReceptorVisuals();
+        updateInstructionsText();
+    }
+
+    function handleMouseDown(mouseX:Float, mouseY:Float, button:MouseButton) {
+        if (!showEditor || button != MouseButton.LEFT) return;
+        if (Application.current.window == null) return;
+        
+        var note = getSelectedNote();
+        if (note == null) return;
+        
+        var sx = note.x;
+        var sy = note.y;
+        var sw = note.w;
+        var sh = note.h;
+        
+        var inSprite = mouseX >= sx && mouseX <= sx + sw && mouseY >= sy && mouseY <= sy + sh;
+        
+        if (inSprite && !spriteSheetMode) {
+            // Start holding for long press detection (only in normal mode)
+            isHoldingMouse = true;
+            isLongPress = false;
+            longPressTriggered = false;
+            mouseDownX = mouseX;
+            mouseDownY = mouseY;
+            longPressTimer = 0;
+        } else {
+            // Not on sprite or in spritesheet mode, start drag if in edit mode
+            startDrag(mouseX, mouseY);
+        }
+    }
+
+    function startDrag(mouseX:Float, mouseY:Float) {
+        // Spritesheet mode dragging - pan the view by modifying clipX/Y
+        if (spriteSheetMode) {
+            isDragging = true;
+            dragStartX = mouseX;
+            dragStartY = mouseY;
+            lastDragX = mouseX;
+            lastDragY = mouseY;
+            var clip = getSelectedClip();
+            dragStartClipX = clip.clipX;
+            dragStartClipY = clip.clipY;
+            dragMode = 0;
+            setCursor(MouseCursor.MOVE);
+            return;
+        }
+        
+        var note = getSelectedNote();
+        if (note == null) return;
+        
+        var sx = note.x;
+        var sy = note.y;
+        var sw = note.w;
+        var sh = note.h;
+        
+        var margin = 6;
+        var nearRight = Math.abs(mouseX - (sx + sw)) <= margin;
+        var nearBottom = Math.abs(mouseY - (sy + sh)) <= margin;
+        var nearLeft = Math.abs(mouseX - sx) <= margin;
+        var nearTop = Math.abs(mouseY - sy) <= margin;
+        
+        isDragging = true;
+        dragStartX = mouseX;
+        dragStartY = mouseY;
+        lastDragX = mouseX;
+        lastDragY = mouseY;
+        
+        var clip = getSelectedClip();
+        dragStartClipX = clip.clipX;
+        dragStartClipY = clip.clipY;
+        dragStartClipW = clip.clipW;
+        dragStartClipH = clip.clipH;
+        dragStartOffsX = clip.offsX;
+        dragStartOffsY = clip.offsY;
+        
+        // Determine drag mode based on edit mode and position
+        if (editMode == 0) { // Position mode - clipX/Y
+            if (nearRight || nearLeft) {
+                dragMode = 0;
+                setCursor(MouseCursor.RESIZE_WE);
+            } else if (nearBottom || nearTop) {
+                dragMode = 0;
+                setCursor(MouseCursor.RESIZE_NS);
+            } else {
+                dragMode = 0;
+                setCursor(MouseCursor.MOVE);
+            }
+        } else if (editMode == 1) { // Size mode - clipW/H
+            if (nearRight && nearBottom) {
+                dragMode = 3;
+                setCursor(MouseCursor.RESIZE_NWSE);
+            } else if (nearRight) {
+                dragMode = 1;
+                setCursor(MouseCursor.RESIZE_WE);
+            } else if (nearBottom) {
+                dragMode = 2;
+                setCursor(MouseCursor.RESIZE_NS);
+            } else {
+                dragMode = 1;
+                setCursor(MouseCursor.RESIZE_WE);
+            }
+        } else if (editMode == 2) { // Offset mode - offsX/Y
+            // If near edges, allow single-axis adjustment; else move both axes
+            if (nearRight) {
+                dragMode = 4; // Offset X only
+                setCursor(MouseCursor.RESIZE_WE);
+            } else if (nearBottom) {
+                dragMode = 5; // Offset Y only
+                setCursor(MouseCursor.RESIZE_NS);
+            } else {
+                dragMode = 6; // Move both axes
+                setCursor(MouseCursor.MOVE);
+            }
+        } else {
+            dragMode = -1;
+            setCursor(MouseCursor.ARROW);
+        }
+    }
+
+    function handleMouseUp(mouseX:Float, mouseY:Float, button:MouseButton) {
+        if (button != MouseButton.LEFT) return;
+        if (Application.current.window == null) return;
+        
+        // Cancel long press
+        isHoldingMouse = false;
+        isLongPress = false;
+        longPressTriggered = false;
+        
+        // Do NOT exit spritesheet mode on mouse up - allow dragging
+        // The user can exit with ESC or long press again
+        
+        isDragging = false;
+        setCursor(MouseCursor.ARROW);
+        dragMode = 0;
+    }
+
+    function handleMouseMove(mouseX:Float, mouseY:Float) {
+        if (!showEditor) return;
+        if (Application.current.window == null) return;
+        
+        // Always update mouse position for cursor changes
+        var note = getSelectedNote();
+        if (note == null) return;
+        
+        // Check if mouse moved too far from start position (cancel long press)
+        if (isHoldingMouse && !longPressTriggered) {
+            var dx = Math.abs(mouseX - mouseDownX);
+            var dy = Math.abs(mouseY - mouseDownY);
+            if (dx > 10 || dy > 10) {
+                isHoldingMouse = false;
+                // Start dragging instead
+                startDrag(mouseX, mouseY);
+                return;
+            }
+        }
+        
+        if (isDragging) {
+            var dx = mouseX - dragStartX;
+            var dy = mouseY - dragStartY;
+            
+            // Spritesheet mode dragging - pan by modifying clipX/Y
+            if (spriteSheetMode) {
+                var clip = getSelectedClip();
+                var newX = Std.int(dragStartClipX - dx);
+                var newY = Std.int(dragStartClipY - dy);
+                clip.clipX = newX;
+                clip.clipY = newY;
+                selectedProperty = "clipX";
+                
+                // Update the clip in config
+                var clipIndex = getClipIndexForReceptor(selectedIndex);
+                updateClipInConfig(clipIndex, currentState, clip);
+                
+                // Update the visual display
+                updateReceptorVisuals();
+                updateInstructionsText();
+                setCursor(MouseCursor.MOVE);
+                return;
+            }
+            
+            // Normal dragging for other edit modes
+            var clip = getSelectedClip();
+            
+            switch(editMode) {
+                case 0: // Position mode - clipX/Y
+                    var newX = Std.int(dragStartClipX - dx);
+                    var newY = Std.int(dragStartClipY - dy);
+                    clip.clipX = newX;
+                    clip.clipY = newY;
+                    selectedProperty = "clipX";
+                    
+                case 1: // Size mode - clipW/H
+                    switch(dragMode) {
+                        case 1: // Resize right
+                            var newW = Std.int(Math.max(1, dragStartClipW + dx));
+                            clip.clipW = newW;
+                            selectedProperty = "clipW";
+                        case 2: // Resize bottom
+                            var newH = Std.int(Math.max(1, dragStartClipH + dy));
+                            clip.clipH = newH;
+                            selectedProperty = "clipH";
+                        case 3: // Corner resize
+                            var newW = Std.int(Math.max(1, dragStartClipW + dx));
+                            var newH = Std.int(Math.max(1, dragStartClipH + dy));
+                            clip.clipW = newW;
+                            clip.clipH = newH;
+                            selectedProperty = "clipW";
+                        default:
+                    }
+                    
+                case 2: // Offset mode - offsX/Y
+                    switch(dragMode) {
+                        case 4: // Offset X only
+                            var newX = Std.int(dragStartOffsX + dx);
+                            clip.offsX = newX;
+                            selectedProperty = "offsX";
+                        case 5: // Offset Y only
+                            var newY = Std.int(dragStartOffsY + dy);
+                            clip.offsY = newY;
+                            selectedProperty = "offsY";
+                        case 6: // Move both axes
+                            var newX = Std.int(dragStartOffsX + dx);
+                            var newY = Std.int(dragStartOffsY + dy);
+                            clip.offsX = newX;
+                            clip.offsY = newY;
+                            selectedProperty = "offsX";
+                        default:
+                    }
+                    
+                default:
+                    return;
+            }
+            
+            // Update the clip in config
+            var clipIndex = getClipIndexForReceptor(selectedIndex);
+            updateClipInConfig(clipIndex, currentState, clip);
+            
+            // Update the visual display
+            updateReceptorVisuals();
+            updateInstructionsText();
+            
+            // Update cursor based on drag mode
+            switch(editMode) {
+                case 0:
+                    setCursor(MouseCursor.MOVE);
+                case 1:
+                    switch(dragMode) {
+                        case 1: setCursor(MouseCursor.RESIZE_WE);
+                        case 2: setCursor(MouseCursor.RESIZE_NS);
+                        case 3: setCursor(MouseCursor.RESIZE_NWSE);
+                        default:
+                    }
+                case 2:
+                    switch(dragMode) {
+                        case 4: setCursor(MouseCursor.RESIZE_WE);
+                        case 5: setCursor(MouseCursor.RESIZE_NS);
+                        case 6: setCursor(MouseCursor.MOVE);
+                        default:
+                    }
+                default:
+            }
+        } else {
+            // Hover state - update cursor (only if not in spritesheet mode)
+            if (!spriteSheetMode) {
+                var sx = note.x;
+                var sy = note.y;
+                var sw = note.w;
+                var sh = note.h;
+                var margin = 6;
+                
+                var nearRight = Math.abs(mouseX - (sx + sw)) <= margin;
+                var nearBottom = Math.abs(mouseY - (sy + sh)) <= margin;
+                var nearLeft = Math.abs(mouseX - sx) <= margin;
+                var nearTop = Math.abs(mouseY - sy) <= margin;
+                var inSprite = mouseX >= sx && mouseX <= sx + sw && mouseY >= sy && mouseY <= sy + sh;
+                
+                if (inSprite && editMode != 3) {
+                    switch(editMode) {
+                        case 0:
+                            if (nearRight || nearLeft) {
+                                setCursor(MouseCursor.RESIZE_WE);
+                            } else if (nearBottom || nearTop) {
+                                setCursor(MouseCursor.RESIZE_NS);
+                            } else {
+                                setCursor(MouseCursor.MOVE);
+                            }
+                        case 1:
+                            if (nearRight && nearBottom) {
+                                setCursor(MouseCursor.RESIZE_NWSE);
+                            } else if (nearRight) {
+                                setCursor(MouseCursor.RESIZE_WE);
+                            } else if (nearBottom) {
+                                setCursor(MouseCursor.RESIZE_NS);
+                            } else {
+                                setCursor(MouseCursor.MOVE);
+                            }
+                        case 2:
+                            if (nearRight) {
+                                setCursor(MouseCursor.RESIZE_WE);
+                            } else if (nearBottom) {
+                                setCursor(MouseCursor.RESIZE_NS);
+                            } else {
+                                setCursor(MouseCursor.MOVE);
+                            }
+                        default:
+                            setCursor(MouseCursor.ARROW);
+                    }
+                } else {
+                    setCursor(MouseCursor.ARROW);
+                }
+            } else {
+                // In spritesheet mode, show move cursor on the selected receptor
+                var sx = note.x;
+                var sy = note.y;
+                var sw = note.w;
+                var sh = note.h;
+                var inSprite = mouseX >= sx && mouseX <= sx + sw && mouseY >= sy && mouseY <= sy + sh;
+                if (inSprite) {
+                    setCursor(MouseCursor.MOVE);
+                } else {
+                    setCursor(MouseCursor.ARROW);
+                }
+            }
+        }
+    }
+
+    function handleMouseWheel(deltaX:Float, deltaY:Float, mode:MouseWheelMode) {
+        if (!showEditor) return;
+        
+        // Mouse wheel controls TAB functionality
+        if (deltaY > 0) {
+            // Scroll up - cycle forward (like TAB)
+            if (spriteSheetMode) {
+                // In spritesheet mode, scroll changes the selected receptor index
+                selectNextIndex();
+            } else {
+                toggleState(1);
+            }
+        } else if (deltaY < 0) {
+            // Scroll down - cycle backward (like SHIFT+TAB)
+            if (spriteSheetMode) {
+                selectPreviousIndex();
+            } else {
+                toggleState(-1);
+            }
+        }
+    }
+
     // Key handling
     public function handleKeyDown(key:KeyCode, modifier:KeyModifier) {
-        // Special case: ESC always toggles the editor, even if it's closed
         if (key == KeyCode.ESCAPE) {
+            if (spriteSheetMode) {
+                // Exit spritesheet mode first
+                toggleSpritesheetMode();
+                return;
+            }
             toggleEditor();
             return;
         }
 
-        // If editor is closed, ignore all other keys
         if (!showEditor) return;
 
-        // Check modifiers
         var isShift = (modifier & KeyModifier.SHIFT) != 0;
         var isCtrl = (modifier & KeyModifier.CTRL) != 0;
 
         switch(key) {
             case KeyCode.UP:
-                adjustSelectedValue(1);
+                if (!spriteSheetMode) adjustSelectedValue(1);
             case KeyCode.DOWN:
-                adjustSelectedValue(-1);
+                if (!spriteSheetMode) adjustSelectedValue(-1);
             case KeyCode.LEFT:
-                if (isShift) {
+                if (spriteSheetMode) {
+                    selectPreviousIndex();
+                } else if (isShift) {
                     selectPreviousIndex();
                 } else if (isCtrl) {
                     adjustSelectedValue(-10);
@@ -999,7 +1347,9 @@ class NoteskinEditor {
                     toggleProperty();
                 }
             case KeyCode.RIGHT:
-                if (isShift) {
+                if (spriteSheetMode) {
+                    selectNextIndex();
+                } else if (isShift) {
                     selectNextIndex();
                 } else if (isCtrl) {
                     adjustSelectedValue(10);
@@ -1008,21 +1358,19 @@ class NoteskinEditor {
                 }
             case KeyCode.TAB:
                 if (isCtrl) {
-                    toggleEditMode();
+                    if (!spriteSheetMode) toggleEditMode();
                 } else {
                     toggleState(isShift ? -1 : 1);
                 }
             case KeyCode.SPACE:
-                toggleProperty();
+                if (!spriteSheetMode) toggleProperty();
             default:
-                // Do nothing
         }
     }
 
     public function toggleEditor() {
         showEditor = !showEditor;
         if (showEditor) {
-            // Ensure texture is loaded
             if (texture == null) {
                 texture = getCombinedNoteskinTexture();
                 if (noteProg != null) {
@@ -1030,42 +1378,44 @@ class NoteskinEditor {
                 }
             }
             
-            // Add grid program first (behind)
-            if (gridProg != null && !gridProg.isIn(roof)) {
-                roof.addProgram(gridProg);
+            if (gridProg != null && !gridProg.isIn(view)) {
+                view.addProgram(gridProg);
             }
             
-            // Then add note program (on top)
-            if (noteProg != null && !noteProg.isIn(roof)) {
-                roof.addProgram(noteProg);
+            if (noteProg != null && !noteProg.isIn(view)) {
+                view.addProgram(noteProg);
             }
             
-            // Update all receptor visuals
+            // Reset spritesheet mode when opening
+            spriteSheetMode = false;
+            spritesheetSelectedIndex = -1;
             updateReceptorVisuals();
             
-            // Show instructions
             if (instructionsText != null) {
                 instructionsText.alpha = 1;
                 updateInstructionsText();
             }
             
             trace('Noteskin Editor opened');
-            trace('Controls: TAB=cycle state, CTRL+TAB=toggle edit mode, UP/DOWN=adjust value');
-            trace('LEFT/RIGHT=switch X/Y (or W/H), CTRL+LEFT/RIGHT=±10, SHIFT+LEFT/RIGHT=change receptor');
-            trace('SPACE=cycle property, ESC=close');
         } else {
-            // Remove note program first, then grid
-            if (noteProg != null && noteProg.isIn(roof)) {
-                roof.removeProgram(noteProg);
+            if (noteProg != null && noteProg.isIn(view)) {
+                view.removeProgram(noteProg);
             }
-            if (gridProg != null && gridProg.isIn(roof)) {
-                roof.removeProgram(gridProg);
+            if (gridProg != null && gridProg.isIn(view)) {
+                view.removeProgram(gridProg);
             }
             
-            // Hide instructions
             if (instructionsText != null) {
                 instructionsText.alpha = 0;
             }
+            
+            setCursor(MouseCursor.ARROW);
+            isDragging = false;
+            isHoldingMouse = false;
+            isLongPress = false;
+            longPressTriggered = false;
+            spriteSheetMode = false;
+            spritesheetSelectedIndex = -1;
             
             trace('Noteskin Editor closed');
         }
@@ -1076,16 +1426,12 @@ class NoteskinEditor {
 
         if (showEditor) toggleEditor();
 
-        if (noteProg != null) {
-            if (noteProg.isIn(display)) {
-                display.removeProgram(noteProg);
-            }
+        if (noteProg != null && noteProg.isIn(display)) {
+            display.removeProgram(noteProg);
         }
 
-        if (gridProg != null) {
-            if (gridProg.isIn(display)) {
-                display.removeProgram(gridProg);
-            }
+        if (gridProg != null && gridProg.isIn(display)) {
+            display.removeProgram(gridProg);
         }
 
         if (noteBuf != null) {
@@ -1112,7 +1458,6 @@ class NoteskinEditor {
             gridSprites = null;
         }
 
-        // Remove instructions text
         if (instructionsText != null) {
             instructionsText.removeProgram();
             instructionsText = null;
@@ -1121,9 +1466,9 @@ class NoteskinEditor {
         display = null;
         view = null;
         roof = null;
-    }
 
-    // Public methods for external control
+        disposed = true;
+    }
 
     public function show() {
         if (!showEditor) toggleEditor();
@@ -1133,9 +1478,16 @@ class NoteskinEditor {
         if (showEditor) toggleEditor();
     }
 
-    public function update() {
-        if (showEditor) {
-            // Update receptor animations if needed
+    public function update(deltaTime:Float) {
+        // Check for long press in the update loop
+        if (isHoldingMouse && !longPressTriggered && !isDragging) {
+            longPressTimer += deltaTime;
+            if (longPressTimer >= longPressThreshold) {
+                // Long press detected - toggle spritesheet mode
+                longPressTriggered = true;
+                isHoldingMouse = false;
+                toggleSpritesheetMode();
+            }
         }
     }
 }
