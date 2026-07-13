@@ -9,7 +9,8 @@ import sys.io.File;
 **/
 @:publicFields
 class NoteskinHandle {
-    private static var _texture:TextureData;
+    public static var texture:TextureData;
+
     var data:NoteskinData;
     var folder:String = "assets/images/noteskin/default";
 
