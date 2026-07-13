@@ -33,6 +33,10 @@ class NoteskinEditor {
     // Editor state
     var currentManiaIndex:Int = 0; // Which mania config we're viewing
     var availableManiaConfigs:Array<NoteskinConfig> = []; // All mania configs from the noteskin
+    var createManiaPopupActive:Bool = false;
+    var createManiaInput:String = "";
+    var createManiaError:String = "";
+    var createManiaKeyCount:Int = 0;
     var currentState:Int = 0; // 0=idle, 1=toNote, 2=press, 3=confirm
     var currentReceptorIndex:Int = 0;
     var currentLane:Int = 0;
@@ -66,11 +70,6 @@ class NoteskinEditor {
     var editingValue:Bool = false;
     var needsRender:Bool = false;
 
-    // Modifier key tracking for mouse wheel
-    var isCtrlPressed:Bool = false;
-    var isShiftPressed:Bool = false;
-    var isAltPressed:Bool = false;
-
     // Mouse state
     var isDragging:Bool = false;
     var dragStartX:Float = 0;
@@ -95,12 +94,6 @@ class NoteskinEditor {
     var spriteSheetMode:Bool = false;
     var longPressTriggered:Bool = false;
     var spritesheetSelectedIndex:Int = -1;
-    
-    // Preview clips mode (extra mania)
-    var previewClipsCameraX:Float = 0;
-    var previewClipsCameraY:Float = 0;
-    var previewClipsZoom:Float = 1.0;
-    var previewGridSprites:Array<RepeatSprite> = [];
     
     // Spritesheet view offset (extra space above to see what's outside)
     static inline var SPRITESHEET_VIEW_OFFSET:Int = 300;
@@ -140,7 +133,6 @@ class NoteskinEditor {
         #if !android
         var window = Application.current.window;
         window.onKeyDown.add(handleKeyDown);
-        window.onKeyUp.add(handleKeyUp);
         window.onMouseDown.add(handleMouseDown);
         window.onMouseUp.add(handleMouseUp);
         window.onMouseMove.add(handleMouseMove);
@@ -152,7 +144,6 @@ class NoteskinEditor {
         #if !android
         var window = Application.current.window;
         window.onKeyDown.remove(handleKeyDown);
-        window.onKeyDown.add(handleKeyUp);
         window.onMouseDown.remove(handleMouseDown);
         window.onMouseUp.remove(handleMouseUp);
         window.onMouseMove.remove(handleMouseMove);
@@ -204,14 +195,10 @@ class NoteskinEditor {
         }
     }
 
-    function isPreviewClipsMode():Bool {
-        return currentManiaIndex == availableManiaConfigs.length - 1 && 
-               availableManiaConfigs.length > 0 && 
-               noteskinData.clip != null && 
-               noteskinData.clip.length > 0;
-    }
-
     function buildInstructionsText():String {
+        // If popup is active, don't build normal instructions
+        if (createManiaPopupActive) return "";
+        
         var stateName = getStateName(currentState);
         var stateColor = switch(currentState) {
             case 0: "#M1#";
@@ -241,31 +228,25 @@ class NoteskinEditor {
             "Drag to pan view | Press ESC or Hold click (400ms) to exit#M9#\n" : 
             "";
         
-        var isPreview = isPreviewClipsMode();
-        var modeName = isPreview ? "PREVIEW CLIPS" : '${maxReceptors}K';
-        var maniaText = 'Mania: #M5#[${currentManiaIndex + 1}/${availableManiaConfigs.length} - $modeName]#M5#\n';
-        
-        var previewControls = isPreview ? 
-            "#M6#Arrow Keys: Move camera | CTRL+MouseWheel: Zoom | SHIFT+MouseWheel: Move up/down#M6#\n" : "";
+        var maniaText = 'Mania: #M5#[${currentManiaIndex + 1}/${availableManiaConfigs.length + 1} - ${maxReceptors}K]#M5#\n';
         
         return 
             "NOTESKIN EDITOR INSTRUCTIONS:\n" +
-            (!spriteSheetMode && !isPreview ? "TAB: Cycle animation state (SHIFT+TAB to go backwards)\n" : "") +
+            (!spriteSheetMode ? "TAB: Cycle animation state (SHIFT+TAB to go backwards)\n" : "") +
             "CTRL+TAB: Toggle edit mode\n" +
             "SHIFT+CTRL+TAB: Switch mania\n" +
+            "CTRL+SHIFT+SPACE: Create new mania\n" +
             "Mouse Wheel: Cycle animation state\n" +
             (spriteSheetMode ? "Arrow Keys or TAB: Switch receptor index\n" :
-            isPreview ? "Arrow Keys: Move camera\n" :
             "Arrow Keys: Edit X/Y values\n") +
             "CTRL+Arrow Keys: Adjust value (10)\n" +
-            (!spriteSheetMode && !isPreview ? "SHIFT+LEFT/RIGHT: Switch receptor index\n" : "") +
+            (!spriteSheetMode ? "SHIFT+LEFT/RIGHT: Switch receptor index\n" : "") +
             "Hold Click (400ms): Toggle spritesheet view\n" +
             "Mouse Drag: Modify current properties\n" +
             "ESC: Close editor\n" +
             (spriteSheetMode ? "#M9#[SPRITESHEET MODE - Mouse only!]\n" +
             "Drag to pan view | Press ESC or Hold click (400ms) to exit#M9#\n" : 
             "") +
-            previewControls +
             maniaText +
             'Current State: ${stateColor}${stateName}${stateColor}\n' +
             'Selected Receptor: #M5#[${selectedIndex + 1}/${maxReceptors}]#M5#\n' +
@@ -297,21 +278,6 @@ class NoteskinEditor {
                     offsetY: 0,
                     gap: 112,
                     indexes: [0, 1, 2, 3]
-                });
-            }
-            
-            // Add Preview Clips as a special mania at the end
-            var totalClips = noteskinData.clip != null ? noteskinData.clip.length : 0;
-            if (totalClips > 0) {
-                var previewIndexes:Array<Int> = [];
-                for (i in 0...totalClips) {
-                    previewIndexes.push(i);
-                }
-                availableManiaConfigs.push({
-                    offsetX: 0,
-                    offsetY: 0,
-                    gap: 90, // Slightly smaller gap for preview
-                    indexes: previewIndexes
                 });
             }
             
@@ -424,65 +390,82 @@ class NoteskinEditor {
         }
     }
 
+    function generateManiaFromClips():NoteskinConfig {
+        var clipCount = noteskinData.clip != null ? noteskinData.clip.length : 0;
+        var indexes:Array<Int> = [];
+        for (i in 0...clipCount) {
+            indexes.push(i);
+        }
+        return {
+            offsetX: 0,
+            offsetY: 0,
+            gap: 120,
+            indexes: indexes
+        };
+    }
+
     function switchMania(direction:Int) {
         if (availableManiaConfigs.length == 0) return;
         
+        var totalManias = availableManiaConfigs.length + 1; // +1 for preview mania
         var newIndex = currentManiaIndex + direction;
-        if (newIndex < 0) newIndex = availableManiaConfigs.length - 1;
-        if (newIndex >= availableManiaConfigs.length) newIndex = 0;
+        if (newIndex < 0) newIndex = totalManias - 1;
+        if (newIndex >= totalManias) newIndex = 0;
         
-        var wasPreview = isPreviewClipsMode();
         currentManiaIndex = newIndex;
-        currentConfig = availableManiaConfigs[currentManiaIndex];
-        
-        // Check if we're entering preview clips mode
-        if (isPreviewClipsMode()) {
-            trace('Entering Preview Clips mode');
-            // Clear existing grid sprites
-            clearPreviewClips();
-            // Create preview clips receptors
-            createPreviewClipsReceptors();
+
+        if (currentManiaIndex < availableManiaConfigs.length) {
+            // Normal mania
+            currentConfig = availableManiaConfigs[currentManiaIndex];
         } else {
-            trace('Exiting Preview Clips mode');
-            // Clear preview clips if any
-            clearPreviewClips();
-            // Update maxReceptors
-            updateMaxReceptorsFromConfig();
-            
-            // Ensure clips exist for all receptors
-            var clips = noteskinData.clip;
-            var defaultClip:NoteskinReceptorProperties = {
-                idle: {clipX: 3, clipY: 116, clipW: 109, clipH: 111, offsX: 0, offsY: 0},
-                press: {clipX: 115, clipY: 229, clipW: 99, clipH: 100, offsX: 0, offsY: 0},
-                color: {clipX: 3, clipY: 116, clipW: 109, clipH: 111, offsX: 0, offsY: 0},
-                confirm: {clipX: 3, clipY: 3, clipW: 240, clipH: 243, offsX: 0, offsY: 0},
-                holdBody: {clipX: 441, clipY: 229, clipW: 35, clipH: 30, offsX: 0, offsY: 0},
-                holdTail: {clipX: 460, clipY: 3, clipW: 35, clipH: 45, offsX: 0, offsY: 0}
-            };
-            
-            while (clips.length < maxReceptors) {
-                clips.push(defaultClip);
-            }
-            
-            // Ensure selectedIndex is within bounds
-            if (selectedIndex >= maxReceptors) {
-                selectedIndex = maxReceptors - 1;
-            }
-            
-            // Ensure spritesheet selected index is valid
-            if (spritesheetSelectedIndex >= maxReceptors) {
-                spritesheetSelectedIndex = maxReceptors - 1;
-            }
-            
-            // Recreate receptors with new config
-            createReceptors();
-            updateReceptorVisuals();
+            // Preview mania - generate from all clips
+            currentConfig = generateManiaFromClips();
         }
         
+        // Update maxReceptors
+        updateMaxReceptorsFromConfig();
+        
+        // Ensure clips exist for all receptors
+        var clips = noteskinData.clip;
+        var defaultClip:NoteskinReceptorProperties = {
+            idle: {clipX: 3, clipY: 116, clipW: 109, clipH: 111, offsX: 0, offsY: 0},
+            press: {clipX: 115, clipY: 229, clipW: 99, clipH: 100, offsX: 0, offsY: 0},
+            color: {clipX: 3, clipY: 116, clipW: 109, clipH: 111, offsX: 0, offsY: 0},
+            confirm: {clipX: 3, clipY: 3, clipW: 240, clipH: 243, offsX: 0, offsY: 0},
+            holdBody: {clipX: 441, clipY: 229, clipW: 35, clipH: 30, offsX: 0, offsY: 0},
+            holdTail: {clipX: 460, clipY: 3, clipW: 35, clipH: 45, offsX: 0, offsY: 0}
+        };
+        
+        while (clips.length < maxReceptors) {
+            clips.push(defaultClip);
+        }
+        
+        // Ensure selectedIndex is within bounds
+        if (selectedIndex >= maxReceptors) {
+            selectedIndex = maxReceptors - 1;
+        }
+        
+        // Ensure spritesheet selected index is valid
+        if (spritesheetSelectedIndex >= maxReceptors) {
+            spritesheetSelectedIndex = maxReceptors - 1;
+        }
+        
+        // Recreate receptors with new config
+        createReceptors();
+        updateReceptorVisuals();
         updateInstructionsText();
         
-        var modeName = isPreviewClipsMode() ? "Preview Clips" : '${maxReceptors}K';
-        trace('Switched to mania ${currentManiaIndex + 1}/${availableManiaConfigs.length} - $modeName');
+        var modeName = currentManiaIndex >= availableManiaConfigs.length ? "Preview All Clips" : '${maxReceptors}K';
+        trace('Switched to mania ${currentManiaIndex + 1}/${totalManias} - $modeName');
+    }
+
+    function createNewMania() {
+        // Show the popup
+        createManiaPopupActive = true;
+        createManiaInput = "";
+        createManiaError = "";
+        createManiaKeyCount = 0;
+        trace('Create Mania popup opened - Enter number of keys');
     }
 
     function createDefaultNoteskin() {
@@ -515,6 +498,141 @@ class NoteskinEditor {
         for (i in 0...maxReceptors) {
             noteskinData.clip.push(defaultClip);
         }
+    }
+
+    function confirmCreateMania() {
+        // Parse the input
+        var keyCount = Std.parseInt(createManiaInput);
+        if (keyCount == null || keyCount <= 0) {
+            createManiaError = "Please enter a valid positive number";
+            return;
+        }
+        
+        // Check if this mania already exists
+        for (config in availableManiaConfigs) {
+            if (config.indexes != null && config.indexes.length == keyCount) {
+                createManiaError = 'Mania with $keyCount keys already exists!';
+                return;
+            }
+        }
+        
+        // Create the new mania
+        var indexes:Array<Int> = [];
+        for (i in 0...keyCount) {
+            indexes.push(i);
+        }
+        
+        var newMania:NoteskinConfig = {
+            offsetX: 0,
+            offsetY: 0,
+            gap: 112,
+            indexes: indexes
+        };
+        
+        // Add the new mania
+        availableManiaConfigs.push(newMania);
+        
+        // Fill in missing manias from 1 to keyCount
+        fillMissingManias(keyCount);
+        
+        // Sort manias by key count
+        sortManiasByKeyCount();
+        
+        // Find the index of the new mania after sorting
+        var newIndex = availableManiaConfigs.indexOf(newMania);
+        if (newIndex != -1) {
+            currentManiaIndex = newIndex;
+            currentConfig = availableManiaConfigs[currentManiaIndex];
+            updateMaxReceptorsFromConfig();
+            
+            // Ensure clips exist
+            var clips = noteskinData.clip;
+            var defaultClip:NoteskinReceptorProperties = {
+                idle: {clipX: 3, clipY: 116, clipW: 109, clipH: 111, offsX: 0, offsY: 0},
+                press: {clipX: 115, clipY: 229, clipW: 99, clipH: 100, offsX: 0, offsY: 0},
+                color: {clipX: 3, clipY: 116, clipW: 109, clipH: 111, offsX: 0, offsY: 0},
+                confirm: {clipX: 3, clipY: 3, clipW: 240, clipH: 243, offsX: 0, offsY: 0},
+                holdBody: {clipX: 441, clipY: 229, clipW: 35, clipH: 30, offsX: 0, offsY: 0},
+                holdTail: {clipX: 460, clipY: 3, clipW: 35, clipH: 45, offsX: 0, offsY: 0}
+            };
+            while (clips.length < maxReceptors) {
+                clips.push(defaultClip);
+            }
+            
+            createReceptors();
+            updateReceptorVisuals();
+            updateInstructionsText();
+            trace('Created new mania with $keyCount keys');
+        }
+        
+        // Close the popup immediately
+        createManiaPopupActive = false;
+        createManiaInput = "";
+        createManiaError = "";
+    }
+
+    function fillMissingManias(maxKeys:Int) {
+        // Check which key counts already exist
+        var existingKeyCounts:Array<Int> = [];
+        for (config in availableManiaConfigs) {
+            if (config.indexes != null) {
+                existingKeyCounts.push(config.indexes.length);
+            }
+        }
+        
+        // Fill in missing manias from 1 to maxKeys
+        for (i in 1...maxKeys) {
+            // Skip if this key count already exists
+            if (existingKeyCounts.indexOf(i) != -1) continue;
+            
+            // Create the missing mania
+            var indexes:Array<Int> = [];
+            for (j in 0...i) {
+                indexes.push(j);
+            }
+            
+            var newMania:NoteskinConfig = {
+                offsetX: 0,
+                offsetY: 0,
+                gap: 112,
+                indexes: indexes
+            };
+            
+            availableManiaConfigs.push(newMania);
+            trace('Auto-created mania with $i keys');
+        }
+    }
+
+    function cancelCreateMania() {
+        createManiaPopupActive = false;
+        createManiaInput = "";
+        createManiaError = "";
+        trace('Create Mania cancelled');
+    }
+
+    function sortManiasByKeyCount() {
+        // Remove any duplicate manias (same key count)
+        var seenKeyCounts:Array<Int> = [];
+        var uniqueManias:Array<NoteskinConfig> = [];
+        
+        for (config in availableManiaConfigs) {
+            if (config.indexes != null) {
+                var keyCount = config.indexes.length;
+                if (seenKeyCounts.indexOf(keyCount) == -1) {
+                    seenKeyCounts.push(keyCount);
+                    uniqueManias.push(config);
+                }
+            }
+        }
+        
+        availableManiaConfigs = uniqueManias;
+        
+        // Sort manias by their index length (key count)
+        availableManiaConfigs.sort(function(a:NoteskinConfig, b:NoteskinConfig) {
+            var lenA = a.indexes != null ? a.indexes.length : 0;
+            var lenB = b.indexes != null ? b.indexes.length : 0;
+            return lenA - lenB;
+        });
     }
 
     function createGrid() {
@@ -709,140 +827,7 @@ class NoteskinEditor {
         }
     }
 
-    function createPreviewClipsReceptors() {
-        // Clear existing receptors
-        for (sprite in receptorSprites) {
-            noteBuf.removeElement(sprite);
-        }
-        receptorSprites = [];
-        
-        // Clear preview grid sprites
-        clearPreviewClips();
-        
-        var totalClips = noteskinData.clip != null ? noteskinData.clip.length : 0;
-        if (totalClips == 0) {
-            trace('No clips to preview');
-            return;
-        }
-        
-        // Use the gap from the preview config
-        var gap = currentConfig.gap != 0 ? currentConfig.gap : 90;
-        
-        // Calculate total width and starting position
-        var totalWidth = totalClips * gap;
-        var startX = (Main.INITIAL_WIDTH - totalWidth) / 2 + previewClipsCameraX;
-        var y = Main.INITIAL_HEIGHT / 2 + previewClipsCameraY;
-        
-        for (i in 0...totalClips) {
-            var clip = noteskinData.clip[i];
-            var basicClip = clip.idle;
-            
-            var note = new Note(
-                Std.int(startX + (i * gap)),
-                Std.int(y),
-                basicClip.clipW,
-                basicClip.clipH,
-                1,
-                1,
-                0.0
-            );
-            
-            // Apply clip data
-            note.clipX = basicClip.clipX;
-            note.clipY = basicClip.clipY;
-            note.clipWidth = basicClip.clipW;
-            note.clipHeight = basicClip.clipH;
-            note.clipPosX = 0;
-            note.clipPosY = 0;
-            note.clipSizeX = basicClip.clipW;
-            note.clipSizeY = basicClip.clipH;
-            note.w = Std.int(basicClip.clipW * previewClipsZoom);
-            note.h = Std.int(basicClip.clipH * previewClipsZoom);
-            note.ox = basicClip.offsX;
-            note.oy = basicClip.offsY;
-            note.changeID(i);
-            
-            // Color based on clip index
-            note.initialAlpha = 0.9;
-            
-            receptorSprites.push(note);
-            noteBuf.addElement(note);
-            
-            // Create grid for this clip
-            var gridSprite = new RepeatSprite(
-                Std.int(startX + (i * gap) + basicClip.offsX),
-                Std.int(y + basicClip.offsY),
-                Std.int(basicClip.clipW * previewClipsZoom),
-                Std.int(basicClip.clipH * previewClipsZoom)
-            );
-            gridSprite.c.aF = 0.15;
-            gridSprite.c.luminanceF = 0.15;
-            previewGridSprites.push(gridSprite);
-            gridBuf.addElement(gridSprite);
-        }
-        
-        noteBuf.update();
-        gridBuf.update();
-        updateInstructionsText();
-    }
-
-    function clearPreviewClips() {
-        for (grid in previewGridSprites) {
-            gridBuf.removeElement(grid);
-        }
-        previewGridSprites = [];
-        gridBuf.update();
-    }
-
-    function updatePreviewClipsVisuals() {
-        var totalClips = noteskinData.clip != null ? noteskinData.clip.length : 0;
-        if (totalClips == 0) return;
-        
-        var gap = currentConfig.gap != 0 ? currentConfig.gap : 90;
-        var totalWidth = totalClips * gap;
-        var startX = (Main.INITIAL_WIDTH - totalWidth) / 2 + previewClipsCameraX;
-        var y = Main.INITIAL_HEIGHT / 2 + previewClipsCameraY;
-        
-        for (i in 0...totalClips) {
-            if (i >= receptorSprites.length) break;
-            
-            var note = receptorSprites[i];
-            var clip = noteskinData.clip[i];
-            var basicClip = clip.idle;
-            
-            note.x = Std.int(startX + (i * gap));
-            note.y = Std.int(y);
-            note.w = basicClip.clipW;
-            note.h = basicClip.clipH;
-            
-            applyClipToNote(note, 0, clip);
-            note.changeID(i);
-            
-            noteBuf.updateElement(note);
-            
-            // Update grid
-            if (i < previewGridSprites.length) {
-                var grid = previewGridSprites[i];
-                grid.x = Std.int(startX + (i * gap) + basicClip.offsX);
-                grid.y = Std.int(y + basicClip.offsY);
-                grid.w = basicClip.clipW;
-                grid.h = basicClip.clipH;
-                gridBuf.updateElement(grid);
-            }
-        }
-        
-        noteBuf.update();
-        gridBuf.update();
-        updateInstructionsText();
-    }
-
     function createReceptors() {
-        // If in preview clips mode, use the special preview creation
-        if (isPreviewClipsMode()) {
-            createPreviewClipsReceptors();
-            return;
-        }
-        
         for (sprite in receptorSprites) {
             noteBuf.removeElement(sprite);
         }
@@ -866,6 +851,11 @@ class NoteskinEditor {
             var clip = getClipForIndex(clipIndex);
             applyClipToNote(note, currentState, clip);
             note.changeID(clipIndex);
+            
+            // Color coding for preview mania
+            if (currentManiaIndex >= availableManiaConfigs.length) {
+                note.initialAlpha = 0.9;
+            }
             
             receptorSprites.push(note);
             noteBuf.addElement(note);
@@ -922,14 +912,11 @@ class NoteskinEditor {
     }
 
     function updateReceptorVisuals() {
-        if (isPreviewClipsMode()) {
-            updatePreviewClipsVisuals();
-            return;
-        }
-        
         var gap = currentConfig.gap != 0 ? currentConfig.gap : 112;
         var startX = (Main.INITIAL_WIDTH - (maxReceptors * gap)) / 2;
         var y = Main.INITIAL_HEIGHT / 2;
+
+        var isPreview = currentManiaIndex >= availableManiaConfigs.length;
 
         for (i in 0...receptorSprites.length) {
             var note = receptorSprites[i];
@@ -976,8 +963,10 @@ class NoteskinEditor {
                 } else {
                     note.c = 0xFFFFFFFF; // White normal
                 }
-                // Reset initialAlpha to 1.0 for normal mode
-                note.initialAlpha = 1.0;
+                // Reset initialAlpha to 1.0 for normal mode if not preview
+                if (!isPreview) {
+                    note.initialAlpha = 1.0;
+                }
                 // Re-apply the clip from the noteskin data
                 applyClipToNote(note, currentState, clip);
             }
@@ -998,10 +987,6 @@ class NoteskinEditor {
     }
 
     function selectNextIndex() {
-        if (isPreviewClipsMode()) {
-            // In preview clips mode, arrow keys move camera instead
-            return;
-        }
         selectedIndex = (selectedIndex + 1) % maxReceptors;
         if (spriteSheetMode) {
             spritesheetSelectedIndex = selectedIndex;
@@ -1011,10 +996,6 @@ class NoteskinEditor {
     }
 
     function selectPreviousIndex() {
-        if (isPreviewClipsMode()) {
-            // In preview clips mode, arrow keys move camera instead
-            return;
-        }
         selectedIndex = (selectedIndex - 1 + maxReceptors) % maxReceptors;
         if (spriteSheetMode) {
             spritesheetSelectedIndex = selectedIndex;
@@ -1051,7 +1032,7 @@ class NoteskinEditor {
     }
 
     function toggleEditMode() {
-        if (spriteSheetMode || isPreviewClipsMode()) return;
+        if (spriteSheetMode) return; // Disable edit mode toggle in spritesheet mode
         editMode = (editMode + 1) % 4;
         switch(editMode) {
             case 0:
@@ -1105,7 +1086,7 @@ class NoteskinEditor {
     }
 
     function adjustSelectedValue(amount:Int) {
-        if (spriteSheetMode || isPreviewClipsMode()) return;
+        if (spriteSheetMode) return; // No editing in spritesheet mode
         
         var clipIndex = getClipIndexForReceptor(selectedIndex);
         var clip = getClipForIndex(clipIndex);
@@ -1140,6 +1121,7 @@ class NoteskinEditor {
                 if (currentConfig.indexes[selectedIndex] < 0) {
                     currentConfig.indexes[selectedIndex] = 0;
                 }
+                // Create new clip if index exceeds clip count
                 while (noteskinData.clip.length <= currentConfig.indexes[selectedIndex]) {
                     var defaultClip:NoteskinReceptorProperties = {
                         idle: {clipX: 3, clipY: 116, clipW: 109, clipH: 111, offsX: 0, offsY: 0},
@@ -1150,6 +1132,12 @@ class NoteskinEditor {
                         holdTail: {clipX: 460, clipY: 3, clipW: 35, clipH: 45, offsX: 0, offsY: 0}
                     };
                     noteskinData.clip.push(defaultClip);
+                    trace('Created new clip at index ${noteskinData.clip.length - 1}');
+                }
+                // Update maxReceptors if we're in preview mode
+                if (currentManiaIndex == availableManiaConfigs.length) {
+                    maxReceptors = noteskinData.clip.length;
+                    currentConfig.indexes = [for (i in 0...noteskinData.clip.length) i];
                 }
             default: selectedProperty = "clipX";
         }
@@ -1196,7 +1184,7 @@ class NoteskinEditor {
     }
 
     function toggleProperty() {
-        if (spriteSheetMode || isPreviewClipsMode()) return;
+        if (spriteSheetMode) return; // No property toggling in spritesheet mode
         var properties = getPropertiesForMode(editMode);
         var currentIndex = properties.indexOf(selectedProperty);
         selectedProperty = properties[(currentIndex + 1) % properties.length];
@@ -1216,10 +1204,14 @@ class NoteskinEditor {
 
     function updateInstructionsText() {
         if (instructionsText != null && showEditor) {
+            // If popup is active, don't update with normal instructions
+            if (createManiaPopupActive) return;
+            
             var newText = buildInstructionsText();
             if (instructionsText.text != newText) {
                 instructionsText.text = newText;
             }
+            instructionsText.scale = 0.7;
             instructionsText.x = 4;
             instructionsText.y = Main.INITIAL_HEIGHT - (instructionsText.height + 4);
             instructionsText.alpha = 1;
@@ -1245,11 +1237,14 @@ class NoteskinEditor {
     }
 
     function toggleSpritesheetMode() {
-        if (isPreviewClipsMode()) return; // Disable spritesheet in preview mode
         spriteSheetMode = !spriteSheetMode;
         if (spriteSheetMode) {
             spritesheetSelectedIndex = selectedIndex;
             trace('Spritesheet mode enabled - showing full texture for receptor ${selectedIndex + 1}');
+            // Reset clip values to their original positions when entering
+            // This prevents any weird offset from previous usage
+            var clip = getSelectedClip();
+            // Don't reset - keep the current values
         } else {
             spritesheetSelectedIndex = -1;
             trace('Spritesheet mode disabled - returning to normal view');
@@ -1263,12 +1258,6 @@ class NoteskinEditor {
         if (!showEditor || button != MouseButton.LEFT) return;
         if (Application.current.window == null) return;
         
-        // In preview clips mode, clicking starts camera drag
-        if (isPreviewClipsMode()) {
-            startDrag(mouseX, mouseY);
-            return;
-        }
-        
         var note = getSelectedNote();
         if (note == null) return;
         
@@ -1280,7 +1269,7 @@ class NoteskinEditor {
         var inSprite = mouseX >= sx && mouseX <= sx + sw && mouseY >= sy && mouseY <= sy + sh;
         
         if (inSprite) {
-            // Start holding for long press detection
+            // Start holding for long press detection in BOTH modes
             isHoldingMouse = true;
             isLongPress = false;
             longPressTriggered = false;
@@ -1288,8 +1277,11 @@ class NoteskinEditor {
             mouseDownY = mouseY;
             longPressTimer = 0;
             
+            // If in spritesheet mode, we'll start dragging after a short delay
+            // if the user doesn't long press first
             if (spriteSheetMode) {
                 // Don't start drag immediately - wait to see if it's a long press
+                // The drag will start in handleMouseMove if the mouse moves
             }
         } else {
             // Not on sprite, start drag if in edit mode
@@ -1302,18 +1294,6 @@ class NoteskinEditor {
         isHoldingMouse = false;
         isLongPress = false;
         longPressTriggered = false;
-        
-        // Preview clips mode dragging - pan the view
-        if (isPreviewClipsMode()) {
-            isDragging = true;
-            dragStartX = mouseX;
-            dragStartY = mouseY;
-            lastDragX = mouseX;
-            lastDragY = mouseY;
-            dragMode = 0;
-            setCursor(MouseCursor.MOVE);
-            return;
-        }
         
         // Spritesheet mode dragging - pan the view by modifying clipX/Y
         if (spriteSheetMode) {
@@ -1409,6 +1389,9 @@ class NoteskinEditor {
         isHoldingMouse = false;
         isLongPress = false;
         
+        // If we were in spritesheet mode and not dragging, we don't want to exit here
+        // The exit happens in update() via long press detection
+        
         isDragging = false;
         setCursor(MouseCursor.ARROW);
         dragMode = 0;
@@ -1429,7 +1412,7 @@ class NoteskinEditor {
             if (dx > 10 || dy > 10) {
                 // Cancel long press
                 isHoldingMouse = false;
-                // Start dragging
+                // Start dragging if in spritesheet mode or if we're in normal edit mode
                 startDrag(mouseX, mouseY);
                 return;
             }
@@ -1438,17 +1421,6 @@ class NoteskinEditor {
         if (isDragging) {
             var dx = mouseX - dragStartX;
             var dy = mouseY - dragStartY;
-            
-            // Preview clips mode dragging - pan the view
-            if (isPreviewClipsMode()) {
-                previewClipsCameraX += dx;
-                previewClipsCameraY += dy;
-                dragStartX = mouseX;
-                dragStartY = mouseY;
-                updatePreviewClipsVisuals();
-                setCursor(MouseCursor.MOVE);
-                return;
-            }
             
             // Spritesheet mode dragging - pan the view by modifying clipX/Y
             if (spriteSheetMode) {
@@ -1552,8 +1524,8 @@ class NoteskinEditor {
                 default:
             }
         } else {
-            // Hover state - update cursor
-            if (!spriteSheetMode && !isPreviewClipsMode()) {
+            // Hover state - update cursor (only if not in spritesheet mode)
+            if (!spriteSheetMode) {
                 var clip = getSelectedClip();
                 var sx = note.x + clip.offsX;
                 var sy = note.y + clip.offsY;
@@ -1601,8 +1573,6 @@ class NoteskinEditor {
                 } else {
                     setCursor(MouseCursor.ARROW);
                 }
-            } else if (isPreviewClipsMode()) {
-                setCursor(MouseCursor.MOVE);
             } else {
                 // In spritesheet mode, show move cursor on the selected receptor
                 var sx = note.x;
@@ -1622,30 +1592,7 @@ class NoteskinEditor {
     function handleMouseWheel(deltaX:Float, deltaY:Float, mode:MouseWheelMode) {
         if (!showEditor) return;
         
-        if (isPreviewClipsMode()) {
-            // Camera controls in preview clips mode
-            if (isAltPressed) {
-                // ALT + MouseWheel: Zoom in/out
-                var zoomFactor = deltaY > 0 ? 1.1 : 0.9;
-                previewClipsZoom *= zoomFactor;
-                previewClipsZoom = Math.max(0.1, Math.min(3.0, previewClipsZoom));
-                updatePreviewClipsVisuals();
-                trace('Zoom: ${previewClipsZoom}');
-            } else if (isCtrlPressed) {
-                // CTRL + MouseWheel: Move left/right
-                previewClipsCameraX += deltaY > 0 ? 20 : -20;
-                updatePreviewClipsVisuals();
-                trace('Camera X: ${previewClipsCameraX}');
-            } else if (isShiftPressed) {
-                // SHIFT + MouseWheel: Move up/down
-                previewClipsCameraY += deltaY > 0 ? -20 : 20;
-                updatePreviewClipsVisuals();
-                trace('Camera Y: ${previewClipsCameraY}');
-            }
-            return;
-        }
-        
-        // Normal mouse wheel controls TAB functionality
+        // Mouse wheel controls TAB functionality
         if (deltaY > 0) {
             // Scroll up - cycle forward (like TAB)
             if (spriteSheetMode) {
@@ -1666,10 +1613,11 @@ class NoteskinEditor {
 
     // Key handling
     public function handleKeyDown(key:KeyCode, modifier:KeyModifier) {
-        // Track modifier states
-        isCtrlPressed = (modifier & KeyModifier.CTRL) != 0;
-        isShiftPressed = (modifier & KeyModifier.SHIFT) != 0;
-        isAltPressed = (modifier & KeyModifier.ALT) != 0;
+        // If the create mania popup is active, handle input differently
+        if (createManiaPopupActive) {
+            handleCreateManiaPopupInput(key);
+            return;
+        }
         
         if (key == KeyCode.ESCAPE) {
             if (spriteSheetMode) {
@@ -1685,17 +1633,22 @@ class NoteskinEditor {
 
         var isShift = (modifier & KeyModifier.SHIFT) != 0;
         var isCtrl = (modifier & KeyModifier.CTRL) != 0;
+        var isAlt = (modifier & KeyModifier.ALT) != 0;
 
         switch(key) {
+            case KeyCode.SPACE:
+                if (isCtrl && isShift) {
+                    // CTRL+SHIFT+SPACE: Create new mania
+                    createNewMania();
+                } else if (!spriteSheetMode) {
+                    // SPACE toggles between X and Y properties
+                    toggleAxisProperty();
+                }
             case KeyCode.UP:
                 if (spriteSheetMode) {
                     // In spritesheet mode, UP changes receptor index
                     selectPreviousIndex();
-                } else if (isPreviewClipsMode()) {
-                    // In preview clips mode, UP moves camera up
-                    previewClipsCameraY -= 20;
-                    updatePreviewClipsVisuals();
-                } else if (isCtrl) {
+                } else if (isCtrl && editMode != 3) {
                     adjustAxisValue(-10, "Y");
                 } else {
                     // Edit Y axis - decrease value (up = less Y)
@@ -1705,11 +1658,7 @@ class NoteskinEditor {
                 if (spriteSheetMode) {
                     // In spritesheet mode, DOWN changes receptor index
                     selectNextIndex();
-                } else if (isPreviewClipsMode()) {
-                    // In preview clips mode, DOWN moves camera down
-                    previewClipsCameraY += 20;
-                    updatePreviewClipsVisuals();
-                } else if (isCtrl) {
+                } else if (isCtrl && editMode != 3) {
                     adjustAxisValue(10, "Y");
                 } else {
                     // Edit Y axis - increase value (down = more Y)
@@ -1719,13 +1668,9 @@ class NoteskinEditor {
                 if (spriteSheetMode) {
                     // In spritesheet mode, LEFT changes receptor index
                     selectPreviousIndex();
-                } else if (isPreviewClipsMode()) {
-                    // In preview clips mode, LEFT moves camera left
-                    previewClipsCameraX -= 20;
-                    updatePreviewClipsVisuals();
                 } else if (isShift) {
                     selectPreviousIndex();
-                } else if (isCtrl) {
+                } else if (isCtrl && editMode != 3) {
                     adjustAxisValue(-10, "X");
                 } else {
                     // Edit X axis - decrease value (left = less X)
@@ -1735,13 +1680,9 @@ class NoteskinEditor {
                 if (spriteSheetMode) {
                     // In spritesheet mode, RIGHT changes receptor index
                     selectNextIndex();
-                } else if (isPreviewClipsMode()) {
-                    // In preview clips mode, RIGHT moves camera right
-                    previewClipsCameraX += 20;
-                    updatePreviewClipsVisuals();
                 } else if (isShift) {
                     selectNextIndex();
-                } else if (isCtrl) {
+                } else if (isCtrl && editMode != 3) {
                     adjustAxisValue(10, "X");
                 } else {
                     // Edit X axis - increase value (right = more X)
@@ -1752,7 +1693,7 @@ class NoteskinEditor {
                     // SHIFT+CTRL+TAB switches mania
                     switchMania(1);
                 } else if (isCtrl) {
-                    if (!spriteSheetMode && !isPreviewClipsMode()) toggleEditMode();
+                    if (!spriteSheetMode) toggleEditMode();
                 } else {
                     toggleState(isShift ? -1 : 1);
                 }
@@ -1760,11 +1701,54 @@ class NoteskinEditor {
         }
     }
 
-    function handleKeyUp(key:KeyCode, modifier:KeyModifier) {
-        // Update modifier states
-        isCtrlPressed = (modifier & KeyModifier.CTRL) != 0;
-        isShiftPressed = (modifier & KeyModifier.SHIFT) != 0;
-        isAltPressed = (modifier & KeyModifier.ALT) != 0;
+    function handleCreateManiaPopupInput(key:KeyCode) {
+        switch(key) {
+            case KeyCode.ESCAPE:
+                cancelCreateMania();
+            case KeyCode.RETURN:
+                confirmCreateMania();
+            case KeyCode.BACKSPACE:
+                if (createManiaInput.length > 0) {
+                    createManiaInput = createManiaInput.substring(0, createManiaInput.length - 1);
+                    createManiaError = "";
+                }
+            default:
+        }
+
+        // Handle number input (supports both regular and numpad keys)
+        var num = key - 0x30; // '0' key
+        var num2 = key - 0x40000059; // Numpad keys
+        if (((num >= 0 && num < 10) || (num2 >= 0 && num2 < 10)) && createManiaInput.length < 2) {
+            // Use the actual number from the key
+            var digit = num >= 0 && num < 10 ? num : num2;
+            createManiaInput += Std.string(digit);
+            createManiaError = "";
+        }
+    }
+
+    function renderCreateManiaPopup() {
+        if (!createManiaPopupActive || instructionsText == null) return;
+        
+        // Build popup text
+        var popupText = 
+            "#M6#=== CREATE NEW MANIA ===#M6#\n" +
+            "How many keys this time?\n" +
+            "(Enter a number 1-64)\n\n" +
+            '#M5#Keys: $createManiaInput#M5#\n';
+        
+        if (createManiaError != "") {
+            popupText += '#M2#$createManiaError#M2#\n';
+        }
+        
+        popupText += 
+            "\n#M1#[ENTER] Confirm#M1#   #M3#[ESC] Cancel#M3#";
+        
+        // Display the popup as the instructions text temporarily
+        instructionsText.text = popupText;
+        instructionsText.x = (Main.INITIAL_WIDTH - instructionsText.width) / 2;
+        instructionsText.y = (Main.INITIAL_HEIGHT - instructionsText.height) / 2;
+        instructionsText.scale = 1.2;
+        instructionsText.alpha = 1;
     }
 
     /**
@@ -1773,7 +1757,7 @@ class NoteskinEditor {
         @param axis - "X" or "Y" to determine which property to edit
     **/
     function adjustAxisValue(amount:Int, axis:String) {
-        if (spriteSheetMode || isPreviewClipsMode()) return;
+        if (spriteSheetMode) return;
         
         // Determine which property to edit based on edit mode and axis
         var propertyToEdit:String;
@@ -1803,7 +1787,7 @@ class NoteskinEditor {
         Toggle between X and Y properties for the current edit mode.
     **/
     function toggleAxisProperty() {
-        if (spriteSheetMode || isPreviewClipsMode()) return;
+        if (spriteSheetMode) return;
         
         var properties = getPropertiesForMode(editMode);
         
@@ -1851,20 +1835,6 @@ class NoteskinEditor {
             // Reset spritesheet mode when opening
             spriteSheetMode = false;
             spritesheetSelectedIndex = -1;
-            
-            // Reset preview clips camera
-            previewClipsCameraX = 0;
-            previewClipsCameraY = 0;
-            previewClipsZoom = 1.0;
-            
-            // Reset to first mania config
-            if (availableManiaConfigs.length > 0) {
-                currentManiaIndex = 0;
-                currentConfig = availableManiaConfigs[currentManiaIndex];
-                updateMaxReceptorsFromConfig();
-                createReceptors();
-            }
-            
             updateReceptorVisuals();
             
             if (instructionsText != null) {
@@ -1874,9 +1844,6 @@ class NoteskinEditor {
             
             trace('Noteskin Editor opened');
         } else {
-            // Clear preview clips if any
-            clearPreviewClips();
-            
             if (noteProg != null && noteProg.isIn(view)) {
                 view.removeProgram(noteProg);
             }
@@ -1904,9 +1871,6 @@ class NoteskinEditor {
         removeEvents();
 
         if (showEditor) toggleEditor();
-
-        // Clear preview clips
-        clearPreviewClips();
 
         if (noteProg != null && noteProg.isIn(display)) {
             display.removeProgram(noteProg);
@@ -1961,8 +1925,14 @@ class NoteskinEditor {
     }
 
     public function update(deltaTime:Float) {
+        // Render create mania popup if active
+        if (createManiaPopupActive) {
+            renderCreateManiaPopup();
+            return;
+        }
+        
         // Check for long press in the update loop
-        if (isHoldingMouse && !longPressTriggered && !isDragging && !isPreviewClipsMode()) {
+        if (isHoldingMouse && !longPressTriggered && !isDragging) {
             longPressTimer += deltaTime;
             if (longPressTimer >= longPressThreshold) {
                 // Long press detected
