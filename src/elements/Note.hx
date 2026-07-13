@@ -65,9 +65,6 @@ class Note implements Element
 
 	public var id:Int = 0;
 
-	// taken from https://github.com/maitag/peote-view-samples/blob/22eca676920b92f864c0996e68b4dabc669a3399/texture/src/TextureSimple.hx#L49
-	var OPTIONS = { texRepeatX:true, texRepeatY:true, blend:true };
-
 	inline public function new(x:Int, y:Int, w:Int, h:Int, scale:Float = 1.0, initialAlpha:Float = 1.0, addedAlpha:Float = 0.0) {
 		reset();
 		setProperties(x, y, w, h, scale, initialAlpha, addedAlpha);

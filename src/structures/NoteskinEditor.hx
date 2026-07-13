@@ -9,6 +9,8 @@ import lime.math.Rectangle;
 import lime.app.Application;
 import lime.ui.MouseButton;
 import elements.Note;
+import elements.Sprite;
+import elements.RepeatSprite;
 import elements.Text;
 import elements.TextFormatMarkerPair;
 import elements.text.TextAlign;
@@ -53,6 +55,12 @@ class NoteskinEditor {
     var noteProg:CustomProgram;
     var texture:Texture;
 
+    // Grid overlay
+    var gridBuf:Buffer<RepeatSprite>;
+    var gridProg:CustomProgram;
+    var gridTexture:Texture;
+    var gridSprites:Array<RepeatSprite> = [];
+
     // Receptor preview
     var receptorSprites:Array<Note> = [];
 
@@ -63,8 +71,9 @@ class NoteskinEditor {
     var editingValue:Bool = false;
     var needsRender:Bool = false;
 
-    // Texture name constant
+    // Texture name constants
     static inline var NOTESKIN_TEXTURE_NAME:String = "noteskinTexV2";
+    static inline var GRID_TEXTURE_NAME:String = "gridTexV2";
 
     // Instructions text
     var instructionsText:Text;
@@ -79,6 +88,7 @@ class NoteskinEditor {
         this.display = display;
         this.view = view;
 
+        createGrid();
         initRendering();
         createReceptors();
         
@@ -114,7 +124,7 @@ class NoteskinEditor {
                 new TextFormatMarkerPair('#M5#', Color.YELLOW),
                 new TextFormatMarkerPair('#M6#', 0xFFFF9933), // Orange for edit mode
                 new TextFormatMarkerPair('#M7#', 0xFFFF33FF), // Pink for offset mode
-                new TextFormatMarkerPair('#M8#', 0xFF1FAA1F) // Green for clip index mode
+                new TextFormatMarkerPair('#M8#', 0xFF33FF33) // Green for clip index mode
             ];
             
             // Create text with the display
@@ -320,6 +330,159 @@ class NoteskinEditor {
         }
     }
 
+    function createGridTexture():Texture {
+        // Check if texture already exists
+        var existingTex = TextureSystem.getTexture(GRID_TEXTURE_NAME);
+        if (existingTex != null) {
+            return existingTex;
+        }
+
+        try {
+            // Create 24x24 grid texture
+            var gridSize = 24;
+            var data = haxe.io.Bytes.alloc(gridSize * gridSize * 4);
+            
+            // Fill with dark gray (fully opaque)
+            for (i in 0...data.length >> 2) {
+                data.setInt32(i << 2, 0xFF404040);
+            }
+            
+            // Draw grid lines (every 8 pixels) - fully opaque colors
+            for (y in 0...gridSize) {
+                for (x in 0...gridSize) {
+                    var isGridLine = (x % 8 == 0 || y % 8 == 0);
+                    var isMajorGrid = (x % 8 == 0 && y % 8 == 0);
+                    var idx = (y * gridSize + x) << 2;
+                    
+                    if (isGridLine) {
+                        if (isMajorGrid) {
+                            // Red for major intersections
+                            data.setInt32(idx, 0xFFFF4444);
+                        } else {
+                            // Light gray for grid lines
+                            data.setInt32(idx, 0xFF888888);
+                        }
+                    }
+                }
+            }
+
+            // Create texture data with RGBA format (already opaque, no premult needed)
+            var textureData = new TextureData(gridSize, gridSize, TextureFormat.RGBA);
+            textureData.bytes = data;
+
+            var texture = new Texture(textureData.width, textureData.height, null, {
+                format: TextureFormat.RGBA,
+                powerOfTwo: false,
+                smoothExpand: false,
+                smoothShrink: false
+            });
+            texture.setData(textureData);
+
+            // Store in texture pool
+            TextureSystem.pool[GRID_TEXTURE_NAME] = texture;
+            
+            return texture;
+        } catch (e) {
+            trace('Failed to create grid texture: $e');
+            return createBlankTexture();
+        }
+    }
+
+    function createGrid() {
+        try {
+            // Create grid texture
+            gridTexture = createGridTexture();
+            
+            if (gridTexture == null) {
+                trace('Grid texture is null, creating blank');
+                gridTexture = createBlankTexture();
+            }
+            
+            if (gridTexture == null) {
+                trace('Failed to create grid texture, skipping grid');
+                return;
+            }
+            
+            if (gridBuf == null) {
+                gridBuf = new Buffer<RepeatSprite>(16, 16, true);
+            }
+
+            if (gridProg == null) {
+                gridProg = new CustomProgram(gridBuf);
+                gridProg.setTexture(gridTexture, GRID_TEXTURE_NAME);
+                gridProg.setColorFormula('c * getTextureColor(${GRID_TEXTURE_NAME}_ID, vTexCoord)');
+            }
+
+            // Create grid sprites for each receptor
+            var gap = currentConfig.gap != 0 ? currentConfig.gap : 112;
+            var startX = (Main.INITIAL_WIDTH - (maxReceptors * gap)) / 2;
+            var y = Main.INITIAL_HEIGHT / 2;
+
+            for (i in 0...maxReceptors) {
+                var gridSprite = new RepeatSprite(
+                    Std.int(startX + (i * gap)),
+                    Std.int(y),
+                    100, 100
+                );
+                
+                // Set color with low alpha
+                gridSprite.c = 0x44FFFFFF; // Semi-transparent white
+                
+                // IMPORTANT: For RepeatSprite, clipX and clipY should be 0
+                // and clipWidth/clipHeight should match the texture size
+                // The repeat will handle tiling across the sprite
+                gridSprite.clipX = 0;
+                gridSprite.clipY = 0;
+                gridSprite.clipWidth = gridTexture.width;
+                gridSprite.clipHeight = gridTexture.height;
+                gridSprite.clipPosX = 0;
+                gridSprite.clipPosY = 0;
+                gridSprite.clipSizeX = gridTexture.width;
+                gridSprite.clipSizeY = gridTexture.height;
+                
+                // Set the tile - this tells the shader which tile of the texture to use
+                gridSprite.tile = 0;
+                gridSprite.slot = 0;
+                
+                gridSprites.push(gridSprite);
+                gridBuf.addElement(gridSprite);
+            }
+
+            // Update buffer once after adding all elements
+            gridBuf.update();
+
+            // Add to roof (behind everything)
+            roof.addProgram(gridProg);
+        } catch (e) {
+            trace('Failed to create grid: $e');
+        }
+    }
+
+    function updateGridPosition() {
+        for (i in 0...gridSprites.length) {
+            var gridSprite = gridSprites[i];
+            
+            // Match the size and position of the receptor
+            if (i < receptorSprites.length) {
+                var receptor = receptorSprites[i];
+                gridSprite.x = receptor.x;
+                gridSprite.y = receptor.y;
+                gridSprite.w = receptor.w;
+                gridSprite.h = receptor.h;
+                gridSprite.clipWidth = gridSprite.clipSizeX = receptor.w;
+                gridSprite.clipHeight = gridSprite.clipSizeY = receptor.h;
+                
+                // IMPORTANT: Don't change clipX/clipY here!
+                // Keep them at 0 so the texture tiles properly
+                // Only update the sprite size
+                gridSprite.c.aF = 0.25;
+            }
+            
+            gridBuf.updateElement(gridSprite);
+        }
+        gridBuf.update();
+    }
+
     function initRendering() {
         // Create or get texture using TextureSystem
         texture = getCombinedNoteskinTexture();
@@ -332,7 +495,8 @@ class NoteskinEditor {
             noteProg = new CustomProgram(noteBuf);
             Note.init(noteProg, NOTESKIN_TEXTURE_NAME, texture);
         }
-
+        
+        // Then add note program (on top)
         display.addProgram(noteProg);
     }
 
@@ -434,20 +598,25 @@ class NoteskinEditor {
     }
 
     function createBlankTexture():Texture {
-        var blankData = new TextureData(500, 500, TextureFormat.RGBA);
-        blankData.bytes = haxe.io.Bytes.alloc(500 * 500 * 4);
-        // Fill with white (premultiplied)
-        for (i in 0...blankData.bytes.length >> 2) {
-            blankData.bytes.setInt32(i << 2, 0xFFFFFFFF);
+        try {
+            var blankData = new TextureData(500, 500, TextureFormat.RGBA);
+            blankData.bytes = haxe.io.Bytes.alloc(500 * 500 * 4);
+            // Fill with white (premultiplied)
+            for (i in 0...blankData.bytes.length >> 2) {
+                blankData.bytes.setInt32(i << 2, 0xFFFFFFFF);
+            }
+            var texture = new Texture(500, 500, null, {
+                format: TextureFormat.RGBA,
+                powerOfTwo: false,
+                smoothExpand: false,
+                smoothShrink: false
+            });
+            texture.setData(blankData);
+            return texture;
+        } catch (e) {
+            trace('Failed to create blank texture: $e');
+            return null;
         }
-        var texture = new Texture(500, 500, null, {
-            format: TextureFormat.RGBA,
-            powerOfTwo: false,
-            smoothExpand: false,
-            smoothShrink: false
-        });
-        texture.setData(blankData);
-        return texture;
     }
 
     function createReceptors() {
@@ -471,23 +640,28 @@ class NoteskinEditor {
                 0.0
             );
             
-            // Get clip data for this receptor
-            var clip = getClipForIndex(i);
+            // Get the clip index for this receptor
+            var clipIndex = getClipIndexForReceptor(i);
+            
+            // Get the clip data from the noteskin data using the clip index
+            var clip = getClipForIndex(clipIndex);
             applyClipToNote(note, currentState, clip);
             
-            // Set the clip index based on the selected index
-            // This maps the receptor to a specific clip in the noteskin texture
-            if (currentConfig.indexes != null && i < currentConfig.indexes.length) {
-                note.changeID(currentConfig.indexes[i]);
-            } else {
-                note.changeID(i);
-            }
+            // Set the note's ID to the clip index
+            note.changeID(clipIndex);
             
             receptorSprites.push(note);
             noteBuf.addElement(note);
         }
 
         noteBuf.update();
+    }
+
+    function getClipIndexForReceptor(index:Int):Int {
+        if (currentConfig.indexes != null && index < currentConfig.indexes.length) {
+            return currentConfig.indexes[index];
+        }
+        return index;
     }
 
     function getClipForIndex(index:Int):NoteskinReceptorProperties {
@@ -544,7 +718,12 @@ class NoteskinEditor {
 
         for (i in 0...receptorSprites.length) {
             var note = receptorSprites[i];
-            var clip = getClipForIndex(i);
+            
+            // Get the clip index for this receptor
+            var clipIndex = getClipIndexForReceptor(i);
+            
+            // Get the clip data from the noteskin data using the clip index
+            var clip = getClipForIndex(clipIndex);
             
             // Apply the clip based on current state
             applyClipToNote(note, currentState, clip);
@@ -560,18 +739,16 @@ class NoteskinEditor {
                 note.c = 0xFFFFFFFF; // White normal
             }
             
-            // Update clip index - this calls changeID which updates the note's clip
-            // based on Note.offsetAndSizeFrames
-            if (currentConfig.indexes != null && i < currentConfig.indexes.length) {
-                note.changeID(currentConfig.indexes[i]);
-            } else {
-                note.changeID(i);
-            }
+            // Set the note's ID to the clip index
+            note.changeID(clipIndex);
             
             noteBuf.updateElement(note);
         }
 
         noteBuf.update();
+        
+        // Update grid positions to match receptors
+        updateGridPosition();
     }
 
     function updateReceptorState(state:Int) {
@@ -665,7 +842,8 @@ class NoteskinEditor {
     }
 
     function adjustSelectedValue(amount:Int) {
-        var clip = getClipForIndex(selectedIndex);
+        var clipIndex = getClipIndexForReceptor(selectedIndex);
+        var clip = getClipForIndex(clipIndex);
         var basicClip:BasicNoteskinClip;
         
         switch(currentState) {
@@ -717,7 +895,9 @@ class NoteskinEditor {
 
         // Update the clip in config (only for non-clipIndex properties)
         if (!isClipIndexProperty) {
-            updateClipInConfig(selectedIndex, currentState, basicClip);
+            // Get the clip at the current clipIndex and update it
+            var currentClipIndex = getClipIndexForReceptor(selectedIndex);
+            updateClipInConfig(currentClipIndex, currentState, basicClip);
         }
         
         // Always update the visual display
@@ -850,8 +1030,13 @@ class NoteskinEditor {
                 }
             }
             
-            // Only add the program if it's not already added
-            if (!noteProg.isIn(roof)) {
+            // Add grid program first (behind)
+            if (gridProg != null && !gridProg.isIn(roof)) {
+                roof.addProgram(gridProg);
+            }
+            
+            // Then add note program (on top)
+            if (noteProg != null && !noteProg.isIn(roof)) {
                 roof.addProgram(noteProg);
             }
             
@@ -869,9 +1054,12 @@ class NoteskinEditor {
             trace('LEFT/RIGHT=switch X/Y (or W/H), CTRL+LEFT/RIGHT=±10, SHIFT+LEFT/RIGHT=change receptor');
             trace('SPACE=cycle property, ESC=close');
         } else {
-            // Remove the program from roof
-            if (noteProg.isIn(roof)) {
+            // Remove note program first, then grid
+            if (noteProg != null && noteProg.isIn(roof)) {
                 roof.removeProgram(noteProg);
+            }
+            if (gridProg != null && gridProg.isIn(roof)) {
+                roof.removeProgram(gridProg);
             }
             
             // Hide instructions
@@ -894,9 +1082,20 @@ class NoteskinEditor {
             }
         }
 
+        if (gridProg != null) {
+            if (gridProg.isIn(display)) {
+                display.removeProgram(gridProg);
+            }
+        }
+
         if (noteBuf != null) {
             noteBuf.clear();
             noteBuf = null;
+        }
+
+        if (gridBuf != null) {
+            gridBuf.clear();
+            gridBuf = null;
         }
 
         if (receptorSprites != null) {
@@ -904,6 +1103,13 @@ class NoteskinEditor {
                 note = null;
             }
             receptorSprites = null;
+        }
+
+        if (gridSprites != null) {
+            for (sprite in gridSprites) {
+                sprite = null;
+            }
+            gridSprites = null;
         }
 
         // Remove instructions text
