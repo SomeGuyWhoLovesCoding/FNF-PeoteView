@@ -1,4 +1,4 @@
-package elements;
+package elements.display;
 
 /**
 	CustomDisplay is a custom class that extends RotatableDisplay.

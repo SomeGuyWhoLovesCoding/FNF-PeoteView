@@ -1,4 +1,4 @@
-package elements;
+package elements.display;
 
 /**
 	RotatableDisplay is a custom class that extends Display with added rotation support at the vertex level.

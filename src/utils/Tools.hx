@@ -16,8 +16,8 @@ class Tools {
 
 	static function parseNoteskinData(path:String) {
 		while (Note.offsetAndSizeFrames.length != 0) Note.offsetAndSizeFrames.pop();
-		while (Sustain.offsets.length != 0) Sustain.offsets.pop();
-		while (Sustain.tailPoints.length != 0) Sustain.tailPoints.pop();
+		//while (Sustain.offsets.length != 0) Sustain.offsets.pop();
+		//while (Sustain.tailPoints.length != 0) Sustain.tailPoints.pop();
 
 		var contents = File.getContent(Paths.asset('$path/noteData.xml'));
 		var xml = Xml.parse(contents);
@@ -64,8 +64,8 @@ class Tools {
 			var y = Std.parseInt(split[1]);
 			var t = Std.parseInt(split[2]);
 
-			Sustain.offsets.push([x, y]);
-			Sustain.tailPoints.push(w - t);
+			//Sustain.offsets.push([x, y]);
+			//Sustain.tailPoints.push(w - t); // this will be removed
 		}
 	}
 

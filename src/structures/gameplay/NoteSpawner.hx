@@ -266,7 +266,6 @@ class NoteSpawner {
 	function renderVirtualSustains(notes:NoteVB) {
 		var downScroll = parent.parent.downScroll;
 		var virtualSustains = notes.sustains;
-		var tailPoints = Sustain.tailPoints;
 		for (i in 0...virtualSustains.length) {
 			var lane = virtualSustains[i];
 			var strumline = parent.strumlines[i];
@@ -280,7 +279,7 @@ class NoteSpawner {
 					var virtualSustain:VirtualSustain = index[k];
 					if (virtualSustain == null) continue;
 					var sustain = new Sustain(virtualSustain.Sx, virtualSustain.Sy, virtualSustain.w, virtualSustain.h,
-						virtualSustain.r, virtualSustain.speed, virtualSustain.scale, id, tailPoints[id]);
+						virtualSustain.r, virtualSustain.speed, virtualSustain.scale, id);
 					sustain.length = virtualSustain.length;
 					sustain.c.aF = virtualSustain.alpha;
 					sustain.c.luminanceF = virtualSustain.alpha;

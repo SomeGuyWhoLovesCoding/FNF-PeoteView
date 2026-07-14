@@ -20,11 +20,10 @@ import elements.*;
 import elements.actor.*;
 import elements.actor.sparrow.*;
 import elements.actor.animate.*;
+import elements.display.*;
 import elements.sprites.*;
-import elements.window.*;
+import elements.text.*;
 import ffmpeg.*;
-import inp.*;
-import interfaces.*;
 #if FV_DEBUG import debug.*; #end
 import miniaudio.*;
 import music.*;
@@ -34,15 +33,6 @@ import structures.*;
 
 // editor structures
 import structures.editors.*;
-
-// noteskin editor
-import structures.editors.noteskin.*;
-
-// chart editor
-import structures.editors.chart.*;
-
-// story mode editor
-import structure.editors.storymode.*;
 
 // gameplay structures
 import structures.gameplay.*;

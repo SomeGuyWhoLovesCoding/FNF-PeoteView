@@ -1,6 +1,4 @@
-package elements;
-
-import elements.text.*;
+package elements.text;
 
 /**
 	The text format marker pair, to color the text with marker pairs.
