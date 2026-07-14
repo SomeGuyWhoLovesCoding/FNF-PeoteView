@@ -52,7 +52,7 @@ class NoteskinEditorUI {
         var stateName = state.clipEditor.getStateName(state.currentState);
         var stateColor = switch(state.currentState) {
             case IDLE: "#M1#";
-            case NOTE: "#M2#";
+            case COLOR: "#M2#";
             case PRESS: "#M3#";
             case CONFIRM: "#M4#";
             default: "";
@@ -90,8 +90,8 @@ class NoteskinEditorUI {
             "NOTESKIN EDITOR INSTRUCTIONS:\n" +
             (!state.spriteSheetMode ? "TAB or Mouse Wheel: Cycle animation state (SHIFT+TAB to go backwards)\n" : "") +
             "CTRL+TAB: Toggle edit mode\n" +
-            "SHIFT+CTRL+TAB: Switch mania\n" +
-            "CTRL+SHIFT+SPACE: Create new mania\n" +
+            "SHIFT+UP/DOWN: Switch mania\n" +
+            "SHIFT+SPACE: Create new mania\n" +
             "ALT+LEFT/RIGHT or ALT+MouseWheel: Adjust gap\n" +
             "CTRL+ALT+LEFT/RIGHT or CTRL+ALT+MouseWheel: Adjust gap (10x)\n" +
             (!state.spriteSheetMode && state.editMode == GLOBAL_TRANSFORM ?
@@ -100,7 +100,7 @@ class NoteskinEditorUI {
                 "Arrow Keys: Edit X/Y values\n")) +
             "CTRL+Arrow Keys: Adjust value (+10)\n" +
             (!state.spriteSheetMode && state.editMode != GLOBAL_TRANSFORM ? "SHIFT+LEFT/RIGHT: Switch receptor index\n" : "") +
-            (!state.spriteSheetMode && state.editMode == GLOBAL_TRANSFORM ? "LEFT/RIGHT: Adjust offset/scale\n" : "") +
+            (!state.spriteSheetMode && state.editMode == GLOBAL_TRANSFORM ? "LEFT/RIGHT or SHIFT+MouseWheel: Adjust offset/scale\n" : "") +
             "Hold Click: Toggle spritesheet view\n" +
             (!state.spriteSheetMode && state.editMode == GLOBAL_TRANSFORM && !state.globalScaleMode ?
                 "Mouse Drag: Move strumline offset X/Y\n" :
@@ -154,10 +154,10 @@ class NoteskinEditorUI {
 
         // Build popup text
         var popupText =
-            "   #M6#=== CREATE NEW MANIA ===#M6#\n" +
+            "#M6#=== CREATE NEW MANIA ===#M6#\n" +
             "How many keys this time?\n" +
             "(Enter a number 1-64)\n\n" +
-            '#M5#Keys: ${state.createManiaInput}#M5#\n';
+            '#M5#Keys: ${state.createManiaInput != "" ? state.createManiaInput : "_"}#M5#\n';
 
         if (state.createManiaError != "") {
             popupText += '#M2#${state.createManiaError}#M2#\n';
@@ -168,7 +168,7 @@ class NoteskinEditorUI {
 
         // Update instructions text
         state.instructionsText.text = popupText;
-        state.instructionsText.alignment = LEFT;
+        state.instructionsText.alignment = CENTER; // was LEFT 
         state.instructionsText.scale = 1.2;
         state.instructionsText.alpha = 1;
 

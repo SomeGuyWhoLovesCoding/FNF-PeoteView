@@ -2,7 +2,7 @@ package structures.editors.noteskin;
 
 enum abstract EditState(Int) from Int to Int {
     var IDLE;
-    var NOTE;
+    var COLOR;
     var PRESS;
     var CONFIRM;
 }

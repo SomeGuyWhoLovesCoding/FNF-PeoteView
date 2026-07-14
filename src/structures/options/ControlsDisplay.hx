@@ -372,17 +372,18 @@ class ControlsDisplay implements IAlphabetScrollHost {
 
 	inline function isInvalidKey(keyCode:KeyCode) {
 		var result = false;
+		result =
+			(keyCode >= 0x4000003A || keyCode < 0x40000045) || // F1-12
+			(keyCode >= 0x40000068 || keyCode < 0x40000073) || // F13-24
+			(keyCode >= 0x400000E0 || keyCode < 0x400000E7) || // Modifier keys (CTRL, ALT, SHIFT, META)
+			(keyCode >= 0x40000074 || keyCode < 0x4000007F); // EXECUTE-MUTE
+		// (this erased solely 220 lines of thanks to me inspiring it from the noteskin editor's mania number input)
+
 		switch (keyCode) {
-			case KeyCode.F1 | KeyCode.F2 | KeyCode.F3 | KeyCode.F4 | KeyCode.F5 | KeyCode.F6 |
-				KeyCode.F7 | KeyCode.F8 | KeyCode.F9 | KeyCode.F10 | KeyCode.F11 | KeyCode.F12 |
-				KeyCode.LEFT_ALT | KeyCode.RIGHT_ALT | KeyCode.LEFT_CTRL | KeyCode.RIGHT_CTRL |
-				KeyCode.LEFT_SHIFT | KeyCode.RIGHT_SHIFT | KeyCode.VOLUME_DOWN | KeyCode.VOLUME_UP |
+			case KeyCode.VOLUME_DOWN | KeyCode.VOLUME_UP |
 				KeyCode.INSERT | KeyCode.DELETE | KeyCode.PRINT_SCREEN | KeyCode.CAPS_LOCK |
 				KeyCode.HOME | KeyCode.END | KeyCode.SCROLL_LOCK | KeyCode.PAUSE |
-				KeyCode.F13 | KeyCode.F14 | KeyCode.F15 | KeyCode.F16 | KeyCode.F17 | KeyCode.F18 |
-				KeyCode.F19 | KeyCode.F20 | KeyCode.F21 | KeyCode.F22 | KeyCode.F23 | KeyCode.F24 |
-				KeyCode.BRIGHTNESS_DOWN | KeyCode.BRIGHTNESS_UP | KeyCode.BACKLIGHT_DOWN | KeyCode.BACKLIGHT_UP |
-				KeyCode.SLEEP | KeyCode.CUT | KeyCode.COPY | KeyCode.PASTE:
+				KeyCode.BRIGHTNESS_DOWN | KeyCode.BRIGHTNESS_UP | KeyCode.BACKLIGHT_DOWN | KeyCode.BACKLIGHT_UP:
 				result = true;
 			default:
 		}

@@ -17,7 +17,7 @@ class NoteskinEditorClipEditor {
     function getBasicClipForState(clip:NoteskinReceptorProperties, editState:EditState):BasicNoteskinClip {
         return switch(editState) {
             case IDLE: clip.idle;
-            case NOTE: clip.press;
+            case COLOR: clip.color; // was clip.press because the ai mistook it as a type of press. I also forgot it was called "color" in the first place.
             case PRESS: clip.press;
             case CONFIRM: clip.confirm;
             default: clip.idle;
@@ -52,7 +52,7 @@ class NoteskinEditorClipEditor {
             var currentClip = clips[index];
             switch(editState) {
                 case IDLE: currentClip.idle = clip;
-                case NOTE: currentClip.press = clip;
+                case COLOR: currentClip.color = clip;
                 case PRESS: currentClip.press = clip;
                 case CONFIRM: currentClip.confirm = clip;
                 default:
@@ -252,7 +252,7 @@ class NoteskinEditorClipEditor {
     function getStateName(editState:EditState):String {
         return switch(editState) {
             case IDLE: "IDLE";
-            case NOTE: "TO NOTE";
+            case COLOR: "COLOR";
             case PRESS: "PRESS";
             case CONFIRM: "CONFIRM";
             default: "unknown";

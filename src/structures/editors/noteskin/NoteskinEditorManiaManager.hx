@@ -276,8 +276,8 @@ class NoteskinEditorManiaManager {
     function confirmCreateMania() {
         // Parse the input
         var keyCount = Std.parseInt(state.createManiaInput);
-        if (keyCount == null || keyCount <= 0) {
-            state.createManiaError = "Please enter a valid positive number";
+        if (keyCount == null || (keyCount <= 0 || keyCount > 64)) {
+            state.createManiaError = "Please enter a valid number between 0 and 64";
             return;
         }
 

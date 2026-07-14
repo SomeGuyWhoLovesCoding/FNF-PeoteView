@@ -70,7 +70,7 @@ class NoteskinEditorInputHandler {
         if (!state.showEditor) return;
 
         // CTRL+SPACE toggles global transform mode (X/Y vs Scale)
-        if (key == KeyCode.SPACE && state.isCtrlPressed && !state.isShiftPressed) {
+        if (key == KeyCode.SPACE && state.isCtrlPressed) {
             if (state.editMode == GLOBAL_TRANSFORM) {
                 state.globalScaleMode = !state.globalScaleMode;
                 var modeName = state.globalScaleMode ? "Scale" : "Offset";
@@ -82,14 +82,16 @@ class NoteskinEditorInputHandler {
 
         switch(key) {
             case KeyCode.SPACE:
-                if (state.isCtrlPressed && state.isShiftPressed
-                    && state.currentManiaIndex < state.availableManiaConfigs.length) {
+                if (state.isShiftPressed) {
                     state.maniaManager.createNewMania();
                 } else if (!state.spriteSheetMode && state.editMode != GLOBAL_TRANSFORM) {
                     state.clipEditor.toggleAxisProperty();
                 }
             case KeyCode.UP:
-                if (state.spriteSheetMode) {
+                if (state.isShiftPressed) {
+                    state.maniaManager.switchMania(1);
+                    state.clipEditor.checkInvalidClipIDPlace();
+                } else if (state.spriteSheetMode) {
                     state.clipEditor.selectPreviousIndex();
                 } else if (state.isCtrlPressed && state.editMode != CLIP_ID && state.editMode != GLOBAL_TRANSFORM) {
                     state.clipEditor.adjustAxisValue(-10, "Y");
@@ -107,7 +109,10 @@ class NoteskinEditorInputHandler {
                     state.clipEditor.adjustAxisValue(-1, "Y");
                 }
             case KeyCode.DOWN:
-                if (state.spriteSheetMode) {
+                if (state.isShiftPressed) {
+                    state.maniaManager.switchMania(-1);
+                    state.clipEditor.checkInvalidClipIDPlace();
+                } else if (state.spriteSheetMode) {
                     state.clipEditor.selectNextIndex();
                 } else if (state.isCtrlPressed && state.editMode != CLIP_ID && state.editMode != GLOBAL_TRANSFORM) {
                     state.clipEditor.adjustAxisValue(10, "Y");
@@ -171,10 +176,7 @@ class NoteskinEditorInputHandler {
                     state.clipEditor.adjustAxisValue(1, "X");
                 }
             case KeyCode.TAB:
-                if (state.isCtrlPressed && state.isShiftPressed) {
-                    state.maniaManager.switchMania(1);
-                    state.clipEditor.checkInvalidClipIDPlace();
-                } else if (state.isCtrlPressed) {
+                if (state.isCtrlPressed) {
                     if (!state.spriteSheetMode) state.clipEditor.toggleEditMode();
                 } else {
                     state.clipEditor.toggleState(state.isShiftPressed ? -1 : 1);
@@ -568,6 +570,13 @@ class NoteskinEditorInputHandler {
             var amount = deltaY > 0 ? (state.isCtrlPressed ? 10 : 1) : (state.isCtrlPressed ? -10 : -1);
             state.maniaManager.adjustGap(amount);
             return;
+        }
+
+        if (state.isShiftPressed && state.globalScaleMode) {
+            // Scale mode - DOWN decreases scale
+            state.currentConfig.scale += deltaY < 0 ? -0.05 : 0.05;
+            if (state.currentConfig.scale < 0.1) state.currentConfig.scale = 0.1;
+            state.renderer.updateGlobalTransform();
         }
 
         if (deltaY > 0) {
