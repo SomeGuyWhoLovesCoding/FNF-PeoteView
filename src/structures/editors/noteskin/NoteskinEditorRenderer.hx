@@ -321,7 +321,7 @@ class NoteskinEditorRenderer {
             if (state.spriteSheetMode && i == state.spritesheetSelectedIndex) {
                 var basicClip = state.clipEditor.getBasicClipForState(clip, state.currentState);
 
-                note.c = 0xFF00FFFF;
+                note.c = 0xFF66FFFF;
                 note.initialAlpha = 0.5;
 
                 // The clipX/Y should be the actual clip position minus the offset to show the full texture
@@ -342,13 +342,11 @@ class NoteskinEditorRenderer {
                 note.y -= Math.round(NoteskinEditorState.SPRITESHEET_VIEW_OFFSET * scale);
             } else {
                 if (i == state.selectedIndex) {
-                    note.c = 0x00FF00FF;
+                    note.c = 0x00FFAAFF;
                 } else {
                     note.c = 0xFFFFFFFF;
                 }
-                if (!isPreview) {
-                    note.initialAlpha = 1.0;
-                }
+                note.initialAlpha = 1.0;
                 applyClipToNote(note, state.currentState, clip);
             }
 

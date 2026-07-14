@@ -20,6 +20,7 @@ class NoteskinEditorInputHandler {
         #if !android
         var window = Application.current.window;
         window.onKeyDown.add(handleKeyDown);
+        window.onKeyUp.add(handleKeyUp);
         window.onMouseDown.add(handleMouseDown);
         window.onMouseUp.add(handleMouseUp);
         window.onMouseMove.add(handleMouseMove);
@@ -31,6 +32,7 @@ class NoteskinEditorInputHandler {
         #if !android
         var window = Application.current.window;
         window.onKeyDown.remove(handleKeyDown);
+        window.onKeyUp.remove(handleKeyUp);
         window.onMouseDown.remove(handleMouseDown);
         window.onMouseUp.remove(handleMouseUp);
         window.onMouseMove.remove(handleMouseMove);
@@ -183,6 +185,13 @@ class NoteskinEditorInputHandler {
                 }
             default:
         }
+    }
+
+    public function handleKeyUp(key:KeyCode, modifier:KeyModifier) {
+        // Track modifier states
+        state.isCtrlPressed = (modifier & KeyModifier.CTRL) != 0;
+        state.isShiftPressed = (modifier & KeyModifier.SHIFT) != 0;
+        state.isAltPressed = (modifier & KeyModifier.ALT) != 0;
     }
 
     function handleCreateManiaPopupInput(key:KeyCode) {
@@ -566,7 +575,7 @@ class NoteskinEditorInputHandler {
         if (!state.showEditor) return;
 
         // ALT+MouseWheel: Adjust gap
-        if (state.isAltPressed) {
+        if (state.isAltPressed && !state.globalScaleMode) {
             var amount = deltaY > 0 ? (state.isCtrlPressed ? 10 : 1) : (state.isCtrlPressed ? -10 : -1);
             state.maniaManager.adjustGap(amount);
             return;
@@ -577,6 +586,7 @@ class NoteskinEditorInputHandler {
             state.currentConfig.scale += deltaY < 0 ? -0.05 : 0.05;
             if (state.currentConfig.scale < 0.1) state.currentConfig.scale = 0.1;
             state.renderer.updateGlobalTransform();
+            return;
         }
 
         if (deltaY > 0) {
