@@ -2281,10 +2281,17 @@ private class NoteskinEditorUI {
             case "gap_m1":              11;
             case "gap_p10":             12;
             case "gap_m10":             13;
-            case "mania_switch":        14;
-            case "spritesheet_toggle":  15;
-            case "show_instructions":   16;
-            case "mania_create":        17;
+            case "mania_switch_p1":     14;
+            case "mania_switch_m1":     15;
+            case "spritesheet_toggle":  16;
+            case "show_instructions":   17;
+            case "mania_create":        18;
+            case "switch_state_idle":   19;
+            case "switch_state_color":  20;
+            case "switch_state_press":  21;
+            case "switch_state_confirm":  22;
+            case "switch_state_holdbody": 23;
+            case "switch_state_holdtail": 24;
             default: -1;
         };
     }
@@ -2350,24 +2357,31 @@ private class NoteskinEditorUI {
     function buildGUIPanel() {
         // 18 buttons, one per XML atlas frame, in frame-number order.
         var allActions:Array<String> = [
-            "mode_clippos",       // frame 0  — Position
-            "mode_clipsize",      // frame 1  — Size
-            "mode_offset",        // frame 2  — Offset
-            "mode_clipid",        // frame 3  — Clip ID
-            "mode_global",        // frame 4  — Global Transform
-            "sustain_toggle",     // frame 5  — Toggle Sustain
-            "sust_texrot_p90",    // frame 6  — +90 deg sustain tex coord rotation
-            "sust_texrot_m90",    // frame 7  — -90 deg sustain tex coord rotation
-            "sust_rot_p90",       // frame 8  — +90 deg regular sustain rotation
-            "sust_rot_m90",       // frame 9  — -90 deg regular sustain rotation
-            "gap_p1",             // frame 10 — +1 gap adjustment
-            "gap_m1",             // frame 11 — -1 gap adjustment
-            "gap_p10",            // frame 12 — +10 gap adjustment
-            "gap_m10",            // frame 13 — -10 gap adjustment
-            "mania_switch",       // frame 14 — switch mania
-            "spritesheet_toggle", // frame 15 — spritesheet mode
-            "show_instructions",  // frame 16 — open instructions menu
-            "mania_create",       // frame 17 — create new mania
+            "mode_clippos",          // frame 0  — Position
+            "mode_clipsize",         // frame 1  — Size
+            "mode_offset",           // frame 2  — Offset
+            "mode_clipid",           // frame 3  — Clip ID
+            "mode_global",           // frame 4  — Global Transform
+            "sustain_toggle",        // frame 5  — Toggle Sustain
+            "sust_texrot_p90",       // frame 6  — +90 deg sustain tex coord rotation
+            "sust_texrot_m90",       // frame 7  — -90 deg sustain tex coord rotation
+            "sust_rot_p90",          // frame 8  — +90 deg regular sustain rotation
+            "sust_rot_m90",          // frame 9  — -90 deg regular sustain rotation
+            "gap_p1",                // frame 10 — +1 gap adjustment
+            "gap_m1",                // frame 11 — -1 gap adjustment
+            "gap_p10",               // frame 12 — +10 gap adjustment
+            "gap_m10",               // frame 13 — -10 gap adjustment
+            "mania_switch_p1",       // frame 14 — +1 switch mania
+            "mania_switch_m1",       // frame 15 — -1 switch mania
+            "spritesheet_toggle",    // frame 16 — spritesheet mode
+            "show_instructions",     // frame 17 — open instructions menu
+            "mania_create",          // frame 18 — create new mania
+            "switch_state_idle",     // frame 19 — switch anim state #1
+            "switch_state_color",    // frame 20 — switch anim state #2
+            "switch_state_press",    // frame 21 — switch anim state #3
+            "switch_state_confirm",  // frame 22 — switch anim state #4
+            "switch_state_holdbody", // frame 23 — switch anim state #5
+            "switch_state_holdtail", // frame 24 — switch anim state #6
         ];
 
         // Build button definitions with display dimensions (80% of texture size)
