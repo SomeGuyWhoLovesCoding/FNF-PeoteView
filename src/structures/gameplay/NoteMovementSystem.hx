@@ -1,5 +1,8 @@
 package structures.gameplay;
 
+import structures.gameplay.NoteVB.VirtualNote;
+import structures.gameplay.NoteVB.VirtualSustain;
+
 @:publicFields
 class NoteMovementSystem {
 	function new(parent:NoteSystem) {

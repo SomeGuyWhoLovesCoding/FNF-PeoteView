@@ -6,16 +6,14 @@
 import peote.view.*;
 import peote.view.intern.*;
 
-// since peote-view 1.0.8
-import peote.view.Uniform.UniformFloat;
-import peote.view.Uniform.UniformVec2;
-
 // GAME
 import atlas.*;
 import data.chart.*;
 import data.gameplay.*;
 import data.options.*;
 import data.SaveData;
+
+// element classes
 import elements.*;
 import elements.actor.*;
 import elements.actor.sparrow.*;
@@ -23,8 +21,13 @@ import elements.actor.animate.*;
 import elements.display.*;
 import elements.sprites.*;
 import elements.text.*;
+
+// render mode (ugly)
 import ffmpeg.*;
+
 #if FV_DEBUG import debug.*; #end
+
+// now the music
 import miniaudio.*;
 import music.*;
 
@@ -36,8 +39,6 @@ import structures.editors.*;
 
 // gameplay structures
 import structures.gameplay.*;
-import structures.gameplay.NoteVB.VirtualNote;
-import structures.gameplay.NoteVB.VirtualSustain;
 
 // and now the option structures
 import structures.options.*;

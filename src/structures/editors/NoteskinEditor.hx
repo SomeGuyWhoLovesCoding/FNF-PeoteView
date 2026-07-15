@@ -6,6 +6,7 @@ package structures.editors;
 
 // Standard library
 import haxe.Json;
+import StringTools;
 import sys.io.File as Sys_Fili;
 import sys.FileSystem;
 
@@ -26,6 +27,8 @@ import structures.gameplay.NoteskinHandle.BasicNoteskinClip;
 import structures.gameplay.NoteskinHandle.NoteskinConfig;
 import structures.gameplay.NoteskinHandle.NoteskinData;
 import structures.gameplay.NoteskinHandle.NoteskinReceptorProperties;
+import structures.gameplay.NoteskinHandle.TextureRotation;
+import elements.Sustain;
 
 // ============================================================================
 // Enums
@@ -36,6 +39,8 @@ private enum abstract EditState(Int) from Int to Int {
     var COLOR;
     var PRESS;
     var CONFIRM;
+    var HOLD_BODY;
+    var HOLD_TAIL;
 }
 
 private enum abstract EditMode(Int) from Int to Int {
@@ -74,17 +79,34 @@ private class NoteskinEditorClipEditor {
 
     function getBasicClipForState(clip:NoteskinReceptorProperties, editState:EditState):BasicNoteskinClip {
         return switch(editState) {
-            case IDLE:    clip.idle;
-            case COLOR:   clip.color;
-            case PRESS:   clip.press;
-            case CONFIRM: clip.confirm;
-            default:      clip.idle;
+            case IDLE:      clip.idle;
+            case COLOR:     clip.color;
+            case PRESS:     clip.press;
+            case CONFIRM:   clip.confirm;
+            case HOLD_BODY: clip.holdBody;
+            case HOLD_TAIL: clip.holdTail;
+            default:        clip.idle;
         }
     }
 
+    /** Get the indexes array for a given edit state. */
+    function getIndexesForState(editState:EditState):Array<Int> {
+        var cfg = state.currentConfig;
+        return switch(editState) {
+            case IDLE:      cfg.idleIndexes;
+            case COLOR:     cfg.colorIndexes;
+            case PRESS:     cfg.pressIndexes;
+            case CONFIRM:   cfg.confirmIndexes;
+            case HOLD_BODY: cfg.holdBodyIndexes;
+            case HOLD_TAIL: cfg.holdTailIndexes;
+            default:        cfg.idleIndexes;
+        };
+    }
+
     function getClipIndexForReceptor(index:Int):Int {
-        if (state.currentConfig.indexes != null && index < state.currentConfig.indexes.length) {
-            return state.currentConfig.indexes[index];
+        var idxArr = getIndexesForState(state.currentState);
+        if (idxArr != null && index < idxArr.length) {
+            return idxArr[index];
         }
         return index;
     }
@@ -102,10 +124,12 @@ private class NoteskinEditorClipEditor {
         if (clips != null && index < clips.length) {
             var currentClip = clips[index];
             switch(editState) {
-                case IDLE:    currentClip.idle = clip;
-                case COLOR:   currentClip.color = clip;
-                case PRESS:   currentClip.press = clip;
-                case CONFIRM: currentClip.confirm = clip;
+                case IDLE:      currentClip.idle = clip;
+                case COLOR:     currentClip.color = clip;
+                case PRESS:     currentClip.press = clip;
+                case CONFIRM:   currentClip.confirm = clip;
+                case HOLD_BODY: currentClip.holdBody = clip;
+                case HOLD_TAIL: currentClip.holdTail = clip;
                 default:
             }
         }
@@ -120,10 +144,12 @@ private class NoteskinEditorClipEditor {
             case "offsX": return clip.offsX;
             case "offsY": return clip.offsY;
             case "clipIndex":
-                if (state.currentConfig.indexes != null && state.selectedIndex < state.currentConfig.indexes.length) {
-                    return state.currentConfig.indexes[state.selectedIndex];
+                var idxArr = getIndexesForState(state.currentState);
+                if (idxArr != null && state.selectedIndex < idxArr.length) {
+                    return idxArr[state.selectedIndex];
                 }
                 return state.selectedIndex;
+            case "rotation": return clip.rotation.toDegrees();
             default: return 0;
         }
     }
@@ -153,23 +179,33 @@ private class NoteskinEditorClipEditor {
             case "offsY": basicClip.offsY += amount;
             case "clipIndex":
                 isClipIndexProperty = true;
-                if (state.currentConfig.indexes == null) {
-                    state.currentConfig.indexes = [];
+                var idxArr = getIndexesForState(state.currentState);
+                if (idxArr == null) {
+                    idxArr = [];
+                    switch(state.currentState) {
+                        case IDLE:      state.currentConfig.idleIndexes = idxArr;
+                        case COLOR:     state.currentConfig.colorIndexes = idxArr;
+                        case PRESS:     state.currentConfig.pressIndexes = idxArr;
+                        case CONFIRM:   state.currentConfig.confirmIndexes = idxArr;
+                        case HOLD_BODY: state.currentConfig.holdBodyIndexes = idxArr;
+                        case HOLD_TAIL: state.currentConfig.holdTailIndexes = idxArr;
+                        default:        state.currentConfig.idleIndexes = idxArr;
+                    }
                 }
-                while (state.currentConfig.indexes.length <= state.selectedIndex) {
-                    state.currentConfig.indexes.push(state.currentConfig.indexes.length);
+                while (idxArr.length <= state.selectedIndex) {
+                    idxArr.push(idxArr.length);
                 }
-                if (state.currentConfig.indexes[state.selectedIndex] + amount >= MAX_KEYS) {
-                    state.currentConfig.indexes[state.selectedIndex] = MAX_KEYS - 1;
+                if (idxArr[state.selectedIndex] + amount >= MAX_KEYS) {
+                    idxArr[state.selectedIndex] = MAX_KEYS - 1;
                     trace('CLIPINDEX: Max indexes reached. (attempted $MAX_KEYS+1)');
                     return;
                 }
-                state.currentConfig.indexes[state.selectedIndex] += amount;
-                if (state.currentConfig.indexes[state.selectedIndex] < 0) {
-                    state.currentConfig.indexes[state.selectedIndex] = 0;
+                idxArr[state.selectedIndex] += amount;
+                if (idxArr[state.selectedIndex] < 0) {
+                    idxArr[state.selectedIndex] = 0;
                 }
                 // Auto-create new clips if the index exceeds the current clip count.
-                while (state.noteskinData.clip.length <= state.currentConfig.indexes[state.selectedIndex]
+                while (state.noteskinData.clip.length <= idxArr[state.selectedIndex]
                        && state.noteskinData.clip.length < MAX_KEYS) {
                     state.noteskinData.clip.push(defaultClip());
                     trace('Created new clip at index ${state.noteskinData.clip.length - 1}');
@@ -177,8 +213,17 @@ private class NoteskinEditorClipEditor {
                 // Update maxReceptors if we're in preview mode.
                 if (state.currentManiaIndex == state.availableManiaConfigs.length) {
                     state.maxReceptors = state.noteskinData.clip.length;
-                    state.currentConfig.indexes = [for (i in 0...state.noteskinData.clip.length) i];
+                    var fillIdx = [for (i in 0...state.noteskinData.clip.length) i];
+                    state.currentConfig.idleIndexes = fillIdx.copy();
+                    state.currentConfig.pressIndexes = fillIdx.copy();
+                    state.currentConfig.colorIndexes = fillIdx.copy();
+                    state.currentConfig.confirmIndexes = fillIdx.copy();
+                    state.currentConfig.holdBodyIndexes = fillIdx.copy();
+                    state.currentConfig.holdTailIndexes = fillIdx.copy();
                 }
+            case "rotation":
+                if (amount > 0) basicClip.rotation = basicClip.rotation.next();
+                else if (amount < 0) basicClip.rotation = basicClip.rotation.prev();
             default: state.selectedProperty = "clipX";
         }
 
@@ -279,19 +324,21 @@ private class NoteskinEditorClipEditor {
             return;
         }
         var newState:Int = state.currentState + increment;
-        if (newState < 0) newState = 3;
-        if (newState >= 4) newState = 0;
+        if (newState < 0) newState = 5;
+        if (newState >= 6) newState = 0;
         state.renderer.updateReceptorState(newState);
         trace('State changed to: ${getStateName(state.currentState)}');
     }
 
     function getStateName(editState:EditState):String {
         return switch(editState) {
-            case IDLE:    "IDLE";
-            case COLOR:   "COLOR";
-            case PRESS:   "PRESS";
-            case CONFIRM: "CONFIRM";
-            default:      "unknown";
+            case IDLE:      "IDLE";
+            case COLOR:     "COLOR";
+            case PRESS:     "PRESS";
+            case CONFIRM:   "CONFIRM";
+            case HOLD_BODY: "HOLD_BODY";
+            case HOLD_TAIL: "HOLD_TAIL";
+            default:        "unknown";
         }
     }
 
@@ -335,37 +382,29 @@ private class NoteskinEditorClipEditor {
         // Bump out of CLIP_ID when entering preview-clips mania — would render garbage data.
         if (state.editMode == CLIP_ID && state.currentManiaIndex >= state.availableManiaConfigs.length) {
             trace('CLIPINDEX: Please back out of preview clip mania first for this mode, that way you don\'t render garbage data.');
-            state.editMode++;
-
-            // Only ever fires CLIP_ID -> GLOBAL_TRANSFORM, so sync the per-mode state
-            // to match what `toggleEditMode` would have done. Without this, calling
-            // `checkInvalidClipIDPlace()` standalone (e.g. right after `switchMania`
-            // from the input handler) leaves `selectedProperty` stale and never
-            // refreshes the on-screen text.
-            if (state.editMode == GLOBAL_TRANSFORM) {
-                state.selectedProperty = "global";
-            }
+            state.editMode = GLOBAL_TRANSFORM;
+            state.selectedProperty = "global";
             state.ui.updateInstructionsText();
         }
     }
 
     function getEditModeName(mode:EditMode):String {
         return switch(mode) {
-            case CLIP_POS:        "Position (clipX/Y)";
-            case CLIP_SIZE:       "Size (clipW/H)";
-            case OFFSET:          "Offset (offsX/Y)";
-            case CLIP_ID:         "Clip Index";
-            case GLOBAL_TRANSFORM:"Thanks for playing";
-            default:              "Unknown";
+            case CLIP_POS:          "Position (clipX/Y)";
+            case CLIP_SIZE:         "Size (clipW/H)";
+            case OFFSET:            "Offset (offsX/Y)";
+            case CLIP_ID:           "Clip Index";
+            case GLOBAL_TRANSFORM:  "Thanks for playing";
+            default:                "Unknown";
         }
     }
 
     function getEditModeColor(mode:EditMode):String {
         return switch(mode) {
-            case CLIP_POS:         "#M6#";
-            case CLIP_SIZE:        "#M4#";
-            case OFFSET:           "#M7#";
-            case CLIP_ID:          "#M8#";
+            case CLIP_POS:          "#M6#";
+            case CLIP_SIZE:         "#M4#";
+            case OFFSET:            "#M7#";
+            case CLIP_ID:           "#M8#";
             default:               "#M5#";
         }
     }
@@ -380,16 +419,43 @@ private class NoteskinEditorClipEditor {
         return getBasicClipForState(clip, state.currentState);
     }
 
+    /** Cycle the rotation of hold body and hold tail clips.
+        direction > 0 = next, direction < 0 = prev.
+        Always targets holdBody + holdTail since the Sustain shader
+        applies a single texRotation to both body and tail sampling. */
+    function rotateCurrentClip(direction:Int) {
+        if (state.spriteSheetMode) return;
+
+        var clipIndex = getClipIndexForReceptor(state.selectedIndex);
+        var clip = getClipForIndex(clipIndex);
+
+        var newRotation:TextureRotation =
+            if (direction > 0) clip.holdBody.rotation.next()
+            else               clip.holdBody.rotation.prev();
+
+        clip.holdBody.rotation = newRotation;
+        clip.holdTail.rotation = newRotation;
+
+        updateClipInConfig(clipIndex, HOLD_BODY, clip.holdBody);
+        updateClipInConfig(clipIndex, HOLD_TAIL, clip.holdTail);
+        state.renderer.updateSustainVisuals();
+        trace('holdBody.rotation = holdTail.rotation = ${newRotation}\u00b0');
+        state.ui.updateInstructionsText();
+    }
+
     /**
         Returns the index of the receptor whose sprite contains the given
         screen coordinates, or -1 if no receptor is hit. Uses the same bounds
         logic as `handleMouseDown` (note.x/y/w/h, no offset).
     **/
     function findReceptorAt(mouseX:Float, mouseY:Float):Int {
+        var scale = state.currentConfig.scale;
         for (i in 0...state.receptorSprites.length) {
             var note = state.receptorSprites[i];
-            if (mouseX >= note.x && mouseX <= note.x + note.w
-                && mouseY >= note.y && mouseY <= note.y + note.h) {
+            var sw = note.w * scale;
+            var sh = note.h * scale;
+            if (mouseX >= note.x && mouseX <= note.x + sw
+                && mouseY >= note.y && mouseY <= note.y + sh) {
                 return i;
             }
         }
@@ -442,26 +508,49 @@ private class NoteskinEditorManiaManager {
                 ? state.noteskinData.configMania.copy()
                 : [];
 
-            // Fall back to a default 4K mania if none exist.
+            // Generate default 1K-4K configs if none exist.
             if (state.availableManiaConfigs.length == 0) {
-                state.availableManiaConfigs.push({
-                    offsetX: 0, offsetY: 0, gap: 112, scale: 1.0, indexes: [0, 1, 2, 3]
-                });
+                for (k in 1...5) {
+                    var idx = [for (j in 0...k) j];
+                    state.availableManiaConfigs.push({
+                        offsetX: 0, offsetY: 0, gap: 112, scale: 1.0,
+                        idleIndexes: idx.copy(), pressIndexes: idx.copy(), colorIndexes: idx.copy(),
+                        confirmIndexes: idx.copy(), holdBodyIndexes: idx.copy(), holdTailIndexes: idx.copy()
+                    });
+                }
             }
 
-            state.currentManiaIndex = 0;
-            state.currentConfig = state.availableManiaConfigs[state.currentManiaIndex];
-
-            updateMaxReceptorsFromConfig();
-
-            // Ensure we have clips for all receptors.
+            // Recreate full 1K-NK mania range and ensure enough clips.
             var clips = state.noteskinData.clip;
-            var numReceptors = clips != null ? clips.length : 0;
-            if (numReceptors < state.maxReceptors) {
-                while (clips.length < state.maxReceptors) {
+            var totalClips = clips != null ? clips.length : 0;
+            var highestManiaKeys = 0;
+            for (cfg in state.availableManiaConfigs) {
+                if (cfg.idleIndexes != null && cfg.idleIndexes.length > highestManiaKeys)
+                    highestManiaKeys = cfg.idleIndexes.length;
+            }
+            var targetKeys = Std.int(Math.max(totalClips, highestManiaKeys));
+            if (targetKeys > 0) {
+                // Clear existing manias and recreate 1K through NK.
+                state.availableManiaConfigs = [];
+                for (k in 1...targetKeys + 1) {
+                    var idx = [for (j in 0...k) j];
+                    state.availableManiaConfigs.push({
+                        offsetX: 0, offsetY: 0, gap: 112, scale: 1.0,
+                        idleIndexes: idx.copy(), pressIndexes: idx.copy(), colorIndexes: idx.copy(),
+                        confirmIndexes: idx.copy(), holdBodyIndexes: idx.copy(), holdTailIndexes: idx.copy()
+                    });
+                }
+                sortManiasByKeyCount();
+                // Ensure clips exist for every index the highest mania references.
+                while (clips.length < targetKeys) {
                     clips.push(NoteskinEditorClipEditor.defaultClip());
                 }
             }
+
+            state.currentManiaIndex = Std.int(Math.max(state.currentManiaIndex, state.availableManiaConfigs.length - 1));
+            state.currentConfig = state.availableManiaConfigs[state.currentManiaIndex];
+
+            updateMaxReceptorsFromConfig();
 
             if (state.selectedIndex >= state.maxReceptors) {
                 state.selectedIndex = state.maxReceptors - 1;
@@ -475,17 +564,20 @@ private class NoteskinEditorManiaManager {
     function createDefaultDataJson(skinFolder:String) {
         try {
             // Default data.json with 4 receptors using actual texture coords from the XML.
+            var idx = [0, 1, 2, 3];
             var defaultData = {
                 name: "default",
                 sparrowImg: "notes.png",
                 configMania: [{
-                    offsetX: 0, offsetY: 0, gap: 112, scale: 1.0, indexes: [0, 1, 2, 3]
+                    offsetX: 0, offsetY: 0, gap: 112, scale: 1.0,
+                    idleIndexes: idx.copy(), pressIndexes: idx.copy(), colorIndexes: idx.copy(),
+                    confirmIndexes: idx.copy(), holdBodyIndexes: idx.copy(), holdTailIndexes: idx.copy()
                 }],
                 clip: [
                     {
                         idle:     {clipX: 3,   clipY: 116, clipW: 109, clipH: 111, offsX: 0, offsY: 0},
                         press:    {clipX: 115, clipY: 229, clipW: 99,  clipH: 100, offsX: 0, offsY: 0},
-                        color:    {clipX: 3,   clipY: 116, clipW: 109, clipH: 111, offsX: 0, offsY: 0},
+                        color:    {clipX: 115, clipY: 116, clipW: 108, clipH: 110, offsX: 0, offsY: 0},
                         confirm:  {clipX: 3,   clipY: 3,   clipW: 240, clipH: 243, offsX: 0, offsY: 0},
                         holdBody: {clipX: 441, clipY: 229, clipW: 35,  clipH: 30,  offsX: 0, offsY: 0},
                         holdTail: {clipX: 460, clipY: 3,   clipW: 35,  clipH: 45,  offsX: 0, offsY: 0}
@@ -493,7 +585,7 @@ private class NoteskinEditorManiaManager {
                     {
                         idle:     {clipX: 346, clipY: 3,   clipW: 111, clipH: 109, offsX: 0, offsY: 0},
                         press:    {clipX: 3,   clipY: 230, clipW: 99,  clipH: 98,  offsX: 0, offsY: 0},
-                        color:    {clipX: 346, clipY: 3,   clipW: 111, clipH: 109, offsX: 0, offsY: 0},
+                        color:    {clipX: 3,   clipY: 3,   clipW: 112, clipH: 110, offsX: 0, offsY: 0},
                         confirm:  {clipX: 246, clipY: 3,   clipW: 189, clipH: 189, offsX: 0, offsY: 0},
                         holdBody: {clipX: 441, clipY: 262, clipW: 35,  clipH: 30,  offsX: 0, offsY: 0},
                         holdTail: {clipX: 460, clipY: 51,  clipW: 35,  clipH: 45,  offsX: 0, offsY: 0}
@@ -501,7 +593,7 @@ private class NoteskinEditorManiaManager {
                     {
                         idle:     {clipX: 233, clipY: 3,   clipW: 110, clipH: 111, offsX: 0, offsY: 0},
                         press:    {clipX: 217, clipY: 230, clipW: 97,  clipH: 99,  offsX: 0, offsY: 0},
-                        color:    {clipX: 233, clipY: 3,   clipW: 110, clipH: 111, offsX: 0, offsY: 0},
+                        color:    {clipX: 226, clipY: 117, clipW: 108, clipH: 110, offsX: 0, offsY: 0},
                         confirm:  {clipX: 197, clipY: 249, clipW: 193, clipH: 189, offsX: 0, offsY: 0},
                         holdBody: {clipX: 441, clipY: 295, clipW: 35,  clipH: 30,  offsX: 0, offsY: 0},
                         holdTail: {clipX: 460, clipY: 147, clipW: 35,  clipH: 45,  offsX: 0, offsY: 0}
@@ -509,7 +601,7 @@ private class NoteskinEditorManiaManager {
                     {
                         idle:     {clipX: 346, clipY: 115, clipW: 111, clipH: 109, offsX: 0, offsY: 0},
                         press:    {clipX: 337, clipY: 227, clipW: 101, clipH: 99,  offsX: 0, offsY: 0},
-                        color:    {clipX: 346, clipY: 115, clipW: 111, clipH: 109, offsX: 0, offsY: 0},
+                        color:    {clipX: 118, clipY: 3,   clipW: 112, clipH: 110, offsX: 0, offsY: 0},
                         confirm:  {clipX: 3,   clipY: 249, clipW: 191, clipH: 192, offsX: 0, offsY: 0},
                         holdBody: {clipX: 460, clipY: 195, clipW: 35,  clipH: 31,  offsX: 0, offsY: 0},
                         holdTail: {clipX: 460, clipY: 99,  clipW: 35,  clipH: 45,  offsX: 0, offsY: 0}
@@ -527,25 +619,40 @@ private class NoteskinEditorManiaManager {
     }
 
     function updateMaxReceptorsFromConfig() {
-        if (state.currentConfig.indexes != null) {
-            state.maxReceptors = state.currentConfig.indexes.length;
-            if (state.maxReceptors < 1) {
-                state.maxReceptors = 1;
-                state.currentConfig.indexes = [0];
-            }
+        var idxArr = state.currentConfig.idleIndexes;
+        if (idxArr != null && idxArr.length > 0) {
+            state.maxReceptors = idxArr.length;
         } else {
             state.maxReceptors = 4;
-            state.currentConfig.indexes = [0, 1, 2, 3];
         }
     }
 
     function generateManiaFromClips():NoteskinConfig {
         // Preview mania — one index per clip.
         var clipCount = state.noteskinData.clip != null ? state.noteskinData.clip.length : 0;
-        var indexes:Array<Int> = [for (i in 0...clipCount) i];
+        var idx = [for (i in 0...clipCount) i];
         return {
-            offsetX: 0, offsetY: 0, gap: 114, scale: 1.0, indexes: indexes
+            offsetX: 0, offsetY: 0, gap: 114, scale: 1.0,
+            idleIndexes: idx, pressIndexes: idx.copy(), colorIndexes: idx.copy(),
+            confirmIndexes: idx.copy(), holdBodyIndexes: idx.copy(), holdTailIndexes: idx.copy()
         };
+    }
+
+    /** Save the current noteskin data back to data.json, overwriting the file. */
+    function saveNoteskin() {
+        try {
+            // Sync the current mania config back into the data.
+            state.noteskinData.configMania = state.availableManiaConfigs;
+
+            var skinFolder = 'assets/images/noteskins/${state.currentSkinName}';
+            var dataPath = Paths.asset('$skinFolder/data.json');
+            var jsonStr = haxe.Json.stringify(state.noteskinData, null, "  ");
+            Sys_Fili.saveContent(dataPath, jsonStr);
+
+            trace('Noteskin saved to $dataPath');
+        } catch (e) {
+            trace('Failed to save noteskin: $e');
+        }
     }
 
     function switchMania(direction:Int) {
@@ -605,16 +712,19 @@ private class NoteskinEditorManiaManager {
     }
 
     function createDefaultNoteskin() {
+        var idx = [0, 1, 2, 3];
         state.noteskinData = {
             name: "default",
             sparrowImg: "notes.png",
             configMania: [{
-                offsetX: 0, offsetY: 0, gap: 112, scale: 1.0, indexes: [0, 1, 2, 3]
+                offsetX: 0, offsetY: 0, gap: 112, scale: 1.0,
+                idleIndexes: idx.copy(), pressIndexes: idx.copy(), colorIndexes: idx.copy(),
+                confirmIndexes: idx.copy(), holdBodyIndexes: idx.copy(), holdTailIndexes: idx.copy()
             }],
             clip: []
         };
         state.availableManiaConfigs = state.noteskinData.configMania.copy();
-        state.currentManiaIndex = 0;
+        state.currentManiaIndex = Std.int(Math.max(state.currentManiaIndex, state.availableManiaConfigs.length - 1));
         state.currentConfig = state.availableManiaConfigs[state.currentManiaIndex];
         updateMaxReceptorsFromConfig();
 
@@ -632,15 +742,17 @@ private class NoteskinEditorManiaManager {
 
         // Reject duplicates.
         for (config in state.availableManiaConfigs) {
-            if (config.indexes != null && config.indexes.length == keyCount) {
+            if (config.idleIndexes != null && config.idleIndexes.length == keyCount) {
                 state.createManiaError = 'Mania with $keyCount keys already exists!';
                 return;
             }
         }
 
-        var indexes:Array<Int> = [for (i in 0...keyCount) i];
+        var idx = [for (i in 0...keyCount) i];
         var newMania:NoteskinConfig = {
-            offsetX: 0, offsetY: 0, gap: 112, scale: 1.0, indexes: indexes
+            offsetX: 0, offsetY: 0, gap: 112, scale: 1.0,
+            idleIndexes: idx.copy(), pressIndexes: idx.copy(), colorIndexes: idx.copy(),
+            confirmIndexes: idx.copy(), holdBodyIndexes: idx.copy(), holdTailIndexes: idx.copy()
         };
 
         state.availableManiaConfigs.push(newMania);
@@ -683,8 +795,8 @@ private class NoteskinEditorManiaManager {
         // Track which key counts already exist.
         var existingKeyCounts:Array<Int> = [];
         for (config in state.availableManiaConfigs) {
-            if (config.indexes != null) {
-                existingKeyCounts.push(config.indexes.length);
+            if (config.idleIndexes != null) {
+                existingKeyCounts.push(config.idleIndexes.length);
             }
         }
 
@@ -692,9 +804,11 @@ private class NoteskinEditorManiaManager {
         for (i in 1...maxKeys) {
             if (existingKeyCounts.indexOf(i) != -1) continue;
 
-            var indexes:Array<Int> = [for (j in 0...i) j];
+            var idx = [for (j in 0...i) j];
             state.availableManiaConfigs.push({
-                offsetX: 0, offsetY: 0, gap: 112, scale: 1.0, indexes: indexes
+                offsetX: 0, offsetY: 0, gap: 112, scale: 1.0,
+                idleIndexes: idx.copy(), pressIndexes: idx.copy(), colorIndexes: idx.copy(),
+                confirmIndexes: idx.copy(), holdBodyIndexes: idx.copy(), holdTailIndexes: idx.copy()
             });
             trace('Auto-created mania with $i keys');
         }
@@ -720,8 +834,8 @@ private class NoteskinEditorManiaManager {
         var uniqueManias:Array<NoteskinConfig> = [];
 
         for (config in state.availableManiaConfigs) {
-            if (config.indexes != null) {
-                var keyCount = config.indexes.length;
+            if (config.idleIndexes != null) {
+                var keyCount = config.idleIndexes.length;
                 if (seenKeyCounts.indexOf(keyCount) == -1) {
                     seenKeyCounts.push(keyCount);
                     uniqueManias.push(config);
@@ -731,8 +845,8 @@ private class NoteskinEditorManiaManager {
 
         state.availableManiaConfigs = uniqueManias;
         state.availableManiaConfigs.sort(function(a:NoteskinConfig, b:NoteskinConfig) {
-            var lenA = a.indexes != null ? a.indexes.length : 0;
-            var lenB = b.indexes != null ? b.indexes.length : 0;
+            var lenA = a.idleIndexes != null ? a.idleIndexes.length : 0;
+            var lenB = b.idleIndexes != null ? b.idleIndexes.length : 0;
             return lenA - lenB;
         });
     }
@@ -748,7 +862,503 @@ private class NoteskinEditorManiaManager {
         state.ui.updateInstructionsText();
         trace('Gap adjusted to: ${state.currentConfig.gap}');
     }
+
+    /** Import clip data from a vanilla FNF-style Sparrow/Starling texture atlas XML.
+
+        Naming convention (case-insensitive, only first frame kept):
+          - `arrow{DIR}0000`              -> idle       (e.g. "arrowLEFT0000")
+          - `{DIR} press0000`             -> press      (e.g. "left press0000")
+          - `{DIR} confirm0000`           -> confirm    (e.g. "left confirm0000")
+          - `{COLOR}0000`                 -> color      (e.g. "purple0000")
+          - `{COLOR} hold piece0000`      -> holdBody   (e.g. "purple hold piece0000")
+          - `{COLOR} hold end0000`        -> holdTail   (e.g. "purple hold end0000")
+          - `{COLOR} end hold0000`        -> holdTail   (typo variant)
+
+        Directions assigned receptors in FNF standard order: left, down, up, right.
+        Colors map to directions via vanilla FNF mapping:
+          purple -> left, blue -> down, green -> up, red -> right.
+    **/
+
+    /** Returns true if every term in `terms` is found (case-insensitive) in `haystack`, regardless of order. */
+    static function allTermsPresent(haystack:String, terms:Array<String>):Bool {
+        var lower = haystack.toLowerCase();
+        for (t in terms) {
+            if (lower.indexOf(t.toLowerCase()) == -1)
+                return false;
+        }
+        return true;
+    }
+
+    function importFromAtlas() {
+        var skinFolder = 'assets/images/noteskins/${state.currentSkinName}';
+        var pngName = state.noteskinData.sparrowImg;
+        var dotIdx = pngName.lastIndexOf(".");
+        var prefix = dotIdx > 0 ? pngName.substring(0, dotIdx) : pngName;
+        var xmlPath = Paths.asset('$skinFolder/$prefix.xml');
+
+        if (!FileSystem.exists(xmlPath)) {
+            trace('Atlas XML not found: $xmlPath');
+            return;
+        }
+
+        try {
+            var xmlContent = Sys_Fili.getContent(xmlPath);
+            var xml = Xml.parse(xmlContent);
+            var root = xml.firstElement();
+            if (root == null) {
+                trace('Atlas XML has no root element');
+                return;
+            }
+
+            // Vanilla FNF direction order (left, down, up, right).
+            var vanillaDirOrder = ["left", "down", "up", "right"];
+
+            // Vanilla FNF color -> direction mapping.
+            var colorToDir = new Map<String, String>();
+            colorToDir.set("purple", "left");
+            colorToDir.set("blue", "down");
+            colorToDir.set("green", "up");
+            colorToDir.set("red", "right");
+
+            var knownColors = ["purple", "blue", "green", "red", "yellow", "pink", "orange", "cyan", "white"];
+            var knownDirs = ["left", "down", "up", "right"];
+
+            // --- Pass 1: classify every SubTexture, only keep first frame ---
+
+            var entries:Array<{group:String, clipType:String, x:Int, y:Int, w:Int, h:Int, offsX:Int, offsY:Int}> = [];
+            var seenKeys = new Map<String, Bool>();
+
+            for (elem in root.elements()) {
+                if (elem.nodeName != "SubTexture") continue;
+
+                var name = elem.get("name");
+                if (name == null) continue;
+
+                var sx = Std.parseInt(elem.get("x"));
+                var sy = Std.parseInt(elem.get("y"));
+                var sw = Std.parseInt(elem.get("width"));
+                var sh = Std.parseInt(elem.get("height"));
+                if (sx == null || sy == null || sw == null || sh == null) continue;
+
+                var sox = Std.parseInt(elem.get("frameX"));
+                var soy = Std.parseInt(elem.get("frameY"));
+                var ox = sox != null ? sox : 0;
+                var oy = soy != null ? soy : 0;
+
+                var nameLower = name.toLowerCase();
+
+                // Trim last 4 characters (Sparrow frame number, e.g. "0000").
+                var trimmed = nameLower;
+                if (trimmed.length > 4) trimmed = trimmed.substring(0, trimmed.length - 4);
+                if (trimmed.length > 0 && trimmed.charAt(trimmed.length - 1) == " ")
+                    trimmed = trimmed.substring(0, trimmed.length - 1);
+                if (trimmed.length == 0) continue;
+
+                // --- Clip type detection (vanilla FNF format) ---
+
+                var clipType:String = null;
+                var groupKeyword:String = null;
+
+                // "arrow{DIR}" camelCase or "arrow {DIR}" -> idle
+                if (StringTools.startsWith(trimmed, "arrow")) {
+                    var dirPart = trimmed.substring(5);
+                    if (StringTools.startsWith(dirPart, " ")) dirPart = dirPart.substring(1);
+                    for (d in knownDirs) {
+                        if (dirPart == d) {
+                            clipType = "idle";
+                            groupKeyword = d;
+                            break;
+                        }
+                    }
+                }
+
+                if (clipType == null) {
+                    // "{DIR} confirm" -> confirm
+                    for (d in knownDirs) {
+                        if (allTermsPresent(trimmed, [d, "confirm"])) {
+                            clipType = "confirm";
+                            groupKeyword = d;
+                            break;
+                        }
+                    }
+                }
+
+                if (clipType == null) {
+                    // "{DIR} press" -> press
+                    for (d in knownDirs) {
+                        if (allTermsPresent(trimmed, [d, "press"])) {
+                            clipType = "press";
+                            groupKeyword = d;
+                            break;
+                        }
+                    }
+                }
+
+                if (clipType == null) {
+                    // Color-based entries
+                    var foundColor:String = null;
+                    for (c in knownColors) {
+                        if (trimmed.indexOf(c) != -1) { foundColor = c; break; }
+                    }
+                    if (foundColor == null && trimmed.indexOf("pruple") != -1) foundColor = "pruple";
+
+                    if (foundColor != null) {
+                        if (allTermsPresent(trimmed, ["hold", "piece"])) {
+                            clipType = "holdBody";
+                            groupKeyword = foundColor;
+                        } else if (allTermsPresent(trimmed, ["hold", "end"]) || allTermsPresent(trimmed, ["end", "hold"])) {
+                            clipType = "holdTail";
+                            groupKeyword = foundColor;
+                        } else if (trimmed == foundColor) {
+                            clipType = "color";
+                            groupKeyword = foundColor;
+                        }
+                    }
+                }
+
+                if (clipType == null || groupKeyword == null) continue;
+
+                // Normalize typo "pruple" -> "purple"
+                if (groupKeyword == "pruple") groupKeyword = "purple";
+
+                // Dedup: only keep first frame per (group, clipType).
+                var dedupKey = groupKeyword + ":" + clipType;
+                if (seenKeys.exists(dedupKey)) continue;
+                seenKeys.set(dedupKey, true);
+
+                entries.push({group: groupKeyword, clipType: clipType, x: sx, y: sy, w: sw, h: sh, offsX: ox, offsY: oy});
+            }
+
+            if (entries.length == 0) {
+                trace('No valid SubTexture entries found in $xmlPath');
+                return;
+            }
+
+            // --- Pass 2: determine receptors, map groups, assign clips ---
+
+            // Collect direction groups in vanilla order.
+            var dirGroupsFound:Array<String> = [];
+            for (d in vanillaDirOrder) {
+                for (e in entries) {
+                    if (e.group == d) { dirGroupsFound.push(d); break; }
+                }
+            }
+
+            // Collect color groups in known order.
+            var colorGroupsFound:Array<String> = [];
+            for (c in knownColors) {
+                for (e in entries) {
+                    if (e.group == c) { colorGroupsFound.push(c); break; }
+                }
+            }
+
+            // Use direction groups as receptors (standard vanilla order).
+            var receptorNames = dirGroupsFound.length > 0 ? dirGroupsFound : colorGroupsFound;
+
+            var keyCount = receptorNames.length;
+            if (keyCount == 0) {
+                trace('No receptor groups found in $xmlPath');
+                return;
+            }
+
+            // Clear ALL existing clips and create exactly keyCount new ones.
+            state.noteskinData.clip = [];
+            var clips = state.noteskinData.clip;
+            for (i in 0...keyCount) {
+                clips.push(NoteskinEditorClipEditor.defaultClip());
+            }
+
+            // Build group -> receptor index map.
+            var groupToReceptor = new Map<String, Int>();
+            for (i in 0...receptorNames.length)
+                groupToReceptor.set(receptorNames[i], i);
+
+            // Map color groups to receptors via vanilla color->direction mapping.
+            var colorToReceptor = new Map<String, Int>();
+            for (c in colorGroupsFound) {
+                var targetDir = colorToDir.get(c);
+                if (targetDir != null) {
+                    var ri = groupToReceptor.get(targetDir);
+                    if (ri != null) colorToReceptor.set(c, ri);
+                }
+            }
+
+            // Assign entries into clip slots.
+            for (entry in entries) {
+                var receptorIndex = groupToReceptor.get(entry.group);
+                if (receptorIndex == null)
+                    receptorIndex = colorToReceptor.get(entry.group);
+                if (receptorIndex == null) continue;
+
+                var clipData:BasicNoteskinClip = {
+                    clipX: entry.x, clipY: entry.y,
+                    clipW: entry.w, clipH: entry.h,
+                    offsX: entry.offsX, offsY: entry.offsY,
+                    rotation: TextureRotation.POS0
+                };
+
+                var clip = clips[receptorIndex];
+                switch (entry.clipType) {
+                    case "idle":     clip.idle = clipData;
+                    case "press":    clip.press = clipData;
+                    case "confirm":  clip.confirm = clipData;
+                    case "color":    clip.color = clipData;
+                    case "holdBody": clip.holdBody = clipData;
+                    case "holdTail": clip.holdTail = clipData;
+                    default:
+                }
+
+                trace('Imported: ${entry.group} ${entry.clipType} [receptor $receptorIndex] (${entry.x}, ${entry.y}, ${entry.w}, ${entry.h}) offs(${entry.offsX}, ${entry.offsY})');
+            }
+
+            // Ensure a mania config exists for this key count.
+            var configs = state.noteskinData.configMania;
+            var foundConfig:NoteskinConfig = null;
+            for (cfg in configs) {
+                if (cfg.idleIndexes != null && cfg.idleIndexes.length == keyCount) {
+                    foundConfig = cfg;
+                    break;
+                }
+            }
+            if (foundConfig == null) {
+                var idx = [for (i in 0...keyCount) i];
+                foundConfig = {
+                    offsetX: 0, offsetY: 0, gap: 112, scale: 1.0,
+                    idleIndexes: idx.copy(), pressIndexes: idx.copy(), colorIndexes: idx.copy(),
+                    confirmIndexes: idx.copy(), holdBodyIndexes: idx.copy(), holdTailIndexes: idx.copy()
+                };
+                configs.push(foundConfig);
+                trace('Created new mania config for $keyCount keys');
+            }
+
+            // Update state to use the new config.
+            state.availableManiaConfigs = configs.copy();
+            state.currentManiaIndex = configs.indexOf(foundConfig);
+            state.currentConfig = foundConfig;
+            updateMaxReceptorsFromConfig();
+
+            if (state.selectedIndex >= state.maxReceptors) {
+                state.selectedIndex = state.maxReceptors - 1;
+            }
+
+            // Refresh everything.
+            state.renderer.createReceptors();
+            state.renderer.createSustains();
+            state.renderer.updateReceptorVisuals();
+            if (state.showSustainPreview) state.renderer.updateSustainVisuals();
+            state.ui.updateInstructionsText();
+
+            trace('Vanilla import complete: ${entries.length} entries, $keyCount receptors (${receptorNames.join(", ")}) from $xmlPath');
+            if (dirGroupsFound.length > 0) {
+                trace('Direction groups: ${dirGroupsFound.join(", ")}');
+                if (colorGroupsFound.length > 0) trace('Color groups: ${colorGroupsFound.join(", ")}');
+            } else {
+                trace('Groups: ${receptorNames.join(", ")}');
+            }
+        } catch (e) {
+            trace('Failed to import vanilla atlas: $e');
+        }
+    }
+
+    /** Import clip data from an 18K+ letter-based Sparrow/Starling atlas XML.
+
+        Naming convention (case-insensitive):
+          - `{L}0000`              -> idle        (e.g. "A0000")
+          - `{L} press0000`       -> press       (e.g. "A press0000")
+          - `{L} confirm0000`     -> confirm     (e.g. "A confirm0000")
+          - `{L} hold0000`        -> holdBody    (e.g. "A hold0000")
+          - `{L} tail0000`        -> holdTail    (e.g. "A tail0000")
+
+        `{L}` is a single uppercase letter (A-Z).  Each unique letter
+        becomes one receptor, sorted alphabetically (A=0, B=1, ...).
+        Animation frames beyond 0000 are skipped (first frame kept).
+        Entries whose group is not a single letter (arrow*, kill, live, etc.)
+        are ignored.
+    **/
+    function importFromAtlas18K() {
+        var skinFolder = 'assets/images/noteskins/${state.currentSkinName}';
+        var pngName = state.noteskinData.sparrowImg;
+        var dotIdx = pngName.lastIndexOf(".");
+        var prefix = dotIdx > 0 ? pngName.substring(0, dotIdx) : pngName;
+        var xmlPath = Paths.asset('$skinFolder/$prefix.xml');
+
+        if (!FileSystem.exists(xmlPath)) {
+            trace('Atlas XML not found: $xmlPath');
+            return;
+        }
+
+        try {
+            var xmlContent = Sys_Fili.getContent(xmlPath);
+            var xml = Xml.parse(xmlContent);
+            var root = xml.firstElement();
+            if (root == null) {
+                trace('Atlas XML has no root element');
+                return;
+            }
+
+            // --- Pass 1: classify every SubTexture into (group, clipType) ---
+
+            var entries:Array<{group:String, clipType:String, x:Int, y:Int, w:Int, h:Int, offsX:Int, offsY:Int}> = [];
+            var seen = new Map<String, Bool>();
+
+            for (elem in root.elements()) {
+                if (elem.nodeName != "SubTexture") continue;
+
+                var name = elem.get("name");
+                if (name == null) continue;
+
+                var sx = Std.parseInt(elem.get("x"));
+                var sy = Std.parseInt(elem.get("y"));
+                var sw = Std.parseInt(elem.get("width"));
+                var sh = Std.parseInt(elem.get("height"));
+                if (sx == null || sy == null || sw == null || sh == null) continue;
+
+                // Sparrow trimmed-frame offsets (frameX/frameY)
+                var sox = Std.parseInt(elem.get("frameX"));
+                var soy = Std.parseInt(elem.get("frameY"));
+                var ox = sox != null ? sox : 0;
+                var oy = soy != null ? soy : 0;
+
+                var nameLower = name.toLowerCase();
+
+                // Trim last 4 characters (Sparrow frame number, e.g. "0000").
+                var trimmed = nameLower;
+                if (trimmed.length > 4) trimmed = trimmed.substring(0, trimmed.length - 4);
+                // Strip trailing space left after digit removal.
+                if (trimmed.length > 0 && trimmed.charAt(trimmed.length - 1) == " ")
+                    trimmed = trimmed.substring(0, trimmed.length - 1);
+                if (trimmed.length == 0) continue;
+
+                // Group: first character must be a single letter a-z.
+                // Reject multi-word names where the first word is longer than 1 char
+                // (e.g. "arrowcircle", "kill", "live").
+                var firstChar = trimmed.charAt(0);
+                if (firstChar < 'a' || firstChar > 'z') continue;
+
+                var sp = trimmed.indexOf(" ");
+                if (sp == -1 && trimmed.length > 1) continue;  // no space, >1 char = skip
+                if (sp != -1 && sp != 1) continue;              // first word >1 char = skip
+
+                var group = firstChar;
+
+                // Determine clip type from the keyword after the group letter.
+                var rest = (sp != -1) ? trimmed.substring(sp + 1) : "";
+                var clipType:String;
+                if (rest == "confirm")       clipType = "confirm";
+                else if (rest == "hold")    clipType = "holdBody";
+                else if (rest == "press")   clipType = "press";
+                else if (rest == "tail")    clipType = "holdTail";
+                else                        clipType = "idle";
+
+                // Deduplicate: only keep first occurrence (frame 0000).
+                var dedupeKey = group + ":" + clipType;
+                if (seen.exists(dedupeKey)) continue;
+                seen.set(dedupeKey, true);
+
+                entries.push({group: group, clipType: clipType, x: sx, y: sy, w: sw, h: sh, offsX: ox, offsY: oy});
+            }
+
+            if (entries.length == 0) {
+                trace('No valid SubTexture entries found in $xmlPath');
+                return;
+            }
+
+            // --- Pass 2: clear ALL clips, determine receptors, create only what's needed ---
+
+            // Collect unique groups, sorted alphabetically (A=0, B=1, ...).
+            var groupSet = new Map<String, Bool>();
+            for (e in entries) groupSet.set(e.group, true);
+            var receptorNames = [for (g in groupSet.keys()) g];
+            receptorNames.sort(function(a:String, b:String):Int {
+                if (a < b) return -1;
+                if (a > b) return 1;
+                return 0;
+            });
+
+            var keyCount = receptorNames.length;
+
+            // --- Clear ALL existing clips and create exactly keyCount new ones ---
+            state.noteskinData.clip = [];
+            var clips = state.noteskinData.clip;
+            for (i in 0...keyCount) {
+                clips.push(NoteskinEditorClipEditor.defaultClip());
+            }
+
+            // Build group -> receptor index map.
+            var groupToReceptor = new Map<String, Int>();
+            for (i in 0...receptorNames.length)
+                groupToReceptor.set(receptorNames[i], i);
+
+            // Assign entries into clip slots.
+            for (entry in entries) {
+                var receptorIndex = groupToReceptor.get(entry.group);
+                if (receptorIndex == null) continue;
+
+                var clipData:BasicNoteskinClip = {
+                    clipX: entry.x, clipY: entry.y,
+                    clipW: entry.w, clipH: entry.h,
+                    offsX: entry.offsX, offsY: entry.offsY,
+                    rotation: TextureRotation.POS0
+                };
+
+                var clip = clips[receptorIndex];
+                switch (entry.clipType) {
+                    case "idle":     clip.idle = clipData;
+                    case "press":    clip.press = clipData;
+                    case "confirm":  clip.confirm = clipData;
+                    case "color":    clip.color = clipData;
+                    case "holdBody": clip.holdBody = clipData;
+                    case "holdTail": clip.holdTail = clipData;
+                    default:
+                }
+
+                trace('Imported: ${entry.group} ${entry.clipType} [receptor $receptorIndex] (${entry.x}, ${entry.y}, ${entry.w}, ${entry.h}) offs(${entry.offsX}, ${entry.offsY})');
+            }
+
+            // --- Ensure a mania config exists for this key count ---
+            var configs = state.noteskinData.configMania;
+            var foundConfig:NoteskinConfig = null;
+            for (cfg in configs) {
+                if (cfg.idleIndexes != null && cfg.idleIndexes.length == keyCount) {
+                    foundConfig = cfg;
+                    break;
+                }
+            }
+            if (foundConfig == null) {
+                var idx = [for (i in 0...keyCount) i];
+                foundConfig = {
+                    offsetX: 0, offsetY: 0, gap: 112, scale: 1.0,
+                    idleIndexes: idx.copy(), pressIndexes: idx.copy(), colorIndexes: idx.copy(),
+                    confirmIndexes: idx.copy(), holdBodyIndexes: idx.copy(), holdTailIndexes: idx.copy()
+                };
+                configs.push(foundConfig);
+                trace('Created new mania config for $keyCount keys');
+            }
+
+            // Update state to use the new config.
+            state.availableManiaConfigs = configs.copy();
+            state.currentManiaIndex = configs.indexOf(foundConfig);
+            state.currentConfig = foundConfig;
+            updateMaxReceptorsFromConfig();
+
+            if (state.selectedIndex >= state.maxReceptors) {
+                state.selectedIndex = state.maxReceptors - 1;
+            }
+
+            // Refresh everything.
+            state.renderer.createReceptors();
+            state.renderer.createSustains();
+            state.renderer.updateReceptorVisuals();
+            if (state.showSustainPreview) state.renderer.updateSustainVisuals();
+            state.ui.updateInstructionsText();
+
+            trace('Lettered Import complete: ${entries.length} entries, $keyCount receptors (${receptorNames.join(", ")}) from $xmlPath');
+        } catch (e) {
+            trace('Failed to import lettered atlas: $e');
+        }
+    }
 }
+
 
 // ============================================================================
 // Renderer — texture loading, receptor/grid creation, visual updates
@@ -832,6 +1442,69 @@ private class NoteskinEditorRenderer {
         }
 
         state.view.addProgram(state.noteProg);
+
+        // Sustain preview
+        if (state.sustainBuf == null) {
+            state.sustainBuf = new Buffer<Sustain>(16, 16, true);
+        }
+        if (state.sustainProg == null) {
+            state.sustainProg = new CustomProgram(state.sustainBuf);
+            Sustain.init(state.sustainProg, NoteskinEditor.NOTESKIN_TEXTURE_NAME, state.texture);
+        }
+        state.view.addProgram(state.sustainProg);
+    }
+
+    function createImportButton() {
+        var btnH = NoteskinEditor.IMPORT_BUTTON_HEIGHT;
+        var btnY = Main.INITIAL_HEIGHT - btnH - 4;
+
+        // Save noteskin button (dark blue)
+        var btnSaveW = NoteskinEditor.SAVE_BUTTON_WIDTH;
+        var btnSaveX = 4;
+        state.saveButtonBox = new RepeatSprite(btnSaveX, btnY, btnSaveW, btnH);
+        state.saveButtonBox.c = 0x000088FF;
+        state.saveButtonBox.c.aF = 0.85;
+        state.gridBuf.addElement(state.saveButtonBox);
+
+        state.saveButtonText = new Text(
+            "SAVE_NOTESKIN_BTN", btnSaveX + 6, btnY + 9,
+            state.display, "SAVE NOTESKIN", "vcr"
+        );
+        state.saveButtonText.scale = 0.5;
+        state.saveButtonText.alpha = 0; // hidden until editor opens
+        state.saveButtonText.addProgram();
+
+        // Vanilla import button
+        var btn4W = NoteskinEditor.IMPORT_BUTTON_WIDTH;
+        var btn4X = btnSaveX + btnSaveW + 4;
+        state.importButtonBox = new RepeatSprite(btn4X, btnY, btn4W, btnH);
+        state.importButtonBox.c = 0x000000FF;
+        state.importButtonBox.c.aF = 0.75;
+        state.gridBuf.addElement(state.importButtonBox);
+
+        state.importButtonText = new Text(
+            "IMPORT_ATLAS_BTN", btn4X + 6, btnY + 9,
+            state.display, "IMPT. VANILLA XML", "vcr"
+        );
+        state.importButtonText.scale = 0.5;
+        state.importButtonText.alpha = 0; // hidden until editor opens
+        state.importButtonText.addProgram();
+
+        // 18K import button
+        var btn18W = NoteskinEditor.IMPORT_BUTTON_18K_WIDTH;
+        var btn18X = btn4X + btn4W + 4;
+        state.importButton18KBox = new RepeatSprite(btn18X, btnY, btn18W, btnH);
+        state.importButton18KBox.c = 0x000000FF;
+        state.importButton18KBox.c.aF = 0.75;
+        state.gridBuf.addElement(state.importButton18KBox);
+
+        state.importButton18KText = new Text(
+            "IMPORT_ATLAS_18K_BTN", btn18X + 6, btnY + 9,
+            state.display, "IMPT. LETTERED XML", "vcr"
+        );
+        state.importButton18KText.scale = 0.5;
+        state.importButton18KText.alpha = 0; // hidden until editor opens
+        state.importButton18KText.addProgram();
     }
 
     function getCombinedNoteskinTexture():Texture {
@@ -1005,6 +1678,7 @@ private class NoteskinEditorRenderer {
         }
 
         state.noteBuf.update();
+        createSustains();
     }
 
     function applyClipToNote(note:Note, editState:EditState, clip:NoteskinReceptorProperties) {
@@ -1090,8 +1764,111 @@ private class NoteskinEditorRenderer {
         }
 
         state.noteBuf.update();
+        updateSustainVisuals();
         updateGridPosition();
         state.ui.updateInstructionsText();
+    }
+
+    function createSustains() {
+        for (s in state.sustainSprites) {
+            state.sustainBuf.removeElement(s);
+        }
+        state.sustainSprites = [];
+
+        var gap = state.currentConfig.gap != 0 ? state.currentConfig.gap : 112;
+        var offsetX = state.currentConfig.offsetX;
+        var offsetY = state.currentConfig.offsetY;
+        var scale = state.currentConfig.scale;
+
+        for (i in 0...state.maxReceptors) {
+            var pos = getReceptorPosition(i, gap, offsetX, offsetY);
+            // Use per-state indexes: body from holdBodyIndexes, tail from holdTailIndexes.
+            var bodyIdxArr = state.clipEditor.getIndexesForState(HOLD_BODY);
+            var tailIdxArr = state.clipEditor.getIndexesForState(HOLD_TAIL);
+            var bodyClip = state.clipEditor.getClipForIndex(bodyIdxArr[i]);
+            var tailClip = state.clipEditor.getClipForIndex(tailIdxArr[i]);
+
+            // Center sustain to the idle clip's drawn dimensions.
+            var idleIdxArr = state.clipEditor.getIndexesForState(IDLE);
+            var idleClip = state.clipEditor.getClipForIndex(idleIdxArr[i]).idle;
+            var idleDrawnW = idleClip.clipW * scale;
+            var sustainBaseW = 100;
+            var xOffset = Std.int((idleDrawnW - sustainBaseW) / 2);
+
+            var sustain = new Sustain(
+                Std.int(pos.x) + xOffset, Std.int(pos.y),
+                sustainBaseW, 30,
+                -90, 1.0, 1.0, 0
+            );
+
+            sustain.bodyX = bodyClip.holdBody.clipX;
+            sustain.bodyY = bodyClip.holdBody.clipY;
+            sustain.bodyW = bodyClip.holdBody.clipW;
+            sustain.bodyH = bodyClip.holdBody.clipH;
+            sustain.tailX = tailClip.holdTail.clipX;
+            sustain.tailY = tailClip.holdTail.clipY;
+            sustain.tailW = tailClip.holdTail.clipW;
+            sustain.tailH = tailClip.holdTail.clipH;
+
+            sustain.texRotation = bodyClip.holdBody.rotation.toDegrees();
+
+            sustain.c.aF = 0.0;
+            sustain.c.luminanceF = 0.0;
+
+            state.sustainSprites.push(sustain);
+            state.sustainBuf.addElement(sustain);
+        }
+
+        state.sustainBuf.update();
+    }
+
+    function updateSustainVisuals() {
+        var gap = state.currentConfig.gap != 0 ? state.currentConfig.gap : 112;
+        var offsetX = state.currentConfig.offsetX;
+        var offsetY = state.currentConfig.offsetY;
+        var scale = state.currentConfig.scale;
+
+        for (i in 0...state.sustainSprites.length) {
+            var sustain = state.sustainSprites[i];
+            if (sustain == null) continue;
+
+            // Use per-state indexes: body from holdBodyIndexes, tail from holdTailIndexes.
+            var bodyIdxArr = state.clipEditor.getIndexesForState(HOLD_BODY);
+            var tailIdxArr = state.clipEditor.getIndexesForState(HOLD_TAIL);
+            var bodyClip = state.clipEditor.getClipForIndex(bodyIdxArr[i]);
+            var tailClip = state.clipEditor.getClipForIndex(tailIdxArr[i]);
+
+            var pos = getReceptorPosition(i, gap, offsetX, offsetY);
+
+            // Center sustain to the idle clip's drawn dimensions.
+            var idleIdxArr = state.clipEditor.getIndexesForState(IDLE);
+            var idleClip = state.clipEditor.getClipForIndex(idleIdxArr[i]).idle;
+            var idleDrawnW = idleClip.clipW * scale;
+            var sustainDrawnW = 100;
+            var xOffset = Std.int((idleDrawnW - sustainDrawnW) / 2);
+
+            sustain.x = Std.int(pos.x) + xOffset;
+            sustain.y = Std.int(pos.y);
+            sustain.scale = scale;
+
+            sustain.bodyX = bodyClip.holdBody.clipX;
+            sustain.bodyY = bodyClip.holdBody.clipY;
+            sustain.bodyW = bodyClip.holdBody.clipW;
+            sustain.bodyH = bodyClip.holdBody.clipH;
+            sustain.tailX = tailClip.holdTail.clipX;
+            sustain.tailY = tailClip.holdTail.clipY;
+            sustain.tailW = tailClip.holdTail.clipW;
+            sustain.tailH = tailClip.holdTail.clipH;
+
+            sustain.texRotation = bodyClip.holdBody.rotation.toDegrees();
+
+            sustain.c.aF = state.showSustainPreview ? 0.5 : 0.0;
+            sustain.c.luminanceF = state.showSustainPreview ? 0.5 : 0.0;
+
+            state.sustainBuf.updateElement(sustain);
+        }
+
+        state.sustainBuf.update();
     }
 
     function updateReceptorState(newState:EditState) {
@@ -1121,10 +1898,12 @@ private class NoteskinEditorUI {
                 new TextFormatMarkerPair('#M3#', 0xFF53FF53),
                 new TextFormatMarkerPair('#M4#', 0xFF5353FF),
                 new TextFormatMarkerPair('#M5#', Color.YELLOW),
-                new TextFormatMarkerPair('#M6#', 0xFFFF9933), // Orange — edit mode
-                new TextFormatMarkerPair('#M7#', 0xFFFF33FF), // Pink   — offset mode
-                new TextFormatMarkerPair('#M8#', 0xFF33FF33), // Green  — clip index mode
-                new TextFormatMarkerPair('#M9#', 0xFFFF00FF)  // Magenta — spritesheet mode
+                new TextFormatMarkerPair('#M6#', 0xFFFF9933), // Orange  — edit mode
+                new TextFormatMarkerPair('#M7#', 0xFFFF33FF), // Pink    — offset mode
+                new TextFormatMarkerPair('#M8#', 0xFF33FF33), // Green   — clip index mode
+                new TextFormatMarkerPair('#M9#', 0xFFFF00FF), // Magenta — spritesheet mode
+                new TextFormatMarkerPair('#M10#', 0xFF00CED1), // Dark turquoise — rotation / hold body
+                new TextFormatMarkerPair('#M11#', 0xFFFF6347)  // Tomato        — hold tail
             ];
 
             state.instructionsText = new Text("NOTESKIN_EDITOR_INSTRUCTIONS", 4, 3, state.display, "", "vcr");
@@ -1150,14 +1929,17 @@ private class NoteskinEditorUI {
 
         var stateName = state.clipEditor.getStateName(state.currentState);
         var stateColor = switch(state.currentState) {
-            case IDLE:    "#M1#";
-            case COLOR:   "#M2#";
-            case PRESS:   "#M3#";
-            case CONFIRM: "#M4#";
-            default:      "";
+            case IDLE:      "#M1#";
+            case COLOR:     "#M2#";
+            case PRESS:     "#M3#";
+            case CONFIRM:   "#M4#";
+            case HOLD_BODY: "#M10#";
+            case HOLD_TAIL: "#M11#";
+            default:        "";
         };
 
-        var clip = state.clipEditor.getClipForIndex(state.selectedIndex);
+        var clipIndex = state.clipEditor.getClipIndexForReceptor(state.selectedIndex);
+        var clip = state.clipEditor.getClipForIndex(clipIndex);
         var basicClip:BasicNoteskinClip = state.clipEditor.getBasicClipForState(clip, state.currentState);
         var currentValue = state.clipEditor.getClipValue(basicClip);
 
@@ -1198,6 +1980,8 @@ private class NoteskinEditorUI {
                 (state.spriteSheetMode ? "Click, Arrow Keys, or TAB: Switch receptor index\n" :
                 "Arrow Keys: Edit X/Y values\n")) +
             "CTRL+Arrow Keys: Adjust value (+10)\n" +
+            (!state.spriteSheetMode ? "CTRL+R+LEFT/RIGHT: Cycle rotation\n" : "") +
+            (!state.spriteSheetMode ? "CTRL+R+SPACE: Toggle sustain preview\n" : "") +
             (!state.spriteSheetMode && state.editMode != GLOBAL_TRANSFORM ? "Click receptor or SHIFT+LEFT/RIGHT: Switch receptor\n" : "") +
             (!state.spriteSheetMode && state.editMode == GLOBAL_TRANSFORM ? "LEFT/RIGHT or SHIFT+MouseWheel: Adjust offset/scale\n" : "") +
             "Hold Click: Toggle spritesheet view\n" +
@@ -1213,7 +1997,12 @@ private class NoteskinEditorUI {
             globalText +
             'Current State: ${stateColor}${stateName}${stateColor}\n' +
             'Selected Receptor: #M5#[${state.selectedIndex + 1}/${state.maxReceptors}]#M5#' +
-            (state.editMode != GLOBAL_TRANSFORM ? '\nEdit Mode: ${editModeColor}${editModeName}${editModeColor}' : '');
+            (state.editMode != GLOBAL_TRANSFORM ?
+                '\nEdit Mode: ${editModeColor}${editModeName}${editModeColor}' : '') +
+            (!state.spriteSheetMode ?
+                '\nRotation: #M10#${basicClip.rotation}\u00b0#M10#' : '') +
+            (state.showSustainPreview ?
+                '\n#M10#[SUSTAIN PREVIEW ON]#M10#' : '');
     }
 
     function updateInstructionsText() {
@@ -1332,6 +2121,7 @@ private class NoteskinEditorInputHandler {
         state.isCtrlPressed  = (modifier & KeyModifier.CTRL)  != 0;
         state.isShiftPressed = (modifier & KeyModifier.SHIFT) != 0;
         state.isAltPressed   = (modifier & KeyModifier.ALT)   != 0;
+        if (key == KeyCode.R) state.isRPressed = true;
 
         if (state.createManiaPopupActive) {
             handleCreateManiaPopupInput(key);
@@ -1348,6 +2138,25 @@ private class NoteskinEditorInputHandler {
         }
 
         if (!state.showEditor) return;
+
+        // --- CTRL+R combinations (rotation keybinds) ---
+        if (state.isCtrlPressed && state.isRPressed) {
+            switch (key) {
+                case KeyCode.SPACE:
+                    state.showSustainPreview = !state.showSustainPreview;
+                    state.renderer.updateSustainVisuals();
+                    trace('Sustain preview: ${state.showSustainPreview ? "ON" : "OFF"}');
+                    state.ui.updateInstructionsText();
+                    return;
+                case KeyCode.LEFT:
+                    state.clipEditor.rotateCurrentClip(-1);
+                    return;
+                case KeyCode.RIGHT:
+                    state.clipEditor.rotateCurrentClip(1);
+                    return;
+                default:
+            }
+        }
 
         // CTRL+SPACE toggles global transform sub-mode (Offset vs Scale).
         if (key == KeyCode.SPACE && state.isCtrlPressed) {
@@ -1461,6 +2270,7 @@ private class NoteskinEditorInputHandler {
         state.isCtrlPressed  = (modifier & KeyModifier.CTRL)  != 0;
         state.isShiftPressed = (modifier & KeyModifier.SHIFT) != 0;
         state.isAltPressed   = (modifier & KeyModifier.ALT)   != 0;
+        if (key == KeyCode.R) state.isRPressed = false;
     }
 
     function handleCreateManiaPopupInput(key:KeyCode) {
@@ -1494,6 +2304,42 @@ private class NoteskinEditorInputHandler {
         if (!state.showEditor || button != MouseButton.LEFT) return;
         if (Application.current.window == null) return;
 
+        // Save noteskin button click.
+        if (state.saveButtonBox != null) {
+            var bx = state.saveButtonBox.x;
+            var by = state.saveButtonBox.y;
+            var bw = state.saveButtonBox.w;
+            var bh = state.saveButtonBox.h;
+            if (mouseX >= bx && mouseX <= bx + bw && mouseY >= by && mouseY <= by + bh) {
+                state.maniaManager.saveNoteskin();
+                return;
+            }
+        }
+
+        // Import vanilla atlas button click.
+        if (state.importButtonBox != null) {
+            var bx = state.importButtonBox.x;
+            var by = state.importButtonBox.y;
+            var bw = state.importButtonBox.w;
+            var bh = state.importButtonBox.h;
+            if (mouseX >= bx && mouseX <= bx + bw && mouseY >= by && mouseY <= by + bh) {
+                state.maniaManager.importFromAtlas();
+                return;
+            }
+        }
+
+        // Import lettered atlas button click.
+        if (state.importButton18KBox != null) {
+            var bx = state.importButton18KBox.x;
+            var by = state.importButton18KBox.y;
+            var bw = state.importButton18KBox.w;
+            var bh = state.importButton18KBox.h;
+            if (mouseX >= bx && mouseX <= bx + bw && mouseY >= by && mouseY <= by + bh) {
+                state.maniaManager.importFromAtlas18K();
+                return;
+            }
+        }
+
         // Click-to-select: if the click landed on a receptor, select it first
         // so the user doesn't have to cycle with SHIFT+LEFT/RIGHT.
         var hitIndex = state.clipEditor.findReceptorAt(mouseX, mouseY);
@@ -1509,10 +2355,11 @@ private class NoteskinEditorInputHandler {
         var note = state.clipEditor.getSelectedNote();
         if (note == null) return;
 
+        var scale = state.currentConfig.scale;
         var sx = note.x;
         var sy = note.y;
-        var sw = note.w;
-        var sh = note.h;
+        var sw = note.w * scale;
+        var sh = note.h * scale;
 
         var inSprite = mouseX >= sx && mouseX <= sx + sw && mouseY >= sy && mouseY <= sy + sh;
 
@@ -1554,10 +2401,11 @@ private class NoteskinEditorInputHandler {
         var note = state.clipEditor.getSelectedNote();
         if (note == null) return;
 
+        var scale = state.currentConfig.scale;
         var sx = note.x;
         var sy = note.y;
-        var sw = note.w;
-        var sh = note.h;
+        var sw = note.w * scale;
+        var sh = note.h * scale;
 
         // Edge detection margin — how close the cursor must be to register
         // as "on the edge" vs. "in the middle".
@@ -1677,8 +2525,9 @@ private class NoteskinEditorInputHandler {
         }
 
         if (state.isDragging) {
-            var dx = mouseX - state.dragStartX;
-            var dy = mouseY - state.dragStartY;
+            var scale = state.currentConfig.scale;
+            var dx = (mouseX - state.dragStartX) / scale;
+            var dy = (mouseY - state.dragStartY) / scale;
 
             // Spritesheet pan.
             if (state.spriteSheetMode) {
@@ -1786,10 +2635,11 @@ private class NoteskinEditorInputHandler {
                 }
 
                 var clip = state.clipEditor.getSelectedClip();
-                var sx = note.x + clip.offsX;
-                var sy = note.y + clip.offsY;
-                var sw = note.w;
-                var sh = note.h;
+                var scale = state.currentConfig.scale;
+                var sx = note.x + clip.offsX * scale;
+                var sy = note.y + clip.offsY * scale;
+                var sw = note.w * scale;
+                var sh = note.h * scale;
                 var margin = 10;
 
                 var nearRight  = Math.abs(mouseX - (sx + sw)) <= margin;
@@ -1819,10 +2669,11 @@ private class NoteskinEditorInputHandler {
                     setCursor(MouseCursor.ARROW);
                 }
             } else {
+                var scale = state.currentConfig.scale;
                 var sx = note.x;
                 var sy = note.y;
-                var sw = note.w;
-                var sh = note.h;
+                var sw = note.w * scale;
+                var sh = note.h * scale;
                 var inSprite = mouseX >= sx && mouseX <= sx + sw && mouseY >= sy && mouseY <= sy + sh;
                 setCursor(inSprite ? MouseCursor.MOVE : MouseCursor.ARROW);
             }
@@ -1885,7 +2736,7 @@ class NoteskinEditor {
     var ui:NoteskinEditorUI;
 
     // Editor state
-    var currentManiaIndex:Int = 0;
+    var currentManiaIndex:Int = 3;
     var availableManiaConfigs:Array<NoteskinConfig> = [];
     var createManiaPopupActive:Bool = false;
     var createManiaInput:String = "";
@@ -1900,6 +2751,7 @@ class NoteskinEditor {
     var isCtrlPressed:Bool = false;
     var isShiftPressed:Bool = false;
     var isAltPressed:Bool = false;
+    var isRPressed:Bool = false;
     var globalScaleMode:Bool = false; // false = offset, true = scale
 
     // Noteskin data
@@ -1920,6 +2772,24 @@ class NoteskinEditor {
 
     // Receptor preview
     var receptorSprites:Array<Note> = [];
+
+    // Sustain preview
+    var sustainBuf:Buffer<Sustain>;
+    var sustainProg:CustomProgram;
+    var sustainSprites:Array<Sustain> = [];
+    var showSustainPreview:Bool = false;
+
+    // Import from atlas buttons
+    var saveButtonBox:RepeatSprite = null;
+    var saveButtonText:Text = null;
+    var importButtonBox:RepeatSprite = null;
+    var importButtonText:Text = null;
+    var importButton18KBox:RepeatSprite = null;
+    var importButton18KText:Text = null;
+    static inline var SAVE_BUTTON_WIDTH:Int = 115;
+    static inline var IMPORT_BUTTON_WIDTH:Int = 130;
+    static inline var IMPORT_BUTTON_18K_WIDTH:Int = 150;
+    static inline var IMPORT_BUTTON_HEIGHT:Int = 30;
 
     // UI state
     var showEditor:Bool = false;
@@ -1986,6 +2856,7 @@ class NoteskinEditor {
 
         renderer.createGrid();
         renderer.initRendering();
+        renderer.createImportButton();
         renderer.createReceptors();
 
         // Initialize instructions text AFTER display is set.
@@ -2013,13 +2884,28 @@ class NoteskinEditor {
                 view.addProgram(noteProg);
             }
 
+            if (sustainProg != null && !sustainProg.isIn(view)) {
+                view.addProgram(sustainProg);
+            }
+
             spriteSheetMode = false;
             spritesheetSelectedIndex = -1;
+            showSustainPreview = false;
             renderer.updateReceptorVisuals();
 
             if (instructionsText != null) {
                 instructionsText.alpha = 1;
                 ui.updateInstructionsText();
+            }
+
+            if (saveButtonText != null) {
+                saveButtonText.alpha = 1;
+            }
+            if (importButtonText != null) {
+                importButtonText.alpha = 1;
+            }
+            if (importButton18KText != null) {
+                importButton18KText.alpha = 1;
             }
 
             trace('Noteskin Editor opened');
@@ -2031,8 +2917,22 @@ class NoteskinEditor {
                 view.removeProgram(gridProg);
             }
 
+            if (sustainProg != null && sustainProg.isIn(view)) {
+                view.removeProgram(sustainProg);
+            }
+
             if (instructionsText != null) {
                 instructionsText.alpha = 0;
+            }
+
+            if (saveButtonText != null) {
+                saveButtonText.alpha = 0;
+            }
+            if (importButtonText != null) {
+                importButtonText.alpha = 0;
+            }
+            if (importButton18KText != null) {
+                importButton18KText.alpha = 0;
             }
 
             inputHandler.setCursor(MouseCursor.ARROW);
@@ -2042,6 +2942,7 @@ class NoteskinEditor {
             longPressTriggered = false;
             spriteSheetMode = false;
             spritesheetSelectedIndex = -1;
+            showSustainPreview = false;
 
             trace('Noteskin Editor closed');
         }
@@ -2057,11 +2958,40 @@ class NoteskinEditor {
             popupBackground = null;
         }
 
+        if (saveButtonBox != null) {
+            gridBuf.removeElement(saveButtonBox);
+            saveButtonBox = null;
+        }
+        if (saveButtonText != null) {
+            saveButtonText.removeProgram();
+            saveButtonText = null;
+        }
+        if (importButtonBox != null) {
+            gridBuf.removeElement(importButtonBox);
+            importButtonBox = null;
+        }
+        if (importButtonText != null) {
+            importButtonText.removeProgram();
+            importButtonText = null;
+        }
+        if (importButton18KBox != null) {
+            gridBuf.removeElement(importButton18KBox);
+            importButton18KBox = null;
+        }
+        if (importButton18KText != null) {
+            importButton18KText.removeProgram();
+            importButton18KText = null;
+        }
+
         if (noteProg != null && noteProg.isIn(display)) {
             display.removeProgram(noteProg);
         }
         if (gridProg != null && gridProg.isIn(display)) {
             display.removeProgram(gridProg);
+        }
+
+        if (sustainProg != null && sustainProg.isIn(display)) {
+            display.removeProgram(sustainProg);
         }
 
         if (noteBuf != null) {
@@ -2072,12 +3002,22 @@ class NoteskinEditor {
             gridBuf.clear();
             gridBuf = null;
         }
+        if (sustainBuf != null) {
+            sustainBuf.clear();
+            sustainBuf = null;
+        }
 
         if (receptorSprites != null) {
             for (note in receptorSprites) {
                 note = null;
             }
             receptorSprites = null;
+        }
+        if (sustainSprites != null) {
+            for (s in sustainSprites) {
+                s = null;
+            }
+            sustainSprites = null;
         }
         if (gridSprites != null) {
             for (sprite in gridSprites) {

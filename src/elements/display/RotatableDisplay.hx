@@ -1,5 +1,10 @@
 package elements.display;
 
+// since peote-view 1.0.8
+// this was from import.hx until I cleaned the said class up
+import peote.view.Uniform.UniformFloat;
+import peote.view.Uniform.UniformVec2;
+
 /**
 	RotatableDisplay is a custom class that extends Display with added rotation support at the vertex level.
 	@since Development
