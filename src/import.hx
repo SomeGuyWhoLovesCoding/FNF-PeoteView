@@ -60,13 +60,13 @@ import titlebar.*;
 
 // LUA SHIT
 #if linc_luajit_funkinview
-import llua.LuaL;
 import llua.Lua;
 import llua.LuaCallback;
 import llua.LuaOpen;
 import llua.LuaException;
 import llua.State;
 import llua.Convert;
+//import llua.Buffer as LuaBuffer; // not to be confused with peote.view.Buffer
 import llua.Lua.Lua_helper;
 import fvlua.*;
 import fvlua.components.*;

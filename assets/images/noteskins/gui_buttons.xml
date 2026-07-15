@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TextureAtlas imagePath="gui_buttons.png">
+	<!-- Created with Adobe Animate version 21.0.6.41649 -->
+	<!-- http://www.adobe.com/products/animate.html -->
+	<SubTexture name="EditStateButtonFrames0000" x="0" y="0" width="96" height="49"/>
+	<SubTexture name="EditStateButtonFrames0001" x="0" y="49" width="96" height="49"/>
+	<SubTexture name="EditStateButtonFrames0002" x="0" y="98" width="96" height="49"/>
+	<SubTexture name="EditStateButtonFrames0003" x="0" y="147" width="96" height="49"/>
+	<SubTexture name="EditStateButtonFrames0004" x="0" y="196" width="96" height="49"/>
+</TextureAtlas>

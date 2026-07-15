@@ -30,6 +30,8 @@ import structures.gameplay.NoteskinHandle.NoteskinReceptorProperties;
 import structures.gameplay.NoteskinHandle.TextureRotation;
 import elements.Sustain;
 
+using StringTools;
+
 // ============================================================================
 // Enums
 // ============================================================================
@@ -49,6 +51,110 @@ private enum abstract EditMode(Int) from Int to Int {
     var OFFSET;
     var CLIP_ID;
     var GLOBAL_TRANSFORM;
+}
+
+// ============================================================================
+// NoteskinGUISprite — lightweight tiled sprite for GUI button labels.
+// Based on UISprite but hardcoded for the gui_buttons.png atlas (128×256,
+// 5 frames of 96×49 each). Uses the same Element/buffer pattern as the
+// existing UISprite so it renders in a single shared buffer+program.
+// ============================================================================
+
+@:publicFields
+class NoteskinGUISprite implements Element {
+    @posX @formula("uDisplayRotateX(aPos)")  var x:Float = 0.0;
+    @posY @formula("uDisplayRotateY(aPos)") var y:Float = 0.0;
+
+    @sizeX var w:Float = 0.0;
+    @sizeY var h:Float = 0.0;
+
+    @texX var clipX:Int = 0;
+    @texY var clipY:Int = 0;
+    @texW var clipWidth:Int = 96;
+    @texH var clipHeight:Int = 49;
+
+    @texPosX  var clipPosX:Int = 0;
+    @texPosY  var clipPosY:Int = 0;
+    @custom @varying @texSizeX var clipSizeX:Int = 96;
+    @custom @varying @texSizeY var clipSizeY:Int = 49;
+
+    @rotation @formula("uDisplayRotation(r)") var r:Float = 0.0;
+
+    @color var c:Color = 0xFFFFFFFF;
+
+    @color private var alphaColor:Color = 0xFFFFFFFF;
+
+    var alpha(get, set):Float;
+
+    inline function get_alpha() {
+        return alphaColor.aF;
+    }
+
+    inline function set_alpha(value:Float) {
+        value = Math.max(value, 0);
+        alphaColor.luminanceF = value;
+        return alphaColor.aF = value;
+    }
+
+    @varying @custom private var _flip:Float = 0.0;
+    @varying @custom var plainColor:Float = 0.0;
+
+    var flip(get, set):Bool;
+
+    inline function get_flip() {
+        return _flip != 0.0;
+    }
+
+    inline function set_flip(value:Bool) {
+        _flip = value ? 1.0 : 0.0;
+        return value;
+    }
+
+    var curID(default, null):Int = 0;
+
+    var OPTIONS = { texRepeatX: false, texRepeatY: false, blend: true };
+
+    // Atlas layout: 5 frames, each 96×49, stacked vertically.
+    // Frame 0 = y:0, Frame 1 = y:49, Frame 2 = y:98, Frame 3 = y:147, Frame 4 = y:196
+    static inline var FRAME_W:Int = 96;
+    static inline var FRAME_H:Int = 49;
+    static inline var ATLAS_W:Int = 128;
+    static inline var ATLAS_H:Int = 256;
+
+    static function init(program:CustomProgram, name:String, texture:Texture) {
+        program.setTexture(texture, name, true);
+
+        if (Main.current.upscale) {
+            program.injectIntoFragmentShader(Shaders.UPSCALE_FRAGMENT_SHADER);
+            program.setColorFormula('
+                mix(iconPixel(${name}_ID, vTexCoord, vec2(clipSizeX, 0.0), vec2(clipSizeY, 0.0)), c, plainColor) * alphaColor
+            ');
+        }
+        else {
+            program.injectIntoFragmentShader('
+                vec4 getTexColor( int textureID, vec4 c, float plainColor )
+                {
+                    return mix(getTextureColor(textureID, vTexCoord), c, plainColor);
+                }
+            ');
+            program.setColorFormula('getTexColor(${name}_ID, c, plainColor) * alphaColor');
+        }
+    }
+
+    function new() {}
+
+    /** Set this sprite to display frame `id` (0–4). Clamps automatically. */
+    inline function changeID(id:Int) {
+        if (id < 0) id = 0;
+        if (id > 4) id = 4;
+        clipX = 0;
+        clipY = id * FRAME_H;
+        clipWidth = FRAME_W;
+        clipHeight = FRAME_H;
+        clipSizeX = FRAME_W;
+        clipSizeY = FRAME_H;
+        curID = id;
+    }
 }
 
 // ============================================================================
@@ -886,21 +992,15 @@ private class NoteskinEditorManiaManager {
         state.createManiaInput = "";
         state.createManiaError = "";
 
-        if (state.instructionsBackground == null) {
-            state.instructionsBackground = new RepeatSprite(
-                Std.int(state.instructionsText.x - 1), Std.int(state.instructionsText.y - 1),
-                Std.int(state.instructionsText.width + 4), Std.int(state.instructionsText.height + 4)
-            );
-            state.instructionsBackground.c = 0x000000FF;
-            state.instructionsBackground.c.aF = 0.6;
-            state.gridBuf.addElement(state.instructionsBackground);
+        // Hide the popup text and remove the popup overlay.
+        if (state.instructionsText != null) {
+            state.instructionsText.alpha = 0;
         }
-
         if (state.popupBackground != null) {
             state.gridBuf.removeElement(state.popupBackground);
             state.popupBackground = null;
-            state.gridBuf.update();
         }
+        state.gridBuf.update();
 
         trace('Create Mania cancelled');
     }
@@ -1555,9 +1655,44 @@ private class NoteskinEditorRenderer {
         state.view.addProgram(state.sustainProg);
     }
 
+    function initGUISprites() {
+        if (state.guiTextureLoaded) return;
+
+        try {
+            var guiTexPath = Paths.asset('assets/images/noteskins/gui_buttons.png');
+            if (!FileSystem.exists(guiTexPath)) {
+                trace('GUI buttons texture not found, skipping GUI sprites');
+                return;
+            }
+            var guiImage = Image.fromFile(guiTexPath);
+            var guiData = new TextureData(guiImage.width, guiImage.height, TextureFormat.RGBA);
+            guiData.bytes = guiImage.getPixels(new Rectangle(0, 0, guiImage.width, guiImage.height), RGBA32);
+
+            var guiTex = new Texture(guiImage.width, guiImage.height, null, {
+                format: TextureFormat.RGBA,
+                powerOfTwo: false,
+                smoothExpand: SaveData.state.graphics.antialiasing,
+                smoothShrink: SaveData.state.graphics.antialiasing
+            });
+            guiTex.setData(guiData);
+            TextureSystem.pool[NoteskinEditor.GUI_TEXTURE_NAME] = guiTex;
+            state.guiTexture = guiTex;
+
+            state.guiSpriteBuf = new Buffer<NoteskinGUISprite>(16, 16, true);
+            state.guiSpriteProg = new CustomProgram(state.guiSpriteBuf);
+            NoteskinGUISprite.init(state.guiSpriteProg, NoteskinEditor.GUI_TEXTURE_NAME, guiTex);
+            state.view.addProgram(state.guiSpriteProg);
+
+            state.guiTextureLoaded = true;
+            trace('GUI sprite buffer initialized (${guiImage.width}x${guiImage.height})');
+        } catch (e) {
+            trace('Failed to init GUI sprites: $e');
+        }
+    }
+
     function createImportButton() {
         var btnH = NoteskinEditor.IMPORT_BUTTON_HEIGHT;
-        var btnY = Main.INITIAL_HEIGHT - btnH - 4;
+        var btnY = 4;
 
         // Save noteskin button (dark blue)
         var btnSaveW = NoteskinEditor.SAVE_BUTTON_WIDTH;
@@ -1889,6 +2024,13 @@ private class NoteskinEditorRenderer {
             var bodyClip = state.clipEditor.getClipForIndex(bodyIdxArr[i]);
             var tailClip = state.clipEditor.getClipForIndex(tailIdxArr[i]);
 
+            var sustain = new Sustain(
+                Std.int(pos.x),
+                Std.int(pos.y),
+                100, 30,
+                -90, 1.0, 1.0, 0
+            );
+
             // Center sustain on the receptor's visual center so it
             // pokes out of the middle of the receptor (growing upward).
             // xOffset centers horizontally, yOffset centers vertically.
@@ -1900,12 +2042,8 @@ private class NoteskinEditorRenderer {
             var xOffset = Std.int(idleClip.offsX * scale + idleDrawnW / 2);
             var yOffset = Std.int(idleClip.offsY * scale + idleDrawnH / 2);
 
-            var sustain = new Sustain(
-                Std.int(pos.x) + xOffset,
-                Std.int(pos.y) + yOffset,
-                100, 30,
-                -90, 1.0, 1.0, 0
-            );
+            sustain.x += xOffset;
+            sustain.y += yOffset;
             sustain.scale = scale;
 
             sustain.bodyX = bodyClip.holdBody.clipX;
@@ -1997,56 +2135,240 @@ private class NoteskinEditorRenderer {
 private class NoteskinEditorUI {
     var state:NoteskinEditor;
 
-    public function new(state:NoteskinEditor) {
-        this.state = state;
-    }
+    // Layout constants — condensed / mobile-friendly
+    static inline var BTN_H:Int = 24;
+    static inline var BTN_PAD:Int = 2;
+    static inline var COL1_W:Int = 112; // edit-state buttons
+    static inline var COL2_W:Int = 88;  // edit-mode buttons
+    static inline var COL3_W:Int = 78;   // small action buttons
+    static inline var ROW_PAD:Int = 2;
+    static inline var PANEL_PAD:Int = 5;
+    static inline var STATE_SCALE:Float = 0.48;
 
-    function initInstructionsText() {
-        if (state.instructionsText == null) {
-            var markers = [
+    // Row y-tracker
+    var curY:Int = 0;
+
+    // Section colors
+    static inline var COL_STATE_BG:Int   = 0x002244FF;
+    static inline var COL_STATE_ACT:Int  = 0x004488FF;
+    static inline var COL_MODE_BG:Int    = 0x332200FF;
+    static inline var COL_MODE_ACT:Int   = 0x664400FF;
+    static inline var COL_ACTION_BG:Int  = 0x003322FF;
+    static inline var COL_ACTION_ACT:Int = 0x006644FF;
+    static inline var COL_DANGER_BG:Int  = 0x440000FF;
+    static inline var COL_DANGER_ACT:Int = 0x880000FF;
+    static inline var COL_INFO_BG:Int    = 0x222233FF;
+
+    // GUI sprite frame assignments per button category
+    // Frame 0 = edit-state, Frame 1 = edit-mode, Frame 2 = nav,
+    // Frame 3 = value adjust, Frame 4 = action/toggle
+    static inline var FRAME_STATE:Int  = 0;
+    static inline var FRAME_MODE:Int   = 1;
+    static inline var FRAME_NAV:Int    = 2;
+    static inline var FRAME_VALUE:Int  = 3;
+    static inline var FRAME_ACTION:Int = 4;
+
+    // Marker pairs shared by state readout text and popups
+    static var MARKERS(get, null):Array<TextFormatMarkerPair>;
+    static function get_MARKERS():Array<TextFormatMarkerPair> {
+        if (MARKERS == null) {
+            MARKERS = [
                 new TextFormatMarkerPair('#M1#', Color.CYAN),
                 new TextFormatMarkerPair('#M2#', 0xFFFF5353),
                 new TextFormatMarkerPair('#M3#', 0xFF53FF53),
                 new TextFormatMarkerPair('#M4#', 0xFF5353FF),
                 new TextFormatMarkerPair('#M5#', Color.YELLOW),
-                new TextFormatMarkerPair('#M6#', 0xFFFF9933), // Orange  — edit mode
-                new TextFormatMarkerPair('#M7#', 0xFFFF33FF), // Pink    — offset mode
-                new TextFormatMarkerPair('#M8#', 0xFF33FF33), // Green   — clip index mode
-                new TextFormatMarkerPair('#M9#', 0xFFFF00FF), // Magenta — spritesheet mode
-                new TextFormatMarkerPair('#M10#', 0xFF00CED1), // Dark turquoise — rotation / hold body
-                new TextFormatMarkerPair('#M11#', 0xFFFF6347)  // Tomato        — hold tail
+                new TextFormatMarkerPair('#M6#', 0xFFFF9933),
+                new TextFormatMarkerPair('#M7#', 0xFFFF33FF),
+                new TextFormatMarkerPair('#M8#', 0xFF33FF33),
+                new TextFormatMarkerPair('#M9#', 0xFFFF00FF),
+                new TextFormatMarkerPair('#M10#', 0xFF00CED1),
+                new TextFormatMarkerPair('#M11#', 0xFFFF6347)
             ];
-
-            state.instructionsText = new Text("NOTESKIN_EDITOR_INSTRUCTIONS", 4, 3, state.display, "", "vcr");
-            state.instructionsText.scale = 0.7;
-            state.instructionsText.alpha = 0; // Start hidden
-            state.instructionsText.multiline = true;
-            state.instructionsText.alignment = RIGHT;
-            state.instructionsText.spacerPercent = -0.1;
-            state.instructionsText.outlineColor = Color.BLACK;
-            state.instructionsText.outlineSize = 1;
-            state.instructionsText.setMarkerPairs(markers);
-
-            state.instructionsText.text = buildInstructionsText();
-
-            positionInstructionsTextTopRight();
-
-            state.instructionsText.addProgram();
-
-            if (state.instructionsBackground == null) {
-                state.instructionsBackground = new RepeatSprite(
-                    Std.int(state.instructionsText.x - 1), Std.int(state.instructionsText.y - 1),
-                    Std.int(state.instructionsText.width + 4), Std.int(state.instructionsText.height + 4)
-                );
-                state.instructionsBackground.c = 0x000000FF;
-                state.instructionsBackground.c.aF = 0.6;
-                state.gridBuf.addElement(state.instructionsBackground);
-            }
         }
+        return MARKERS;
     }
 
-    function buildInstructionsText():String {
+    public function new(state:NoteskinEditor) {
+        this.state = state;
+    }
+
+    // --- Button factory (RepeatSprite box + optional NoteskinGUISprite label) ---
+
+    function makeButton(x:Int, y:Int, w:Int, action:String, frameID:Int, bgCol:Int = 0x333333FF):{box:RepeatSprite, sprite:NoteskinGUISprite, action:String} {
+        var box = new RepeatSprite(x, y, w, BTN_H);
+        box.c = bgCol;
+        box.c.aF = 0.7;
+        state.gridBuf.addElement(box);
+
+        var sprite:NoteskinGUISprite = null;
+        if (state.guiSpriteBuf != null) {
+            sprite = new NoteskinGUISprite();
+            sprite.x = x;
+            sprite.y = y;
+            sprite.w = w;
+            sprite.h = BTN_H;
+            sprite.changeID(frameID);
+            sprite.alpha = 0.85;
+            state.guiSpriteBuf.addElement(sprite);
+            state.guiSprites.push(sprite);
+        }
+
+        return {box: box, sprite: sprite, action: action};
+    }
+
+    /** Map an action string to a GUI sprite frame ID. */
+    function getFrameForAction(action:String):Int {
+        if (action.startsWith("state_"))  return FRAME_STATE;
+        if (action.startsWith("mode_"))   return FRAME_MODE;
+        if (action.startsWith("mania_") || action.startsWith("receptor_")) return FRAME_NAV;
+        if (action.startsWith("gap_") || action.startsWith("rot_")) return FRAME_VALUE;
+        return FRAME_ACTION;
+    }
+
+    // --- Build the entire GUI panel ---
+
+    function buildGUIPanel() {
+        var panelW = PANEL_PAD + COL1_W + BTN_PAD + COL2_W + BTN_PAD + COL3_W + PANEL_PAD;
+        var panelX = Main.INITIAL_WIDTH - panelW;
+        var panelY = 4;
+
+        // Background
+        if (state.guiBackground == null) {
+            state.guiBackground = new RepeatSprite(panelX, panelY, panelW, 10);
+            state.guiBackground.c = 0x000000FF;
+            state.guiBackground.c.aF = 0.7;
+            state.gridBuf.addElement(state.guiBackground);
+        }
+
+        curY = panelY + PANEL_PAD;
+        var secX = panelX + PANEL_PAD;
+
+        // === Column 1: Edit State (6 buttons in 3 rows of 2) ===
+        var halfCol = Std.int((COL1_W - BTN_PAD) / 2);
+        pushBtn(secX, curY, halfCol, "state_idle");
+        pushBtn(secX + halfCol + BTN_PAD, curY, halfCol, "state_color");
+        curY += BTN_H + ROW_PAD;
+        pushBtn(secX, curY, halfCol, "state_press");
+        pushBtn(secX + halfCol + BTN_PAD, curY, halfCol, "state_confirm");
+        curY += BTN_H + ROW_PAD;
+        pushBtn(secX, curY, halfCol, "state_holdbody");
+        pushBtn(secX + halfCol + BTN_PAD, curY, halfCol, "state_holdtail");
+        var col1BtnEnd = curY + BTN_H;
+
+        // === Column 2: Edit Mode (5 buttons stacked) ===
+        var modeX = secX + COL1_W + BTN_PAD;
+        var localY = panelY + PANEL_PAD;
+        var modeW = COL2_W;
+        pushBtn(modeX, localY, modeW, "mode_clippos");
+        localY += BTN_H + ROW_PAD;
+        pushBtn(modeX, localY, modeW, "mode_clipsize");
+        localY += BTN_H + ROW_PAD;
+        pushBtn(modeX, localY, modeW, "mode_offset");
+        localY += BTN_H + ROW_PAD;
+        pushBtn(modeX, localY, modeW, "mode_clipid");
+        localY += BTN_H + ROW_PAD;
+        pushBtn(modeX, localY, modeW, "mode_global");
+        var col2BtnEnd = localY + BTN_H;
+
+        // === Column 3: Actions (condensed — no large section gaps) ===
+        var actX = modeX + COL2_W + BTN_PAD;
+        var actW = COL3_W;
+        var actY = panelY + PANEL_PAD;
+        var halfAct = Std.int((actW - BTN_PAD) / 2);
+
+        // Mania nav
+        pushBtn(actX, actY, halfAct, "mania_prev");
+        pushBtn(actX + halfAct + BTN_PAD, actY, halfAct, "mania_next");
+        actY += BTN_H + ROW_PAD;
+        pushBtn(actX, actY, actW, "mania_create");
+        actY += BTN_H + ROW_PAD;
+
+        // Gap
+        pushBtn(actX, actY, halfAct, "gap_m10");
+        pushBtn(actX + halfAct + BTN_PAD, actY, halfAct, "gap_m1");
+        actY += BTN_H + ROW_PAD;
+        pushBtn(actX, actY, halfAct, "gap_p1");
+        pushBtn(actX + halfAct + BTN_PAD, actY, halfAct, "gap_p10");
+        actY += BTN_H + ROW_PAD;
+
+        // Receptor
+        pushBtn(actX, actY, halfAct, "receptor_prev");
+        pushBtn(actX + halfAct + BTN_PAD, actY, halfAct, "receptor_next");
+        actY += BTN_H + ROW_PAD;
+
+        // Sustain
+        pushBtn(actX, actY, actW, "sustain_toggle");
+        actY += BTN_H + ROW_PAD;
+        pushBtn(actX, actY, halfAct, "rot_prev");
+        pushBtn(actX + halfAct + BTN_PAD, actY, halfAct, "rot_next");
+        actY += BTN_H + ROW_PAD;
+
+        // Toggles
+        pushBtn(actX, actY, actW, "spritesheet_toggle");
+        actY += BTN_H + ROW_PAD;
+        pushBtn(actX, actY, actW, "toggle_axis");
+        actY += BTN_H + ROW_PAD;
+
+        // Help button at bottom-right
+        pushBtn(actX, actY, actW, "show_instructions");
+        var col3BtnEnd = actY + BTN_H;
+
+        // Update the GUI sprite buffer after adding all sprites
+        if (state.guiSpriteBuf != null) {
+            state.guiSpriteBuf.update();
+        }
+
+        // --- State readout Text (column 1, below state buttons) ---
+        var readoutY = col1BtnEnd + 4;
+        if (state.guiStateText == null) {
+            state.guiStateText = new Text("GUI_STATE_READOUT", secX, readoutY, state.display, "", "vcr");
+            state.guiStateText.scale = STATE_SCALE;
+            state.guiStateText.alpha = 0;
+            state.guiStateText.multiline = true;
+            state.guiStateText.alignment = LEFT;
+            state.guiStateText.spacerPercent = -0.15;
+            state.guiStateText.outlineColor = Color.BLACK;
+            state.guiStateText.outlineSize = 1;
+            state.guiStateText.setMarkerPairs(MARKERS);
+            state.guiStateText.addProgram();
+        } else {
+            state.guiStateText.x = secX;
+            state.guiStateText.y = readoutY;
+        }
+
+        updateStateReadout();
+        state.guiStateText.refresh();
+        var readoutBottom = Std.int(state.guiStateText.y + state.guiStateText.height + ROW_PAD);
+
+        // Resize the panel background to fit the tallest column
+        var maxBottom = col1BtnEnd;
+        if (col2BtnEnd > maxBottom) maxBottom = col2BtnEnd;
+        if (col3BtnEnd > maxBottom) maxBottom = col3BtnEnd;
+        if (readoutBottom > maxBottom) maxBottom = readoutBottom;
+
+        state.guiBackground.w = panelW;
+        state.guiBackground.h = maxBottom - panelY + PANEL_PAD;
+        state.gridBuf.updateElement(state.guiBackground);
+    }
+
+    /** Push a button into state.guiButtons (RepeatSprite box + NoteskinGUISprite label). */
+    function pushBtn(x:Int, y:Int, w:Int, action:String) {
+        var bgCol = COL_INFO_BG;
+        var frameID = getFrameForAction(action);
+        // Assign section colors by action prefix
+        if (action.startsWith("state_"))  bgCol = COL_STATE_BG;
+        if (action.startsWith("mode_"))   bgCol = COL_MODE_BG;
+        if (action == "mania_create" || action == "show_instructions") bgCol = COL_DANGER_BG;
+        var entry = makeButton(x, y, w, action, frameID, bgCol);
+        state.guiButtons.push(entry);
+    }
+
+    // --- State readout ---
+
+    function buildStateReadoutText():String {
         if (state.createManiaPopupActive) return "";
+        if (state.showInstructionsPopup) return "";
 
         var stateName = state.clipEditor.getStateName(state.currentState);
         var stateColor = switch(state.currentState) {
@@ -2062,102 +2384,221 @@ private class NoteskinEditorUI {
         var clipIndex = state.clipEditor.getClipIndexForReceptor(state.selectedIndex);
         var clip = state.clipEditor.getClipForIndex(clipIndex);
         var basicClip:BasicNoteskinClip = state.clipEditor.getBasicClipForState(clip, state.currentState);
+        var basicHoldClip:BasicNoteskinClip = state.clipEditor.getClipForIndex(clipIndex).holdBody;
 
         var editModeName = state.clipEditor.getEditModeName(state.editMode);
         var editModeColor = state.clipEditor.getEditModeColor(state.editMode);
 
-        var maniaText = 'Mania: #M5#[${state.currentManiaIndex + 1}/${state.availableManiaConfigs.length + 1} - ${state.maxReceptors}K]#M5#\n';
-        var gapText = 'Gap: #M5#[${state.currentConfig.gap}]#M5#\n';
+        var result = '';
+        if (state.spriteSheetMode) {
+            result += '#M9#[SPRITESHEET MODE]#M9#\n';
+        }
+        result += 'Mania: #M5#[${state.currentManiaIndex + 1}/${state.availableManiaConfigs.length + 1} - ${state.maxReceptors}K]#M5#\n';
+        result += 'Gap: #M5#[${state.currentConfig.gap}px]#M5#\n';
 
-        var globalText = "";
         if (state.editMode == GLOBAL_TRANSFORM) {
             var modeName = state.globalScaleMode ? "Scale" : "Offset";
             var modeColor = state.globalScaleMode ? "#M4#" : "#M6#";
-            globalText = 'Global Transform: ${modeColor}$modeName${modeColor}\n';
+            result += 'Global: ${modeColor}$modeName${modeColor}\n';
             if (state.globalScaleMode) {
-                globalText += '#M5#Scale: ${Math.round(state.currentConfig.scale * 100) / 100}#M5#\n';
+                result += '#M5#Scale: ${Math.round(state.currentConfig.scale * 100) / 100}#M5#\n';
             } else {
-                globalText += '#M5#Offset X: ${state.currentConfig.offsetX}, Y: ${state.currentConfig.offsetY}#M5#\n';
+                result += '#M5#Off X:${state.currentConfig.offsetX} Y:${state.currentConfig.offsetY}#M5#\n';
             }
-            globalText += "#M1#Press space to toggle Offset/Scale#M1#\n";
         }
 
+        result += 'State: ${stateColor}${stateName}${stateColor}\n';
+        result += 'Receptor: #M5#[${state.selectedIndex + 1}/${state.maxReceptors}]#M5#\n';
+
+        if (state.editMode != GLOBAL_TRANSFORM) {
+            result += 'Mode: ${editModeColor}${editModeName}${editModeColor}\n';
+            result += '#M7#Pos: ${basicClip.clipX},${basicClip.clipY}  Sz: ${basicClip.clipW}x${basicClip.clipH}#M7#\n';
+            result += '#M6#Off: ${basicClip.offsX},${basicClip.offsY}#M6#';
+        }
+
+        if (!state.spriteSheetMode) {
+            result += '\nRot: #M10#${basicHoldClip.rotation}D#M10#';
+        }
+
+        if (state.currentManiaIndex == state.availableManiaConfigs.length) {
+            result += '\n#M2#[CLIP PREVIEW ON]#M2#';
+        }
+        if (state.showSustainPreview) {
+            result += '\n#M10#[SUSTAIN PREVIEW ON]#M10#';
+        }
+
+        return result;
+    }
+
+    function updateStateReadout() {
+        if (state.guiStateText == null) return;
+        var newText = buildStateReadoutText();
+        if (state.guiStateText.text != newText) {
+            state.guiStateText.text = newText;
+        }
+    }
+
+    // --- Highlight active buttons ---
+
+    function updateButtonHighlights() {
+        for (btn in state.guiButtons) {
+            var isActive = false;
+
+            switch(btn.action) {
+                case "state_idle":     isActive = (state.currentState == IDLE);
+                case "state_color":    isActive = (state.currentState == COLOR);
+                case "state_press":    isActive = (state.currentState == PRESS);
+                case "state_confirm":  isActive = (state.currentState == CONFIRM);
+                case "state_holdbody": isActive = (state.currentState == HOLD_BODY);
+                case "state_holdtail": isActive = (state.currentState == HOLD_TAIL);
+                case "mode_clippos":  isActive = (state.editMode == CLIP_POS);
+                case "mode_clipsize": isActive = (state.editMode == CLIP_SIZE);
+                case "mode_offset":   isActive = (state.editMode == OFFSET);
+                case "mode_clipid":   isActive = (state.editMode == CLIP_ID);
+                case "mode_global":   isActive = (state.editMode == GLOBAL_TRANSFORM);
+                case "sustain_toggle": isActive = state.showSustainPreview;
+                case "spritesheet_toggle": isActive = state.spriteSheetMode;
+                case "show_instructions": isActive = state.showInstructionsPopup;
+                default:
+            }
+
+            if (isActive) {
+                btn.box.c.aF = 1.0;
+            } else {
+                btn.box.c.aF = 0.7;
+            }
+            state.gridBuf.updateElement(btn.box);
+
+            // Also bump the GUI sprite alpha for active buttons
+            if (btn.sprite != null) {
+                btn.sprite.alpha = isActive ? 1.0 : 0.85;
+                if (state.guiSpriteBuf != null) {
+                    state.guiSpriteBuf.updateElement(btn.sprite);
+                }
+            }
+        }
+    }
+
+    // --- Instructions popup ---
+
+    function buildInstructionsPopupText():String {
         return
-            "NOTESKIN EDITOR INSTRUCTIONS:\n" +
-            (!state.spriteSheetMode ? "1-6: Switch edit state\n[#M5#1=Idle, 2=Color, 3=Press, 4=Confirm, 5=Sust. Note, 6=Sust. Tail#M5#]\n" : "") +
-            (!state.spriteSheetMode ? "ALT+1-5: Switch edit mode\n[#M2#1=Clip X/Y, 2=Clip W/H, 3=Offset,\n4=Clip Index, 5=Global Transform#M2#]\n" : "") +
-            "SHIFT+UP/DOWN: Switch mania\n" +
-            "SHIFT+M: Create new mania\n" +
-            "\nALT+LEFT/RIGHT or ALT+MouseWheel: Adjust gap\n" +
-            "CTRL+ALT+LEFT/RIGHT or CTRL+ALT+MouseWheel: Adjust gap (10x)\n" +
-            (!state.spriteSheetMode && state.editMode == GLOBAL_TRANSFORM ?
-                "Arrow Keys: Adjust Offset/Scale\n" :
-                (state.spriteSheetMode ? "Click, Arrow Keys: Switch receptor index\n" :
-                "Arrow Keys: Edit X/Y values\n")) +
-            "CTRL+Arrow Keys: Adjust value (+10)\n\n" +
-            (!state.spriteSheetMode && state.showSustainPreview ? "R+LEFT/RIGHT: Cycle sustain rotation\n" : "") +
-            (!state.spriteSheetMode ? "CTRL+R: Toggle sustain preview\n" : "") +
-            (!state.spriteSheetMode && state.editMode != GLOBAL_TRANSFORM ? "Click receptor or SHIFT+LEFT/RIGHT: Switch receptor\n" : "") +
-            (!state.spriteSheetMode && state.editMode == GLOBAL_TRANSFORM ? "LEFT/RIGHT or SHIFT+MouseWheel: Adjust offset/scale\n" : "") +
-            "\nHold Click: Toggle spritesheet view\n" +
-            (!state.spriteSheetMode && state.editMode == GLOBAL_TRANSFORM && !state.globalScaleMode ?
-                "Mouse Drag: Move strumline offset X/Y\n" :
-                "Mouse Drag: Modify current properties\n") +
-            "ESC: Close editor\n\n" +
-            (state.spriteSheetMode ? "#M9#[SPRITESHEET MODE - Mouse only!]\n" +
-            "Drag to pan view | Press ESC or hold click to exit#M9#\n" :
-            "") +
-            maniaText +
-            gapText +
-            globalText +
-            'Current State: ${stateColor}${stateName}${stateColor}\n' +
-            'Selected Receptor: #M5#[${state.selectedIndex + 1}/${state.maxReceptors}]#M5#' +
-            (state.editMode != GLOBAL_TRANSFORM ?
-                '\nEdit Mode: ${editModeColor}${editModeName}${editModeColor} [X: ${basicClip.clipX}, Y: ${basicClip.clipY}, Width: ${basicClip.clipW}, Height: ${basicClip.clipH}]\n#M6#Offset: ${basicClip.offsX}x${basicClip.offsY}#M6#' : '') +
-            (!state.spriteSheetMode ?
-                '\nRotation: #M10#${basicClip.rotation}\u00b0#M10#' : '') +
-            (state.currentManiaIndex == state.availableManiaConfigs.length ?
-                '\n#M2#[CLIP PREVIEW ON]#M2#' : '') +
-            (state.showSustainPreview ?
-                '\n#M10#[SUSTAIN PREVIEW ON]#M10#' : '');
+            "#M1#KEYBOARD / MOUSE INSTRUCTIONS#M1#\n\n" +
+            "#M5#--- Edit State (1-6) ---#M5#\n" +
+            "1=Idle  2=Color  3=Press\n4=Confirm  5=Sust.Note  6=Sust.Tail\n\n" +
+            "#M2#--- Edit Mode (ALT+1-5) ---#M2#\n" +
+            "1=Clip X/Y  2=Clip W/H\n3=Offset  4=Clip Index\n5=Global Transform\n\n" +
+            "#M3#--- Navigation ---#M3#\n" +
+            "Switch Mania: SHIFT+UP/DOWN\n" +
+            "Switch Receptor: Click note\n" +
+            "  or SHIFT+LEFT/RIGHT\n\n" +
+            "#M4#--- Editing ---#M4#\n" +
+            "Edit values: Arrow Keys\n" +
+            "Adjust Gap: ALT+LEFT/RIGHT/Wheel\n" +
+            "Move properties: Drag Mouse\n" +
+            "#M9#(CTRL+ for 10x on all)#M9#\n\n" +
+            "#M10#--- Sustain ---#M10#\n" +
+            "Toggle preview: CTRL+R\n" +
+            "Cycle rotation: hold R + LEFT/RIGHT\n" +
+            "Click sustain top to rotate (debug)\n\n" +
+            "#M5#--- Other ---#M5#\n" +
+            "Create Mania: SHIFT+M\n" +
+            "Toggle Axis: SPACE\n" +
+            "Toggle Spritesheet: Hold click\n" +
+            "Close editor: ESC\n\n" +
+            "#M1#[ESC] Close this popup#M1#";
+    }
+
+    function ensureInstructionsText() {
+        if (state.instructionsText != null) return;
+        state.instructionsText = new Text("NOTESKIN_EDITOR_INSTRUCTIONS", 0, 0, state.display, "", "vcr");
+        state.instructionsText.scale = 0.7;
+        state.instructionsText.alpha = 0;
+        state.instructionsText.multiline = true;
+        state.instructionsText.alignment = LEFT;
+        state.instructionsText.spacerPercent = -0.1;
+        state.instructionsText.outlineColor = Color.BLACK;
+        state.instructionsText.outlineSize = 1;
+        state.instructionsText.setMarkerPairs(MARKERS);
+        state.instructionsText.addProgram();
+    }
+
+    function renderInstructionsPopup() {
+        if (!state.showInstructionsPopup) return;
+        ensureInstructionsText();
+
+        if (state.popupBackground == null) {
+            state.popupBackground = new RepeatSprite(0, 0, 0, 0);
+            state.popupBackground.c = 0x000000FF;
+            state.popupBackground.c.aF = 0.75;
+            state.gridBuf.addElement(state.popupBackground);
+        }
+
+        state.instructionsText.text = buildInstructionsPopupText();
+        state.instructionsText.alignment = LEFT;
+        state.instructionsText.scale = 0.7;
+        state.instructionsText.alpha = 1;
+
+        state.instructionsText.refresh();
+
+        var padX = 16;
+        var padY = 12;
+        state.instructionsText.x = padX;
+        state.instructionsText.y = padY;
+
+        state.popupBackground.x = 0;
+        state.popupBackground.y = 0;
+        state.popupBackground.w = Std.int(state.instructionsText.width + padX * 2);
+        state.popupBackground.h = Std.int(state.instructionsText.height + padY * 2);
+        state.gridBuf.updateElement(state.popupBackground);
+        state.gridBuf.update();
+    }
+
+    function hideInstructionsPopup() {
+        state.showInstructionsPopup = false;
+        if (state.popupBackground != null) {
+            state.gridBuf.removeElement(state.popupBackground);
+            state.popupBackground = null;
+        }
+        if (state.instructionsText != null) {
+            state.instructionsText.alpha = 0;
+        }
+        state.ui.updateButtonHighlights();
+    }
+
+    // --- Init / Update ---
+
+    function initInstructionsText() {
+        buildGUIPanel();
+        updateButtonHighlights();
+        updateStateReadout();
     }
 
     function updateInstructionsText() {
-        if (state.instructionsText != null && state.showEditor) {
-            if (state.createManiaPopupActive) {
-                state.instructionsText.alignment = LEFT;
-                return;
-            }
+        if (!state.showEditor) return;
 
-            var newText = buildInstructionsText();
-            if (state.instructionsText.text != newText) {
-                state.instructionsText.text = newText;
-            }
-            state.instructionsText.alignment = RIGHT;
-            state.instructionsText.scale = 0.7;
-            positionInstructionsTextTopRight();
-
-            if (state.instructionsBackground != null) {
-                state.instructionsBackground.x = Std.int(state.instructionsText.x - 2);
-                state.instructionsBackground.y = Std.int(state.instructionsText.y - 2);
-                state.instructionsBackground.w = Std.int(state.instructionsText.width + 2);
-                state.instructionsBackground.h = Std.int(state.instructionsText.height + 2);
-                state.gridBuf.updateElement(state.instructionsBackground);
-            }
-
-            state.instructionsText.alpha = 1;
+        if (state.showInstructionsPopup) {
+            renderInstructionsPopup();
+            return;
         }
+
+        if (state.createManiaPopupActive) {
+            renderCreateManiaPopup();
+            return;
+        }
+
+        updateStateReadout();
+        updateButtonHighlights();
     }
 
-    function positionInstructionsTextTopRight() {
-        state.instructionsText.y = 4;
-        state.instructionsText.x = Main.INITIAL_WIDTH - (state.instructionsText.width + 4);
+    function positionInstructionsTextBottomRight() {
+        // No-op
     }
 
     function renderCreateManiaPopup() {
-        if (!state.createManiaPopupActive || state.instructionsText == null) return;
+        if (!state.createManiaPopupActive) return;
+        ensureInstructionsText();
 
-        // Create popup background on first frame.
         if (state.popupBackground == null) {
             state.popupBackground = new RepeatSprite(0, 0, 0, 0);
             state.popupBackground.c = 0x000000FF;
@@ -2182,7 +2623,6 @@ private class NoteskinEditorUI {
         state.instructionsText.scale = 1.2;
         state.instructionsText.alpha = 1;
 
-        // Force the text to recalculate its dimensions before positioning.
         state.instructionsText.refresh();
 
         state.instructionsText.x = (Main.INITIAL_WIDTH - state.instructionsText.width) / 2;
@@ -2255,6 +2695,10 @@ private class NoteskinEditorInputHandler {
         }
 
         if (key == KeyCode.ESCAPE) {
+            if (state.showInstructionsPopup) {
+                state.ui.hideInstructionsPopup();
+                return;
+            }
             if (state.spriteSheetMode) {
                 state.clipEditor.toggleSpritesheetMode();
             } else {
@@ -2264,6 +2708,9 @@ private class NoteskinEditorInputHandler {
         }
 
         if (!state.showEditor) return;
+
+        // Block all other input while instructions popup is open
+        if (state.showInstructionsPopup) return;
 
         // --- CTRL+R combination (rotation keybinds) ---
         if (state.isCtrlPressed) {
@@ -2456,9 +2903,87 @@ private class NoteskinEditorInputHandler {
 
     // --- Mouse Handling ---
 
+    function handleGUIAction(action:String) {
+        switch(action) {
+            // Edit state
+            case "state_idle":     state.renderer.updateReceptorState(0);
+            case "state_color":    state.renderer.updateReceptorState(1);
+            case "state_press":    state.renderer.updateReceptorState(2);
+            case "state_confirm":  state.renderer.updateReceptorState(3);
+            case "state_holdbody": state.renderer.updateReceptorState(4);
+            case "state_holdtail": state.renderer.updateReceptorState(5);
+            // Edit mode
+            case "mode_clippos":  state.clipEditor.setEditMode(0);
+            case "mode_clipsize": state.clipEditor.setEditMode(1);
+            case "mode_offset":   state.clipEditor.setEditMode(2);
+            case "mode_clipid":   state.clipEditor.setEditMode(3);
+            case "mode_global":   state.clipEditor.setEditMode(4);
+            // Mania
+            case "mania_prev":
+                state.maniaManager.switchMania(-1);
+                state.clipEditor.checkInvalidClipIDPlace();
+            case "mania_next":
+                state.maniaManager.switchMania(1);
+                state.clipEditor.checkInvalidClipIDPlace();
+            case "mania_create":
+                state.maniaManager.createNewMania();
+            // Gap
+            case "gap_m10": state.maniaManager.adjustGap(-10);
+            case "gap_m1":  state.maniaManager.adjustGap(-1);
+            case "gap_p1":  state.maniaManager.adjustGap(1);
+            case "gap_p10": state.maniaManager.adjustGap(10);
+            // Receptor
+            case "receptor_prev":
+                state.clipEditor.selectPreviousIndex();
+                state.renderer.updateReceptorVisuals();
+            case "receptor_next":
+                state.clipEditor.selectNextIndex();
+                state.renderer.updateReceptorVisuals();
+            // Sustain
+            case "sustain_toggle":
+                state.showSustainPreview = !state.showSustainPreview;
+                state.renderer.updateSustainVisuals();
+            case "rot_prev":
+                state.clipEditor.rotateCurrentClip(-1);
+            case "rot_next":
+                state.clipEditor.rotateCurrentClip(1);
+            // Other
+            case "spritesheet_toggle":
+                state.clipEditor.toggleSpritesheetMode();
+            case "toggle_axis":
+                if (!state.spriteSheetMode && state.editMode != GLOBAL_TRANSFORM)
+                    state.clipEditor.toggleAxisProperty();
+            case "show_instructions":
+                state.showInstructionsPopup = true;
+                state.ui.updateInstructionsText();
+            default:
+        }
+        state.ui.updateInstructionsText();
+    }
+
     function handleMouseDown(mouseX:Float, mouseY:Float, button:MouseButton) {
         if (!state.showEditor || button != MouseButton.LEFT) return;
         if (Application.current.window == null) return;
+
+        // If instructions popup is showing, ESC closes it (handled in keydown),
+        // but clicking anywhere outside the popup also closes it.
+        if (state.showInstructionsPopup) {
+            state.ui.hideInstructionsPopup();
+            return;
+        }
+
+        // --- GUI panel button clicks ---
+        for (btn in state.guiButtons) {
+            if (btn.box == null) continue;
+            var bx = btn.box.x;
+            var by = btn.box.y;
+            var bw = btn.box.w;
+            var bh = btn.box.h;
+            if (mouseX >= bx && mouseX <= bx + bw && mouseY >= by && mouseY <= by + bh) {
+                handleGUIAction(btn.action);
+                return;
+            }
+        }
 
         // Save noteskin button click.
         if (state.saveButtonBox != null) {
@@ -2493,6 +3018,31 @@ private class NoteskinEditorInputHandler {
             if (mouseX >= bx && mouseX <= bx + bw && mouseY >= by && mouseY <= by + bh) {
                 state.maniaManager.importFromAtlas18K();
                 return;
+            }
+        }
+
+        // Debug: click the top of a sustain to cycle its rotation.
+        // The sustain grows upward from its anchor (sustain.x, sustain.y),
+        // so the "top" (tail tip) is at approximately sustain.y - sustainLength * scale.
+        if (state.showSustainPreview && !state.spriteSheetMode) {
+            var sustainLength = 100;
+            var hitMargin = 15; // px tolerance for the click zone
+            for (si in 0...state.sustainSprites.length) {
+                var s = state.sustainSprites[si];
+                if (s == null) continue;
+                var sScale = s.scale != 0 ? s.scale : 1;
+                var topY = s.y - sustainLength * sScale;
+                // Hit zone: a horizontal band at the sustain's top
+                if (mouseX >= s.x - hitMargin && mouseX <= s.x + hitMargin
+                    && mouseY >= topY - hitMargin && mouseY <= topY + hitMargin) {
+                    // Select this receptor and cycle rotation
+                    if (si != state.selectedIndex) {
+                        state.selectedIndex = si;
+                        state.renderer.updateReceptorVisuals();
+                    }
+                    state.clipEditor.rotateCurrentClip(1);
+                    return;
+                }
             }
         }
 
@@ -2950,6 +3500,12 @@ class NoteskinEditor {
     static inline var IMPORT_BUTTON_18K_WIDTH:Int = 150;
     static inline var IMPORT_BUTTON_HEIGHT:Int = 30;
 
+    // GUI panel buttons (created by NoteskinEditorUI)
+    var guiButtons:Array<{box:RepeatSprite, sprite:NoteskinGUISprite, action:String}> = [];
+    var guiBackground:RepeatSprite = null;
+    var guiStateText:Text = null;
+    var showInstructionsPopup:Bool = false;
+
     // UI state
     var showEditor:Bool = false;
     var selectedProperty:String = "clipX";
@@ -2992,9 +3548,17 @@ class NoteskinEditor {
     // Texture name constants
     static inline var NOTESKIN_TEXTURE_NAME:String = "noteskinTexV2";
     static inline var GRID_TEXTURE_NAME:String = "gridTexV2";
+    static inline var GUI_TEXTURE_NAME:String = "guiButtonsTexV2";
 
     // Instructions text
     var instructionsText:Text;
+
+    // GUI sprite buffer (single buffer+program for all button label sprites)
+    var guiSpriteBuf:Buffer<NoteskinGUISprite> = null;
+    var guiSpriteProg:CustomProgram = null;
+    var guiTexture:Texture = null;
+    var guiSprites:Array<NoteskinGUISprite> = [];
+    var guiTextureLoaded:Bool = false;
 
     public function new() {
         // Helper constructors don't do any work — they only store the back-reference.
@@ -3016,6 +3580,7 @@ class NoteskinEditor {
 
         renderer.createGrid();
         renderer.initRendering();
+        renderer.initGUISprites();
         renderer.createImportButton();
         renderer.createReceptors();
 
@@ -3048,15 +3613,27 @@ class NoteskinEditor {
                 view.addProgram(sustainProg);
             }
 
+            if (guiSpriteProg != null && !guiSpriteProg.isIn(view)) {
+                view.addProgram(guiSpriteProg);
+            }
+
             spriteSheetMode = false;
             spritesheetSelectedIndex = -1;
             showSustainPreview = false;
             renderer.updateReceptorVisuals();
 
-            if (instructionsText != null) {
-                instructionsText.alpha = 1;
-                ui.updateInstructionsText();
+            // Show all GUI panel buttons, sprites, and state text
+            for (btn in guiButtons) {
+                if (btn.box != null) btn.box.c.aF = 0.7;
             }
+            for (s in guiSprites) {
+                s.alpha = 0.85;
+                if (guiSpriteBuf != null) guiSpriteBuf.updateElement(s);
+            }
+            if (guiSpriteBuf != null) guiSpriteBuf.update();
+            if (guiStateText != null) guiStateText.alpha = 1;
+            if (guiBackground != null) guiBackground.c.aF = 0.7;
+            ui.updateInstructionsText();
 
             if (saveButtonText != null) {
                 saveButtonText.alpha = 1;
@@ -3081,8 +3658,22 @@ class NoteskinEditor {
                 view.removeProgram(sustainProg);
             }
 
+            if (guiSpriteProg != null && guiSpriteProg.isIn(view)) {
+                view.removeProgram(guiSpriteProg);
+            }
+
+            // Hide all GUI panel sprites and state text
+            for (s in guiSprites) {
+                s.alpha = 0;
+                if (guiSpriteBuf != null) guiSpriteBuf.updateElement(s);
+            }
+            if (guiSpriteBuf != null) guiSpriteBuf.update();
+            if (guiStateText != null) guiStateText.alpha = 0;
             if (instructionsText != null) {
                 instructionsText.alpha = 0;
+            }
+            if (showInstructionsPopup) {
+                ui.hideInstructionsPopup();
             }
 
             if (saveButtonText != null) {
@@ -3116,6 +3707,43 @@ class NoteskinEditor {
         if (popupBackground != null) {
             gridBuf.removeElement(popupBackground);
             popupBackground = null;
+        }
+
+        // Clean up GUI panel buttons
+        if (guiButtons != null) {
+            for (btn in guiButtons) {
+                if (btn.box != null) {
+                    gridBuf.removeElement(btn.box);
+                }
+            }
+            guiButtons = [];
+        }
+        if (guiBackground != null) {
+            gridBuf.removeElement(guiBackground);
+            guiBackground = null;
+        }
+        // Clean up GUI sprites
+        if (guiSprites != null) {
+            for (s in guiSprites) {
+                if (guiSpriteBuf != null) guiSpriteBuf.removeElement(s);
+            }
+            guiSprites = [];
+        }
+        if (guiSpriteBuf != null) {
+            guiSpriteBuf.clear();
+            guiSpriteBuf = null;
+        }
+        if (guiSpriteProg != null) {
+            if (view != null && guiSpriteProg.isIn(view)) view.removeProgram(guiSpriteProg);
+            guiSpriteProg = null;
+        }
+        if (guiStateText != null) {
+            guiStateText.removeProgram();
+            guiStateText = null;
+        }
+        if (instructionsBackground != null) {
+            gridBuf.removeElement(instructionsBackground);
+            instructionsBackground = null;
         }
 
         if (saveButtonBox != null) {
@@ -3212,6 +3840,9 @@ class NoteskinEditor {
             ui.renderCreateManiaPopup();
             return;
         }
+
+        // Don't process long press while instructions popup is open.
+        if (showInstructionsPopup) return;
 
         // Long press detection.
         if (isHoldingMouse && !longPressTriggered && !isDragging) {
