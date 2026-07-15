@@ -3,8 +3,17 @@
 	<!-- Created with Adobe Animate version 21.0.6.41649 -->
 	<!-- http://www.adobe.com/products/animate.html -->
 	<SubTexture name="EditStateButtonFrames0000" x="0" y="0" width="96" height="49"/>
-	<SubTexture name="EditStateButtonFrames0001" x="0" y="49" width="96" height="49"/>
-	<SubTexture name="EditStateButtonFrames0002" x="0" y="98" width="96" height="49"/>
-	<SubTexture name="EditStateButtonFrames0003" x="0" y="147" width="96" height="49"/>
-	<SubTexture name="EditStateButtonFrames0004" x="0" y="196" width="96" height="49"/>
+	<SubTexture name="EditStateButtonFrames0001" x="96" y="0" width="96" height="49"/>
+	<SubTexture name="EditStateButtonFrames0002" x="0" y="49" width="96" height="49"/>
+	<SubTexture name="EditStateButtonFrames0003" x="96" y="49" width="96" height="49"/>
+	<SubTexture name="EditStateButtonFrames0004" x="0" y="98" width="96" height="49"/>
+	<SubTexture name="EditStateButtonFrames0005" x="96" y="98" width="96" height="49"/>
+	<SubTexture name="EditStateButtonFrames0006" x="192" y="0" width="51" height="49" frameX="0" frameY="0" frameWidth="96" frameHeight="49"/>
+	<SubTexture name="EditStateButtonFrames0007" x="192" y="49" width="51" height="49" frameX="0" frameY="0" frameWidth="96" frameHeight="49"/>
+	<SubTexture name="EditStateButtonFrames0008" x="192" y="98" width="51" height="49" frameX="0" frameY="0" frameWidth="96" frameHeight="49"/>
+	<SubTexture name="EditStateButtonFrames0009" x="0" y="147" width="51" height="49" frameX="0" frameY="0" frameWidth="96" frameHeight="49"/>
+	<SubTexture name="EditStateButtonFrames0010" x="51" y="147" width="51" height="49" frameX="0" frameY="0" frameWidth="96" frameHeight="49"/>
+	<SubTexture name="EditStateButtonFrames0011" x="102" y="147" width="51" height="49" frameX="0" frameY="0" frameWidth="96" frameHeight="49"/>
+	<SubTexture name="EditStateButtonFrames0012" x="153" y="147" width="51" height="49" frameX="0" frameY="0" frameWidth="96" frameHeight="49"/>
+	<SubTexture name="EditStateButtonFrames0013" x="204" y="147" width="51" height="49" frameX="0" frameY="0" frameWidth="96" frameHeight="49"/>
 </TextureAtlas>
