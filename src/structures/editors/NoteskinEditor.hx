@@ -619,6 +619,34 @@ private class NoteskinEditorClipEditor {
         state.ui.updateInstructionsText();
     }
 
+    /** Adjust the visual rotation (r) of a sustain sprite by the given degrees. */
+    function rotateSustainSprite(receptorIndex:Int, degrees:Float) {
+        if (state.spriteSheetMode) return;
+        if (receptorIndex < 0 || receptorIndex >= state.maxReceptors) return;
+
+        // Ensure the array is large enough
+        while (state.sustainRotations.length <= receptorIndex) {
+            state.sustainRotations.push(0.0);
+        }
+
+        state.sustainRotations[receptorIndex] += degrees;
+
+        // Apply to the actual sustain sprite if it exists
+        if (receptorIndex < state.sustainSprites.length) {
+            var s = state.sustainSprites[receptorIndex];
+            if (s != null) {
+                s.r = state.sustainRotations[receptorIndex];
+                if (state.sustainBuf != null) {
+                    state.sustainBuf.updateElement(s);
+                    state.sustainBuf.update();
+                }
+            }
+        }
+
+        trace('sustain[${receptorIndex}].r = ${state.sustainRotations[receptorIndex]}\u00b0');
+        state.ui.updateInstructionsText();
+    }
+
     /**
         Returns the index of the receptor whose sprite contains the given
         screen coordinates, or -1 if no receptor is hit. Uses the same bounds
@@ -2098,6 +2126,13 @@ private class NoteskinEditorRenderer {
 
             sustain.texRotation = bodyClip.holdBody.rotation.toDegrees();
 
+            // Apply stored visual rotation for this receptor
+            if (i < state.sustainRotations.length) {
+                sustain.r = state.sustainRotations[i];
+            } else {
+                sustain.r = 0.0;
+            }
+
             sustain.c.aF = 0.0;
             sustain.c.luminanceF = 0.0;
 
@@ -2152,6 +2187,13 @@ private class NoteskinEditorRenderer {
 
             sustain.texRotation = bodyClip.holdBody.rotation.toDegrees();
 
+            // Apply stored visual rotation for this receptor
+            if (i < state.sustainRotations.length) {
+                sustain.r = state.sustainRotations[i];
+            } else {
+                sustain.r = 0.0;
+            }
+
             sustain.c.aF = state.showSustainPreview ? 0.5 : 0.0;
             sustain.c.luminanceF = state.showSustainPreview ? 0.5 : 0.0;
 
@@ -2178,8 +2220,7 @@ private class NoteskinEditorUI {
     static inline var BTN_GAP:Int = 3;
     static inline var PANEL_PAD:Int = 5;
     static inline var STATE_SCALE:Float = 0.48;
-    static inline var PLAIN_BTN_W:Int = 101;
-    static inline var PLAIN_BTN_H:Int = 97;
+    static inline var BTN_SCALE:Float = 0.8;
 
     // Section colors
     static inline var COL_STATE_BG:Int   = 0x002244FF;
@@ -2217,30 +2258,33 @@ private class NoteskinEditorUI {
         this.state = state;
     }
 
-    // --- Frame assignment: maps each action to its XML frame index (or -1 for plain) ---
+    // --- Frame assignment: each action maps 1:1 to its XML frame index ---
+    // #1=Position  #2=Size  #3=Offset  #4=ClipID  #5=GlobalTransform
+    // #6=ToggleSustain  #7=+90sustTexRot  #8=-90sustTexRot
+    // #9=+90sustRot  #10=-90sustRot  #11=+1gap  #12=-1gap
+    // #13=+10gap  #14=-10gap  #15=switchMania  #16=spritesheetMode
+    // #17=openInstructions  #18=createMania
 
     static function getSpriteFrame(action:String):Int {
         return switch(action) {
-            // 191-wide frames (0-5, 16, 17)
-            case "state_idle":         0;
-            case "state_color":        1;
-            case "state_press":        2;
-            case "state_confirm":      3;
-            case "state_holdbody":     4;
-            case "state_holdtail":     5;
-            case "mania_create":       16;
-            case "sustain_toggle":     17;
-            // 101-wide frames (6-15)
-            case "show_instructions":  6;
-            case "rot_next":           7;
-            case "gap_m1":             8;
-            case "gap_p1":             9;
-            case "rot_prev":           10;
-            case "gap_p10":            11;
-            case "spritesheet_toggle": 12;
-            case "toggle_axis":        13;
-            case "mode_global":        14;
-            case "gap_m10":            15;
+            case "mode_clippos":        0;
+            case "mode_clipsize":       1;
+            case "mode_offset":         2;
+            case "mode_clipid":         3;
+            case "mode_global":         4;
+            case "sustain_toggle":      5;
+            case "sust_texrot_p90":     6;
+            case "sust_texrot_m90":     7;
+            case "sust_rot_p90":        8;
+            case "sust_rot_m90":        9;
+            case "gap_p1":              10;
+            case "gap_m1":              11;
+            case "gap_p10":             12;
+            case "gap_m10":             13;
+            case "mania_switch":        14;
+            case "spritesheet_toggle":  15;
+            case "show_instructions":   16;
+            case "mania_create":        17;
             default: -1;
         };
     }
@@ -2248,17 +2292,31 @@ private class NoteskinEditorUI {
     // --- Background color for a button action ---
 
     static function getBgColor(action:String):Int {
-        if (action.startsWith("state_"))  return COL_STATE_BG;
-        if (action.startsWith("mode_"))   return COL_MODE_BG;
+        if (action.startsWith("mode_"))       return COL_MODE_BG;
+        if (action.startsWith("sust_"))       return COL_MODE_BG;
         if (action == "mania_create" || action == "show_instructions") return COL_DANGER_BG;
+        if (action == "sustain_toggle")       return COL_ACTION_BG;
+        if (action == "spritesheet_toggle")   return COL_ACTION_BG;
         return COL_ACTION_BG;
+    }
+
+    // --- Display size for a frame at 80% scale ---
+
+    static function displayW(frameID:Int):Int {
+        var f = NoteskinGUISprite.ATLAS_FRAMES[frameID];
+        return Math.round(f.width * BTN_SCALE);
+    }
+    static function displayH(frameID:Int):Int {
+        var f = NoteskinGUISprite.ATLAS_FRAMES[frameID];
+        return Math.round(f.height * BTN_SCALE);
     }
 
     // --- Button factories ---
 
     function makeSpriteButton(x:Int, y:Int, action:String, frameID:Int, bgCol:Int):{box:RepeatSprite, sprite:NoteskinGUISprite, action:String} {
-        var f = NoteskinGUISprite.ATLAS_FRAMES[frameID];
-        var box = new RepeatSprite(x, y, f.width, f.height);
+        var dw = displayW(frameID);
+        var dh = displayH(frameID);
+        var box = new RepeatSprite(x, y, dw, dh);
         box.c = bgCol;
         box.c.aF = 0.7;
         state.gridBuf.addElement(box);
@@ -2269,6 +2327,8 @@ private class NoteskinEditorUI {
             sprite.x = x;
             sprite.y = y;
             sprite.changeID(frameID);
+            sprite.w = dw;
+            sprite.h = dh;
             sprite.alpha = 0.85;
             state.guiSpriteBuf.addElement(sprite);
             state.guiSprites.push(sprite);
@@ -2288,52 +2348,44 @@ private class NoteskinEditorUI {
     // --- Build the entire GUI panel ---
 
     function buildGUIPanel() {
-        // Define all button actions in logical groups
+        // 18 buttons, one per XML atlas frame, in frame-number order.
         var allActions:Array<String> = [
-            // Edit states (6)
-            "state_idle", "state_color", "state_press", "state_confirm", "state_holdbody", "state_holdtail",
-            // Edit modes (5)
-            "mode_clippos", "mode_clipsize", "mode_offset", "mode_clipid", "mode_global",
-            // Navigation
-            "mania_prev", "mania_next",
-            // Creation
-            "mania_create",
-            // Gap
-            "gap_m10", "gap_m1", "gap_p1", "gap_p10",
-            // Receptor
-            "receptor_prev", "receptor_next",
-            // Sustain
-            "sustain_toggle",
-            // Rotation
-            "rot_prev", "rot_next",
-            // Toggles
-            "spritesheet_toggle", "toggle_axis",
-            // Help
-            "show_instructions",
+            "mode_clippos",       // frame 0  — Position
+            "mode_clipsize",      // frame 1  — Size
+            "mode_offset",        // frame 2  — Offset
+            "mode_clipid",        // frame 3  — Clip ID
+            "mode_global",        // frame 4  — Global Transform
+            "sustain_toggle",     // frame 5  — Toggle Sustain
+            "sust_texrot_p90",    // frame 6  — +90 deg sustain tex coord rotation
+            "sust_texrot_m90",    // frame 7  — -90 deg sustain tex coord rotation
+            "sust_rot_p90",       // frame 8  — +90 deg regular sustain rotation
+            "sust_rot_m90",       // frame 9  — -90 deg regular sustain rotation
+            "gap_p1",             // frame 10 — +1 gap adjustment
+            "gap_m1",             // frame 11 — -1 gap adjustment
+            "gap_p10",            // frame 12 — +10 gap adjustment
+            "gap_m10",            // frame 13 — -10 gap adjustment
+            "mania_switch",       // frame 14 — switch mania
+            "spritesheet_toggle", // frame 15 — spritesheet mode
+            "show_instructions",  // frame 16 — open instructions menu
+            "mania_create",       // frame 17 — create new mania
         ];
 
-        // Build button definitions with dimensions from the XML atlas frames
+        // Build button definitions with display dimensions (80% of texture size)
         var btnDefs:Array<{action:String, w:Int, h:Int, frameID:Int}> = [];
         for (action in allActions) {
             var frameID = getSpriteFrame(action);
-            var w:Int;
-            var h:Int;
-            if (frameID >= 0) {
-                var f = NoteskinGUISprite.ATLAS_FRAMES[frameID];
-                w = f.width;
-                h = f.height;
-            } else {
-                w = PLAIN_BTN_W;
-                h = PLAIN_BTN_H;
-            }
+            if (frameID < 0) continue;
+            var w = displayW(frameID);
+            var h = displayH(frameID);
             btnDefs.push({action: action, w: w, h: h, frameID: frameID});
         }
 
-        // Sort by width descending (widest buttons first for positional layout).
-        // Within the same width, maintain the original action order.
+        // Sort by width descending (widest first), then by original order.
         btnDefs.sort(function(a, b):Int {
             if (b.w != a.w) return b.w - a.w;
-            return Reflect.compare(a.action, b.action);
+            var ai = allActions.indexOf(a.action);
+            var bi = allActions.indexOf(b.action);
+            return ai - bi;
         });
 
         // Flow layout -- compute positions relative to panel content origin
@@ -2518,20 +2570,14 @@ private class NoteskinEditorUI {
             var isActive = false;
 
             switch(btn.action) {
-                case "state_idle":     isActive = (state.currentState == IDLE);
-                case "state_color":    isActive = (state.currentState == COLOR);
-                case "state_press":    isActive = (state.currentState == PRESS);
-                case "state_confirm":  isActive = (state.currentState == CONFIRM);
-                case "state_holdbody": isActive = (state.currentState == HOLD_BODY);
-                case "state_holdtail": isActive = (state.currentState == HOLD_TAIL);
-                case "mode_clippos":  isActive = (state.editMode == CLIP_POS);
-                case "mode_clipsize": isActive = (state.editMode == CLIP_SIZE);
-                case "mode_offset":   isActive = (state.editMode == OFFSET);
-                case "mode_clipid":   isActive = (state.editMode == CLIP_ID);
-                case "mode_global":   isActive = (state.editMode == GLOBAL_TRANSFORM);
-                case "sustain_toggle": isActive = state.showSustainPreview;
-                case "spritesheet_toggle": isActive = state.spriteSheetMode;
-                case "show_instructions": isActive = state.showInstructionsPopup;
+                case "mode_clippos":        isActive = (state.editMode == CLIP_POS);
+                case "mode_clipsize":       isActive = (state.editMode == CLIP_SIZE);
+                case "mode_offset":         isActive = (state.editMode == OFFSET);
+                case "mode_clipid":         isActive = (state.editMode == CLIP_ID);
+                case "mode_global":         isActive = (state.editMode == GLOBAL_TRANSFORM);
+                case "sustain_toggle":      isActive = state.showSustainPreview;
+                case "spritesheet_toggle":  isActive = state.spriteSheetMode;
+                case "show_instructions":   isActive = state.showInstructionsPopup;
                 default:
             }
 
@@ -2980,54 +3026,40 @@ private class NoteskinEditorInputHandler {
 
     function handleGUIAction(action:String) {
         switch(action) {
-            // Edit state
-            case "state_idle":     state.renderer.updateReceptorState(0);
-            case "state_color":    state.renderer.updateReceptorState(1);
-            case "state_press":    state.renderer.updateReceptorState(2);
-            case "state_confirm":  state.renderer.updateReceptorState(3);
-            case "state_holdbody": state.renderer.updateReceptorState(4);
-            case "state_holdtail": state.renderer.updateReceptorState(5);
             // Edit mode
             case "mode_clippos":  state.clipEditor.setEditMode(0);
             case "mode_clipsize": state.clipEditor.setEditMode(1);
             case "mode_offset":   state.clipEditor.setEditMode(2);
             case "mode_clipid":   state.clipEditor.setEditMode(3);
             case "mode_global":   state.clipEditor.setEditMode(4);
-            // Mania
-            case "mania_prev":
-                state.maniaManager.switchMania(-1);
-                state.clipEditor.checkInvalidClipIDPlace();
-            case "mania_next":
-                state.maniaManager.switchMania(1);
-                state.clipEditor.checkInvalidClipIDPlace();
-            case "mania_create":
-                state.maniaManager.createNewMania();
+            // Sustain
+            case "sustain_toggle":
+                state.showSustainPreview = !state.showSustainPreview;
+                state.renderer.updateSustainVisuals();
+            // Sustain texture coord rotation (cycles TextureRotation enum on holdBody+holdTail)
+            case "sust_texrot_p90":
+                state.clipEditor.rotateCurrentClip(1);
+            case "sust_texrot_m90":
+                state.clipEditor.rotateCurrentClip(-1);
+            // Regular sustain sprite rotation (adjusts visual r on sustain sprites)
+            case "sust_rot_p90":
+                state.clipEditor.rotateSustainSprite(state.selectedIndex, 90);
+            case "sust_rot_m90":
+                state.clipEditor.rotateSustainSprite(state.selectedIndex, -90);
             // Gap
             case "gap_m10": state.maniaManager.adjustGap(-10);
             case "gap_m1":  state.maniaManager.adjustGap(-1);
             case "gap_p1":  state.maniaManager.adjustGap(1);
             case "gap_p10": state.maniaManager.adjustGap(10);
-            // Receptor
-            case "receptor_prev":
-                state.clipEditor.selectPreviousIndex();
-                state.renderer.updateReceptorVisuals();
-            case "receptor_next":
-                state.clipEditor.selectNextIndex();
-                state.renderer.updateReceptorVisuals();
-            // Sustain
-            case "sustain_toggle":
-                state.showSustainPreview = !state.showSustainPreview;
-                state.renderer.updateSustainVisuals();
-            case "rot_prev":
-                state.clipEditor.rotateCurrentClip(-1);
-            case "rot_next":
-                state.clipEditor.rotateCurrentClip(1);
-            // Other
+            // Mania
+            case "mania_switch":
+                state.maniaManager.switchMania(1);
+                state.clipEditor.checkInvalidClipIDPlace();
+            case "mania_create":
+                state.maniaManager.createNewMania();
+            // Toggles
             case "spritesheet_toggle":
                 state.clipEditor.toggleSpritesheetMode();
-            case "toggle_axis":
-                if (!state.spriteSheetMode && state.editMode != GLOBAL_TRANSFORM)
-                    state.clipEditor.toggleAxisProperty();
             case "show_instructions":
                 state.showInstructionsPopup = true;
                 state.ui.updateInstructionsText();
@@ -3562,6 +3594,7 @@ class NoteskinEditor {
     var sustainProg:CustomProgram;
     var sustainSprites:Array<Sustain> = [];
     var showSustainPreview:Bool = false;
+    var sustainRotations:Array<Float> = []; // per-receptor visual rotation (degrees)
 
     // Import from atlas buttons
     var saveButtonBox:RepeatSprite = null;
