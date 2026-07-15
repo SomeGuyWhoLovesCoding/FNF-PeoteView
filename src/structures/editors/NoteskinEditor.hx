@@ -135,6 +135,7 @@ private class NoteskinEditorClipEditor {
         }
     }
 
+    // for one purpose, to actually see
     function getClipValue(clip:BasicNoteskinClip):Int {
         switch(state.selectedProperty) {
             case "clipX": return clip.clipX;
@@ -318,7 +319,7 @@ private class NoteskinEditorClipEditor {
 
     function toggleState(increment:Int) {
         if (state.spriteSheetMode) {
-            // In spritesheet mode, TAB controls the selected receptor index instead.
+            // In spritesheet mode, left/right controls the selected receptor index instead.
             if (increment > 0) selectNextIndex();
             else                selectPreviousIndex();
             return;
@@ -336,7 +337,7 @@ private class NoteskinEditorClipEditor {
             case COLOR:     "COLOR";
             case PRESS:     "PRESS";
             case CONFIRM:   "CONFIRM";
-            case HOLD_BODY: "SUST. BODY";
+            case HOLD_BODY: "SUST. NOTE";
             case HOLD_TAIL: "SUST. TAIL";
             default:        "unknown";
         }
@@ -736,6 +737,11 @@ private class NoteskinEditorManiaManager {
             state.popupBackground = null;
         }
 
+        if (state.instructionsBackground != null) {
+            state.gridBuf.removeElement(state.instructionsBackground);
+            state.instructionsBackground = null;
+        }
+
         trace('Create Mania popup opened - Enter number of keys');
     }
 
@@ -816,6 +822,16 @@ private class NoteskinEditorManiaManager {
             state.gridBuf.update();
         }
 
+        if (state.instructionsBackground == null) {
+            state.instructionsBackground = new RepeatSprite(
+                Std.int(state.instructionsText.x - 1), Std.int(state.instructionsText.y - 1),
+                Std.int(state.instructionsText.width + 4), Std.int(state.instructionsText.height + 4)
+            );
+            state.instructionsBackground.c = 0x000000FF;
+            state.instructionsBackground.c.aF = 0.6;
+            state.gridBuf.addElement(state.instructionsBackground);
+        }
+
         state.ui.updateInstructionsText();
     }
 
@@ -869,6 +885,16 @@ private class NoteskinEditorManiaManager {
         state.createManiaPopupActive = false;
         state.createManiaInput = "";
         state.createManiaError = "";
+
+        if (state.instructionsBackground == null) {
+            state.instructionsBackground = new RepeatSprite(
+                Std.int(state.instructionsText.x - 1), Std.int(state.instructionsText.y - 1),
+                Std.int(state.instructionsText.width + 4), Std.int(state.instructionsText.height + 4)
+            );
+            state.instructionsBackground.c = 0x000000FF;
+            state.instructionsBackground.c.aF = 0.6;
+            state.gridBuf.addElement(state.instructionsBackground);
+        }
 
         if (state.popupBackground != null) {
             state.gridBuf.removeElement(state.popupBackground);
@@ -2006,6 +2032,16 @@ private class NoteskinEditorUI {
             positionInstructionsTextTopRight();
 
             state.instructionsText.addProgram();
+
+            if (state.instructionsBackground == null) {
+                state.instructionsBackground = new RepeatSprite(
+                    Std.int(state.instructionsText.x - 1), Std.int(state.instructionsText.y - 1),
+                    Std.int(state.instructionsText.width + 4), Std.int(state.instructionsText.height + 4)
+                );
+                state.instructionsBackground.c = 0x000000FF;
+                state.instructionsBackground.c.aF = 0.6;
+                state.gridBuf.addElement(state.instructionsBackground);
+            }
         }
     }
 
@@ -2026,15 +2062,9 @@ private class NoteskinEditorUI {
         var clipIndex = state.clipEditor.getClipIndexForReceptor(state.selectedIndex);
         var clip = state.clipEditor.getClipForIndex(clipIndex);
         var basicClip:BasicNoteskinClip = state.clipEditor.getBasicClipForState(clip, state.currentState);
-        var currentValue = state.clipEditor.getClipValue(basicClip);
 
         var editModeName = state.clipEditor.getEditModeName(state.editMode);
         var editModeColor = state.clipEditor.getEditModeColor(state.editMode);
-
-        var spritesheetText = state.spriteSheetMode ?
-            "#M9#[SPRITESHEET MODE - Mouse only!]\n" +
-            "Drag to pan view | Press ESC or Hold click to exit#M9#\n" :
-            "";
 
         var maniaText = 'Mania: #M5#[${state.currentManiaIndex + 1}/${state.availableManiaConfigs.length + 1} - ${state.maxReceptors}K]#M5#\n';
         var gapText = 'Gap: #M5#[${state.currentConfig.gap}]#M5#\n';
@@ -2049,33 +2079,31 @@ private class NoteskinEditorUI {
             } else {
                 globalText += '#M5#Offset X: ${state.currentConfig.offsetX}, Y: ${state.currentConfig.offsetY}#M5#\n';
             }
-            globalText += "#M1#CTRL+SPACE: Toggle Offset/Scale#M1#\n";
+            globalText += "#M1#Press space to toggle Offset/Scale#M1#\n";
         }
 
         return
             "NOTESKIN EDITOR INSTRUCTIONS:\n" +
-            (!state.spriteSheetMode ? "TAB or Mouse Wheel: Cycle animation state (SHIFT+TAB to go backwards)\n" : "") +
-            "CTRL+TAB: Toggle edit mode\n" +
-            (!state.spriteSheetMode ? "CTRL+1-6: Switch edit state\n" : "") +
-            (!state.spriteSheetMode ? "ALT+1-5: Switch edit mode\n" : "") +
+            (!state.spriteSheetMode ? "1-6: Switch edit state\n[#M5#1=Idle, 2=Color, 3=Press, 4=Confirm, 5=Sust. Note, 6=Sust. Tail#M5#]\n" : "") +
+            (!state.spriteSheetMode ? "ALT+1-5: Switch edit mode\n[#M2#1=Clip X/Y, 2=Clip W/H, 3=Offset,\n4=Clip Index, 5=Global Transform#M2#]\n" : "") +
             "SHIFT+UP/DOWN: Switch mania\n" +
-            "SHIFT+SPACE: Create new mania\n" +
-            "ALT+LEFT/RIGHT or ALT+MouseWheel: Adjust gap\n" +
+            "SHIFT+M: Create new mania\n" +
+            "\nALT+LEFT/RIGHT or ALT+MouseWheel: Adjust gap\n" +
             "CTRL+ALT+LEFT/RIGHT or CTRL+ALT+MouseWheel: Adjust gap (10x)\n" +
             (!state.spriteSheetMode && state.editMode == GLOBAL_TRANSFORM ?
                 "Arrow Keys: Adjust Offset/Scale\n" :
-                (state.spriteSheetMode ? "Click, Arrow Keys, or TAB: Switch receptor index\n" :
+                (state.spriteSheetMode ? "Click, Arrow Keys: Switch receptor index\n" :
                 "Arrow Keys: Edit X/Y values\n")) +
-            "CTRL+Arrow Keys: Adjust value (+10)\n" +
-            (!state.spriteSheetMode ? "CTRL+R+LEFT/RIGHT: Cycle rotation\n" : "") +
-            (!state.spriteSheetMode ? "CTRL+R+SPACE: Toggle sustain preview\n" : "") +
+            "CTRL+Arrow Keys: Adjust value (+10)\n\n" +
+            (!state.spriteSheetMode && state.showSustainPreview ? "R+LEFT/RIGHT: Cycle sustain rotation\n" : "") +
+            (!state.spriteSheetMode ? "CTRL+R: Toggle sustain preview\n" : "") +
             (!state.spriteSheetMode && state.editMode != GLOBAL_TRANSFORM ? "Click receptor or SHIFT+LEFT/RIGHT: Switch receptor\n" : "") +
             (!state.spriteSheetMode && state.editMode == GLOBAL_TRANSFORM ? "LEFT/RIGHT or SHIFT+MouseWheel: Adjust offset/scale\n" : "") +
-            "Hold Click: Toggle spritesheet view\n" +
+            "\nHold Click: Toggle spritesheet view\n" +
             (!state.spriteSheetMode && state.editMode == GLOBAL_TRANSFORM && !state.globalScaleMode ?
                 "Mouse Drag: Move strumline offset X/Y\n" :
                 "Mouse Drag: Modify current properties\n") +
-            "ESC: Close editor\n" +
+            "ESC: Close editor\n\n" +
             (state.spriteSheetMode ? "#M9#[SPRITESHEET MODE - Mouse only!]\n" +
             "Drag to pan view | Press ESC or hold click to exit#M9#\n" :
             "") +
@@ -2085,9 +2113,11 @@ private class NoteskinEditorUI {
             'Current State: ${stateColor}${stateName}${stateColor}\n' +
             'Selected Receptor: #M5#[${state.selectedIndex + 1}/${state.maxReceptors}]#M5#' +
             (state.editMode != GLOBAL_TRANSFORM ?
-                '\nEdit Mode: ${editModeColor}${editModeName}${editModeColor}' : '') +
+                '\nEdit Mode: ${editModeColor}${editModeName}${editModeColor} [X: ${basicClip.clipX}, Y: ${basicClip.clipY}, Width: ${basicClip.clipW}, Height: ${basicClip.clipH}]\n#M6#Offset: ${basicClip.offsX}x${basicClip.offsY}#M6#' : '') +
             (!state.spriteSheetMode ?
                 '\nRotation: #M10#${basicClip.rotation}\u00b0#M10#' : '') +
+            (state.currentManiaIndex == state.availableManiaConfigs.length ?
+                '\n#M2#[CLIP PREVIEW ON]#M2#' : '') +
             (state.showSustainPreview ?
                 '\n#M10#[SUSTAIN PREVIEW ON]#M10#' : '');
     }
@@ -2106,6 +2136,15 @@ private class NoteskinEditorUI {
             state.instructionsText.alignment = RIGHT;
             state.instructionsText.scale = 0.7;
             positionInstructionsTextTopRight();
+
+            if (state.instructionsBackground != null) {
+                state.instructionsBackground.x = Std.int(state.instructionsText.x - 2);
+                state.instructionsBackground.y = Std.int(state.instructionsText.y - 2);
+                state.instructionsBackground.w = Std.int(state.instructionsText.width + 2);
+                state.instructionsBackground.h = Std.int(state.instructionsText.height + 2);
+                state.gridBuf.updateElement(state.instructionsBackground);
+            }
+
             state.instructionsText.alpha = 1;
         }
     }
@@ -2226,27 +2265,21 @@ private class NoteskinEditorInputHandler {
 
         if (!state.showEditor) return;
 
-        // --- CTRL+R combinations (rotation keybinds) ---
-        if (state.isCtrlPressed && state.isRPressed) {
+        // --- CTRL+R combination (rotation keybinds) ---
+        if (state.isCtrlPressed) {
             switch (key) {
-                case KeyCode.SPACE:
+                case KeyCode.R:
                     state.showSustainPreview = !state.showSustainPreview;
                     state.renderer.updateSustainVisuals();
                     trace('Sustain preview: ${state.showSustainPreview ? "ON" : "OFF"}');
                     state.ui.updateInstructionsText();
-                    return;
-                case KeyCode.LEFT:
-                    state.clipEditor.rotateCurrentClip(-1);
-                    return;
-                case KeyCode.RIGHT:
-                    state.clipEditor.rotateCurrentClip(1);
                     return;
                 default:
             }
         }
 
         // CTRL+SPACE toggles global transform sub-mode (Offset vs Scale).
-        if (key == KeyCode.SPACE && state.isCtrlPressed) {
+        if (key == KeyCode.SPACE) {
             if (state.editMode == GLOBAL_TRANSFORM) {
                 state.globalScaleMode = !state.globalScaleMode;
                 var modeName = state.globalScaleMode ? "Scale" : "Offset";
@@ -2258,7 +2291,7 @@ private class NoteskinEditorInputHandler {
 
         // CTRL+1..6: jump directly to an edit state.
         // 1=IDLE, 2=COLOR, 3=PRESS, 4=CONFIRM, 5=HOLD_BODY, 6=HOLD_TAIL.
-        if (!state.spriteSheetMode && state.isCtrlPressed && !state.isAltPressed) {
+        if (!state.spriteSheetMode && !state.isAltPressed) {
             var newStateIdx:Int = switch(key) {
                 case KeyCode.NUMBER_1 | KeyCode.NUMPAD_1:   0;
                 case KeyCode.NUMBER_2 | KeyCode.NUMPAD_2:   1;
@@ -2277,7 +2310,7 @@ private class NoteskinEditorInputHandler {
 
         // ALT+1..5: jump directly to an edit mode.
         // 1=CLIP_POS, 2=CLIP_SIZE, 3=OFFSET, 4=CLIP_ID, 5=GLOBAL_TRANSFORM.
-        if (!state.spriteSheetMode && state.isAltPressed && !state.isCtrlPressed) {
+        if (!state.spriteSheetMode && state.isAltPressed) {
             var newModeIdx:Int = switch(key) {
                 case KeyCode.NUMBER_1 | KeyCode.NUMPAD_1:   0;
                 case KeyCode.NUMBER_2 | KeyCode.NUMPAD_2:   1;
@@ -2293,10 +2326,12 @@ private class NoteskinEditorInputHandler {
         }
 
         switch(key) {
-            case KeyCode.SPACE:
+            case KeyCode.M:
                 if (state.isShiftPressed) {
                     state.maniaManager.createNewMania();
-                } else if (!state.spriteSheetMode && state.editMode != GLOBAL_TRANSFORM) {
+                }
+            case KeyCode.SPACE:
+                if (!state.spriteSheetMode && state.editMode != GLOBAL_TRANSFORM) {
                     state.clipEditor.toggleAxisProperty();
                 }
             case KeyCode.UP:
@@ -2339,7 +2374,9 @@ private class NoteskinEditorInputHandler {
                     state.clipEditor.adjustAxisValue(1, "Y");
                 }
             case KeyCode.LEFT:
-                if (state.spriteSheetMode) {
+                if (state.showSustainPreview && state.isRPressed && !(state.isAltPressed || state.isShiftPressed || state.isCtrlPressed)) {
+                    state.clipEditor.rotateCurrentClip(-1);
+                } else if (state.spriteSheetMode) {
                     state.clipEditor.selectPreviousIndex();
                 } else if (state.isAltPressed) {
                     state.maniaManager.adjustGap(state.isCtrlPressed ? -10 : -1);
@@ -2360,7 +2397,9 @@ private class NoteskinEditorInputHandler {
                     state.clipEditor.adjustAxisValue(-1, "X");
                 }
             case KeyCode.RIGHT:
-                if (state.spriteSheetMode) {
+                if (state.showSustainPreview && state.isRPressed &&!(state.isAltPressed || state.isShiftPressed || state.isCtrlPressed)) {
+                    state.clipEditor.rotateCurrentClip(1);
+                } else if (state.spriteSheetMode) {
                     state.clipEditor.selectNextIndex();
                 } else if (state.isAltPressed) {
                     state.maniaManager.adjustGap(state.isCtrlPressed ? 10 : 1);
@@ -2378,12 +2417,6 @@ private class NoteskinEditorInputHandler {
                     }
                 } else {
                     state.clipEditor.adjustAxisValue(1, "X");
-                }
-            case KeyCode.TAB:
-                if (state.isCtrlPressed) {
-                    if (!state.spriteSheetMode) state.clipEditor.toggleEditMode();
-                } else {
-                    state.clipEditor.toggleState(state.isShiftPressed ? -1 : 1);
                 }
             default:
         }
@@ -2924,6 +2957,7 @@ class NoteskinEditor {
     var editingValue:Bool = false;
     var needsRender:Bool = false;
     var popupBackground:RepeatSprite = null;
+    var instructionsBackground:RepeatSprite = null;
 
     // Mouse state
     var isDragging:Bool = false;
