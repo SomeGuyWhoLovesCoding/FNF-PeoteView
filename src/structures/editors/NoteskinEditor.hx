@@ -336,8 +336,8 @@ private class NoteskinEditorClipEditor {
             case COLOR:     "COLOR";
             case PRESS:     "PRESS";
             case CONFIRM:   "CONFIRM";
-            case HOLD_BODY: "HOLD_BODY";
-            case HOLD_TAIL: "HOLD_TAIL";
+            case HOLD_BODY: "SUST. BODY";
+            case HOLD_TAIL: "SUST. TAIL";
             default:        "unknown";
         }
     }
@@ -375,6 +375,34 @@ private class NoteskinEditorClipEditor {
                 state.selectedProperty = "global";
         }
         trace('Edit mode: ${getEditModeName(state.editMode)}');
+        state.ui.updateInstructionsText();
+    }
+
+    /** Jump directly to a specific edit mode (used by ALT+1..4 keybinds).
+        Mirrors toggleEditMode's bookkeeping: clears globalScaleMode when
+        leaving GLOBAL_TRANSFORM, runs checkInvalidClipIDPlace, and resets
+        selectedProperty to the new mode's default. **/
+    function setEditMode(idx:Int) {
+        if (state.spriteSheetMode) return;
+        if (idx < 0 || idx > 4) return;
+
+        state.editMode = idx;
+        if (state.editMode != GLOBAL_TRANSFORM) {
+            state.globalScaleMode = false;
+        }
+        checkInvalidClipIDPlace();
+
+        // Reset selectedProperty to the new mode's default so the
+        // arrow-key editor lands on a sensible axis immediately.
+        switch(state.editMode) {
+            case CLIP_POS:          state.selectedProperty = "clipX";
+            case CLIP_SIZE:         state.selectedProperty = "clipW";
+            case OFFSET:            state.selectedProperty = "offsX";
+            case CLIP_ID:           state.selectedProperty = "clipIndex";
+            case GLOBAL_TRANSFORM:  state.selectedProperty = "global";
+        }
+
+        trace('Edit mode set to: ${getEditModeName(state.editMode)}');
         state.ui.updateInstructionsText();
     }
 
@@ -801,16 +829,39 @@ private class NoteskinEditorManiaManager {
         }
 
         // Fill in missing manias from 1 to maxKeys.
+        // Each filled mania goes through the same setup as confirmCreateMania:
+        // sort, select, update maxReceptors, ensure clips, rebuild receptors,
+        // refresh visuals/instructions, and trace.
         for (i in 1...maxKeys) {
             if (existingKeyCounts.indexOf(i) != -1) continue;
 
             var idx = [for (j in 0...i) j];
-            state.availableManiaConfigs.push({
+            var newMania:NoteskinConfig = {
                 offsetX: 0, offsetY: 0, gap: 112, scale: 1.0,
                 idleIndexes: idx.copy(), pressIndexes: idx.copy(), colorIndexes: idx.copy(),
                 confirmIndexes: idx.copy(), holdBodyIndexes: idx.copy(), holdTailIndexes: idx.copy()
-            });
-            trace('Auto-created mania with $i keys');
+            };
+
+            state.availableManiaConfigs.push(newMania);
+
+            sortManiasByKeyCount();
+
+            var newIndex = state.availableManiaConfigs.indexOf(newMania);
+            if (newIndex != -1) {
+                state.currentManiaIndex = newIndex;
+                state.currentConfig = state.availableManiaConfigs[state.currentManiaIndex];
+                updateMaxReceptorsFromConfig();
+
+                var clips = state.noteskinData.clip;
+                while (clips.length < state.maxReceptors) {
+                    clips.push(NoteskinEditorClipEditor.defaultClip());
+                }
+
+                state.renderer.createReceptors();
+                state.renderer.updateReceptorVisuals();
+                state.ui.updateInstructionsText();
+                trace('Auto-created mania with $i keys');
+            }
         }
     }
 
@@ -1131,10 +1182,22 @@ private class NoteskinEditorManiaManager {
                 trace('Created new mania config for $keyCount keys');
             }
 
-            // Update state to use the new config.
+            // Mirror confirmCreateMania: after ensuring the keyCount config
+            // exists, fill in 1K..(NK-1)K so the mania bar shows the full
+            // 1K-NK range with NK active (e.g. [4/4 - 4K]).
             state.availableManiaConfigs = configs.copy();
-            state.currentManiaIndex = configs.indexOf(foundConfig);
-            state.currentConfig = foundConfig;
+            fillMissingManias(keyCount);
+            sortManiasByKeyCount();
+
+            // After sort, refetch the index of the just-imported keyCount
+            // config (sort may have moved it).
+            var newIndex = state.availableManiaConfigs.indexOf(foundConfig);
+            if (newIndex != -1) {
+                state.currentManiaIndex = newIndex;
+                state.currentConfig = state.availableManiaConfigs[state.currentManiaIndex];
+            } else {
+                state.currentConfig = foundConfig;
+            }
             updateMaxReceptorsFromConfig();
 
             if (state.selectedIndex >= state.maxReceptors) {
@@ -1335,10 +1398,22 @@ private class NoteskinEditorManiaManager {
                 trace('Created new mania config for $keyCount keys');
             }
 
-            // Update state to use the new config.
+            // Mirror confirmCreateMania: after ensuring the keyCount config
+            // exists, fill in 1K..(NK-1)K so the mania bar shows the full
+            // 1K-NK range with NK active (e.g. [4/4 - 4K]).
             state.availableManiaConfigs = configs.copy();
-            state.currentManiaIndex = configs.indexOf(foundConfig);
-            state.currentConfig = foundConfig;
+            fillMissingManias(keyCount);
+            sortManiasByKeyCount();
+
+            // After sort, refetch the index of the just-imported keyCount
+            // config (sort may have moved it).
+            var newIndex = state.availableManiaConfigs.indexOf(foundConfig);
+            if (newIndex != -1) {
+                state.currentManiaIndex = newIndex;
+                state.currentConfig = state.availableManiaConfigs[state.currentManiaIndex];
+            } else {
+                state.currentConfig = foundConfig;
+            }
             updateMaxReceptorsFromConfig();
 
             if (state.selectedIndex >= state.maxReceptors) {
@@ -1788,18 +1863,41 @@ private class NoteskinEditorRenderer {
             var bodyClip = state.clipEditor.getClipForIndex(bodyIdxArr[i]);
             var tailClip = state.clipEditor.getClipForIndex(tailIdxArr[i]);
 
-            // Center sustain to the idle clip's drawn dimensions.
+            // Center sustain on the receptor's visual center so it
+            // pokes out of the middle of the receptor (growing upward).
+            // xOffset centers horizontally, yOffset centers vertically.
             var idleIdxArr = state.clipEditor.getIndexesForState(IDLE);
             var idleClip = state.clipEditor.getClipForIndex(idleIdxArr[i]).idle;
             var idleDrawnW = idleClip.clipW * scale;
+            var idleDrawnH = idleClip.clipH * scale;
             var sustainBaseW = 100;
-            var xOffset = Std.int((idleDrawnW - sustainBaseW) / 2);
+            var sustainBaseH = 30;
+            // Sustain rendering geometry (from Sustain.hx):
+            //   py = h * 0.5 = 15 (raw h, NOT scaled)
+            //   Position adds (0, py) before -90deg rotation around pivot (0, py).
+            //   sizeX = w * speed = 100 (constant)
+            //   sizeY = h * scale = 30 * scale (scaled)
+            // After rotation:
+            //   Visual center X = sustain.x + sustainBaseH*(scale-1)/2
+            //   Visual center Y = sustain.y - (sustainBaseW - sustainBaseH)/2
+            // Set these equal to the receptor visual center
+            //   (pos.x + offsX*scale + clipW*scale/2, pos.y + offsY*scale + clipH*scale/2)
+            // and solve for sustain.x / sustain.y.
+            // X: horizontally center the sustain's visual center on the receptor.
+            // Y: place the START (bottom) of the sustain at the receptor's visual center,
+            //    so the sustain grows upward from the middle of the receptor.
+            //    Visual bottom = sustain.y + sustainBaseH/2 (the py pivot offset).
+            //    Set visual bottom = receptor center Y and solve for sustain.y.
+            var xOffset = Std.int(idleClip.offsX * scale + (idleDrawnW + sustainBaseH * (1 - scale)) / 2);
+            var yOffset = Std.int(idleClip.offsY * scale + (idleDrawnH - sustainBaseH) / 2);
 
             var sustain = new Sustain(
-                Std.int(pos.x) + xOffset, Std.int(pos.y),
-                sustainBaseW, 30,
+                Std.int(pos.x) + xOffset,
+                Std.int(pos.y) + yOffset,
+                sustainBaseW, sustainBaseH,
                 -90, 1.0, 1.0, 0
             );
+            sustain.scale = scale;
 
             sustain.bodyX = bodyClip.holdBody.clipX;
             sustain.bodyY = bodyClip.holdBody.clipY;
@@ -1840,15 +1938,40 @@ private class NoteskinEditorRenderer {
 
             var pos = getReceptorPosition(i, gap, offsetX, offsetY);
 
-            // Center sustain to the idle clip's drawn dimensions.
+            // Center sustain on the receptor's visual center so it
+            // pokes out of the middle of the receptor (growing upward).
+            // xOffset centers horizontally, yOffset centers vertically.
             var idleIdxArr = state.clipEditor.getIndexesForState(IDLE);
             var idleClip = state.clipEditor.getClipForIndex(idleIdxArr[i]).idle;
             var idleDrawnW = idleClip.clipW * scale;
-            var sustainDrawnW = 100;
-            var xOffset = Std.int((idleDrawnW - sustainDrawnW) / 2);
+            var idleDrawnH = idleClip.clipH * scale;
+            // Use the same hardcoded constructor values as createSustains
+            // (100 x 30) so the two functions stay perfectly in sync.
+            // Reading sustain.w/sustain.h is unreliable because the
+            // Sustain class may swap w/h after its internal -90deg rotation.
+            var sustainBaseW = 100;
+            var sustainBaseH = 30;
+            // Sustain rendering geometry (from Sustain.hx):
+            //   py = h * 0.5 = 15 (raw h, NOT scaled)
+            //   Position adds (0, py) before -90deg rotation around pivot (0, py).
+            //   sizeX = w * speed = 100 (constant)
+            //   sizeY = h * scale = 30 * scale (scaled)
+            // After rotation:
+            //   Visual center X = sustain.x + sustainBaseH*(scale-1)/2
+            //   Visual center Y = sustain.y - (sustainBaseW - sustainBaseH)/2
+            // Set these equal to the receptor visual center
+            //   (pos.x + offsX*scale + clipW*scale/2, pos.y + offsY*scale + clipH*scale/2)
+            // and solve for sustain.x / sustain.y.
+            // X: horizontally center the sustain's visual center on the receptor.
+            // Y: place the START (bottom) of the sustain at the receptor's visual center,
+            //    so the sustain grows upward from the middle of the receptor.
+            //    Visual bottom = sustain.y + sustainBaseH/2 (the py pivot offset).
+            //    Set visual bottom = receptor center Y and solve for sustain.y.
+            var xOffset = Std.int(idleClip.offsX * scale + (idleDrawnW + sustainBaseH * (1 - scale)) / 2);
+            var yOffset = Std.int(idleClip.offsY * scale + (idleDrawnH - sustainBaseH) / 2);
 
             sustain.x = Std.int(pos.x) + xOffset;
-            sustain.y = Std.int(pos.y);
+            sustain.y = Std.int(pos.y) + yOffset;
             sustain.scale = scale;
 
             sustain.bodyX = bodyClip.holdBody.clipX;
@@ -1971,6 +2094,8 @@ private class NoteskinEditorUI {
             "NOTESKIN EDITOR INSTRUCTIONS:\n" +
             (!state.spriteSheetMode ? "TAB or Mouse Wheel: Cycle animation state (SHIFT+TAB to go backwards)\n" : "") +
             "CTRL+TAB: Toggle edit mode\n" +
+            (!state.spriteSheetMode ? "CTRL+1-6: Switch edit state\n" : "") +
+            (!state.spriteSheetMode ? "ALT+1-5: Switch edit mode\n" : "") +
             "SHIFT+UP/DOWN: Switch mania\n" +
             "SHIFT+SPACE: Create new mania\n" +
             "ALT+LEFT/RIGHT or ALT+MouseWheel: Adjust gap\n" +
@@ -2167,6 +2292,42 @@ private class NoteskinEditorInputHandler {
                 state.ui.updateInstructionsText();
             }
             return;
+        }
+
+        // CTRL+1..6: jump directly to an edit state.
+        // 1=IDLE, 2=COLOR, 3=PRESS, 4=CONFIRM, 5=HOLD_BODY, 6=HOLD_TAIL.
+        if (!state.spriteSheetMode && state.isCtrlPressed && !state.isAltPressed) {
+            var newStateIdx:Int = switch(key) {
+                case KeyCode.NUMBER_1 | KeyCode.NUMPAD_1:   0;
+                case KeyCode.NUMBER_2 | KeyCode.NUMPAD_2:   1;
+                case KeyCode.NUMBER_3 | KeyCode.NUMPAD_3: 2;
+                case KeyCode.NUMBER_4 | KeyCode.NUMPAD_4:  3;
+                case KeyCode.NUMBER_5 | KeyCode.NUMPAD_5:  4;
+                case KeyCode.NUMBER_6 | KeyCode.NUMPAD_6:  5;
+                default:            -1;
+            };
+            if (newStateIdx != -1) {
+                state.renderer.updateReceptorState(newStateIdx);
+                trace('Edit state set to: ${state.clipEditor.getStateName(state.currentState)}');
+                return;
+            }
+        }
+
+        // ALT+1..5: jump directly to an edit mode.
+        // 1=CLIP_POS, 2=CLIP_SIZE, 3=OFFSET, 4=CLIP_ID, 5=GLOBAL_TRANSFORM.
+        if (!state.spriteSheetMode && state.isAltPressed && !state.isCtrlPressed) {
+            var newModeIdx:Int = switch(key) {
+                case KeyCode.NUMBER_1 | KeyCode.NUMPAD_1:   0;
+                case KeyCode.NUMBER_2 | KeyCode.NUMPAD_2:   1;
+                case KeyCode.NUMBER_3 | KeyCode.NUMPAD_3: 2;
+                case KeyCode.NUMBER_4 | KeyCode.NUMPAD_4:  3;
+                case KeyCode.NUMBER_5 | KeyCode.NUMPAD_5:  4;
+                default:            -1;
+            };
+            if (newModeIdx != -1) {
+                state.clipEditor.setEditMode(newModeIdx);
+                return;
+            }
         }
 
         switch(key) {
@@ -2684,7 +2845,10 @@ private class NoteskinEditorInputHandler {
         if (!state.showEditor) return;
 
         // ALT+Wheel: adjust gap.
-        if (state.isAltPressed && !state.globalScaleMode) {
+        // Always available, including inside GLOBAL_TRANSFORM edit mode
+        // (regardless of whether the sub-mode is Offset or Scale), so the
+        // user can still tune gap without leaving the global transform mode.
+        if (state.isAltPressed) {
             var amount = deltaY > 0 ? (state.isCtrlPressed ? 10 : 1) : (state.isCtrlPressed ? -10 : -1);
             state.maniaManager.adjustGap(amount);
             return;
