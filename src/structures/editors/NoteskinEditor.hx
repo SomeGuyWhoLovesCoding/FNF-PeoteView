@@ -1483,8 +1483,8 @@ private class NoteskinEditorRenderer {
             var basicClip = state.clipEditor.getBasicClipForState(clip, state.currentState);
 
             var gridSprite = new RepeatSprite(
-                Math.round(receptor.x + basicClip.offsX),
-                Math.round(receptor.y + basicClip.offsY),
+                Math.round(receptor.x + (basicClip.offsX * scale)),
+                Math.round(receptor.y + (basicClip.offsY * scale)),
                 Math.round(basicClip.clipW * scale),
                 Math.round(basicClip.clipH * scale)
             );
@@ -1870,31 +1870,14 @@ private class NoteskinEditorRenderer {
             var idleClip = state.clipEditor.getClipForIndex(idleIdxArr[i]).idle;
             var idleDrawnW = idleClip.clipW * scale;
             var idleDrawnH = idleClip.clipH * scale;
-            var sustainBaseW = 100;
-            var sustainBaseH = 30;
-            // Sustain rendering geometry (from Sustain.hx):
-            //   py = h * 0.5 = 15 (raw h, NOT scaled)
-            //   Position adds (0, py) before -90deg rotation around pivot (0, py).
-            //   sizeX = w * speed = 100 (constant)
-            //   sizeY = h * scale = 30 * scale (scaled)
-            // After rotation:
-            //   Visual center X = sustain.x + sustainBaseH*(scale-1)/2
-            //   Visual center Y = sustain.y - (sustainBaseW - sustainBaseH)/2
-            // Set these equal to the receptor visual center
-            //   (pos.x + offsX*scale + clipW*scale/2, pos.y + offsY*scale + clipH*scale/2)
-            // and solve for sustain.x / sustain.y.
-            // X: horizontally center the sustain's visual center on the receptor.
-            // Y: place the START (bottom) of the sustain at the receptor's visual center,
-            //    so the sustain grows upward from the middle of the receptor.
-            //    Visual bottom = sustain.y + sustainBaseH/2 (the py pivot offset).
-            //    Set visual bottom = receptor center Y and solve for sustain.y.
-            var xOffset = Std.int(idleClip.offsX * scale + (idleDrawnW + sustainBaseH * (1 - scale)) / 2);
-            var yOffset = Std.int(idleClip.offsY * scale + (idleDrawnH - sustainBaseH) / 2);
+            // NoteVB.hx followNote approach: place sustain at receptor center.
+            var xOffset = Std.int(idleClip.offsX * scale + idleDrawnW / 2);
+            var yOffset = Std.int(idleClip.offsY * scale + idleDrawnH / 2);
 
             var sustain = new Sustain(
                 Std.int(pos.x) + xOffset,
                 Std.int(pos.y) + yOffset,
-                sustainBaseW, sustainBaseH,
+                100, 30,
                 -90, 1.0, 1.0, 0
             );
             sustain.scale = scale;
@@ -1945,30 +1928,9 @@ private class NoteskinEditorRenderer {
             var idleClip = state.clipEditor.getClipForIndex(idleIdxArr[i]).idle;
             var idleDrawnW = idleClip.clipW * scale;
             var idleDrawnH = idleClip.clipH * scale;
-            // Use the same hardcoded constructor values as createSustains
-            // (100 x 30) so the two functions stay perfectly in sync.
-            // Reading sustain.w/sustain.h is unreliable because the
-            // Sustain class may swap w/h after its internal -90deg rotation.
-            var sustainBaseW = 100;
-            var sustainBaseH = 30;
-            // Sustain rendering geometry (from Sustain.hx):
-            //   py = h * 0.5 = 15 (raw h, NOT scaled)
-            //   Position adds (0, py) before -90deg rotation around pivot (0, py).
-            //   sizeX = w * speed = 100 (constant)
-            //   sizeY = h * scale = 30 * scale (scaled)
-            // After rotation:
-            //   Visual center X = sustain.x + sustainBaseH*(scale-1)/2
-            //   Visual center Y = sustain.y - (sustainBaseW - sustainBaseH)/2
-            // Set these equal to the receptor visual center
-            //   (pos.x + offsX*scale + clipW*scale/2, pos.y + offsY*scale + clipH*scale/2)
-            // and solve for sustain.x / sustain.y.
-            // X: horizontally center the sustain's visual center on the receptor.
-            // Y: place the START (bottom) of the sustain at the receptor's visual center,
-            //    so the sustain grows upward from the middle of the receptor.
-            //    Visual bottom = sustain.y + sustainBaseH/2 (the py pivot offset).
-            //    Set visual bottom = receptor center Y and solve for sustain.y.
-            var xOffset = Std.int(idleClip.offsX * scale + (idleDrawnW + sustainBaseH * (1 - scale)) / 2);
-            var yOffset = Std.int(idleClip.offsY * scale + (idleDrawnH - sustainBaseH) / 2);
+            // NoteVB.hx followNote approach: place sustain at receptor center.
+            var xOffset = Std.int(idleClip.offsX * scale + idleDrawnW / 2);
+            var yOffset = Std.int(idleClip.offsY * scale + idleDrawnH / 2);
 
             sustain.x = Std.int(pos.x) + xOffset;
             sustain.y = Std.int(pos.y) + yOffset;
@@ -2750,8 +2712,8 @@ private class NoteskinEditorInputHandler {
                     // Global offset drag — only applies in offset sub-mode;
                     // scale sub-mode is handled by arrow keys.
                     if (state.globalScaleMode) return;
-                    state.currentConfig.offsetX = Std.int(state.dragStartOffsX + dx);
-                    state.currentConfig.offsetY = Std.int(state.dragStartOffsY + dy);
+                    state.currentConfig.offsetX = Std.int(state.dragStartOffsX + (dx * scale));
+                    state.currentConfig.offsetY = Std.int(state.dragStartOffsY + (dy * scale));
                     state.renderer.updateGlobalTransform();
                     setCursor(MouseCursor.MOVE);
                     return;
