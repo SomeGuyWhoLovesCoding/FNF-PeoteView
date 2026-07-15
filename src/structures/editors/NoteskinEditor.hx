@@ -54,10 +54,25 @@ private enum abstract EditMode(Int) from Int to Int {
 }
 
 // ============================================================================
-// NoteskinGUISprite — lightweight tiled sprite for GUI button labels.
-// Based on UISprite but hardcoded for the gui_buttons.png atlas (128×256,
-// 5 frames of 96×49 each). Uses the same Element/buffer pattern as the
-// existing UISprite so it renders in a single shared buffer+program.
+// GUI Atlas Frame -- parsed from gui_buttons.xml (Adobe Animate export).
+// ============================================================================
+
+typedef GuiAtlasFrame = {
+    var name:String;
+    var x:Int;
+    var y:Int;
+    var width:Int;
+    var height:Int;
+    var frameX:Int;
+    var frameY:Int;
+    var frameWidth:Int;
+    var frameHeight:Int;
+};
+
+// ============================================================================
+// NoteskinGUISprite -- lightweight sprite for GUI button labels.
+// Uses frame data parsed from gui_buttons.xml (580x512 atlas, 18 frames).
+// Each frame is rendered at its native pixel dimensions -- NO stretching.
 // ============================================================================
 
 @:publicFields
@@ -70,13 +85,13 @@ class NoteskinGUISprite implements Element {
 
     @texX var clipX:Int = 0;
     @texY var clipY:Int = 0;
-    @texW var clipWidth:Int = 96;
-    @texH var clipHeight:Int = 49;
+    @texW var clipWidth:Int = 191;
+    @texH var clipHeight:Int = 97;
 
     @texPosX  var clipPosX:Int = 0;
     @texPosY  var clipPosY:Int = 0;
-    @custom @varying @texSizeX var clipSizeX:Int = 96;
-    @custom @varying @texSizeY var clipSizeY:Int = 49;
+    @custom @varying @texSizeX var clipSizeX:Int = 191;
+    @custom @varying @texSizeY var clipSizeY:Int = 97;
 
     @rotation @formula("uDisplayRotation(r)") var r:Float = 0.0;
 
@@ -114,12 +129,32 @@ class NoteskinGUISprite implements Element {
 
     var OPTIONS = { texRepeatX: false, texRepeatY: false, blend: true };
 
-    // Atlas layout: 5 frames, each 96×49, stacked vertically.
-    // Frame 0 = y:0, Frame 1 = y:49, Frame 2 = y:98, Frame 3 = y:147, Frame 4 = y:196
-    static inline var FRAME_W:Int = 96;
-    static inline var FRAME_H:Int = 49;
-    static inline var ATLAS_W:Int = 128;
-    static inline var ATLAS_H:Int = 256;
+    // Atlas dimensions (580x512)
+    static inline var ATLAS_W:Int = 580;
+    static inline var ATLAS_H:Int = 512;
+
+    // Frame data parsed from gui_buttons.xml -- 18 frames total.
+    // 8 frames are 191x97 (full width), 10 frames are 101x97 (trimmed).
+    public static var ATLAS_FRAMES:Array<GuiAtlasFrame> = [
+        { name: "instance 10000", x: 0,   y: 0,   width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10001", x: 191, y: 0,   width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10002", x: 382, y: 0,   width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10003", x: 0,   y: 97,  width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10004", x: 191, y: 97,  width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10005", x: 382, y: 97,  width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10006", x: 0,   y: 388, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10007", x: 101, y: 388, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10008", x: 191, y: 194, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10009", x: 191, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10010", x: 202, y: 388, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10011", x: 292, y: 194, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10012", x: 292, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10013", x: 303, y: 388, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10014", x: 404, y: 194, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10015", x: 393, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10016", x: 0,   y: 194, width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10017", x: 0,   y: 291, width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+    ];
 
     static function init(program:CustomProgram, name:String, texture:Texture) {
         program.setTexture(texture, name, true);
@@ -143,16 +178,22 @@ class NoteskinGUISprite implements Element {
 
     function new() {}
 
-    /** Set this sprite to display frame `id` (0–4). Clamps automatically. */
+    /**
+        Set this sprite to display frame `id` (0-17).
+        Uses ATLAS_FRAMES for all UV and size data -- pixel-perfect, no stretching.
+    */
     inline function changeID(id:Int) {
         if (id < 0) id = 0;
-        if (id > 4) id = 4;
-        clipX = 0;
-        clipY = id * FRAME_H;
-        clipWidth = FRAME_W;
-        clipHeight = FRAME_H;
-        clipSizeX = FRAME_W;
-        clipSizeY = FRAME_H;
+        if (id >= ATLAS_FRAMES.length) id = ATLAS_FRAMES.length - 1;
+        var f = ATLAS_FRAMES[id];
+        clipX = f.x;
+        clipY = f.y;
+        clipWidth = f.width;
+        clipHeight = f.height;
+        clipSizeX = f.width;
+        clipSizeY = f.height;
+        w = f.width;
+        h = f.height;
         curID = id;
     }
 }
@@ -1678,7 +1719,7 @@ private class NoteskinEditorRenderer {
             TextureSystem.pool[NoteskinEditor.GUI_TEXTURE_NAME] = guiTex;
             state.guiTexture = guiTex;
 
-            state.guiSpriteBuf = new Buffer<NoteskinGUISprite>(16, 16, true);
+            state.guiSpriteBuf = new Buffer<NoteskinGUISprite>(32, 32, true);
             state.guiSpriteProg = new CustomProgram(state.guiSpriteBuf);
             NoteskinGUISprite.init(state.guiSpriteProg, NoteskinEditor.GUI_TEXTURE_NAME, guiTex);
             state.view.addProgram(state.guiSpriteProg);
@@ -2128,25 +2169,17 @@ private class NoteskinEditorRenderer {
 }
 
 // ============================================================================
-// UI — instructions text and create-mania popup rendering
-// ============================================================================
 
 @:publicFields
 private class NoteskinEditorUI {
     var state:NoteskinEditor;
 
-    // Layout constants — condensed / mobile-friendly
-    static inline var BTN_H:Int = 24;
-    static inline var BTN_PAD:Int = 2;
-    static inline var COL1_W:Int = 112; // edit-state buttons
-    static inline var COL2_W:Int = 88;  // edit-mode buttons
-    static inline var COL3_W:Int = 78;   // small action buttons
-    static inline var ROW_PAD:Int = 2;
+    // Layout constants
+    static inline var BTN_GAP:Int = 3;
     static inline var PANEL_PAD:Int = 5;
     static inline var STATE_SCALE:Float = 0.48;
-
-    // Row y-tracker
-    var curY:Int = 0;
+    static inline var PLAIN_BTN_W:Int = 101;
+    static inline var PLAIN_BTN_H:Int = 97;
 
     // Section colors
     static inline var COL_STATE_BG:Int   = 0x002244FF;
@@ -2158,15 +2191,6 @@ private class NoteskinEditorUI {
     static inline var COL_DANGER_BG:Int  = 0x440000FF;
     static inline var COL_DANGER_ACT:Int = 0x880000FF;
     static inline var COL_INFO_BG:Int    = 0x222233FF;
-
-    // GUI sprite frame assignments per button category
-    // Frame 0 = edit-state, Frame 1 = edit-mode, Frame 2 = nav,
-    // Frame 3 = value adjust, Frame 4 = action/toggle
-    static inline var FRAME_STATE:Int  = 0;
-    static inline var FRAME_MODE:Int   = 1;
-    static inline var FRAME_NAV:Int    = 2;
-    static inline var FRAME_VALUE:Int  = 3;
-    static inline var FRAME_ACTION:Int = 4;
 
     // Marker pairs shared by state readout text and popups
     static var MARKERS(get, null):Array<TextFormatMarkerPair>;
@@ -2193,10 +2217,48 @@ private class NoteskinEditorUI {
         this.state = state;
     }
 
-    // --- Button factory (RepeatSprite box + optional NoteskinGUISprite label) ---
+    // --- Frame assignment: maps each action to its XML frame index (or -1 for plain) ---
 
-    function makeButton(x:Int, y:Int, w:Int, action:String, frameID:Int, bgCol:Int = 0x333333FF):{box:RepeatSprite, sprite:NoteskinGUISprite, action:String} {
-        var box = new RepeatSprite(x, y, w, BTN_H);
+    static function getSpriteFrame(action:String):Int {
+        return switch(action) {
+            // 191-wide frames (0-5, 16, 17)
+            case "state_idle":         0;
+            case "state_color":        1;
+            case "state_press":        2;
+            case "state_confirm":      3;
+            case "state_holdbody":     4;
+            case "state_holdtail":     5;
+            case "mania_create":       16;
+            case "sustain_toggle":     17;
+            // 101-wide frames (6-15)
+            case "show_instructions":  6;
+            case "rot_next":           7;
+            case "gap_m1":             8;
+            case "gap_p1":             9;
+            case "rot_prev":           10;
+            case "gap_p10":            11;
+            case "spritesheet_toggle": 12;
+            case "toggle_axis":        13;
+            case "mode_global":        14;
+            case "gap_m10":            15;
+            default: -1;
+        };
+    }
+
+    // --- Background color for a button action ---
+
+    static function getBgColor(action:String):Int {
+        if (action.startsWith("state_"))  return COL_STATE_BG;
+        if (action.startsWith("mode_"))   return COL_MODE_BG;
+        if (action == "mania_create" || action == "show_instructions") return COL_DANGER_BG;
+        return COL_ACTION_BG;
+    }
+
+    // --- Button factories ---
+
+    function makeSpriteButton(x:Int, y:Int, action:String, frameID:Int, bgCol:Int):{box:RepeatSprite, sprite:NoteskinGUISprite, action:String} {
+        var f = NoteskinGUISprite.ATLAS_FRAMES[frameID];
+        var box = new RepeatSprite(x, y, f.width, f.height);
         box.c = bgCol;
         box.c.aF = 0.7;
         state.gridBuf.addElement(box);
@@ -2206,8 +2268,6 @@ private class NoteskinEditorUI {
             sprite = new NoteskinGUISprite();
             sprite.x = x;
             sprite.y = y;
-            sprite.w = w;
-            sprite.h = BTN_H;
             sprite.changeID(frameID);
             sprite.alpha = 0.85;
             state.guiSpriteBuf.addElement(sprite);
@@ -2217,112 +2277,148 @@ private class NoteskinEditorUI {
         return {box: box, sprite: sprite, action: action};
     }
 
-    /** Map an action string to a GUI sprite frame ID. */
-    function getFrameForAction(action:String):Int {
-        if (action.startsWith("state_"))  return FRAME_STATE;
-        if (action.startsWith("mode_"))   return FRAME_MODE;
-        if (action.startsWith("mania_") || action.startsWith("receptor_")) return FRAME_NAV;
-        if (action.startsWith("gap_") || action.startsWith("rot_")) return FRAME_VALUE;
-        return FRAME_ACTION;
+    function makePlainButton(x:Int, y:Int, w:Int, h:Int, action:String, bgCol:Int):{box:RepeatSprite, sprite:NoteskinGUISprite, action:String} {
+        var box = new RepeatSprite(x, y, w, h);
+        box.c = bgCol;
+        box.c.aF = 0.7;
+        state.gridBuf.addElement(box);
+        return {box: box, sprite: null, action: action};
     }
 
     // --- Build the entire GUI panel ---
 
     function buildGUIPanel() {
-        var panelW = PANEL_PAD + COL1_W + BTN_PAD + COL2_W + BTN_PAD + COL3_W + PANEL_PAD;
-        var panelX = Main.INITIAL_WIDTH - panelW;
+        // Define all button actions in logical groups
+        var allActions:Array<String> = [
+            // Edit states (6)
+            "state_idle", "state_color", "state_press", "state_confirm", "state_holdbody", "state_holdtail",
+            // Edit modes (5)
+            "mode_clippos", "mode_clipsize", "mode_offset", "mode_clipid", "mode_global",
+            // Navigation
+            "mania_prev", "mania_next",
+            // Creation
+            "mania_create",
+            // Gap
+            "gap_m10", "gap_m1", "gap_p1", "gap_p10",
+            // Receptor
+            "receptor_prev", "receptor_next",
+            // Sustain
+            "sustain_toggle",
+            // Rotation
+            "rot_prev", "rot_next",
+            // Toggles
+            "spritesheet_toggle", "toggle_axis",
+            // Help
+            "show_instructions",
+        ];
+
+        // Build button definitions with dimensions from the XML atlas frames
+        var btnDefs:Array<{action:String, w:Int, h:Int, frameID:Int}> = [];
+        for (action in allActions) {
+            var frameID = getSpriteFrame(action);
+            var w:Int;
+            var h:Int;
+            if (frameID >= 0) {
+                var f = NoteskinGUISprite.ATLAS_FRAMES[frameID];
+                w = f.width;
+                h = f.height;
+            } else {
+                w = PLAIN_BTN_W;
+                h = PLAIN_BTN_H;
+            }
+            btnDefs.push({action: action, w: w, h: h, frameID: frameID});
+        }
+
+        // Sort by width descending (widest buttons first for positional layout).
+        // Within the same width, maintain the original action order.
+        btnDefs.sort(function(a, b):Int {
+            if (b.w != a.w) return b.w - a.w;
+            return Reflect.compare(a.action, b.action);
+        });
+
+        // Flow layout -- compute positions relative to panel content origin
+        var maxRowContentW = Std.int(Main.INITIAL_WIDTH * 0.45);
+        if (maxRowContentW < 400) maxRowContentW = 400;
+        if (maxRowContentW > 700) maxRowContentW = 700;
+
+        var localX = 0;
+        var localY = 0;
+        var rowH = 0;
+        var maxRowW = 0;
+
+        var positioned:Array<{action:String, lx:Int, ly:Int, w:Int, h:Int, frameID:Int}> = [];
+
+        for (def in btnDefs) {
+            // Wrap to next row if this button doesn't fit
+            if (localX + def.w > maxRowContentW && localX > 0) {
+                if (localX - BTN_GAP > maxRowW) maxRowW = localX - BTN_GAP;
+                localX = 0;
+                localY += rowH + BTN_GAP;
+                rowH = 0;
+            }
+
+            positioned.push({
+                action: def.action,
+                lx: localX,
+                ly: localY,
+                w: def.w,
+                h: def.h,
+                frameID: def.frameID
+            });
+
+            localX += def.w + BTN_GAP;
+            if (def.h > rowH) rowH = def.h;
+        }
+
+        // Track final row width
+        if (localX - BTN_GAP > maxRowW) maxRowW = localX - BTN_GAP;
+        var contentH = localY + rowH;
+
+        // Compute panel size (right-aligned to screen edge)
+        var pad = PANEL_PAD;
+        var panelW = maxRowW + pad * 2;
+        var panelH = contentH + pad * 2;
+        var panelX = Main.INITIAL_WIDTH - panelW - 4;
         var panelY = 4;
 
-        // Background
+        // Create / update the panel background
         if (state.guiBackground == null) {
-            state.guiBackground = new RepeatSprite(panelX, panelY, panelW, 10);
+            state.guiBackground = new RepeatSprite(panelX, panelY, panelW, panelH);
             state.guiBackground.c = 0x000000FF;
             state.guiBackground.c.aF = 0.7;
             state.gridBuf.addElement(state.guiBackground);
+        } else {
+            state.guiBackground.x = panelX;
+            state.guiBackground.y = panelY;
+            state.guiBackground.w = panelW;
+            state.guiBackground.h = panelH;
+            state.gridBuf.updateElement(state.guiBackground);
         }
 
-        curY = panelY + PANEL_PAD;
-        var secX = panelX + PANEL_PAD;
+        // Create buttons at absolute positions
+        for (p in positioned) {
+            var bx = panelX + pad + p.lx;
+            var by = panelY + pad + p.ly;
+            var bgCol = getBgColor(p.action);
 
-        // === Column 1: Edit State (6 buttons in 3 rows of 2) ===
-        var halfCol = Std.int((COL1_W - BTN_PAD) / 2);
-        pushBtn(secX, curY, halfCol, "state_idle");
-        pushBtn(secX + halfCol + BTN_PAD, curY, halfCol, "state_color");
-        curY += BTN_H + ROW_PAD;
-        pushBtn(secX, curY, halfCol, "state_press");
-        pushBtn(secX + halfCol + BTN_PAD, curY, halfCol, "state_confirm");
-        curY += BTN_H + ROW_PAD;
-        pushBtn(secX, curY, halfCol, "state_holdbody");
-        pushBtn(secX + halfCol + BTN_PAD, curY, halfCol, "state_holdtail");
-        var col1BtnEnd = curY + BTN_H;
-
-        // === Column 2: Edit Mode (5 buttons stacked) ===
-        var modeX = secX + COL1_W + BTN_PAD;
-        var localY = panelY + PANEL_PAD;
-        var modeW = COL2_W;
-        pushBtn(modeX, localY, modeW, "mode_clippos");
-        localY += BTN_H + ROW_PAD;
-        pushBtn(modeX, localY, modeW, "mode_clipsize");
-        localY += BTN_H + ROW_PAD;
-        pushBtn(modeX, localY, modeW, "mode_offset");
-        localY += BTN_H + ROW_PAD;
-        pushBtn(modeX, localY, modeW, "mode_clipid");
-        localY += BTN_H + ROW_PAD;
-        pushBtn(modeX, localY, modeW, "mode_global");
-        var col2BtnEnd = localY + BTN_H;
-
-        // === Column 3: Actions (condensed — no large section gaps) ===
-        var actX = modeX + COL2_W + BTN_PAD;
-        var actW = COL3_W;
-        var actY = panelY + PANEL_PAD;
-        var halfAct = Std.int((actW - BTN_PAD) / 2);
-
-        // Mania nav
-        pushBtn(actX, actY, halfAct, "mania_prev");
-        pushBtn(actX + halfAct + BTN_PAD, actY, halfAct, "mania_next");
-        actY += BTN_H + ROW_PAD;
-        pushBtn(actX, actY, actW, "mania_create");
-        actY += BTN_H + ROW_PAD;
-
-        // Gap
-        pushBtn(actX, actY, halfAct, "gap_m10");
-        pushBtn(actX + halfAct + BTN_PAD, actY, halfAct, "gap_m1");
-        actY += BTN_H + ROW_PAD;
-        pushBtn(actX, actY, halfAct, "gap_p1");
-        pushBtn(actX + halfAct + BTN_PAD, actY, halfAct, "gap_p10");
-        actY += BTN_H + ROW_PAD;
-
-        // Receptor
-        pushBtn(actX, actY, halfAct, "receptor_prev");
-        pushBtn(actX + halfAct + BTN_PAD, actY, halfAct, "receptor_next");
-        actY += BTN_H + ROW_PAD;
-
-        // Sustain
-        pushBtn(actX, actY, actW, "sustain_toggle");
-        actY += BTN_H + ROW_PAD;
-        pushBtn(actX, actY, halfAct, "rot_prev");
-        pushBtn(actX + halfAct + BTN_PAD, actY, halfAct, "rot_next");
-        actY += BTN_H + ROW_PAD;
-
-        // Toggles
-        pushBtn(actX, actY, actW, "spritesheet_toggle");
-        actY += BTN_H + ROW_PAD;
-        pushBtn(actX, actY, actW, "toggle_axis");
-        actY += BTN_H + ROW_PAD;
-
-        // Help button at bottom-right
-        pushBtn(actX, actY, actW, "show_instructions");
-        var col3BtnEnd = actY + BTN_H;
+            var entry:{box:RepeatSprite, sprite:NoteskinGUISprite, action:String};
+            if (p.frameID >= 0) {
+                entry = makeSpriteButton(bx, by, p.action, p.frameID, bgCol);
+            } else {
+                entry = makePlainButton(bx, by, p.w, p.h, p.action, bgCol);
+            }
+            state.guiButtons.push(entry);
+        }
 
         // Update the GUI sprite buffer after adding all sprites
         if (state.guiSpriteBuf != null) {
             state.guiSpriteBuf.update();
         }
 
-        // --- State readout Text (column 1, below state buttons) ---
-        var readoutY = col1BtnEnd + 4;
+        // --- State readout Text (below the panel) ---
+        var readoutY = panelY + panelH + 4;
         if (state.guiStateText == null) {
-            state.guiStateText = new Text("GUI_STATE_READOUT", secX, readoutY, state.display, "", "vcr");
+            state.guiStateText = new Text("GUI_STATE_READOUT", panelX + pad, readoutY, state.display, "", "vcr");
             state.guiStateText.scale = STATE_SCALE;
             state.guiStateText.alpha = 0;
             state.guiStateText.multiline = true;
@@ -2333,35 +2429,12 @@ private class NoteskinEditorUI {
             state.guiStateText.setMarkerPairs(MARKERS);
             state.guiStateText.addProgram();
         } else {
-            state.guiStateText.x = secX;
+            state.guiStateText.x = panelX + pad;
             state.guiStateText.y = readoutY;
         }
 
         updateStateReadout();
         state.guiStateText.refresh();
-        var readoutBottom = Std.int(state.guiStateText.y + state.guiStateText.height + ROW_PAD);
-
-        // Resize the panel background to fit the tallest column
-        var maxBottom = col1BtnEnd;
-        if (col2BtnEnd > maxBottom) maxBottom = col2BtnEnd;
-        if (col3BtnEnd > maxBottom) maxBottom = col3BtnEnd;
-        if (readoutBottom > maxBottom) maxBottom = readoutBottom;
-
-        state.guiBackground.w = panelW;
-        state.guiBackground.h = maxBottom - panelY + PANEL_PAD;
-        state.gridBuf.updateElement(state.guiBackground);
-    }
-
-    /** Push a button into state.guiButtons (RepeatSprite box + NoteskinGUISprite label). */
-    function pushBtn(x:Int, y:Int, w:Int, action:String) {
-        var bgCol = COL_INFO_BG;
-        var frameID = getFrameForAction(action);
-        // Assign section colors by action prefix
-        if (action.startsWith("state_"))  bgCol = COL_STATE_BG;
-        if (action.startsWith("mode_"))   bgCol = COL_MODE_BG;
-        if (action == "mania_create" || action == "show_instructions") bgCol = COL_DANGER_BG;
-        var entry = makeButton(x, y, w, action, frameID, bgCol);
-        state.guiButtons.push(entry);
     }
 
     // --- State readout ---
@@ -2637,6 +2710,8 @@ private class NoteskinEditorUI {
         state.gridBuf.update();
     }
 }
+
+
 
 // ============================================================================
 // Input Handler — keyboard and mouse event routing
