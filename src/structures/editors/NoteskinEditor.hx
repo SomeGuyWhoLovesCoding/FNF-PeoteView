@@ -71,7 +71,7 @@ typedef GuiAtlasFrame = {
 
 // ============================================================================
 // NoteskinGUISprite -- lightweight sprite for GUI button labels.
-// Uses frame data parsed from gui_buttons.xml (580x512 atlas, 18 frames).
+// Uses frame data parsed from gui_buttons.xml (1024x512 atlas, 25 frames).
 // Each frame is rendered at its native pixel dimensions -- NO stretching.
 // ============================================================================
 
@@ -129,31 +129,38 @@ class NoteskinGUISprite implements Element {
 
     var OPTIONS = { texRepeatX: false, texRepeatY: false, blend: true };
 
-    // Atlas dimensions (580x512)
-    static inline var ATLAS_W:Int = 580;
+    // Atlas dimensions (1024x512)
+    static inline var ATLAS_W:Int = 1024;
     static inline var ATLAS_H:Int = 512;
 
-    // Frame data parsed from gui_buttons.xml -- 18 frames total.
-    // 8 frames are 191x97 (full width), 10 frames are 101x97 (trimmed).
+    // Frame data parsed from gui_buttons.xml -- 25 frames total.
+    // 14 frames are 191x97 (full width), 11 frames are 101x97 (trimmed).
     public static var ATLAS_FRAMES:Array<GuiAtlasFrame> = [
         { name: "instance 10000", x: 0,   y: 0,   width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
         { name: "instance 10001", x: 191, y: 0,   width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
         { name: "instance 10002", x: 382, y: 0,   width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10003", x: 0,   y: 97,  width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10004", x: 191, y: 97,  width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10005", x: 382, y: 97,  width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10006", x: 0,   y: 388, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10007", x: 101, y: 388, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10008", x: 191, y: 194, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10009", x: 191, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10010", x: 202, y: 388, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10011", x: 292, y: 194, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10012", x: 292, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10013", x: 303, y: 388, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10014", x: 404, y: 194, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10015", x: 393, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10016", x: 0,   y: 194, width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10017", x: 0,   y: 291, width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10003", x: 573, y: 0,   width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10004", x: 764, y: 0,   width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10005", x: 0,   y: 97,  width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10006", x: 764, y: 194, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10007", x: 865, y: 194, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10008", x: 0,   y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10009", x: 101, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10010", x: 202, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10011", x: 303, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10012", x: 404, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10013", x: 505, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10014", x: 606, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10015", x: 707, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10016", x: 808, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10017", x: 191, y: 97,  width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10018", x: 382, y: 97,  width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10019", x: 573, y: 97,  width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10020", x: 764, y: 97,  width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10021", x: 0,   y: 194, width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10022", x: 191, y: 194, width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10023", x: 382, y: 194, width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10024", x: 573, y: 194, width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
     ];
 
     static function init(program:CustomProgram, name:String, texture:Texture) {
@@ -475,6 +482,17 @@ private class NoteskinEditorClipEditor {
         if (newState < 0) newState = 5;
         if (newState >= 6) newState = 0;
         state.renderer.updateReceptorState(newState);
+        trace('State changed to: ${getStateName(state.currentState)}');
+    }
+
+    function toggleStateEqual(currentState:EditState) {
+        if (state.spriteSheetMode) {
+            return;
+        }
+        var newState:Int = currentState;
+        if (newState < 0) newState = 5;
+        if (newState >= 6) newState = 0;
+        state.renderer.updateReceptorState(currentState);
         trace('State changed to: ${getStateName(state.currentState)}');
     }
 
@@ -991,20 +1009,13 @@ private class NoteskinEditorManiaManager {
         state.createManiaInput = "";
         state.createManiaError = "";
 
+        if (state.instructionsText != null) {
+            state.instructionsText.alpha = 0;
+        }
         if (state.popupBackground != null) {
             state.gridBuf.removeElement(state.popupBackground);
             state.popupBackground = null;
             state.gridBuf.update();
-        }
-
-        if (state.instructionsBackground == null) {
-            state.instructionsBackground = new RepeatSprite(
-                Std.int(state.instructionsText.x - 1), Std.int(state.instructionsText.y - 1),
-                Std.int(state.instructionsText.width + 4), Std.int(state.instructionsText.height + 4)
-            );
-            state.instructionsBackground.c = 0x000000FF;
-            state.instructionsBackground.c.aF = 0.6;
-            state.gridBuf.addElement(state.instructionsBackground);
         }
 
         state.ui.updateInstructionsText();
@@ -1761,11 +1772,18 @@ private class NoteskinEditorRenderer {
 
     function createImportButton() {
         var btnH = NoteskinEditor.IMPORT_BUTTON_HEIGHT;
-        var btnY = 4;
+        var btnSaveW = NoteskinEditor.SAVE_BUTTON_WIDTH;
+        var btn4W = NoteskinEditor.IMPORT_BUTTON_WIDTH;
+        var btn18W = NoteskinEditor.IMPORT_BUTTON_18K_WIDTH;
+        var totalW = btnSaveW + 4 + btn4W + 4 + btn18W;
+        var margin = 4;
+
+        // Position at bottom-right of screen
+        var btnY = Main.INITIAL_HEIGHT - btnH - margin;
+        var rowX = Main.INITIAL_WIDTH - totalW - margin;
 
         // Save noteskin button (dark blue)
-        var btnSaveW = NoteskinEditor.SAVE_BUTTON_WIDTH;
-        var btnSaveX = 4;
+        var btnSaveX = rowX;
         state.saveButtonBox = new RepeatSprite(btnSaveX, btnY, btnSaveW, btnH);
         state.saveButtonBox.c = 0x000088FF;
         state.saveButtonBox.c.aF = 0.85;
@@ -1780,8 +1798,7 @@ private class NoteskinEditorRenderer {
         state.saveButtonText.addProgram();
 
         // Vanilla import button
-        var btn4W = NoteskinEditor.IMPORT_BUTTON_WIDTH;
-        var btn4X = btnSaveX + btnSaveW + 4;
+        var btn4X = rowX + btnSaveW + 4;
         state.importButtonBox = new RepeatSprite(btn4X, btnY, btn4W, btnH);
         state.importButtonBox.c = 0x000000FF;
         state.importButtonBox.c.aF = 0.75;
@@ -1796,8 +1813,7 @@ private class NoteskinEditorRenderer {
         state.importButtonText.addProgram();
 
         // 18K import button
-        var btn18W = NoteskinEditor.IMPORT_BUTTON_18K_WIDTH;
-        var btn18X = btn4X + btn4W + 4;
+        var btn18X = rowX + btnSaveW + 4 + btn4W + 4;
         state.importButton18KBox = new RepeatSprite(btn18X, btnY, btn18W, btnH);
         state.importButton18KBox.c = 0x000000FF;
         state.importButton18KBox.c.aF = 0.75;
@@ -2275,8 +2291,8 @@ private class NoteskinEditorUI {
             case "sustain_toggle":      5;
             case "sust_texrot_p90":     6;
             case "sust_texrot_m90":     7;
-            case "sust_rot_p90":        8;
-            case "sust_rot_m90":        9;
+            case "sust_rot_p45":        8;
+            case "sust_rot_m45":        9;
             case "gap_p1":              10;
             case "gap_m1":              11;
             case "gap_p10":             12;
@@ -2352,10 +2368,10 @@ private class NoteskinEditorUI {
         return {box: box, sprite: null, action: action};
     }
 
-    // --- Build the entire GUI panel ---
+    // --- Build GUI panels (two separate panels: left=square, right=wide) ---
 
     function buildGUIPanel() {
-        // 18 buttons, one per XML atlas frame, in frame-number order.
+        // 25 buttons total: 14 wide (191px) + 11 square (101px)
         var allActions:Array<String> = [
             "mode_clippos",          // frame 0  — Position
             "mode_clipsize",         // frame 1  — Size
@@ -2365,8 +2381,8 @@ private class NoteskinEditorUI {
             "sustain_toggle",        // frame 5  — Toggle Sustain
             "sust_texrot_p90",       // frame 6  — +90 deg sustain tex coord rotation
             "sust_texrot_m90",       // frame 7  — -90 deg sustain tex coord rotation
-            "sust_rot_p90",          // frame 8  — +90 deg regular sustain rotation
-            "sust_rot_m90",          // frame 9  — -90 deg regular sustain rotation
+            "sust_rot_p45",          // frame 8  — +90 deg regular sustain rotation
+            "sust_rot_m45",          // frame 9  — -90 deg regular sustain rotation
             "gap_p1",                // frame 10 — +1 gap adjustment
             "gap_m1",                // frame 11 — -1 gap adjustment
             "gap_p10",               // frame 12 — +10 gap adjustment
@@ -2384,96 +2400,96 @@ private class NoteskinEditorUI {
             "switch_state_holdtail", // frame 24 — switch anim state #6
         ];
 
-        // Build button definitions with display dimensions (80% of texture size)
-        var btnDefs:Array<{action:String, w:Int, h:Int, frameID:Int}> = [];
+        // Separate into square (101px) and wide (191px) groups
+        var squareDefs:Array<{action:String, w:Int, h:Int, frameID:Int}> = [];
+        var wideDefs:Array<{action:String, w:Int, h:Int, frameID:Int}> = [];
+
         for (action in allActions) {
             var frameID = getSpriteFrame(action);
             if (frameID < 0) continue;
-            var w = displayW(frameID);
-            var h = displayH(frameID);
-            btnDefs.push({action: action, w: w, h: h, frameID: frameID});
-        }
-
-        // Sort by width descending (widest first), then by original order.
-        btnDefs.sort(function(a, b):Int {
-            if (b.w != a.w) return b.w - a.w;
-            var ai = allActions.indexOf(a.action);
-            var bi = allActions.indexOf(b.action);
-            return ai - bi;
-        });
-
-        // Flow layout -- compute positions relative to panel content origin
-        var maxRowContentW = Std.int(Main.INITIAL_WIDTH * 0.45);
-        if (maxRowContentW < 400) maxRowContentW = 400;
-        if (maxRowContentW > 700) maxRowContentW = 700;
-
-        var localX = 0;
-        var localY = 0;
-        var rowH = 0;
-        var maxRowW = 0;
-
-        var positioned:Array<{action:String, lx:Int, ly:Int, w:Int, h:Int, frameID:Int}> = [];
-
-        for (def in btnDefs) {
-            // Wrap to next row if this button doesn't fit
-            if (localX + def.w > maxRowContentW && localX > 0) {
-                if (localX - BTN_GAP > maxRowW) maxRowW = localX - BTN_GAP;
-                localX = 0;
-                localY += rowH + BTN_GAP;
-                rowH = 0;
+            var f = NoteskinGUISprite.ATLAS_FRAMES[frameID];
+            var entry = {action: action, w: displayW(frameID), h: displayH(frameID), frameID: frameID};
+            if (f.width <= 101) {
+                squareDefs.push(entry);
+            } else {
+                wideDefs.push(entry);
             }
-
-            positioned.push({
-                action: def.action,
-                lx: localX,
-                ly: localY,
-                w: def.w,
-                h: def.h,
-                frameID: def.frameID
-            });
-
-            localX += def.w + BTN_GAP;
-            if (def.h > rowH) rowH = def.h;
         }
 
-        // Track final row width
-        if (localX - BTN_GAP > maxRowW) maxRowW = localX - BTN_GAP;
-        var contentH = localY + rowH;
-
-        // Compute panel size (right-aligned to screen edge)
         var pad = PANEL_PAD;
-        var panelW = maxRowW + pad * 2;
-        var panelH = contentH + pad * 2;
-        var panelX = Main.INITIAL_WIDTH - panelW - 4;
-        var panelY = 4;
 
-        // Create / update the panel background
+        // === Left panel: square buttons, 2 per row, at top-left ===
+        var sqW = squareDefs.length > 0 ? squareDefs[0].w : 0;
+        var sqH = squareDefs.length > 0 ? squareDefs[0].h : 0;
+        var leftColW = (sqW > 0) ? (sqW * 2 + BTN_GAP) : 0;
+        var leftRows = Std.int(Math.ceil(squareDefs.length / 2));
+        var leftContentH = (leftRows > 0) ? (leftRows * (sqH + BTN_GAP) - BTN_GAP) : 0;
+        var leftPanelW = leftColW + pad * 2;
+        var leftPanelH = leftContentH + pad * 2;
+        var leftPanelX = 4;
+        var leftPanelY = 4;
+
+        if (state.guiLeftBackground == null) {
+            state.guiLeftBackground = new RepeatSprite(leftPanelX, leftPanelY, leftPanelW, leftPanelH);
+            state.guiLeftBackground.c = 0x000000FF;
+            state.guiLeftBackground.c.aF = 0.7;
+            state.gridBuf.addElement(state.guiLeftBackground);
+        } else {
+            state.guiLeftBackground.x = leftPanelX;
+            state.guiLeftBackground.y = leftPanelY;
+            state.guiLeftBackground.w = leftPanelW;
+            state.guiLeftBackground.h = leftPanelH;
+            state.gridBuf.updateElement(state.guiLeftBackground);
+        }
+
+        // Place square buttons in left panel
+        var lx = 0;
+        var ly = 0;
+        for (i in 0...squareDefs.length) {
+            var d = squareDefs[i];
+            var bx = leftPanelX + pad + lx;
+            var by = leftPanelY + pad + ly;
+            var bgCol = getBgColor(d.action);
+            state.guiButtons.push(makeSpriteButton(bx, by, d.action, d.frameID, bgCol));
+            lx += d.w + BTN_GAP;
+            if ((i + 1) % 2 == 0) { lx = 0; ly += d.h + BTN_GAP; }
+        }
+
+        // === Right panel: wide buttons, 2 per row, at top-right ===
+        var wdW = wideDefs.length > 0 ? wideDefs[0].w : 0;
+        var wdH = wideDefs.length > 0 ? wideDefs[0].h : 0;
+        var rightColW = (wdW > 0) ? (wdW * 2 + BTN_GAP) : 0;
+        var rightRows = Std.int(Math.ceil(wideDefs.length / 2));
+        var rightContentH = (rightRows > 0) ? (rightRows * (wdH + BTN_GAP) - BTN_GAP) : 0;
+        var rightPanelW = rightColW + pad * 2;
+        var rightPanelH = rightContentH + pad * 2;
+        var rightPanelX = Main.INITIAL_WIDTH - rightPanelW - 4;
+        var rightPanelY = 4;
+
         if (state.guiBackground == null) {
-            state.guiBackground = new RepeatSprite(panelX, panelY, panelW, panelH);
+            state.guiBackground = new RepeatSprite(rightPanelX, rightPanelY, rightPanelW, rightPanelH);
             state.guiBackground.c = 0x000000FF;
             state.guiBackground.c.aF = 0.7;
             state.gridBuf.addElement(state.guiBackground);
         } else {
-            state.guiBackground.x = panelX;
-            state.guiBackground.y = panelY;
-            state.guiBackground.w = panelW;
-            state.guiBackground.h = panelH;
+            state.guiBackground.x = rightPanelX;
+            state.guiBackground.y = rightPanelY;
+            state.guiBackground.w = rightPanelW;
+            state.guiBackground.h = rightPanelH;
             state.gridBuf.updateElement(state.guiBackground);
         }
 
-        // Create buttons at absolute positions
-        for (p in positioned) {
-            var bx = panelX + pad + p.lx;
-            var by = panelY + pad + p.ly;
-            var bgCol = getBgColor(p.action);
-
-            var entry:{box:RepeatSprite, sprite:NoteskinGUISprite, action:String};
-            if (p.frameID >= 0) {
-                entry = makeSpriteButton(bx, by, p.action, p.frameID, bgCol);
-            } else {
-                entry = makePlainButton(bx, by, p.w, p.h, p.action, bgCol);
-            }
-            state.guiButtons.push(entry);
+        // Place wide buttons in right panel
+        var rx = 0;
+        var ry = 0;
+        for (i in 0...wideDefs.length) {
+            var d = wideDefs[i];
+            var bx = rightPanelX + pad + rx;
+            var by = rightPanelY + pad + ry;
+            var bgCol = getBgColor(d.action);
+            state.guiButtons.push(makeSpriteButton(bx, by, d.action, d.frameID, bgCol));
+            rx += d.w + BTN_GAP;
+            if ((i + 1) % 2 == 0) { rx = 0; ry += d.h + BTN_GAP; }
         }
 
         // Update the GUI sprite buffer after adding all sprites
@@ -2481,10 +2497,10 @@ private class NoteskinEditorUI {
             state.guiSpriteBuf.update();
         }
 
-        // --- State readout Text (below the panel) ---
-        var readoutY = panelY + panelH + 4;
+        // --- State readout Text (below the right panel) ---
+        var readoutY = rightPanelY + rightPanelH + 4;
         if (state.guiStateText == null) {
-            state.guiStateText = new Text("GUI_STATE_READOUT", panelX + pad, readoutY, state.display, "", "vcr");
+            state.guiStateText = new Text("GUI_STATE_READOUT", rightPanelX + pad, readoutY, state.display, "", "vcr");
             state.guiStateText.scale = STATE_SCALE;
             state.guiStateText.alpha = 0;
             state.guiStateText.multiline = true;
@@ -2495,7 +2511,7 @@ private class NoteskinEditorUI {
             state.guiStateText.setMarkerPairs(MARKERS);
             state.guiStateText.addProgram();
         } else {
-            state.guiStateText.x = panelX + pad;
+            state.guiStateText.x = rightPanelX + pad;
             state.guiStateText.y = readoutY;
         }
 
@@ -2674,13 +2690,30 @@ private class NoteskinEditorUI {
 
         state.instructionsText.refresh();
 
-        var padX = 16;
-        var padY = 12;
-        state.instructionsText.x = padX;
-        state.instructionsText.y = padY;
+        // Compute left panel dimensions (same as buildGUIPanel)
+        var sqF = NoteskinGUISprite.ATLAS_FRAMES[6]; // first square frame
+        var sqW = Math.round(sqF.width * BTN_SCALE);
+        var sqH = Math.round(sqF.height * BTN_SCALE);
+        var sqCount = 11; // number of square buttons
+        var leftRows = Std.int(Math.ceil(sqCount / 2));
+        var leftColW = sqW * 2 + BTN_GAP;
+        var leftContentH = leftRows * (sqH + BTN_GAP) - BTN_GAP;
+        var lpad = PANEL_PAD;
+        var leftPanelW = leftColW + lpad * 2;
+        var leftPanelH = leftContentH + lpad * 2;
+        var leftPanelX = 4;
+        var leftPanelY = 4;
 
-        state.popupBackground.x = 0;
-        state.popupBackground.y = 0;
+        // Position popup to the RIGHT of the left panel
+        var popupX = leftPanelX + leftPanelW + 4;
+        var popupY = leftPanelY;
+        var padX = 12;
+        var padY = 12;
+        state.instructionsText.x = popupX + padX;
+        state.instructionsText.y = popupY + padY;
+
+        state.popupBackground.x = popupX;
+        state.popupBackground.y = popupY;
         state.popupBackground.w = Std.int(state.instructionsText.width + padX * 2);
         state.popupBackground.h = Std.int(state.instructionsText.height + padY * 2);
         state.gridBuf.updateElement(state.popupBackground);
@@ -3016,8 +3049,11 @@ private class NoteskinEditorInputHandler {
             case KeyCode.ESCAPE:
                 state.maniaManager.cancelCreateMania();
                 state.ui.updateInstructionsText();
+                return;
             case KeyCode.RETURN:
                 state.maniaManager.confirmCreateMania();
+                state.ui.updateInstructionsText();
+                return;
             case KeyCode.BACKSPACE:
                 if (state.createManiaInput.length > 0) {
                     state.createManiaInput = state.createManiaInput.substring(0, state.createManiaInput.length - 1);
@@ -3056,27 +3092,51 @@ private class NoteskinEditorInputHandler {
             case "sust_texrot_m90":
                 state.clipEditor.rotateCurrentClip(-1);
             // Regular sustain sprite rotation (adjusts visual r on sustain sprites)
-            case "sust_rot_p90":
-                state.clipEditor.rotateSustainSprite(state.selectedIndex, 90);
-            case "sust_rot_m90":
-                state.clipEditor.rotateSustainSprite(state.selectedIndex, -90);
+            case "sust_rot_p45":
+                state.clipEditor.rotateSustainSprite(state.selectedIndex, 45);
+            case "sust_rot_m45":
+                state.clipEditor.rotateSustainSprite(state.selectedIndex, -45);
             // Gap
             case "gap_m10": state.maniaManager.adjustGap(-10);
             case "gap_m1":  state.maniaManager.adjustGap(-1);
             case "gap_p1":  state.maniaManager.adjustGap(1);
             case "gap_p10": state.maniaManager.adjustGap(10);
             // Mania
-            case "mania_switch":
+            case "mania_switch_p1":
                 state.maniaManager.switchMania(1);
                 state.clipEditor.checkInvalidClipIDPlace();
+            case "mania_switch_m1":
+                state.maniaManager.switchMania(-1);
+                state.clipEditor.checkInvalidClipIDPlace();
             case "mania_create":
-                state.maniaManager.createNewMania();
+                if (state.createManiaPopupActive)
+                    state.maniaManager.cancelCreateMania();
+                else
+                    state.maniaManager.createNewMania();
             // Toggles
             case "spritesheet_toggle":
                 state.clipEditor.toggleSpritesheetMode();
             case "show_instructions":
                 state.showInstructionsPopup = true;
                 state.ui.updateInstructionsText();
+            case "switch_state_idle":
+                state.clipEditor.toggleStateEqual(IDLE);
+                state.clipEditor.checkInvalidClipIDPlace();
+            case "switch_state_color":
+                state.clipEditor.toggleStateEqual(COLOR);
+                state.clipEditor.checkInvalidClipIDPlace();
+            case "switch_state_press":
+                state.clipEditor.toggleStateEqual(PRESS);
+                state.clipEditor.checkInvalidClipIDPlace();
+            case "switch_state_confirm":
+                state.clipEditor.toggleStateEqual(CONFIRM);
+                state.clipEditor.checkInvalidClipIDPlace();
+            case "switch_state_holdbody":
+                state.clipEditor.toggleStateEqual(HOLD_BODY);
+                state.clipEditor.checkInvalidClipIDPlace();
+            case "switch_state_holdtail":
+                state.clipEditor.toggleStateEqual(HOLD_TAIL);
+                state.clipEditor.checkInvalidClipIDPlace();
             default:
         }
         state.ui.updateInstructionsText();
@@ -3624,7 +3684,8 @@ class NoteskinEditor {
 
     // GUI panel buttons (created by NoteskinEditorUI)
     var guiButtons:Array<{box:RepeatSprite, sprite:NoteskinGUISprite, action:String}> = [];
-    var guiBackground:RepeatSprite = null;
+    var guiBackground:RepeatSprite = null;        // right panel (wide buttons)
+    var guiLeftBackground:RepeatSprite = null;    // left panel (square buttons)
     var guiStateText:Text = null;
     var showInstructionsPopup:Bool = false;
 
@@ -3755,6 +3816,7 @@ class NoteskinEditor {
             if (guiSpriteBuf != null) guiSpriteBuf.update();
             if (guiStateText != null) guiStateText.alpha = 1;
             if (guiBackground != null) guiBackground.c.aF = 0.7;
+            if (guiLeftBackground != null) guiLeftBackground.c.aF = 0.7;
             ui.updateInstructionsText();
 
             if (saveButtonText != null) {
@@ -3843,6 +3905,10 @@ class NoteskinEditor {
         if (guiBackground != null) {
             gridBuf.removeElement(guiBackground);
             guiBackground = null;
+        }
+        if (guiLeftBackground != null) {
+            gridBuf.removeElement(guiLeftBackground);
+            guiLeftBackground = null;
         }
         // Clean up GUI sprites
         if (guiSprites != null) {
