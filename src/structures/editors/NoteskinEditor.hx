@@ -53,6 +53,13 @@ private enum abstract EditMode(Int) from Int to Int {
     var GLOBAL_TRANSFORM;
 }
 
+private enum abstract ConfirmationPopupType(Int) from Int to Int {
+    var NONE;
+    var SAVE;
+    var IMPORT_VANILLA;
+    var IMPORT_LETTERED;
+}
+
 // ============================================================================
 // GUI Atlas Frame -- parsed from gui_buttons.xml (Adobe Animate export).
 // ============================================================================
@@ -895,20 +902,31 @@ private class NoteskinEditorManiaManager {
                 }
             }
 
-            // Recreate full 1K-NK mania range and ensure enough clips.
+            // Ensure the 1K-NK mania range exists and enough clips are present.
+            // IMPORTANT: preserve already-loaded configs (their offsetX, offsetY,
+            // gap, scale, and per-type indexes) - only fill in default configs
+            // for key counts that are missing. Previously this block wiped the
+            // entire array and recreated every config from defaults, which
+            // silently discarded the saved global transform offset/scale.
             var clips = state.noteskinData.clip;
             var totalClips = clips != null ? clips.length : 0;
             var highestManiaKeys = 0;
+            var existingKeyCounts:Array<Int> = [];
             for (cfg in state.availableManiaConfigs) {
-                if (cfg.idleIndexes != null && cfg.idleIndexes.length > highestManiaKeys)
-                    highestManiaKeys = cfg.idleIndexes.length;
+                if (cfg.idleIndexes != null) {
+                    if (cfg.idleIndexes.length > highestManiaKeys)
+                        highestManiaKeys = cfg.idleIndexes.length;
+                    existingKeyCounts.push(cfg.idleIndexes.length);
+                }
             }
             var targetKeys = Std.int(Math.max(totalClips, highestManiaKeys));
             if (targetKeys > 0) {
-                // Clear existing manias and recreate 1K through NK.
-                state.availableManiaConfigs = [];
+                // Fill in any missing manias from 1K through targetKeys-K,
+                // leaving existing (loaded) configs untouched.
                 for (k in 1...targetKeys + 1) {
-                    state.availableManiaConfigs.push(makeManiaConfig(k));
+                    if (existingKeyCounts.indexOf(k) == -1) {
+                        state.availableManiaConfigs.push(makeManiaConfig(k));
+                    }
                 }
                 sortManiasByKeyCount();
                 // Ensure clips exist for every index the highest mania references.
@@ -1078,6 +1096,8 @@ private class NoteskinEditorManiaManager {
         state.createManiaError = "";
         state.createManiaKeyCount = 0;
 
+		Main.current.playScrollSound();
+
         // Remove any stale popup backgrounds.
         removePopupBackground();
         removeInstructionsBackground();
@@ -1135,6 +1155,8 @@ private class NoteskinEditorManiaManager {
             state.ui.updateInstructionsText();
             trace('Created new mania with $keyCount keys');
         }
+
+        Main.current.playCancelSound();
 
         // Close popup.
         state.createManiaPopupActive = false;
@@ -1196,6 +1218,8 @@ private class NoteskinEditorManiaManager {
         state.createManiaInput = "";
         state.createManiaError = "";
 
+		Main.current.playScrollSound();
+
         // Hide the popup text and remove the popup overlay.
         if (state.instructionsText != null) {
             state.instructionsText.alpha = 0;
@@ -1204,6 +1228,73 @@ private class NoteskinEditorManiaManager {
         state.gridBuf.update();
 
         trace('Create Mania cancelled');
+    }
+
+    function openConfirmationPopup(type:ConfirmationPopupType) {
+        state.confirmationPopupType = type;
+
+        // Remove any stale popup backgrounds.
+        removePopupBackground();
+        removeInstructionsBackground();
+
+        var label = switch(type) {
+            case SAVE:             'Save Noteskin';
+            case IMPORT_VANILLA:   'Import Vanilla Atlas';
+            case IMPORT_LETTERED:  'Import Lettered Atlas';
+            default:               'Confirm';
+        }
+        trace('$label popup opened - awaiting confirmation');
+    }
+
+    function confirmConfirmationPopup() {
+        // Execute the action associated with the current popup type.
+        switch(state.confirmationPopupType) {
+            case SAVE:             saveNoteskin();
+            case IMPORT_VANILLA:   importFromAtlas();
+            case IMPORT_LETTERED:  importFromAtlas18K();
+            default:
+        }
+
+		Main.current.playScrollSound();
+
+        var label = switch(state.confirmationPopupType) {
+            case SAVE:             'Save Noteskin';
+            case IMPORT_VANILLA:   'Import Vanilla Atlas';
+            case IMPORT_LETTERED:  'Import Lettered Atlas';
+            default:               '';
+        }
+        trace('$label confirmed');
+
+        closeConfirmationPopup(false);
+    }
+
+    function cancelConfirmationPopup() {
+        var label = switch(state.confirmationPopupType) {
+            case SAVE:             'Save Noteskin';
+            case IMPORT_VANILLA:   'Import Vanilla Atlas';
+            case IMPORT_LETTERED:  'Import Lettered Atlas';
+            default:               '';
+        }
+
+		Main.current.playCancelSound();
+
+        closeConfirmationPopup();
+        trace('$label cancelled');
+    }
+
+    function closeConfirmationPopup(playSound:Bool = false) {
+        state.confirmationPopupType = NONE;
+
+        if (state.instructionsText != null) {
+            state.instructionsText.alpha = 0;
+        }
+        removePopupBackground();
+        state.gridBuf.update();
+
+        if (playSound)
+		    Main.current.playCancelSound();
+
+        state.ui.updateInstructionsText();
     }
 
     function sortManiasByKeyCount() {
@@ -1498,6 +1589,8 @@ private class NoteskinEditorManiaManager {
             } else {
                 trace('Groups: ${receptorNames.join(", ")}');
             }
+
+		    Main.current.playScrollSound();
         } catch (e) {
             trace('Failed to import vanilla atlas: $e');
         }
@@ -1647,6 +1740,8 @@ private class NoteskinEditorManiaManager {
             }
 
             finalizeImport(foundConfig, keyCount, entries, receptorNames, 'Lettered');
+
+		Main.current.playScrollSound();
         } catch (e) {
             trace('Failed to import lettered atlas: $e');
         }
@@ -2616,6 +2711,7 @@ private class NoteskinEditorUI {
 
     function buildStateReadoutText():String {
         if (state.createManiaPopupActive) return "";
+        if (state.confirmationPopupType != NONE) return "";
         if (state.showInstructionsPopup) return "";
 
         var stateName = state.clipEditor.getStateName(state.currentState);
@@ -2647,11 +2743,11 @@ private class NoteskinEditorUI {
         if (state.editMode == GLOBAL_TRANSFORM) {
             var modeName = state.globalScaleMode ? "Scale" : "Offset";
             var modeColor = state.globalScaleMode ? "#M4#" : "#M6#";
-            result += 'Global: ${modeColor}$modeName${modeColor}\n';
+            result += 'Global Transform Mode: ${modeColor}$modeName${modeColor}\n';
             if (state.globalScaleMode) {
-                result += '#M5#Scale: ${Math.round(state.currentConfig.scale * 100) / 100}#M5#\n';
+                result += '#M5#Scale: ${Math.round(state.currentConfig.scale * 100) / 100}#M5#\nPress LEFT/RIGHT to adjust\n\n';
             } else {
-                result += '#M5#Off X:${state.currentConfig.offsetX} Y:${state.currentConfig.offsetY}#M5#\n';
+                result += '#M5#Off X:${state.currentConfig.offsetX} Y:${state.currentConfig.offsetY}#M5#\nPress Arrow Keys to adjust\n\n';
             }
         }
 
@@ -2660,12 +2756,12 @@ private class NoteskinEditorUI {
 
         if (state.editMode != GLOBAL_TRANSFORM) {
             result += 'Mode: ${editModeColor}${editModeName}${editModeColor}\n';
-            result += '#M7#Pos: ${basicClip.clipX},${basicClip.clipY}  Sz: ${basicClip.clipW}x${basicClip.clipH}#M7#\n';
-            result += '#M6#Off: ${basicClip.offsX},${basicClip.offsY}#M6#';
+            result += 'Texcoord info:\n\n#M7#Pos: ${basicClip.clipX},${basicClip.clipY} Size: ${basicClip.clipW}x${basicClip.clipH}#M7#\n';
+            result += '#M6#Off: ${basicClip.offsX},${basicClip.offsY}#M6#\n';
         }
 
         if (!state.spriteSheetMode) {
-            result += '\nRot: #M10#${basicHoldClip.rotation}D#M10#';
+            result += 'Sust. texcoord rotation: #M10#${basicHoldClip.rotation}D#M10#';
         }
 
         if (state.currentManiaIndex == state.availableManiaConfigs.length) {
@@ -2842,6 +2938,11 @@ private class NoteskinEditorUI {
             return;
         }
 
+        if (state.confirmationPopupType != NONE) {
+            renderConfirmationPopup();
+            return;
+        }
+
         updateStateReadout();
         updateButtonHighlights();
     }
@@ -2891,6 +2992,59 @@ private class NoteskinEditorUI {
         state.gridBuf.updateElement(state.popupBackground);
         state.gridBuf.update();
     }
+
+    function renderConfirmationPopup() {
+        if (state.confirmationPopupType == NONE) return;
+        ensureInstructionsText();
+
+        if (state.popupBackground == null) {
+            state.popupBackground = new RepeatSprite(0, 0, 0, 0);
+            state.popupBackground.c = 0x000000FF;
+            state.popupBackground.c.aF = 0.6;
+            state.gridBuf.addElement(state.popupBackground);
+        }
+
+        var titleColor = switch(state.confirmationPopupType) {
+            case SAVE:             "#M2#";
+            case IMPORT_VANILLA:   "#M3#";
+            case IMPORT_LETTERED:  "#M4#";
+            default:               "#M1#";
+        };
+        var title = switch(state.confirmationPopupType) {
+            case SAVE:             "SAVE NOTESKIN";
+            case IMPORT_VANILLA:   "IMPORT VANILLA ATLAS";
+            case IMPORT_LETTERED:  "IMPORT LETTERED ATLAS";
+            default:               "CONFIRM";
+        };
+        var body = switch(state.confirmationPopupType) {
+            case SAVE:             "with the current one.";
+            case IMPORT_VANILLA:   "with the imported vanilla atlas clips.";
+            case IMPORT_LETTERED:  "with the imported lettered atlas clips.";
+            default:               "";
+        };
+
+        var popupText = titleColor + "=== " + title + " ===" + titleColor + '\nAre you sure? You\'ll possibly\noverwrite your old noteskin data\n$body' +
+        "\n#M1#[ENTER] Confirm#M1#   #M3#[ESC] Cancel#M3#";
+
+        state.instructionsText.text = popupText;
+        state.instructionsText.alignment = CENTER;
+        state.instructionsText.scale = 1.2;
+        state.instructionsText.alpha = 1;
+
+        state.instructionsText.refresh();
+
+        state.instructionsText.x = (Main.INITIAL_WIDTH - state.instructionsText.width) / 2;
+        state.instructionsText.y = (Main.INITIAL_HEIGHT - state.instructionsText.height) / 2;
+
+        var padding = 20;
+        state.popupBackground.x = Std.int(state.instructionsText.x - padding);
+        state.popupBackground.y = Std.int(state.instructionsText.y - padding);
+        state.popupBackground.w = Std.int(state.instructionsText.width + padding * 2);
+        state.popupBackground.h = Std.int(state.instructionsText.height + padding * 2);
+        state.gridBuf.updateElement(state.popupBackground);
+        state.gridBuf.update();
+    }
+
 }
 
 
@@ -2955,14 +3109,22 @@ private class NoteskinEditorInputHandler {
             return;
         }
 
+        if (state.confirmationPopupType != NONE) {
+            handleConfirmationPopupInput(key);
+            return;
+        }
+
         if (key == KeyCode.ESCAPE) {
             if (state.showInstructionsPopup) {
+		        Main.current.playScrollSound();
                 state.ui.hideInstructionsPopup();
                 return;
             }
             if (state.spriteSheetMode) {
+        		Main.current.playScrollSound();
                 state.clipEditor.toggleSpritesheetMode();
             } else {
+		        Main.current.playCancelSound();
                 state.toggleEditor();
             }
             return;
@@ -2978,8 +3140,10 @@ private class NoteskinEditorInputHandler {
             switch (key) {
                 case KeyCode.R:
                     state.showSustainPreview = !state.showSustainPreview;
+		            Main.current.playScrollSound();
                     state.renderer.updateSustainVisuals();
                     trace('Sustain preview: ${state.showSustainPreview ? "ON" : "OFF"}');
+		            Main.current.playScrollSound();
                     state.ui.updateInstructionsText();
                     return;
                 default:
@@ -2992,6 +3156,7 @@ private class NoteskinEditorInputHandler {
                 state.globalScaleMode = !state.globalScaleMode;
                 var modeName = state.globalScaleMode ? "Scale" : "Offset";
                 trace('Global transform mode: $modeName');
+		        Main.current.playScrollSound();
                 state.ui.updateInstructionsText();
             }
             return;
@@ -3010,6 +3175,7 @@ private class NoteskinEditorInputHandler {
                 default:            -1;
             };
             if (newStateIdx != -1) {
+		        Main.current.playScrollSound();
                 state.renderer.updateReceptorState(newStateIdx);
                 trace('Edit state set to: ${state.clipEditor.getStateName(state.currentState)}');
                 return;
@@ -3028,6 +3194,7 @@ private class NoteskinEditorInputHandler {
                 default:            -1;
             };
             if (newModeIdx != -1) {
+		        Main.current.playScrollSound();
                 state.clipEditor.setEditMode(newModeIdx);
                 return;
             }
@@ -3040,13 +3207,16 @@ private class NoteskinEditorInputHandler {
                 }
             case KeyCode.SPACE:
                 if (!state.spriteSheetMode && state.editMode != GLOBAL_TRANSFORM) {
+		            Main.current.playCancelSound();
                     state.clipEditor.toggleAxisProperty();
                 }
             case KeyCode.UP:
                 if (state.isShiftPressed) {
+		            Main.current.playScrollSound();
                     state.maniaManager.switchMania(1);
                     state.clipEditor.checkInvalidClipIDPlace();
                 } else if (state.spriteSheetMode) {
+		            Main.current.playScrollSound();
                     state.clipEditor.selectPreviousIndex();
                 } else if (state.isCtrlPressed && state.editMode != CLIP_ID && state.editMode != GLOBAL_TRANSFORM) {
                     state.clipEditor.adjustAxisValue(-10, "Y");
@@ -3063,9 +3233,11 @@ private class NoteskinEditorInputHandler {
                 }
             case KeyCode.DOWN:
                 if (state.isShiftPressed) {
+		            Main.current.playScrollSound();
                     state.maniaManager.switchMania(-1);
                     state.clipEditor.checkInvalidClipIDPlace();
                 } else if (state.spriteSheetMode) {
+		            Main.current.playScrollSound();
                     state.clipEditor.selectNextIndex();
                 } else if (state.isCtrlPressed && state.editMode != CLIP_ID && state.editMode != GLOBAL_TRANSFORM) {
                     state.clipEditor.adjustAxisValue(10, "Y");
@@ -3083,6 +3255,7 @@ private class NoteskinEditorInputHandler {
                 }
             case KeyCode.LEFT:
                 if (state.showSustainPreview && state.isRPressed && !(state.isAltPressed || state.isShiftPressed || state.isCtrlPressed)) {
+		            Main.current.playScrollSound();
                     state.clipEditor.rotateCurrentClip(-1);
                 } else if (state.spriteSheetMode) {
                     state.clipEditor.selectPreviousIndex();
@@ -3106,6 +3279,7 @@ private class NoteskinEditorInputHandler {
                 }
             case KeyCode.RIGHT:
                 if (state.showSustainPreview && state.isRPressed &&!(state.isAltPressed || state.isShiftPressed || state.isCtrlPressed)) {
+		            Main.current.playScrollSound();
                     state.clipEditor.rotateCurrentClip(1);
                 } else if (state.spriteSheetMode) {
                     state.clipEditor.selectNextIndex();
@@ -3165,6 +3339,20 @@ private class NoteskinEditorInputHandler {
         }
     }
 
+    function handleConfirmationPopupInput(key:KeyCode) {
+        switch(key) {
+            case KeyCode.ESCAPE:
+                state.maniaManager.cancelConfirmationPopup();
+                state.ui.updateInstructionsText();
+                return;
+            case KeyCode.RETURN:
+                state.maniaManager.confirmConfirmationPopup();
+                state.ui.updateInstructionsText();
+                return;
+            default:
+        }
+    }
+
     // --- Mouse Handling ---
 
     function handleGUIAction(action:String) {
@@ -3177,6 +3365,7 @@ private class NoteskinEditorInputHandler {
             case "mode_global":   state.clipEditor.setEditMode(4);
             // Sustain
             case "sustain_toggle":
+		        Main.current.playScrollSound();
                 state.showSustainPreview = !state.showSustainPreview;
                 state.renderer.updateSustainVisuals();
             // Sustain texture coord rotation (cycles TextureRotation enum on holdBody+holdTail)
@@ -3186,9 +3375,9 @@ private class NoteskinEditorInputHandler {
                 state.clipEditor.rotateCurrentClip(-1);
             // Regular sustain sprite rotation (adjusts visual r on sustain sprites)
             case "sust_rot_m45":
-                state.clipEditor.rotateSustainSprite(state.selectedIndex, 90);
+                state.clipEditor.rotateSustainSprite(state.selectedIndex, 45);
             case "sust_rot_p45":
-                state.clipEditor.rotateSustainSprite(state.selectedIndex, -90);
+                state.clipEditor.rotateSustainSprite(state.selectedIndex, -45);
             // Gap
             case "gap_m10": state.maniaManager.adjustGap(-10);
             case "gap_m1":  state.maniaManager.adjustGap(-1);
@@ -3196,9 +3385,11 @@ private class NoteskinEditorInputHandler {
             case "gap_p10": state.maniaManager.adjustGap(10);
             // Mania
             case "mania_switch_p1":
+		        Main.current.playScrollSound();
                 state.maniaManager.switchMania(1);
                 state.clipEditor.checkInvalidClipIDPlace();
             case "mania_switch_m1":
+		        Main.current.playScrollSound();
                 state.maniaManager.switchMania(-1);
                 state.clipEditor.checkInvalidClipIDPlace();
             case "mania_create":
@@ -3208,6 +3399,7 @@ private class NoteskinEditorInputHandler {
                     state.maniaManager.createNewMania();
             // Toggles
             case "show_instructions":
+		        Main.current.playScrollSound();
                 state.showInstructionsPopup = true;
                 state.ui.updateInstructionsText();
             case "switch_state_idle":
@@ -3255,6 +3447,24 @@ private class NoteskinEditorInputHandler {
             return;
         }
 
+        // If a confirmation popup is active, clicking on it confirms, clicking outside cancels.
+        if (state.confirmationPopupType != NONE) {
+            if (state.popupBackground != null) {
+                if (hitTestBox(state.popupBackground, mouseX, mouseY)) {
+                    // Clicked on the popup — confirm.
+                    state.maniaManager.confirmConfirmationPopup();
+                } else {
+                    // Clicked outside — cancel.
+                    state.maniaManager.cancelConfirmationPopup();
+                }
+            } else {
+                // No popup background rendered yet — cancel.
+                state.maniaManager.cancelConfirmationPopup();
+            }
+            state.ui.updateInstructionsText();
+            return;
+        }
+
         // If instructions popup is showing, ESC closes it (handled in keydown),
         // but clicking anywhere outside the popup also closes it.
         if (state.showInstructionsPopup) {
@@ -3274,19 +3484,28 @@ private class NoteskinEditorInputHandler {
 
         // Save noteskin button click.
         if (state.saveButtonBox != null && hitTestBox(state.saveButtonBox, mouseX, mouseY)) {
-            state.maniaManager.saveNoteskin();
+            if (state.confirmationPopupType == SAVE)
+                state.maniaManager.cancelConfirmationPopup();
+            else
+                state.maniaManager.openConfirmationPopup(SAVE);
             return;
         }
 
         // Import vanilla atlas button click.
         if (state.importButtonBox != null && hitTestBox(state.importButtonBox, mouseX, mouseY)) {
-            state.maniaManager.importFromAtlas();
+            if (state.confirmationPopupType == IMPORT_VANILLA)
+                state.maniaManager.cancelConfirmationPopup();
+            else
+                state.maniaManager.openConfirmationPopup(IMPORT_VANILLA);
             return;
         }
 
         // Import lettered atlas button click.
         if (state.importButton18KBox != null && hitTestBox(state.importButton18KBox, mouseX, mouseY)) {
-            state.maniaManager.importFromAtlas18K();
+            if (state.confirmationPopupType == IMPORT_LETTERED)
+                state.maniaManager.cancelConfirmationPopup();
+            else
+                state.maniaManager.openConfirmationPopup(IMPORT_LETTERED);
             return;
         }
 
@@ -3369,7 +3588,7 @@ private class NoteskinEditorInputHandler {
             var modeName = state.globalScaleMode ? "Scale" : "Offset";
             trace('Global transform toggled to: $modeName');
             state.ui.updateInstructionsText();
-            state.inputHandler.setCursor(state.globalScaleMode ? MouseCursor.ARROW : MouseCursor.MOVE);
+		    Main.current.playScrollSound();
             return;
         }
 
@@ -3795,6 +4014,7 @@ class NoteskinEditor {
     var createManiaInput:String = "";
     var createManiaError:String = "";
     var createManiaKeyCount:Int = 0;
+    var confirmationPopupType:ConfirmationPopupType = NONE;
     var currentState:EditState = IDLE;
     var currentReceptorIndex:Int = 0;
     var currentLane:Int = 0;
@@ -4236,6 +4456,12 @@ class NoteskinEditor {
         // Render create-mania popup if active.
         if (createManiaPopupActive) {
             ui.renderCreateManiaPopup();
+            return;
+        }
+
+        // Render confirmation popup if active.
+        if (confirmationPopupType != NONE) {
+            ui.renderConfirmationPopup();
             return;
         }
 
