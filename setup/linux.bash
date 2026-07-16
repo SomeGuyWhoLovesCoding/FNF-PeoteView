@@ -60,7 +60,7 @@ haxelib git hxcpp https://github.com/SomeGuyWhoLovesCoding/hxcpp-sgwlfnf.git --q
 
 # Step 2: Install lime (required by hxp and input2action)
 log_info "Installing lime..."
-haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet
+haxelib git lime https://github.com/openfl/lime.git --quiet
 
 # Step 3: Install packages that depend on lime (cannot be parallel with each other)
 log_info "Installing hxp (depends on lime)..."

@@ -65,7 +65,7 @@ jobs:
         run: |
           # Install hxcpp and lime sequentially
           haxelib git hxcpp https://github.com/SomeGuyWhoLovesCoding/hxcpp-sgwlfnf.git --quiet
-          haxelib git lime https://github.com/SomeGuyWhoLovesCoding/lime.git --quiet
+          haxelib git lime https://github.com/openfl/lime.git --quiet
           
           # Everything else in parallel
           start /B haxelib install format --quiet
@@ -87,7 +87,7 @@ jobs:
       # Compile for Windows
       - name: Compile (Windows)
         if: runner.os == 'Windows'
-        run: haxelib run lime build windows --app-version="7.0.0-${{ github.run_id}}"
+        run: haxelib run lime build windows --app-version="git-${{ github.run_id}}"
         shell: cmd
       
       # Compile for Linux
@@ -95,7 +95,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           haxelib run lime rebuild linux
-          haxelib run lime build linux --app-version="7.0.0-${{ github.run_id}}"
+          haxelib run lime build linux --app-version="git-${{ github.run_id}}"
         shell: bash
       
       # Package Linux build

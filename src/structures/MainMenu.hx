@@ -73,6 +73,12 @@ class MainMenu {
 			watermarkTxt.x = 3;
 			watermarkTxt.outlineColor = 0x000000FF;
 			watermarkTxt.outlineSize = 1.25; // 0.06 - usually the default text+ outline size on DaVinci Resolve
+			watermarkTxt.multiline = true;
+		}
+
+		if (!Tools.checkForUpdates()) {
+			var str = watermarkTxt.text;
+			watermarkTxt.text = '[ NO WIFI / OUTDATED VERSION - PLEASE GO TO GAMEBANA PAGE & RUN INSTALLER TO UPDATE ]\n$str';
 		}
 
 		if (optionProg == null) {

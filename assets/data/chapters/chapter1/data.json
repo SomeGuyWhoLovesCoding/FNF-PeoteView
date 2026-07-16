@@ -1,19 +1,9 @@
 {
 	"general": {
-		"name": "Vs Shaggy",
+		"name": "Test story chapter",
 		"description": "...?????"
 	},
 	"songs": [
-		{
-			"dir": "assets/songs/a-random-bambi-fantrack",
-			"icon": "bf",
-			"title": "A random bambi fantrack",
-			"color": {
-				"R": 0,
-				"G": 255,
-				"B": 255
-			}
-		},
 		{
 			"dir": "assets/songs/god-eater",
 			"icon": "pshaggy",

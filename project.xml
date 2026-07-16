@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <project>
-	<meta title="Friday Night Funkin': Peote View" package="peote.view" version="0.1.0" company="Sylvio Sell - maitag" />
+	<meta title="Friday Night Funkin': Peote View" package="peote.view" version="0.9.4" company="Sylvio Sell - maitag" />
 
 	<window width="1280" height="720" fps="60" resizable="true" vsync="false" background="null" />
 	<window if="html5||android" width="0" height="0" />

@@ -7,3 +7,5 @@ This aims to have a flexible codebase to make it faster to read in development t
 Expect this repository to be somewhat active with a burst of commits during the month. Please respect the developer's work with intention to either mess around with the source code or play already-compiled builds that'll be shown when v0.99 releases, which will be an experimental global release during its existence.
 
 Refer to [the wiki](https://github.com/SomeGuyWhoLovesCoding/FNF-PeoteView/wiki/The-Basics) for more info.
+
+Oh, and for any of you who are wondering if a discord server exists for it, yes. There infact exists [a server you can join in](https://discord.gg/XrV2UmRbNM).

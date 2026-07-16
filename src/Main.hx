@@ -25,6 +25,8 @@ private enum abstract StateSelection(Int) {
 @:publicFields
 class Main extends Application
 {
+	static inline var BUILD = 1;
+
 	/**
 	 * FNF's standard resolution is 720p.
 	 * Resizing the window won't make the game look crispier

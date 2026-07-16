@@ -12,6 +12,32 @@ using StringTools;
 **/
 @:publicFields
 class Tools {
+	// a steal from https://github.com/ShadowMario/FNF-PsychEngine/blob/5c67ced49e5a98535298a6daa3f8f4ec79ac8399/.github/workflows/main.yml#L46 cuz why not
+	public static function checkForUpdates() {
+		var url = "https://raw.githubusercontent.com/SomeGuyWhoLoveCoding/FNF-PeoteView/main/.gitVersion";
+		var version = Main.BUILD;
+		var versionsDontMatch = false;
+		trace('checking for updates...');
+		var http = new haxe.Http(url);
+		http.onData = function (data:String)
+		{
+			var newVersion = Std.parseInt(data);
+			trace('build version online: $newVersion, your build version: $version');
+			if(newVersion != version) {
+				trace('versions arent matching! please update');
+				versionsDontMatch;
+				http.onData = null;
+				http.onError = null;
+				http = null;
+			}
+		}
+		http.onError = function (error) {
+			trace('error: $error');
+		}
+		http.request();
+		return !versionsDontMatch; // we're in the clear
+	}
+
 	static var iconGridMap:Map<String, Array<Int>> = [];
 
 	static function parseNoteskinData(path:String) {
