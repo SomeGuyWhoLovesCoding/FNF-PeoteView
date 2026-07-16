@@ -278,12 +278,12 @@ private class NoteskinEditorClipEditor {
     /** Shared default receptor properties. Used everywhere a placeholder clip is needed. */
     static function defaultClip():NoteskinReceptorProperties {
         return {
-            idle:     {clipX: 3,   clipY: 116, clipW: 109, clipH: 111, offsX: 0, offsY: 0},
-            press:    {clipX: 115, clipY: 229, clipW: 99,  clipH: 100, offsX: 0, offsY: 0},
-            color:    {clipX: 3,   clipY: 116, clipW: 109, clipH: 111, offsX: 0, offsY: 0},
-            confirm:  {clipX: 3,   clipY: 3,   clipW: 240, clipH: 243, offsX: 0, offsY: 0},
-            holdBody: {clipX: 441, clipY: 229, clipW: 35,  clipH: 30,  offsX: 0, offsY: 0},
-            holdTail: {clipX: 460, clipY: 3,   clipW: 35,  clipH: 45,  offsX: 0, offsY: 0}
+            idle:     {clipX: 436, clipY: 301, clipW: 109, clipH: 111, offsX: 0, offsY: 0},  // arrow left0000
+            press:    {clipX: 546, clipY: 301, clipW: 99,  clipH: 100, offsX: 0, offsY: 0},  // left press0000
+            color:    {clipX: 226, clipY: 384, clipW: 108, clipH: 110, offsX: 0, offsY: 0},  // purple0000
+            confirm:  {clipX: 1,   clipY: 1,   clipW: 240, clipH: 243, offsX: 0, offsY: 0},  // left confirm0000
+            holdBody: {clipX: 145, clipY: 467, clipW: 35,  clipH: 31,  offsX: 0, offsY: 0},  // purple hold piece0000
+            holdTail: {clipX: 73,  clipY: 467, clipW: 35,  clipH: 45,  offsX: 0, offsY: 0}   // pruple end hold0000
         };
     }
 
@@ -733,10 +733,14 @@ private class NoteskinEditorClipEditor {
         var scale = state.currentConfig.scale;
         for (i in 0...state.receptorSprites.length) {
             var note = state.receptorSprites[i];
+            var clip = state.clipEditor.getClipForIndex(state.clipEditor.getClipIndexForReceptor(i));
+            var basicClip = state.clipEditor.getBasicClipForState(clip, state.currentState);
+            var sx = note.x + basicClip.offsX * scale;
+            var sy = note.y + basicClip.offsY * scale;
             var sw = note.w * scale;
             var sh = note.h * scale;
-            if (mouseX >= note.x && mouseX <= note.x + sw
-                && mouseY >= note.y && mouseY <= note.y + sh) {
+            if (mouseX >= sx && mouseX <= sx + sw
+                && mouseY >= sy && mouseY <= sy + sh) {
                 return i;
             }
         }
@@ -784,6 +788,87 @@ private class NoteskinEditorManiaManager {
         this.state = state;
     }
 
+    /** Create a standard NoteskinConfig for the given key count.
+        All index arrays are initialized to [0, 1, ..., keyCount-1]. */
+    static function makeManiaConfig(keyCount:Int, gap:Int = 112, scale:Float = 1.0):NoteskinConfig {
+        var idx = [for (i in 0...keyCount) i];
+        return {
+            offsetX: 0, offsetY: 0, gap: gap, scale: scale,
+            idleIndexes: idx.copy(), pressIndexes: idx.copy(), colorIndexes: idx.copy(),
+            confirmIndexes: idx.copy(), holdBodyIndexes: idx.copy(), holdTailIndexes: idx.copy()
+        };
+    }
+    /** Ensure at least `minCount` clips exist, filling with defaults. */
+    function ensureClipsForReceptors(minCount:Int) {
+        var clips = state.noteskinData.clip;
+        while (clips.length < minCount) {
+            clips.push(NoteskinEditorClipEditor.defaultClip());
+        }
+    }
+    /** Common finalization logic shared by importFromAtlas and importFromAtlas18K.
+        Fills missing manias, sorts, selects the imported config, refreshes visuals. */
+    function finalizeImport(foundConfig:NoteskinConfig, keyCount:Int,
+            entries:Array<{group:String, clipType:String, x:Int, y:Int, w:Int, h:Int, offsX:Int, offsY:Int}>,
+            receptorNames:Array<String>, label:String) {
+        state.availableManiaConfigs = state.noteskinData.configMania.copy();
+        fillMissingManias(keyCount);
+        sortManiasByKeyCount();
+
+        var newIndex = state.availableManiaConfigs.indexOf(foundConfig);
+        if (newIndex != -1) {
+            state.currentManiaIndex = newIndex;
+            state.currentConfig = state.availableManiaConfigs[newIndex];
+        } else {
+            state.currentConfig = foundConfig;
+        }
+        updateMaxReceptorsFromConfig();
+
+        if (state.selectedIndex >= state.maxReceptors) {
+            state.selectedIndex = state.maxReceptors - 1;
+        }
+
+        state.renderer.createReceptors();
+        state.renderer.createSustains();
+        state.renderer.updateReceptorVisuals();
+        if (state.showSustainPreview) state.renderer.updateSustainVisuals();
+        state.ui.updateInstructionsText();
+
+        trace('$label import complete: ${entries.length} entries, $keyCount receptors (${receptorNames.join(", ")})');
+    }
+    /** Assign a parsed clip data struct into the correct slot of a NoteskinReceptorProperties. */
+    static function applyClipTypeData(clip:NoteskinReceptorProperties, clipType:String, clipData:BasicNoteskinClip) {
+        switch (clipType) {
+            case "idle":     clip.idle = clipData;
+            case "press":    clip.press = clipData;
+            case "confirm":  clip.confirm = clipData;
+            case "color":    clip.color = clipData;
+            case "holdBody": clip.holdBody = clipData;
+            case "holdTail": clip.holdTail = clipData;
+            default:
+        }
+    }
+    /** Parse a SubTexture XML element into structured data.
+        Returns null if the element is invalid or missing required attributes. */
+    static function parseSubTextureElement(elem:Xml):{x:Int, y:Int, w:Int, h:Int, offsX:Int, offsY:Int} {
+        var sx = Std.parseInt(elem.get("x"));
+        var sy = Std.parseInt(elem.get("y"));
+        var sw = Std.parseInt(elem.get("width"));
+        var sh = Std.parseInt(elem.get("height"));
+        if (sx == null || sy == null || sw == null || sh == null) return null;
+
+        var sox = Std.parseInt(elem.get("frameX"));
+        var soy = Std.parseInt(elem.get("frameY"));
+        return {x: sx, y: sy, w: sw, h: sh, offsX: sox != null ? sox : 0, offsY: soy != null ? soy : 0};
+    }
+
+    /** Trim the Sparrow frame number suffix (e.g. "0000") and trailing space from a name. */
+    static function trimSparrowFrameSuffix(name:String):String {
+        var trimmed = name.toLowerCase();
+        if (trimmed.length > 4) trimmed = trimmed.substring(0, trimmed.length - 4);
+        if (trimmed.length > 0 && trimmed.charAt(trimmed.length - 1) == " ")
+            trimmed = trimmed.substring(0, trimmed.length - 1);
+        return trimmed;
+    }
     function loadNoteskin(skinName:String) {
         state.currentSkinName = skinName;
         var skinFolder = 'assets/images/noteskins/$skinName';
@@ -806,12 +891,7 @@ private class NoteskinEditorManiaManager {
             // Generate default 1K-4K configs if none exist.
             if (state.availableManiaConfigs.length == 0) {
                 for (k in 1...5) {
-                    var idx = [for (j in 0...k) j];
-                    state.availableManiaConfigs.push({
-                        offsetX: 0, offsetY: 0, gap: 112, scale: 1.0,
-                        idleIndexes: idx.copy(), pressIndexes: idx.copy(), colorIndexes: idx.copy(),
-                        confirmIndexes: idx.copy(), holdBodyIndexes: idx.copy(), holdTailIndexes: idx.copy()
-                    });
+                    state.availableManiaConfigs.push(makeManiaConfig(k));
                 }
             }
 
@@ -828,12 +908,7 @@ private class NoteskinEditorManiaManager {
                 // Clear existing manias and recreate 1K through NK.
                 state.availableManiaConfigs = [];
                 for (k in 1...targetKeys + 1) {
-                    var idx = [for (j in 0...k) j];
-                    state.availableManiaConfigs.push({
-                        offsetX: 0, offsetY: 0, gap: 112, scale: 1.0,
-                        idleIndexes: idx.copy(), pressIndexes: idx.copy(), colorIndexes: idx.copy(),
-                        confirmIndexes: idx.copy(), holdBodyIndexes: idx.copy(), holdTailIndexes: idx.copy()
-                    });
+                    state.availableManiaConfigs.push(makeManiaConfig(k));
                 }
                 sortManiasByKeyCount();
                 // Ensure clips exist for every index the highest mania references.
@@ -859,47 +934,42 @@ private class NoteskinEditorManiaManager {
     function createDefaultDataJson(skinFolder:String) {
         try {
             // Default data.json with 4 receptors using actual texture coords from the XML.
-            var idx = [0, 1, 2, 3];
             var defaultData = {
                 name: "default",
                 sparrowImg: "sheet.png",
-                configMania: [{
-                    offsetX: 0, offsetY: 0, gap: 112, scale: 1.0,
-                    idleIndexes: idx.copy(), pressIndexes: idx.copy(), colorIndexes: idx.copy(),
-                    confirmIndexes: idx.copy(), holdBodyIndexes: idx.copy(), holdTailIndexes: idx.copy()
-                }],
+                configMania: [makeManiaConfig(4)],
                 clip: [
                     {
-                        idle:     {clipX: 3,   clipY: 116, clipW: 109, clipH: 111, offsX: 0, offsY: 0},
-                        press:    {clipX: 115, clipY: 229, clipW: 99,  clipH: 100, offsX: 0, offsY: 0},
-                        color:    {clipX: 115, clipY: 116, clipW: 108, clipH: 110, offsX: 0, offsY: 0},
-                        confirm:  {clipX: 3,   clipY: 3,   clipW: 240, clipH: 243, offsX: 0, offsY: 0},
-                        holdBody: {clipX: 441, clipY: 229, clipW: 35,  clipH: 30,  offsX: 0, offsY: 0},
-                        holdTail: {clipX: 460, clipY: 3,   clipW: 35,  clipH: 45,  offsX: 0, offsY: 0}
+                        idle:     {clipX: 436, clipY: 301, clipW: 109, clipH: 111, offsX: 0, offsY: 0},
+                        press:    {clipX: 546, clipY: 301, clipW: 99,  clipH: 100, offsX: 0, offsY: 0},
+                        color:    {clipX: 226, clipY: 384, clipW: 108, clipH: 110, offsX: 0, offsY: 0},
+                        confirm:  {clipX: 1,   clipY: 1,   clipW: 240, clipH: 243, offsX: 0, offsY: 0},
+                        holdBody: {clipX: 145, clipY: 467, clipW: 35,  clipH: 31,  offsX: 0, offsY: 0},
+                        holdTail: {clipX: 73,  clipY: 467, clipW: 35,  clipH: 45,  offsX: 0, offsY: 0}
                     },
                     {
-                        idle:     {clipX: 346, clipY: 3,   clipW: 111, clipH: 109, offsX: 0, offsY: 0},
-                        press:    {clipX: 3,   clipY: 230, clipW: 99,  clipH: 98,  offsX: 0, offsY: 0},
-                        color:    {clipX: 3,   clipY: 3,   clipW: 112, clipH: 110, offsX: 0, offsY: 0},
-                        confirm:  {clipX: 246, clipY: 3,   clipW: 189, clipH: 189, offsX: 0, offsY: 0},
-                        holdBody: {clipX: 441, clipY: 262, clipW: 35,  clipH: 30,  offsX: 0, offsY: 0},
-                        holdTail: {clipX: 460, clipY: 51,  clipW: 35,  clipH: 45,  offsX: 0, offsY: 0}
+                        idle:     {clipX: 114, clipY: 357, clipW: 111, clipH: 109, offsX: 0, offsY: 0},
+                        press:    {clipX: 548, clipY: 191, clipW: 99,  clipH: 98,  offsX: 0, offsY: 0},
+                        color:    {clipX: 1,   clipY: 245, clipW: 112, clipH: 110, offsX: 0, offsY: 0},
+                        confirm:  {clipX: 242, clipY: 1,   clipW: 191, clipH: 192, offsX: 0, offsY: 0},
+                        holdBody: {clipX: 181, clipY: 467, clipW: 35,  clipH: 30,  offsX: 0, offsY: 0},
+                        holdTail: {clipX: 1,   clipY: 467, clipW: 35,  clipH: 45,  offsX: 0, offsY: 0}
                     },
                     {
-                        idle:     {clipX: 233, clipY: 3,   clipW: 110, clipH: 111, offsX: 0, offsY: 0},
-                        press:    {clipX: 217, clipY: 230, clipW: 97,  clipH: 99,  offsX: 0, offsY: 0},
-                        color:    {clipX: 226, clipY: 117, clipW: 108, clipH: 110, offsX: 0, offsY: 0},
-                        confirm:  {clipX: 197, clipY: 249, clipW: 193, clipH: 189, offsX: 0, offsY: 0},
-                        holdBody: {clipX: 441, clipY: 295, clipW: 35,  clipH: 30,  offsX: 0, offsY: 0},
-                        holdTail: {clipX: 460, clipY: 147, clipW: 35,  clipH: 45,  offsX: 0, offsY: 0}
+                        idle:     {clipX: 436, clipY: 191, clipW: 111, clipH: 109, offsX: 0, offsY: 0},
+                        press:    {clipX: 444, clipY: 413, clipW: 101, clipH: 99,  offsX: 0, offsY: 0},
+                        color:    {clipX: 1,   clipY: 356, clipW: 112, clipH: 110, offsX: 0, offsY: 0},
+                        confirm:  {clipX: 242, clipY: 194, clipW: 193, clipH: 189, offsX: 0, offsY: 0},
+                        holdBody: {clipX: 217, clipY: 495, clipW: 35,  clipH: 30,  offsX: 0, offsY: 0},
+                        holdTail: {clipX: 37,  clipY: 467, clipW: 35,  clipH: 45,  offsX: 0, offsY: 0}
                     },
                     {
-                        idle:     {clipX: 346, clipY: 115, clipW: 111, clipH: 109, offsX: 0, offsY: 0},
-                        press:    {clipX: 337, clipY: 227, clipW: 101, clipH: 99,  offsX: 0, offsY: 0},
-                        color:    {clipX: 118, clipY: 3,   clipW: 112, clipH: 110, offsX: 0, offsY: 0},
-                        confirm:  {clipX: 3,   clipY: 249, clipW: 191, clipH: 192, offsX: 0, offsY: 0},
-                        holdBody: {clipX: 460, clipY: 195, clipW: 35,  clipH: 31,  offsX: 0, offsY: 0},
-                        holdTail: {clipX: 460, clipY: 99,  clipW: 35,  clipH: 45,  offsX: 0, offsY: 0}
+                        idle:     {clipX: 114, clipY: 245, clipW: 110, clipH: 111, offsX: 0, offsY: 0},
+                        press:    {clipX: 546, clipY: 402, clipW: 97,  clipH: 99,  offsX: 0, offsY: 0},
+                        color:    {clipX: 335, clipY: 413, clipW: 108, clipH: 110, offsX: 0, offsY: 0},
+                        confirm:  {clipX: 434, clipY: 1,   clipW: 189, clipH: 189, offsX: 0, offsY: 0},
+                        holdBody: {clipX: 181, clipY: 498, clipW: 35,  clipH: 30,  offsX: 0, offsY: 0},
+                        holdTail: {clipX: 109, clipY: 467, clipW: 35,  clipH: 45,  offsX: 0, offsY: 0}
                     }
                 ]
             };
@@ -923,14 +993,9 @@ private class NoteskinEditorManiaManager {
     }
 
     function generateManiaFromClips():NoteskinConfig {
-        // Preview mania — one index per clip.
+        // Preview mania — one index per clip. Uses gap=114 for visual distinction.
         var clipCount = state.noteskinData.clip != null ? state.noteskinData.clip.length : 0;
-        var idx = [for (i in 0...clipCount) i];
-        return {
-            offsetX: 0, offsetY: 0, gap: 114, scale: 1.0,
-            idleIndexes: idx, pressIndexes: idx.copy(), colorIndexes: idx.copy(),
-            confirmIndexes: idx.copy(), holdBodyIndexes: idx.copy(), holdTailIndexes: idx.copy()
-        };
+        return makeManiaConfig(clipCount, 114);
     }
 
     /** Save the current noteskin data back to data.json, overwriting the file. */
@@ -973,10 +1038,7 @@ private class NoteskinEditorManiaManager {
         updateMaxReceptorsFromConfig();
 
         // Ensure clips exist for all receptors.
-        var clips = state.noteskinData.clip;
-        while (clips.length < state.maxReceptors) {
-            clips.push(NoteskinEditorClipEditor.defaultClip());
-        }
+        ensureClipsForReceptors(state.maxReceptors);
 
         if (state.selectedIndex >= state.maxReceptors) {
             state.selectedIndex = state.maxReceptors - 1;
@@ -995,6 +1057,21 @@ private class NoteskinEditorManiaManager {
         trace('Switched to mania ${state.currentManiaIndex + 1}/${totalManias} - $modeName');
     }
 
+    /** Remove the popup background overlay from the grid buffer. */
+    function removePopupBackground() {
+        if (state.popupBackground != null) {
+            state.gridBuf.removeElement(state.popupBackground);
+            state.popupBackground = null;
+        }
+    }
+
+    /** Hide the instructions background overlay. */
+    function removeInstructionsBackground() {
+        if (state.instructionsBackground != null) {
+            state.gridBuf.removeElement(state.instructionsBackground);
+            state.instructionsBackground = null;
+        }
+    }
     function createNewMania() {
         state.createManiaPopupActive = true;
         state.createManiaInput = "";
@@ -1002,29 +1079,17 @@ private class NoteskinEditorManiaManager {
         state.createManiaKeyCount = 0;
 
         // Remove any stale popup backgrounds.
-        if (state.popupBackground != null) {
-            state.gridBuf.removeElement(state.popupBackground);
-            state.popupBackground = null;
-        }
-
-        if (state.instructionsBackground != null) {
-            state.gridBuf.removeElement(state.instructionsBackground);
-            state.instructionsBackground = null;
-        }
+        removePopupBackground();
+        removeInstructionsBackground();
 
         trace('Create Mania popup opened - Enter number of keys');
     }
 
     function createDefaultNoteskin() {
-        var idx = [0, 1, 2, 3];
         state.noteskinData = {
             name: "default",
             sparrowImg: "sheet.png",
-            configMania: [{
-                offsetX: 0, offsetY: 0, gap: 112, scale: 1.0,
-                idleIndexes: idx.copy(), pressIndexes: idx.copy(), colorIndexes: idx.copy(),
-                confirmIndexes: idx.copy(), holdBodyIndexes: idx.copy(), holdTailIndexes: idx.copy()
-            }],
+            configMania: [makeManiaConfig(4)],
             clip: []
         };
         state.availableManiaConfigs = state.noteskinData.configMania.copy();
@@ -1032,9 +1097,7 @@ private class NoteskinEditorManiaManager {
         state.currentConfig = state.availableManiaConfigs[state.currentManiaIndex];
         updateMaxReceptorsFromConfig();
 
-        for (i in 0...state.maxReceptors) {
-            state.noteskinData.clip.push(NoteskinEditorClipEditor.defaultClip());
-        }
+        ensureClipsForReceptors(state.maxReceptors);
     }
 
     function confirmCreateMania() {
@@ -1052,12 +1115,7 @@ private class NoteskinEditorManiaManager {
             }
         }
 
-        var idx = [for (i in 0...keyCount) i];
-        var newMania:NoteskinConfig = {
-            offsetX: 0, offsetY: 0, gap: 112, scale: 1.0,
-            idleIndexes: idx.copy(), pressIndexes: idx.copy(), colorIndexes: idx.copy(),
-            confirmIndexes: idx.copy(), holdBodyIndexes: idx.copy(), holdTailIndexes: idx.copy()
-        };
+        var newMania = makeManiaConfig(keyCount);
 
         state.availableManiaConfigs.push(newMania);
 
@@ -1070,10 +1128,7 @@ private class NoteskinEditorManiaManager {
             state.currentConfig = state.availableManiaConfigs[state.currentManiaIndex];
             updateMaxReceptorsFromConfig();
 
-            var clips = state.noteskinData.clip;
-            while (clips.length < state.maxReceptors) {
-                clips.push(NoteskinEditorClipEditor.defaultClip());
-            }
+            ensureClipsForReceptors(state.maxReceptors);
 
             state.renderer.createReceptors();
             state.renderer.updateReceptorVisuals();
@@ -1114,12 +1169,7 @@ private class NoteskinEditorManiaManager {
         for (i in 1...maxKeys) {
             if (existingKeyCounts.indexOf(i) != -1) continue;
 
-            var idx = [for (j in 0...i) j];
-            var newMania:NoteskinConfig = {
-                offsetX: 0, offsetY: 0, gap: 112, scale: 1.0,
-                idleIndexes: idx.copy(), pressIndexes: idx.copy(), colorIndexes: idx.copy(),
-                confirmIndexes: idx.copy(), holdBodyIndexes: idx.copy(), holdTailIndexes: idx.copy()
-            };
+            var newMania = makeManiaConfig(i);
 
             state.availableManiaConfigs.push(newMania);
 
@@ -1131,10 +1181,7 @@ private class NoteskinEditorManiaManager {
                 state.currentConfig = state.availableManiaConfigs[state.currentManiaIndex];
                 updateMaxReceptorsFromConfig();
 
-                var clips = state.noteskinData.clip;
-                while (clips.length < state.maxReceptors) {
-                    clips.push(NoteskinEditorClipEditor.defaultClip());
-                }
+                ensureClipsForReceptors(state.maxReceptors);
 
                 state.renderer.createReceptors();
                 state.renderer.updateReceptorVisuals();
@@ -1153,10 +1200,7 @@ private class NoteskinEditorManiaManager {
         if (state.instructionsText != null) {
             state.instructionsText.alpha = 0;
         }
-        if (state.popupBackground != null) {
-            state.gridBuf.removeElement(state.popupBackground);
-            state.popupBackground = null;
-        }
+        removePopupBackground();
         state.gridBuf.update();
 
         trace('Create Mania cancelled');
@@ -1268,24 +1312,10 @@ private class NoteskinEditorManiaManager {
                 var name = elem.get("name");
                 if (name == null) continue;
 
-                var sx = Std.parseInt(elem.get("x"));
-                var sy = Std.parseInt(elem.get("y"));
-                var sw = Std.parseInt(elem.get("width"));
-                var sh = Std.parseInt(elem.get("height"));
-                if (sx == null || sy == null || sw == null || sh == null) continue;
+                var parsed = parseSubTextureElement(elem);
+                if (parsed == null) continue;
 
-                var sox = Std.parseInt(elem.get("frameX"));
-                var soy = Std.parseInt(elem.get("frameY"));
-                var ox = sox != null ? sox : 0;
-                var oy = soy != null ? soy : 0;
-
-                var nameLower = name.toLowerCase();
-
-                // Trim last 4 characters (Sparrow frame number, e.g. "0000").
-                var trimmed = nameLower;
-                if (trimmed.length > 4) trimmed = trimmed.substring(0, trimmed.length - 4);
-                if (trimmed.length > 0 && trimmed.charAt(trimmed.length - 1) == " ")
-                    trimmed = trimmed.substring(0, trimmed.length - 1);
+                var trimmed = trimSparrowFrameSuffix(name);
                 if (trimmed.length == 0) continue;
 
                 // --- Clip type detection (vanilla FNF format) ---
@@ -1360,7 +1390,7 @@ private class NoteskinEditorManiaManager {
                 if (seenKeys.exists(dedupKey)) continue;
                 seenKeys.set(dedupKey, true);
 
-                entries.push({group: groupKeyword, clipType: clipType, x: sx, y: sy, w: sw, h: sh, offsX: ox, offsY: oy});
+                entries.push({group: groupKeyword, clipType: clipType, x: parsed.x, y: parsed.y, w: parsed.w, h: parsed.h, offsX: parsed.offsX, offsY: parsed.offsY});
             }
 
             if (entries.length == 0) {
@@ -1397,10 +1427,8 @@ private class NoteskinEditorManiaManager {
 
             // Clear ALL existing clips and create exactly keyCount new ones.
             state.noteskinData.clip = [];
+            ensureClipsForReceptors(keyCount);
             var clips = state.noteskinData.clip;
-            for (i in 0...keyCount) {
-                clips.push(NoteskinEditorClipEditor.defaultClip());
-            }
 
             // Build group -> receptor index map.
             var groupToReceptor = new Map<String, Int>();
@@ -1455,12 +1483,7 @@ private class NoteskinEditorManiaManager {
                 }
             }
             if (foundConfig == null) {
-                var idx = [for (i in 0...keyCount) i];
-                foundConfig = {
-                    offsetX: 0, offsetY: 0, gap: 112, scale: 1.0,
-                    idleIndexes: idx.copy(), pressIndexes: idx.copy(), colorIndexes: idx.copy(),
-                    confirmIndexes: idx.copy(), holdBodyIndexes: idx.copy(), holdTailIndexes: idx.copy()
-                };
+                foundConfig = makeManiaConfig(keyCount);
                 configs.push(foundConfig);
                 trace('Created new mania config for $keyCount keys');
             }
@@ -1468,33 +1491,7 @@ private class NoteskinEditorManiaManager {
             // Mirror confirmCreateMania: after ensuring the keyCount config
             // exists, fill in 1K..(NK-1)K so the mania bar shows the full
             // 1K-NK range with NK active (e.g. [4/4 - 4K]).
-            state.availableManiaConfigs = configs.copy();
-            fillMissingManias(keyCount);
-            sortManiasByKeyCount();
-
-            // After sort, refetch the index of the just-imported keyCount
-            // config (sort may have moved it).
-            var newIndex = state.availableManiaConfigs.indexOf(foundConfig);
-            if (newIndex != -1) {
-                state.currentManiaIndex = newIndex;
-                state.currentConfig = state.availableManiaConfigs[state.currentManiaIndex];
-            } else {
-                state.currentConfig = foundConfig;
-            }
-            updateMaxReceptorsFromConfig();
-
-            if (state.selectedIndex >= state.maxReceptors) {
-                state.selectedIndex = state.maxReceptors - 1;
-            }
-
-            // Refresh everything.
-            state.renderer.createReceptors();
-            state.renderer.createSustains();
-            state.renderer.updateReceptorVisuals();
-            if (state.showSustainPreview) state.renderer.updateSustainVisuals();
-            state.ui.updateInstructionsText();
-
-            trace('Vanilla import complete: ${entries.length} entries, $keyCount receptors (${receptorNames.join(", ")}) from $xmlPath');
+            finalizeImport(foundConfig, keyCount, entries, receptorNames, 'Vanilla');
             if (dirGroupsFound.length > 0) {
                 trace('Direction groups: ${dirGroupsFound.join(", ")}');
                 if (colorGroupsFound.length > 0) trace('Color groups: ${colorGroupsFound.join(", ")}');
@@ -1553,26 +1550,10 @@ private class NoteskinEditorManiaManager {
                 var name = elem.get("name");
                 if (name == null) continue;
 
-                var sx = Std.parseInt(elem.get("x"));
-                var sy = Std.parseInt(elem.get("y"));
-                var sw = Std.parseInt(elem.get("width"));
-                var sh = Std.parseInt(elem.get("height"));
-                if (sx == null || sy == null || sw == null || sh == null) continue;
+                var parsed = parseSubTextureElement(elem);
+                if (parsed == null) continue;
 
-                // Sparrow trimmed-frame offsets (frameX/frameY)
-                var sox = Std.parseInt(elem.get("frameX"));
-                var soy = Std.parseInt(elem.get("frameY"));
-                var ox = sox != null ? sox : 0;
-                var oy = soy != null ? soy : 0;
-
-                var nameLower = name.toLowerCase();
-
-                // Trim last 4 characters (Sparrow frame number, e.g. "0000").
-                var trimmed = nameLower;
-                if (trimmed.length > 4) trimmed = trimmed.substring(0, trimmed.length - 4);
-                // Strip trailing space left after digit removal.
-                if (trimmed.length > 0 && trimmed.charAt(trimmed.length - 1) == " ")
-                    trimmed = trimmed.substring(0, trimmed.length - 1);
+                var trimmed = trimSparrowFrameSuffix(name);
                 if (trimmed.length == 0) continue;
 
                 // Group: first character must be a single letter a-z.
@@ -1601,7 +1582,7 @@ private class NoteskinEditorManiaManager {
                 if (seen.exists(dedupeKey)) continue;
                 seen.set(dedupeKey, true);
 
-                entries.push({group: group, clipType: clipType, x: sx, y: sy, w: sw, h: sh, offsX: ox, offsY: oy});
+                entries.push({group: group, clipType: clipType, x: parsed.x, y: parsed.y, w: parsed.w, h: parsed.h, offsX: parsed.offsX, offsY: parsed.offsY});
             }
 
             if (entries.length == 0) {
@@ -1625,10 +1606,8 @@ private class NoteskinEditorManiaManager {
 
             // --- Clear ALL existing clips and create exactly keyCount new ones ---
             state.noteskinData.clip = [];
+            ensureClipsForReceptors(keyCount);
             var clips = state.noteskinData.clip;
-            for (i in 0...keyCount) {
-                clips.push(NoteskinEditorClipEditor.defaultClip());
-            }
 
             // Build group -> receptor index map.
             var groupToReceptor = new Map<String, Int>();
@@ -1647,16 +1626,7 @@ private class NoteskinEditorManiaManager {
                     rotation: TextureRotation.POS0
                 };
 
-                var clip = clips[receptorIndex];
-                switch (entry.clipType) {
-                    case "idle":     clip.idle = clipData;
-                    case "press":    clip.press = clipData;
-                    case "confirm":  clip.confirm = clipData;
-                    case "color":    clip.color = clipData;
-                    case "holdBody": clip.holdBody = clipData;
-                    case "holdTail": clip.holdTail = clipData;
-                    default:
-                }
+                applyClipTypeData(clips[receptorIndex], entry.clipType, clipData);
 
                 trace('Imported: ${entry.group} ${entry.clipType} [receptor $receptorIndex] (${entry.x}, ${entry.y}, ${entry.w}, ${entry.h}) offs(${entry.offsX}, ${entry.offsY})');
             }
@@ -1671,46 +1641,12 @@ private class NoteskinEditorManiaManager {
                 }
             }
             if (foundConfig == null) {
-                var idx = [for (i in 0...keyCount) i];
-                foundConfig = {
-                    offsetX: 0, offsetY: 0, gap: 112, scale: 1.0,
-                    idleIndexes: idx.copy(), pressIndexes: idx.copy(), colorIndexes: idx.copy(),
-                    confirmIndexes: idx.copy(), holdBodyIndexes: idx.copy(), holdTailIndexes: idx.copy()
-                };
+                foundConfig = makeManiaConfig(keyCount);
                 configs.push(foundConfig);
                 trace('Created new mania config for $keyCount keys');
             }
 
-            // Mirror confirmCreateMania: after ensuring the keyCount config
-            // exists, fill in 1K..(NK-1)K so the mania bar shows the full
-            // 1K-NK range with NK active (e.g. [4/4 - 4K]).
-            state.availableManiaConfigs = configs.copy();
-            fillMissingManias(keyCount);
-            sortManiasByKeyCount();
-
-            // After sort, refetch the index of the just-imported keyCount
-            // config (sort may have moved it).
-            var newIndex = state.availableManiaConfigs.indexOf(foundConfig);
-            if (newIndex != -1) {
-                state.currentManiaIndex = newIndex;
-                state.currentConfig = state.availableManiaConfigs[state.currentManiaIndex];
-            } else {
-                state.currentConfig = foundConfig;
-            }
-            updateMaxReceptorsFromConfig();
-
-            if (state.selectedIndex >= state.maxReceptors) {
-                state.selectedIndex = state.maxReceptors - 1;
-            }
-
-            // Refresh everything.
-            state.renderer.createReceptors();
-            state.renderer.createSustains();
-            state.renderer.updateReceptorVisuals();
-            if (state.showSustainPreview) state.renderer.updateSustainVisuals();
-            state.ui.updateInstructionsText();
-
-            trace('Lettered Import complete: ${entries.length} entries, $keyCount receptors (${receptorNames.join(", ")}) from $xmlPath');
+            finalizeImport(foundConfig, keyCount, entries, receptorNames, 'Lettered');
         } catch (e) {
             trace('Failed to import lettered atlas: $e');
         }
@@ -1730,6 +1666,41 @@ private class NoteskinEditorRenderer {
         this.state = state;
     }
 
+    /** Premultiply alpha on pixel data and create a Texture from the given Image. */
+    static function premultiplyAndCreateTexture(image:Image, smooth:Bool, powerOfTwo:Bool = false):Texture {
+        var pixelData = image.getPixels(new Rectangle(0, 0, image.width, image.height), RGBA32);
+
+        // Premultiply alpha so the texture composites correctly.
+        var premultipliedData = haxe.io.Bytes.alloc(pixelData.length);
+        for (i in 0...pixelData.length >> 2) {
+            var fullARGB = pixelData.getInt32(i << 2);
+
+            var a = (fullARGB >>> 24) & 0xFF;
+            var r = (fullARGB >>> 16) & 0xFF;
+            var g = (fullARGB >>> 8)  & 0xFF;
+            var b = (fullARGB)        & 0xFF;
+
+            r = (r * a) >> 8;
+            g = (g * a) >> 8;
+            b = (b * a) >> 8;
+
+            var premul = (a << 24) | (r << 16) | (g << 8) | b;
+            premultipliedData.setInt32(i << 2, premul);
+        }
+
+        var textureData = new TextureData(image.width, image.height, TextureFormat.RGBA);
+        textureData.bytes = premultipliedData;
+
+        var texture = new Texture(textureData.width, textureData.height, null, {
+            format: TextureFormat.RGBA,
+            powerOfTwo: powerOfTwo,
+            smoothExpand: smooth,
+            smoothShrink: smooth
+        });
+        texture.setData(textureData);
+
+        return texture;
+    }
     function createGrid() {
         try {
             // --- Scrolling grid background (bottommost layer) ---
@@ -1901,16 +1872,7 @@ private class NoteskinEditorRenderer {
                 return;
             }
             var guiImage = Image.fromFile(guiTexPath);
-            var guiData = new TextureData(guiImage.width, guiImage.height, TextureFormat.RGBA);
-            guiData.bytes = guiImage.getPixels(new Rectangle(0, 0, guiImage.width, guiImage.height), RGBA32);
-
-            var guiTex = new Texture(guiImage.width, guiImage.height, null, {
-                format: TextureFormat.RGBA,
-                powerOfTwo: false,
-                smoothExpand: SaveData.state.graphics.antialiasing,
-                smoothShrink: SaveData.state.graphics.antialiasing
-            });
-            guiTex.setData(guiData);
+            var guiTex = premultiplyAndCreateTexture(guiImage, SaveData.state.graphics.antialiasing);
             TextureSystem.pool[NoteskinEditor.GUI_TEXTURE_NAME] = guiTex;
             state.guiTexture = guiTex;
 
@@ -2008,40 +1970,8 @@ private class NoteskinEditorRenderer {
             }
 
             var sheetImage = Image.fromFile(sheetPath);
-
-            var pixelData = sheetImage.getPixels(new Rectangle(0, 0, sheetImage.width, sheetImage.height), RGBA32);
-
-            // Premultiply alpha so the texture composites correctly.
-            var premultipliedData = haxe.io.Bytes.alloc(pixelData.length);
-            for (i in 0...pixelData.length >> 2) {
-                var fullARGB = pixelData.getInt32(i << 2);
-
-                var a = (fullARGB >>> 24) & 0xFF;
-                var r = (fullARGB >>> 16) & 0xFF;
-                var g = (fullARGB >>> 8)  & 0xFF;
-                var b = (fullARGB)        & 0xFF;
-
-                r = (r * a) >> 8;
-                g = (g * a) >> 8;
-                b = (b * a) >> 8;
-
-                var premul = (a << 24) | (r << 16) | (g << 8) | b;
-                premultipliedData.setInt32(i << 2, premul);
-            }
-
-            var textureData = new TextureData(sheetImage.width, sheetImage.height, TextureFormat.RGBA);
-            textureData.bytes = premultipliedData;
-
-            var texture = new Texture(textureData.width, textureData.height, null, {
-                format: TextureFormat.RGBA,
-                powerOfTwo: false,
-                smoothExpand: SaveData.state.graphics.antialiasing,
-                smoothShrink: SaveData.state.graphics.antialiasing
-            });
-            texture.setData(textureData);
-
+            var texture = premultiplyAndCreateTexture(sheetImage, SaveData.state.graphics.antialiasing);
             TextureSystem.pool[NoteskinEditor.NOTESKIN_TEXTURE_NAME] = texture;
-
             return texture;
         } catch (e) {
             trace('Failed to load noteskin texture: $e');
@@ -2977,6 +2907,10 @@ private class NoteskinEditorInputHandler {
         this.state = state;
     }
 
+    /** Test whether the mouse coordinates are inside a RepeatSprite's bounding box. */
+    static function hitTestBox(box:RepeatSprite, mx:Float, my:Float):Bool {
+        return mx >= box.x && mx <= box.x + box.w && my >= box.y && my <= box.y + box.h;
+    }
     function addEvents() {
         #if !android
         var window = Application.current.window;
@@ -3246,14 +3180,14 @@ private class NoteskinEditorInputHandler {
                 state.showSustainPreview = !state.showSustainPreview;
                 state.renderer.updateSustainVisuals();
             // Sustain texture coord rotation (cycles TextureRotation enum on holdBody+holdTail)
-            case "sust_texrot_p90":
-                state.clipEditor.rotateCurrentClip(1);
             case "sust_texrot_m90":
+                state.clipEditor.rotateCurrentClip(1);
+            case "sust_texrot_p90":
                 state.clipEditor.rotateCurrentClip(-1);
             // Regular sustain sprite rotation (adjusts visual r on sustain sprites)
-            case "sust_rot_p45":
-                state.clipEditor.rotateSustainSprite(state.selectedIndex, 90);
             case "sust_rot_m45":
+                state.clipEditor.rotateSustainSprite(state.selectedIndex, 90);
+            case "sust_rot_p45":
                 state.clipEditor.rotateSustainSprite(state.selectedIndex, -90);
             // Gap
             case "gap_m10": state.maniaManager.adjustGap(-10);
@@ -3306,11 +3240,7 @@ private class NoteskinEditorInputHandler {
         // If create-mania popup is active, clicking on it confirms, clicking outside cancels.
         if (state.createManiaPopupActive) {
             if (state.popupBackground != null) {
-                var bx = state.popupBackground.x;
-                var by = state.popupBackground.y;
-                var bw = state.popupBackground.w;
-                var bh = state.popupBackground.h;
-                if (mouseX >= bx && mouseX <= bx + bw && mouseY >= by && mouseY <= by + bh) {
+                if (hitTestBox(state.popupBackground, mouseX, mouseY)) {
                     // Clicked on the popup — confirm.
                     state.maniaManager.confirmCreateMania();
                 } else {
@@ -3336,50 +3266,28 @@ private class NoteskinEditorInputHandler {
         //     always work even in preview-clips mania). ---
         for (btn in state.guiButtons) {
             if (btn.box == null) continue;
-            var bx = btn.box.x;
-            var by = btn.box.y;
-            var bw = btn.box.w;
-            var bh = btn.box.h;
-            if (mouseX >= bx && mouseX <= bx + bw && mouseY >= by && mouseY <= by + bh) {
+            if (hitTestBox(btn.box, mouseX, mouseY)) {
                 handleGUIAction(btn.action);
                 return;
             }
         }
 
         // Save noteskin button click.
-        if (state.saveButtonBox != null) {
-            var bx = state.saveButtonBox.x;
-            var by = state.saveButtonBox.y;
-            var bw = state.saveButtonBox.w;
-            var bh = state.saveButtonBox.h;
-            if (mouseX >= bx && mouseX <= bx + bw && mouseY >= by && mouseY <= by + bh) {
-                state.maniaManager.saveNoteskin();
-                return;
-            }
+        if (state.saveButtonBox != null && hitTestBox(state.saveButtonBox, mouseX, mouseY)) {
+            state.maniaManager.saveNoteskin();
+            return;
         }
 
         // Import vanilla atlas button click.
-        if (state.importButtonBox != null) {
-            var bx = state.importButtonBox.x;
-            var by = state.importButtonBox.y;
-            var bw = state.importButtonBox.w;
-            var bh = state.importButtonBox.h;
-            if (mouseX >= bx && mouseX <= bx + bw && mouseY >= by && mouseY <= by + bh) {
-                state.maniaManager.importFromAtlas();
-                return;
-            }
+        if (state.importButtonBox != null && hitTestBox(state.importButtonBox, mouseX, mouseY)) {
+            state.maniaManager.importFromAtlas();
+            return;
         }
 
         // Import lettered atlas button click.
-        if (state.importButton18KBox != null) {
-            var bx = state.importButton18KBox.x;
-            var by = state.importButton18KBox.y;
-            var bw = state.importButton18KBox.w;
-            var bh = state.importButton18KBox.h;
-            if (mouseX >= bx && mouseX <= bx + bw && mouseY >= by && mouseY <= by + bh) {
-                state.maniaManager.importFromAtlas18K();
-                return;
-            }
+        if (state.importButton18KBox != null && hitTestBox(state.importButton18KBox, mouseX, mouseY)) {
+            state.maniaManager.importFromAtlas18K();
+            return;
         }
 
         // --- Preview mode vertical scroll (100px zones next to GUI panels) ---
@@ -3469,8 +3377,9 @@ private class NoteskinEditorInputHandler {
         if (note == null) return;
 
         var scale = state.currentConfig.scale;
-        var sx = note.x;
-        var sy = note.y;
+        var clip = state.clipEditor.getSelectedClip();
+        var sx = note.x + clip.offsX * scale;
+        var sy = note.y + clip.offsY * scale;
         var sw = note.w * scale;
         var sh = note.h * scale;
 
@@ -3515,8 +3424,9 @@ private class NoteskinEditorInputHandler {
         if (note == null) return;
 
         var scale = state.currentConfig.scale;
-        var sx = note.x;
-        var sy = note.y;
+        var clip = state.clipEditor.getSelectedClip();
+        var sx = note.x + clip.offsX * scale;
+        var sy = note.y + clip.offsY * scale;
         var sw = note.w * scale;
         var sh = note.h * scale;
 
@@ -4057,6 +3967,13 @@ class NoteskinEditor {
         inputHandler.addEvents();
     }
 
+    /** Set the alpha of the import/save button text labels. */
+    function setImportButtonLabelsAlpha(alpha:Float) {
+        if (saveButtonText != null) saveButtonText.alpha = alpha;
+        if (importButtonText != null) importButtonText.alpha = alpha;
+        if (importButton18KText != null) importButton18KText.alpha = alpha;
+    }
+
     public function toggleEditor() {
         showEditor = !showEditor;
         if (showEditor) {
@@ -4108,15 +4025,7 @@ class NoteskinEditor {
             if (guiLeftBackground != null) guiLeftBackground.c.aF = 0.7;
             ui.updateInstructionsText();
 
-            if (saveButtonText != null) {
-                saveButtonText.alpha = 1;
-            }
-            if (importButtonText != null) {
-                importButtonText.alpha = 1;
-            }
-            if (importButton18KText != null) {
-                importButton18KText.alpha = 1;
-            }
+            setImportButtonLabelsAlpha(1);
 
             trace('Noteskin Editor opened');
         } else {
@@ -4135,15 +4044,7 @@ class NoteskinEditor {
                 ui.hideInstructionsPopup();
             }
 
-            if (saveButtonText != null) {
-                saveButtonText.alpha = 0;
-            }
-            if (importButtonText != null) {
-                importButtonText.alpha = 0;
-            }
-            if (importButton18KText != null) {
-                importButton18KText.alpha = 0;
-            }
+            setImportButtonLabelsAlpha(0);
 
             // Hide panel backgrounds and button boxes
             for (btn in guiButtons) {
