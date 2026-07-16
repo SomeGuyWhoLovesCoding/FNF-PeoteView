@@ -134,33 +134,33 @@ class NoteskinGUISprite implements Element {
     static inline var ATLAS_H:Int = 512;
 
     // Frame data parsed from gui_buttons.xml -- 25 frames total.
-    // 14 frames are 191x97 (full width), 11 frames are 101x97 (trimmed).
+    // 8 frames are 191x97 (wide), 17 frames are ~101x97 (square/trimmed).
     public static var ATLAS_FRAMES:Array<GuiAtlasFrame> = [
         { name: "instance 10000", x: 0,   y: 0,   width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10001", x: 191, y: 0,   width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10002", x: 382, y: 0,   width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10003", x: 573, y: 0,   width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10004", x: 764, y: 0,   width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10005", x: 0,   y: 97,  width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10006", x: 764, y: 194, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10007", x: 865, y: 194, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10008", x: 0,   y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10009", x: 101, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10010", x: 202, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10011", x: 303, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10012", x: 404, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10013", x: 505, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10014", x: 606, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10015", x: 707, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10016", x: 808, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10017", x: 191, y: 97,  width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10018", x: 382, y: 97,  width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10019", x: 573, y: 97,  width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10020", x: 764, y: 97,  width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10021", x: 0,   y: 194, width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10022", x: 191, y: 194, width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10023", x: 382, y: 194, width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
-        { name: "instance 10024", x: 573, y: 194, width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10001", x: 0,   y: 97,  width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10002", x: 191, y: 0,   width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10003", x: 0,   y: 194, width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10004", x: 191, y: 97,  width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10005", x: 382, y: 0,   width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10006", x: 573, y: 0,   width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10007", x: 0,   y: 388, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10008", x: 191, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10009", x: 382, y: 194, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10010", x: 484, y: 97,  width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10011", x: 101, y: 388, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10012", x: 292, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10013", x: 483, y: 194, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10014", x: 202, y: 388, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10015", x: 393, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10016", x: 303, y: 388, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10017", x: 0,   y: 291, width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10018", x: 191, y: 194, width: 191, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10019", x: 494, y: 291, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10020", x: 404, y: 388, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10021", x: 505, y: 388, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10022", x: 382, y: 97,  width: 102, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10023", x: 585, y: 97,  width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
+        { name: "instance 10024", x: 584, y: 194, width: 101, height: 97, frameX: 0, frameY: 0, frameWidth: 191, frameHeight: 97 },
     ];
 
     static function init(program:CustomProgram, name:String, texture:Texture) {
@@ -193,16 +193,72 @@ class NoteskinGUISprite implements Element {
         if (id < 0) id = 0;
         if (id >= ATLAS_FRAMES.length) id = ATLAS_FRAMES.length - 1;
         var f = ATLAS_FRAMES[id];
-        clipX = f.x;
-        clipY = f.y;
-        clipWidth = f.width;
-        clipHeight = f.height;
-        clipSizeX = f.width;
-        clipSizeY = f.height;
+        // Inset UV rectangle by 1px on each edge to prevent adjacent-frame
+        // bleeding caused by GPU texel interpolation at subpixel boundaries.
+        clipX = f.x + 1;
+        clipY = f.y + 1;
+        clipWidth = f.width - 2;
+        clipHeight = f.height - 2;
+        clipSizeX = f.width - 2;
+        clipSizeY = f.height - 2;
         w = f.width;
         h = f.height;
         curID = id;
     }
+}
+
+// ============================================================================
+// GridBackgroundSprite -- square sprite for the scrolling grid background.
+// Uses texture repeat (texRepeatX/Y = true) to tile a grid pattern infinitely.
+// Sprite x/y positions (Float) are shifted for smooth diagonal scrolling.
+// Four squares in a 2x2 arrangement cover the viewport seamlessly.
+// ============================================================================
+
+@:publicFields
+class GridBackgroundSprite implements Element {
+    @posX var x:Float = 0.0;
+    @posY var y:Float = 0.0;
+    @sizeX var w:Float = 0.0;
+    @sizeY var h:Float = 0.0;
+
+    @texX var clipX:Int = 0;
+    @texY var clipY:Int = 0;
+    @texW var clipWidth:Int = 64;
+    @texH var clipHeight:Int = 64;
+
+    @texPosX var clipPosX:Int = 0;
+    @texPosY var clipPosY:Int = 0;
+    @custom @varying @texSizeX var clipSizeX:Int = 64;
+    @custom @varying @texSizeY var clipSizeY:Int = 64;
+
+    @color var c:Color = 0xFFFFFFFF;
+
+    var OPTIONS = { texRepeatX: true, texRepeatY: true, blend: false };
+
+    // Size of one grid tile (64x64 = 2x2 checkerboard duplicated 32x32).
+    static inline var TILE_SIZE:Int = 64;
+
+    static function init(program:CustomProgram, name:String, texture:Texture) {
+        program.setTexture(texture, name, true);
+
+        if (Main.current.upscale) {
+            program.injectIntoFragmentShader(Shaders.UPSCALE_FRAGMENT_SHADER);
+            program.setColorFormula('
+                iconPixel(${name}_ID, vTexCoord, vec2(clipSizeX, 0.0), vec2(clipSizeY, 0.0))
+            ');
+        }
+        else {
+            program.injectIntoFragmentShader('
+                vec4 getBgTexColor(int textureID, vec4 c)
+                {
+                    return getTextureColor(textureID, vTexCoord);
+                }
+            ');
+            program.setColorFormula('getBgTexColor(${name}_ID, c)');
+        }
+    }
+
+    function new() {}
 }
 
 // ============================================================================
@@ -311,6 +367,9 @@ private class NoteskinEditorClipEditor {
 
     function adjustSelectedValue(amount:Int) {
         if (state.spriteSheetMode) return;
+
+        // Block property modifications when the selected receptor is off-screen.
+        if (!isReceptorOnScreen(state.selectedIndex)) return;
 
         // Disallow clipIndex edits while in preview-clips mania — would produce garbage renders.
         if (state.selectedProperty == "clipIndex"
@@ -684,6 +743,20 @@ private class NoteskinEditorClipEditor {
         return -1;
     }
 
+    /** Returns true if the receptor at the given index is at least
+        partially visible on screen.  Returns false when the entire
+        sprite rectangle is outside the viewport. */
+    function isReceptorOnScreen(index:Int):Bool {
+        if (index < 0 || index >= state.receptorSprites.length) return false;
+        var note = state.receptorSprites[index];
+        if (note == null) return false;
+        var scale = state.currentConfig.scale;
+        var sw = note.w * scale;
+        var sh = note.h * scale;
+        return (note.x + sw > 0 && note.x < Main.INITIAL_WIDTH
+             && note.y + sh > 0 && note.y < Main.INITIAL_HEIGHT);
+    }
+
     function toggleSpritesheetMode() {
         state.spriteSheetMode = !state.spriteSheetMode;
         if (state.spriteSheetMode) {
@@ -887,6 +960,10 @@ private class NoteskinEditorManiaManager {
 
         state.currentManiaIndex = newIndex;
 
+        // Reset preview scroll when switching manias
+        state.previewScrollOffset = 0;
+        state.isPreviewScrolling = false;
+
         if (state.currentManiaIndex < state.availableManiaConfigs.length) {
             state.currentConfig = state.availableManiaConfigs[state.currentManiaIndex];
         } else {
@@ -924,7 +1001,7 @@ private class NoteskinEditorManiaManager {
         state.createManiaError = "";
         state.createManiaKeyCount = 0;
 
-        // Remove any stale popup background.
+        // Remove any stale popup backgrounds.
         if (state.popupBackground != null) {
             state.gridBuf.removeElement(state.popupBackground);
             state.popupBackground = null;
@@ -1655,13 +1732,93 @@ private class NoteskinEditorRenderer {
 
     function createGrid() {
         try {
+            // --- Scrolling grid background (bottommost layer) ---
+            if (state.backgroundBuf == null) {
+                state.backgroundBuf = new Buffer<GridBackgroundSprite>(4, 4, true);
+            }
+            if (state.backgroundProg == null) {
+                state.backgroundProg = new CustomProgram(state.backgroundBuf);
+                // Generate a 64x64 checkerboard tile texture procedurally.
+                // The 2x2 pattern (dark/light, light/dark) is duplicated 32x32
+                // times to fill the full 64x64 tile.
+                var tileSize = GridBackgroundSprite.TILE_SIZE;
+                var darkR = 18, darkG = 18, darkB = 24;
+                var lightR = 35, lightG = 35, lightB = 48;
+                var gridBytes = haxe.io.Bytes.alloc(tileSize * tileSize * 4);
+                for (py in 0...tileSize) {
+                    for (px in 0...tileSize) {
+                        var idx = (py * tileSize + px) * 4;
+                        // Standard checkerboard: matches the 2x2 pattern
+                        // [dark][light] / [light][dark] tiled 32x32.
+                        var isDark = ((px & 1) + (py & 1)) != 1;
+                        var r = isDark ? darkR : lightR;
+                        var g = isDark ? darkG : lightG;
+                        var b = isDark ? darkB : lightB;
+                        gridBytes.set(idx, r);
+                        gridBytes.set(idx + 1, g);
+                        gridBytes.set(idx + 2, b);
+                        gridBytes.set(idx + 3, 255);
+                    }
+                }
+
+                var gridTexData = new TextureData(tileSize, tileSize, TextureFormat.RGBA);
+                gridTexData.bytes = gridBytes;
+                var gridTex = new Texture(tileSize, tileSize, null, {
+                    format: TextureFormat.RGBA,
+                    powerOfTwo: true,
+                    smoothExpand: false,
+                    smoothShrink: false
+                });
+                gridTex.setData(gridTexData);
+                state.backgroundTexture = gridTex;
+                TextureSystem.pool[NoteskinEditor.BACKGROUND_TEXTURE_NAME] = gridTex;
+
+                GridBackgroundSprite.init(
+                    state.backgroundProg,
+                    NoteskinEditor.BACKGROUND_TEXTURE_NAME,
+                    gridTex
+                );
+            }
+
+            // Create 4 square sprites in a 2x2 arrangement for seamless 2D scrolling.
+            // Each square is max(screenW, screenH) so the 2x2 block always covers the viewport.
+            var tileSize = GridBackgroundSprite.TILE_SIZE;
+            var S:Float = Main.INITIAL_WIDTH;
+            if (Main.INITIAL_HEIGHT > S) S = Main.INITIAL_HEIGHT;
+            S = Math.ceil(S);
+            state.backgroundSprites = [];
+            // Base offsets for 2x2 grid: top-left, top-right, bottom-left, bottom-right
+            var bx = [0.0, -S, 0.0, -S];
+            var by = [0.0, 0.0, -S, -S];
+            for (i in 0...4) {
+                var spr = new GridBackgroundSprite();
+                spr.x = bx[i];
+                spr.y = by[i];
+                spr.w = S;
+                spr.h = S;
+                spr.clipWidth = tileSize;
+                spr.clipHeight = tileSize;
+                spr.clipSizeX = tileSize;
+                spr.clipSizeY = tileSize;
+                state.backgroundSprites.push(spr);
+                state.backgroundBuf.addElement(spr);
+            }
+
+            // --- Receptor grid overlay (above background, below receptors) ---
+            if (state.receptorGridBuf == null) {
+                state.receptorGridBuf = new Buffer<RepeatSprite>(16, 16, true);
+            }
+            if (state.receptorGridProg == null) {
+                state.receptorGridProg = new CustomProgram(state.receptorGridBuf);
+            }
+
+            // --- GUI overlay (above receptors, below guiSprite labels) ---
             if (state.gridBuf == null) {
                 state.gridBuf = new Buffer<RepeatSprite>(16, 16, true);
             }
             if (state.gridProg == null) {
                 state.gridProg = new CustomProgram(state.gridBuf);
             }
-            state.view.addProgram(state.gridProg);
         } catch (e) {
             trace('Failed to create grid: $e');
         }
@@ -1669,7 +1826,7 @@ private class NoteskinEditorRenderer {
 
     function updateGridPosition() {
         for (sprite in state.gridSprites) {
-            state.gridBuf.removeElement(sprite);
+            state.receptorGridBuf.removeElement(sprite);
         }
         state.gridSprites = [];
 
@@ -1705,10 +1862,10 @@ private class NoteskinEditorRenderer {
             }
 
             state.gridSprites.push(gridSprite);
-            state.gridBuf.addElement(gridSprite);
+            state.receptorGridBuf.addElement(gridSprite);
         }
 
-        state.gridBuf.update();
+        state.receptorGridBuf.update();
     }
 
     function initRendering() {
@@ -1722,7 +1879,7 @@ private class NoteskinEditorRenderer {
             Note.init(state.noteProg, NoteskinEditor.NOTESKIN_TEXTURE_NAME, state.texture);
         }
 
-        state.view.addProgram(state.noteProg);
+        // Note: programs are added to view in init() in the correct z-order.
 
         // Sustain preview
         if (state.sustainBuf == null) {
@@ -1732,7 +1889,6 @@ private class NoteskinEditorRenderer {
             state.sustainProg = new CustomProgram(state.sustainBuf);
             Sustain.init(state.sustainProg, NoteskinEditor.NOTESKIN_TEXTURE_NAME, state.texture);
         }
-        state.view.addProgram(state.sustainProg);
     }
 
     function initGUISprites() {
@@ -1761,7 +1917,8 @@ private class NoteskinEditorRenderer {
             state.guiSpriteBuf = new Buffer<NoteskinGUISprite>(32, 32, true);
             state.guiSpriteProg = new CustomProgram(state.guiSpriteBuf);
             NoteskinGUISprite.init(state.guiSpriteProg, NoteskinEditor.GUI_TEXTURE_NAME, guiTex);
-            state.view.addProgram(state.guiSpriteProg);
+
+            // Note: programs are added to view in init() in the correct z-order.
 
             state.guiTextureLoaded = true;
             trace('GUI sprite buffer initialized (${guiImage.width}x${guiImage.height})');
@@ -1778,9 +1935,9 @@ private class NoteskinEditorRenderer {
         var totalW = btnSaveW + 4 + btn4W + 4 + btn18W;
         var margin = 4;
 
-        // Position at bottom-right of screen
+        // Position at bottom-left, next to the left button panel
         var btnY = Main.INITIAL_HEIGHT - btnH - margin;
-        var rowX = Main.INITIAL_WIDTH - totalW - margin;
+        var rowX = 4 + margin; // aligned with left panel
 
         // Save noteskin button (dark blue)
         var btnSaveX = rowX;
@@ -1936,7 +2093,34 @@ private class NoteskinEditorRenderer {
 
     // Preview-clips mode lays receptors out in rows of PREVIEW_COLS so a noteskin
     // with dozens of clips stays readable. Normal manias keep the single-row layout.
-    static inline var PREVIEW_COLS:Int = 11;
+    static inline var PREVIEW_COLS:Int = 6;
+
+    /** Clamp previewScrollOffset so content stays reachable vertically. */
+    function clampPreviewScroll() {
+        if (!isPreviewMania() || state.maxReceptors == 0) {
+            state.previewScrollOffset = 0;
+            return;
+        }
+        var gap = state.currentConfig.gap != 0 ? state.currentConfig.gap : 112;
+        var totalRows = Math.ceil(state.maxReceptors / PREVIEW_COLS);
+        var centerY = Main.INITIAL_HEIGHT / 2.36;
+        var halfContent = ((totalRows - 1) / 2.0) * gap;
+
+        // At offset=0 the block is centered around centerY.
+        // Positive offset pushes content down (reveals top rows).
+        // Negative offset pushes content up (reveals bottom rows).
+        // Allow top row center to reach gap/2 from screen top:
+        var maxScroll = halfContent - centerY + (gap * 0.5);
+        // Allow bottom row center to reach gap*1.7 from screen bottom:
+        var minScroll = Main.INITIAL_HEIGHT - centerY - halfContent - (gap * 1.7);
+
+        // If content fits on screen, don't allow any scrolling.
+        if (maxScroll < 0) maxScroll = 0;
+        if (minScroll > 0) minScroll = 0;
+
+        if (state.previewScrollOffset > maxScroll) state.previewScrollOffset = maxScroll;
+        if (state.previewScrollOffset < minScroll) state.previewScrollOffset = minScroll;
+    }
 
     function isPreviewMania():Bool {
         return state.currentManiaIndex >= state.availableManiaConfigs.length;
@@ -1954,7 +2138,7 @@ private class NoteskinEditorRenderer {
             var centerY = Main.INITIAL_HEIGHT / 2.36 + offsetY;
             var rowHeight = gap; // square grid
             var x = startX + (col * gap);
-            var y = centerY + (row - (totalRows - 1) / 2) * rowHeight;
+            var y = centerY + (row - (totalRows - 1) / 2) * rowHeight + state.previewScrollOffset;
             return {x: x, y: y};
         } else {
             var startX = (Main.INITIAL_WIDTH - (state.maxReceptors * gap)) / 2 + offsetX;
@@ -1998,7 +2182,6 @@ private class NoteskinEditorRenderer {
             state.noteBuf.addElement(note);
         }
 
-        state.noteBuf.update();
         createSustains();
     }
 
@@ -2146,7 +2329,7 @@ private class NoteskinEditorRenderer {
             if (i < state.sustainRotations.length) {
                 sustain.r = state.sustainRotations[i];
             } else {
-                sustain.r = 0.0;
+                sustain.r = -90.0;
             }
 
             sustain.c.aF = 0.0;
@@ -2155,8 +2338,6 @@ private class NoteskinEditorRenderer {
             state.sustainSprites.push(sustain);
             state.sustainBuf.addElement(sustain);
         }
-
-        state.sustainBuf.update();
     }
 
     function updateSustainVisuals() {
@@ -2207,7 +2388,7 @@ private class NoteskinEditorRenderer {
             if (i < state.sustainRotations.length) {
                 sustain.r = state.sustainRotations[i];
             } else {
-                sustain.r = 0.0;
+                sustain.r = -90.0;
             }
 
             sustain.c.aF = state.showSustainPreview ? 0.5 : 0.0;
@@ -2235,8 +2416,8 @@ private class NoteskinEditorUI {
     // Layout constants
     static inline var BTN_GAP:Int = 3;
     static inline var PANEL_PAD:Int = 5;
-    static inline var STATE_SCALE:Float = 0.48;
-    static inline var BTN_SCALE:Float = 0.8;
+    static inline var STATE_SCALE:Float = 0.8;
+    static inline var BTN_SCALE:Float = 0.84;
 
     // Section colors
     static inline var COL_STATE_BG:Int   = 0x002244FF;
@@ -2319,7 +2500,7 @@ private class NoteskinEditorUI {
         if (action.startsWith("sust_"))       return COL_MODE_BG;
         if (action == "mania_create" || action == "show_instructions") return COL_DANGER_BG;
         if (action == "sustain_toggle")       return COL_ACTION_BG;
-        if (action == "spritesheet_toggle")   return COL_ACTION_BG;
+
         return COL_ACTION_BG;
     }
 
@@ -2371,14 +2552,17 @@ private class NoteskinEditorUI {
     // --- Build GUI panels (two separate panels: left=square, right=wide) ---
 
     function buildGUIPanel() {
-        // 25 buttons total: 14 wide (191px) + 11 square (101px)
+        // 25 buttons total: 8 wide (191px, right) + 17 square (~101px, left)
+        // Edit state buttons listed first so they appear at the top of the left panel.
         var allActions:Array<String> = [
-            "mode_clippos",          // frame 0  — Position
-            "mode_clipsize",         // frame 1  — Size
-            "mode_offset",           // frame 2  — Offset
-            "mode_clipid",           // frame 3  — Clip ID
-            "mode_global",           // frame 4  — Global Transform
-            "sustain_toggle",        // frame 5  — Toggle Sustain
+            // Edit state buttons (square, top of left panel)
+            "switch_state_idle",     // frame 19 — switch anim state #1
+            "switch_state_color",    // frame 20 — switch anim state #2
+            "switch_state_press",    // frame 21 — switch anim state #3
+            "switch_state_confirm",  // frame 22 — switch anim state #4
+            "switch_state_holdbody", // frame 23 — switch anim state #5
+            "switch_state_holdtail", // frame 24 — switch anim state #6
+            // Adjustment buttons (square, below edit states)
             "sust_texrot_p90",       // frame 6  — +90 deg sustain tex coord rotation
             "sust_texrot_m90",       // frame 7  — -90 deg sustain tex coord rotation
             "sust_rot_p45",          // frame 8  — +90 deg regular sustain rotation
@@ -2389,18 +2573,18 @@ private class NoteskinEditorUI {
             "gap_m10",               // frame 13 — -10 gap adjustment
             "mania_switch_p1",       // frame 14 — +1 switch mania
             "mania_switch_m1",       // frame 15 — -1 switch mania
-            "spritesheet_toggle",    // frame 16 — spritesheet mode
+            // Wide buttons (right panel, 1 per row)
+            "mode_clippos",          // frame 0  — Position
+            "mode_clipsize",         // frame 1  — Size
+            "mode_offset",           // frame 2  — Offset
+            "mode_clipid",           // frame 3  — Clip ID
+            "mode_global",           // frame 4  — Global Transform
+            "sustain_toggle",        // frame 5  — Toggle Sustain
             "show_instructions",     // frame 17 — open instructions menu
             "mania_create",          // frame 18 — create new mania
-            "switch_state_idle",     // frame 19 — switch anim state #1
-            "switch_state_color",    // frame 20 — switch anim state #2
-            "switch_state_press",    // frame 21 — switch anim state #3
-            "switch_state_confirm",  // frame 22 — switch anim state #4
-            "switch_state_holdbody", // frame 23 — switch anim state #5
-            "switch_state_holdtail", // frame 24 — switch anim state #6
         ];
 
-        // Separate into square (101px) and wide (191px) groups
+        // Separate into square (<150px) and wide (191px) groups
         var squareDefs:Array<{action:String, w:Int, h:Int, frameID:Int}> = [];
         var wideDefs:Array<{action:String, w:Int, h:Int, frameID:Int}> = [];
 
@@ -2409,7 +2593,7 @@ private class NoteskinEditorUI {
             if (frameID < 0) continue;
             var f = NoteskinGUISprite.ATLAS_FRAMES[frameID];
             var entry = {action: action, w: displayW(frameID), h: displayH(frameID), frameID: frameID};
-            if (f.width <= 101) {
+            if (f.width < 150) {
                 squareDefs.push(entry);
             } else {
                 wideDefs.push(entry);
@@ -2455,11 +2639,11 @@ private class NoteskinEditorUI {
             if ((i + 1) % 2 == 0) { lx = 0; ly += d.h + BTN_GAP; }
         }
 
-        // === Right panel: wide buttons, 2 per row, at top-right ===
+        // === Right panel: wide buttons, 1 per row, at top-right ===
         var wdW = wideDefs.length > 0 ? wideDefs[0].w : 0;
         var wdH = wideDefs.length > 0 ? wideDefs[0].h : 0;
-        var rightColW = (wdW > 0) ? (wdW * 2 + BTN_GAP) : 0;
-        var rightRows = Std.int(Math.ceil(wideDefs.length / 2));
+        var rightColW = (wdW > 0) ? wdW : 0;
+        var rightRows = wideDefs.length;
         var rightContentH = (rightRows > 0) ? (rightRows * (wdH + BTN_GAP) - BTN_GAP) : 0;
         var rightPanelW = rightColW + pad * 2;
         var rightPanelH = rightContentH + pad * 2;
@@ -2479,17 +2663,15 @@ private class NoteskinEditorUI {
             state.gridBuf.updateElement(state.guiBackground);
         }
 
-        // Place wide buttons in right panel
-        var rx = 0;
+        // Place wide buttons in right panel (1 per row)
         var ry = 0;
         for (i in 0...wideDefs.length) {
             var d = wideDefs[i];
-            var bx = rightPanelX + pad + rx;
+            var bx = rightPanelX + pad;
             var by = rightPanelY + pad + ry;
             var bgCol = getBgColor(d.action);
             state.guiButtons.push(makeSpriteButton(bx, by, d.action, d.frameID, bgCol));
-            rx += d.w + BTN_GAP;
-            if ((i + 1) % 2 == 0) { rx = 0; ry += d.h + BTN_GAP; }
+            ry += d.h + BTN_GAP;
         }
 
         // Update the GUI sprite buffer after adding all sprites
@@ -2497,21 +2679,23 @@ private class NoteskinEditorUI {
             state.guiSpriteBuf.update();
         }
 
-        // --- State readout Text (below the right panel) ---
-        var readoutY = rightPanelY + rightPanelH + 4;
+        // --- State readout Text (to the left of the right panel) ---
+        var readoutX = rightPanelX - pad - 180; // left-aligned, 180px wide area
+        if (readoutX < leftPanelX + leftPanelW + 8) readoutX = leftPanelX + leftPanelW + 8;
+        var readoutY = rightPanelY;
         if (state.guiStateText == null) {
-            state.guiStateText = new Text("GUI_STATE_READOUT", rightPanelX + pad, readoutY, state.display, "", "vcr");
+            state.guiStateText = new Text("GUI_STATE_READOUT", readoutX, readoutY, state.display, "", "vcr");
             state.guiStateText.scale = STATE_SCALE;
             state.guiStateText.alpha = 0;
             state.guiStateText.multiline = true;
-            state.guiStateText.alignment = LEFT;
+            state.guiStateText.alignment = RIGHT;
             state.guiStateText.spacerPercent = -0.15;
             state.guiStateText.outlineColor = Color.BLACK;
             state.guiStateText.outlineSize = 1;
             state.guiStateText.setMarkerPairs(MARKERS);
             state.guiStateText.addProgram();
         } else {
-            state.guiStateText.x = rightPanelX + pad;
+            state.guiStateText.x = readoutX;
             state.guiStateText.y = readoutY;
         }
 
@@ -2587,6 +2771,16 @@ private class NoteskinEditorUI {
 
     function updateStateReadout() {
         if (state.guiStateText == null) return;
+        // Anchor right edge of text to the left of the right black box.
+        var pad = PANEL_PAD;
+        state.guiStateText.refresh();
+        var readoutX = state.guiBackground.x - pad - state.guiStateText.width;
+        if (state.guiLeftBackground != null) {
+            var minX = state.guiLeftBackground.x + state.guiLeftBackground.w + 8;
+            if (readoutX < minX) readoutX = minX;
+        }
+        state.guiStateText.x = readoutX;
+        state.guiStateText.y = state.guiBackground.y;
         var newText = buildStateReadoutText();
         if (state.guiStateText.text != newText) {
             state.guiStateText.text = newText;
@@ -2606,7 +2800,7 @@ private class NoteskinEditorUI {
                 case "mode_clipid":         isActive = (state.editMode == CLIP_ID);
                 case "mode_global":         isActive = (state.editMode == GLOBAL_TRANSFORM);
                 case "sustain_toggle":      isActive = state.showSustainPreview;
-                case "spritesheet_toggle":  isActive = state.spriteSheetMode;
+
                 case "show_instructions":   isActive = state.showInstructionsPopup;
                 default:
             }
@@ -2687,35 +2881,21 @@ private class NoteskinEditorUI {
         state.instructionsText.alignment = LEFT;
         state.instructionsText.scale = 0.7;
         state.instructionsText.alpha = 1;
-
         state.instructionsText.refresh();
 
-        // Compute left panel dimensions (same as buildGUIPanel)
-        var sqF = NoteskinGUISprite.ATLAS_FRAMES[6]; // first square frame
-        var sqW = Math.round(sqF.width * BTN_SCALE);
-        var sqH = Math.round(sqF.height * BTN_SCALE);
-        var sqCount = 11; // number of square buttons
-        var leftRows = Std.int(Math.ceil(sqCount / 2));
-        var leftColW = sqW * 2 + BTN_GAP;
-        var leftContentH = leftRows * (sqH + BTN_GAP) - BTN_GAP;
-        var lpad = PANEL_PAD;
-        var leftPanelW = leftColW + lpad * 2;
-        var leftPanelH = leftContentH + lpad * 2;
-        var leftPanelX = 4;
-        var leftPanelY = 4;
+        var padding = 12;
+        var totalW = Std.int(state.instructionsText.width + padding * 2);
+        var totalH = Std.int(state.instructionsText.height + padding * 2);
+        var bgX = Std.int((Main.INITIAL_WIDTH - totalW) / 2);
+        var bgY = Std.int((Main.INITIAL_HEIGHT - totalH) / 2);
 
-        // Position popup to the RIGHT of the left panel
-        var popupX = leftPanelX + leftPanelW + 4;
-        var popupY = leftPanelY;
-        var padX = 12;
-        var padY = 12;
-        state.instructionsText.x = popupX + padX;
-        state.instructionsText.y = popupY + padY;
+        state.instructionsText.x = bgX + padding;
+        state.instructionsText.y = bgY + padding;
+        state.popupBackground.x = bgX;
+        state.popupBackground.y = bgY;
+        state.popupBackground.w = totalW;
+        state.popupBackground.h = totalH;
 
-        state.popupBackground.x = popupX;
-        state.popupBackground.y = popupY;
-        state.popupBackground.w = Std.int(state.instructionsText.width + padX * 2);
-        state.popupBackground.h = Std.int(state.instructionsText.height + padY * 2);
         state.gridBuf.updateElement(state.popupBackground);
         state.gridBuf.update();
     }
@@ -3093,9 +3273,9 @@ private class NoteskinEditorInputHandler {
                 state.clipEditor.rotateCurrentClip(-1);
             // Regular sustain sprite rotation (adjusts visual r on sustain sprites)
             case "sust_rot_p45":
-                state.clipEditor.rotateSustainSprite(state.selectedIndex, 45);
+                state.clipEditor.rotateSustainSprite(state.selectedIndex, 90);
             case "sust_rot_m45":
-                state.clipEditor.rotateSustainSprite(state.selectedIndex, -45);
+                state.clipEditor.rotateSustainSprite(state.selectedIndex, -90);
             // Gap
             case "gap_m10": state.maniaManager.adjustGap(-10);
             case "gap_m1":  state.maniaManager.adjustGap(-1);
@@ -3114,8 +3294,6 @@ private class NoteskinEditorInputHandler {
                 else
                     state.maniaManager.createNewMania();
             // Toggles
-            case "spritesheet_toggle":
-                state.clipEditor.toggleSpritesheetMode();
             case "show_instructions":
                 state.showInstructionsPopup = true;
                 state.ui.updateInstructionsText();
@@ -3146,6 +3324,28 @@ private class NoteskinEditorInputHandler {
         if (!state.showEditor || button != MouseButton.LEFT) return;
         if (Application.current.window == null) return;
 
+        // If create-mania popup is active, clicking on it confirms, clicking outside cancels.
+        if (state.createManiaPopupActive) {
+            if (state.popupBackground != null) {
+                var bx = state.popupBackground.x;
+                var by = state.popupBackground.y;
+                var bw = state.popupBackground.w;
+                var bh = state.popupBackground.h;
+                if (mouseX >= bx && mouseX <= bx + bw && mouseY >= by && mouseY <= by + bh) {
+                    // Clicked on the popup — confirm.
+                    state.maniaManager.confirmCreateMania();
+                } else {
+                    // Clicked outside — cancel.
+                    state.maniaManager.cancelCreateMania();
+                }
+            } else {
+                // No popup background rendered yet — cancel.
+                state.maniaManager.cancelCreateMania();
+            }
+            state.ui.updateInstructionsText();
+            return;
+        }
+
         // If instructions popup is showing, ESC closes it (handled in keydown),
         // but clicking anywhere outside the popup also closes it.
         if (state.showInstructionsPopup) {
@@ -3153,7 +3353,8 @@ private class NoteskinEditorInputHandler {
             return;
         }
 
-        // --- GUI panel button clicks ---
+        // --- GUI panel button clicks (check BEFORE scroll so buttons
+        //     always work even in preview-clips mania). ---
         for (btn in state.guiButtons) {
             if (btn.box == null) continue;
             var bx = btn.box.x;
@@ -3202,6 +3403,36 @@ private class NoteskinEditorInputHandler {
             }
         }
 
+        // --- Preview mode vertical scroll (100px zones next to GUI panels) ---
+        if (state.renderer.isPreviewMania() && !state.spriteSheetMode) {
+            var hitIndex = state.clipEditor.findReceptorAt(mouseX, mouseY);
+            if (hitIndex == -1) {
+                var scrollZoneWidth:Float = 100.0;
+                // Left scroll zone: 100px starting right after the left black box
+                var leftScrollLeft = 0.0;
+                var leftScrollRight = 0.0;
+                if (state.guiLeftBackground != null) {
+                    leftScrollLeft = state.guiLeftBackground.x + state.guiLeftBackground.w;
+                    leftScrollRight = leftScrollLeft + scrollZoneWidth;
+                }
+                // Right scroll zone: 100px ending at the left edge of the right black box
+                var rightScrollRight = 0.0;
+                var rightScrollLeft = 0.0;
+                if (state.guiBackground != null) {
+                    rightScrollRight = state.guiBackground.x;
+                    rightScrollLeft = rightScrollRight - scrollZoneWidth;
+                }
+                var inLeftZone = (leftScrollRight > 0) && (mouseX >= leftScrollLeft && mouseX < leftScrollRight);
+                var inRightZone = (rightScrollLeft > 0) && (mouseX >= rightScrollLeft && mouseX < rightScrollRight);
+                if (inLeftZone || inRightZone) {
+                    state.isPreviewScrolling = true;
+                    state.previewScrollStartY = mouseY;
+                    state.previewScrollStartOffset = state.previewScrollOffset;
+                    return;
+                }
+            }
+        }
+
         // Debug: click the top of a sustain to cycle its rotation.
         // The sustain grows upward from its anchor (sustain.x, sustain.y),
         // so the "top" (tail tip) is at approximately sustain.y - sustainLength * scale.
@@ -3229,14 +3460,30 @@ private class NoteskinEditorInputHandler {
 
         // Click-to-select: if the click landed on a receptor, select it first
         // so the user doesn't have to cycle with SHIFT+LEFT/RIGHT.
-        var hitIndex = state.clipEditor.findReceptorAt(mouseX, mouseY);
-        if (hitIndex != -1 && hitIndex != state.selectedIndex) {
-            state.selectedIndex = hitIndex;
-            if (state.spriteSheetMode) {
-                state.spritesheetSelectedIndex = hitIndex;
+        // Blocked in spritesheet mode — you should only interact with the
+        // currently selected receptor there (for clip panning).
+        var hitAnyReceptor = false;
+        if (!state.spriteSheetMode) {
+            var hitIndex = state.clipEditor.findReceptorAt(mouseX, mouseY);
+            if (hitIndex != -1) {
+                hitAnyReceptor = true;
+                if (hitIndex != state.selectedIndex) {
+                    state.selectedIndex = hitIndex;
+                    state.renderer.updateReceptorVisuals();
+                    state.ui.updateInstructionsText();
+                }
             }
-            state.renderer.updateReceptorVisuals();
+        }
+
+        // In GLOBAL_TRANSFORM mode, clicking empty space (no receptor hit)
+        // toggles between Scale and Offset sub-mode.
+        if (state.editMode == GLOBAL_TRANSFORM && !hitAnyReceptor) {
+            state.globalScaleMode = !state.globalScaleMode;
+            var modeName = state.globalScaleMode ? "Scale" : "Offset";
+            trace('Global transform toggled to: $modeName');
             state.ui.updateInstructionsText();
+            state.inputHandler.setCursor(state.globalScaleMode ? MouseCursor.ARROW : MouseCursor.MOVE);
+            return;
         }
 
         var note = state.clipEditor.getSelectedNote();
@@ -3379,6 +3626,13 @@ private class NoteskinEditorInputHandler {
         if (button != MouseButton.LEFT) return;
         if (Application.current.window == null) return;
 
+        // Stop preview scroll drag.
+        if (state.isPreviewScrolling) {
+            state.isPreviewScrolling = false;
+            setCursor(MouseCursor.ARROW);
+            return;
+        }
+
         state.isHoldingMouse = false;
         state.isLongPress = false;
 
@@ -3390,6 +3644,18 @@ private class NoteskinEditorInputHandler {
     function handleMouseMove(mouseX:Float, mouseY:Float) {
         if (!state.showEditor) return;
         if (Application.current.window == null) return;
+
+        // Preview mode vertical drag-scroll
+        // Drag up (mouseY decreases) → receptors go down (positive offset)
+        // Drag down (mouseY increases) → receptors go up (negative offset)
+        if (state.isPreviewScrolling) {
+            var dy = state.previewScrollStartY - mouseY;
+            state.previewScrollOffset = state.previewScrollStartOffset + (dy * 2);
+            state.renderer.clampPreviewScroll();
+            state.renderer.updateReceptorVisuals();
+            state.inputHandler.setCursor(MouseCursor.MOVE);
+            return;
+        }
 
         var note = state.clipEditor.getSelectedNote();
         if (note == null) return;
@@ -3412,6 +3678,14 @@ private class NoteskinEditorInputHandler {
         }
 
         if (state.isDragging) {
+            // Block per-receptor drag modifications when off-screen.
+            // (Global transform drag is exempt — it moves all receptors.)
+            if (state.editMode != GLOBAL_TRANSFORM
+                && !state.spriteSheetMode
+                && !state.clipEditor.isReceptorOnScreen(state.selectedIndex)) {
+                return;
+            }
+
             var scale = state.currentConfig.scale;
             var dx = (mouseX - state.dragStartX) / scale;
             var dy = (mouseY - state.dragStartY) / scale;
@@ -3655,10 +3929,21 @@ class NoteskinEditor {
     var noteProg:CustomProgram;
     var texture:Texture;
 
-    // Grid overlay
+    // Scrolling grid background (bottommost layer)
+    var backgroundBuf:Buffer<GridBackgroundSprite>;
+    var backgroundProg:CustomProgram;
+    var backgroundSprites:Array<GridBackgroundSprite> = [];
+    var backgroundTexture:Texture;
+    static inline var BACKGROUND_TEXTURE_NAME:String = "editorGridBgTexV2";
+
+    // Receptor grid overlay (below receptors, above background)
+    var receptorGridBuf:Buffer<RepeatSprite>;
+    var receptorGridProg:CustomProgram;
+    var gridSprites:Array<RepeatSprite> = [];
+
+    // GUI overlay (above receptors, below guiSprite labels)
     var gridBuf:Buffer<RepeatSprite>;
     var gridProg:CustomProgram;
-    var gridSprites:Array<RepeatSprite> = [];
 
     // Receptor preview
     var receptorSprites:Array<Note> = [];
@@ -3725,12 +4010,21 @@ class NoteskinEditor {
     var longPressTriggered:Bool = false;
     var spritesheetSelectedIndex:Int = -1;
 
+    // Preview mode vertical scroll (drag from empty boundaries)
+    var previewScrollOffset:Float = 0.0;
+    var backgroundScrollX:Float = 0.0; // accumulates X scroll offset for grid bg
+    var backgroundScrollY:Float = 0.0; // accumulates Y scroll offset for grid bg
+    var isPreviewScrolling:Bool = false;
+    var previewScrollStartY:Float = 0.0;
+    var previewScrollStartOffset:Float = 0.0;
+
     // Spritesheet view offset — extra space above to see what's outside the clip.
     static inline var SPRITESHEET_VIEW_OFFSET:Int = 300;
 
     // Texture name constants
     static inline var NOTESKIN_TEXTURE_NAME:String = "noteskinTexV2";
     static inline var GRID_TEXTURE_NAME:String = "gridTexV2";
+    static inline var RECEPTOR_GRID_TEXTURE_NAME:String = "receptorGridTexV2";
     static inline var GUI_TEXTURE_NAME:String = "guiButtonsTexV2";
 
     // Instructions text
@@ -3767,6 +4061,15 @@ class NoteskinEditor {
         renderer.createImportButton();
         renderer.createReceptors();
 
+        // Add all programs to view in correct z-order (bottom to top):
+        // background → receptorGrid → note → sustain → grid(GUI) → guiSprite
+        if (backgroundProg != null) view.addProgram(backgroundProg);
+        if (receptorGridProg != null) view.addProgram(receptorGridProg);
+        if (noteProg != null) view.addProgram(noteProg);
+        if (sustainProg != null) view.addProgram(sustainProg);
+        if (gridProg != null) view.addProgram(gridProg);
+        if (guiSpriteProg != null) view.addProgram(guiSpriteProg);
+
         // Initialize instructions text AFTER display is set.
         ui.initInstructionsText();
 
@@ -3785,8 +4088,11 @@ class NoteskinEditor {
                 }
             }
 
-            if (gridProg != null && !gridProg.isIn(view)) {
-                view.addProgram(gridProg);
+            if (backgroundProg != null && !backgroundProg.isIn(view)) {
+                view.addProgram(backgroundProg);
+            }
+            if (receptorGridProg != null && !receptorGridProg.isIn(view)) {
+                view.addProgram(receptorGridProg);
             }
             if (noteProg != null && !noteProg.isIn(view)) {
                 view.addProgram(noteProg);
@@ -3794,6 +4100,10 @@ class NoteskinEditor {
 
             if (sustainProg != null && !sustainProg.isIn(view)) {
                 view.addProgram(sustainProg);
+            }
+
+            if (gridProg != null && !gridProg.isIn(view)) {
+                view.addProgram(gridProg);
             }
 
             if (guiSpriteProg != null && !guiSpriteProg.isIn(view)) {
@@ -3831,22 +4141,8 @@ class NoteskinEditor {
 
             trace('Noteskin Editor opened');
         } else {
-            if (noteProg != null && noteProg.isIn(view)) {
-                view.removeProgram(noteProg);
-            }
-            if (gridProg != null && gridProg.isIn(view)) {
-                view.removeProgram(gridProg);
-            }
-
-            if (sustainProg != null && sustainProg.isIn(view)) {
-                view.removeProgram(sustainProg);
-            }
-
-            if (guiSpriteProg != null && guiSpriteProg.isIn(view)) {
-                view.removeProgram(guiSpriteProg);
-            }
-
-            // Hide all GUI panel sprites and state text
+            // Hide all GUI panel sprites and state text (keep programs in view
+            // so the user can still see receptor positions and tweak them).
             for (s in guiSprites) {
                 s.alpha = 0;
                 if (guiSpriteBuf != null) guiSpriteBuf.updateElement(s);
@@ -3869,6 +4165,17 @@ class NoteskinEditor {
             if (importButton18KText != null) {
                 importButton18KText.alpha = 0;
             }
+
+            // Hide panel backgrounds and button boxes
+            for (btn in guiButtons) {
+                if (btn.box != null) btn.box.c.aF = 0;
+            }
+            if (guiBackground != null) guiBackground.c.aF = 0;
+            if (guiLeftBackground != null) guiLeftBackground.c.aF = 0;
+            if (saveButtonBox != null) saveButtonBox.c.aF = 0;
+            if (importButtonBox != null) importButtonBox.c.aF = 0;
+            if (importButton18KBox != null) importButton18KBox.c.aF = 0;
+            if (gridBuf != null) gridBuf.update();
 
             inputHandler.setCursor(MouseCursor.ARROW);
             isDragging = false;
@@ -3965,6 +4272,12 @@ class NoteskinEditor {
         if (gridProg != null && gridProg.isIn(display)) {
             display.removeProgram(gridProg);
         }
+        if (receptorGridProg != null && receptorGridProg.isIn(display)) {
+            display.removeProgram(receptorGridProg);
+        }
+        if (backgroundProg != null && backgroundProg.isIn(display)) {
+            display.removeProgram(backgroundProg);
+        }
 
         if (sustainProg != null && sustainProg.isIn(display)) {
             display.removeProgram(sustainProg);
@@ -3978,10 +4291,27 @@ class NoteskinEditor {
             gridBuf.clear();
             gridBuf = null;
         }
+        if (receptorGridBuf != null) {
+            receptorGridBuf.clear();
+            receptorGridBuf = null;
+        }
+        if (backgroundBuf != null) {
+            backgroundBuf.clear();
+            backgroundBuf = null;
+        }
         if (sustainBuf != null) {
             sustainBuf.clear();
             sustainBuf = null;
         }
+
+        if (backgroundSprites != null) {
+            backgroundSprites = [];
+        }
+        if (backgroundTexture != null) {
+            backgroundTexture.dispose();
+            backgroundTexture = null;
+        }
+        TextureSystem.pool.remove(BACKGROUND_TEXTURE_NAME);
 
         if (receptorSprites != null) {
             for (note in receptorSprites) {
@@ -4031,6 +4361,44 @@ class NoteskinEditor {
 
         // Don't process long press while instructions popup is open.
         if (showInstructionsPopup) return;
+
+        // Auto-scroll the grid background via Float x/y-position.
+        // 4 squares in a 2x2 arrangement tile seamlessly in both axes.
+        // Half speed: 15 px/sec per axis (diagonal scroll).
+        if (backgroundSprites.length > 0 && backgroundBuf != null) {
+            backgroundScrollX += deltaTime / 20;
+            backgroundScrollY += deltaTime / 20;
+
+            var S:Float = Main.INITIAL_WIDTH;
+            if (Main.INITIAL_HEIGHT > S) S = Main.INITIAL_HEIGHT;
+            S = Math.ceil(S);
+
+            var wrapX = backgroundScrollX % S;
+            if (wrapX < 0) wrapX += S;
+            var wrapY = backgroundScrollY % S;
+            if (wrapY < 0) wrapY += S;
+
+            // 2x2 grid offsets: each square is SxS, shifted by -S as needed.
+            var ox = [0.0, -S, 0.0, -S];
+            var oy = [0.0, 0.0, -S, -S];
+            for (i in 0...backgroundSprites.length) {
+                backgroundSprites[i].x = wrapX + ox[i];
+                backgroundSprites[i].y = wrapY + oy[i];
+                backgroundBuf.updateElement(backgroundSprites[i]);
+            }
+        }
+
+        // Preview scroll: lerp back to clamped range if somehow out of bounds.
+        if (!isPreviewScrolling) {
+            var before = previewScrollOffset;
+            renderer.clampPreviewScroll();
+            if (previewScrollOffset != before) {
+                // Overshot during drag — lerp back smoothly.
+                var lerpFactor = Math.min(1.0, deltaTime * 12.0);
+                previewScrollOffset = before + (previewScrollOffset - before) * lerpFactor;
+                renderer.updateReceptorVisuals();
+            }
+        }
 
         // Long press detection.
         if (isHoldingMouse && !longPressTriggered && !isDragging) {
