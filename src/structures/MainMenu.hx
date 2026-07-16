@@ -67,7 +67,7 @@ class MainMenu {
 			}
 		}
 
-		var watermarkText = 'Press 7 (DEBUG) to Open Noteskin Editor and be surprised\nFunkin\' View - Version $fnfpVer';
+		var watermarkText = 'Press 7 (DEBUG) to test the Noteskin Editor and be surprised\nFunkin\' View - Version $fnfpVer';
 
 		if (watermarkTxt == null) {
 			watermarkTxt = new Text("mainMenuWatermarkTxt", 0, 0, display, watermarkText);
