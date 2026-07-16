@@ -78,7 +78,7 @@ class MainMenu {
 			watermarkTxt.outlineSize = 1.15;
 		}
 
-		if (Tools.checkForUpdates()) {
+		if (!Tools.checkForUpdates()) {
 			watermarkTxt.text = '[ NO WIFI / OUTDATED VERSION - PLEASE GO TO GAMEBANA PAGE & RUN INSTALLER TO UPDATE ]\n$watermarkText';
 		}
 
