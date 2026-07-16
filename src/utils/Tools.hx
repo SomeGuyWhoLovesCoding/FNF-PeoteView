@@ -14,7 +14,7 @@ using StringTools;
 class Tools {
 	// a steal from https://github.com/ShadowMario/FNF-PsychEngine/blob/5c67ced49e5a98535298a6daa3f8f4ec79ac8399/.github/workflows/main.yml#L46 cuz why not
 	public static function checkForUpdates() {
-		var url = "https://raw.githubusercontent.com/SomeGuyWhoLoveCoding/FNF-PeoteView/main/.gitVersion";
+		var url = "https://raw.githubusercontent.com/SomeGuyWhoLovesCoding/FNF-PeoteView/refs/heads/official/.gitVersion";
 		var version = Main.BUILD;
 		var versionsDontMatch = false;
 		trace('checking for updates...');
