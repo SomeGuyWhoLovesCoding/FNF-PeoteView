@@ -1,9 +1,0 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<TextureAtlas imagePath="confirm.png">
-	<!-- Created with Adobe Animate version 21.0.6.41649 -->
-	<!-- http://www.adobe.com/products/animate.html -->
-	<SubTexture name="down confirm0000" x="3" y="249" width="191" height="192"/>
-	<SubTexture name="left confirm0000" x="3" y="3" width="240" height="243"/>
-	<SubTexture name="right confirm0000" x="246" y="3" width="189" height="189"/>
-	<SubTexture name="up confirm0000" x="197" y="249" width="193" height="189"/>
-</TextureAtlas>

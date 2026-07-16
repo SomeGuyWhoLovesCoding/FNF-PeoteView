@@ -862,7 +862,7 @@ private class NoteskinEditorManiaManager {
             var idx = [0, 1, 2, 3];
             var defaultData = {
                 name: "default",
-                sparrowImg: "notes.png",
+                sparrowImg: "sheet.png",
                 configMania: [{
                     offsetX: 0, offsetY: 0, gap: 112, scale: 1.0,
                     idleIndexes: idx.copy(), pressIndexes: idx.copy(), colorIndexes: idx.copy(),
@@ -1019,7 +1019,7 @@ private class NoteskinEditorManiaManager {
         var idx = [0, 1, 2, 3];
         state.noteskinData = {
             name: "default",
-            sparrowImg: "notes.png",
+            sparrowImg: "sheet.png",
             configMania: [{
                 offsetX: 0, offsetY: 0, gap: 112, scale: 1.0,
                 idleIndexes: idx.copy(), pressIndexes: idx.copy(), colorIndexes: idx.copy(),
@@ -1994,43 +1994,22 @@ private class NoteskinEditorRenderer {
         try {
             var skinFolder = 'assets/images/noteskins/${state.currentSkinName}';
 
-            var notesPath = Paths.asset('$skinFolder/notes.png');
-            var confirmPath = Paths.asset('$skinFolder/confirm.png');
+            var sheetPath = Paths.asset('$skinFolder/sheet.png');
+            var sheetExists = FileSystem.exists(sheetPath);
 
-            var notesExists = FileSystem.exists(notesPath);
-            var confirmExists = FileSystem.exists(confirmPath);
-
-            if (!notesExists && !confirmExists) {
-                notesPath = Paths.asset('assets/images/noteskins/default/notes.png');
-                confirmPath = Paths.asset('assets/images/noteskins/default/confirm.png');
-                notesExists = FileSystem.exists(notesPath);
-                confirmExists = FileSystem.exists(confirmPath);
+            if (!sheetExists) {
+                sheetPath = Paths.asset('assets/images/noteskins/default/sheet.png');
+                sheetExists = FileSystem.exists(sheetPath);
             }
 
-            if (!notesExists) {
-                trace('Notes texture not found, creating blank');
+            if (!sheetExists) {
+                trace('Sheet texture not found, creating blank');
                 return createBlankTexture();
             }
 
-            var notesImage = Image.fromFile(notesPath);
-            var confirmImage = confirmExists ? Image.fromFile(confirmPath) : null;
+            var sheetImage = Image.fromFile(sheetPath);
 
-            var combinedWidth = notesImage.width + (confirmImage != null ? confirmImage.width : 0);
-            var combinedHeight = Std.int(Math.max(notesImage.height, confirmImage != null ? confirmImage.height : 0));
-
-            var combinedImage = new Image(null, 0, 0, combinedWidth, combinedHeight, 0x00000000);
-
-            var sourceRect = new Rectangle(0, 0, notesImage.width, notesImage.height);
-            var destPoint = new Vector2(0, 0);
-            combinedImage.copyPixels(notesImage, sourceRect, destPoint);
-
-            if (confirmImage != null) {
-                var confirmRect = new Rectangle(0, 0, confirmImage.width, confirmImage.height);
-                var confirmDest = new Vector2(notesImage.width, 0);
-                combinedImage.copyPixels(confirmImage, confirmRect, confirmDest);
-            }
-
-            var pixelData = combinedImage.getPixels(new Rectangle(0, 0, combinedWidth, combinedHeight), RGBA32);
+            var pixelData = sheetImage.getPixels(new Rectangle(0, 0, sheetImage.width, sheetImage.height), RGBA32);
 
             // Premultiply alpha so the texture composites correctly.
             var premultipliedData = haxe.io.Bytes.alloc(pixelData.length);
@@ -2050,7 +2029,7 @@ private class NoteskinEditorRenderer {
                 premultipliedData.setInt32(i << 2, premul);
             }
 
-            var textureData = new TextureData(combinedWidth, combinedHeight, TextureFormat.RGBA);
+            var textureData = new TextureData(sheetImage.width, sheetImage.height, TextureFormat.RGBA);
             textureData.bytes = premultipliedData;
 
             var texture = new Texture(textureData.width, textureData.height, null, {
@@ -2065,7 +2044,7 @@ private class NoteskinEditorRenderer {
 
             return texture;
         } catch (e) {
-            trace('Failed to load combined noteskin texture: $e');
+            trace('Failed to load noteskin texture: $e');
             return createBlankTexture();
         }
     }
