@@ -67,20 +67,22 @@ class MainMenu {
 			}
 		}
 
+		var watermarkText = 'Press 7 (DEBUG) to Open Noteskin Editor and be surprised\nFunkin\' View - Version $fnfpVer';
+
 		if (watermarkTxt == null) {
-			watermarkTxt = new Text("mainMenuWatermarkTxt", 0, 0, display, 'Press 7 (DEBUG) to Open Noteskin Editor and be surprised\nFunkin\' View - Version $fnfpVer');
+			watermarkTxt = new Text("mainMenuWatermarkTxt", 0, 0, display, watermarkText);
 			watermarkTxt.scale = 0.667;
 			watermarkTxt.multiline = true;
-			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height - 3;
 			watermarkTxt.x = 3;
 			watermarkTxt.outlineColor = 0x000000FF;
 			watermarkTxt.outlineSize = 1.15;
 		}
 
-		if (!Tools.checkForUpdates()) {
-			var str = watermarkTxt.text;
-			watermarkTxt.text = '[ NO WIFI / OUTDATED VERSION - PLEASE GO TO GAMEBANA PAGE & RUN INSTALLER TO UPDATE ]\n$str';
+		if (Tools.checkForUpdates()) {
+			watermarkTxt.text = '[ NO WIFI / OUTDATED VERSION - PLEASE GO TO GAMEBANA PAGE & RUN INSTALLER TO UPDATE ]\n$watermarkText';
 		}
+
+		watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height - 1;
 
 		if (optionProg == null) {
 			var texName = "mainMenuSheet";
