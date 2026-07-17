@@ -41,7 +41,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 
 	inline static var INSTRUCTIONS_TEXT = "KEYBINDING Instructions:\nPress TAB to begin binding\nPress ESC to cancel binding\n\n" +
 		"MANIA Instructions:\nPress DEBUG to swap between #M1#KEY1#M1# and #M2#KEY2#M2# modes\n" +
-		"WHILE YOU BIND:\nPress CTRL+Left or CTRL+Right to change MANIA\nPress BACK to reset currrent MANIA\n" +
+		"\nWhile you bind your mania, you press each key in order\nWhen you bind:\nPress CTRL+Left or CTRL+Right to change MANIA\nPress BACK to reset currrent MANIA\n" +
 		"Press RESET to remove binding (#M2#KEY2#M2# only)"; // had to split it to multiple lines for readability and consistency
 
 	var parent(default, null):OptionsMenu;
