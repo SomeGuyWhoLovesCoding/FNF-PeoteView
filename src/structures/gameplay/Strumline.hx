@@ -113,6 +113,8 @@ class Strumline {
 		var cfgM = handle.data.configMania[mania];
 		this.offsetX = cfgM.offsetX;
 		this.offsetY = cfgM.offsetY;
+		this.gap = cfgM.gap;
+		this.length = mania;
 	}
 
 	function draw(buf:Buffer<Note>) {

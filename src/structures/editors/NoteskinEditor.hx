@@ -58,6 +58,7 @@ private enum abstract ConfirmationPopupType(Int) from Int to Int {
     var SAVE;
     var IMPORT_VANILLA;
     var IMPORT_LETTERED;
+    var SWITCH_NOTESKIN;
 }
 
 // ============================================================================
@@ -896,27 +897,26 @@ private class NoteskinEditorManiaManager {
             if (managerHandle != null) {
                 // Retry loadTexture() if init() failed (sheet missing at startup,
                 // file added after init, etc.). An unloaded handle has texUnit=0
-                // (first skin's slot), so switching to it would visually no-op.
-                var texCountBefore = NoteskinManager.textureCache != null ? NoteskinManager.textureCache.length : 0;
-                if (!managerHandle.loaded) {
+                // (first bucket's slot), so switching to it would visually no-op.
+                var wasLoaded = managerHandle.loaded;
+                if (!wasLoaded) {
                     trace('loadNoteskin: handle for "$skinName" not loaded — retrying');
                     managerHandle.loadTexture();
                 }
                 state.noteskinHandle = managerHandle;
 
-                // If loadTexture appended a new texture, re-bind both programs
-                // (setMultiTexture snapshots the array at bind time).
-                if (managerHandle.loaded) {
-                    var texCountAfter = NoteskinManager.textureCache != null ? NoteskinManager.textureCache.length : 0;
-                    if (texCountAfter > texCountBefore) {
-                        trace('loadNoteskin: textureCache grew ($texCountBefore -> $texCountAfter) — re-binding');
-                        if (state.noteProg != null) managerHandle.setProgramsTexture(state.noteProg);
-                        if (state.sustainProg != null) managerHandle.setProgramsTexture(state.sustainProg);
-                    }
-                } else {
+                // If loadTexture transitioned loaded false->true, the handle
+                // now has a fresh (texUnit, texSlot) pair in the cache.
+                // Re-bind both programs so peote-view picks up the new slot —
+                // setMultiTexture snapshots slot state at bind time.
+                if (managerHandle.loaded && !wasLoaded) {
+                    trace('loadNoteskin: "$skinName" now loaded -> unit=${managerHandle.texUnit}, slot=${managerHandle.texSlot} — re-binding');
+                    if (state.noteProg != null) managerHandle.setProgramsTexture(state.noteProg);
+                    if (state.sustainProg != null) managerHandle.setProgramsTexture(state.sustainProg);
+                } else if (!managerHandle.loaded) {
                     trace('loadNoteskin: WARNING — "$skinName" STILL not loaded; will fall back to texUnit=0');
                 }
-                trace('loadNoteskin: "$skinName" -> texUnit=${managerHandle.texUnit}, loaded=${managerHandle.loaded}');
+                trace('loadNoteskin: "$skinName" -> unit=${managerHandle.texUnit}, slot=${managerHandle.texSlot}, loaded=${managerHandle.loaded}');
             } else {
                 state.noteskinHandle = new NoteskinHandle(skinName);
                 if (!state.noteskinHandle.loaded) {
@@ -926,7 +926,7 @@ private class NoteskinEditorManiaManager {
                     if (state.noteProg != null) state.noteskinHandle.setProgramsTexture(state.noteProg);
                     if (state.sustainProg != null) state.noteskinHandle.setProgramsTexture(state.sustainProg);
                 }
-                trace('loadNoteskin (unmanaged): "$skinName" -> texUnit=${state.noteskinHandle.texUnit}, loaded=${state.noteskinHandle.loaded}');
+                trace('loadNoteskin (unmanaged): "$skinName" -> unit=${state.noteskinHandle.texUnit}, slot=${state.noteskinHandle.texSlot}, loaded=${state.noteskinHandle.loaded}');
             }
             state.noteskinData = state.noteskinHandle.data;
 
@@ -1204,7 +1204,7 @@ private class NoteskinEditorManiaManager {
         state.createManiaError = "";
         state.createManiaKeyCount = 0;
 
-                Main.current.playScrollSound();
+        Main.current.playScrollSound();
 
         // Remove any stale popup backgrounds.
         removePopupBackground();
@@ -1330,7 +1330,7 @@ private class NoteskinEditorManiaManager {
         state.createManiaInput = "";
         state.createManiaError = "";
 
-                Main.current.playScrollSound();
+        Main.current.playScrollSound();
 
         // Hide the popup text and remove the popup overlay.
         if (state.instructionsText != null) {
@@ -1353,6 +1353,7 @@ private class NoteskinEditorManiaManager {
             case SAVE:             'Save Noteskin';
             case IMPORT_VANILLA:   'Import Vanilla Atlas';
             case IMPORT_LETTERED:  'Import Lettered Atlas';
+            case SWITCH_NOTESKIN:  'Switch Noteskin';
             default:               'Confirm';
         }
         trace('$label popup opened - awaiting confirmation');
@@ -1364,15 +1365,15 @@ private class NoteskinEditorManiaManager {
             case SAVE:             saveNoteskin();
             case IMPORT_VANILLA:   importFromAtlas();
             case IMPORT_LETTERED:  importFromAtlas18K();
+            case SWITCH_NOTESKIN:  switchNoteskin();
             default:
         }
-
-                Main.current.playScrollSound();
 
         var label = switch(state.confirmationPopupType) {
             case SAVE:             'Save Noteskin';
             case IMPORT_VANILLA:   'Import Vanilla Atlas';
             case IMPORT_LETTERED:  'Import Lettered Atlas';
+            case SWITCH_NOTESKIN:  'Switch Noteskin';
             default:               '';
         }
         trace('$label confirmed');
@@ -1385,10 +1386,11 @@ private class NoteskinEditorManiaManager {
             case SAVE:             'Save Noteskin';
             case IMPORT_VANILLA:   'Import Vanilla Atlas';
             case IMPORT_LETTERED:  'Import Lettered Atlas';
+            case SWITCH_NOTESKIN:  'Import Lettered Atlas';
             default:               '';
         }
 
-                Main.current.playCancelSound();
+        Main.current.playCancelSound();
 
         closeConfirmationPopup();
         trace('$label cancelled');
@@ -1404,7 +1406,7 @@ private class NoteskinEditorManiaManager {
         state.gridBuf.update();
 
         if (playSound)
-                    Main.current.playCancelSound();
+            Main.current.playCancelSound();
 
         state.ui.updateInstructionsText();
     }
@@ -1701,8 +1703,6 @@ private class NoteskinEditorManiaManager {
             } else {
                 trace('Groups: ${receptorNames.join(", ")}');
             }
-
-                    Main.current.playScrollSound();
         } catch (e) {
             trace('Failed to import vanilla atlas: $e');
         }
@@ -1852,8 +1852,6 @@ private class NoteskinEditorManiaManager {
             }
 
             finalizeImport(foundConfig, keyCount, entries, receptorNames, 'Lettered');
-
-                Main.current.playScrollSound();
         } catch (e) {
             trace('Failed to import lettered atlas: $e');
         }
@@ -2405,10 +2403,11 @@ private class NoteskinEditorRenderer {
 
                 // Spritesheet mode: override clip properties to show the full
                 // texture around the selected clip region.
-                // Uses texture.width/texture.height — the handle's cached
-                // Texture reference (fetched from TextureSystem.pool).
-                var sheetW = state.noteskinHandle.texture.width;
-                var sheetH = state.noteskinHandle.texture.height;
+                // Uses image.width/image.height — the handle's source Image
+                // (the actual sheet dimensions; the cache's master texture is
+                // sized to the BUCKET, which may be bigger than this image).
+                var sheetW = state.noteskinHandle.image.width;
+                var sheetH = state.noteskinHandle.image.height;
                 note.clipX = basicClip.clipX - NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
                 note.clipY = basicClip.clipY - NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
                 note.clipWidth = sheetW + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
@@ -2621,7 +2620,8 @@ private class NoteskinEditorUI {
                 new TextFormatMarkerPair('#M8#', 0xFF33FF33),
                 new TextFormatMarkerPair('#M9#', 0xFFFF00FF),
                 new TextFormatMarkerPair('#M10#', 0xFF00CED1),
-                new TextFormatMarkerPair('#M11#', 0xFFFF6347)
+                new TextFormatMarkerPair('#M11#', 0xFFFF6347),
+                new TextFormatMarkerPair('#M12#', 0xFF0033A0)
             ];
         }
         return MARKERS;
@@ -3137,8 +3137,7 @@ private class NoteskinEditorUI {
         var popupText =
             "#M6#=== CREATE NEW MANIA ===#M6#\n" +
             "How many keys this time?\n" +
-            "(Enter a number 1-64)\n\n" +
-            '#M5#Keys: ${state.createManiaInput != "" ? state.createManiaInput : "_"}#M5#\n';
+            '(Enter a number 1-64) #M5#${state.createManiaInput != "" ? state.createManiaInput : "_"} Keys#M5#\n';
 
         if (state.createManiaError != "") {
             popupText += '#M2#${state.createManiaError}#M2#\n';
@@ -3179,23 +3178,27 @@ private class NoteskinEditorUI {
         var titleColor = switch(state.confirmationPopupType) {
             case SAVE:             "#M2#";
             case IMPORT_VANILLA:   "#M3#";
-            case IMPORT_LETTERED:  "#M4#";
+            case IMPORT_LETTERED:  "#M1#";
+            case SWITCH_NOTESKIN: "#M12#";
             default:               "#M1#";
         };
         var title = switch(state.confirmationPopupType) {
             case SAVE:             "SAVE NOTESKIN";
             case IMPORT_VANILLA:   "IMPORT VANILLA ATLAS";
             case IMPORT_LETTERED:  "IMPORT LETTERED ATLAS";
+            case SWITCH_NOTESKIN:  "SWITCH NOTESKIN";
             default:               "CONFIRM";
         };
         var body = switch(state.confirmationPopupType) {
             case SAVE:             "with the current one.";
-            case IMPORT_VANILLA:   "with the imported vanilla atlas clips.";
-            case IMPORT_LETTERED:  "with the imported lettered atlas clips.";
+            case IMPORT_VANILLA:   "with one from a vanilla atlas.";
+            case IMPORT_LETTERED:  "with one from a lettered atlas.";
+            case SWITCH_NOTESKIN:  "when loading the next noteskin.";
             default:               "";
         };
 
-        var popupText = titleColor + "=== " + title + " ===" + titleColor + '\nAre you sure? You\'ll possibly\noverwrite your old noteskin data\n$body' +
+        var popupText = titleColor + "=== " + title + " ===" + titleColor + '\nAre you sure? You\'ll possibly\n' +
+            (state.confirmationPopupType == SWITCH_NOTESKIN ? 'lose your current noteskin data' : 'overwrite your old noteskin data') + '\n$body' +
         "\n#M1#[ENTER] Confirm#M1#   #M3#[ESC] Cancel#M3#";
 
         state.instructionsText.text = popupText;
@@ -3288,12 +3291,12 @@ private class NoteskinEditorInputHandler {
 
         if (key == KeyCode.ESCAPE) {
             if (state.showInstructionsPopup) {
-                        Main.current.playScrollSound();
+                Main.current.playScrollSound();
                 state.ui.hideInstructionsPopup();
                 return;
             }
             if (state.spriteSheetMode) {
-                        Main.current.playScrollSound();
+                Main.current.playScrollSound();
                 state.clipEditor.toggleSpritesheetMode();
             } else {
                         Main.current.playCancelSound();
@@ -3312,10 +3315,10 @@ private class NoteskinEditorInputHandler {
             switch (key) {
                 case KeyCode.R:
                     state.showSustainPreview = !state.showSustainPreview;
-                            Main.current.playScrollSound();
+                    Main.current.playScrollSound();
                     state.renderer.updateSustainVisuals();
                     trace('Sustain preview: ${state.showSustainPreview ? "ON" : "OFF"}');
-                            Main.current.playScrollSound();
+                    Main.current.playScrollSound();
                     state.ui.updateInstructionsText();
                     return;
                 default:
@@ -3328,7 +3331,7 @@ private class NoteskinEditorInputHandler {
                 state.globalScaleMode = !state.globalScaleMode;
                 var modeName = state.globalScaleMode ? "Scale" : "Offset";
                 trace('Global transform mode: $modeName');
-                        Main.current.playScrollSound();
+                Main.current.playScrollSound();
                 state.ui.updateInstructionsText();
             }
             return;
@@ -3347,7 +3350,7 @@ private class NoteskinEditorInputHandler {
                 default:            -1;
             };
             if (newStateIdx != -1) {
-                        Main.current.playScrollSound();
+                Main.current.playScrollSound();
                 state.renderer.updateReceptorState(newStateIdx);
                 trace('Edit state set to: ${state.clipEditor.getStateName(state.currentState)}');
                 return;
@@ -3366,7 +3369,7 @@ private class NoteskinEditorInputHandler {
                 default:            -1;
             };
             if (newModeIdx != -1) {
-                        Main.current.playScrollSound();
+                Main.current.playScrollSound();
                 state.clipEditor.setEditMode(newModeIdx);
                 return;
             }
@@ -3384,11 +3387,11 @@ private class NoteskinEditorInputHandler {
                 }
             case KeyCode.UP:
                 if (state.isShiftPressed) {
-                            Main.current.playScrollSound();
+                    Main.current.playScrollSound();
                     state.maniaManager.switchMania(1);
                     state.clipEditor.checkInvalidClipIDPlace();
                 } else if (state.spriteSheetMode) {
-                            Main.current.playScrollSound();
+                    Main.current.playScrollSound();
                     state.clipEditor.selectPreviousIndex();
                 } else if (state.isCtrlPressed && state.editMode != CLIP_ID && state.editMode != GLOBAL_TRANSFORM) {
                     state.clipEditor.adjustAxisValue(-10, "Y");
@@ -3405,11 +3408,11 @@ private class NoteskinEditorInputHandler {
                 }
             case KeyCode.DOWN:
                 if (state.isShiftPressed) {
-                            Main.current.playScrollSound();
+                    Main.current.playScrollSound();
                     state.maniaManager.switchMania(-1);
                     state.clipEditor.checkInvalidClipIDPlace();
                 } else if (state.spriteSheetMode) {
-                            Main.current.playScrollSound();
+                    Main.current.playScrollSound();
                     state.clipEditor.selectNextIndex();
                 } else if (state.isCtrlPressed && state.editMode != CLIP_ID && state.editMode != GLOBAL_TRANSFORM) {
                     state.clipEditor.adjustAxisValue(10, "Y");
@@ -3427,7 +3430,7 @@ private class NoteskinEditorInputHandler {
                 }
             case KeyCode.LEFT:
                 if (state.showSustainPreview && state.isRPressed && !(state.isAltPressed || state.isShiftPressed || state.isCtrlPressed)) {
-                            Main.current.playScrollSound();
+                    Main.current.playScrollSound();
                     state.clipEditor.rotateCurrentClip(-1);
                 } else if (state.spriteSheetMode) {
                     state.clipEditor.selectPreviousIndex();
@@ -3451,7 +3454,7 @@ private class NoteskinEditorInputHandler {
                 }
             case KeyCode.RIGHT:
                 if (state.showSustainPreview && state.isRPressed &&!(state.isAltPressed || state.isShiftPressed || state.isCtrlPressed)) {
-                            Main.current.playScrollSound();
+                    Main.current.playScrollSound();
                     state.clipEditor.rotateCurrentClip(1);
                 } else if (state.spriteSheetMode) {
                     state.clipEditor.selectNextIndex();
@@ -3537,7 +3540,7 @@ private class NoteskinEditorInputHandler {
             case "mode_global":   state.clipEditor.setEditMode(4);
             // Sustain
             case "sustain_toggle":
-                        Main.current.playScrollSound();
+                Main.current.playScrollSound();
                 state.showSustainPreview = !state.showSustainPreview;
                 state.renderer.updateSustainVisuals();
             // Sustain texture coord rotation (cycles TextureRotation enum on holdBody+holdTail)
@@ -3557,11 +3560,11 @@ private class NoteskinEditorInputHandler {
             case "gap_p10": state.maniaManager.adjustGap(10);
             // Mania
             case "mania_switch_p1":
-                        Main.current.playScrollSound();
+                Main.current.playScrollSound();
                 state.maniaManager.switchMania(1);
                 state.clipEditor.checkInvalidClipIDPlace();
             case "mania_switch_m1":
-                        Main.current.playScrollSound();
+                Main.current.playScrollSound();
                 state.maniaManager.switchMania(-1);
                 state.clipEditor.checkInvalidClipIDPlace();
             case "mania_create":
@@ -3571,7 +3574,7 @@ private class NoteskinEditorInputHandler {
                     state.maniaManager.createNewMania();
             // Toggles
             case "show_instructions":
-                        Main.current.playScrollSound();
+                Main.current.playScrollSound();
                 state.showInstructionsPopup = true;
                 state.ui.updateInstructionsText();
             case "switch_state_idle":
@@ -3684,7 +3687,10 @@ private class NoteskinEditorInputHandler {
         // Switch noteskin button click — cycles to the next loaded noteskin
         // in NoteskinManager and reloads the entire editor.
         if (state.switchNoteskinButtonBox != null && hitTestBox(state.switchNoteskinButtonBox, mouseX, mouseY)) {
-            state.maniaManager.switchNoteskin();
+            if (state.confirmationPopupType == SWITCH_NOTESKIN)
+                state.maniaManager.cancelConfirmationPopup();
+            else
+                state.maniaManager.openConfirmationPopup(SWITCH_NOTESKIN);
             return;
         }
 
@@ -3767,7 +3773,7 @@ private class NoteskinEditorInputHandler {
             var modeName = state.globalScaleMode ? "Scale" : "Offset";
             trace('Global transform toggled to: $modeName');
             state.ui.updateInstructionsText();
-                    Main.current.playScrollSound();
+            Main.current.playScrollSound();
             return;
         }
 
@@ -4381,16 +4387,14 @@ class NoteskinEditor {
     public function toggleEditor() {
         showEditor = !showEditor;
         if (showEditor) {
-            // With multi-texture, all skin textures stay bound to the
-            // program via setMultiTexture at initRendering() time. If
-            // the handle was disposed (e.g. by NoteskinManager's LRU
-            // evictor) and is now being re-loaded, we just need to
-            // re-register its texture in NoteskinManager.textureCache
-            // (handled by loadTexture itself) — no program re-binding
-            // or shader re-injection needed. The @texUnit / @texSlot
-            // values on existing Note / Sustain elements may be stale
-            // if the cache was rebuilt, but the editor's rebuild flow
-            // (createReceptors) will refresh them.
+            // With TextureCache, all bucket master textures stay bound to
+            // the program via setMultiTexture at initRendering() time. If
+            // the handle was disposed (e.g. by NoteskinManager.disposeSkin)
+            // and is now being re-loaded, loadTexture() re-registers it in
+            // a fresh slot of the shared cache — no program re-binding or
+            // shader re-injection needed. The @texUnit / @texSlot values
+            // on existing Note / Sustain elements will be refreshed by the
+            // editor's rebuild flow (createReceptors).
             if (noteskinHandle != null && !noteskinHandle.loaded) {
                 noteskinHandle.loadTexture();
             }
