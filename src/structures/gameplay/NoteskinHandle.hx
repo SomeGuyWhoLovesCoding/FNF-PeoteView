@@ -72,44 +72,16 @@ class NoteskinHandle {
     **/
     var skinName:String = "";
 
-    /** Key into `TextureSystem.pool` for this skin's sheet texture.
-        Empty string until `loadTexture()` is called. Built from
-        `skinName` (NOT `data.name`) so folders with colliding
-        `data.name` values don't share the same pool entry. */
     var textureKey:String = "";
 
-    /** Cached `Texture` reference (fetched from `TextureSystem.pool`).
-        Null until `loadTexture()` succeeds. */
     var texture:Texture = null;
 
-    /**
-        This skin's index into `NoteskinManager.textureCache`.
-        Used as the per-element `@texUnit` value on Note / Sustain
-        elements so they sample from THIS skin's slot of the
-        multi-texture bound via `program.setMultiTexture`.
-
-        Set by `NoteskinManager.init()` when the skin is registered
-        into the cache. Defaults to `0` (first skin) — safe because
-        the manager always loads at least one skin before elements
-        are created.
-    **/
     var texUnit:Int = 0;
 
-    /**
-        Slot within the texture unit. Always `0` for noteskins —
-        each skin occupies its own unit (one Texture per slot in
-        `NoteskinManager.textureCache`), no sub-packing.
-    **/
     var texSlot:Int = 0;
 
-    /** True once `loadTexture()` has successfully created the texture
-        in `TextureSystem.pool` AND registered it in
-        `NoteskinManager.textureCache`. */
     var loaded:Bool = false;
 
-    /** Current mania key count. Used by NoteskinRuntimeHelper to pick the right
-        configMania entry. Set by Strumline when the handle is assigned.
-        Defaults to 1 (single key). */
     var mania:Int = 1;
 
     var data:NoteskinData;
@@ -316,27 +288,8 @@ class NoteskinHandle {
             return;
         }
 
-        // Per-skin pool key built from the FOLDER NAME (skinName), NOT
-        // `data.name`. Two different folders can share the same
-        // `data.name` (e.g. duplicated folders, or any folder missing
-        // data.json falls back to DEFAULT_DATA which has name="default").
-        // If we keyed off data.name, the second skin's createTexture
-        // would be a no-op, getTexture would return the SAME Texture
-        // object, registerTexture would push it into textureCache a
-        // second time, and setMultiTexture would then throw
-        // "textureLayer cannot contain same texture twice".
-        //
-        // The folder name is guaranteed unique by the filesystem, so
-        // each skin gets its own pool entry, its own Texture, and its
-        // own slot in textureCache — which is what makes texUnit-based
-        // switching actually visually switch the texture.
-        // The 15-skin cap (NoteskinManager.MAX_CACHED_NOTESKINS) ensures we
-        // don't exhaust GPU texture units.
         textureKey = 'noteskin_${skinName}';
 
-        // createTexture is idempotent: if the key already exists (e.g. the
-        // skin was previously loaded and disposed but the pool entry lingered),
-        // this is a no-op.
         TextureSystem.createTexture(textureKey, sheetPath, false, true);
 
         // Fetch the Texture reference so callers can read .width/.height.
@@ -346,10 +299,6 @@ class NoteskinHandle {
             return;
         }
 
-        // Register in the shared multi-texture cache and remember our slot.
-        // NoteskinManager.registerTexture appends `texture` to its
-        // textureCache Array<Texture> and returns the new index, which
-        // becomes this handle's `texUnit` value.
         texUnit = NoteskinManager.registerTexture(texture);
         texSlot = 0;
 
@@ -578,7 +527,6 @@ class NoteskinHandle {
 
     // --- Getters for clip data by index ---
 
-    /** Get the NoteskinReceptorProperties for a given clip index. */
     inline function getClip(index:Int):NoteskinReceptorProperties {
         if (data.clip != null && index >= 0 && index < data.clip.length) {
             return data.clip[index];
@@ -586,7 +534,6 @@ class NoteskinHandle {
         return defaultClip();
     }
 
-    /** Get a specific clip type for a given clip index. */
     inline function getClipState(index:Int, state:Int):BasicNoteskinClip {
         var clip = getClip(index);
         return switch (state) {
@@ -600,7 +547,6 @@ class NoteskinHandle {
         };
     }
 
-    /** Get the clip index array for a given edit state from a config. */
     static inline function getIndexesForState(config:NoteskinConfig, state:Int):Array<Int> {
         return switch (state) {
             case 0: config.idleIndexes;
@@ -626,7 +572,6 @@ class NoteskinHandle {
     }
 
     static function parseConfig(raw:Dynamic):NoteskinConfig {
-        // Support both old format (single "indexes") and new format (per-type indexes).
         var oldIndexes:Array<Int> = raw.indexes;
         var hasOld = oldIndexes != null && oldIndexes.length > 0;
 
@@ -635,12 +580,12 @@ class NoteskinHandle {
             offsetY: raw.offsetY != null ? raw.offsetY : 0,
             gap: raw.gap != null ? raw.gap : 112,
             scale: raw.scale != null ? raw.scale : 1.0,
-            idleIndexes:     raw.idleIndexes != null     ? raw.idleIndexes     : (hasOld ? oldIndexes.copy() : []),
-            pressIndexes:    raw.pressIndexes != null    ? raw.pressIndexes    : (hasOld ? oldIndexes.copy() : []),
-            colorIndexes:    raw.colorIndexes != null    ? raw.colorIndexes    : (hasOld ? oldIndexes.copy() : []),
-            confirmIndexes:  raw.confirmIndexes != null  ? raw.confirmIndexes  : (hasOld ? oldIndexes.copy() : []),
-            holdBodyIndexes: raw.holdBodyIndexes != null ? raw.holdBodyIndexes : (hasOld ? oldIndexes.copy() : []),
-            holdTailIndexes: raw.holdTailIndexes != null ? raw.holdTailIndexes : (hasOld ? oldIndexes.copy() : [])
+            idleIndexes:     raw.idleIndexes != null     ? raw.idleIndexes     : [],
+            pressIndexes:    raw.pressIndexes != null    ? raw.pressIndexes    : [],
+            colorIndexes:    raw.colorIndexes != null    ? raw.colorIndexes    : [],
+            confirmIndexes:  raw.confirmIndexes != null  ? raw.confirmIndexes  : [],
+            holdBodyIndexes: raw.holdBodyIndexes != null ? raw.holdBodyIndexes : [],
+            holdTailIndexes: raw.holdTailIndexes != null ? raw.holdTailIndexes : []
         };
     }
 
@@ -660,16 +605,11 @@ class NoteskinHandle {
 // ============================================================================
 
 enum abstract TextureRotation(Float) from Float to Float {
-    /** 0° — no rotation. */
     var POS0   = 0.0;
-    /** 90° clockwise. */
     var POS90  = 90.0;
-    /** 180°. */
     var POS180 = 180.0;
-    /** 90° counter-clockwise (270°). */
     var NEG90  = -90.0;
 
-    /** Cycle to the next rotation value. */
     public inline function next():TextureRotation {
         var v:Float = this;
         if (v == 0.0)   return POS90;
@@ -678,7 +618,6 @@ enum abstract TextureRotation(Float) from Float to Float {
         return POS0;
     }
 
-    /** Cycle to the previous rotation value. */
     public inline function prev():TextureRotation {
         var v:Float = this;
         if (v == 0.0)   return NEG90;
@@ -687,16 +626,10 @@ enum abstract TextureRotation(Float) from Float to Float {
         return POS180;
     }
 
-    /** To degrees. */
     public inline function toDegrees():Int {
         return Std.int(this);
     }
 
-    /**
-        Parse from JSON value — accepts numeric degrees or legacy
-        string formats ("POS0", "POS90", "POS180", "NEG90").
-        Defaults to POS0.
-    **/
     public static function parse(val:Dynamic):TextureRotation {
         if (val == null) return POS0;
 
@@ -741,17 +674,11 @@ class NoteskinConfig {
     var gap:Int;
     var scale:Float;
 
-    /** Per-mania-key clip index for the IDLE state. */
     var idleIndexes:Array<Int>;
-    /** Per-mania-key clip index for the PRESS state. */
     var pressIndexes:Array<Int>;
-    /** Per-mania-key clip index for the COLOR overlay. */
     var colorIndexes:Array<Int>;
-    /** Per-mania-key clip index for the CONFIRM state. */
     var confirmIndexes:Array<Int>;
-    /** Per-mania-key clip index for the HOLD_BODY state. */
     var holdBodyIndexes:Array<Int>;
-    /** Per-mania-key clip index for the HOLD_TAIL state. */
     var holdTailIndexes:Array<Int>;
 }
 

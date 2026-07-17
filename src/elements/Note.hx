@@ -38,21 +38,6 @@ class Note implements Element
 
     @varying @custom @set("properties") public var addedAlpha:Float = 0.0;
 
-    /**
-        Multi-texture slot selectors. These tell peote-view's shader
-        which entry in the program's bound `setMultiTexture` array to
-        sample from for THIS element.
-
-        - `texUnit`: index into `NoteskinManager.textureCache` (the
-          array passed to `program.setMultiTexture(cache, "noteTexV2")`).
-        - `texSlot`: sub-slot within that unit. Always 0 for noteskins
-          (one Texture per unit, no sub-packing).
-
-        Updated by `setHandle(handle)` whenever the strumline switches
-        to a different noteskin — that's the ONLY call needed to make
-        a note start sampling from a different skin's sheet. No
-        `setTexture` re-binding, no shader re-injection.
-    **/
     @texUnit public var texUnit:Int = 0;
     @texSlot public var texSlot:Int = 0;
 
@@ -93,23 +78,6 @@ class Note implements Element
         this.id = id;
     }
 
-    /**
-        Propagate `texUnit` / `texSlot` from a noteskin handle to this
-        note. Called from the constructor and from
-        `Strumline.set_noteskinHandle` whenever the active skin changes.
-
-        After this call, the note's `@texUnit` / `@texSlot` attributes
-        point at the new skin's slot in `NoteskinManager.textureCache`,
-        so the shader will sample from that skin's sheet on the next
-        draw. No `setTexture` re-binding or shader re-injection is
-        needed — peote-view picks up the new attributes on the next
-        `buffer.updateElement(note)` call (which the strumline / editor
-        is responsible for triggering).
-
-        If `handle` is null, this is a no-op (the note keeps its
-        previous texUnit/texSlot — useful for the editor's "no skin
-        loaded yet" state).
-    **/
     inline public function setHandle(handle:NoteskinHandle) {
         if (handle == null) return;
         this.handle = handle;
@@ -123,7 +91,6 @@ class Note implements Element
         state = IDLE;
         if (handle == null) return;
         var clip = NoteskinRuntimeHelper.getIdleClip(handle, id);
-                //trace('Idle and ${clip.clipX}x${clip.clipY},${clip.clipW}x${clip.clipH},index:$id');
         applyClip(clip);
         rW = w;
         rH = h;
