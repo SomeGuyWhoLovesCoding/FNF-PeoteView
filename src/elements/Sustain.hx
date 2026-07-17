@@ -57,6 +57,18 @@ class Sustain implements Element
     @varying @custom @set("properties") public var speed:Float = 1.0;
     @varying @custom @set("properties") public var scale:Float = 1.0;
 
+    /**
+        Multi-texture slot selectors (same as Note). `texUnit` is this
+        sustain's skin's index into `NoteskinManager.textureCache`;
+        `texSlot` is always 0.
+
+        Updated by `setHandle(handle)` so the sustain starts sampling
+        from the new skin's sheet the moment the strumline switches
+        handles — no shader re-injection needed.
+    **/
+    @texUnit public var texUnit:Int = 0;
+    @texSlot public var texSlot:Int = 0;
+
     // ========================================================================
     // Texture Coordinates (body = "hold piece", tail = "hold end")
     // ========================================================================
@@ -110,6 +122,26 @@ class Sustain implements Element
     inline public function new(x:Int, y:Int, w:Int, h:Int, handle:NoteskinHandle, r:Float, s:Float, sc:Float, tile:Int) {
         this.handle = handle;
         setProperties(x, y, w, h, r, s, sc, 0, 36, 20, 36, 40, 36, 20, 36, 0);
+        setHandle(handle);
+    }
+
+    /**
+        Propagate `texUnit` / `texSlot` from a noteskin handle to this
+        sustain. Called from the constructor and from
+        `Strumline.set_noteskinHandle` whenever the active skin changes.
+
+        After this call, the sustain's `@texUnit` / `@texSlot`
+        attributes point at the new skin's slot in
+        `NoteskinManager.textureCache`, so the shader will sample from
+        that skin's sheet on the next draw.
+
+        If `handle` is null, this is a no-op.
+    **/
+    inline public function setHandle(handle:NoteskinHandle) {
+        if (handle == null) return;
+        this.handle = handle;
+        texUnit = handle.texUnit;
+        texSlot = handle.texSlot;
     }
 
     /**

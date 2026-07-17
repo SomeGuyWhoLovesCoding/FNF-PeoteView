@@ -12,8 +12,6 @@ import sys.FileSystem;
 
 // Lime
 import lime.app.Application;
-import lime.graphics.Image;
-import lime.math.Rectangle;
 import lime.math.Vector2;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
@@ -891,7 +889,105 @@ private class NoteskinEditorManiaManager {
                 createDefaultDataJson(skinFolder);
             }
 
-            state.noteskinHandle = new NoteskinHandle(skinName);
+            // ## TextureSystem: fetch the handle from NoteskinManager
+            //
+            // The manager owns the canonical handle for every skin it
+            // discovered at init() time. That handle carries the
+            // `textureKey` into `TextureSystem.pool` and a cached
+            // `texture:Texture` reference.
+            //
+            // If we just did `new NoteskinHandle(skinName)` here, we'd
+            // create a SECOND handle for the same skin — its
+            // `loadTexture()` would call `TextureSystem.createTexture()`
+            // (which is idempotent, so no duplicate texture, but we'd
+            // still waste a handle object). Going through
+            // `NoteskinManager.get()` ensures we reuse the manager's
+            // handle, and transparently swaps the skin in via LRU
+            // eviction if it was parked (overflow case).
+            //
+            // We fall back to `new NoteskinHandle()` only if the skin
+            // isn't in the manager — e.g. a brand-new skin the user
+            // just created in the editor and hasn't saved yet, or a
+            // skin whose folder was added after NoteskinManager.init().
+            var managerHandle = NoteskinManager.get(skinName);
+            if (managerHandle != null) {
+                // ## Retry load if the handle exists but its texture failed at init time.
+                //
+                // NoteskinManager.init() calls loadTexture() on every cached
+                // skin, but loadTexture() can fail if the sheet file was
+                // missing, had a different name than data.json's sparrowImg,
+                // or if the file was added to disk AFTER init() ran. In any
+                // of those cases, the handle stays `loaded == false` and its
+                // `texUnit` defaults to 0 — which is whatever skin was
+                // registered FIRST (usually `default`). Switching to such a
+                // skin would then sample from slot 0 (default's texture),
+                // making it look like the texture "didn't switch".
+                //
+                // The fix: retry loadTexture() here. If the sheet now exists
+                // (file was added, path was fixed, etc.), the load succeeds,
+                // the texture is appended to textureCache, and the handle
+                // gets a real texUnit. We then MUST re-call setMultiTexture
+                // on both programs because setMultiTexture snapshots the
+                // textureCache array at bind time — appending alone isn't
+                // enough; the new texture would be invisible to the shader
+                // until the next re-bind.
+                var texCountBefore = NoteskinManager.textureCache != null ? NoteskinManager.textureCache.length : 0;
+                if (!managerHandle.loaded) {
+                    trace('loadNoteskin: manager handle for "$skinName" is not loaded — retrying loadTexture()');
+                    managerHandle.loadTexture();
+                }
+                state.noteskinHandle = managerHandle;
+
+                // If loadTexture() succeeded AND added a new entry to
+                // textureCache, re-bind both programs so the new texture
+                // becomes part of the multi-texture sampler array.
+                // (If texCount didn't change, the texture was already
+                // bound at initRendering() time and no re-bind is needed.)
+                if (managerHandle.loaded) {
+                    var texCountAfter = NoteskinManager.textureCache != null ? NoteskinManager.textureCache.length : 0;
+                    if (texCountAfter > texCountBefore) {
+                        trace('loadNoteskin: textureCache grew ($texCountBefore -> $texCountAfter) — re-binding setMultiTexture on both programs');
+                        if (state.noteProg != null) {
+                            managerHandle.setProgramsTexture(state.noteProg);
+                        }
+                        if (state.sustainProg != null) {
+                            managerHandle.setProgramsTexture(state.sustainProg);
+                        }
+                    }
+                } else {
+                    trace('loadNoteskin: WARNING — manager handle for "$skinName" STILL not loaded after retry; '
+                        + 'elements will fall back to texUnit=0 (first skin\'s texture). '
+                        + 'Check that the sheet file exists at the path in data.json\'s sparrowImg field.');
+                }
+
+                // Diagnostic: log the handle's texUnit so we can verify
+                // the per-element texture selector will point at the right slot.
+                trace('loadNoteskin: "$skinName" -> texUnit=${managerHandle.texUnit}, texSlot=${managerHandle.texSlot}, '
+                    + 'loaded=${managerHandle.loaded}, textureKey="${managerHandle.textureKey}", '
+                    + 'textureCache.length=${NoteskinManager.textureCache != null ? NoteskinManager.textureCache.length : 0}');
+            } else {
+                state.noteskinHandle = new NoteskinHandle(skinName);
+                // New / unmanaged skin — create its texture in
+                // TextureSystem.pool AND register it in
+                // NoteskinManager.textureCache (loadTexture does both).
+                // After this, we MUST re-call setMultiTexture on both
+                // programs so peote-view picks up the newly-appended
+                // texture in textureCache — setMultiTexture snapshots
+                // the array at bind time, so appending alone isn't enough.
+                if (!state.noteskinHandle.loaded) {
+                    state.noteskinHandle.loadTexture();
+                }
+                if (state.noteskinHandle.loaded) {
+                    if (state.noteProg != null) {
+                        state.noteskinHandle.setProgramsTexture(state.noteProg);
+                    }
+                    if (state.sustainProg != null) {
+                        state.noteskinHandle.setProgramsTexture(state.sustainProg);
+                    }
+                }
+                trace('loadNoteskin (unmanaged): "$skinName" -> texUnit=${state.noteskinHandle.texUnit}, '
+                    + 'loaded=${state.noteskinHandle.loaded}, textureKey="${state.noteskinHandle.textureKey}"');
+            }
             state.noteskinData = state.noteskinHandle.data;
 
             // Store all mania configs.
@@ -939,7 +1035,16 @@ private class NoteskinEditorManiaManager {
                 }
             }
 
-            state.currentManiaIndex = Std.int(Math.max(state.currentManiaIndex, state.availableManiaConfigs.length - 1));
+            // Clamp currentManiaIndex to the new skin's valid range.
+            // Using Math.min (NOT Math.max) so an out-of-range index from the
+            // previous skin — e.g. preview-all-clips mode sets it to
+            // `availableManiaConfigs.length`, which can be > the new skin's
+            // last valid index — gets clamped DOWN to the new last index
+            // instead of being kept above the range (which made
+            // `availableManiaConfigs[currentManiaIndex]` return null and
+            // crash `updateMaxReceptorsFromConfig()` with Null Object Reference).
+            state.currentManiaIndex = Std.int(Math.min(state.currentManiaIndex, state.availableManiaConfigs.length - 1));
+            if (state.currentManiaIndex < 0) state.currentManiaIndex = 0;
             state.currentConfig = state.availableManiaConfigs[state.currentManiaIndex];
 
             updateMaxReceptorsFromConfig();
@@ -955,10 +1060,27 @@ private class NoteskinEditorManiaManager {
 
     /** Switch to the next noteskin registered in NoteskinManager.
         Cycles through every loaded skin (alphabetical order from the manager's
-        key list) and reloads the entire editor — handle, data, texture,
-        receptors, sustains, and GUI — so the new skin is fully reflected
-        on-screen. This ensures the editor actually exercises NoteskinManager
-        instead of being locked to whichever skin was passed at construction. */
+        key list) and reloads the entire editor — handle, data, receptors,
+        sustains, and GUI — so the new skin is fully reflected on-screen.
+        This ensures the editor actually exercises NoteskinManager instead
+        of being locked to whichever skin was passed at construction.
+
+        ## Multi-texture: no re-binding needed
+
+        Because all cached skin textures are bound to the program ONCE
+        via `setMultiTexture` in `initRendering()`, switching noteskins
+        is just a matter of:
+          1. `loadNoteskin(nextSkin)` — fetches the new handle from
+             NoteskinManager (the handle's `texUnit` already points
+             at its slot in `NoteskinManager.textureCache`).
+          2. Rebuild receptors + sustains — `createReceptors()`
+             constructs new Note / Sustain elements whose constructors
+             call `setHandle(handle)`, propagating the new `texUnit` /
+             `texSlot` to each element's `@texUnit` / `@texSlot`
+             attributes. The shader then samples from the new skin's
+             sheet on the next draw.
+
+        No `setProgramsTexture` re-binding, no shader re-injection. */
     function switchNoteskin() {
         // The manager holds every noteskin it discovered at startup.
         // We can't construct this list ourselves because non-trivial skins
@@ -986,35 +1108,34 @@ private class NoteskinEditorManiaManager {
         Main.current.playScrollSound();
         trace('SWITCH_NOTESKIN: "${state.currentSkinName}" -> "$nextSkin"');
 
-        // --- Reload everything ---
+        // --- Reload handle + receptors (multi-texture: no re-binding) ---
 
-        // 1. Drop the current handle's texture. The handle shares its texture
-        //    under the global name "noteTexV2" via TextureSystem, so we also
-        //    remove it from the pool — otherwise loadTexture() on the next
-        //    handle would find the stale texture and skip reloading.
-        if (state.noteskinHandle != null) {
-            state.noteskinHandle.dispose();
-            state.noteskinHandle = null;
-        }
-        TextureSystem.pool.remove("noteTexV2");
+        state.noteskinHandle = null;
 
-        // 2. Rebuild the handle + data + mania configs for the new skin.
-        //    loadNoteskin() also resets currentManiaIndex/Config/maxReceptors.
+        // 1. Rebuild the handle + data + mania configs for the new skin.
+        //    loadNoteskin() fetches the handle from NoteskinManager.
+        //    The handle's `texUnit` is already set (it was assigned
+        //    during NoteskinManager.init() when the skin's texture was
+        //    registered in textureCache).
         loadNoteskin(nextSkin);
 
-        // 3. Force the new handle to load its own texture (now that the pool
-        //    slot is empty, this creates a fresh "noteTexV2" with the new sheet).
+        // Diagnostic: confirm the handle's texUnit BEFORE createReceptors
+        // builds new Note elements. If texUnit is 0 for every skin, the
+        // textures aren't loading distinctly and the multitexture binding
+        // won't be able to switch visually.
         if (state.noteskinHandle != null) {
-            state.noteskinHandle.loadTexture();
-            if (state.noteProg != null) {
-                state.noteskinHandle.setProgramsTexture(state.noteProg);
-            }
-            if (state.sustainProg != null) {
-                state.noteskinHandle.setProgramsTexture(state.sustainProg);
-            }
+            trace('SWITCH_NOTESKIN: about to createReceptors with handle texUnit=${state.noteskinHandle.texUnit}, '
+                + 'texSlot=${state.noteskinHandle.texSlot}, loaded=${state.noteskinHandle.loaded}, '
+                + 'textureKey="${state.noteskinHandle.textureKey}"');
         }
 
-        // 4. Reset transient editor state that doesn't make sense for a new skin.
+        // 2. (No re-binding step.) With multi-texture, all skin textures
+        //    are already bound to the programs via setMultiTexture in
+        //    initRendering(). The new handle's texUnit is propagated
+        //    to each Note / Sustain element via setHandle() inside
+        //    createReceptors() below.
+
+        // 3. Reset transient editor state that doesn't make sense for a new skin.
         state.spriteSheetMode = false;
         state.spritesheetSelectedIndex = -1;
         state.showSustainPreview = false;
@@ -1027,7 +1148,11 @@ private class NoteskinEditorManiaManager {
         state.selectedProperty = "clipX";
         state.globalScaleMode = false;
 
-        // 5. Rebuild receptors + sustains + grid + GUI readout from scratch.
+        // 4. Rebuild receptors + sustains + grid + GUI readout from scratch.
+        //    createReceptors() constructs new Note elements whose
+        //    constructors call setHandle(handle), propagating the new
+        //    handle's texUnit/texSlot. This is the ONLY call needed
+        //    to make the editor start sampling from the new skin's sheet.
         state.renderer.createReceptors();
         state.renderer.updateReceptorVisuals();
         if (state.showSustainPreview) state.renderer.updateSustainVisuals();
@@ -1193,14 +1318,18 @@ private class NoteskinEditorManiaManager {
     }
 
     function createDefaultNoteskin() {
-        state.noteskinData = {
-            name: "default",
-            sparrowImg: "sheet.png",
-            configMania: [makeManiaConfig(4)],
-            clip: []
-        };
+        // Use the shared in-memory DEFAULT_DATA template from NoteskinHandle
+        // (deep-copied via defaultData() so this state can be mutated safely).
+        // This makes NoteskinHandle.DEFAULT_DATA the single source of truth
+        // for "what a default noteskin looks like" — both the on-disk
+        // createDefaultDataJson() and this in-memory fallback ultimately
+        // mirror the same template.
+        state.noteskinData = NoteskinHandle.defaultData();
         state.availableManiaConfigs = state.noteskinData.configMania.copy();
-        state.currentManiaIndex = Std.int(Math.max(state.currentManiaIndex, state.availableManiaConfigs.length - 1));
+        // Clamp currentManiaIndex DOWN to the valid range (Math.min, NOT
+        // Math.max — see loadNoteskin() for the rationale).
+        state.currentManiaIndex = Std.int(Math.min(state.currentManiaIndex, state.availableManiaConfigs.length - 1));
+        if (state.currentManiaIndex < 0) state.currentManiaIndex = 0;
         state.currentConfig = state.availableManiaConfigs[state.currentManiaIndex];
         updateMaxReceptorsFromConfig();
 
@@ -1848,7 +1977,6 @@ private class NoteskinEditorRenderer {
         this.state = state;
     }
 
-    // premultiplyAndCreateTexture removed — use NoteskinHandle.premultiplyAndCreateTexture() instead.
     function createGrid() {
         try {
             // --- Scrolling grid background (bottommost layer) ---
@@ -1988,6 +2116,14 @@ private class NoteskinEditorRenderer {
     }
 
     function initRendering() {
+        // Defensive: ensure NoteskinManager is initialized before we touch
+        // its textureCache. If the host app already called init(), this
+        // is a no-op (textureCache != null). If not, we lazily initialize
+        // here so the editor is usable standalone.
+        if (NoteskinManager.textureCache == null) {
+            NoteskinManager.init();
+        }
+
         state.noteskinHandle.loadTexture();
 
         if (state.noteBuf == null) {
@@ -1996,7 +2132,16 @@ private class NoteskinEditorRenderer {
         if (state.noteProg == null) {
             state.noteProg = new CustomProgram(state.noteBuf);
             Note.init(state.noteProg);
+            // Bind the ENTIRE NoteskinManager.textureCache to the note
+            // program as a multi-texture under "noteTexV2". This binds
+            // every cached skin's sheet at once — switching noteskins
+            // is then just a matter of updating each Note's @texUnit /
+            // @texSlot attributes via setHandle(), no re-binding needed.
             state.noteskinHandle.setProgramsTexture(state.noteProg);
+            // Inject the note shader (alpha compositing formula).
+            // This references the noteTexV2_ID uniform registered above,
+            // so it MUST come after setProgramsTexture.
+            state.noteskinHandle.setProgramsNoteShader(state.noteProg);
         }
 
         // Sustain preview
@@ -2006,7 +2151,18 @@ private class NoteskinEditorRenderer {
         if (state.sustainProg == null) {
             state.sustainProg = new CustomProgram(state.sustainBuf);
             Sustain.init(state.sustainProg);
+            // Same multi-texture binding for the sustain program.
             state.noteskinHandle.setProgramsTexture(state.sustainProg);
+            // Inject the sustain tiling/rotation shader. This references
+            // noteTexV2_ID and BAKES 1.0/texture.width and 1.0/texture.height
+            // as float literals — for the FIRST skin's texture dimensions.
+            // Multi-texture with different-sized sheets would require
+            // per-element invTexW/invTexH varyings (not yet implemented);
+            // for now, the baked literals are correct for at least the
+            // first cached skin, and other skins will render with slightly
+            // wrong sustain tiling (the note rendering is unaffected).
+            // MUST come after setProgramsTexture.
+            state.noteskinHandle.setProgramsSustainShader(state.sustainProg);
         }
     }
 
@@ -2014,14 +2170,23 @@ private class NoteskinEditorRenderer {
         if (state.guiTextureLoaded) return;
 
         try {
-            var guiTexPath = Paths.asset('assets/images/noteskins/gui_buttons.png');
-            if (!FileSystem.exists(guiTexPath)) {
+            var guiTexPath = 'assets/images/noteskins/gui_buttons.png';
+            var guiTexPathFull = Paths.asset(guiTexPath);
+            if (!FileSystem.exists(guiTexPathFull)) {
                 trace('GUI buttons texture not found, skipping GUI sprites');
                 return;
             }
-            var guiImage = Image.fromFile(guiTexPath);
-            var guiTex = NoteskinHandle.premultiplyAndCreateTexture(guiImage);
-            TextureSystem.pool[NoteskinEditor.GUI_TEXTURE_NAME] = guiTex;
+            // Use TextureSystem.createTexture — it handles Image loading,
+            // premultiplication, and Texture creation internally, then
+            // stores the texture in TextureSystem.pool under the given key.
+            // (Replaces the old NoteskinHandle.premultiplyAndCreateTexture
+            // static method, which has been removed.)
+            TextureSystem.createTexture(NoteskinEditor.GUI_TEXTURE_NAME, guiTexPath, false, true);
+            var guiTex = TextureSystem.getTexture(NoteskinEditor.GUI_TEXTURE_NAME);
+            if (guiTex == null) {
+                trace('Failed to create GUI texture via TextureSystem');
+                return;
+            }
             state.guiTexture = guiTex;
 
             state.guiSpriteBuf = new Buffer<NoteskinGUISprite>(32, 32, true);
@@ -2031,7 +2196,7 @@ private class NoteskinEditorRenderer {
             // Note: programs are added to view in init() in the correct z-order.
 
             state.guiTextureLoaded = true;
-            trace('GUI sprite buffer initialized (${guiImage.width}x${guiImage.height})');
+            trace('GUI sprite buffer initialized (${guiTex.width}x${guiTex.height})');
         } catch (e) {
             trace('Failed to init GUI sprites: $e');
         }
@@ -2333,6 +2498,26 @@ private class NoteskinEditorRenderer {
         for (i in 0...state.strumline.length) {
             var note = state.strumline.receptors[i].note;
 
+            // ## Propagate the current noteskin handle's texUnit/texSlot
+            // to this note on every visual update.
+            //
+            // This is what makes noteskin switching actually visually
+            // switch the texture: each Note's @texUnit / @texSlot
+            // attributes select which entry in the program's bound
+            // multi-texture array to sample from. Without this call,
+            // a note created under skin A keeps sampling from skin A's
+            // slot even after `state.noteskinHandle` is swapped to
+            // skin B — so the texture on screen never changes.
+            //
+            // `createReceptors()` constructs fresh Note elements whose
+            // constructors call `setHandle()`, but `updateReceptorVisuals()`
+            // runs far more often (on every mania change, state change,
+            // selection change, etc.) and was the missing propagation
+            // point. Calling it here is cheap (just two int writes per
+            // note) and guarantees the element's texture selector always
+            // tracks the current handle.
+            note.setHandle(state.noteskinHandle);
+
             var clipIndex = state.clipEditor.getClipIndexForReceptor(i);
             var clip = state.clipEditor.getClipForIndex(clipIndex);
 
@@ -2357,14 +2542,18 @@ private class NoteskinEditorRenderer {
 
                 // Spritesheet mode: override clip properties to show the full
                 // texture around the selected clip region.
+                // Uses texture.width/texture.height — the handle's cached
+                // Texture reference (fetched from TextureSystem.pool).
+                var sheetW = state.noteskinHandle.texture.width;
+                var sheetH = state.noteskinHandle.texture.height;
                 note.clipX = basicClip.clipX - NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
                 note.clipY = basicClip.clipY - NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-                note.clipWidth = state.noteskinHandle.texture.width + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-                note.clipHeight = state.noteskinHandle.texture.height + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-                note.clipSizeX = state.noteskinHandle.texture.width + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-                note.clipSizeY = state.noteskinHandle.texture.height + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-                note.w = state.noteskinHandle.texture.width + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-                note.h = state.noteskinHandle.texture.height + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+                note.clipWidth = sheetW + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+                note.clipHeight = sheetH + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+                note.clipSizeX = sheetW + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+                note.clipSizeY = sheetH + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+                note.w = sheetW + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+                note.h = sheetH + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
                 note.ox = basicClip.offsX;
                 note.oy = basicClip.offsY;
                 note.x -= Math.round(NoteskinEditor.SPRITESHEET_VIEW_OFFSET * scale);
@@ -2468,6 +2657,17 @@ private class NoteskinEditorRenderer {
         for (i in 0...state.sustainSprites.length) {
             var sustain = state.sustainSprites[i];
             if (sustain == null) continue;
+
+            // ## Propagate the current noteskin handle's texUnit/texSlot
+            // to this sustain on every visual update.
+            //
+            // Same rationale as updateReceptorVisuals(): without this
+            // call, an existing sustain keeps sampling from whatever
+            // skin slot it was created under, even after the handle
+            // is swapped to a different skin. Calling setHandle() here
+            // guarantees the sustain's texture selector always tracks
+            // the current noteskin.
+            sustain.setHandle(state.noteskinHandle);
 
             // Use per-state indexes: body from holdBodyIndexes, tail from holdTailIndexes.
             var bodyIdxArr = state.clipEditor.getIndexesForState(HOLD_BODY);
@@ -4324,16 +4524,18 @@ class NoteskinEditor {
     public function toggleEditor() {
         showEditor = !showEditor;
         if (showEditor) {
-            if (noteskinHandle.texture == null) {
+            // With multi-texture, all skin textures stay bound to the
+            // program via setMultiTexture at initRendering() time. If
+            // the handle was disposed (e.g. by NoteskinManager's LRU
+            // evictor) and is now being re-loaded, we just need to
+            // re-register its texture in NoteskinManager.textureCache
+            // (handled by loadTexture itself) — no program re-binding
+            // or shader re-injection needed. The @texUnit / @texSlot
+            // values on existing Note / Sustain elements may be stale
+            // if the cache was rebuilt, but the editor's rebuild flow
+            // (createReceptors) will refresh them.
+            if (noteskinHandle != null && !noteskinHandle.loaded) {
                 noteskinHandle.loadTexture();
-            }
-            if (noteProg != null) {
-                noteskinHandle.setProgramsTexture(noteProg);
-                noteskinHandle.setProgramsNoteShader(noteProg);
-            }
-            if (sustainProg != null) {
-                noteskinHandle.setProgramsTexture(sustainProg);
-                noteskinHandle.setProgramsSustainShader(sustainProg);
             }
 
             if (backgroundProg != null && !backgroundProg.isIn(view)) {
