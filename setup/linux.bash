@@ -32,10 +32,7 @@ sudo apt-get update
 
 # Install dependencies sequentially
 log_info "Installing 64-bit dependencies..."
-sudo apt-get install -y libc6-dev-i386 g++-multilib
-sudo apt install -y libx11-dev libxrandr-dev libxinerama-dev
-sudo apt-get install -y libgl-dev libgl1-mesa-dev libasound2-dev
-sudo apt-get install -y libgbm-dev mesa-common-dev libegl1-mesa-dev libgles2-mesa-dev
+sudo apt-get install -y libgl1-mesa-dev libglu1-mesa-dev g++-multilib gcc-multilib libasound2-dev libx11-dev libxext-dev libxi-dev libxrandr-dev libxinerama-dev libpulse-dev libmbedtls-dev libpng-dev libturbojpeg-dev libuv1-dev libvorbis-dev libvulkan-dev
 
 # Setup i386
 log_info "Setting up i386 architecture..."
@@ -44,8 +41,7 @@ sudo apt update
 
 # Install 32-bit dependencies
 log_info "Installing 32-bit dependencies..."
-sudo apt-get install -y libgl-dev:i386 libgl1-mesa-dev:i386 libglu1-mesa-dev:i386
-sudo apt-get install -y libgbm-dev:i386 mesa-common-dev:i386 libegl1-mesa-dev:i386 libgles2-mesa-dev:i386
+sudo apt-get install -y libgl1-mesa-dev:i386 libglu1-mesa-dev:i386 g++-multilib:i386 gcc-multilib:i386 libasound2-dev:i386 libx11-dev:i386 libxext-dev:i386 libxi-dev:i386 libxrandr-dev:i386 libxinerama-dev:i386 libpulse-dev:i386 libmbedtls-dev:i386 libpng-dev:i386 libturbojpeg-dev:i386 libuv1-dev:i386 libvorbis-dev:i386 libvulkan-dev:i386
 
 # Setup haxelib
 log_info "Setting up haxelib..."
