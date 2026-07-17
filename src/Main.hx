@@ -311,6 +311,7 @@ class Main extends Application
 		HealthBarSprite.healthBarProperties = Tools.parseHealthBarConfig('assets/images/ui');
 		UISprite.timeBarProperties = Tools.parseTimeBarConfig('assets/images/ui');
 		Tools.parseNoteskinData('assets/images/notes');
+		NoteskinManager.init(); // prepare
 
 		TextureSystem.createTexture("mainMenuBGTex", "assets/images/mainMenu/menuBG.png", false, true);
 		TextureSystem.createTexture("mainMenuSheet", "assets/images/mainMenu/sheet.png", false, true);

@@ -43,8 +43,8 @@ class Sustain implements Element
     // Position & Size
     // ========================================================================
 
-    @posX @formula("uDisplayRotateX(aPos + vec2(0.0, py)) - uDisplayRotateX(vec2(0.0, py))") @set("properties") public var x:Int;
-    @posY @formula("uDisplayRotateY(aPos + vec2(0.0, py)) - uDisplayRotateY(vec2(0.0, py))") @set("properties") public var y:Int;
+    @posX @formula("uDisplayRotateX(aPos)") @set("properties") public var x:Int;
+    @posY @formula("uDisplayRotateY(aPos)") @set("properties") public var y:Int;
 
     @varying @sizeX @formula("w * speed") @set("properties") public var w:Int;
     @varying @sizeY @formula("h * scale") @set("properties") public var h:Int;
