@@ -41,7 +41,8 @@ class ControlsDisplay implements IAlphabetScrollHost {
 
 	inline static var INSTRUCTIONS_TEXT = "KEYBINDING Instructions:\nPress TAB to begin binding\nPress ESC to cancel binding\n\n" +
 		"MANIA Instructions:\nPress DEBUG to swap between #M1#KEY1#M1# and #M2#KEY2#M2# modes\n" +
-		"\nWhile you bind your mania, you press each key in order\nWhen you bind:\nPress CTRL+Left or CTRL+Right to change MANIA\nPress BACK to reset currrent MANIA\n" +
+		"\nWhile you bind your mania, you press each key in order\nWhen you bind:\nPress CTRL+Left or CTRL+Right to change MANIA\n" +
+		"Press ALT+Up or ALT+Down to switch slot\nPress BACK to reset current MANIA\n" +
 		"Press RESET to remove binding (#M2#KEY2#M2# only)"; // had to split it to multiple lines for readability and consistency
 
 	var parent(default, null):OptionsMenu;
@@ -182,7 +183,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		maniaKeybindTxt.alpha = Tools.lerp(maniaKeybindTxt.alpha, parent.opened && (curSelectedTarget >= controlFields.length || alertDupebind || binding) ? 1.0 : 0.0, ratio);
 		if (bindingMania) {
 			var str = 'KEYBINDS\nUSING ${maniaSubBindNum == 1 ? "#M2#KEY2#M2#" : "#M1#KEY1#M1#"}\n';
-				if (alertDupebind) str += '#M3#${alertDupebindKeyName} is already bound to:\n${alertDupebindConflictName}\nTry a different key.#M3#\n';
+			if (alertDupebind) str += '#M3#${alertDupebindKeyName} is already bound to:\n${alertDupebindConflictName}\nTry a different key.#M3#\n';
 			else if (alertKeybindReset) str += '#M3#Successfully reset current MANIA.#M3#\n';
 			else str += "#M3#Currently binding...#M3#\n";
 			var keybindArr = SaveData.state.controls.game.keybindArray[curManiaNum];
@@ -280,6 +281,21 @@ class ControlsDisplay implements IAlphabetScrollHost {
 						Main.current.playScrollSound();
 					case KeyCode.RIGHT:
 						curManiaNum++;
+						Main.current.playScrollSound();
+					default:
+				}
+				return;
+			}
+
+			// Alt+Up/Down to switch mania bind slot
+			if ((keyModifier == KeyModifier.LEFT_ALT || keyModifier == KeyModifier.RIGHT_ALT)) {
+				var keybindsArr = SaveData.state.controls.game.keybindArray[curManiaNum];
+				switch (keyCode) {
+					case KeyCode.UP:
+						maniaBindNum = Std.int(Math.max(0, maniaBindNum - 1));
+						Main.current.playScrollSound();
+					case KeyCode.DOWN:
+						maniaBindNum = Std.int(Math.min(keybindsArr.length - 1, maniaBindNum + 1));
 						Main.current.playScrollSound();
 					default:
 				}
