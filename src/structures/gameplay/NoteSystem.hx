@@ -44,9 +44,8 @@ class NoteSystem {
 		}
 
 		if (notesProg == null) {
-			var tex = TextureSystem.getTexture("noteTex");
 			notesProg = new CustomProgram(notesBuf);
-			Note.init(notesProg, "noteTex", tex);
+			Note.init(notesProg);
 		}
 
 		if (sustainsBuf == null) {
@@ -54,9 +53,8 @@ class NoteSystem {
 		}
 
 		if (sustainProg == null) {
-			var tex2 = TextureSystem.getTexture("sustainTex");
 			sustainProg = new CustomProgram(sustainsBuf);
-			Sustain.init(sustainProg, "sustainTex", tex2);
+			Sustain.init(sustainProg);
 		}
 	}
 
@@ -89,7 +87,7 @@ class NoteSystem {
 		for (i in 0...2) {
 			var strumline = new Strumline(STRUMLINE_X_OFFSET + Std.int(Main.INITIAL_WIDTH * (i * 0.5)),
 				parent.downScroll ? Main.INITIAL_HEIGHT - STRUMLINE_Y_OFFSET_DOWNSCROLL : STRUMLINE_Y_OFFSET,
-				Std.int(inputSystem.strumline[0]), inputSystem.strumline[1], mania, this);
+				NoteskinManager.get("default"), Std.int(inputSystem.strumline[0]), inputSystem.strumline[1], mania, this);
 			strumline.playable = parent.inputSystem.strumlinePlayable[i];
 			strumlines.push(strumline);
 		}

@@ -12,14 +12,17 @@ class Strumline {
 
 	var x(default, set):Int;
 	var y(default, set):Int;
+	var offsetX(default, set):Int;
+	var offsetY(default, set):Int;
 	var scale(default, set):Float;
 	var gap(default, set):Int;
 	var length(default, set):Int;
 	var playable:Bool;
+	var noteskinHandle(default, set):NoteskinHandle;
 
 	function set_x(value:Int) {
 		for (i in 0...length) {
-			receptors[i].note.x = value + Math.floor(gap * i);
+			receptors[i].note.x = value + Math.floor(gap * i) + offsetX;
 		}
 		return x = value;
 	}
@@ -27,10 +30,35 @@ class Strumline {
 	function set_y(value:Int) {
 		if (value != y) {
 			for (i in 0...length) {
-				receptors[i].note.y = value;
+				receptors[i].note.y = value + offsetY;
 			}
 		}
 		return y = value;
+	}
+
+	inline function set_offsetX(value:Int) {
+		offsetX = value;
+		set_x(x);
+		return value;
+	}
+
+	inline function set_offsetY(value:Int) {
+		offsetY = value;
+		set_y(y);
+		return value;
+	}
+
+	inline function set_noteskinHandle(handle:NoteskinHandle) {
+		noteskinHandle = handle;
+
+		for (i in 0...length) {
+			var receptor = receptors[i];
+			receptor.note.handle = handle;
+			receptor.note.changeID(i);
+			receptor.note.reset();
+		}
+
+		return handle;
 	}
 
 	function set_scale(value:Float) {
@@ -51,13 +79,11 @@ class Strumline {
 	function set_length(value:Int) {
 		receptors.resize(value);
 
-		var ids = parent.parent.inputSystem.receptorIds;
-
 		for (i in 0...value) {
 			var rec = receptors[i];
 			if (rec == null) {
-				var note = new Note(x, y, 0, 0);
-				note.changeID(ids[i]);
+				var note = new Note(x, y, 0, 0, noteskinHandle);
+				note.changeID(i);
 				note.reset();
 				receptors[i] = new Receptor(note);
 			}
@@ -70,7 +96,7 @@ class Strumline {
 
 	var parent(default, null):NoteSystem;
 
-	function new(x:Int, y:Int, gap:Int, scale:Float, length:Int, parent:NoteSystem) {
+	function new(x:Int, y:Int, noteskinHandle:NoteskinHandle, gap:Int, scale:Float, length:Int, parent:NoteSystem) {
 		receptors = [];
 
 		this.parent = parent;
@@ -80,6 +106,13 @@ class Strumline {
 		this.y = y;
 		this.scale = scale;
 		this.gap = gap;
+		this.noteskinHandle = noteskinHandle;
+	}
+
+	function applyNoteskinProperties(handle:NoteskinHandle, mania:Int) {
+		var cfgM = handle.data.configMania[mania];
+		this.offsetX = cfgM.offsetX;
+		this.offsetY = cfgM.offsetY;
 	}
 
 	function draw(buf:Buffer<Note>) {

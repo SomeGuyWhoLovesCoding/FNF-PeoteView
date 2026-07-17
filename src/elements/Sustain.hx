@@ -97,140 +97,38 @@ class Sustain implements Element
     // Shader Init
     // ========================================================================
 
-    static public function init(program:CustomProgram, name:String, texture:Texture)
+    var handle:NoteskinHandle; // new
+
+    static public function init(program:CustomProgram)
     {
-        program.setTexture(texture, name);
-
-        var tileW = Util.toFloatString(texture.width);
-        var tileH = Util.toFloatString(texture.height);
-        var invTileW = Util.toFloatString(1.0 / texture.width);
-        var invTileH = Util.toFloatString(1.0 / texture.height);
-
-        program.injectIntoFragmentShader('
-            // --- Rotation helper ---
-            // Rotates a [0,1] UV by 0 / 90 / 180 / 270 degrees.
-            // Uses range checks instead of == because texRotation is a
-            // @varying float | interpolation between vertices can introduce
-            // tiny precision drift (e.g. 89.9998) that breaks exact compares.
-            vec2 sustainRotateUV(vec2 uv, float rot) {
-                rot = mod(rot + 360.0, 360.0);
-                if (rot > 45.0 && rot < 135.0)       return vec2(uv.y, 1.0 - uv.x);
-                if (rot >= 135.0 && rot < 225.0)     return vec2(1.0 - uv.x, 1.0 - uv.y);
-                if (rot >= 225.0 && rot < 315.0)     return vec2(1.0 - uv.y, uv.x);
-                return uv;
-            }
-
-            bool sustainIsSwapped(float rot) {
-                rot = mod(rot + 360.0, 360.0);
-                return (rot > 45.0 && rot < 135.0) || (rot >= 225.0 && rot < 315.0);
-            }
-
-            vec4 slice(int textureID, vec4 bodyCoord, vec4 tailCoord, float texRotation) {
-                vec2 coord = vTexCoord;
-
-                // After rotation, the length-axis and thickness-axis may swap.
-                // For 0 / 180 the rect\'s width (z) is along the sustain length
-                // and height (w) is across the thickness. For 90 / 270 they swap.
-                bool swapped = sustainIsSwapped(texRotation);
-
-                float bodyLen   = swapped ? bodyCoord.w : bodyCoord.z;
-                float bodyThick = swapped ? bodyCoord.z : bodyCoord.w;
-                float tailLen   = swapped ? tailCoord.w : tailCoord.z;
-                float tailThick = swapped ? tailCoord.z : tailCoord.w;
-
-                float drawLen   = vSize.x;  // sustain length (drawn)
-                float drawThick = vSize.y;  // sustain thickness (drawn)
-
-                // Body scale | used ONLY for body tiling.
-                float bodyPxScale = drawThick / max(bodyThick, 0.001);
-                float bodyDrawLen = bodyLen * bodyPxScale;
-
-                // Tail scale | uses the TAIL\'s own thickness, NOT the body\'s.
-                // This preserves the tail\'s native aspect ratio regardless of
-                // how the body\'s thickness compares. Without this, when the
-                // sustain\'s thickness drops below the tail\'s native thickness,
-                // the tail\'s length and thickness scales diverge and the tail
-                // appears stretched along its length.
-                float tailPxScale = drawThick / max(tailThick, 0.001);
-                float tailDrawLen = tailLen * tailPxScale;
-
-                vec2 localCoord;
-                vec4 rect;
-
-                if (tailDrawLen >= drawLen) {
-                    // --- Tail doesn\'t fit (or exactly fits) ---
-                    // Render ONLY the tail, CROPPED to the sustain length.
-                    // The tail texture is sampled at its NATIVE scale | we
-                    // show only the fraction that fits, not stretched.
-                    // This prevents the tail from disappearing when the
-                    // sustain is too short (which happened because UVs were
-                    // being compressed beyond the texture bounds).
-                    float visibleFrac = drawLen / max(tailDrawLen, 0.001);
-                    visibleFrac = min(visibleFrac, 1.0);
-                    // Show the TIP of the tail (the end cap), which is the
-                    // visible portion at the sustain\'s end.
-                    localCoord = vec2(1.0 - visibleFrac + coord.x * visibleFrac, coord.y);
-                    rect = tailCoord;
-                } else {
-                    // --- Normal: body fills [0, tailStart], tail fills [tailStart, 1] ---
-                    float tailStart = 1.0 - (tailDrawLen / max(drawLen, 0.001));
-
-                    if (coord.x > tailStart) {
-                        // Tail region | remap coord.x from [tailStart, 1] to [0, 1]
-                        // so the tail texture spans its full length within this region.
-                        localCoord = vec2(
-                            (coord.x - tailStart) / max(1.0 - tailStart, 0.001),
-                            coord.y
-                        );
-                        rect = tailCoord;
-                    } else {
-                        // Body region - tile along the length using fract().
-                        // Map [0, tailStart] -> [N, 0] so tailStart always
-                        // lands on a tile boundary (fract = 0), matching the
-                        // old shader\'s (1.0 - coord.x / tail.x) approach.
-                        float numTiles = tailStart * drawLen / max(bodyDrawLen, 0.001);
-                        float tiledX = fract((1.0 - coord.x / max(tailStart, 0.001)) * numTiles);
-                        localCoord = vec2(tiledX, coord.y);
-                        rect = bodyCoord;
-                    }
-                }
-
-                // Rotate the local coord within [0,1], then map to
-                // full-texture UV space using the rect\'s pixel position+size.
-                vec2 rotated = sustainRotateUV(localCoord, texRotation);
-                vec2 uv = (rect.xy + rotated * rect.zw) * vec2($invTileW, $invTileH);
-
-                // Clamp to [0,1] to prevent out-of-bounds sampling when
-                // coords are near texture edges (which made the tail disappear).
-                uv = clamp(uv, vec2(0.0), vec2(1.0));
-
-                return getTextureColor(textureID, uv);
-            }
-        ');
-
-        program.setColorFormula('c * slice(${name}_ID, vec4(bodyX, bodyY, bodyW, bodyH), vec4(tailX, tailY, tailW, tailH), texRotation)');
     }
 
     // ========================================================================
     // Construction & ID
     // ========================================================================
 
-    inline public function new(x:Int, y:Int, w:Int, h:Int, r:Float, s:Float, sc:Float, tile:Int) {
+    inline public function new(x:Int, y:Int, w:Int, h:Int, handle:NoteskinHandle, r:Float, s:Float, sc:Float, tile:Int) {
+        this.handle = handle;
         setProperties(x, y, w, h, r, s, sc, 0, 36, 20, 36, 40, 36, 20, 36, 0);
     }
 
     /**
-        Set the body/tail coords and rotation from the lookup tables for
-        this clip ID.
+        Set the body/tail coords and rotation from the helper for this lane.
     **/
     inline public function changeID(id:Int) {
-        var coords = holdCoords[id];
-        if (coords != null && coords.length >= 8) {
-            bodyX = coords[0]; bodyY = coords[1];
-            bodyW = coords[2]; bodyH = coords[3];
-            tailX = coords[4]; tailY = coords[5];
-            tailW = coords[6]; tailH = coords[7];
-        }
-        texRotation = rotations[id];
+        var bodyClip = NoteskinRuntimeHelper.getHoldBodyClip(handle, id);
+        var tailClip = NoteskinRuntimeHelper.getHoldTailClip(handle, id);
+
+        bodyX = bodyClip.clipX;
+        bodyY = bodyClip.clipY;
+        bodyW = bodyClip.clipW;
+        bodyH = bodyClip.clipH;
+
+        tailX = tailClip.clipX;
+        tailY = tailClip.clipY;
+        tailW = tailClip.clipW;
+        tailH = tailClip.clipH;
+
+        texRotation = bodyClip.rotation.toDegrees();
     }
 }

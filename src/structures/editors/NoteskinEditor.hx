@@ -28,7 +28,9 @@ import structures.gameplay.NoteskinHandle.NoteskinConfig;
 import structures.gameplay.NoteskinHandle.NoteskinData;
 import structures.gameplay.NoteskinHandle.NoteskinReceptorProperties;
 import structures.gameplay.NoteskinHandle.TextureRotation;
+import structures.gameplay.NoteskinManager;
 import elements.Sustain;
+import structures.gameplay.Strumline;
 
 using StringTools;
 
@@ -670,7 +672,8 @@ private class NoteskinEditorClipEditor {
     }
 
     function getSelectedNote():Note {
-        return state.receptorSprites[state.selectedIndex];
+        if (state.strumline == null || state.selectedIndex >= state.strumline.length) return null;
+        return state.strumline.receptors[state.selectedIndex].note;
     }
 
     function getSelectedClip():BasicNoteskinClip {
@@ -737,9 +740,10 @@ private class NoteskinEditorClipEditor {
         logic as `handleMouseDown` (note.x/y/w/h, no offset).
     **/
     function findReceptorAt(mouseX:Float, mouseY:Float):Int {
+        if (state.strumline == null) return -1;
         var scale = state.currentConfig.scale;
-        for (i in 0...state.receptorSprites.length) {
-            var note = state.receptorSprites[i];
+        for (i in 0...state.strumline.length) {
+            var note = state.strumline.receptors[i].note;
             var clip = state.clipEditor.getClipForIndex(state.clipEditor.getClipIndexForReceptor(i));
             var basicClip = state.clipEditor.getBasicClipForState(clip, state.currentState);
             var sx = note.x + basicClip.offsX * scale;
@@ -758,8 +762,8 @@ private class NoteskinEditorClipEditor {
         partially visible on screen.  Returns false when the entire
         sprite rectangle is outside the viewport. */
     function isReceptorOnScreen(index:Int):Bool {
-        if (index < 0 || index >= state.receptorSprites.length) return false;
-        var note = state.receptorSprites[index];
+        if (state.strumline == null || index < 0 || index >= state.strumline.length) return false;
+        var note = state.strumline.receptors[index].note;
         if (note == null) return false;
         var scale = state.currentConfig.scale;
         var sw = note.w * scale;
@@ -949,6 +953,89 @@ private class NoteskinEditorManiaManager {
         }
     }
 
+    /** Switch to the next noteskin registered in NoteskinManager.
+        Cycles through every loaded skin (alphabetical order from the manager's
+        key list) and reloads the entire editor — handle, data, texture,
+        receptors, sustains, and GUI — so the new skin is fully reflected
+        on-screen. This ensures the editor actually exercises NoteskinManager
+        instead of being locked to whichever skin was passed at construction. */
+    function switchNoteskin() {
+        // The manager holds every noteskin it discovered at startup.
+        // We can't construct this list ourselves because non-trivial skins
+        // may have been registered dynamically after init().
+        var skinNames = NoteskinManager.currentLoadedNoteskins.keys;
+        if (skinNames == null || skinNames.length == 0) {
+            trace('SWITCH_NOTESKIN: NoteskinManager has no skins loaded — nothing to switch to.');
+            return;
+        }
+
+        // Find the current skin's slot. If it isn't in the manager (e.g. the
+        // editor was constructed with a skin name that doesn't exist on disk),
+        // start at slot 0 so we still land on a valid skin.
+        var currentIdx = skinNames.indexOf(state.currentSkinName);
+        var nextIdx = currentIdx + 1;
+        if (nextIdx >= skinNames.length) nextIdx = 0;
+        var nextSkin = skinNames[nextIdx];
+
+        // No-op if we'd be switching to the same skin AND it's the only one.
+        if (nextSkin == state.currentSkinName && skinNames.length == 1) {
+            trace('SWITCH_NOTESKIN: only one skin is loaded, nothing to switch to.');
+            return;
+        }
+
+        Main.current.playScrollSound();
+        trace('SWITCH_NOTESKIN: "${state.currentSkinName}" -> "$nextSkin"');
+
+        // --- Reload everything ---
+
+        // 1. Drop the current handle's texture. The handle shares its texture
+        //    under the global name "noteTexV2" via TextureSystem, so we also
+        //    remove it from the pool — otherwise loadTexture() on the next
+        //    handle would find the stale texture and skip reloading.
+        if (state.noteskinHandle != null) {
+            state.noteskinHandle.dispose();
+            state.noteskinHandle = null;
+        }
+        TextureSystem.pool.remove("noteTexV2");
+
+        // 2. Rebuild the handle + data + mania configs for the new skin.
+        //    loadNoteskin() also resets currentManiaIndex/Config/maxReceptors.
+        loadNoteskin(nextSkin);
+
+        // 3. Force the new handle to load its own texture (now that the pool
+        //    slot is empty, this creates a fresh "noteTexV2" with the new sheet).
+        if (state.noteskinHandle != null) {
+            state.noteskinHandle.loadTexture();
+            if (state.noteProg != null) {
+                state.noteskinHandle.setProgramsTexture(state.noteProg);
+            }
+            if (state.sustainProg != null) {
+                state.noteskinHandle.setProgramsTexture(state.sustainProg);
+            }
+        }
+
+        // 4. Reset transient editor state that doesn't make sense for a new skin.
+        state.spriteSheetMode = false;
+        state.spritesheetSelectedIndex = -1;
+        state.showSustainPreview = false;
+        state.sustainRotations = [];
+        state.previewScrollOffset = 0;
+        state.isPreviewScrolling = false;
+        state.selectedIndex = 0;
+        state.currentState = IDLE;
+        state.editMode = CLIP_POS;
+        state.selectedProperty = "clipX";
+        state.globalScaleMode = false;
+
+        // 5. Rebuild receptors + sustains + grid + GUI readout from scratch.
+        state.renderer.createReceptors();
+        state.renderer.updateReceptorVisuals();
+        if (state.showSustainPreview) state.renderer.updateSustainVisuals();
+        state.ui.updateInstructionsText();
+
+        trace('SWITCH_NOTESKIN: now editing "$nextSkin"');
+    }
+
     function createDefaultDataJson(skinFolder:String) {
         try {
             // Default data.json with 4 receptors using actual texture coords from the XML.
@@ -1096,7 +1183,7 @@ private class NoteskinEditorManiaManager {
         state.createManiaError = "";
         state.createManiaKeyCount = 0;
 
-		Main.current.playScrollSound();
+                Main.current.playScrollSound();
 
         // Remove any stale popup backgrounds.
         removePopupBackground();
@@ -1218,7 +1305,7 @@ private class NoteskinEditorManiaManager {
         state.createManiaInput = "";
         state.createManiaError = "";
 
-		Main.current.playScrollSound();
+                Main.current.playScrollSound();
 
         // Hide the popup text and remove the popup overlay.
         if (state.instructionsText != null) {
@@ -1255,7 +1342,7 @@ private class NoteskinEditorManiaManager {
             default:
         }
 
-		Main.current.playScrollSound();
+                Main.current.playScrollSound();
 
         var label = switch(state.confirmationPopupType) {
             case SAVE:             'Save Noteskin';
@@ -1276,7 +1363,7 @@ private class NoteskinEditorManiaManager {
             default:               '';
         }
 
-		Main.current.playCancelSound();
+                Main.current.playCancelSound();
 
         closeConfirmationPopup();
         trace('$label cancelled');
@@ -1292,7 +1379,7 @@ private class NoteskinEditorManiaManager {
         state.gridBuf.update();
 
         if (playSound)
-		    Main.current.playCancelSound();
+                    Main.current.playCancelSound();
 
         state.ui.updateInstructionsText();
     }
@@ -1590,7 +1677,7 @@ private class NoteskinEditorManiaManager {
                 trace('Groups: ${receptorNames.join(", ")}');
             }
 
-		    Main.current.playScrollSound();
+                    Main.current.playScrollSound();
         } catch (e) {
             trace('Failed to import vanilla atlas: $e');
         }
@@ -1741,7 +1828,7 @@ private class NoteskinEditorManiaManager {
 
             finalizeImport(foundConfig, keyCount, entries, receptorNames, 'Lettered');
 
-		Main.current.playScrollSound();
+                Main.current.playScrollSound();
         } catch (e) {
             trace('Failed to import lettered atlas: $e');
         }
@@ -1761,41 +1848,7 @@ private class NoteskinEditorRenderer {
         this.state = state;
     }
 
-    /** Premultiply alpha on pixel data and create a Texture from the given Image. */
-    static function premultiplyAndCreateTexture(image:Image, smooth:Bool, powerOfTwo:Bool = false):Texture {
-        var pixelData = image.getPixels(new Rectangle(0, 0, image.width, image.height), RGBA32);
-
-        // Premultiply alpha so the texture composites correctly.
-        var premultipliedData = haxe.io.Bytes.alloc(pixelData.length);
-        for (i in 0...pixelData.length >> 2) {
-            var fullARGB = pixelData.getInt32(i << 2);
-
-            var a = (fullARGB >>> 24) & 0xFF;
-            var r = (fullARGB >>> 16) & 0xFF;
-            var g = (fullARGB >>> 8)  & 0xFF;
-            var b = (fullARGB)        & 0xFF;
-
-            r = (r * a) >> 8;
-            g = (g * a) >> 8;
-            b = (b * a) >> 8;
-
-            var premul = (a << 24) | (r << 16) | (g << 8) | b;
-            premultipliedData.setInt32(i << 2, premul);
-        }
-
-        var textureData = new TextureData(image.width, image.height, TextureFormat.RGBA);
-        textureData.bytes = premultipliedData;
-
-        var texture = new Texture(textureData.width, textureData.height, null, {
-            format: TextureFormat.RGBA,
-            powerOfTwo: powerOfTwo,
-            smoothExpand: smooth,
-            smoothShrink: smooth
-        });
-        texture.setData(textureData);
-
-        return texture;
-    }
+    // premultiplyAndCreateTexture removed — use NoteskinHandle.premultiplyAndCreateTexture() instead.
     function createGrid() {
         try {
             // --- Scrolling grid background (bottommost layer) ---
@@ -1904,9 +1957,9 @@ private class NoteskinEditorRenderer {
         var scale = state.currentConfig.scale;
 
         for (i in 0...state.maxReceptors) {
-            if (i >= state.receptorSprites.length) break;
+            if (state.strumline == null || i >= state.strumline.length) break;
 
-            var receptor = state.receptorSprites[i];
+            var receptor = state.strumline.receptors[i].note;
             var clipIndex = state.clipEditor.getClipIndexForReceptor(i);
             var clip = state.clipEditor.getClipForIndex(clipIndex);
             var basicClip = state.clipEditor.getBasicClipForState(clip, state.currentState);
@@ -1935,17 +1988,16 @@ private class NoteskinEditorRenderer {
     }
 
     function initRendering() {
-        state.texture = getCombinedNoteskinTexture();
+        state.noteskinHandle.loadTexture();
 
         if (state.noteBuf == null) {
             state.noteBuf = new Buffer<Note>(16, 16, true);
         }
         if (state.noteProg == null) {
             state.noteProg = new CustomProgram(state.noteBuf);
-            Note.init(state.noteProg, NoteskinEditor.NOTESKIN_TEXTURE_NAME, state.texture);
+            Note.init(state.noteProg);
+            state.noteskinHandle.setProgramsTexture(state.noteProg);
         }
-
-        // Note: programs are added to view in init() in the correct z-order.
 
         // Sustain preview
         if (state.sustainBuf == null) {
@@ -1953,7 +2005,8 @@ private class NoteskinEditorRenderer {
         }
         if (state.sustainProg == null) {
             state.sustainProg = new CustomProgram(state.sustainBuf);
-            Sustain.init(state.sustainProg, NoteskinEditor.NOTESKIN_TEXTURE_NAME, state.texture);
+            Sustain.init(state.sustainProg);
+            state.noteskinHandle.setProgramsTexture(state.sustainProg);
         }
     }
 
@@ -1967,7 +2020,7 @@ private class NoteskinEditorRenderer {
                 return;
             }
             var guiImage = Image.fromFile(guiTexPath);
-            var guiTex = premultiplyAndCreateTexture(guiImage, SaveData.state.graphics.antialiasing);
+            var guiTex = NoteskinHandle.premultiplyAndCreateTexture(guiImage);
             TextureSystem.pool[NoteskinEditor.GUI_TEXTURE_NAME] = guiTex;
             state.guiTexture = guiTex;
 
@@ -1989,7 +2042,8 @@ private class NoteskinEditorRenderer {
         var btnSaveW = NoteskinEditor.SAVE_BUTTON_WIDTH;
         var btn4W = NoteskinEditor.IMPORT_BUTTON_WIDTH;
         var btn18W = NoteskinEditor.IMPORT_BUTTON_18K_WIDTH;
-        var totalW = btnSaveW + 4 + btn4W + 4 + btn18W;
+        var btnSwitchW = NoteskinEditor.SWITCH_NOTESKIN_BUTTON_WIDTH;
+        var totalW = btnSaveW + 4 + btn4W + 4 + btn18W + 4 + btnSwitchW;
         var margin = 4;
 
         // Position at bottom-left, next to the left button panel
@@ -2020,7 +2074,7 @@ private class NoteskinEditorRenderer {
 
         state.importButtonText = new Text(
             "IMPORT_ATLAS_BTN", btn4X + 6, btnY + 9,
-            state.display, "IMPT. VANILLA XML", "vcr"
+            state.display, "IMPORT VANILLA XML", "vcr"
         );
         state.importButtonText.scale = 0.5;
         state.importButtonText.alpha = 0; // hidden until editor opens
@@ -2035,64 +2089,28 @@ private class NoteskinEditorRenderer {
 
         state.importButton18KText = new Text(
             "IMPORT_ATLAS_18K_BTN", btn18X + 6, btnY + 9,
-            state.display, "IMPT. LETTERED XML", "vcr"
+            state.display, "IMPORT LETTERED XML", "vcr"
         );
         state.importButton18KText.scale = 0.5;
         state.importButton18KText.alpha = 0; // hidden until editor opens
         state.importButton18KText.addProgram();
-    }
 
-    function getCombinedNoteskinTexture():Texture {
-        var existingTex = TextureSystem.getTexture(NoteskinEditor.NOTESKIN_TEXTURE_NAME);
-        if (existingTex != null) {
-            return existingTex;
-        }
+        // Switch noteskin button (purple-ish) — cycles through every noteskin
+        // currently loaded in NoteskinManager and reloads the entire editor
+        // so the new skin's texture, clips, and manias are reflected on-screen.
+        var btnSwitchX = rowX + btnSaveW + 4 + btn4W + 4 + btn18W + 4;
+        state.switchNoteskinButtonBox = new RepeatSprite(btnSwitchX, btnY, btnSwitchW, btnH);
+        state.switchNoteskinButtonBox.c = 0x220044FF;
+        state.switchNoteskinButtonBox.c.aF = 0.85;
+        state.gridBuf.addElement(state.switchNoteskinButtonBox);
 
-        try {
-            var skinFolder = 'assets/images/noteskins/${state.currentSkinName}';
-
-            var sheetPath = Paths.asset('$skinFolder/sheet.png');
-            var sheetExists = FileSystem.exists(sheetPath);
-
-            if (!sheetExists) {
-                sheetPath = Paths.asset('assets/images/noteskins/default/sheet.png');
-                sheetExists = FileSystem.exists(sheetPath);
-            }
-
-            if (!sheetExists) {
-                trace('Sheet texture not found, creating blank');
-                return createBlankTexture();
-            }
-
-            var sheetImage = Image.fromFile(sheetPath);
-            var texture = premultiplyAndCreateTexture(sheetImage, SaveData.state.graphics.antialiasing);
-            TextureSystem.pool[NoteskinEditor.NOTESKIN_TEXTURE_NAME] = texture;
-            return texture;
-        } catch (e) {
-            trace('Failed to load noteskin texture: $e');
-            return createBlankTexture();
-        }
-    }
-
-    function createBlankTexture():Texture {
-        try {
-            var blankData = new TextureData(500, 500, TextureFormat.RGBA);
-            blankData.bytes = haxe.io.Bytes.alloc(500 * 500 * 4);
-            for (i in 0...blankData.bytes.length >> 2) {
-                blankData.bytes.setInt32(i << 2, 0xFFFFFFFF);
-            }
-            var texture = new Texture(500, 500, null, {
-                format: TextureFormat.RGBA,
-                powerOfTwo: false,
-                smoothExpand: false,
-                smoothShrink: false
-            });
-            texture.setData(blankData);
-            return texture;
-        } catch (e) {
-            trace('Failed to create blank texture: $e');
-            return null;
-        }
+        state.switchNoteskinButtonText = new Text(
+            "SWITCH_NOTESKIN_BTN", btnSwitchX + 6, btnY + 9,
+            state.display, "SWITCH NOTESKIN", "vcr"
+        );
+        state.switchNoteskinButtonText.scale = 0.5;
+        state.switchNoteskinButtonText.alpha = 0; // hidden until editor opens
+        state.switchNoteskinButtonText.addProgram();
     }
 
     // Preview-clips mode lays receptors out in rows of PREVIEW_COLS so a noteskin
@@ -2152,60 +2170,144 @@ private class NoteskinEditorRenderer {
     }
 
     function createReceptors() {
-        for (sprite in state.receptorSprites) {
-            state.noteBuf.removeElement(sprite);
+        // Remove old notes from buffer
+        if (state.strumline != null) {
+            for (i in 0...state.strumline.length) {
+                state.noteBuf.removeElement(state.strumline.receptors[i].note);
+            }
         }
-        state.receptorSprites = [];
 
         var gap = state.currentConfig.gap != 0 ? state.currentConfig.gap : 112;
         var offsetX = state.currentConfig.offsetX;
         var offsetY = state.currentConfig.offsetY;
         var scale = state.currentConfig.scale;
+        var pos = getReceptorPosition(0, gap, offsetX, offsetY);
 
-        for (i in 0...state.maxReceptors) {
-            var pos = getReceptorPosition(i, gap, offsetX, offsetY);
-            var note = new Note(
-                Std.int(pos.x),
-                Std.int(pos.y),
-                100, 100,
-                scale,
-                scale,
-                0.0
-            );
+        // Set the mania key count on the handle BEFORE creating the Strumline,
+        // so that Note.reset() inside the constructor resolves the correct config.
+        //
+        // In preview-clips mode, the editor uses a generated identity config
+        // that isn't part of `data.configMania`. We rebuild `data.configMania`
+        // from `availableManiaConfigs` + the preview config so that Note's
+        // state methods (reset/toNote/press/confirm) — which rely on
+        // NoteskinRuntimeHelper.getConfigForLane() — can find it. This also
+        // prunes any stale preview configs from previous preview sessions,
+        // and gets wiped on save (saveNoteskin overwrites configMania with
+        // availableManiaConfigs), so it doesn't leak into the file.
+        var inPreviewMode = state.currentManiaIndex >= state.availableManiaConfigs.length;
+        if (inPreviewMode) {
+            var previewCfg = state.currentConfig;
+            var freshConfigs = state.availableManiaConfigs.copy();
+            freshConfigs.push(previewCfg);
+            state.noteskinHandle.data.configMania = freshConfigs;
+            state.noteskinHandle.mania = freshConfigs.length; // points to previewCfg at the end
+        } else {
+            // Keep data.configMania in sync with availableManiaConfigs in case
+            // any configs were added/removed since loadNoteskin.
+            state.noteskinHandle.data.configMania = state.availableManiaConfigs.copy();
+            state.noteskinHandle.mania = state.maxReceptors;
+        }
+
+        state.strumline = new Strumline(
+            Std.int(pos.x), Std.int(pos.y),
+            state.noteskinHandle,
+            gap, scale, state.maxReceptors,
+            null
+        );
+
+        // Apply noteskin properties for the current mania config
+        var maniaIdx = state.currentManiaIndex < state.availableManiaConfigs.length ? state.currentManiaIndex : 0;
+        if (state.noteskinHandle.data.configMania != null && maniaIdx < state.noteskinHandle.data.configMania.length) {
+            state.strumline.applyNoteskinProperties(state.noteskinHandle, maniaIdx);
+        }
+
+        // Position each note using the editor's custom layout and apply the
+        // clip for the current edit state. Strumline's constructor already
+        // set `note.id = i` (the lane index) via `note.changeID(i)` inside
+        // set_length, so we deliberately do NOT call `note.changeID(clipIndex)`
+        // here — keeping `note.id = lane` is what lets Note.reset()/toNote()/
+        // press()/confirm() resolve the right clip via NoteskinRuntimeHelper.
+        for (i in 0...state.strumline.length) {
+            var notePos = getReceptorPosition(i, gap, offsetX, offsetY);
+            var note = state.strumline.receptors[i].note;
+            note.x = Std.int(notePos.x);
+            note.y = Std.int(notePos.y);
 
             var clipIndex = state.clipEditor.getClipIndexForReceptor(i);
             var clip = state.clipEditor.getClipForIndex(clipIndex);
             applyClipToNote(note, state.currentState, clip);
-            note.changeID(clipIndex);
 
             if (state.currentManiaIndex >= state.availableManiaConfigs.length) {
                 note.initialAlpha = 0.9;
             }
-
-            state.receptorSprites.push(note);
-            state.noteBuf.addElement(note);
         }
+
+        // Add all notes to the render buffer
+        state.strumline.draw(state.noteBuf);
 
         createSustains();
     }
 
-    function applyClipToNote(note:Note, editState:EditState, clip:NoteskinReceptorProperties) {
-        var basicClip = state.clipEditor.getBasicClipForState(clip, editState);
+    /** Apply clip data to a Note for the given edit state.
+        
+        For IDLE / COLOR / PRESS / CONFIRM, this calls the corresponding
+        Note state method (reset / toNote / press / confirm) so that the
+        note's own state machine — and by extension NoteskinRuntimeHelper —
+        is actually exercised by the editor, instead of being bypassed by
+        direct field writes. The state methods resolve the clip via
+        `note.id` (lane index) and `handle.mania` (current config), which
+        is exactly the same path gameplay uses.
 
+        The state-check methods (idle / isNote / pressed / confirmed) are
+        also called so they're utilized — they mirror the pattern in
+        Strumline.release(), where the check decides whether the state
+        transition is needed. We then call the transition unconditionally
+        so that clip EDITS always propagate visually, even when the note
+        was already in the target state (e.g. user is editing IDLE clips
+        and drags one — the note is already IDLE, but we still need to
+        re-apply the modified clip).
+
+        For HOLD_BODY / HOLD_TAIL, Note has no corresponding state method
+        (those clips live on the Sustain sprite, not the Note itself), so
+        we fall back to direct clip field writes for visual reference. */
+    function applyClipToNote(note:Note, editState:EditState, clip:NoteskinReceptorProperties) {
         var scale = state.currentConfig.scale;
 
-        note.clipX = basicClip.clipX;
-        note.clipY = basicClip.clipY;
-        note.clipWidth = basicClip.clipW;
-        note.clipHeight = basicClip.clipH;
-        note.clipPosX = 0;
-        note.clipPosY = 0;
-        note.clipSizeX = basicClip.clipW;
-        note.clipSizeY = basicClip.clipH;
-        note.w = basicClip.clipW;
-        note.h = basicClip.clipH;
-        note.ox = basicClip.offsX;
-        note.oy = basicClip.offsY;
+        switch (editState) {
+            case IDLE:
+                // Utilize idle() as the state check (Strumline.release pattern),
+                // then unconditionally reset() so clip edits propagate.
+                var _wasIdle:Bool = note.idle();
+                note.reset();
+            case COLOR:
+                var _wasNote:Bool = note.isNote();
+                note.toNote();
+            case PRESS:
+                var _wasPressed:Bool = note.pressed();
+                note.press();
+            case CONFIRM:
+                var _wasConfirmed:Bool = note.confirmed();
+                note.confirm();
+            case HOLD_BODY, HOLD_TAIL:
+                // No Note state method for hold clips — write fields directly.
+                var basicClip = state.clipEditor.getBasicClipForState(clip, editState);
+                note.clipX = basicClip.clipX;
+                note.clipY = basicClip.clipY;
+                note.clipWidth = basicClip.clipW;
+                note.clipHeight = basicClip.clipH;
+                note.clipSizeX = basicClip.clipW;
+                note.clipSizeY = basicClip.clipH;
+                note.w = basicClip.clipW;
+                note.h = basicClip.clipH;
+                note.ox = basicClip.offsX;
+                note.oy = basicClip.offsY;
+            default:
+                // No-op — keep whatever state the note is currently in.
+        }
+
+        // Note.applyClip() does not set `scale` (it's a separate varying
+        // property), so make sure the editor's per-config scale is applied
+        // regardless of which path we took above.
         note.scale = scale;
     }
 
@@ -2221,13 +2323,15 @@ private class NoteskinEditorRenderer {
     }
 
     function updateReceptorVisuals() {
+        if (state.strumline == null) return;
+
         var gap = state.currentConfig.gap != 0 ? state.currentConfig.gap : 112;
         var offsetX = state.currentConfig.offsetX;
         var offsetY = state.currentConfig.offsetY;
         var scale = state.currentConfig.scale;
 
-        for (i in 0...state.receptorSprites.length) {
-            var note = state.receptorSprites[i];
+        for (i in 0...state.strumline.length) {
+            var note = state.strumline.receptors[i].note;
 
             var clipIndex = state.clipEditor.getClipIndexForReceptor(i);
             var clip = state.clipEditor.getClipForIndex(clipIndex);
@@ -2235,7 +2339,15 @@ private class NoteskinEditorRenderer {
             var pos = getReceptorPosition(i, gap, offsetX, offsetY);
             note.x = Std.int(pos.x);
             note.y = Std.int(pos.y);
-            note.scale = scale;
+
+            // Keep `note.id = i` (lane index). The Strumline constructor
+            // already set this via `note.changeID(i)`, and we deliberately
+            // do NOT override it with `clipIndex` — Note.reset()/toNote()/
+            // press()/confirm() rely on `note.id` being the lane index so
+            // NoteskinRuntimeHelper can resolve the right per-state clip.
+            //
+            // (The clip pool index is still tracked locally via `clipIndex`
+            //  for grid/sustain lookups below.)
 
             if (state.spriteSheetMode && i == state.spritesheetSelectedIndex) {
                 var basicClip = state.clipEditor.getBasicClipForState(clip, state.currentState);
@@ -2243,16 +2355,16 @@ private class NoteskinEditorRenderer {
                 note.c = 0xFF66FFFF;
                 note.initialAlpha = 0.5;
 
-                // Show the full texture around the clip — clipX/Y becomes the clip's
-                // top-left minus the view offset, dimensions become the texture size.
+                // Spritesheet mode: override clip properties to show the full
+                // texture around the selected clip region.
                 note.clipX = basicClip.clipX - NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
                 note.clipY = basicClip.clipY - NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-                note.clipWidth = state.texture.width + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-                note.clipHeight = state.texture.height + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-                note.clipSizeX = state.texture.width + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-                note.clipSizeY = state.texture.height + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-                note.w = state.texture.width + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-                note.h = state.texture.height + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+                note.clipWidth = state.noteskinHandle.texture.width + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+                note.clipHeight = state.noteskinHandle.texture.height + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+                note.clipSizeX = state.noteskinHandle.texture.width + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+                note.clipSizeY = state.noteskinHandle.texture.height + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+                note.w = state.noteskinHandle.texture.width + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+                note.h = state.noteskinHandle.texture.height + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
                 note.ox = basicClip.offsX;
                 note.oy = basicClip.offsY;
                 note.x -= Math.round(NoteskinEditor.SPRITESHEET_VIEW_OFFSET * scale);
@@ -2264,10 +2376,12 @@ private class NoteskinEditorRenderer {
                     note.c = 0xFFFFFFFF;
                 }
                 note.initialAlpha = 1.0;
+                // Apply the clip via Note's state methods (reset/toNote/press/
+                // confirm) for IDLE/COLOR/PRESS/CONFIRM, or direct field
+                // writes for HOLD_BODY/HOLD_TAIL. See applyClipToNote.
                 applyClipToNote(note, state.currentState, clip);
             }
 
-            note.changeID(clipIndex);
             state.noteBuf.updateElement(note);
         }
 
@@ -2300,6 +2414,7 @@ private class NoteskinEditorRenderer {
                 Std.int(pos.x),
                 Std.int(pos.y),
                 100, 30,
+                state.noteskinHandle,
                 -90, 1.0, 1.0, 0
             );
 
@@ -3116,15 +3231,15 @@ private class NoteskinEditorInputHandler {
 
         if (key == KeyCode.ESCAPE) {
             if (state.showInstructionsPopup) {
-		        Main.current.playScrollSound();
+                        Main.current.playScrollSound();
                 state.ui.hideInstructionsPopup();
                 return;
             }
             if (state.spriteSheetMode) {
-        		Main.current.playScrollSound();
+                        Main.current.playScrollSound();
                 state.clipEditor.toggleSpritesheetMode();
             } else {
-		        Main.current.playCancelSound();
+                        Main.current.playCancelSound();
                 state.toggleEditor();
             }
             return;
@@ -3140,10 +3255,10 @@ private class NoteskinEditorInputHandler {
             switch (key) {
                 case KeyCode.R:
                     state.showSustainPreview = !state.showSustainPreview;
-		            Main.current.playScrollSound();
+                            Main.current.playScrollSound();
                     state.renderer.updateSustainVisuals();
                     trace('Sustain preview: ${state.showSustainPreview ? "ON" : "OFF"}');
-		            Main.current.playScrollSound();
+                            Main.current.playScrollSound();
                     state.ui.updateInstructionsText();
                     return;
                 default:
@@ -3156,7 +3271,7 @@ private class NoteskinEditorInputHandler {
                 state.globalScaleMode = !state.globalScaleMode;
                 var modeName = state.globalScaleMode ? "Scale" : "Offset";
                 trace('Global transform mode: $modeName');
-		        Main.current.playScrollSound();
+                        Main.current.playScrollSound();
                 state.ui.updateInstructionsText();
             }
             return;
@@ -3175,7 +3290,7 @@ private class NoteskinEditorInputHandler {
                 default:            -1;
             };
             if (newStateIdx != -1) {
-		        Main.current.playScrollSound();
+                        Main.current.playScrollSound();
                 state.renderer.updateReceptorState(newStateIdx);
                 trace('Edit state set to: ${state.clipEditor.getStateName(state.currentState)}');
                 return;
@@ -3194,7 +3309,7 @@ private class NoteskinEditorInputHandler {
                 default:            -1;
             };
             if (newModeIdx != -1) {
-		        Main.current.playScrollSound();
+                        Main.current.playScrollSound();
                 state.clipEditor.setEditMode(newModeIdx);
                 return;
             }
@@ -3207,16 +3322,16 @@ private class NoteskinEditorInputHandler {
                 }
             case KeyCode.SPACE:
                 if (!state.spriteSheetMode && state.editMode != GLOBAL_TRANSFORM) {
-		            Main.current.playCancelSound();
+                            Main.current.playCancelSound();
                     state.clipEditor.toggleAxisProperty();
                 }
             case KeyCode.UP:
                 if (state.isShiftPressed) {
-		            Main.current.playScrollSound();
+                            Main.current.playScrollSound();
                     state.maniaManager.switchMania(1);
                     state.clipEditor.checkInvalidClipIDPlace();
                 } else if (state.spriteSheetMode) {
-		            Main.current.playScrollSound();
+                            Main.current.playScrollSound();
                     state.clipEditor.selectPreviousIndex();
                 } else if (state.isCtrlPressed && state.editMode != CLIP_ID && state.editMode != GLOBAL_TRANSFORM) {
                     state.clipEditor.adjustAxisValue(-10, "Y");
@@ -3233,11 +3348,11 @@ private class NoteskinEditorInputHandler {
                 }
             case KeyCode.DOWN:
                 if (state.isShiftPressed) {
-		            Main.current.playScrollSound();
+                            Main.current.playScrollSound();
                     state.maniaManager.switchMania(-1);
                     state.clipEditor.checkInvalidClipIDPlace();
                 } else if (state.spriteSheetMode) {
-		            Main.current.playScrollSound();
+                            Main.current.playScrollSound();
                     state.clipEditor.selectNextIndex();
                 } else if (state.isCtrlPressed && state.editMode != CLIP_ID && state.editMode != GLOBAL_TRANSFORM) {
                     state.clipEditor.adjustAxisValue(10, "Y");
@@ -3255,7 +3370,7 @@ private class NoteskinEditorInputHandler {
                 }
             case KeyCode.LEFT:
                 if (state.showSustainPreview && state.isRPressed && !(state.isAltPressed || state.isShiftPressed || state.isCtrlPressed)) {
-		            Main.current.playScrollSound();
+                            Main.current.playScrollSound();
                     state.clipEditor.rotateCurrentClip(-1);
                 } else if (state.spriteSheetMode) {
                     state.clipEditor.selectPreviousIndex();
@@ -3279,7 +3394,7 @@ private class NoteskinEditorInputHandler {
                 }
             case KeyCode.RIGHT:
                 if (state.showSustainPreview && state.isRPressed &&!(state.isAltPressed || state.isShiftPressed || state.isCtrlPressed)) {
-		            Main.current.playScrollSound();
+                            Main.current.playScrollSound();
                     state.clipEditor.rotateCurrentClip(1);
                 } else if (state.spriteSheetMode) {
                     state.clipEditor.selectNextIndex();
@@ -3365,7 +3480,7 @@ private class NoteskinEditorInputHandler {
             case "mode_global":   state.clipEditor.setEditMode(4);
             // Sustain
             case "sustain_toggle":
-		        Main.current.playScrollSound();
+                        Main.current.playScrollSound();
                 state.showSustainPreview = !state.showSustainPreview;
                 state.renderer.updateSustainVisuals();
             // Sustain texture coord rotation (cycles TextureRotation enum on holdBody+holdTail)
@@ -3385,11 +3500,11 @@ private class NoteskinEditorInputHandler {
             case "gap_p10": state.maniaManager.adjustGap(10);
             // Mania
             case "mania_switch_p1":
-		        Main.current.playScrollSound();
+                        Main.current.playScrollSound();
                 state.maniaManager.switchMania(1);
                 state.clipEditor.checkInvalidClipIDPlace();
             case "mania_switch_m1":
-		        Main.current.playScrollSound();
+                        Main.current.playScrollSound();
                 state.maniaManager.switchMania(-1);
                 state.clipEditor.checkInvalidClipIDPlace();
             case "mania_create":
@@ -3399,7 +3514,7 @@ private class NoteskinEditorInputHandler {
                     state.maniaManager.createNewMania();
             // Toggles
             case "show_instructions":
-		        Main.current.playScrollSound();
+                        Main.current.playScrollSound();
                 state.showInstructionsPopup = true;
                 state.ui.updateInstructionsText();
             case "switch_state_idle":
@@ -3509,6 +3624,13 @@ private class NoteskinEditorInputHandler {
             return;
         }
 
+        // Switch noteskin button click — cycles to the next loaded noteskin
+        // in NoteskinManager and reloads the entire editor.
+        if (state.switchNoteskinButtonBox != null && hitTestBox(state.switchNoteskinButtonBox, mouseX, mouseY)) {
+            state.maniaManager.switchNoteskin();
+            return;
+        }
+
         // --- Preview mode vertical scroll (100px zones next to GUI panels) ---
         if (state.renderer.isPreviewMania() && !state.spriteSheetMode) {
             var hitIndex = state.clipEditor.findReceptorAt(mouseX, mouseY);
@@ -3588,7 +3710,7 @@ private class NoteskinEditorInputHandler {
             var modeName = state.globalScaleMode ? "Scale" : "Offset";
             trace('Global transform toggled to: $modeName');
             state.ui.updateInstructionsText();
-		    Main.current.playScrollSound();
+                    Main.current.playScrollSound();
             return;
         }
 
@@ -4008,6 +4130,7 @@ class NoteskinEditor {
     var ui:NoteskinEditorUI;
 
     // Editor state
+    var currentSkin:String = "default";
     var currentManiaIndex:Int = 3;
     var availableManiaConfigs:Array<NoteskinConfig> = [];
     var createManiaPopupActive:Bool = false;
@@ -4036,7 +4159,6 @@ class NoteskinEditor {
     // Rendering
     var noteBuf:Buffer<Note>;
     var noteProg:CustomProgram;
-    var texture:Texture;
 
     // Scrolling grid background (bottommost layer)
     var backgroundBuf:Buffer<GridBackgroundSprite>;
@@ -4055,7 +4177,7 @@ class NoteskinEditor {
     var gridProg:CustomProgram;
 
     // Receptor preview
-    var receptorSprites:Array<Note> = [];
+    var strumline:Strumline;
 
     // Sustain preview
     var sustainBuf:Buffer<Sustain>;
@@ -4071,9 +4193,14 @@ class NoteskinEditor {
     var importButtonText:Text = null;
     var importButton18KBox:RepeatSprite = null;
     var importButton18KText:Text = null;
+    // Switch noteskin button — cycles through NoteskinManager's loaded skins
+    // and reloads the entire editor (handle, data, receptors, sustains, GUI).
+    var switchNoteskinButtonBox:RepeatSprite = null;
+    var switchNoteskinButtonText:Text = null;
     static inline var SAVE_BUTTON_WIDTH:Int = 115;
     static inline var IMPORT_BUTTON_WIDTH:Int = 130;
     static inline var IMPORT_BUTTON_18K_WIDTH:Int = 150;
+    static inline var SWITCH_NOTESKIN_BUTTON_WIDTH:Int = 145;
     static inline var IMPORT_BUTTON_HEIGHT:Int = 30;
 
     // GUI panel buttons (created by NoteskinEditorUI)
@@ -4131,7 +4258,6 @@ class NoteskinEditor {
     static inline var SPRITESHEET_VIEW_OFFSET:Int = 300;
 
     // Texture name constants
-    static inline var NOTESKIN_TEXTURE_NAME:String = "noteskinTexV2";
     static inline var GRID_TEXTURE_NAME:String = "gridTexV2";
     static inline var RECEPTOR_GRID_TEXTURE_NAME:String = "receptorGridTexV2";
     static inline var GUI_TEXTURE_NAME:String = "guiButtonsTexV2";
@@ -4192,16 +4318,22 @@ class NoteskinEditor {
         if (saveButtonText != null) saveButtonText.alpha = alpha;
         if (importButtonText != null) importButtonText.alpha = alpha;
         if (importButton18KText != null) importButton18KText.alpha = alpha;
+        if (switchNoteskinButtonText != null) switchNoteskinButtonText.alpha = alpha;
     }
 
     public function toggleEditor() {
         showEditor = !showEditor;
         if (showEditor) {
-            if (texture == null) {
-                texture = renderer.getCombinedNoteskinTexture();
-                if (noteProg != null) {
-                    noteProg.setTexture(texture, NOTESKIN_TEXTURE_NAME, true);
-                }
+            if (noteskinHandle.texture == null) {
+                noteskinHandle.loadTexture();
+            }
+            if (noteProg != null) {
+                noteskinHandle.setProgramsTexture(noteProg);
+                noteskinHandle.setProgramsNoteShader(noteProg);
+            }
+            if (sustainProg != null) {
+                noteskinHandle.setProgramsTexture(sustainProg);
+                noteskinHandle.setProgramsSustainShader(sustainProg);
             }
 
             if (backgroundProg != null && !backgroundProg.isIn(view)) {
@@ -4213,15 +4345,12 @@ class NoteskinEditor {
             if (noteProg != null && !noteProg.isIn(view)) {
                 view.addProgram(noteProg);
             }
-
             if (sustainProg != null && !sustainProg.isIn(view)) {
                 view.addProgram(sustainProg);
             }
-
             if (gridProg != null && !gridProg.isIn(view)) {
                 view.addProgram(gridProg);
             }
-
             if (guiSpriteProg != null && !guiSpriteProg.isIn(view)) {
                 view.addProgram(guiSpriteProg);
             }
@@ -4245,7 +4374,24 @@ class NoteskinEditor {
             if (guiLeftBackground != null) guiLeftBackground.c.aF = 0.7;
             ui.updateInstructionsText();
 
-            setImportButtonLabelsAlpha(1);
+            // --- FIX: restore bottom-left button boxes ---
+            if (saveButtonBox != null) {
+                saveButtonBox.c.aF = 0.85;
+                gridBuf.updateElement(saveButtonBox);
+            }
+            if (importButtonBox != null) {
+                importButtonBox.c.aF = 0.85;
+                gridBuf.updateElement(importButtonBox);
+            }
+            if (importButton18KBox != null) {
+                importButton18KBox.c.aF = 0.85;
+                gridBuf.updateElement(importButton18KBox);
+            }
+            if (switchNoteskinButtonBox != null) {
+                switchNoteskinButtonBox.c.aF = 0.85;
+                gridBuf.updateElement(switchNoteskinButtonBox);
+            }
+            setImportButtonLabelsAlpha(1); // text labels are already visible
 
             trace('Noteskin Editor opened');
         } else {
@@ -4275,6 +4421,7 @@ class NoteskinEditor {
             if (saveButtonBox != null) saveButtonBox.c.aF = 0;
             if (importButtonBox != null) importButtonBox.c.aF = 0;
             if (importButton18KBox != null) importButton18KBox.c.aF = 0;
+            if (switchNoteskinButtonBox != null) switchNoteskinButtonBox.c.aF = 0;
             if (gridBuf != null) gridBuf.update();
 
             inputHandler.setCursor(MouseCursor.ARROW);
@@ -4365,6 +4512,14 @@ class NoteskinEditor {
             importButton18KText.removeProgram();
             importButton18KText = null;
         }
+        if (switchNoteskinButtonBox != null) {
+            gridBuf.removeElement(switchNoteskinButtonBox);
+            switchNoteskinButtonBox = null;
+        }
+        if (switchNoteskinButtonText != null) {
+            switchNoteskinButtonText.removeProgram();
+            switchNoteskinButtonText = null;
+        }
 
         if (noteProg != null && noteProg.isIn(display)) {
             display.removeProgram(noteProg);
@@ -4413,11 +4568,9 @@ class NoteskinEditor {
         }
         TextureSystem.pool.remove(BACKGROUND_TEXTURE_NAME);
 
-        if (receptorSprites != null) {
-            for (note in receptorSprites) {
-                note = null;
-            }
-            receptorSprites = null;
+        if (strumline != null) {
+            strumline.dispose();
+            strumline = null;
         }
         if (sustainSprites != null) {
             for (s in sustainSprites) {

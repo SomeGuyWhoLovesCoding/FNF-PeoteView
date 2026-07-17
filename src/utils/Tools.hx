@@ -41,7 +41,7 @@ class Tools {
 	static var iconGridMap:Map<String, Array<Int>> = [];
 
 	static function parseNoteskinData(path:String) {
-		while (Note.offsetAndSizeFrames.length != 0) Note.offsetAndSizeFrames.pop();
+/*		while (Note.offsetAndSizeFrames.length != 0) Note.offsetAndSizeFrames.pop();
 		//while (Sustain.offsets.length != 0) Sustain.offsets.pop();
 		//while (Sustain.tailPoints.length != 0) Sustain.tailPoints.pop();
 
@@ -92,7 +92,7 @@ class Tools {
 
 			//Sustain.offsets.push([x, y]);
 			//Sustain.tailPoints.push(w - t); // this will be removed
-		}
+		}*/
 	}
 
 	static function parseHealthBarConfig(path:String) {
