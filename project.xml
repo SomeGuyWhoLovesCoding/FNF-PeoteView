@@ -39,14 +39,13 @@
 	<haxedef name="HXCPP_GC_BIG_BLOCKS" />
 
 	<!-- Latency-sensitive settings for funkin' view -->
-	<haxedef name="HX_MULTI_THREAD_MARKING" unless="debug" />
 	<haxedef name="HXCPP_GC_DYNAMIC_SIZE" />
-	<haxedef name="HXCPP_GC_GENERATIONAL" unless="debug" />
-	<haxedef name="HXCPP_FUTURE_GC" unless="debug" />
+	<haxedef name="HXCPP_GC_GENERATIONAL" unless="FV_PROFILE" />
+	<haxedef name="HXCPP_FUTURE_GC" unless="FV_PROFILE" />
 
 	<!-- Compile-time feature functionality dedicated to Funkin' View -->
 	<haxedef name="HXCPP_TRACY" if="FV_PROFILE" />
-	<haxedef name="HXCPP_TELEMETRY" if="FV_PROFILE" />
+	<haxedef name="HXCPP_TELEMETRY" />
 	<haxedef name="HXCPP_STACK_TRACE" if="debug" />
 	<haxedef name="HXCPP_STACK_LINE" if="debug" />
 	<haxedef name="HXCPP_TRACY_ON_DEMAND" if="FV_PROFILE" />
