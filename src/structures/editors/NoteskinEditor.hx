@@ -59,6 +59,7 @@ private enum abstract ConfirmationPopupType(Int) from Int to Int {
     var IMPORT_VANILLA;
     var IMPORT_LETTERED;
     var SWITCH_NOTESKIN;
+    var EXIT;
 }
 
 // ============================================================================
@@ -1333,6 +1334,7 @@ private class NoteskinEditorManiaManager {
             case IMPORT_VANILLA:   'Import Vanilla Atlas';
             case IMPORT_LETTERED:  'Import Lettered Atlas';
             case SWITCH_NOTESKIN:  'Switch Noteskin';
+            case EXIT:             'Exit Noteskin Editor';
             default:               'Confirm';
         }
     }
@@ -1352,6 +1354,7 @@ private class NoteskinEditorManiaManager {
             case IMPORT_VANILLA:   'Import Vanilla Atlas';
             case IMPORT_LETTERED:  'Import Lettered Atlas';
             case SWITCH_NOTESKIN:  'Switch Noteskin';
+            case EXIT:             'Exit Noteskin Editor';
             default:               '';
         }
 
@@ -1363,7 +1366,8 @@ private class NoteskinEditorManiaManager {
             case SAVE:             'Save Noteskin';
             case IMPORT_VANILLA:   'Import Vanilla Atlas';
             case IMPORT_LETTERED:  'Import Lettered Atlas';
-            case SWITCH_NOTESKIN:  'Import Lettered Atlas';
+            case SWITCH_NOTESKIN:  'Switch Noteskin';
+            case EXIT:             'Exit Noteskin Editor';
             default:               '';
         }
 
@@ -3427,18 +3431,20 @@ private class NoteskinEditorUI {
             case IMPORT_VANILLA:   "IMPORT VANILLA ATLAS";
             case IMPORT_LETTERED:  "IMPORT LETTERED ATLAS";
             case SWITCH_NOTESKIN:  "SWITCH NOTESKIN";
+            case EXIT:             'EXIT NOTESKIN EDITOR';
             default:               "CONFIRM";
         };
         var body = switch(state.confirmationPopupType) {
             case SAVE:             "with the current one.";
             case IMPORT_VANILLA:   "with one from a vanilla atlas.";
             case IMPORT_LETTERED:  "with one from a lettered atlas.";
-            case SWITCH_NOTESKIN:  "when loading the next noteskin.";
+            case SWITCH_NOTESKIN:  "loading the next noteskin.";
+            case EXIT:  "exiting.";
             default:               "";
         };
 
-        var popupText = titleColor + "=== " + title + " ===" + titleColor + '\nAre you sure? You\'ll possibly\n' +
-            (state.confirmationPopupType == SWITCH_NOTESKIN ? 'lose your current noteskin data' : 'overwrite your old noteskin data') + '\n$body' +
+        var popupText = titleColor + "=== " + title + " ===" + titleColor + '\nAre you sure? You will\n' +
+            (state.confirmationPopupType == SWITCH_NOTESKIN || state.confirmationPopupType == EXIT ? 'lose your noteskin data when' : 'overwrite your old noteskin data') + '\n$body' +
         "\n#M1#[ENTER] Confirm#M1#   #M3#[ESC] Cancel#M3#";
 
         NoteskinEditor.instructionsText.text = popupText;
@@ -3539,15 +3545,18 @@ private class NoteskinEditorInputHandler {
                 Main.current.playScrollSound();
                 state.clipEditor.toggleSpritesheetMode();
             } else {
-                        Main.current.playCancelSound();
+                Main.current.playCancelSound();
                 state.toggleEditor();
             }
             return;
         }
 
         if (key == KeyCode.BACKSPACE) {
-            Main.current.playCancelSound();
-            Main.switchState(EDITOR_MENU);
+            Main.current.playScrollSound();
+            if (state.confirmationPopupType == EXIT)
+                state.maniaManager.cancelConfirmationPopup();
+            else
+                state.maniaManager.openConfirmationPopup(EXIT);
             return;
         }
 
@@ -3625,7 +3634,7 @@ private class NoteskinEditorInputHandler {
                 }
             case KeyCode.SPACE:
                 if (!state.spriteSheetMode && state.editMode != GLOBAL_TRANSFORM) {
-                            Main.current.playCancelSound();
+                    Main.current.playCancelSound();
                     state.clipEditor.toggleAxisProperty();
                 }
             case KeyCode.UP:
