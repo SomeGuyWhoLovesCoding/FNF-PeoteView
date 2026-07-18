@@ -1346,6 +1346,7 @@ private class NoteskinEditorManiaManager {
             case IMPORT_VANILLA:   importFromAtlas();
             case IMPORT_LETTERED:  importFromAtlas18K();
             case SWITCH_NOTESKIN:  switchNoteskin();
+            case EXIT:  Main.switchState(EDITOR_MENU);
             default:
         }
 
