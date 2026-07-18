@@ -165,6 +165,7 @@ class NoteskinHandle {
             // DEFAULT_DATA template (deep-copied so callers can mutate safely).
             trace('NoteskinHandle: failed to load data.json at "$path" ($e); falling back to DEFAULT_DATA');
             data = defaultData();
+            File.saveContent(folder, Json.stringify(data));
             return;
         }
 
