@@ -43,6 +43,9 @@ class FreeplayMenu {
 	function new() {
 		freeplayScreen = new FreeplayScreen(this, 'chapter1');
 
+		// Pre-warm all addPrograms so the first open() is instant.
+		freeplayScreen.preWarm();
+
 		actions = [
 			Controls.Action.UI_UP => { action: up },
 			Controls.Action.UI_DOWN => { action: down },

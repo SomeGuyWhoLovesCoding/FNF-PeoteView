@@ -275,7 +275,7 @@ class Main extends Application
 			EditorMenu.preInit(middleDisplay);
 
 			trace("4.b");
-			NoteskinEditor.preInit(middleDisplay);
+			NoteskinEditor.preInit(middleDisplay, bottomDisplay);
 
 			trace("5");
 			switchState(MAIN_MENU);

@@ -104,6 +104,33 @@ class FreeplayScreen implements IAlphabetScrollHost {
 
 		disposed = false;
 	}
+
+	/**
+		Pre-warm all programs (alphabet + song icons) so the first open()
+		adds them with zero stall. Call once after display is initialized.
+	**/
+	function preWarm() {
+		if (display == null) return;
+
+		// Do a full reload to create alphabet, song icons buffer/program, and
+		// populate icon elements — this is where all the heavy allocation lives.
+		reload('chapter1');
+
+		// Pre-warm every first-time addProgram call (shader compilation).
+		addPrograms();
+
+		// Immediately remove everything so the screen appears hidden.
+		shutDown();
+
+		// Null alphabet so the next reload() takes the fresh-creation path
+		// (shutDown leaves it disposed but non-null).
+		alphabet = null;
+
+		// Clean instance data but keep static buffers/programs alive.
+		songsAvailable = [];
+		songIconGroup = [];
+		disposed = true;
+	}
 	
 	function clearSongIcons() {
 		// Remove all existing icons from buffer

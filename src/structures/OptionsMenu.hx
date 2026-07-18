@@ -41,6 +41,9 @@ class OptionsMenu {
 
 			var tex = TextureSystem.getTexture("optionsMenuSheet");
 			OptionsSprite.init(optionsProg, "optionsMenuSheet", tex);
+			
+			display.addProgram(optionsProg);
+			display.removeProgram(optionsProg);
 		}
 	}
 

@@ -246,9 +246,9 @@ class NoteskinHandle {
             // buckets are too loose a match. Pass it through to peote-view
             // anyway — it may still handle it (or reject with its own error,
             // which the try/catch below will surface).
-            trace('NoteskinHandle: WARNING — "$skinName" (${image.width}x${image.height}) is not close to any bucket; trying registerTextureData as-is');
+            //trace('NoteskinHandle: WARNING — "$skinName" (${image.width}x${image.height}) is not close to any bucket; trying registerTextureData as-is');
         } else if (bucket.w != image.width || bucket.h != image.height) {
-            trace('NoteskinHandle: close-fit resizing "$skinName" from ${image.width}x${image.height} to ${bucket.w}x${bucket.h}');
+            //trace('NoteskinHandle: close-fit resizing "$skinName" from ${image.width}x${image.height} to ${bucket.w}x${bucket.h}');
             image.resize(bucket.w, bucket.h);
         }
 

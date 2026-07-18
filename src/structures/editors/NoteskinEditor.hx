@@ -430,7 +430,6 @@ private class NoteskinEditorClipEditor {
                 while (state.noteskinData.clip.length <= idxArr[state.selectedIndex]
                        && state.noteskinData.clip.length < MAX_KEYS) {
                     state.noteskinData.clip.push(defaultClip());
-                    trace('Created new clip at index ${state.noteskinData.clip.length - 1}');
                 }
                 // Update maxReceptors if we're in preview mode.
                 if (state.currentManiaIndex == state.availableManiaConfigs.length) {
@@ -455,8 +454,6 @@ private class NoteskinEditorClipEditor {
         }
 
         state.renderer.updateReceptorVisuals();
-
-        trace('${getStateName(state.currentState)}.${state.selectedProperty} = ${getClipValue(basicClip)}');
         state.ui.updateInstructionsText();
     }
 
@@ -465,7 +462,6 @@ private class NoteskinEditorClipEditor {
         var properties = getPropertiesForMode(state.editMode);
         var currentIndex = properties.indexOf(state.selectedProperty);
         state.selectedProperty = properties[(currentIndex + 1) % properties.length];
-        trace('Editing property: ${state.selectedProperty}');
         state.ui.updateInstructionsText();
     }
 
@@ -516,7 +512,6 @@ private class NoteskinEditorClipEditor {
             state.selectedProperty = properties[0];
         }
 
-        trace('Editing property: ${state.selectedProperty}');
         state.ui.updateInstructionsText();
     }
 
@@ -549,7 +544,6 @@ private class NoteskinEditorClipEditor {
         if (newState < 0) newState = 5;
         if (newState >= 6) newState = 0;
         state.renderer.updateReceptorState(newState);
-        trace('State changed to: ${getStateName(state.currentState)}');
     }
 
     function toggleStateEqual(currentState:EditState) {
@@ -560,7 +554,6 @@ private class NoteskinEditorClipEditor {
         if (newState < 0) newState = 5;
         if (newState >= 6) newState = 0;
         state.renderer.updateReceptorState(currentState);
-        trace('State changed to: ${getStateName(state.currentState)}');
     }
 
     function getStateName(editState:EditState):String {
@@ -607,7 +600,6 @@ private class NoteskinEditorClipEditor {
             case GLOBAL_TRANSFORM:
                 state.selectedProperty = "global";
         }
-        trace('Edit mode: ${getEditModeName(state.editMode)}');
         state.ui.updateInstructionsText();
     }
 
@@ -635,7 +627,6 @@ private class NoteskinEditorClipEditor {
             case GLOBAL_TRANSFORM:  state.selectedProperty = "global";
         }
 
-        trace('Edit mode set to: ${getEditModeName(state.editMode)}');
         state.ui.updateInstructionsText();
     }
 
@@ -701,7 +692,6 @@ private class NoteskinEditorClipEditor {
         updateClipInConfig(clipIndex, HOLD_BODY, clip.holdBody);
         updateClipInConfig(clipIndex, HOLD_TAIL, clip.holdTail);
         state.renderer.updateSustainVisuals();
-        trace('holdBody.rotation = holdTail.rotation = ${newRotation}\u00b0');
         state.ui.updateInstructionsText();
     }
 
@@ -729,7 +719,6 @@ private class NoteskinEditorClipEditor {
             }
         }
 
-        trace('sustain[${receptorIndex}].r = ${state.sustainRotations[receptorIndex]}\u00b0');
         state.ui.updateInstructionsText();
     }
 
@@ -775,10 +764,8 @@ private class NoteskinEditorClipEditor {
         state.spriteSheetMode = !state.spriteSheetMode;
         if (state.spriteSheetMode) {
             state.spritesheetSelectedIndex = state.selectedIndex;
-            trace('Spritesheet mode enabled - showing full texture for receptor ${state.selectedIndex + 1}');
         } else {
             state.spritesheetSelectedIndex = -1;
-            trace('Spritesheet mode disabled - returning to normal view');
             state.inputHandler.setCursor(MouseCursor.ARROW);
         }
         state.renderer.updateReceptorVisuals();
@@ -1020,7 +1007,6 @@ private class NoteskinEditorManiaManager {
         }
 
         Main.current.playScrollSound();
-        trace('SWITCH_NOTESKIN: "${state.currentSkinName}" -> "$nextSkin"');
 
         state.noteskinHandle = null;
 
@@ -1180,7 +1166,6 @@ private class NoteskinEditorManiaManager {
         var modeName = state.currentManiaIndex >= state.availableManiaConfigs.length
             ? "Preview All Clips"
             : '${state.maxReceptors}K';
-        trace('Switched to mania ${state.currentManiaIndex + 1}/${totalManias} - $modeName');
     }
 
     /** Remove the popup background overlay from the grid buffer. */
@@ -1209,8 +1194,6 @@ private class NoteskinEditorManiaManager {
         // Remove any stale popup backgrounds.
         removePopupBackground();
         removeInstructionsBackground();
-
-        trace('Create Mania popup opened - Enter number of keys');
     }
 
     function createDefaultNoteskin() {
@@ -1265,7 +1248,6 @@ private class NoteskinEditorManiaManager {
             state.renderer.createReceptors();
             state.renderer.updateReceptorVisuals();
             state.ui.updateInstructionsText();
-            trace('Created new mania with $keyCount keys');
         }
 
         Main.current.playCancelSound();
@@ -1320,7 +1302,6 @@ private class NoteskinEditorManiaManager {
                 state.renderer.createReceptors();
                 state.renderer.updateReceptorVisuals();
                 state.ui.updateInstructionsText();
-                trace('Auto-created mania with $i keys');
             }
         }
     }
@@ -1338,8 +1319,6 @@ private class NoteskinEditorManiaManager {
         }
         removePopupBackground();
         NoteskinEditor.gridBuf.update();
-
-        trace('Create Mania cancelled');
     }
 
     function openConfirmationPopup(type:ConfirmationPopupType) {
@@ -1356,7 +1335,6 @@ private class NoteskinEditorManiaManager {
             case SWITCH_NOTESKIN:  'Switch Noteskin';
             default:               'Confirm';
         }
-        trace('$label popup opened - awaiting confirmation');
     }
 
     function confirmConfirmationPopup() {
@@ -1376,7 +1354,6 @@ private class NoteskinEditorManiaManager {
             case SWITCH_NOTESKIN:  'Switch Noteskin';
             default:               '';
         }
-        trace('$label confirmed');
 
         closeConfirmationPopup(false);
     }
@@ -1393,7 +1370,6 @@ private class NoteskinEditorManiaManager {
         Main.current.playCancelSound();
 
         closeConfirmationPopup();
-        trace('$label cancelled');
     }
 
     function closeConfirmationPopup(playSound:Bool = false) {
@@ -1443,7 +1419,6 @@ private class NoteskinEditorManiaManager {
         state.renderer.createReceptors();
         state.renderer.updateReceptorVisuals();
         state.ui.updateInstructionsText();
-        trace('Gap adjusted to: ${state.currentConfig.gap}');
     }
 
     /** Import clip data from a vanilla FNF-style Sparrow/Starling texture atlas XML.
@@ -2373,7 +2348,7 @@ private class NoteskinEditorRenderer {
             // Note: programs are added to view in init() in the correct z-order.
 
             NoteskinEditor.guiTextureLoaded = true;
-            trace('GUI sprite buffer initialized (${guiTex.width}x${guiTex.height})');
+            //trace('GUI sprite buffer initialized (${guiTex.width}x${guiTex.height})');
         } catch (e) {
             trace('Failed to init GUI sprites: $e');
         }
@@ -2645,11 +2620,6 @@ private class NoteskinEditorRenderer {
         createReceptors();
         updateReceptorVisuals();
         state.ui.updateInstructionsText();
-        if (state.globalScaleMode) {
-            trace('Global Scale: ${state.currentConfig.scale}');
-        } else {
-            trace('Global Offset: (${state.currentConfig.offsetX}, ${state.currentConfig.offsetY})');
-        }
     }
 
     function updateReceptorVisuals() {
@@ -3593,7 +3563,6 @@ private class NoteskinEditorInputHandler {
                     state.showSustainPreview = !state.showSustainPreview;
                     Main.current.playScrollSound();
                     state.renderer.updateSustainVisuals();
-                    trace('Sustain preview: ${state.showSustainPreview ? "ON" : "OFF"}');
                     Main.current.playScrollSound();
                     state.ui.updateInstructionsText();
                     return;
@@ -3606,7 +3575,6 @@ private class NoteskinEditorInputHandler {
             if (state.editMode == GLOBAL_TRANSFORM) {
                 state.globalScaleMode = !state.globalScaleMode;
                 var modeName = state.globalScaleMode ? "Scale" : "Offset";
-                trace('Global transform mode: $modeName');
                 Main.current.playScrollSound();
                 state.ui.updateInstructionsText();
             }
@@ -3628,7 +3596,6 @@ private class NoteskinEditorInputHandler {
             if (newStateIdx != -1) {
                 Main.current.playScrollSound();
                 state.renderer.updateReceptorState(newStateIdx);
-                trace('Edit state set to: ${state.clipEditor.getStateName(state.currentState)}');
                 return;
             }
         }
@@ -4047,7 +4014,6 @@ private class NoteskinEditorInputHandler {
         if (state.editMode == GLOBAL_TRANSFORM && !hitAnyReceptor) {
             state.globalScaleMode = !state.globalScaleMode;
             var modeName = state.globalScaleMode ? "Scale" : "Offset";
-            trace('Global transform toggled to: $modeName');
             state.ui.updateInstructionsText();
             Main.current.playScrollSound();
             return;
@@ -4710,8 +4676,6 @@ class NoteskinEditor {
                 gridBuf.updateElement(switchNoteskinButtonBox);
             }
             setImportButtonLabelsAlpha(1); // text labels are already visible
-
-            trace('Noteskin Editor opened');
         } else {
             // Hide all GUI panel sprites and state text (keep programs in view
             // so the user can still see receptor positions and tweak them).
@@ -4750,8 +4714,6 @@ class NoteskinEditor {
             spriteSheetMode = false;
             spritesheetSelectedIndex = -1;
             showSustainPreview = false;
-
-            trace('Noteskin Editor closed');
         }
     }
 
@@ -4761,7 +4723,7 @@ class NoteskinEditor {
         Call once at startup — the statics survive dispose().
         No instance needed; display is used for Text pre-warming.
     **/
-    public static function preInit(display:Display) {
+    public static function preInit(display:CustomDisplay, view:CustomDisplay) {
         NoteskinEditorRenderer.initStaticBuffers();
 
         var handle = NoteskinManager.get("default");
@@ -4773,6 +4735,20 @@ class NoteskinEditor {
         NoteskinEditorRenderer.initStaticGUISprites();
         NoteskinEditorRenderer.initStaticGridSprites();
         NoteskinEditorRenderer.initStaticTexts(display);
+
+        // Pre-warm addProgram on the view so the first editor open is instant.
+        // Show then immediately hide — shaders compile on first addProgram.
+        NoteskinEditorRenderer.showPrograms(view);
+        NoteskinEditorRenderer.hidePrograms(view);
+
+        // Pre-warm Text add/remove cycle: constructor already added them,
+        // so remove now so the editor's first addProgram is a re-add (cheap).
+        if (NoteskinEditor.saveButtonText != null) NoteskinEditor.saveButtonText.removeProgram();
+        if (NoteskinEditor.importButtonText != null) NoteskinEditor.importButtonText.removeProgram();
+        if (NoteskinEditor.importButton18KText != null) NoteskinEditor.importButton18KText.removeProgram();
+        if (NoteskinEditor.switchNoteskinButtonText != null) NoteskinEditor.switchNoteskinButtonText.removeProgram();
+        if (NoteskinEditor.guiStateText != null) NoteskinEditor.guiStateText.removeProgram();
+        if (NoteskinEditor.instructionsText != null) NoteskinEditor.instructionsText.removeProgram();
     }
 
     public function dispose() {
@@ -4969,7 +4945,6 @@ class NoteskinEditor {
                     // EXIT spritesheet mode.
                     spriteSheetMode = false;
                     spritesheetSelectedIndex = -1;
-                    trace('Spritesheet mode disabled - returning to normal view');
                     inputHandler.setCursor(MouseCursor.ARROW);
                     renderer.updateReceptorVisuals();
                     ui.updateInstructionsText();

@@ -97,7 +97,7 @@ class NoteskinManager {
         var skinNames:Array<String> = [];
         for (dir in skinFolderFolders) {
             var subfolder = '$skinFolder/$dir';
-            trace(subfolder);
+            //trace(subfolder);
             if (subfolder.endsWith(".png") || subfolder.endsWith(".xml") || subfolder.endsWith(".txt")) continue;
             if (!FileSystem.isDirectory(subfolder)) continue;
 
@@ -130,7 +130,7 @@ class NoteskinManager {
             var h = currentLoadedNoteskins.get(name);
             if (h != null && h.loaded) loadedCount++;
         }
-        trace('NoteskinManager.init: $skinLen skin(s) — $loadedCount loaded, ${skinLen - loadedCount} failed');
+        /*trace('NoteskinManager.init: $skinLen skin(s) — $loadedCount loaded, ${skinLen - loadedCount} failed');
 
         trace('NoteskinManager.init: per-skin summary:');
         for (name in currentLoadedNoteskins.keys) {
@@ -138,7 +138,7 @@ class NoteskinManager {
             if (h != null) {
                 trace('  "$name" -> unit=${h.texUnit}, slot=${h.texSlot}, loaded=${h.loaded}');
             }
-        }
+        }*/
     }
 
     /** Find the smallest bucket that fits `imageW`×`imageH` AND is "close enough"
