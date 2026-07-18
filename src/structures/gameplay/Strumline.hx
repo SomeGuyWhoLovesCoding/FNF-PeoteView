@@ -50,12 +50,18 @@ class Strumline {
 
 	inline function set_noteskinHandle(handle:NoteskinHandle) {
 		noteskinHandle = handle;
+		var scale = this.scale; // use current scale
 
 		for (i in 0...length) {
 			var receptor = receptors[i];
 			receptor.note.handle = handle;
 			receptor.note.changeID(i);
 			receptor.note.reset();
+
+			// --- new: cache idle clip dimensions ---
+			var idleClip = NoteskinRuntimeHelper.getIdleClip(handle, i);
+			receptor.sustainPivotX = Std.int(idleClip.clipW * scale * 0.5);
+			receptor.sustainPivotY = Std.int(idleClip.clipH * scale * 0.5);
 		}
 
 		return handle;
@@ -64,7 +70,12 @@ class Strumline {
 	function set_scale(value:Float) {
 		if (value != scale) {
 			for (i in 0...length) {
-				receptors[i].note.scale = value;
+				var receptor = receptors[i];
+				receptor.note.scale = value;
+
+				var idleClip = NoteskinRuntimeHelper.getIdleClip(noteskinHandle, i);
+				receptor.sustainPivotX = Std.int(idleClip.clipW * scale);
+				receptor.sustainPivotY = Std.int(idleClip.clipH * scale);
 			}
 		}
 		return scale = value;
@@ -104,9 +115,9 @@ class Strumline {
 		this.length = length;
 		this.x = x;
 		this.y = y;
-		this.scale = scale;
 		this.gap = gap;
 		this.noteskinHandle = noteskinHandle;
+		this.scale = scale;
 	}
 
 	function applyNoteskinProperties(handle:NoteskinHandle, mania:Int) {
@@ -114,7 +125,8 @@ class Strumline {
 		this.offsetX = cfgM.offsetX;
 		this.offsetY = cfgM.offsetY;
 		this.gap = cfgM.gap;
-		//this.length = mania+1; please, for the love of god, do not do this
+		this.scale = cfgM.scale;
+		this.length = mania;
 	}
 
 	function draw(buf:Buffer<Note>) {
@@ -132,13 +144,6 @@ class Strumline {
 		if (noteToHit != null && !File.getJudgement(noteIndex)) {
 			var pf = parent.parent;
 			var type = noteToHit.type;
-
-			var noteTypeCall:Int->Int->Bool->Void = parent.noteTypeFunctionalityPre[type];
-			var noteTypeCallExists = noteTypeCall != null;
-
-			if (noteTypeCallExists) {
-				noteTypeCall(index, type, false);
-			}
 
 			if (!note.confirmed()) {
 				note.confirm();

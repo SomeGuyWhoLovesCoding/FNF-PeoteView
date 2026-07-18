@@ -592,8 +592,6 @@ class PlayField {
 
 		var lane = note.type;
 
-		if (noteSystem.noteTypeFunctionalityPre[note.type] != null) lane = 1;
-
 		var index = 1 + lane;
 		if (Chart.header.voicesDirs.length > 1) index = 1;
 		if (index > 0 && index <= Mixer.trackCount) Mixer.changeTrackVolume(index, 1);
@@ -678,7 +676,6 @@ class PlayField {
 		}
 
 		var lane = note.type;
-		if (noteSystem.noteTypeFunctionalityPre[note.type] != null) lane = 1;
 
 		var index = 1 + lane;
 		if (Chart.header.voicesDirs.length > 1) index = 1;
@@ -707,7 +704,6 @@ class PlayField {
 		#end
 
 		var lane = note.type;
-		if (noteSystem.noteTypeFunctionalityPre[note.type] != null) lane = 1;
 
 		if (noteSystem != null && noteSystem.strumlines[lane].confirmed(note.index)) return;
 

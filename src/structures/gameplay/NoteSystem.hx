@@ -39,6 +39,15 @@ class NoteSystem {
 	static var NOTE_HOLD_TIME_FAR_FACTOR = 4.0;
 
 	static function init() {
+        if (NoteskinManager.textureCache == null) {
+            NoteskinManager.init();
+        }
+
+        typeToHandle = [for (_ in 0...1 << 8) NoteskinManager.get("default")];
+		var handle = typeToHandle[0];
+
+        handle.loadTexture();
+
 		if (notesBuf == null) {
 			notesBuf = new Buffer<Note>(16, 16, true);
 		}
@@ -46,6 +55,8 @@ class NoteSystem {
 		if (notesProg == null) {
 			notesProg = new CustomProgram(notesBuf);
 			Note.init(notesProg);
+            handle.setProgramsTexture(notesProg);
+            handle.setProgramsNoteShader(notesProg);
 		}
 
 		if (sustainsBuf == null) {
@@ -55,6 +66,8 @@ class NoteSystem {
 		if (sustainProg == null) {
 			sustainProg = new CustomProgram(sustainsBuf);
 			Sustain.init(sustainProg);
+            handle.setProgramsTexture(sustainProg);
+            handle.setProgramsNoteShader(sustainProg);
 		}
 	}
 
@@ -64,14 +77,11 @@ class NoteSystem {
 	var notePool(default, null):NotePool;
 	var virtualNoteBuffer(default, null):NoteVB;
 
-	var noteTypeFunctionalityPre(default, null):Array<Int->Int->Bool->Void>;
+    static var typeToHandle:Array<NoteskinHandle> = [];
 
 	var parent(default, null):PlayField;
 
 	function new(parent:PlayField) {
-		noteTypeFunctionalityPre = [];
-		noteTypeFunctionalityPre.resize(1 << 7);
-
 		this.parent = parent;
 
 		var display = parent.display;
@@ -281,14 +291,7 @@ class NoteSystem {
 		var duration = note.duration;
 		var position = note.position;
 
-		var noteTypeCall:Int->Int->Bool->Void = noteTypeFunctionalityPre[note.type];
-		var noteTypeCallExists = noteTypeCall != null;
-
-		if (!noteTypeCallExists) {
-			lane = note.type % strumlines.length;
-		} else {
-			lane = 1;
-		}
+		lane = note.type % strumlines.length;
 
 		var strumline = strumlines[lane];
 		var receptor = strumline.receptors[index];
@@ -356,9 +359,6 @@ class NoteSystem {
 					File.setJudgement(_id, true);
 
 					var type = note.type;
-					if (noteTypeCallExists) {
-						noteTypeCall(index, type, true);
-					}
 
 					if (@:privateAccess parent.onNoteMiss.__listeners.length != 0)
 						parent.onNoteMiss.dispatch(note, noteSpr.notesInOne);
@@ -419,7 +419,7 @@ class NoteSystem {
 				if (sustainExists) {
 					receptor.sustainResolved = false;
 					receptor.sustainToHold_duration = duration;
-					sustainSpr.followNote(rec.x, rec.y, id);
+					sustainSpr.followNote(rec.x + receptor.sustainPivotX, rec.y + receptor.sustainPivotY, id);
 					sustainSpr.w = sustainSpr.length - leftover;
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
@@ -439,7 +439,7 @@ class NoteSystem {
 			sustainSpr.speed = parent.scrollSpeed;
 			sustainSpr.scale = rec.scale;
 			sustainSpr.length = sustainLength;
-			sustainSpr.followNote(noteSpr.Sx, noteSpr.Sy, id);
+			sustainSpr.followNote(noteSpr.Sx + receptor.sustainPivotX, noteSpr.Sy + receptor.sustainPivotY, id);
 			sustainSpr.diff = isHit ? 0 : Std.int(diff);
 
 			var sustainCompleted = pos > position + (MetaNote.floatToMetaNotePosition(sustainLength - SUSTAIN_TAIL_END));
@@ -451,7 +451,7 @@ class NoteSystem {
 				sustainSpr.w = sustainLength;
 			} else {
 				if (sustainSpr.w >= 0) {
-					sustainSpr.followNote(rec.x, rec.y, id);
+					sustainSpr.followNote(rec.x + receptor.sustainPivotX, rec.y + receptor.sustainPivotY, id);
 					sustainSpr.w = sustainLength - leftover;
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}

@@ -24,6 +24,9 @@ class Receptor {
     var confirmTimer:ReceptorTimer;
     var sustainActive:Bool;
     var sustainResolved:Bool;
+
+    var sustainPivotX:Int = 0;
+    var sustainPivotY:Int = 0;
     
     function new(note:Note) {
         this.note = note;

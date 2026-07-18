@@ -71,9 +71,7 @@ class NoteSpawner {
 		while (i < top) {
 			var n = File.getNote(i);
 
-			var lane = parent.noteTypeFunctionalityPre[n.type] != null
-				? 1
-				: (n.type % parent.strumlines.length);
+			var lane = n.type % parent.strumlines.length;
 			var receptor = parent.strumlines[lane].receptors[n.index];
 			var rec = receptor.note;
 
@@ -240,7 +238,8 @@ class NoteSpawner {
 						continue;
 					}
 
-					var note = new Note(virtualNote.Sx, virtualNote.Sy, 0, 0, NoteskinManager.get("default"),
+                	var handle = NoteSystem.typeToHandle[virtualNote.ref.type];
+					var note = new Note(virtualNote.Sx, virtualNote.Sy, 0, 0, handle,
 						virtualNote.scale, virtualNote.initialAlpha, virtualNote.addedAlpha);
 					note.diff = -virtualNote.diff;
 					note.scrollDirection = strumReceptor.scrollDirection;
@@ -282,8 +281,12 @@ class NoteSpawner {
 				for (k in 0...length) {
 					var virtualSustain:VirtualSustain = index[k];
 					if (virtualSustain == null) continue;
+
+                	var handle = NoteSystem.typeToHandle[virtualSustain.ref.ref.type];
+
 					var sustain = new Sustain(virtualSustain.Sx, virtualSustain.Sy, virtualSustain.w, virtualSustain.h,
-						NoteskinManager.get("default"), virtualSustain.r, virtualSustain.speed, virtualSustain.scale, id);
+						handle, virtualSustain.r, virtualSustain.speed, virtualSustain.scale, id);
+
 					sustain.length = virtualSustain.length;
 					sustain.c.aF = virtualSustain.alpha;
 					sustain.c.luminanceF = virtualSustain.alpha;
