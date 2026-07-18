@@ -27,14 +27,6 @@ class NoteskinManager {
         peote-view would also reject them, but with a less clear error. **/
     static var MAX_TEXTURE_DIMENSION:Int = 4096;
 
-    // --- Bucket configs ---
-    // POT buckets (square power-of-two sizes) use powerOfTwo:true.
-    // NPOT buckets (off-square or non-POT sizes) use powerOfTwo:false.
-    // Both share maxTextureSize:4096 — the master texture for any bucket
-    // won't exceed 4096 in either dimension.
-    static var textureConfigPOT:TextureConfig = { maxTextureSize: 4096, powerOfTwo: true };
-    static var textureConfig:TextureConfig    = { maxTextureSize: 4096, powerOfTwo: false };
-
     /** Bucket size table. MUST match the order of entries passed to
         `new TextureCache([...])` in init() — `findClosestFitBucket` and
         `setBucketUniforms` (if added later for the mat4 sustain-shader trick)
@@ -74,28 +66,15 @@ class NoteskinManager {
             disposeAll();
         }
 
-        // Build the cache with 13 buckets. Slot counts are capped to what
-        // fits in ONE 4096x4096 master texture per bucket — otherwise
-        // peote-view's TextureCache creates multiple Textures per bucket
-        // type to satisfy the slot request, and each Texture burns a
-        // texture unit. With these counts, each bucket = 1 Texture = 1
-        // unit → 13 units total.
-        //
-        // Slot-count math (slots that fit in a 4096x4096 master per bucket):
-        //   256x256  → 16x16 = 256 (cap at 16)
-        //   256x512  → 16x8  = 128 (cap at 16)
-        //   512x256  → 8x16  = 128 (cap at 16)
-        //   512x512  → 8x8   = 64  (cap at 16)
-        //   512x1024 → 8x4   = 32  (cap at 16)
-        //   1024x512 → 4x8   = 32  (cap at 16)
-        //   1024x1024→ 4x4   = 16  (cap at 16)
-        //   1024x2048→ 4x2   = 8   (cap at 8)
-        //   2048x1024→ 2x4   = 8   (cap at 8)
-        //   2048x2048→ 2x2   = 4   (cap at 4)
-        //   2048x4096→ 2x1   = 2   (cap at 2)
-        //   4096x2048→ 1x2   = 2   (cap at 2)
-        //   4096x4096→ 1x1   = 1   (cap at 1)
-        // Total slots: 16*7 + 8*2 + 4 + 2*2 + 1 = 137 noteskins across 13 units.
+        // --- Bucket configs ---
+        // POT buckets (square power-of-two sizes) use powerOfTwo:true.
+        // NPOT buckets (off-square or non-POT sizes) use powerOfTwo:false.
+        // Both share maxTextureSize:4096 — the master texture for any bucket
+        // won't exceed 4096 in either dimension.
+        var aaSetting = SaveData.state.graphics.antialiasing;
+        var textureConfigPOT:TextureConfig = { maxTextureSize: 4096, powerOfTwo: true, smoothExpand: aaSetting, smoothShrink: aaSetting };
+        var textureConfig:TextureConfig    = { maxTextureSize: 4096, powerOfTwo: false, smoothExpand: aaSetting, smoothShrink: aaSetting };
+
         textureCache = new TextureCache([
             { width: 256,  height: 256,  slots: 16, config: textureConfigPOT },
             { width: 256,  height: 512,  slots: 16, config: textureConfig    },

@@ -129,7 +129,7 @@ class MainMenu {
 			Controls.Action.UI_LEFT => { action: left },
 			Controls.Action.UI_RIGHT => { action: right },
 			Controls.Action.UI_ACCEPT => { action: accept },
-			Controls.Action.GAME_DEBUG => { action: goToNoteskinDebug }
+			Controls.Action.GAME_DEBUG => { action: goToEditors }
 		];
 	}
 
@@ -236,6 +236,11 @@ class MainMenu {
 				Main.current.optionsMenu.open();
 				removeEvents();
 				Main.current.playScrollSound();
+			case 'editors': // EDITORS
+				selectedAlpha = 0.0;
+				removeEvents();
+				Main.switchState(EDITOR_MENU);
+				Main.current.playScrollSound();
 			case 'backspace to exit':
 				// TODO: ONCE TITLE SCREEN IS DONE ENOUGH, I WILL REPLACE THIS
 				Sys.exit(0);
@@ -271,9 +276,10 @@ class MainMenu {
 		}
 	}
 
-	function goToNoteskinDebug(isDown:Bool, param:Int) {
+	function goToEditors(isDown:Bool, param:Int) {
 		if (!isDown) return;
-		Main.switchState(NOTE_VIEW);
+		removeEvents();
+		Main.switchState(EDITOR_MENU);
 	}
 
 	function addEvents() {

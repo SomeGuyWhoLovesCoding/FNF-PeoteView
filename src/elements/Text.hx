@@ -218,47 +218,84 @@ class Text {
 
 	private function wrapText(str:String):Array<String> {
 		var lines:Array<String> = [];
-		
-		if (!multiline) {
-			// Even when not multiline, we should strip newlines
-			return [str.replace("\n", " ")];
+		var len = str.length;
+		if (len == 0) {
+			lines.push("");
+			return lines;
 		}
-		
-		// First, split by explicit newlines
-		var newlineSegments = str.split("\n");
-		
-		for (segment in newlineSegments) {
-			if (maxWidth <= 0) {
-				// No width limit, just add the segment as-is
-				if (segment.length > 0 || lines.length > 0 || segment == newlineSegments[0]) {
-					lines.push(segment);
+
+		if (!multiline) {
+			// Fast newline-to-space replacement without split allocation
+			var buf = new StringBuf();
+			for (i in 0...len) {
+				var c = str.charCodeAt(i);
+				buf.addChar(c == 10 ? 32 : c);
+			}
+			lines.push(buf.toString());
+			return lines;
+		}
+
+		if (maxWidth <= 0) {
+			// Fast newline split using index tracking (no split array allocation)
+			var lastIdx = 0;
+			for (i in 0...len) {
+				if (str.charCodeAt(i) == 10) {
+					lines.push(str.substr(lastIdx, i - lastIdx));
+					lastIdx = i + 1;
 				}
+			}
+			lines.push(str.substr(lastIdx));
+			return lines;
+		}
+
+		// Word wrap with maxWidth (single pass, minimal allocation)
+		var quarterScale = scale / 2;
+		var lineStart = 0;
+		var currentLineWidth:Float = 0;
+		var lastSpaceIndex:Int = -1;
+		var lastSpaceWidth:Float = 0;
+
+		for (i in 0...len) {
+			var c = str.charCodeAt(i);
+			
+			if (c == 10) {
+				lines.push(str.substr(lineStart, i - lineStart));
+				lineStart = i + 1;
+				currentLineWidth = 0;
+				lastSpaceIndex = -1;
+				lastSpaceWidth = 0;
+				continue;
+			}
+
+			var data = parsedTextAtlasData[c];
+			var charWidth = (data != null ? data[6] : 0.0) * quarterScale;
+			var totalCharWidth = charWidth + (charWidth * spacerPercent);
+
+			if (c == 32) {
+				lastSpaceIndex = i;
+				lastSpaceWidth = currentLineWidth;
+			}
+
+			if (currentLineWidth + totalCharWidth > maxWidth && lastSpaceIndex != -1) {
+				// Wrap at last space
+				lines.push(str.substr(lineStart, lastSpaceIndex - lineStart));
+				lineStart = lastSpaceIndex + 1;
+				currentLineWidth = lastSpaceWidth + totalCharWidth;
+				lastSpaceIndex = -1;
+				lastSpaceWidth = 0;
 			} else {
-				// Word wrap within maxWidth
-				var words = segment.split(" ");
-				var currentLine = "";
-				var quarterScale = scale / 2;
-				
-				for (i in 0...words.length) {
-					var word = words[i];
-					var testLine = currentLine.length == 0 ? word : currentLine + " " + word;
-					var testWidth = calculateTextWidth(testLine, quarterScale);
-					
-					if (testWidth > maxWidth && currentLine.length > 0) {
-						lines.push(currentLine);
-						currentLine = word;
-					} else {
-						currentLine = testLine;
-					}
-				}
-				
-				if (currentLine.length > 0 || segment.length == 0) {
-					lines.push(currentLine);
-				}
+				currentLineWidth += totalCharWidth;
 			}
 		}
 		
-		return lines.length == 0 ? (multiline ? [""] : [str]) : lines;
+		// Push remaining text
+		if (lineStart < len || (len > 0 && str.charCodeAt(len - 1) == 10)) {
+			lines.push(str.substr(lineStart));
+		} else if (lines.length == 0) {
+			lines.push(str);
+		}
+
+		return lines;
 	}
 
 	private function calculateTextWidth(line:String, quarterScale:Float):Float {
@@ -295,7 +332,7 @@ class Text {
 		return maxHeight + lineSpacing;
 	}
 
-	// ── set_text (updated with multiline support) ─────────────────────────────
+	// ── set_text (updated with pre-allocation and combined dimension pass) ────
 
 	function set_text(raw:String) {
 		if (!_dirty) if (raw == _rawText) return text;
@@ -307,42 +344,56 @@ class Text {
 		var str = parsed.clean;
 		colorSpans = parsed.spans;
 		
-		// Handle multiline - this now respects \n from parseMarkup
-		if (multiline) {
-			_lines = wrapText(str);
-		} else {
-			// When not multiline, replace newlines with spaces
-			_lines = [str.replace("\n", " ")];
-		}
+		// Handle multiline
+		_lines = multiline ? wrapText(str) : [str.replace("\n", " ")];
 		
-		// Calculate line widths and total dimensions
 		var quarterScale = scale / 2;
 		_lineWidths = [];
 		var maxLineWidth:Float = 0;
 		var totalHeight:Float = 0;
-		var lineHeight = calculateLineHeight();
-		
+		var lineHeight:Float = 0;
+		var maxHeightInFont:Float = 0;
+
+		// Single pass for widths and max height (avoids iterating text multiple times)
 		for (lineIdx in 0..._lines.length) {
 			var line = _lines[lineIdx];
-			var lineWidth = calculateTextWidth(line, quarterScale);
+			var lineWidth:Float = 0;
+			
+			for (i in 0...line.length) {
+				var data = parsedTextAtlasData[line.charCodeAt(i)];
+				if (data != null) {
+					var charWidth = data[6] * quarterScale;
+					lineWidth += charWidth + (charWidth * spacerPercent);
+					
+					if (data[3] > maxHeightInFont) {
+						maxHeightInFont = data[3];
+					}
+				}
+			}
+			
 			_lineWidths.push(lineWidth);
 			if (lineWidth > maxLineWidth) maxLineWidth = lineWidth;
 		}
 		
-		// Total height = sum of all line heights
+		lineHeight = (maxHeightInFont * quarterScale) + lineSpacing;
 		totalHeight = _lines.length * lineHeight;
 		
 		// Store actual dimensions
-		width = maxLineWidth;  // Width is the maximum line width
-		height = totalHeight;   // Height is total height of all lines
+		width = maxLineWidth;
+		height = totalHeight;
 		
-		// Hide previously-active sprites
-		var oldCount = _activeCount;
+		// Count total characters to render
 		var totalChars = 0;
 		for (line in _lines) totalChars += line.length;
 		
-		if (totalChars < oldCount) {
-			for (ci in totalChars...oldCount) {
+		// PRE-ALLOCATE: Ensure buffer has capacity to prevent runtime 'new' allocations mid-loop
+		while (buffer.length < totalChars) {
+			buffer.addElement(new TextCharSprite()); 
+		}
+		
+		// Hide previously-active excess sprites
+		if (totalChars < _activeCount) {
+			for (ci in totalChars..._activeCount) {
 				var spr = buffer.getElement(ci);
 				if (spr == null) continue;
 				spr.x = spr.y = -999999999;
@@ -356,35 +407,38 @@ class Text {
 		// Render each character with line positioning
 		var globalCharIdx = 0;
 		var spanIdx = 0;
-		
-		// Track character position within the original raw text for color spans
 		var rawCharIdx = 0;
+		var originalTextLen = str.length;
 		
 		for (lineIdx in 0..._lines.length) {
 			var line = _lines[lineIdx];
 			var lineWidth = _lineWidths[lineIdx];
 			
-			// Calculate X offset based on alignment - using actual line width, not max width
+			// Calculate X offset based on alignment
 			var xOffset = switch (alignment) {
 				case LEFT: 0.0;
-				case CENTER: (maxLineWidth - lineWidth) / 2;
+				case CENTER: (maxLineWidth - lineWidth) * 0.5;
 				case RIGHT: maxLineWidth - lineWidth;
 			}
 			
 			var advanceX = xOffset;
 			var lineY = y + (lineIdx * lineHeight);
 			
-			for (ci in 0...line.length) {
-				var code = line.charCodeAt(ci);
+			for (i in 0...line.length) {
+				var code = line.charCodeAt(i);
 				var data = parsedTextAtlasData[code];
+				if (data == null) {
+					rawCharIdx++;
+					continue; // Skip unmapped chars safely
+				}
 				
-				var spr:TextCharSprite = globalCharIdx < buffer.length
-					? buffer.getElement(globalCharIdx)
-					: buffer.addElement(new TextCharSprite());
+				// Safe fetch: we guaranteed capacity above
+				var spr:TextCharSprite = buffer.getElement(globalCharIdx);
 				
 				// Resolve style based on position in original text
-				while (spanIdx < colorSpans.length && colorSpans[spanIdx].end <= rawCharIdx)
+				while (spanIdx < colorSpans.length && colorSpans[spanIdx].end <= rawCharIdx) {
 					spanIdx++;
+				}
 				var span = (spanIdx < colorSpans.length && rawCharIdx >= colorSpans[spanIdx].start)
 					? colorSpans[spanIdx] : null;
 				var sc = span != null ? span.color : color;
@@ -393,8 +447,7 @@ class Text {
 				
 				// Apply spacer percentage to advance width
 				var baseAdvance = data[6] * quarterScale;
-				var spacerAmount = baseAdvance * spacerPercent;
-				var totalAdvance = baseAdvance + spacerAmount;
+				var totalAdvance = baseAdvance + (baseAdvance * spacerPercent);
 				
 				// Fill sprite
 				spr.clipX = data[0];
@@ -419,8 +472,7 @@ class Text {
 			}
 			
 			// Skip over newline characters in rawCharIdx for proper span tracking
-			var originalText = str;
-			while (rawCharIdx < originalText.length && originalText.charCodeAt(rawCharIdx) == 10) {
+			while (rawCharIdx < originalTextLen && str.charCodeAt(rawCharIdx) == 10) {
 				rawCharIdx++;
 			}
 		}
@@ -559,16 +611,30 @@ class Text {
 		return {clean: clean.toString(), spans: spans};
 	}
 
-	private function matchMarkerAt(raw:String, i:Int):Int {
+	// ── Optimized Markup Matching (Allocation-Free) ───────────────────────────
+
+	@:privateAccess
+	private inline function matchMarkerAt(raw:String, i:Int):Int {
 		var best = -1;
 		var bestLen = 0;
+		var rawLen = raw.length;
+		
 		for (mi in 0...markerPairs.length) {
 			var m = markerPairs[mi].marker;
-			if (m.length <= bestLen) continue;
-			if (i + m.length > raw.length) continue;
-			if (raw.substr(i, m.length) == m) {
+			var len = m.length;
+			if (len <= bestLen || i + len > rawLen) continue;
+			
+			var match = true;
+			// Inline character comparison avoids substr allocation
+			for (j in 0...len) {
+				if (raw.charCodeAt(i + j) != m.charCodeAt(j)) {
+					match = false;
+					break;
+				}
+			}
+			if (match) {
 				best = mi;
-				bestLen = m.length;
+				bestLen = len;
 			}
 		}
 		return best;

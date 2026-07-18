@@ -3143,7 +3143,7 @@ private class NoteskinEditorUI {
             popupText += '#M2#${state.createManiaError}#M2#\n';
         }
 
-        popupText += "\n#M1#[ENTER] Confirm#M1#   #M3#[ESC] Cancel#M3#";
+        popupText += "\n#M1#[ENTER or TAP ON POPUP] Confirm#M1#\n#M3#[ESC or TAP OUT OF POPUP] Cancel#M3#";
 
         state.instructionsText.text = popupText;
         state.instructionsText.alignment = CENTER;
@@ -3199,7 +3199,7 @@ private class NoteskinEditorUI {
 
         var popupText = titleColor + "=== " + title + " ===" + titleColor + '\nAre you sure? You\'ll possibly\n' +
             (state.confirmationPopupType == SWITCH_NOTESKIN ? 'lose your current noteskin data' : 'overwrite your old noteskin data') + '\n$body' +
-        "\n#M1#[ENTER] Confirm#M1#   #M3#[ESC] Cancel#M3#";
+        "\n#M1#[ENTER or TAP ON POPUP] Confirm#M1#\n#M3#[ESC or TAP OUT OF POPUP] Cancel#M3#";
 
         state.instructionsText.text = popupText;
         state.instructionsText.alignment = CENTER;

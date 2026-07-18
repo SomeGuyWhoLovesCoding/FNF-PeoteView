@@ -16,6 +16,7 @@ private enum abstract StateSelection(Int) {
 	var GAMEPLAY;
 	var AWARDS;
 	var NOTE_VIEW;
+	var EDITOR_MENU;
 }
 
 /**
@@ -148,6 +149,10 @@ class Main extends Application
 				Sys.println('dispose the noteskin editor menu');
 				instance.noteskinEditor.dispose();
 				instance.noteskinEditor = null;
+			case EDITOR_MENU:
+				Sys.println('dispose the editor menu');
+				instance.editorMenu.dispose();
+				instance.editorMenu = null;
 			case NONE:
 		}
 
@@ -168,6 +173,10 @@ class Main extends Application
 				Sys.println('create the noteskin editor menu');
 				instance.noteskinEditor = new NoteskinEditor();
 				instance.noteskinEditor.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
+			case EDITOR_MENU:
+				Sys.println('create the editor menu');
+				instance.editorMenu = new EditorMenu();
+				instance.editorMenu.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
 			case NONE:
 		}
 
@@ -192,12 +201,14 @@ class Main extends Application
 	var optionsScreen:CustomDisplay;
 	var freeplayScreen:CustomDisplay;
 	var storyScreen:CustomDisplay;
+	var editorScreen:CustomDisplay;
 
 	// STATES
 	var currentState:StateSelection;
 	var mainMenu:MainMenu;
 	var playField:PlayField;
 	var noteskinEditor:NoteskinEditor;
+	var editorMenu:EditorMenu;
 
 	// MENUS
 	var optionsMenu(default, null):OptionsMenu;
@@ -259,6 +270,12 @@ class Main extends Application
 			trace("4");
 			StoryMenu.init(storyScreen);
 			storyMenu = new StoryMenu();
+
+			trace("4.a");
+			EditorMenu.preInit(middleDisplay);
+
+			trace("4.b");
+			//NoteskinEditor.preInit(middleDisplay);
 
 			trace("5");
 			switchState(MAIN_MENU);
@@ -333,6 +350,7 @@ class Main extends Application
 		optionsScreen = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
 		freeplayScreen = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
 		storyScreen = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
+		editorScreen = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
 		Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 	}
 
@@ -346,6 +364,7 @@ class Main extends Application
 		peoteView.addDisplay(optionsScreen);
 		peoteView.addDisplay(freeplayScreen);
 		peoteView.addDisplay(storyScreen);
+		peoteView.addDisplay(editorScreen);
 		Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 	}
 
@@ -390,6 +409,10 @@ class Main extends Application
 
 			if (noteskinEditor != null && !noteskinEditor.disposed) {
 				noteskinEditor.update(newDeltaTime);
+			}
+
+			if (editorMenu != null && !editorMenu.disposed) {
+				editorMenu.update(newDeltaTime);
 			}
 
 			if (optionsMenu.active) {
@@ -455,6 +478,7 @@ class Main extends Application
 		centerDisplayOnWindow(optionsScreen, w, h);
 		centerDisplayOnWindow(freeplayScreen, w, h);
 		centerDisplayOnWindow(storyScreen, w, h);
+		centerDisplayOnWindow(editorScreen, w, h);
 	}
 
 	function centerDisplayOnWindow(display:CustomDisplay, w:Int, h:Int) {
