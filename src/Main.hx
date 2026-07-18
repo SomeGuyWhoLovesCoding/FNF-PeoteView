@@ -275,7 +275,7 @@ class Main extends Application
 			EditorMenu.preInit(middleDisplay);
 
 			trace("4.b");
-			//NoteskinEditor.preInit(middleDisplay);
+			NoteskinEditor.preInit(middleDisplay);
 
 			trace("5");
 			switchState(MAIN_MENU);
@@ -296,6 +296,11 @@ class Main extends Application
 			});
 
 			_started = true;
+
+			var title = Application.current.window.title;
+			var titleLen = title.length;
+			Application.current.window.title = title.substring(0, titleLen - 13);
+			//Application.current.window.hidden = false;
 		}, 100);
 	}
 

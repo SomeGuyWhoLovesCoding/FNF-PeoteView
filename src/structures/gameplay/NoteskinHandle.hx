@@ -211,6 +211,7 @@ class NoteskinHandle {
         free slot of that bucket. Images > 4096x4096 throw — see
         NoteskinManager.MAX_TEXTURE_DIMENSION. **/
     function loadTexture():Void {
+        //trace("Loaded - true");
         if (loaded) return;
 
         var sheetPath = Paths.asset('$folder/${data.sparrowImg}');

@@ -722,9 +722,9 @@ private class NoteskinEditorClipEditor {
             var s = state.sustainSprites[receptorIndex];
             if (s != null) {
                 s.r = state.sustainRotations[receptorIndex];
-                if (state.sustainBuf != null) {
-                    state.sustainBuf.updateElement(s);
-                    state.sustainBuf.update();
+                if (NoteskinEditor.sustainBuf != null) {
+                    NoteskinEditor.sustainBuf.updateElement(s);
+                    NoteskinEditor.sustainBuf.update();
                 }
             }
         }
@@ -911,8 +911,8 @@ private class NoteskinEditorManiaManager {
                 // setMultiTexture snapshots slot state at bind time.
                 if (managerHandle.loaded && !wasLoaded) {
                     trace('loadNoteskin: "$skinName" now loaded -> unit=${managerHandle.texUnit}, slot=${managerHandle.texSlot} — re-binding');
-                    if (state.noteProg != null) managerHandle.setProgramsTexture(state.noteProg);
-                    if (state.sustainProg != null) managerHandle.setProgramsTexture(state.sustainProg);
+                    if (NoteskinEditor.noteProg != null) managerHandle.setProgramsTexture(NoteskinEditor.noteProg);
+                    if (NoteskinEditor.sustainProg != null) managerHandle.setProgramsTexture(NoteskinEditor.sustainProg);
                 } else if (!managerHandle.loaded) {
                     trace('loadNoteskin: WARNING — "$skinName" STILL not loaded; will fall back to texUnit=0');
                 }
@@ -923,8 +923,8 @@ private class NoteskinEditorManiaManager {
                     state.noteskinHandle.loadTexture();
                 }
                 if (state.noteskinHandle.loaded) {
-                    if (state.noteProg != null) state.noteskinHandle.setProgramsTexture(state.noteProg);
-                    if (state.sustainProg != null) state.noteskinHandle.setProgramsTexture(state.sustainProg);
+                    if (NoteskinEditor.noteProg != null) state.noteskinHandle.setProgramsTexture(NoteskinEditor.noteProg);
+                    if (NoteskinEditor.sustainProg != null) state.noteskinHandle.setProgramsTexture(NoteskinEditor.sustainProg);
                 }
                 trace('loadNoteskin (unmanaged): "$skinName" -> unit=${state.noteskinHandle.texUnit}, slot=${state.noteskinHandle.texSlot}, loaded=${state.noteskinHandle.loaded}');
             }
@@ -1186,7 +1186,7 @@ private class NoteskinEditorManiaManager {
     /** Remove the popup background overlay from the grid buffer. */
     function removePopupBackground() {
         if (state.popupBackground != null) {
-            state.gridBuf.removeElement(state.popupBackground);
+            NoteskinEditor.gridBuf.removeElement(state.popupBackground);
             state.popupBackground = null;
         }
     }
@@ -1194,7 +1194,7 @@ private class NoteskinEditorManiaManager {
     /** Hide the instructions background overlay. */
     function removeInstructionsBackground() {
         if (state.instructionsBackground != null) {
-            state.gridBuf.removeElement(state.instructionsBackground);
+            NoteskinEditor.gridBuf.removeElement(state.instructionsBackground);
             state.instructionsBackground = null;
         }
     }
@@ -1275,13 +1275,13 @@ private class NoteskinEditorManiaManager {
         state.createManiaInput = "";
         state.createManiaError = "";
 
-        if (state.instructionsText != null) {
-            state.instructionsText.alpha = 0;
+        if (NoteskinEditor.instructionsText != null) {
+            NoteskinEditor.instructionsText.alpha = 0;
         }
         if (state.popupBackground != null) {
-            state.gridBuf.removeElement(state.popupBackground);
+            NoteskinEditor.gridBuf.removeElement(state.popupBackground);
             state.popupBackground = null;
-            state.gridBuf.update();
+            NoteskinEditor.gridBuf.update();
         }
 
         state.ui.updateInstructionsText();
@@ -1333,11 +1333,11 @@ private class NoteskinEditorManiaManager {
         Main.current.playScrollSound();
 
         // Hide the popup text and remove the popup overlay.
-        if (state.instructionsText != null) {
-            state.instructionsText.alpha = 0;
+        if (NoteskinEditor.instructionsText != null) {
+            NoteskinEditor.instructionsText.alpha = 0;
         }
         removePopupBackground();
-        state.gridBuf.update();
+        NoteskinEditor.gridBuf.update();
 
         trace('Create Mania cancelled');
     }
@@ -1399,11 +1399,11 @@ private class NoteskinEditorManiaManager {
     function closeConfirmationPopup(playSound:Bool = false) {
         state.confirmationPopupType = NONE;
 
-        if (state.instructionsText != null) {
-            state.instructionsText.alpha = 0;
+        if (NoteskinEditor.instructionsText != null) {
+            NoteskinEditor.instructionsText.alpha = 0;
         }
         removePopupBackground();
-        state.gridBuf.update();
+        NoteskinEditor.gridBuf.update();
 
         if (playSound)
             Main.current.playCancelSound();
@@ -1871,14 +1871,335 @@ private class NoteskinEditorRenderer {
         this.state = state;
     }
 
+    // ========================================================================
+    // Static cache-warming — call these from preInit() without an instance.
+    // ========================================================================
+
+    /** Create all static buffers, programs and the checkerboard texture.
+        Null-guarded so repeated calls are no-ops. */
+    static function initStaticBuffers() {
+        try {
+            if (NoteskinEditor.backgroundBuf == null) {
+                NoteskinEditor.backgroundBuf = new Buffer<GridBackgroundSprite>(4, 4, true);
+            }
+            if (NoteskinEditor.backgroundProg == null) {
+                NoteskinEditor.backgroundProg = new CustomProgram(NoteskinEditor.backgroundBuf);
+
+                var tileSize = GridBackgroundSprite.TILE_SIZE;
+                var darkR = 18, darkG = 18, darkB = 24;
+                var lightR = 35, lightG = 35, lightB = 48;
+                var gridBytes = haxe.io.Bytes.alloc(tileSize * tileSize * 4);
+                for (py in 0...tileSize) {
+                    for (px in 0...tileSize) {
+                        var idx = (py * tileSize + px) * 4;
+                        var isDark = ((px & 1) + (py & 1)) != 1;
+                        gridBytes.set(idx,     isDark ? darkR : lightR);
+                        gridBytes.set(idx + 1, isDark ? darkG : lightG);
+                        gridBytes.set(idx + 2, isDark ? darkB : lightB);
+                        gridBytes.set(idx + 3, 255);
+                    }
+                }
+
+                var gridTexData = new TextureData(tileSize, tileSize, TextureFormat.RGBA);
+                gridTexData.bytes = gridBytes;
+                var gridTex = new Texture(tileSize, tileSize, null, {
+                    format: TextureFormat.RGBA,
+                    powerOfTwo: true,
+                    smoothExpand: false,
+                    smoothShrink: false
+                });
+                gridTex.setData(gridTexData);
+                NoteskinEditor.backgroundTexture = gridTex;
+                TextureSystem.pool[NoteskinEditor.BACKGROUND_TEXTURE_NAME] = gridTex;
+
+                GridBackgroundSprite.init(
+                    NoteskinEditor.backgroundProg,
+                    NoteskinEditor.BACKGROUND_TEXTURE_NAME,
+                    gridTex
+                );
+            }
+
+            if (NoteskinEditor.receptorGridBuf == null) {
+                NoteskinEditor.receptorGridBuf = new Buffer<RepeatSprite>(16, 16, true);
+            }
+            if (NoteskinEditor.receptorGridProg == null) {
+                NoteskinEditor.receptorGridProg = new CustomProgram(NoteskinEditor.receptorGridBuf);
+            }
+
+            if (NoteskinEditor.gridBuf == null) {
+                NoteskinEditor.gridBuf = new Buffer<RepeatSprite>(16, 16, true);
+            }
+            if (NoteskinEditor.gridProg == null) {
+                NoteskinEditor.gridProg = new CustomProgram(NoteskinEditor.gridBuf);
+            }
+        } catch (e) {
+            trace('Failed to init static buffers: $e');
+        }
+    }
+
+    /** Create note + sustain buffers/programs and compile their shaders.
+        Requires a loaded NoteskinHandle for texture binding and shader injection. */
+    static function initStaticRendering(handle:NoteskinHandle) {
+        if (NoteskinManager.textureCache == null) {
+            NoteskinManager.init();
+        }
+
+        handle.loadTexture();
+
+        if (NoteskinEditor.noteBuf == null) {
+            NoteskinEditor.noteBuf = new Buffer<Note>(16, 16, true);
+        }
+        if (NoteskinEditor.noteProg == null) {
+            NoteskinEditor.noteProg = new CustomProgram(NoteskinEditor.noteBuf);
+            Note.init(NoteskinEditor.noteProg);
+            handle.setProgramsTexture(NoteskinEditor.noteProg);
+            handle.setProgramsNoteShader(NoteskinEditor.noteProg);
+        }
+
+        if (NoteskinEditor.sustainBuf == null) {
+            NoteskinEditor.sustainBuf = new Buffer<Sustain>(16, 16, true);
+        }
+        if (NoteskinEditor.sustainProg == null) {
+            NoteskinEditor.sustainProg = new CustomProgram(NoteskinEditor.sustainBuf);
+            Sustain.init(NoteskinEditor.sustainProg);
+            handle.setProgramsTexture(NoteskinEditor.sustainProg);
+            handle.setProgramsSustainShader(NoteskinEditor.sustainProg);
+        }
+    }
+
+    /** Create the GUI sprite buffer/program and load the button atlas. */
+    static function initStaticGUISprites() {
+        if (NoteskinEditor.guiTextureLoaded) return;
+
+        try {
+            var guiTexPath = 'assets/images/noteskins/gui_buttons.png';
+            var guiTexPathFull = Paths.asset(guiTexPath);
+            if (!FileSystem.exists(guiTexPathFull)) {
+                trace('GUI buttons texture not found, skipping GUI sprites');
+                return;
+            }
+
+            TextureSystem.createTexture(NoteskinEditor.GUI_TEXTURE_NAME, guiTexPath, false, true);
+            var guiTex = TextureSystem.getTexture(NoteskinEditor.GUI_TEXTURE_NAME);
+            if (guiTex == null) {
+                trace('Failed to create GUI texture via TextureSystem');
+                return;
+            }
+
+            NoteskinEditor.guiTexture = guiTex;
+            NoteskinEditor.guiSpriteBuf = new Buffer<NoteskinGUISprite>(32, 32, true);
+            NoteskinEditor.guiSpriteProg = new CustomProgram(NoteskinEditor.guiSpriteBuf);
+            NoteskinGUISprite.init(NoteskinEditor.guiSpriteProg, NoteskinEditor.GUI_TEXTURE_NAME, guiTex);
+
+            NoteskinEditor.guiTextureLoaded = true;
+            trace('GUI sprite buffer initialized (${guiTex.width}x${guiTex.height})');
+        } catch (e) {
+            trace('Failed to init GUI sprites: $e');
+        }
+    }
+
+    /** Populate the 4 background checkerboard sprites into the static backgroundBuf.
+        Called from preInit() — no instance needed. Guarded so repeated calls are no-ops. */
+    static function initStaticGridSprites() {
+        if (NoteskinEditor.backgroundSprites.length > 0) return;
+        if (NoteskinEditor.backgroundBuf == null) return;
+
+        var tileSize = GridBackgroundSprite.TILE_SIZE;
+        var S:Float = Main.INITIAL_WIDTH;
+        if (Main.INITIAL_HEIGHT > S) S = Main.INITIAL_HEIGHT;
+        S = Math.ceil(S);
+
+        var bx = [0.0, -S, 0.0, -S];
+        var by = [0.0, 0.0, -S, -S];
+        for (i in 0...4) {
+            var spr = new GridBackgroundSprite();
+            spr.x = bx[i];
+            spr.y = by[i];
+            spr.w = S;
+            spr.h = S;
+            spr.clipWidth = tileSize;
+            spr.clipHeight = tileSize;
+            spr.clipSizeX = tileSize;
+            spr.clipSizeY = tileSize;
+            NoteskinEditor.backgroundSprites.push(spr);
+            NoteskinEditor.backgroundBuf.addElement(spr);
+        }
+    }
+
+    /** Pre-warm all 6 static Text objects so the first editor open is instant.
+        Each Text is created with alpha=0 and added to the display immediately.
+        dispose() only calls removeProgram(); it never destroys the Text objects. */
+    static function initStaticTexts(display:Display) {
+        // Save button label
+        if (NoteskinEditor.saveButtonText == null) {
+            NoteskinEditor.saveButtonText = new Text(
+                "SAVE_NOTESKIN_BTN", 0, 0, display, "SAVE NOTESKIN", "vcr"
+            );
+            NoteskinEditor.saveButtonText.scale = 0.5;
+            NoteskinEditor.saveButtonText.alpha = 0;
+        }
+
+        // Import vanilla XML button label
+        if (NoteskinEditor.importButtonText == null) {
+            NoteskinEditor.importButtonText = new Text(
+                "IMPORT_ATLAS_BTN", 0, 0, display, "IMPORT VANILLA XML", "vcr"
+            );
+            NoteskinEditor.importButtonText.scale = 0.5;
+            NoteskinEditor.importButtonText.alpha = 0;
+        }
+
+        // Import lettered XML button label
+        if (NoteskinEditor.importButton18KText == null) {
+            NoteskinEditor.importButton18KText = new Text(
+                "IMPORT_ATLAS_18K_BTN", 0, 0, display, "IMPORT LETTERED XML", "vcr"
+            );
+            NoteskinEditor.importButton18KText.scale = 0.5;
+            NoteskinEditor.importButton18KText.alpha = 0;
+        }
+
+        // Switch noteskin button label
+        if (NoteskinEditor.switchNoteskinButtonText == null) {
+            NoteskinEditor.switchNoteskinButtonText = new Text(
+                "SWITCH_NOTESKIN_BTN", 0, 0, display, "SWITCH NOTESKIN", "vcr"
+            );
+            NoteskinEditor.switchNoteskinButtonText.scale = 0.5;
+            NoteskinEditor.switchNoteskinButtonText.alpha = 0;
+        }
+
+        // GUI state readout (right-side panel info)
+        if (NoteskinEditor.guiStateText == null) {
+            NoteskinEditor.guiStateText = new Text("GUI_STATE_READOUT", 0, 0, display, "", "vcr");
+            NoteskinEditor.guiStateText.scale = NoteskinEditorUI.STATE_SCALE;
+            NoteskinEditor.guiStateText.alpha = 0;
+            NoteskinEditor.guiStateText.multiline = true;
+            NoteskinEditor.guiStateText.alignment = RIGHT;
+            NoteskinEditor.guiStateText.spacerPercent = -0.15;
+            NoteskinEditor.guiStateText.outlineColor = Color.BLACK;
+            NoteskinEditor.guiStateText.outlineSize = 1;
+            NoteskinEditor.guiStateText.setMarkerPairs(NoteskinEditorUI.MARKERS);
+        }
+
+        // Instructions / popup text
+        if (NoteskinEditor.instructionsText == null) {
+            NoteskinEditor.instructionsText = new Text("NOTESKIN_EDITOR_INSTRUCTIONS", 0, 0, display, "", "vcr");
+            NoteskinEditor.instructionsText.scale = 0.7;
+            NoteskinEditor.instructionsText.alpha = 0;
+            NoteskinEditor.instructionsText.multiline = true;
+            NoteskinEditor.instructionsText.alignment = LEFT;
+            NoteskinEditor.instructionsText.spacerPercent = -0.1;
+            NoteskinEditor.instructionsText.outlineColor = Color.BLACK;
+            NoteskinEditor.instructionsText.outlineSize = 1;
+            NoteskinEditor.instructionsText.setMarkerPairs(NoteskinEditorUI.MARKERS);
+        }
+    }
+
+    /** Create receptors (Strumline + notes + sustains) using instance state.
+        Static function that takes the editor state as a parameter. */
+    static function initStaticReceptors(state:NoteskinEditor) {
+        // Remove old notes from buffer
+        if (state.strumline != null) {
+            for (i in 0...state.strumline.length) {
+                NoteskinEditor.noteBuf.removeElement(state.strumline.receptors[i].note);
+            }
+        }
+
+        var gap = state.currentConfig.gap != 0 ? state.currentConfig.gap : 112;
+        var offsetX = state.currentConfig.offsetX;
+        var offsetY = state.currentConfig.offsetY;
+        var scale = state.currentConfig.scale;
+        var pos = state.renderer.getReceptorPosition(0, gap, offsetX, offsetY);
+
+        var inPreviewMode = state.currentManiaIndex >= state.availableManiaConfigs.length;
+        if (inPreviewMode) {
+            var previewCfg = state.currentConfig;
+            var freshConfigs = state.availableManiaConfigs.copy();
+            freshConfigs.push(previewCfg);
+            state.noteskinHandle.data.configMania = freshConfigs;
+            state.noteskinHandle.mania = freshConfigs.length;
+        } else {
+            state.noteskinHandle.data.configMania = state.availableManiaConfigs.copy();
+            state.noteskinHandle.mania = state.maxReceptors;
+        }
+
+        state.strumline = new Strumline(
+            Std.int(pos.x), Std.int(pos.y),
+            state.noteskinHandle,
+            gap, scale, state.maxReceptors,
+            null
+        );
+
+        var maniaIdx = state.currentManiaIndex < state.availableManiaConfigs.length ? state.currentManiaIndex : 0;
+        if (state.noteskinHandle.data.configMania != null && maniaIdx < state.noteskinHandle.data.configMania.length) {
+            state.strumline.applyNoteskinProperties(state.noteskinHandle, maniaIdx);
+        }
+
+        for (i in 0...state.strumline.length) {
+            var notePos = state.renderer.getReceptorPosition(i, gap, offsetX, offsetY);
+            var note = state.strumline.receptors[i].note;
+            note.x = Std.int(notePos.x);
+            note.y = Std.int(notePos.y);
+
+            var clipIndex = state.clipEditor.getClipIndexForReceptor(i);
+            var clip = state.clipEditor.getClipForIndex(clipIndex);
+            state.renderer.applyClipToNote(note, state.currentState, clip);
+
+            if (state.currentManiaIndex >= state.availableManiaConfigs.length) {
+                note.initialAlpha = 0.9;
+            }
+        }
+
+        state.strumline.draw(NoteskinEditor.noteBuf);
+        state.renderer.createSustains();
+    }
+
+    // ========================================================================
+    // Static program show / hide
+    // ========================================================================
+
+    /** Add all static programs to a display in z-order. */
+    static function showPrograms(display:CustomDisplay) {
+        if (NoteskinEditor.backgroundProg != null && !NoteskinEditor.backgroundProg.isIn(display))
+            display.addProgram(NoteskinEditor.backgroundProg);
+        if (NoteskinEditor.receptorGridProg != null && !NoteskinEditor.receptorGridProg.isIn(display))
+            display.addProgram(NoteskinEditor.receptorGridProg);
+        if (NoteskinEditor.noteProg != null && !NoteskinEditor.noteProg.isIn(display))
+            display.addProgram(NoteskinEditor.noteProg);
+        if (NoteskinEditor.sustainProg != null && !NoteskinEditor.sustainProg.isIn(display))
+            display.addProgram(NoteskinEditor.sustainProg);
+        if (NoteskinEditor.gridProg != null && !NoteskinEditor.gridProg.isIn(display))
+            display.addProgram(NoteskinEditor.gridProg);
+        if (NoteskinEditor.guiSpriteProg != null && !NoteskinEditor.guiSpriteProg.isIn(display))
+            display.addProgram(NoteskinEditor.guiSpriteProg);
+    }
+
+    /** Remove all static programs from a display. */
+    static function hidePrograms(display:CustomDisplay) {
+        if (NoteskinEditor.backgroundProg != null && NoteskinEditor.backgroundProg.isIn(display))
+            display.removeProgram(NoteskinEditor.backgroundProg);
+        if (NoteskinEditor.receptorGridProg != null && NoteskinEditor.receptorGridProg.isIn(display))
+            display.removeProgram(NoteskinEditor.receptorGridProg);
+        if (NoteskinEditor.noteProg != null && NoteskinEditor.noteProg.isIn(display))
+            display.removeProgram(NoteskinEditor.noteProg);
+        if (NoteskinEditor.sustainProg != null && NoteskinEditor.sustainProg.isIn(display))
+            display.removeProgram(NoteskinEditor.sustainProg);
+        if (NoteskinEditor.gridProg != null && NoteskinEditor.gridProg.isIn(display))
+            display.removeProgram(NoteskinEditor.gridProg);
+        if (NoteskinEditor.guiSpriteProg != null && NoteskinEditor.guiSpriteProg.isIn(display))
+            display.removeProgram(NoteskinEditor.guiSpriteProg);
+    }
+
+    // ========================================================================
+    // Instance methods
+    // ========================================================================
+
     function createGrid() {
         try {
             // --- Scrolling grid background (bottommost layer) ---
-            if (state.backgroundBuf == null) {
-                state.backgroundBuf = new Buffer<GridBackgroundSprite>(4, 4, true);
+            if (NoteskinEditor.backgroundBuf == null) {
+                NoteskinEditor.backgroundBuf = new Buffer<GridBackgroundSprite>(4, 4, true);
             }
-            if (state.backgroundProg == null) {
-                state.backgroundProg = new CustomProgram(state.backgroundBuf);
+            if (NoteskinEditor.backgroundProg == null) {
+                NoteskinEditor.backgroundProg = new CustomProgram(NoteskinEditor.backgroundBuf);
                 // Generate a 64x64 checkerboard tile texture procedurally.
                 // The 2x2 pattern (dark/light, light/dark) is duplicated 32x32
                 // times to fill the full 64x64 tile.
@@ -1911,11 +2232,11 @@ private class NoteskinEditorRenderer {
                     smoothShrink: false
                 });
                 gridTex.setData(gridTexData);
-                state.backgroundTexture = gridTex;
+                NoteskinEditor.backgroundTexture = gridTex;
                 TextureSystem.pool[NoteskinEditor.BACKGROUND_TEXTURE_NAME] = gridTex;
 
                 GridBackgroundSprite.init(
-                    state.backgroundProg,
+                    NoteskinEditor.backgroundProg,
                     NoteskinEditor.BACKGROUND_TEXTURE_NAME,
                     gridTex
                 );
@@ -1923,42 +2244,23 @@ private class NoteskinEditorRenderer {
 
             // Create 4 square sprites in a 2x2 arrangement for seamless 2D scrolling.
             // Each square is max(screenW, screenH) so the 2x2 block always covers the viewport.
-            var tileSize = GridBackgroundSprite.TILE_SIZE;
-            var S:Float = Main.INITIAL_WIDTH;
-            if (Main.INITIAL_HEIGHT > S) S = Main.INITIAL_HEIGHT;
-            S = Math.ceil(S);
-            state.backgroundSprites = [];
-            // Base offsets for 2x2 grid: top-left, top-right, bottom-left, bottom-right
-            var bx = [0.0, -S, 0.0, -S];
-            var by = [0.0, 0.0, -S, -S];
-            for (i in 0...4) {
-                var spr = new GridBackgroundSprite();
-                spr.x = bx[i];
-                spr.y = by[i];
-                spr.w = S;
-                spr.h = S;
-                spr.clipWidth = tileSize;
-                spr.clipHeight = tileSize;
-                spr.clipSizeX = tileSize;
-                spr.clipSizeY = tileSize;
-                state.backgroundSprites.push(spr);
-                state.backgroundBuf.addElement(spr);
-            }
+            // NOTE: backgroundSprites is now static — populated by initStaticGridSprites()
+            // in preInit. This code only runs if somehow the static sprites are missing.
 
             // --- Receptor grid overlay (above background, below receptors) ---
-            if (state.receptorGridBuf == null) {
-                state.receptorGridBuf = new Buffer<RepeatSprite>(16, 16, true);
+            if (NoteskinEditor.receptorGridBuf == null) {
+                NoteskinEditor.receptorGridBuf = new Buffer<RepeatSprite>(16, 16, true);
             }
-            if (state.receptorGridProg == null) {
-                state.receptorGridProg = new CustomProgram(state.receptorGridBuf);
+            if (NoteskinEditor.receptorGridProg == null) {
+                NoteskinEditor.receptorGridProg = new CustomProgram(NoteskinEditor.receptorGridBuf);
             }
 
             // --- GUI overlay (above receptors, below guiSprite labels) ---
-            if (state.gridBuf == null) {
-                state.gridBuf = new Buffer<RepeatSprite>(16, 16, true);
+            if (NoteskinEditor.gridBuf == null) {
+                NoteskinEditor.gridBuf = new Buffer<RepeatSprite>(16, 16, true);
             }
-            if (state.gridProg == null) {
-                state.gridProg = new CustomProgram(state.gridBuf);
+            if (NoteskinEditor.gridProg == null) {
+                NoteskinEditor.gridProg = new CustomProgram(NoteskinEditor.gridBuf);
             }
         } catch (e) {
             trace('Failed to create grid: $e');
@@ -1967,7 +2269,7 @@ private class NoteskinEditorRenderer {
 
     function updateGridPosition() {
         for (sprite in state.gridSprites) {
-            state.receptorGridBuf.removeElement(sprite);
+            NoteskinEditor.receptorGridBuf.removeElement(sprite);
         }
         state.gridSprites = [];
 
@@ -2003,10 +2305,10 @@ private class NoteskinEditorRenderer {
             }
 
             state.gridSprites.push(gridSprite);
-            state.receptorGridBuf.addElement(gridSprite);
+            NoteskinEditor.receptorGridBuf.addElement(gridSprite);
         }
 
-        state.receptorGridBuf.update();
+        NoteskinEditor.receptorGridBuf.update();
     }
 
     function initRendering() {
@@ -2017,35 +2319,35 @@ private class NoteskinEditorRenderer {
 
         state.noteskinHandle.loadTexture();
 
-        if (state.noteBuf == null) {
-            state.noteBuf = new Buffer<Note>(16, 16, true);
+        if (NoteskinEditor.noteBuf == null) {
+            NoteskinEditor.noteBuf = new Buffer<Note>(16, 16, true);
         }
-        if (state.noteProg == null) {
-            state.noteProg = new CustomProgram(state.noteBuf);
-            Note.init(state.noteProg);
+        if (NoteskinEditor.noteProg == null) {
+            NoteskinEditor.noteProg = new CustomProgram(NoteskinEditor.noteBuf);
+            Note.init(NoteskinEditor.noteProg);
             // Bind all cached skin textures at once. Switching skins is then
             // just a matter of each Note's @texUnit/@texSlot (set via setHandle).
-            state.noteskinHandle.setProgramsTexture(state.noteProg);
+            state.noteskinHandle.setProgramsTexture(NoteskinEditor.noteProg);
             // Shader references noteTexV2_ID — MUST come after setProgramsTexture.
-            state.noteskinHandle.setProgramsNoteShader(state.noteProg);
+            state.noteskinHandle.setProgramsNoteShader(NoteskinEditor.noteProg);
         }
 
         // Sustain preview
-        if (state.sustainBuf == null) {
-            state.sustainBuf = new Buffer<Sustain>(16, 16, true);
+        if (NoteskinEditor.sustainBuf == null) {
+            NoteskinEditor.sustainBuf = new Buffer<Sustain>(16, 16, true);
         }
-        if (state.sustainProg == null) {
-            state.sustainProg = new CustomProgram(state.sustainBuf);
-            Sustain.init(state.sustainProg);
-            state.noteskinHandle.setProgramsTexture(state.sustainProg);
+        if (NoteskinEditor.sustainProg == null) {
+            NoteskinEditor.sustainProg = new CustomProgram(NoteskinEditor.sustainBuf);
+            Sustain.init(NoteskinEditor.sustainProg);
+            state.noteskinHandle.setProgramsTexture(NoteskinEditor.sustainProg);
             // Shader bakes 1/texW and 1/texH from the first cached skin's
             // dimensions — see NoteskinHandle.setProgramsSustainShader caveat.
-            state.noteskinHandle.setProgramsSustainShader(state.sustainProg);
+            state.noteskinHandle.setProgramsSustainShader(NoteskinEditor.sustainProg);
         }
     }
 
     function initGUISprites() {
-        if (state.guiTextureLoaded) return;
+        if (NoteskinEditor.guiTextureLoaded) return;
 
         try {
             var guiTexPath = 'assets/images/noteskins/gui_buttons.png';
@@ -2062,15 +2364,15 @@ private class NoteskinEditorRenderer {
                 trace('Failed to create GUI texture via TextureSystem');
                 return;
             }
-            state.guiTexture = guiTex;
+            NoteskinEditor.guiTexture = guiTex;
 
-            state.guiSpriteBuf = new Buffer<NoteskinGUISprite>(32, 32, true);
-            state.guiSpriteProg = new CustomProgram(state.guiSpriteBuf);
-            NoteskinGUISprite.init(state.guiSpriteProg, NoteskinEditor.GUI_TEXTURE_NAME, guiTex);
+            NoteskinEditor.guiSpriteBuf = new Buffer<NoteskinGUISprite>(32, 32, true);
+            NoteskinEditor.guiSpriteProg = new CustomProgram(NoteskinEditor.guiSpriteBuf);
+            NoteskinGUISprite.init(NoteskinEditor.guiSpriteProg, NoteskinEditor.GUI_TEXTURE_NAME, guiTex);
 
             // Note: programs are added to view in init() in the correct z-order.
 
-            state.guiTextureLoaded = true;
+            NoteskinEditor.guiTextureLoaded = true;
             trace('GUI sprite buffer initialized (${guiTex.width}x${guiTex.height})');
         } catch (e) {
             trace('Failed to init GUI sprites: $e');
@@ -2095,45 +2397,36 @@ private class NoteskinEditorRenderer {
         state.saveButtonBox = new RepeatSprite(btnSaveX, btnY, btnSaveW, btnH);
         state.saveButtonBox.c = 0x000088FF;
         state.saveButtonBox.c.aF = 0.85;
-        state.gridBuf.addElement(state.saveButtonBox);
+        NoteskinEditor.gridBuf.addElement(state.saveButtonBox);
 
-        state.saveButtonText = new Text(
-            "SAVE_NOTESKIN_BTN", btnSaveX + 6, btnY + 9,
-            state.display, "SAVE NOTESKIN", "vcr"
-        );
-        state.saveButtonText.scale = 0.5;
-        state.saveButtonText.alpha = 0; // hidden until editor opens
-        state.saveButtonText.addProgram();
+        // Text object pre-warmed in initStaticTexts; just position and re-add to display.
+        NoteskinEditor.saveButtonText.x = btnSaveX + 6;
+        NoteskinEditor.saveButtonText.y = btnY + 9;
+        NoteskinEditor.saveButtonText.addProgram();
 
         // Vanilla import button
         var btn4X = rowX + btnSaveW + 4;
         state.importButtonBox = new RepeatSprite(btn4X, btnY, btn4W, btnH);
         state.importButtonBox.c = 0x000000FF;
         state.importButtonBox.c.aF = 0.75;
-        state.gridBuf.addElement(state.importButtonBox);
+        NoteskinEditor.gridBuf.addElement(state.importButtonBox);
 
-        state.importButtonText = new Text(
-            "IMPORT_ATLAS_BTN", btn4X + 6, btnY + 9,
-            state.display, "IMPORT VANILLA XML", "vcr"
-        );
-        state.importButtonText.scale = 0.5;
-        state.importButtonText.alpha = 0; // hidden until editor opens
-        state.importButtonText.addProgram();
+        // Text object pre-warmed in initStaticTexts; just position and re-add to display.
+        NoteskinEditor.importButtonText.x = btn4X + 6;
+        NoteskinEditor.importButtonText.y = btnY + 9;
+        NoteskinEditor.importButtonText.addProgram();
 
         // 18K import button
         var btn18X = rowX + btnSaveW + 4 + btn4W + 4;
         state.importButton18KBox = new RepeatSprite(btn18X, btnY, btn18W, btnH);
         state.importButton18KBox.c = 0x000000FF;
         state.importButton18KBox.c.aF = 0.75;
-        state.gridBuf.addElement(state.importButton18KBox);
+        NoteskinEditor.gridBuf.addElement(state.importButton18KBox);
 
-        state.importButton18KText = new Text(
-            "IMPORT_ATLAS_18K_BTN", btn18X + 6, btnY + 9,
-            state.display, "IMPORT LETTERED XML", "vcr"
-        );
-        state.importButton18KText.scale = 0.5;
-        state.importButton18KText.alpha = 0; // hidden until editor opens
-        state.importButton18KText.addProgram();
+        // Text object pre-warmed in initStaticTexts; just position and re-add to display.
+        NoteskinEditor.importButton18KText.x = btn18X + 6;
+        NoteskinEditor.importButton18KText.y = btnY + 9;
+        NoteskinEditor.importButton18KText.addProgram();
 
         // Switch noteskin button (purple-ish) — cycles through every noteskin
         // currently loaded in NoteskinManager and reloads the entire editor
@@ -2142,15 +2435,12 @@ private class NoteskinEditorRenderer {
         state.switchNoteskinButtonBox = new RepeatSprite(btnSwitchX, btnY, btnSwitchW, btnH);
         state.switchNoteskinButtonBox.c = 0x220044FF;
         state.switchNoteskinButtonBox.c.aF = 0.85;
-        state.gridBuf.addElement(state.switchNoteskinButtonBox);
+        NoteskinEditor.gridBuf.addElement(state.switchNoteskinButtonBox);
 
-        state.switchNoteskinButtonText = new Text(
-            "SWITCH_NOTESKIN_BTN", btnSwitchX + 6, btnY + 9,
-            state.display, "SWITCH NOTESKIN", "vcr"
-        );
-        state.switchNoteskinButtonText.scale = 0.5;
-        state.switchNoteskinButtonText.alpha = 0; // hidden until editor opens
-        state.switchNoteskinButtonText.addProgram();
+        // Text object pre-warmed in initStaticTexts; just position and re-add to display.
+        NoteskinEditor.switchNoteskinButtonText.x = btnSwitchX + 6;
+        NoteskinEditor.switchNoteskinButtonText.y = btnY + 9;
+        NoteskinEditor.switchNoteskinButtonText.addProgram();
     }
 
     // Preview-clips mode lays receptors out in rows of PREVIEW_COLS so a noteskin
@@ -2213,7 +2503,7 @@ private class NoteskinEditorRenderer {
         // Remove old notes from buffer
         if (state.strumline != null) {
             for (i in 0...state.strumline.length) {
-                state.noteBuf.removeElement(state.strumline.receptors[i].note);
+                NoteskinEditor.noteBuf.removeElement(state.strumline.receptors[i].note);
             }
         }
 
@@ -2283,7 +2573,7 @@ private class NoteskinEditorRenderer {
         }
 
         // Add all notes to the render buffer
-        state.strumline.draw(state.noteBuf);
+        state.strumline.draw(NoteskinEditor.noteBuf);
 
         createSustains();
     }
@@ -2433,10 +2723,10 @@ private class NoteskinEditorRenderer {
                 applyClipToNote(note, state.currentState, clip);
             }
 
-            state.noteBuf.updateElement(note);
+            NoteskinEditor.noteBuf.updateElement(note);
         }
 
-        state.noteBuf.update();
+        NoteskinEditor.noteBuf.update();
         updateSustainVisuals();
         updateGridPosition();
         state.ui.updateInstructionsText();
@@ -2444,7 +2734,7 @@ private class NoteskinEditorRenderer {
 
     function createSustains() {
         for (s in state.sustainSprites) {
-            state.sustainBuf.removeElement(s);
+            NoteskinEditor.sustainBuf.removeElement(s);
         }
         state.sustainSprites = [];
 
@@ -2506,7 +2796,7 @@ private class NoteskinEditorRenderer {
             sustain.c.luminanceF = 0.0;
 
             state.sustainSprites.push(sustain);
-            state.sustainBuf.addElement(sustain);
+            NoteskinEditor.sustainBuf.addElement(sustain);
         }
     }
 
@@ -2569,10 +2859,10 @@ private class NoteskinEditorRenderer {
             sustain.c.aF = state.showSustainPreview ? 0.5 : 0.0;
             sustain.c.luminanceF = state.showSustainPreview ? 0.5 : 0.0;
 
-            state.sustainBuf.updateElement(sustain);
+            NoteskinEditor.sustainBuf.updateElement(sustain);
         }
 
-        state.sustainBuf.update();
+        NoteskinEditor.sustainBuf.update();
     }
 
     function updateReceptorState(newState:EditState) {
@@ -2699,10 +2989,10 @@ private class NoteskinEditorUI {
         var box = new RepeatSprite(x, y, dw, dh);
         box.c = bgCol;
         box.c.aF = 0.7;
-        state.gridBuf.addElement(box);
+        NoteskinEditor.gridBuf.addElement(box);
 
         var sprite:NoteskinGUISprite = null;
-        if (state.guiSpriteBuf != null) {
+        if (NoteskinEditor.guiSpriteBuf != null) {
             sprite = new NoteskinGUISprite();
             sprite.x = x;
             sprite.y = y;
@@ -2710,7 +3000,7 @@ private class NoteskinEditorUI {
             sprite.w = dw;
             sprite.h = dh;
             sprite.alpha = 0.85;
-            state.guiSpriteBuf.addElement(sprite);
+            NoteskinEditor.guiSpriteBuf.addElement(sprite);
             state.guiSprites.push(sprite);
         }
 
@@ -2721,7 +3011,7 @@ private class NoteskinEditorUI {
         var box = new RepeatSprite(x, y, w, h);
         box.c = bgCol;
         box.c.aF = 0.7;
-        state.gridBuf.addElement(box);
+        NoteskinEditor.gridBuf.addElement(box);
         return {box: box, sprite: null, action: action};
     }
 
@@ -2793,13 +3083,13 @@ private class NoteskinEditorUI {
             state.guiLeftBackground = new RepeatSprite(leftPanelX, leftPanelY, leftPanelW, leftPanelH);
             state.guiLeftBackground.c = 0x000000FF;
             state.guiLeftBackground.c.aF = 0.7;
-            state.gridBuf.addElement(state.guiLeftBackground);
+            NoteskinEditor.gridBuf.addElement(state.guiLeftBackground);
         } else {
             state.guiLeftBackground.x = leftPanelX;
             state.guiLeftBackground.y = leftPanelY;
             state.guiLeftBackground.w = leftPanelW;
             state.guiLeftBackground.h = leftPanelH;
-            state.gridBuf.updateElement(state.guiLeftBackground);
+            NoteskinEditor.gridBuf.updateElement(state.guiLeftBackground);
         }
 
         // Place square buttons in left panel
@@ -2830,13 +3120,13 @@ private class NoteskinEditorUI {
             state.guiBackground = new RepeatSprite(rightPanelX, rightPanelY, rightPanelW, rightPanelH);
             state.guiBackground.c = 0x000000FF;
             state.guiBackground.c.aF = 0.7;
-            state.gridBuf.addElement(state.guiBackground);
+            NoteskinEditor.gridBuf.addElement(state.guiBackground);
         } else {
             state.guiBackground.x = rightPanelX;
             state.guiBackground.y = rightPanelY;
             state.guiBackground.w = rightPanelW;
             state.guiBackground.h = rightPanelH;
-            state.gridBuf.updateElement(state.guiBackground);
+            NoteskinEditor.gridBuf.updateElement(state.guiBackground);
         }
 
         // Place wide buttons in right panel (1 per row)
@@ -2851,32 +3141,21 @@ private class NoteskinEditorUI {
         }
 
         // Update the GUI sprite buffer after adding all sprites
-        if (state.guiSpriteBuf != null) {
-            state.guiSpriteBuf.update();
+        if (NoteskinEditor.guiSpriteBuf != null) {
+            NoteskinEditor.guiSpriteBuf.update();
         }
 
         // --- State readout Text (to the left of the right panel) ---
         var readoutX = rightPanelX - pad - 180; // left-aligned, 180px wide area
         if (readoutX < leftPanelX + leftPanelW + 8) readoutX = leftPanelX + leftPanelW + 8;
         var readoutY = rightPanelY;
-        if (state.guiStateText == null) {
-            state.guiStateText = new Text("GUI_STATE_READOUT", readoutX, readoutY, state.display, "", "vcr");
-            state.guiStateText.scale = STATE_SCALE;
-            state.guiStateText.alpha = 0;
-            state.guiStateText.multiline = true;
-            state.guiStateText.alignment = RIGHT;
-            state.guiStateText.spacerPercent = -0.15;
-            state.guiStateText.outlineColor = Color.BLACK;
-            state.guiStateText.outlineSize = 1;
-            state.guiStateText.setMarkerPairs(MARKERS);
-            state.guiStateText.addProgram();
-        } else {
-            state.guiStateText.x = readoutX;
-            state.guiStateText.y = readoutY;
-        }
+        // Text object pre-warmed in initStaticTexts; just position and re-add to display.
+        NoteskinEditor.guiStateText.x = readoutX;
+        NoteskinEditor.guiStateText.y = readoutY;
+        NoteskinEditor.guiStateText.addProgram();
 
         updateStateReadout();
-        state.guiStateText.refresh();
+        NoteskinEditor.guiStateText.refresh();
     }
 
     // --- State readout ---
@@ -2947,20 +3226,20 @@ private class NoteskinEditorUI {
     }
 
     function updateStateReadout() {
-        if (state.guiStateText == null) return;
+        if (NoteskinEditor.guiStateText == null) return;
         // Anchor right edge of text to the left of the right black box.
         var pad = PANEL_PAD;
-        state.guiStateText.refresh();
-        var readoutX = state.guiBackground.x - pad - state.guiStateText.width;
+        NoteskinEditor.guiStateText.refresh();
+        var readoutX = state.guiBackground.x - pad - NoteskinEditor.guiStateText.width;
         if (state.guiLeftBackground != null) {
             var minX = state.guiLeftBackground.x + state.guiLeftBackground.w + 8;
             if (readoutX < minX) readoutX = minX;
         }
-        state.guiStateText.x = readoutX;
-        state.guiStateText.y = state.guiBackground.y;
+        NoteskinEditor.guiStateText.x = readoutX;
+        NoteskinEditor.guiStateText.y = state.guiBackground.y;
         var newText = buildStateReadoutText();
-        if (state.guiStateText.text != newText) {
-            state.guiStateText.text = newText;
+        if (NoteskinEditor.guiStateText.text != newText) {
+            NoteskinEditor.guiStateText.text = newText;
         }
     }
 
@@ -2987,13 +3266,13 @@ private class NoteskinEditorUI {
             } else {
                 btn.box.c.aF = 0.7;
             }
-            state.gridBuf.updateElement(btn.box);
+            NoteskinEditor.gridBuf.updateElement(btn.box);
 
             // Also bump the GUI sprite alpha for active buttons
             if (btn.sprite != null) {
                 btn.sprite.alpha = isActive ? 1.0 : 0.85;
-                if (state.guiSpriteBuf != null) {
-                    state.guiSpriteBuf.updateElement(btn.sprite);
+                if (NoteskinEditor.guiSpriteBuf != null) {
+                    NoteskinEditor.guiSpriteBuf.updateElement(btn.sprite);
                 }
             }
         }
@@ -3030,17 +3309,8 @@ private class NoteskinEditorUI {
     }
 
     function ensureInstructionsText() {
-        if (state.instructionsText != null) return;
-        state.instructionsText = new Text("NOTESKIN_EDITOR_INSTRUCTIONS", 0, 0, state.display, "", "vcr");
-        state.instructionsText.scale = 0.7;
-        state.instructionsText.alpha = 0;
-        state.instructionsText.multiline = true;
-        state.instructionsText.alignment = LEFT;
-        state.instructionsText.spacerPercent = -0.1;
-        state.instructionsText.outlineColor = Color.BLACK;
-        state.instructionsText.outlineSize = 1;
-        state.instructionsText.setMarkerPairs(MARKERS);
-        state.instructionsText.addProgram();
+        // Text object pre-warmed in initStaticTexts; just re-add to display.
+        NoteskinEditor.instructionsText.addProgram();
     }
 
     function renderInstructionsPopup() {
@@ -3051,40 +3321,40 @@ private class NoteskinEditorUI {
             state.popupBackground = new RepeatSprite(0, 0, 0, 0);
             state.popupBackground.c = 0x000000FF;
             state.popupBackground.c.aF = 0.75;
-            state.gridBuf.addElement(state.popupBackground);
+            NoteskinEditor.gridBuf.addElement(state.popupBackground);
         }
 
-        state.instructionsText.text = buildInstructionsPopupText();
-        state.instructionsText.alignment = LEFT;
-        state.instructionsText.scale = 0.7;
-        state.instructionsText.alpha = 1;
-        state.instructionsText.refresh();
+        NoteskinEditor.instructionsText.text = buildInstructionsPopupText();
+        NoteskinEditor.instructionsText.alignment = LEFT;
+        NoteskinEditor.instructionsText.scale = 0.7;
+        NoteskinEditor.instructionsText.alpha = 1;
+        NoteskinEditor.instructionsText.refresh();
 
         var padding = 12;
-        var totalW = Std.int(state.instructionsText.width + padding * 2);
-        var totalH = Std.int(state.instructionsText.height + padding * 2);
+        var totalW = Std.int(NoteskinEditor.instructionsText.width + padding * 2);
+        var totalH = Std.int(NoteskinEditor.instructionsText.height + padding * 2);
         var bgX = Std.int((Main.INITIAL_WIDTH - totalW) / 2);
         var bgY = Std.int((Main.INITIAL_HEIGHT - totalH) / 2);
 
-        state.instructionsText.x = bgX + padding;
-        state.instructionsText.y = bgY + padding;
+        NoteskinEditor.instructionsText.x = bgX + padding;
+        NoteskinEditor.instructionsText.y = bgY + padding;
         state.popupBackground.x = bgX;
         state.popupBackground.y = bgY;
         state.popupBackground.w = totalW;
         state.popupBackground.h = totalH;
 
-        state.gridBuf.updateElement(state.popupBackground);
-        state.gridBuf.update();
+        NoteskinEditor.gridBuf.updateElement(state.popupBackground);
+        NoteskinEditor.gridBuf.update();
     }
 
     function hideInstructionsPopup() {
         state.showInstructionsPopup = false;
         if (state.popupBackground != null) {
-            state.gridBuf.removeElement(state.popupBackground);
+            NoteskinEditor.gridBuf.removeElement(state.popupBackground);
             state.popupBackground = null;
         }
-        if (state.instructionsText != null) {
-            state.instructionsText.alpha = 0;
+        if (NoteskinEditor.instructionsText != null) {
+            NoteskinEditor.instructionsText.alpha = 0;
         }
         state.ui.updateButtonHighlights();
     }
@@ -3131,7 +3401,7 @@ private class NoteskinEditorUI {
             state.popupBackground = new RepeatSprite(0, 0, 0, 0);
             state.popupBackground.c = 0x000000FF;
             state.popupBackground.c.aF = 0.6;
-            state.gridBuf.addElement(state.popupBackground);
+            NoteskinEditor.gridBuf.addElement(state.popupBackground);
         }
 
         var popupText =
@@ -3143,25 +3413,25 @@ private class NoteskinEditorUI {
             popupText += '#M2#${state.createManiaError}#M2#\n';
         }
 
-        popupText += "\n#M1#[ENTER or TAP ON POPUP] Confirm#M1#\n#M3#[ESC or TAP OUT OF POPUP] Cancel#M3#";
+        popupText += "\n#M1#[ENTER] Confirm#M1#   #M3#[ESC] Cancel#M3#";
 
-        state.instructionsText.text = popupText;
-        state.instructionsText.alignment = CENTER;
-        state.instructionsText.scale = 1.2;
-        state.instructionsText.alpha = 1;
+        NoteskinEditor.instructionsText.text = popupText;
+        NoteskinEditor.instructionsText.alignment = CENTER;
+        NoteskinEditor.instructionsText.scale = 1.2;
+        NoteskinEditor.instructionsText.alpha = 1;
 
-        state.instructionsText.refresh();
+        NoteskinEditor.instructionsText.refresh();
 
-        state.instructionsText.x = (Main.INITIAL_WIDTH - state.instructionsText.width) / 2;
-        state.instructionsText.y = (Main.INITIAL_HEIGHT - state.instructionsText.height) / 2;
+        NoteskinEditor.instructionsText.x = (Main.INITIAL_WIDTH - NoteskinEditor.instructionsText.width) / 2;
+        NoteskinEditor.instructionsText.y = (Main.INITIAL_HEIGHT - NoteskinEditor.instructionsText.height) / 2;
 
         var padding = 20;
-        state.popupBackground.x = Std.int(state.instructionsText.x - padding);
-        state.popupBackground.y = Std.int(state.instructionsText.y - padding);
-        state.popupBackground.w = Std.int(state.instructionsText.width + padding * 2);
-        state.popupBackground.h = Std.int(state.instructionsText.height + padding * 2);
-        state.gridBuf.updateElement(state.popupBackground);
-        state.gridBuf.update();
+        state.popupBackground.x = Std.int(NoteskinEditor.instructionsText.x - padding);
+        state.popupBackground.y = Std.int(NoteskinEditor.instructionsText.y - padding);
+        state.popupBackground.w = Std.int(NoteskinEditor.instructionsText.width + padding * 2);
+        state.popupBackground.h = Std.int(NoteskinEditor.instructionsText.height + padding * 2);
+        NoteskinEditor.gridBuf.updateElement(state.popupBackground);
+        NoteskinEditor.gridBuf.update();
     }
 
     function renderConfirmationPopup() {
@@ -3172,7 +3442,7 @@ private class NoteskinEditorUI {
             state.popupBackground = new RepeatSprite(0, 0, 0, 0);
             state.popupBackground.c = 0x000000FF;
             state.popupBackground.c.aF = 0.6;
-            state.gridBuf.addElement(state.popupBackground);
+            NoteskinEditor.gridBuf.addElement(state.popupBackground);
         }
 
         var titleColor = switch(state.confirmationPopupType) {
@@ -3199,25 +3469,25 @@ private class NoteskinEditorUI {
 
         var popupText = titleColor + "=== " + title + " ===" + titleColor + '\nAre you sure? You\'ll possibly\n' +
             (state.confirmationPopupType == SWITCH_NOTESKIN ? 'lose your current noteskin data' : 'overwrite your old noteskin data') + '\n$body' +
-        "\n#M1#[ENTER or TAP ON POPUP] Confirm#M1#\n#M3#[ESC or TAP OUT OF POPUP] Cancel#M3#";
+        "\n#M1#[ENTER] Confirm#M1#   #M3#[ESC] Cancel#M3#";
 
-        state.instructionsText.text = popupText;
-        state.instructionsText.alignment = CENTER;
-        state.instructionsText.scale = 1.2;
-        state.instructionsText.alpha = 1;
+        NoteskinEditor.instructionsText.text = popupText;
+        NoteskinEditor.instructionsText.alignment = CENTER;
+        NoteskinEditor.instructionsText.scale = 1.2;
+        NoteskinEditor.instructionsText.alpha = 1;
 
-        state.instructionsText.refresh();
+        NoteskinEditor.instructionsText.refresh();
 
-        state.instructionsText.x = (Main.INITIAL_WIDTH - state.instructionsText.width) / 2;
-        state.instructionsText.y = (Main.INITIAL_HEIGHT - state.instructionsText.height) / 2;
+        NoteskinEditor.instructionsText.x = (Main.INITIAL_WIDTH - NoteskinEditor.instructionsText.width) / 2;
+        NoteskinEditor.instructionsText.y = (Main.INITIAL_HEIGHT - NoteskinEditor.instructionsText.height) / 2;
 
         var padding = 20;
-        state.popupBackground.x = Std.int(state.instructionsText.x - padding);
-        state.popupBackground.y = Std.int(state.instructionsText.y - padding);
-        state.popupBackground.w = Std.int(state.instructionsText.width + padding * 2);
-        state.popupBackground.h = Std.int(state.instructionsText.height + padding * 2);
-        state.gridBuf.updateElement(state.popupBackground);
-        state.gridBuf.update();
+        state.popupBackground.x = Std.int(NoteskinEditor.instructionsText.x - padding);
+        state.popupBackground.y = Std.int(NoteskinEditor.instructionsText.y - padding);
+        state.popupBackground.w = Std.int(NoteskinEditor.instructionsText.width + padding * 2);
+        state.popupBackground.h = Std.int(NoteskinEditor.instructionsText.height + padding * 2);
+        NoteskinEditor.gridBuf.updateElement(state.popupBackground);
+        NoteskinEditor.gridBuf.update();
     }
 
 }
@@ -3302,6 +3572,12 @@ private class NoteskinEditorInputHandler {
                         Main.current.playCancelSound();
                 state.toggleEditor();
             }
+            return;
+        }
+
+        if (key == KeyCode.BACKSPACE) {
+            Main.current.playCancelSound();
+            Main.switchState(EDITOR_MENU);
             return;
         }
 
@@ -4220,46 +4496,46 @@ class NoteskinEditor {
     var currentSkinName:String = "default";
 
     // Rendering
-    var noteBuf:Buffer<Note>;
-    var noteProg:CustomProgram;
+    static var noteBuf:Buffer<Note>;
+    static var noteProg:CustomProgram;
 
     // Scrolling grid background (bottommost layer)
-    var backgroundBuf:Buffer<GridBackgroundSprite>;
-    var backgroundProg:CustomProgram;
-    var backgroundSprites:Array<GridBackgroundSprite> = [];
-    var backgroundTexture:Texture;
+    static var backgroundBuf:Buffer<GridBackgroundSprite>;
+    static var backgroundProg:CustomProgram;
+    static var backgroundSprites:Array<GridBackgroundSprite> = [];
+    static var backgroundTexture:Texture;
     static inline var BACKGROUND_TEXTURE_NAME:String = "editorGridBgTexV2";
 
     // Receptor grid overlay (below receptors, above background)
-    var receptorGridBuf:Buffer<RepeatSprite>;
-    var receptorGridProg:CustomProgram;
+    static var receptorGridBuf:Buffer<RepeatSprite>;
+    static var receptorGridProg:CustomProgram;
     var gridSprites:Array<RepeatSprite> = [];
 
     // GUI overlay (above receptors, below guiSprite labels)
-    var gridBuf:Buffer<RepeatSprite>;
-    var gridProg:CustomProgram;
+    static var gridBuf:Buffer<RepeatSprite>;
+    static var gridProg:CustomProgram;
 
     // Receptor preview
     var strumline:Strumline;
 
     // Sustain preview
-    var sustainBuf:Buffer<Sustain>;
-    var sustainProg:CustomProgram;
+    static var sustainBuf:Buffer<Sustain>;
+    static var sustainProg:CustomProgram;
     var sustainSprites:Array<Sustain> = [];
     var showSustainPreview:Bool = false;
     var sustainRotations:Array<Float> = []; // per-receptor visual rotation (degrees)
 
     // Import from atlas buttons
     var saveButtonBox:RepeatSprite = null;
-    var saveButtonText:Text = null;
+    static var saveButtonText:Text = null;
     var importButtonBox:RepeatSprite = null;
-    var importButtonText:Text = null;
+    static var importButtonText:Text = null;
     var importButton18KBox:RepeatSprite = null;
-    var importButton18KText:Text = null;
+    static var importButton18KText:Text = null;
     // Switch noteskin button — cycles through NoteskinManager's loaded skins
     // and reloads the entire editor (handle, data, receptors, sustains, GUI).
     var switchNoteskinButtonBox:RepeatSprite = null;
-    var switchNoteskinButtonText:Text = null;
+    static var switchNoteskinButtonText:Text = null;
     static inline var SAVE_BUTTON_WIDTH:Int = 115;
     static inline var IMPORT_BUTTON_WIDTH:Int = 130;
     static inline var IMPORT_BUTTON_18K_WIDTH:Int = 150;
@@ -4270,7 +4546,7 @@ class NoteskinEditor {
     var guiButtons:Array<{box:RepeatSprite, sprite:NoteskinGUISprite, action:String}> = [];
     var guiBackground:RepeatSprite = null;        // right panel (wide buttons)
     var guiLeftBackground:RepeatSprite = null;    // left panel (square buttons)
-    var guiStateText:Text = null;
+    static var guiStateText:Text = null;
     var showInstructionsPopup:Bool = false;
 
     // UI state
@@ -4326,14 +4602,14 @@ class NoteskinEditor {
     static inline var GUI_TEXTURE_NAME:String = "guiButtonsTexV2";
 
     // Instructions text
-    var instructionsText:Text;
+    static var instructionsText:Text;
 
     // GUI sprite buffer (single buffer+program for all button label sprites)
-    var guiSpriteBuf:Buffer<NoteskinGUISprite> = null;
-    var guiSpriteProg:CustomProgram = null;
-    var guiTexture:Texture = null;
+    static var guiSpriteBuf:Buffer<NoteskinGUISprite> = null;
+    static var guiSpriteProg:CustomProgram = null;
+    static var guiTexture:Texture = null;
     var guiSprites:Array<NoteskinGUISprite> = [];
-    var guiTextureLoaded:Bool = false;
+    static var guiTextureLoaded:Bool = false;
 
     public function new() {
         // Helper constructors don't do any work — they only store the back-reference.
@@ -4353,20 +4629,8 @@ class NoteskinEditor {
         this.display = display;
         this.view = view;
 
-        renderer.createGrid();
-        renderer.initRendering();
-        renderer.initGUISprites();
-        renderer.createImportButton();
-        renderer.createReceptors();
-
-        // Add all programs to view in correct z-order (bottom to top):
-        // background → receptorGrid → note → sustain → grid(GUI) → guiSprite
-        if (backgroundProg != null) view.addProgram(backgroundProg);
-        if (receptorGridProg != null) view.addProgram(receptorGridProg);
-        if (noteProg != null) view.addProgram(noteProg);
-        if (sustainProg != null) view.addProgram(sustainProg);
-        if (gridProg != null) view.addProgram(gridProg);
-        if (guiSpriteProg != null) view.addProgram(guiSpriteProg);
+        // Add all programs to view in correct z-order (bottom to top).
+        NoteskinEditorRenderer.showPrograms(view);
 
         // Initialize instructions text AFTER display is set.
         ui.initInstructionsText();
@@ -4399,24 +4663,15 @@ class NoteskinEditor {
                 noteskinHandle.loadTexture();
             }
 
-            if (backgroundProg != null && !backgroundProg.isIn(view)) {
-                view.addProgram(backgroundProg);
+            // First-time element creation — buffers/programs already warmed by preInit.
+            if (strumline == null) {
+                NoteskinEditorRenderer.initStaticReceptors(this);
             }
-            if (receptorGridProg != null && !receptorGridProg.isIn(view)) {
-                view.addProgram(receptorGridProg);
+            if (saveButtonBox == null) {
+                renderer.createImportButton();
             }
-            if (noteProg != null && !noteProg.isIn(view)) {
-                view.addProgram(noteProg);
-            }
-            if (sustainProg != null && !sustainProg.isIn(view)) {
-                view.addProgram(sustainProg);
-            }
-            if (gridProg != null && !gridProg.isIn(view)) {
-                view.addProgram(gridProg);
-            }
-            if (guiSpriteProg != null && !guiSpriteProg.isIn(view)) {
-                view.addProgram(guiSpriteProg);
-            }
+
+            NoteskinEditorRenderer.showPrograms(view);
 
             spriteSheetMode = false;
             spritesheetSelectedIndex = -1;
@@ -4500,6 +4755,26 @@ class NoteskinEditor {
         }
     }
 
+    /**
+        Pre-warm all static buffers, programs, and textures so that
+        the first real init() skips all shader compilation.
+        Call once at startup — the statics survive dispose().
+        No instance needed; display is used for Text pre-warming.
+    **/
+    public static function preInit(display:Display) {
+        NoteskinEditorRenderer.initStaticBuffers();
+
+        var handle = NoteskinManager.get("default");
+        if (handle != null) {
+            if (!handle.loaded) handle.loadTexture();
+            NoteskinEditorRenderer.initStaticRendering(handle);
+        }
+
+        NoteskinEditorRenderer.initStaticGUISprites();
+        NoteskinEditorRenderer.initStaticGridSprites();
+        NoteskinEditorRenderer.initStaticTexts(display);
+    }
+
     public function dispose() {
         inputHandler.removeEvents();
 
@@ -4534,17 +4809,13 @@ class NoteskinEditor {
             }
             guiSprites = [];
         }
-        if (guiSpriteBuf != null) {
-            guiSpriteBuf.clear();
-            guiSpriteBuf = null;
-        }
+        // Do NOT clear guiSpriteBuf — it's static and survives dispose.
+        // Individual GUI sprites were removed above.
         if (guiSpriteProg != null) {
             if (view != null && guiSpriteProg.isIn(view)) view.removeProgram(guiSpriteProg);
-            guiSpriteProg = null;
         }
         if (guiStateText != null) {
             guiStateText.removeProgram();
-            guiStateText = null;
         }
         if (instructionsBackground != null) {
             gridBuf.removeElement(instructionsBackground);
@@ -4557,7 +4828,6 @@ class NoteskinEditor {
         }
         if (saveButtonText != null) {
             saveButtonText.removeProgram();
-            saveButtonText = null;
         }
         if (importButtonBox != null) {
             gridBuf.removeElement(importButtonBox);
@@ -4565,7 +4835,6 @@ class NoteskinEditor {
         }
         if (importButtonText != null) {
             importButtonText.removeProgram();
-            importButtonText = null;
         }
         if (importButton18KBox != null) {
             gridBuf.removeElement(importButton18KBox);
@@ -4573,7 +4842,6 @@ class NoteskinEditor {
         }
         if (importButton18KText != null) {
             importButton18KText.removeProgram();
-            importButton18KText = null;
         }
         if (switchNoteskinButtonBox != null) {
             gridBuf.removeElement(switchNoteskinButtonBox);
@@ -4581,76 +4849,44 @@ class NoteskinEditor {
         }
         if (switchNoteskinButtonText != null) {
             switchNoteskinButtonText.removeProgram();
-            switchNoteskinButtonText = null;
         }
 
-        if (noteProg != null && noteProg.isIn(display)) {
-            display.removeProgram(noteProg);
+        NoteskinEditorRenderer.hidePrograms(view);
+
+        // Remove instance elements from static buffers individually.
+        // Do NOT .clear() the static buffers — they survive dispose.
+        if (strumline != null) {
+            for (i in 0...strumline.length) {
+                if (noteBuf != null) noteBuf.removeElement(strumline.receptors[i].note);
+            }
         }
-        if (gridProg != null && gridProg.isIn(display)) {
-            display.removeProgram(gridProg);
+        if (sustainSprites != null) {
+            for (s in sustainSprites) {
+                if (s != null && sustainBuf != null) sustainBuf.removeElement(s);
+            }
         }
-        if (receptorGridProg != null && receptorGridProg.isIn(display)) {
-            display.removeProgram(receptorGridProg);
-        }
-        if (backgroundProg != null && backgroundProg.isIn(display)) {
-            display.removeProgram(backgroundProg);
+        if (gridSprites != null) {
+            for (sprite in gridSprites) {
+                if (sprite != null && receptorGridBuf != null) receptorGridBuf.removeElement(sprite);
+            }
         }
 
-        if (sustainProg != null && sustainProg.isIn(display)) {
-            display.removeProgram(sustainProg);
-        }
-
-        if (noteBuf != null) {
-            noteBuf.clear();
-            noteBuf = null;
-        }
-        if (gridBuf != null) {
-            gridBuf.clear();
-            gridBuf = null;
-        }
-        if (receptorGridBuf != null) {
-            receptorGridBuf.clear();
-            receptorGridBuf = null;
-        }
-        if (backgroundBuf != null) {
-            backgroundBuf.clear();
-            backgroundBuf = null;
-        }
-        if (sustainBuf != null) {
-            sustainBuf.clear();
-            sustainBuf = null;
-        }
-
-        if (backgroundSprites != null) {
-            backgroundSprites = [];
-        }
-        if (backgroundTexture != null) {
-            backgroundTexture.dispose();
-            backgroundTexture = null;
-        }
-        TextureSystem.pool.remove(BACKGROUND_TEXTURE_NAME);
+        // Do NOT clear or null backgroundSprites — they're static and persist
+        // across instances so the scrolling background always works.
 
         if (strumline != null) {
             strumline.dispose();
             strumline = null;
         }
         if (sustainSprites != null) {
-            for (s in sustainSprites) {
-                s = null;
-            }
-            sustainSprites = null;
+            sustainSprites = [];
         }
         if (gridSprites != null) {
-            for (sprite in gridSprites) {
-                sprite = null;
-            }
-            gridSprites = null;
+            gridSprites = [];
         }
 
         if (instructionsText != null) {
             instructionsText.removeProgram();
-            instructionsText = null;
         }
 
         display = null;
