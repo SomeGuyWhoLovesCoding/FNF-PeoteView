@@ -3425,6 +3425,7 @@ private class NoteskinEditorUI {
             case IMPORT_VANILLA:   "#M3#";
             case IMPORT_LETTERED:  "#M1#";
             case SWITCH_NOTESKIN: "#M12#";
+            case EXIT:             "#M6#";
             default:               "#M1#";
         };
         var title = switch(state.confirmationPopupType) {
@@ -3440,12 +3441,14 @@ private class NoteskinEditorUI {
             case IMPORT_VANILLA:   "with one from a vanilla atlas.";
             case IMPORT_LETTERED:  "with one from a lettered atlas.";
             case SWITCH_NOTESKIN:  "loading the next noteskin.";
-            case EXIT:  "exiting.";
+            case EXIT:  "exiting in this session.";
             default:               "";
         };
 
-        var popupText = titleColor + "=== " + title + " ===" + titleColor + '\nAre you sure? You will\n' +
-            (state.confirmationPopupType == SWITCH_NOTESKIN || state.confirmationPopupType == EXIT ? 'lose your noteskin data when' : 'overwrite your old noteskin data') + '\n$body' +
+        var popupText = titleColor + "=== " + title + " ===" + titleColor + '\nAre you sure? You' +
+            (state.confirmationPopupType == EXIT ? 'r current noteskin\ndata will be saved for later when' :
+                (state.confirmationPopupType == SWITCH_NOTESKIN ? 'will\nlose your noteskin data when' : 'will\noverwrite your old noteskin data')
+            ) + '\n$body' +
         "\n#M1#[ENTER] Confirm#M1#   #M3#[ESC] Cancel#M3#";
 
         NoteskinEditor.instructionsText.text = popupText;
@@ -3553,7 +3556,6 @@ private class NoteskinEditorInputHandler {
         }
 
         if (key == KeyCode.BACKSPACE) {
-            Main.current.playScrollSound();
             if (state.confirmationPopupType == EXIT)
                 state.maniaManager.cancelConfirmationPopup();
             else
