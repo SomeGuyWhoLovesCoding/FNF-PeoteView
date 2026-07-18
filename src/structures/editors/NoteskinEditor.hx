@@ -2108,9 +2108,15 @@ private class NoteskinEditorRenderer {
             null
         );
 
-        var maniaIdx = state.currentManiaIndex < state.availableManiaConfigs.length ? state.currentManiaIndex : 0;
-        if (state.noteskinHandle.data.configMania != null && maniaIdx < state.noteskinHandle.data.configMania.length) {
-            state.strumline.applyNoteskinProperties(state.noteskinHandle, maniaIdx);
+        // In preview-clips mode we skip applyNoteskinProperties because the
+        // Strumline was already constructed with the correct gap/scale/length,
+        // and positions are set manually below. Calling it with a normal mania
+        // index would override length to `mania + 1`, collapsing all receptors to one.
+        if (!inPreviewMode) {
+            var maniaIdx = state.currentManiaIndex;
+            if (state.noteskinHandle.data.configMania != null && maniaIdx < state.noteskinHandle.data.configMania.length) {
+                state.strumline.applyNoteskinProperties(state.noteskinHandle, maniaIdx);
+            }
         }
 
         for (i in 0...state.strumline.length) {
@@ -2525,10 +2531,15 @@ private class NoteskinEditorRenderer {
             null
         );
 
-        // Apply noteskin properties for the current mania config
-        var maniaIdx = state.currentManiaIndex < state.availableManiaConfigs.length ? state.currentManiaIndex : 0;
-        if (state.noteskinHandle.data.configMania != null && maniaIdx < state.noteskinHandle.data.configMania.length) {
-            state.strumline.applyNoteskinProperties(state.noteskinHandle, maniaIdx);
+        // In preview-clips mode we skip applyNoteskinProperties because the
+        // Strumline was already constructed with the correct gap/scale/length,
+        // and positions are set manually below. Calling it with a normal mania
+        // index would override length to `mania + 1`, collapsing all receptors to one.
+        if (!inPreviewMode) {
+            var maniaIdx = state.currentManiaIndex;
+            if (state.noteskinHandle.data.configMania != null && maniaIdx < state.noteskinHandle.data.configMania.length) {
+                state.strumline.applyNoteskinProperties(state.noteskinHandle, maniaIdx);
+            }
         }
 
         // Position each note using the editor's custom layout and apply the

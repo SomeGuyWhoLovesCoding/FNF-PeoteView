@@ -126,7 +126,7 @@ class Strumline {
 		this.offsetY = cfgM.offsetY;
 		this.gap = cfgM.gap;
 		this.scale = cfgM.scale;
-		this.length = mania;
+		this.length = mania + 1;
 	}
 
 	function draw(buf:Buffer<Note>) {
