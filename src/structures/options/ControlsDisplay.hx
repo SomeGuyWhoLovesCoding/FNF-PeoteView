@@ -252,6 +252,8 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			Application.current.window.onKeyDown.remove(onKeyDown);
 			Main.current.playCancelSound();
 		}
+
+		SaveData.save();
 	}
 
 	function onKeyDown(keyCode:KeyCode, keyModifier:KeyModifier) {
