@@ -5,12 +5,17 @@ import system.TextureSystem;
 
 using StringTools;
 
-/** Noteskin manager. Owns the shared `textureCache:Array<Texture>` bound to
+/**
+    Noteskin manager. Owns the shared `textureCache:Array<Texture>` bound to
     programs via `setMultiTexture`. Each NoteskinHandle's index in this array
     becomes its `texUnit` (the per-element selector Note/Sustain use to sample
     the right skin). Textures also live in `TextureSystem.pool` under
     `'noteskin_<skinName>'` (folder-name-keyed) for disposal. MAX_CACHED_NOTESKINS
-    caps simultaneous loaded textures; extras are parked (handle exists, not loaded). **/
+    caps simultaneous loaded textures; extras are parked (handle exists, not loaded).
+
+    ⚠ WIP! NEED A WAY TO EFFECTIVELY MAKE MY OWN TEXTURE UNIT-SLOT ISSUE THAT DOESN'T CONSUME
+    ALL OF THE RAM LIKE PEOTEVIEW TEXTURECACHE DOES. WILL BE BACK LATER.
+**/
 @:publicFields
 class NoteskinManager {
     /** Hard cap on simultaneously-loaded skin textures. 15 leaves one texture
@@ -39,7 +44,7 @@ class NoteskinManager {
         var skinNames:Array<String> = [];
         for (dir in skinFolderFolders) {
             var subfolder = '$skinFolder/$dir';
-            trace(subfolder);
+            //trace(subfolder);
             if (subfolder.endsWith(".png") || subfolder.endsWith(".xml") || subfolder.endsWith(".txt")) continue;
             if (!FileSystem.isDirectory(subfolder)) continue;
 
