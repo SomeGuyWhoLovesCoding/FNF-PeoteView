@@ -2,7 +2,7 @@ package structures.gameplay;
 
 /**
  * Note virtual buffer to check the range of note "elements" that need to be rendered,
- * in order to do more complex optimization tricks like "greedy note merging".
+ * in order to do an optimization trick like "ambient note occlusion" for you, with some visual tricks.
  * The fake note overlap really helps solidify things, since you
  * don't normally render more than a million sprites anyway.
  * @since Development

@@ -6,49 +6,47 @@ import structures.gameplay.NoteskinHandle.BasicNoteskinClip;
 import structures.gameplay.NoteskinHandle.NoteskinReceptorProperties;
 
 class NoteskinRuntimeHelper {
-    inline static public function getIdleClip(handle:NoteskinHandle, lane:Int):BasicNoteskinClip {
-        return getClipForState(handle, lane, IDLE);
+    inline static public function getIdleClip(handle:NoteskinHandle, lane:Int, mania:Int):BasicNoteskinClip {
+        return getClipForState(handle, lane, IDLE, mania);
     }
 
-    inline static public function getColorClip(handle:NoteskinHandle, lane:Int):BasicNoteskinClip {
-        return getClipForState(handle, lane, COLOR);
+    inline static public function getColorClip(handle:NoteskinHandle, lane:Int, mania:Int):BasicNoteskinClip {
+        return getClipForState(handle, lane, COLOR, mania);
     }
 
-    inline static public function getPressClip(handle:NoteskinHandle, lane:Int):BasicNoteskinClip {
-        return getClipForState(handle, lane, PRESS);
+    inline static public function getPressClip(handle:NoteskinHandle, lane:Int, mania:Int):BasicNoteskinClip {
+        return getClipForState(handle, lane, PRESS, mania);
     }
 
-    inline static public function getConfirmClip(handle:NoteskinHandle, lane:Int):BasicNoteskinClip {
-        return getClipForState(handle, lane, CONFIRM);
+    inline static public function getConfirmClip(handle:NoteskinHandle, lane:Int, mania:Int):BasicNoteskinClip {
+        return getClipForState(handle, lane, CONFIRM, mania);
     }
 
-    static public function getHoldBodyClip(handle:NoteskinHandle, lane:Int):BasicNoteskinClip {
+    static public function getHoldBodyClip(handle:NoteskinHandle, lane:Int, mania:Int):BasicNoteskinClip {
         var data = handle.data;
-        var cfg = getConfigForLane(handle, lane);
-        var idxArr = cfg.holdBodyIndexes;
+        var cfg = getConfigForLane(handle, lane, mania);
+        
+        var idxArr:Array<Int> = cfg.holdBodyIndexes;
         if (idxArr == null || lane >= idxArr.length) return defaultClip().holdBody;
         var clipIdx = idxArr[lane];
         if (clipIdx >= data.clip.length) return defaultClip().holdBody;
         return data.clip[clipIdx].holdBody;
     }
 
-    static public function getHoldTailClip(handle:NoteskinHandle, lane:Int):BasicNoteskinClip {
+    static public function getHoldTailClip(handle:NoteskinHandle, lane:Int, mania:Int):BasicNoteskinClip {
         var data = handle.data;
-        var cfg = getConfigForLane(handle, lane);
-        var idxArr = cfg.holdTailIndexes;
+        var cfg = getConfigForLane(handle, lane, mania);
+
+        var idxArr:Array<Int> = cfg.holdTailIndexes;
         if (idxArr == null || lane >= idxArr.length) return defaultClip().holdTail;
         var clipIdx = idxArr[lane];
         if (clipIdx >= data.clip.length) return defaultClip().holdTail;
         return data.clip[clipIdx].holdTail;
     }
 
-    // --- Internal helpers ---
-
-    static private function getConfigForLane(handle:NoteskinHandle, lane:Int):NoteskinConfig {
-        // Pick the config that matches the current mania key count.
-        // configMania is 0-indexed: configMania[0] = 1-key, configMania[1] = 2-key, etc.
-        // handle.mania is set by Strumline when the handle is assigned.
-        var idx = handle.mania - 1;
+    // Change getConfigForLane to use the passed mania
+    static private function getConfigForLane(handle:NoteskinHandle, lane:Int, mania:Int):NoteskinConfig {
+        var idx = mania - 1;  // ← use the passed mania, NOT handle.mania
         var configs = handle.data.configMania;
         if (configs != null && idx >= 0 && idx < configs.length) {
             return configs[idx];
@@ -56,7 +54,7 @@ class NoteskinRuntimeHelper {
         // Fallback: try to find a config whose idleIndexes length matches mania
         if (configs != null) {
             for (cfg in configs) {
-                if (cfg.idleIndexes != null && cfg.idleIndexes.length == handle.mania) {
+                if (cfg.idleIndexes != null && cfg.idleIndexes.length == mania) {
                     return cfg;
                 }
             }
@@ -66,9 +64,10 @@ class NoteskinRuntimeHelper {
         return null;
     }
 
-    static private function getClipForState(handle:NoteskinHandle, lane:Int, state:NoteState):BasicNoteskinClip {
+    // And the private helper
+    static private function getClipForState(handle:NoteskinHandle, lane:Int, state:NoteState, mania:Int):BasicNoteskinClip {
         var data = handle.data;
-        var cfg = getConfigForLane(handle, lane);
+        var cfg = getConfigForLane(handle, lane, mania);
         if (data == null || cfg == null) return defaultClipForState(state);
 
         var idxArr:Array<Int> = switch (state) {

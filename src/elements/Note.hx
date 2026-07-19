@@ -57,6 +57,7 @@ class Note implements Element
     public var rH:Int;
 
     public var id:Int = 0;
+    public var mania_for_clipruntimehelper:Int = 4;
 
     // Internal state for checking methods
     private var state:NoteState = IDLE;
@@ -90,7 +91,7 @@ class Note implements Element
     public function reset() {
         state = IDLE;
         if (handle == null) return;
-        var clip = NoteskinRuntimeHelper.getIdleClip(handle, id);
+        var clip = NoteskinRuntimeHelper.getIdleClip(handle, id, mania_for_clipruntimehelper);
         applyClip(clip);
         rW = w;
         rH = h;
@@ -98,22 +99,22 @@ class Note implements Element
 
     public function toNote() {
         state = COLOR;
-                if (handle == null) return;
-        var clip = NoteskinRuntimeHelper.getColorClip(handle, id);
+        if (handle == null) return;
+        var clip = NoteskinRuntimeHelper.getColorClip(handle, id, mania_for_clipruntimehelper);
         applyClip(clip);
     }
 
     public function press() {
         state = PRESS;
         if (handle == null) return;
-        var clip = NoteskinRuntimeHelper.getPressClip(handle, id);
+        var clip = NoteskinRuntimeHelper.getPressClip(handle, id, mania_for_clipruntimehelper);
         applyClip(clip);
     }
 
     public function confirm() {
         state = CONFIRM;
         if (handle == null) return;
-        var clip = NoteskinRuntimeHelper.getConfirmClip(handle, id);
+        var clip = NoteskinRuntimeHelper.getConfirmClip(handle, id, mania_for_clipruntimehelper);
         applyClip(clip);
     }
 

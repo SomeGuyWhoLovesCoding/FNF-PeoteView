@@ -46,12 +46,16 @@ class Main extends Application
 		return current.peoteView.height;
 	}
 
+	static var UP_TO_DATE:Bool = false;
+
 	// Internal variable for checking if the game has booted up
 	private var _started(default, null):Bool;
 
 	override function onWindowCreate()
 	{
 		var titleBarColor:Color = SaveData.state.graphics.customTitleBarColor;
+
+		UP_TO_DATE = Tools.checkForUpdates();
 
 		#if (windows && customtitlebar)
 		Titlebar.setTitlebarColor(titleBarColor.r, titleBarColor.g, titleBarColor.b);

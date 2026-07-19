@@ -10,7 +10,7 @@
 			"name": "Debug",
 			"type": "lime",
 			"request": "launch",
-			"preLaunchTask": null
+			"preLaunchTask": "lime test windows -D FV_PROFILE -debug"
 		},
 		{
 			"name": "Macro",

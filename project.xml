@@ -52,9 +52,9 @@
 	<haxedef name="HXCPP_TRACY_MEMORY" if="FV_PROFILE" />
 	<!--<haxedef name="FV_DEBUG" />-->
 
-	<haxedef name="HXCPP_CHECK_POINTER" if="release" />
-	<haxedef name="HXCPP_STACK_LINE" if="release" />
-	<haxedef name="HXCPP_STACK_TRACE" if="release" />
+	<haxedef name="HXCPP_CHECK_POINTER" if="debug" />
+	<haxedef name="HXCPP_STACK_LINE" if="debug" />
+	<haxedef name="HXCPP_STACK_TRACE" if="debug" />
 	<!--<haxelib name="hxcpp-debug-server" if="debug" />-->
 
 	<!-- Automatically compile externs, hxcpp does the same naturally -->

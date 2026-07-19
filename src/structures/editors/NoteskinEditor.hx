@@ -2089,16 +2089,18 @@ private class NoteskinEditorRenderer {
         var scale = state.currentConfig.scale;
         var pos = state.renderer.getReceptorPosition(0, gap, offsetX, offsetY);
 
+        // Ensure data.configMania has the right config at the right index so
+        // NoteskinRuntimeHelper.getConfigForLane() can find it. We do NOT set
+        // handle.mania — mania_for_clipruntimehelper on each Note resolves
+        // clips independently, so mutating the shared handle is unnecessary.
         var inPreviewMode = state.currentManiaIndex >= state.availableManiaConfigs.length;
         if (inPreviewMode) {
             var previewCfg = state.currentConfig;
             var freshConfigs = state.availableManiaConfigs.copy();
             freshConfigs.push(previewCfg);
             state.noteskinHandle.data.configMania = freshConfigs;
-            state.noteskinHandle.mania = freshConfigs.length;
         } else {
             state.noteskinHandle.data.configMania = state.availableManiaConfigs.copy();
-            state.noteskinHandle.mania = state.maxReceptors;
         }
 
         state.strumline = new Strumline(
@@ -2125,9 +2127,10 @@ private class NoteskinEditorRenderer {
             note.x = Std.int(notePos.x);
             note.y = Std.int(notePos.y);
 
-            var clipIndex = state.clipEditor.getClipIndexForReceptor(i);
-            var clip = state.clipEditor.getClipForIndex(clipIndex);
-            state.renderer.applyClipToNote(note, state.currentState, clip);
+            // mania_for_clipruntimehelper is already set by Strumline.set_length(),
+            // so we can call the Note state methods directly — they resolve the
+            // correct clip via NoteskinRuntimeHelper without needing handle.mania.
+            state.renderer.applyClipToNote(note, state.currentState);
 
             if (state.currentManiaIndex >= state.availableManiaConfigs.length) {
                 note.initialAlpha = 0.9;
@@ -2499,29 +2502,31 @@ private class NoteskinEditorRenderer {
         var scale = state.currentConfig.scale;
         var pos = getReceptorPosition(0, gap, offsetX, offsetY);
 
-        // Set the mania key count on the handle BEFORE creating the Strumline,
-        // so that Note.reset() inside the constructor resolves the correct config.
+        // Ensure data.configMania has the right config at the right index so
+        // NoteskinRuntimeHelper.getConfigForLane() can find it via
+        // mania_for_clipruntimehelper. We do NOT set handle.mania — the state
+        // methods (reset/toNote/press/confirm) on Note now resolve clips via
+        // mania_for_clipruntimehelper, not handle.mania, so mutating the shared
+        // handle's mania field is both unnecessary and harmful (it corrupts the
+        // handle for other Strumlines that share it).
         //
         // In preview-clips mode, the editor uses a generated identity config
         // that isn't part of `data.configMania`. We rebuild `data.configMania`
-        // from `availableManiaConfigs` + the preview config so that Note's
-        // state methods (reset/toNote/press/confirm) — which rely on
-        // NoteskinRuntimeHelper.getConfigForLane() — can find it. This also
-        // prunes any stale preview configs from previous preview sessions,
-        // and gets wiped on save (saveNoteskin overwrites configMania with
-        // availableManiaConfigs), so it doesn't leak into the file.
+        // from `availableManiaConfigs` + the preview config so that
+        // getConfigForLane() can find it. This also prunes any stale preview
+        // configs from previous sessions, and gets wiped on save (saveNoteskin
+        // overwrites configMania with availableManiaConfigs), so it doesn't
+        // leak into the file.
         var inPreviewMode = state.currentManiaIndex >= state.availableManiaConfigs.length;
         if (inPreviewMode) {
             var previewCfg = state.currentConfig;
             var freshConfigs = state.availableManiaConfigs.copy();
             freshConfigs.push(previewCfg);
             state.noteskinHandle.data.configMania = freshConfigs;
-            state.noteskinHandle.mania = freshConfigs.length; // points to previewCfg at the end
         } else {
             // Keep data.configMania in sync with availableManiaConfigs in case
             // any configs were added/removed since loadNoteskin.
             state.noteskinHandle.data.configMania = state.availableManiaConfigs.copy();
-            state.noteskinHandle.mania = state.maxReceptors;
         }
 
         state.strumline = new Strumline(
@@ -2554,9 +2559,10 @@ private class NoteskinEditorRenderer {
             note.x = Std.int(notePos.x);
             note.y = Std.int(notePos.y);
 
-            var clipIndex = state.clipEditor.getClipIndexForReceptor(i);
-            var clip = state.clipEditor.getClipForIndex(clipIndex);
-            applyClipToNote(note, state.currentState, clip);
+            // mania_for_clipruntimehelper is already set by Strumline.set_length(),
+            // so calling the Note state methods directly will resolve the correct
+            // clip via NoteskinRuntimeHelper — no need to pass clip data manually.
+            applyClipToNote(note, state.currentState);
 
             if (state.currentManiaIndex >= state.availableManiaConfigs.length) {
                 note.initialAlpha = 0.9;
@@ -2569,48 +2575,33 @@ private class NoteskinEditorRenderer {
         createSustains();
     }
 
-    /** Apply clip data to a Note for the given edit state.
-        
-        For IDLE / COLOR / PRESS / CONFIRM, this calls the corresponding
-        Note state method (reset / toNote / press / confirm) so that the
-        note's own state machine — and by extension NoteskinRuntimeHelper —
-        is actually exercised by the editor, instead of being bypassed by
-        direct field writes. The state methods resolve the clip via
-        `note.id` (lane index) and `handle.mania` (current config), which
-        is exactly the same path gameplay uses.
+    /** Apply the clip for the given edit state to a Note.
 
-        The state-check methods (idle / isNote / pressed / confirmed) are
-        also called so they're utilized — they mirror the pattern in
-        Strumline.release(), where the check decides whether the state
-        transition is needed. We then call the transition unconditionally
-        so that clip EDITS always propagate visually, even when the note
-        was already in the target state (e.g. user is editing IDLE clips
-        and drags one — the note is already IDLE, but we still need to
-        re-apply the modified clip).
+        For IDLE / COLOR / PRESS / CONFIRM, this simply calls the
+        corresponding Note state method (reset / toNote / press / confirm).
+        The state methods resolve the correct clip internally via
+        `note.id` (lane index) and `mania_for_clipruntimehelper`, which
+        was set by Strumline.set_length() — no external clip lookup needed.
 
         For HOLD_BODY / HOLD_TAIL, Note has no corresponding state method
         (those clips live on the Sustain sprite, not the Note itself), so
         we fall back to direct clip field writes for visual reference. */
-    function applyClipToNote(note:Note, editState:EditState, clip:NoteskinReceptorProperties) {
+    function applyClipToNote(note:Note, editState:EditState) {
         var scale = state.currentConfig.scale;
 
         switch (editState) {
             case IDLE:
-                // Utilize idle() as the state check (Strumline.release pattern),
-                // then unconditionally reset() so clip edits propagate.
-                var _wasIdle:Bool = note.idle();
                 note.reset();
             case COLOR:
-                var _wasNote:Bool = note.isNote();
                 note.toNote();
             case PRESS:
-                var _wasPressed:Bool = note.pressed();
                 note.press();
             case CONFIRM:
-                var _wasConfirmed:Bool = note.confirmed();
                 note.confirm();
             case HOLD_BODY, HOLD_TAIL:
                 // No Note state method for hold clips — write fields directly.
+                var clipIndex = state.clipEditor.getClipIndexForReceptor(note.id);
+                var clip = state.clipEditor.getClipForIndex(clipIndex);
                 var basicClip = state.clipEditor.getBasicClipForState(clip, editState);
                 note.clipX = basicClip.clipX;
                 note.clipY = basicClip.clipY;
@@ -2682,8 +2673,8 @@ private class NoteskinEditorRenderer {
                 // Uses image.width/image.height — the handle's source Image
                 // (the actual sheet dimensions; the cache's master texture is
                 // sized to the BUCKET, which may be bigger than this image).
-                var sheetW = state.noteskinHandle.image.width;
-                var sheetH = state.noteskinHandle.image.height;
+                var sheetW = state.noteskinHandle.texture.width;
+                var sheetH = state.noteskinHandle.texture.height;
                 note.clipX = basicClip.clipX - NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
                 note.clipY = basicClip.clipY - NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
                 note.clipWidth = sheetW + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
@@ -2706,7 +2697,7 @@ private class NoteskinEditorRenderer {
                 // Apply the clip via Note's state methods (reset/toNote/press/
                 // confirm) for IDLE/COLOR/PRESS/CONFIRM, or direct field
                 // writes for HOLD_BODY/HOLD_TAIL. See applyClipToNote.
-                applyClipToNote(note, state.currentState, clip);
+                applyClipToNote(note, state.currentState);
             }
 
             NoteskinEditor.noteBuf.updateElement(note);
@@ -2744,6 +2735,7 @@ private class NoteskinEditorRenderer {
                 state.noteskinHandle,
                 -90, 1.0, 1.0, 0
             );
+            sustain.mania_for_clipruntimehelper = state.maxReceptors;
 
             // Center sustain on the receptor's visual center so it
             // pokes out of the middle of the receptor (growing upward).

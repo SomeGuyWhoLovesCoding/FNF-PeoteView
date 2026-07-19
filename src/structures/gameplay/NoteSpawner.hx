@@ -241,6 +241,7 @@ class NoteSpawner {
                 	var handle = NoteSystem.typeToHandle[virtualNote.ref.type];
 					var note = new Note(virtualNote.Sx, virtualNote.Sy, 0, 0, handle,
 						virtualNote.scale, virtualNote.initialAlpha, virtualNote.addedAlpha);
+					note.mania_for_clipruntimehelper = strumline.length - 1;
 					note.diff = -virtualNote.diff;
 					note.scrollDirection = strumReceptor.scrollDirection;
 					if (downScroll) note.scrollDirection += 180;
@@ -287,6 +288,7 @@ class NoteSpawner {
 					var sustain = new Sustain(virtualSustain.Sx, virtualSustain.Sy, virtualSustain.w, virtualSustain.h,
 						handle, virtualSustain.r, virtualSustain.speed, virtualSustain.scale, id);
 
+					sustain.mania_for_clipruntimehelper = strumline.length - 1;
 					sustain.length = virtualSustain.length;
 					sustain.c.aF = virtualSustain.alpha;
 					sustain.c.luminanceF = virtualSustain.alpha;

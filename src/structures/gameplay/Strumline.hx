@@ -55,11 +55,12 @@ class Strumline {
 		for (i in 0...length) {
 			var receptor = receptors[i];
 			receptor.note.handle = handle;
+			receptor.note.mania_for_clipruntimehelper = length;
 			receptor.note.changeID(i);
 			receptor.note.reset();
 
 			// --- new: cache idle clip dimensions ---
-			var idleClip = NoteskinRuntimeHelper.getIdleClip(handle, i);
+			var idleClip = NoteskinRuntimeHelper.getIdleClip(handle, i, length);
 			receptor.sustainPivotX = Std.int(idleClip.clipW * scale * 0.5);
 			receptor.sustainPivotY = Std.int(idleClip.clipH * scale * 0.5);
 		}
@@ -72,8 +73,9 @@ class Strumline {
 			for (i in 0...length) {
 				var receptor = receptors[i];
 				receptor.note.scale = value;
+				receptor.note.mania_for_clipruntimehelper = length;
 
-				var idleClip = NoteskinRuntimeHelper.getIdleClip(noteskinHandle, i);
+				var idleClip = NoteskinRuntimeHelper.getIdleClip(noteskinHandle, i, length);
 				receptor.sustainPivotX = Std.int(idleClip.clipW * scale);
 				receptor.sustainPivotY = Std.int(idleClip.clipH * scale);
 			}
@@ -113,10 +115,10 @@ class Strumline {
 		this.parent = parent;
 
 		this.length = length;
+		this.noteskinHandle = noteskinHandle;
 		this.x = x;
 		this.y = y;
 		this.gap = gap;
-		this.noteskinHandle = noteskinHandle;
 		this.scale = scale;
 	}
 

@@ -3,43 +3,85 @@ package structures.gameplay;
 import haxe.Json;
 import sys.io.File;
 import sys.FileSystem;
-import lime.graphics.Image;
+import system.TextureSystem;
 
-/** Noteskin handle. Owns per-skin sheet metadata (texUnit/texSlot pair from the
-    shared TextureCache) plus data.json contents. The actual texture is owned
-    by `NoteskinManager.textureCache` (a peote-view `TextureCache`) — this
-    handle just remembers which (unit, slot) within that cache holds this
-    skin's sheet. Folder-name-keyed to avoid data.name collisions. **/
+/**
+    Noteskin handle class.
+
+    Each mania config now carries per-clip-type indexes so that
+    idle, press, color, confirm, holdBody and holdTail can each
+    reference independent clip slots.
+
+    ## Multi-texture architecture
+
+    This handle does NOT own a `Texture` directly — the `Texture`
+    lives in `TextureSystem.pool` under a per-skin key
+    (`'noteskin_<skinName>'` — keyed by FOLDER NAME, not `data.name`,
+    so folders with colliding `data.name` values don't share a pool
+    entry) AND is registered in the shared
+    `NoteskinManager.textureCache` (an `Array<Texture>`). The handle
+    stores:
+      - `textureKey`: the string key into `TextureSystem.pool`
+      - `texture`:    a cached reference to the `Texture` (so callers
+                      can read `texture.width` / `texture.height`)
+      - `texUnit`:    this skin's index into `NoteskinManager.textureCache`
+                      (used as the per-element `@texUnit` value on
+                      Note / Sustain elements so they sample from THIS
+                      skin's slot of the multi-texture)
+      - `texSlot`:    always `0` (each skin occupies a single slot —
+                      no sub-packing)
+
+    `loadTexture()` calls `TextureSystem.createTexture(textureKey,
+    sheetPath, false, true)` (premultiply = true). The actual file IO
+    and alpha-premultiplication happen inside TextureSystem — no lime
+    `Image` is touched in this class.
+
+    `setProgramsTexture()` calls `program.setMultiTexture(
+    NoteskinManager.textureCache, identifier)` to bind ALL cached
+    skin textures to the program at once. Each Note / Sustain element
+    then carries `@texUnit` / `@texSlot` attributes that tell the
+    shader which slot to sample from. Switching noteskins is therefore
+    just a matter of updating each element's `@texUnit` / `@texSlot`
+    via `setHandle()` — no `setTexture` re-binding or shader
+    re-injection required on a switch.
+
+    `dispose()` clears the cached `texture` reference but does NOT
+    call `TextureSystem.disposeTexture()` — the GPU memory stays
+    allocated so the skin can be re-bound quickly on a switch.
+
+    ## Default data fallback
+
+    If `data.json` is missing or fails to parse, the constructor falls
+    back to the in-memory `DEFAULT_DATA` template (a deep copy, so it is
+    safe to mutate the resulting `data` field).
+**/
 @:publicFields
 class NoteskinHandle {
-    /** Skin folder name. Used as the unique key for the manager — NOT data.name,
-        which can collide across folders. */
+    /**
+        The skin's folder name (the leaf directory name under
+        `assets/images/noteskins/`). Set in the constructor and used as
+        the unique identifier for this skin across the manager.
+
+        ⚠ This is the FOLDER NAME, not `data.name`. Two different folders
+        can have a `data.json` whose `name` field collides (e.g. both
+        say `"default"` because the user duplicated a folder, or because
+        a folder is missing `data.json` and the constructor fell back to
+        `DEFAULT_DATA` which has `name = "default"`). The folder name is
+        guaranteed unique by the filesystem, so it's the only safe key
+        for `textureKey` and for `NoteskinManager.currentLoadedNoteskins`.
+    **/
     var skinName:String = "";
 
-    /** Source image. Kept on the handle so the sustain shader can read the
-        image's dimensions (the master texture's dims are the BUCKET size,
-        which differs from this image's size when packed into a bigger bucket).
-        After close-fit resize, image dims == bucket dims. */
-    var image:Image = null;
+    var textureKey:String = "";
 
-    /** The TextureData handed to `NoteskinManager.registerTextureData`. Kept
-        on the handle so `dispose()` can pass it back to
-        `textureCache.removeData(textureData)` to release the slot. */
-    var textureData:TextureData = null;
+    var texture:Texture = null;
 
-    /** Which bucket (texture unit) this skin's sheet landed in. Used as the
-        per-element @texUnit value so the shader samples this skin's bucket. */
     var texUnit:Int = 0;
 
-    /** Which slot within the bucket's master texture holds this skin's sheet.
-        Used as the per-element @texSlot value so peote-view offsets UVs to the
-        right sub-rect of the master texture. */
     var texSlot:Int = 0;
 
-    /** True once loadTexture() has created the texture and registered it. */
     var loaded:Bool = false;
 
-    /** Current mania key count. Set by Strumline. */
     var mania:Int = 1;
 
     var data:NoteskinData;
@@ -165,7 +207,6 @@ class NoteskinHandle {
             // DEFAULT_DATA template (deep-copied so callers can mutate safely).
             trace('NoteskinHandle: failed to load data.json at "$path" ($e); falling back to DEFAULT_DATA');
             data = defaultData();
-            File.saveContent(folder, Json.stringify(data));
             return;
         }
 
@@ -204,121 +245,95 @@ class NoteskinHandle {
         };
     }
 
-    /** Load the sheet image, pack it into the shared TextureCache, and store
-        the returned (texUnit, texSlot) pair. Idempotent.
+    /**
+        Create this skin's sheet texture in `TextureSystem.pool` AND
+        register it in `NoteskinManager.textureCache`.
 
-        The cache picks the smallest bucket whose slot dimensions are >= the
-        image's dimensions (the "resize to be bigger" path) and packs into a
-        free slot of that bucket. Images > 4096x4096 throw — see
-        NoteskinManager.MAX_TEXTURE_DIMENSION. **/
+        Steps:
+          1. `TextureSystem.createTexture(textureKey, sheetPath, false, true)`
+             — creates the GPU texture (handles file IO + alpha
+             premultiplication internally; no lime `Image` touched here).
+          2. `TextureSystem.getTexture(textureKey)` — caches the `Texture`
+             reference on this handle so callers can read `.width` / `.height`.
+          3. `NoteskinManager.registerTexture(texture)` — appends the
+             `Texture` to the shared `textureCache` array and assigns
+             this handle's `texUnit` to its index in that array. The
+             `texSlot` stays at `0` (one Texture per unit, no sub-packing).
+
+        After this call:
+          - `textureKey` is `'noteskin_<skinName>'` (folder-name-based —
+            unique per skin folder even if `data.name` collides)
+          - `texture` is the `Texture` from `TextureSystem.pool` (or null
+            if the sheet file doesn't exist or `createTexture` failed)
+          - `texUnit` is this skin's index in `NoteskinManager.textureCache`
+          - `texSlot` is `0`
+          - `loaded` is true iff `texture != null`
+
+        Idempotent: re-calling on an already-loaded handle is a no-op
+        (the texture stays in the pool and the cache; `texUnit` is
+        preserved).
+
+        If the sheet file doesn't exist, a warning is traced and the
+        handle stays unloaded. The handle is still usable for data
+        lookups (clip coordinates, mania configs) but elements rendered
+        with a null texture will sample garbage — the failure is
+        visually obvious.
+    **/
     function loadTexture():Void {
-        //trace("Loaded - true");
         if (loaded) return;
 
         var sheetPath = Paths.asset('$folder/${data.sparrowImg}');
         if (!FileSystem.exists(sheetPath)) {
-            trace('NoteskinHandle: sheet texture not found at "$sheetPath" for skin "$skinName"');
+            trace('NoteskinHandle: sheet texture not found at "$sheetPath" for skin "$skinName" (data.name="${data.name}")');
             return;
         }
 
-        // Load the source image. We keep the reference on `image` so the
-        // sustain shader can read this image's dimensions (the master
-        // texture in the cache is sized to the BUCKET, not the image).
-        image = Image.fromFile(sheetPath);
-        if (image == null) {
-            trace('NoteskinHandle: Image.fromFile failed for skin "$skinName" (path=$sheetPath)');
+        textureKey = 'noteskin_${skinName}';
+
+        TextureSystem.createTexture(textureKey, sheetPath, false, true);
+
+        // Fetch the Texture reference so callers can read .width/.height.
+        texture = TextureSystem.getTexture(textureKey);
+        if (texture == null) {
+            trace('NoteskinHandle: TextureSystem.createTexture failed for skin "$skinName" (key=$textureKey)');
             return;
         }
 
-        // Close-fit resize: if the image dimensions don't EXACTLY match any
-        // bucket but are "close enough" (within RESIZE_FIT_TOLERANCE), resize
-        // the image up to the bucket's exact dimensions. peote-view's
-        // TextureCache.addData requires exact dimension matches per slot, so
-        // without this a 1000x480 sheet would be rejected even though it
-        // clearly belongs in the 1024x512 bucket.
-        //
-        // We resize the Image in-place (lime's Image.resize mutates the
-        // underlying pixel buffer). Note: lime's default resize is bilinear
-        // for upscaling — adequate for art sheets, no extra quality config
-        // needed here.
-        var bucket = NoteskinManager.findClosestFitBucket(image.width, image.height);
-        if (bucket == null) {
-            // Image is much smaller than any fitting bucket, or all fitting
-            // buckets are too loose a match. Pass it through to peote-view
-            // anyway — it may still handle it (or reject with its own error,
-            // which the try/catch below will surface).
-            //trace('NoteskinHandle: WARNING — "$skinName" (${image.width}x${image.height}) is not close to any bucket; trying registerTextureData as-is');
-        } else if (bucket.w != image.width || bucket.h != image.height) {
-            //trace('NoteskinHandle: close-fit resizing "$skinName" from ${image.width}x${image.height} to ${bucket.w}x${bucket.h}');
-            image.resize(bucket.w, bucket.h);
-        }
+        texUnit = NoteskinManager.registerTexture(texture);
+        texSlot = 0;
 
-        // Convert Image to TextureData with premultiplied alpha.
-        // This replicates TextureSystem.createTexture's premultiply logic —
-        // we can't use TextureSystem directly because it creates a Texture in
-        // its own pool, and we want a TextureData to hand to
-        // TextureCache.addData instead.
-        //
-        // Premultiplication scales RGB by alpha so the shader can use
-        // (src*alpha + dst) blending without dark fringes on translucent
-        // edges. The noteskins render with alpha blending enabled, so this
-        // matters for visual quality.
-        textureData = new TextureData(image.width, image.height, TextureFormat.RGBA);
-        textureData.bytes = haxe.io.Bytes.alloc(image.width * image.height * 4);
-        var srcBytes = image.data.toBytes();
-        for (i in 0...textureData.bytes.length >> 2) {
-            var fullARGB = srcBytes.getInt32(i << 2);
-            var a = (fullARGB >>> 24) & 0xFF;
-            var r = (fullARGB >>> 16) & 0xFF;
-            var g = (fullARGB >>> 8)  & 0xFF;
-            var b = (fullARGB)        & 0xFF;
-            // Scale RGB by alpha (>> 8 is divide by 256, close enough to /255).
-            r = (r * a) >> 8;
-            g = (g * a) >> 8;
-            b = (b * a) >> 8;
-            var premul = (a << 24) | (r << 16) | (g << 8) | b;
-            textureData.bytes.setInt32(i << 2, premul);
-        }
-
-        // Pack into the shared TextureCache. registerTextureData returns
-        // peote-view's {unit, slot} placement (or null if all slots full).
-        // Throws if textureData > MAX_TEXTURE_DIMENSION — let it propagate.
-        var placement:{unit:Int, slot:Int} = null;
-        try {
-            placement = NoteskinManager.registerTextureData(textureData);
-        } catch (e:Dynamic) {
-            trace('NoteskinHandle: registerTextureData threw for skin "$skinName" (${image.width}x${image.height}): $e');
-            textureData = null;
-            image = null;
-            return;
-        }
-        if (placement == null) {
-            trace('NoteskinHandle: registerTextureData returned null for skin "$skinName" (all slots full?)');
-            textureData = null;
-            image = null;
-            return;
-        }
-
-        // Stash the (unit, slot) pair onto the handle so Note/Sustain's
-        // setHandle() can propagate them to the @texUnit / @texSlot
-        // element attributes.
-        texUnit = placement.unit;
-        texSlot = placement.slot;
         loaded = true;
-        trace('NoteskinHandle: loaded skin "$skinName" (${image.width}x${image.height}) -> unit=$texUnit, slot=$texSlot');
+        trace('NoteskinHandle: loaded skin "$skinName" (data.name="${data.name}") sheet (${texture.width}x${texture.height}) '
+            + 'into TextureSystem.pool["$textureKey"] and NoteskinManager.textureCache[$texUnit]');
     }
 
-    /** Bind NoteskinManager.textureCache (a peote-view TextureCache) to a
-        program as a multi-texture under `identifier` (default "noteTexV2").
-        Call once at program creation; no re-binding needed on skin switch —
-        peote-view rebinds the bucket textures at draw time based on each
-        element's @texUnit, and offsets UVs by @texSlot automatically. **/
+    /**
+        Bind the shared `NoteskinManager.textureCache` to a `CustomProgram`
+        as a multi-texture under the given identifier (defaults to
+        `"noteTexV2"`).
+
+        Calls `program.setMultiTexture(NoteskinManager.textureCache, identifier)`
+        — peote-view binds every `Texture` in the array as a separate
+        sampler, and auto-generates the `<identifier>_ID` uniform that the
+        injected fragment shaders reference. Each Note / Sustain element's
+        `@texUnit` / `@texSlot` attributes then select which slot to
+        sample from at draw time.
+
+        This MUST be called once at program creation time (in the editor's
+        `initRendering`). It does NOT need to be re-called on a noteskin
+        switch — switching is handled by updating each element's
+        `@texUnit` / `@texSlot` via `setHandle()`.
+
+        The identifier is REQUIRED for `setProgramsNoteShader()` and
+        `setProgramsSustainShader()` because both shader fragments
+        reference the auto-generated `<identifier>_ID` uniform.
+    **/
     function setProgramsTexture(program:CustomProgram, identifier:String = "noteTexV2") {
-        if (NoteskinManager.textureCache == null) {
-            trace('NoteskinHandle.setProgramsTexture: textureCache null — skipping');
+        if (NoteskinManager.textureCache == null || NoteskinManager.textureCache.length == 0) {
+            trace('NoteskinHandle.setProgramsTexture: NoteskinManager.textureCache is empty — skipping');
             return;
         }
-        program.setMultiTexture(NoteskinManager.textureCache.textures, identifier);
+        program.setMultiTexture(NoteskinManager.textureCache, identifier);
     }
 
     function setProgramsNoteShader(program:CustomProgram) {
@@ -335,29 +350,49 @@ class NoteskinHandle {
         program.setColorFormula( 'c * why(noteTexV2_ID, initialAlpha, addedAlpha)' );
     }
 
-    /** Inject the sustain tiling/rotation shader. Bakes 1/texW and 1/texH as
-        float literals from THIS handle's source IMAGE dimensions.
+    /**
+        Inject the sustain tiling/rotation shader into a program.
 
-        After `loadTexture`'s close-fit resize, `image.width`/`image.height`
-        EQUAL the bucket's dimensions for any skin that was resized (which is
-        the common case). For exact-match skins (no resize needed), the image
-        dimensions also match the bucket. So the baked literals are correct for
-        THIS skin's bucket — but they're still wrong for OTHER skins in OTHER
-        buckets, since this shader is only injected once per program at init
-        time using the FIRST cached skin's dimensions.
+        ## Baked texture dimensions (multi-texture caveat)
 
-        A proper fix is the mat4-as-texture-array trick: pack all 13 buckets'
-        `(invW, invH)` into 4 mat4 uniforms and look up by `textureID` in the
-        shader. See notes in `NoteskinManager.BUCKET_SIZES` and the mat4
-        approach discussed in the worklog. **/
+        The shader bakes `1.0/texture.width` and `1.0/texture.height` as
+        float literals (via `Util.toFloatString`) at injection time,
+        using THIS handle's texture dimensions. With multi-texture
+        (different skins can have different sheet dimensions), the
+        baked literals are only CORRECT for sustains whose `@texUnit`
+        matches this handle's `texUnit`.
+
+        In practice this means: the sustain preview is accurate for the
+        skin that was active when `initRendering()` first injected the
+        shader. Switching to a different-sized skin will render sustains
+        with slightly wrong UV scaling (note rendering is unaffected —
+        it uses `vTexCoord` directly, not the baked literals).
+
+        To make this fully correct for multi-texture, the shader would
+        need per-element `invTexW` / `invTexH` varyings on `Sustain`.
+        That's deliberately NOT done here per the user's instruction
+        ("I didn't mean add the invTexW/H to Sustain.hx. Undo that —
+        I already got it").
+
+        ## Why not re-inject on switch?
+
+        Because the sustain program is bound to a multi-texture array
+        (`setMultiTexture` in `initRendering`), the program itself
+        doesn't change on a skin switch — only each Sustain element's
+        `@texUnit` / `@texSlot` change. Re-injecting the shader on
+        every switch would recompile the fragment shader (slow) and
+        still wouldn't fix the per-element dimension mismatch (would
+        just shift it to whichever skin was switched to). So we
+        inject ONCE at program creation and accept the caveat above.
+    **/
     function setProgramsSustainShader(program:CustomProgram) {
-        if (image == null) {
-            trace('NoteskinHandle.setProgramsSustainShader: image is null for "$skinName" — skipping');
+        if (texture == null) {
+            trace('NoteskinHandle.setProgramsSustainShader: texture is null for "${data.name}" — skipping');
             return;
         }
 
-        var invTileW = Util.toFloatString(1.0 / image.width);
-        var invTileH = Util.toFloatString(1.0 / image.height);
+        var invTileW = Util.toFloatString(1.0 / texture.width);
+        var invTileH = Util.toFloatString(1.0 / texture.height);
 
         program.injectIntoFragmentShader('
             // --- Rotation helper ---
@@ -466,31 +501,32 @@ class NoteskinHandle {
         program.setColorFormula('c * slice(noteTexV2_ID, vec4(bodyX, bodyY, bodyW, bodyH), vec4(tailX, tailY, tailW, tailH), texRotation)');
     }
 
-    /** Clear this handle's references and release its slot back to the
-        shared TextureCache (so another skin can reuse it later). The cache
-        itself stays alive until NoteskinManager.disposeAll().
-        Safe to call multiple times. **/
+    /**
+        Dispose this handle's reference to its texture.
+
+        Clears `texture`, `textureKey`, `texUnit`, `texSlot`, and
+        `loaded`. Does NOT call `TextureSystem.disposeTexture()` —
+        the GPU memory stays allocated so the skin can be re-bound
+        quickly on a switch.
+
+        Safe to call multiple times. Safe to call on a handle that was
+        never loaded.
+    **/
     function dispose() {
-        // Release the slot back to the cache. peote-view's removeData
-        // takes the same TextureData reference we passed to addData, so
-        // it can find the slot in its textureDataMap and mark it free.
-        if (textureData != null && NoteskinManager.textureCache != null) {
-            try {
-                NoteskinManager.textureCache.removeData(textureData);
-            } catch (e:Dynamic) {
-                trace('NoteskinHandle.dispose: removeData failed for "$skinName": $e');
-            }
-        }
+        // Just clear our references — TextureSystem.pool and
+        // NoteskinManager.textureCache still own the Texture. The
+        // manager's disposeAll() is responsible for actually freeing
+        // GPU memory via TextureSystem.disposeTexture + clearing the
+        // textureCache array.
         loaded = false;
-        image = null;
-        textureData = null;
+        texture = null;
+        textureKey = "";
         texUnit = 0;
         texSlot = 0;
     }
 
     // --- Getters for clip data by index ---
 
-    /** Get the NoteskinReceptorProperties for a given clip index. */
     inline function getClip(index:Int):NoteskinReceptorProperties {
         if (data.clip != null && index >= 0 && index < data.clip.length) {
             return data.clip[index];
@@ -498,7 +534,6 @@ class NoteskinHandle {
         return defaultClip();
     }
 
-    /** Get a specific clip type for a given clip index. */
     inline function getClipState(index:Int, state:Int):BasicNoteskinClip {
         var clip = getClip(index);
         return switch (state) {
@@ -512,7 +547,6 @@ class NoteskinHandle {
         };
     }
 
-    /** Get the clip index array for a given edit state from a config. */
     static inline function getIndexesForState(config:NoteskinConfig, state:Int):Array<Int> {
         return switch (state) {
             case 0: config.idleIndexes;
@@ -538,7 +572,6 @@ class NoteskinHandle {
     }
 
     static function parseConfig(raw:Dynamic):NoteskinConfig {
-        // Support both old format (single "indexes") and new format (per-type indexes).
         var oldIndexes:Array<Int> = raw.indexes;
         var hasOld = oldIndexes != null && oldIndexes.length > 0;
 
@@ -547,12 +580,12 @@ class NoteskinHandle {
             offsetY: raw.offsetY != null ? raw.offsetY : 0,
             gap: raw.gap != null ? raw.gap : 112,
             scale: raw.scale != null ? raw.scale : 1.0,
-            idleIndexes:     raw.idleIndexes != null     ? raw.idleIndexes     : (hasOld ? oldIndexes.copy() : []),
-            pressIndexes:    raw.pressIndexes != null    ? raw.pressIndexes    : (hasOld ? oldIndexes.copy() : []),
-            colorIndexes:    raw.colorIndexes != null    ? raw.colorIndexes    : (hasOld ? oldIndexes.copy() : []),
-            confirmIndexes:  raw.confirmIndexes != null  ? raw.confirmIndexes  : (hasOld ? oldIndexes.copy() : []),
-            holdBodyIndexes: raw.holdBodyIndexes != null ? raw.holdBodyIndexes : (hasOld ? oldIndexes.copy() : []),
-            holdTailIndexes: raw.holdTailIndexes != null ? raw.holdTailIndexes : (hasOld ? oldIndexes.copy() : [])
+            idleIndexes:     raw.idleIndexes != null     ? raw.idleIndexes     : [],
+            pressIndexes:    raw.pressIndexes != null    ? raw.pressIndexes    : [],
+            colorIndexes:    raw.colorIndexes != null    ? raw.colorIndexes    : [],
+            confirmIndexes:  raw.confirmIndexes != null  ? raw.confirmIndexes  : [],
+            holdBodyIndexes: raw.holdBodyIndexes != null ? raw.holdBodyIndexes : [],
+            holdTailIndexes: raw.holdTailIndexes != null ? raw.holdTailIndexes : []
         };
     }
 
@@ -572,16 +605,11 @@ class NoteskinHandle {
 // ============================================================================
 
 enum abstract TextureRotation(Float) from Float to Float {
-    /** 0° — no rotation. */
     var POS0   = 0.0;
-    /** 90° clockwise. */
     var POS90  = 90.0;
-    /** 180°. */
     var POS180 = 180.0;
-    /** 90° counter-clockwise (270°). */
     var NEG90  = -90.0;
 
-    /** Cycle to the next rotation value. */
     public inline function next():TextureRotation {
         var v:Float = this;
         if (v == 0.0)   return POS90;
@@ -590,7 +618,6 @@ enum abstract TextureRotation(Float) from Float to Float {
         return POS0;
     }
 
-    /** Cycle to the previous rotation value. */
     public inline function prev():TextureRotation {
         var v:Float = this;
         if (v == 0.0)   return NEG90;
@@ -599,16 +626,10 @@ enum abstract TextureRotation(Float) from Float to Float {
         return POS180;
     }
 
-    /** To degrees. */
     public inline function toDegrees():Int {
         return Std.int(this);
     }
 
-    /**
-        Parse from JSON value — accepts numeric degrees or legacy
-        string formats ("POS0", "POS90", "POS180", "NEG90").
-        Defaults to POS0.
-    **/
     public static function parse(val:Dynamic):TextureRotation {
         if (val == null) return POS0;
 
@@ -653,17 +674,11 @@ class NoteskinConfig {
     var gap:Int;
     var scale:Float;
 
-    /** Per-mania-key clip index for the IDLE state. */
     var idleIndexes:Array<Int>;
-    /** Per-mania-key clip index for the PRESS state. */
     var pressIndexes:Array<Int>;
-    /** Per-mania-key clip index for the COLOR overlay. */
     var colorIndexes:Array<Int>;
-    /** Per-mania-key clip index for the CONFIRM state. */
     var confirmIndexes:Array<Int>;
-    /** Per-mania-key clip index for the HOLD_BODY state. */
     var holdBodyIndexes:Array<Int>;
-    /** Per-mania-key clip index for the HOLD_TAIL state. */
     var holdTailIndexes:Array<Int>;
 }
 

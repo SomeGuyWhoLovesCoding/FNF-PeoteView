@@ -67,7 +67,7 @@ class NoteSystem {
 			sustainProg = new CustomProgram(sustainsBuf);
 			Sustain.init(sustainProg);
             handle.setProgramsTexture(sustainProg);
-            handle.setProgramsNoteShader(sustainProg);
+            handle.setProgramsSustainShader(sustainProg);
 		}
 	}
 
@@ -97,7 +97,7 @@ class NoteSystem {
 		for (i in 0...2) {
 			var strumline = new Strumline(STRUMLINE_X_OFFSET + Std.int(Main.INITIAL_WIDTH * (i * 0.5)),
 				parent.downScroll ? Main.INITIAL_HEIGHT - STRUMLINE_Y_OFFSET_DOWNSCROLL : STRUMLINE_Y_OFFSET,
-				NoteskinManager.get("default"), Std.int(inputSystem.strumline[0]), inputSystem.strumline[1], mania, this);
+				typeToHandle[i], Std.int(inputSystem.strumline[0]), inputSystem.strumline[1], mania, this);
 			strumline.playable = parent.inputSystem.strumlinePlayable[i];
 			strumlines.push(strumline);
 		}

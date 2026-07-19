@@ -105,19 +105,13 @@ class Sustain implements Element
     static public var holdCoords:Array<Array<Float>> = [];
     static public var rotations:Array<Int> = [];
 
-    // ========================================================================
-    // Shader Init
-    // ========================================================================
+    public var mania_for_clipruntimehelper:Int = 4;
 
     var handle:NoteskinHandle; // new
 
     static public function init(program:CustomProgram)
     {
     }
-
-    // ========================================================================
-    // Construction & ID
-    // ========================================================================
 
     inline public function new(x:Int, y:Int, w:Int, h:Int, handle:NoteskinHandle, r:Float, s:Float, sc:Float, tile:Int) {
         this.handle = handle;
@@ -148,8 +142,8 @@ class Sustain implements Element
         Set the body/tail coords and rotation from the helper for this lane.
     **/
     inline public function changeID(id:Int) {
-        var bodyClip = NoteskinRuntimeHelper.getHoldBodyClip(handle, id);
-        var tailClip = NoteskinRuntimeHelper.getHoldTailClip(handle, id);
+        var bodyClip = NoteskinRuntimeHelper.getHoldBodyClip(handle, id, mania_for_clipruntimehelper);
+        var tailClip = NoteskinRuntimeHelper.getHoldTailClip(handle, id, mania_for_clipruntimehelper);
 
         bodyX = bodyClip.clipX;
         bodyY = bodyClip.clipY;
