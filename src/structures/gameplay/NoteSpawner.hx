@@ -224,8 +224,8 @@ class NoteSpawner {
 			for (j in 0...lane.length) {
 				var index = lane[j];
 				var length = notes.noteLength[i][j];
-				var id = parent.parent.inputSystem.receptorIds[j];
-				var receptor = strumline.receptors[j];
+				//trace('RECEPTOR LENGTH: ${strumline.receptors.length}');
+				var receptor = strumline.receptors[i];
 				var strumReceptor = receptor.note;
 				var k = 0;
 				if (length == 0) continue;
@@ -238,9 +238,7 @@ class NoteSpawner {
 						continue;
 					}
 
-					//trace("Let's see if see get any info bout this!");
                 	var handle = NoteSystem.typeToHandle[virtualNote.ref.type];
-					//trace("Oops, we null referenced!");
 
 					var note = new Note(virtualNote.Sx, virtualNote.Sy, 0, 0, handle,
 						virtualNote.scale, virtualNote.initialAlpha, virtualNote.addedAlpha);
@@ -249,7 +247,7 @@ class NoteSpawner {
 					note.scrollDirection = strumReceptor.scrollDirection;
 					if (downScroll) note.scrollDirection += 180;
 
-					note.changeID(id);
+					note.changeID(j);
 					note.toNote();
 
 					var noteToHitIdx = receptor.noteToHit_index;
@@ -279,19 +277,16 @@ class NoteSpawner {
 			for (j in 0...lane.length) {
 				var index = lane[j];
 				var length = notes.sustainLength[i][j];
-				var id = parent.parent.inputSystem.receptorIds[j];
-				var receptor = strumline.receptors[j];
+				var receptor = strumline.receptors[i];
 				var strumReceptor = receptor.note;
 				for (k in 0...length) {
 					var virtualSustain:VirtualSustain = index[k];
 					if (virtualSustain == null) continue;
 
-					//trace("Let's see if see get any info bout this!");
                 	var handle = NoteSystem.typeToHandle[virtualSustain.ref.ref.type];
-					//trace("Oops, we null referenced!");
 
 					var sustain = new Sustain(virtualSustain.Sx, virtualSustain.Sy, virtualSustain.w, virtualSustain.h,
-						handle, virtualSustain.r, virtualSustain.speed, virtualSustain.scale, id);
+						handle, virtualSustain.r, virtualSustain.speed, virtualSustain.scale, i);
 
 					sustain.mania_for_clipruntimehelper = strumline.length;
 					sustain.length = virtualSustain.length;
@@ -304,7 +299,7 @@ class NoteSpawner {
 						sustain.r += 180;
 						sustain.scrollDirection += 180;
 					}
-					sustain.changeID(id);
+					sustain.changeID(j);
 
 					NoteSystem.sustainsBuf.addElement(sustain);
 				}

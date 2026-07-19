@@ -596,7 +596,7 @@ class PlayField {
 		if (Chart.header.voicesDirs.length > 1) index = 1;
 		if (index > 0 && index <= Mixer.trackCount) Mixer.changeTrackVolume(index, 1);
 
-		var playable = inputSystem.strumlinePlayable[lane];
+		var playable = noteSystem.strumlines[lane].playable;
 
 		if (!playable) {
 			health -= healthLoss[lane];
@@ -707,7 +707,7 @@ class PlayField {
 
 		if (noteSystem != null && noteSystem.strumlines[lane].confirmed(note.index)) return;
 
-		var playable = inputSystem.strumlinePlayable[lane];
+		var playable = noteSystem.strumlines[lane].playable;
 
 		if (!playable) {
 			health -= healthLoss[lane];

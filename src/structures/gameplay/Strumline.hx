@@ -1,6 +1,7 @@
 package structures.gameplay;
 
 import lime.system.System;
+import lime.ui.KeyCode;
 
 /**
  * The home of inputs, whether you own it or not.
@@ -17,8 +18,19 @@ class Strumline {
 	var scale(default, set):Float;
 	var gap(default, set):Int;
 	var length(default, set):Int;
-	var playable:Bool;
 	var noteskinHandle(default, set):NoteskinHandle;
+
+	// input system keybind rework to be based off the current strumline
+	var playable(default, set):Bool;
+
+	function set_playable(value:Bool) {
+		playable = value;
+		updateKeybinds();
+		return value;
+	}
+
+	var keybinds:Array<KeyCode> = [];
+	var keybindsTwo:Array<KeyCode> = [];
 
 	function set_x(value:Int) {
 		for (i in 0...length) {
@@ -72,6 +84,7 @@ class Strumline {
 				receptor.note.mania_for_clipruntimehelper = length;
 			}
 		}
+		updateKeybinds();
 		calculateSustainPivot();
 		return scale = value;
 	}
@@ -94,6 +107,7 @@ class Strumline {
 				receptors[i] = new Receptor(note);
 			}
 		}
+		updateKeybinds();
 		calculateSustainPivot();
 
 		return length = value;
@@ -124,6 +138,29 @@ class Strumline {
 			var idleClip = NoteskinRuntimeHelper.getIdleClip(noteskinHandle, i, length);
 			receptor.sustainPivotX = Math.round(idleClip.clipW * scale * 0.5);
 			receptor.sustainPivotY = Math.round(idleClip.clipH * scale * 0.5);
+		}
+	}
+
+	function updateKeybinds() {
+		if (!playable) {
+			keybinds.resize(0);
+			keybindsTwo.resize(0);
+			return;
+		}
+
+		keybinds.resize(length);
+		keybindsTwo.resize(length);
+
+		for (i in 0...length) {
+			var keybindArray = SaveData.state.controls.game.keybindArray;
+			var bind = keybindArray[length-1];
+			if (bind == null) return;
+			var len = bind.length;
+			var keybind = bind[i];
+			//trace('On index $i on length $length');
+			keybinds[i] = i < len ? keybind[0] : -1;
+			if (keybind.length == 2)
+				keybindsTwo[i] = i < len ? keybind[1] : -1;
 		}
 	}
 

@@ -337,9 +337,15 @@ class ControlsDisplay implements IAlphabetScrollHost {
 	}
 
 	// #3 — returns the label of the UI/game control that already owns this key (excluding the current slot), or "" if no conflict
-	function findConflict(keyCode:KeyCode, currentIndex:Int):String {
+	function findConflict(keyCode:KeyCode, currentIndex:Int, alertOnUI:Bool = true):String {
 		var ui = SaveData.state.controls.ui;
 		var game = SaveData.state.controls.game;
+
+		if (game.pause == keyCode && 6 != currentIndex) return controlLabels[6];
+		if (game.reset == keyCode && 7 != currentIndex) return controlLabels[7];
+		if (game.debug == keyCode && 8 != currentIndex) return controlLabels[8];
+
+		if (!alertOnUI) return "";// "secret hi";
 
 		if (ui.left == keyCode && 0 != currentIndex) return controlLabels[0];
 		if (ui.down == keyCode && 1 != currentIndex) return controlLabels[1];
@@ -347,10 +353,6 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		if (ui.right == keyCode && 3 != currentIndex) return controlLabels[3];
 		if (ui.accept == keyCode && 4 != currentIndex) return controlLabels[4];
 		if (ui.back == keyCode && 5 != currentIndex) return controlLabels[5];
-
-		if (game.pause == keyCode && 6 != currentIndex) return controlLabels[6];
-		if (game.reset == keyCode && 7 != currentIndex) return controlLabels[7];
-		if (game.debug == keyCode && 8 != currentIndex) return controlLabels[8];
 
 		return "";
 	}
@@ -486,7 +488,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 				}
 
 				// Check for duplicate against UI/game controls
-				var uiGameConflict = findConflict(keyCode, -1);
+				var uiGameConflict = findConflict(keyCode, -1, false);
 				if (uiGameConflict != "") {
 					alertDupebind = true;
 					alertDupebindKeyName = KeyCodeConverter.getSimpleKeyName(keyCode);
@@ -508,7 +510,15 @@ class ControlsDisplay implements IAlphabetScrollHost {
 
 		var playField = Main.current.playField;
 		if (playField != null) {
-			if (playField.mania == curManiaNum + 1) playField.inputSystem.reloadKeybinds(curManiaNum + 1);
+			if (playField.mania == curManiaNum + 1) {
+				var noteSystem = playField.noteSystem;
+				if (noteSystem != null) {
+					var strumlines = noteSystem.strumlines;
+					for (i in 0...strumlines.length) {
+						strumlines[i].updateKeybinds();
+					}
+				}
+			}
 		}
 
 		if (maniaBindNum <= keybindsArr.length - 1) {

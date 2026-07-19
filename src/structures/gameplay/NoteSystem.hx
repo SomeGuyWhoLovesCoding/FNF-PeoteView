@@ -98,12 +98,13 @@ class NoteSystem {
 		for (i in 0...2) {
 			var strumline = new Strumline(STRUMLINE_X_OFFSET + Std.int(Main.INITIAL_WIDTH * (i * 0.5)),
 				parent.downScroll ? Main.INITIAL_HEIGHT - STRUMLINE_Y_OFFSET_DOWNSCROLL : STRUMLINE_Y_OFFSET,
-				typeToHandle[i], Std.int(inputSystem.strumline[0]), inputSystem.strumline[1], mania, this);
-			strumline.playable = parent.inputSystem.strumlinePlayable[i];
+				typeToHandle[i], 0, 0, mania, this);
+			strumline.playable = i == 1;
+			strumline.applyNoteskinProperties(typeToHandle[i], mania - 1);
 			strumlines.push(strumline);
 		}
 
-		virtualNoteBuffer = new NoteVB(strumlines.length, strumlines[0].receptors.length);
+		virtualNoteBuffer = new NoteVB(strumlines.length, 1 << 8);
 
 		notePool = new NotePool(this);
 		noteSpawner = new NoteSpawner(this);
@@ -297,12 +298,11 @@ class NoteSystem {
 		var strumline = strumlines[lane];
 		var receptor = strumline.receptors[index];
 		var rec = receptor.note;
-		var id = parent.inputSystem.receptorIds[index];
 		var handle = NoteSystem.typeToHandle[note.type];
 
-		var noteSpr = notePool.getNote(id, note, _id);
+		var noteSpr = notePool.getNote(index, note, _id);
 		if (noteSpr == null) return noteSpr;
-		var sustainSpr = duration != 0 ? notePool.getSustain(id, note, _id) : null;
+		var sustainSpr = duration != 0 ? notePool.getSustain(index, note, _id) : null;
 		var sustainExists = duration != 0;
 
 		var leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
@@ -421,7 +421,7 @@ class NoteSystem {
 				if (sustainExists) {
 					receptor.sustainResolved = false;
 					receptor.sustainToHold_duration = duration;
-					sustainSpr.followNote(rec.x + receptor.sustainPivotX, rec.y + receptor.sustainPivotY, id);
+					sustainSpr.followNote(rec.x + receptor.sustainPivotX, rec.y + receptor.sustainPivotY, index);
 					sustainSpr.w = sustainSpr.length - leftover;
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}
@@ -441,7 +441,7 @@ class NoteSystem {
 			sustainSpr.speed = parent.scrollSpeed;
 			sustainSpr.scale = rec.scale;
 			sustainSpr.length = sustainLength;
-			sustainSpr.followNote(noteSpr.Sx + receptor.sustainPivotX, noteSpr.Sy + receptor.sustainPivotY, id);
+			sustainSpr.followNote(noteSpr.Sx + receptor.sustainPivotX, noteSpr.Sy + receptor.sustainPivotY, index);
 			sustainSpr.diff = isHit ? 0 : Std.int(diff);
 
 			var sustainCompleted = pos > position + (MetaNote.floatToMetaNotePosition(sustainLength - SUSTAIN_TAIL_END));
@@ -453,7 +453,7 @@ class NoteSystem {
 				sustainSpr.w = sustainLength;
 			} else {
 				if (sustainSpr.w >= 0) {
-					sustainSpr.followNote(rec.x + receptor.sustainPivotX, rec.y + receptor.sustainPivotY, id);
+					sustainSpr.followNote(rec.x + receptor.sustainPivotX, rec.y + receptor.sustainPivotY, index);
 					sustainSpr.w = sustainLength - leftover;
 					if (sustainSpr.w < 0) sustainSpr.w = 0;
 				}

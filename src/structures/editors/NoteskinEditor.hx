@@ -3219,6 +3219,8 @@ private class NoteskinEditorUI {
         if (NoteskinEditor.guiStateText.text != newText) {
             NoteskinEditor.guiStateText.text = newText;
         }
+
+        NoteskinEditor.guiStateText.x = Main.INITIAL_WIDTH - NoteskinEditor.guiStateText.width - 4;
     }
 
     // --- Highlight active buttons ---
