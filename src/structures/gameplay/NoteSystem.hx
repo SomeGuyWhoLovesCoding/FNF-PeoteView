@@ -481,10 +481,6 @@ class NoteSystem {
 				receptor.sustainActive = !isResolved;
 		}
 
-		if (_id == 5 && sustainExists) {
-			trace(sustainSpr.Sx,sustainSpr.Sy);
-		}
-
 		if (noteSpr != null) {
 			noteMovement.run(this, noteSpr, sustainSpr, rec, index, note.type, isHit);
 			if (sustainExists)
