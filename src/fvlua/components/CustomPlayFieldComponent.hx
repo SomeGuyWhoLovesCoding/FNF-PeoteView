@@ -264,7 +264,12 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 				FunkinViewLua.error('Notetype ID out of range! $id >= 256 or $id < 0');
 				return FunkinViewLua.Function_Stop;
 			}
-			NoteSystem.typeToHandle[id] = NoteskinManager.get(value);
+			var noteskinHandle = NoteskinManager.get(value);
+			if (noteskinHandle == null) {
+				FunkinViewLua.error('Can\' do that - Noteskin Handle "$value" either not found or has invalid data.');
+				return FunkinViewLua.Function_Stop;
+			}
+			NoteSystem.typeToHandle[id] = noteskinHandle;
 			return FunkinViewLua.Function_Continue;
 		});
 
@@ -279,7 +284,12 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 				FunkinViewLua.error('Can\' do that - Strumline $id is null.');
 				return FunkinViewLua.Function_Stop;
 			}
-			targetStrumline.noteskinHandle = NoteskinManager.get(value);
+			var noteskinHandle = NoteskinManager.get(value);
+			if (noteskinHandle == null) {
+				FunkinViewLua.error('Can\' do that - Noteskin Handle "$value" either not found or has invalid data.');
+				return FunkinViewLua.Function_Stop;
+			}
+			targetStrumline.noteskinHandle = noteskinHandle;
 			return FunkinViewLua.Function_Continue;
 		});
 	}

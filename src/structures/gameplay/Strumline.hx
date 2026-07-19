@@ -58,12 +58,8 @@ class Strumline {
 			receptor.note.mania_for_clipruntimehelper = length;
 			receptor.note.changeID(i);
 			receptor.note.reset();
-
-			// --- new: cache idle clip dimensions ---
-			var idleClip = NoteskinRuntimeHelper.getIdleClip(handle, i, length);
-			receptor.sustainPivotX = Std.int(idleClip.clipW * scale * 0.5);
-			receptor.sustainPivotY = Std.int(idleClip.clipH * scale * 0.5);
 		}
+		calculateSustainPivot();
 
 		return handle;
 	}
@@ -74,12 +70,9 @@ class Strumline {
 				var receptor = receptors[i];
 				receptor.note.scale = value;
 				receptor.note.mania_for_clipruntimehelper = length;
-
-				var idleClip = NoteskinRuntimeHelper.getIdleClip(noteskinHandle, i, length);
-				receptor.sustainPivotX = Std.int(idleClip.clipW * scale);
-				receptor.sustainPivotY = Std.int(idleClip.clipH * scale);
 			}
 		}
+		calculateSustainPivot();
 		return scale = value;
 	}
 
@@ -101,6 +94,7 @@ class Strumline {
 				receptors[i] = new Receptor(note);
 			}
 		}
+		calculateSustainPivot();
 
 		return length = value;
 	}
@@ -114,12 +108,23 @@ class Strumline {
 
 		this.parent = parent;
 
-		this.scale = scale;
 		this.length = length;
 		this.noteskinHandle = noteskinHandle;
+		this.scale = scale;
 		this.x = x;
 		this.y = y;
 		this.gap = gap;
+
+		calculateSustainPivot();
+	}
+
+	function calculateSustainPivot() {
+		for (i in 0...length) {
+			var receptor = receptors[i];
+			var idleClip = NoteskinRuntimeHelper.getIdleClip(noteskinHandle, i, length);
+			receptor.sustainPivotX = Math.round(idleClip.clipW * scale * 0.5);
+			receptor.sustainPivotY = Math.round(idleClip.clipH * scale * 0.5);
+		}
 	}
 
 	function applyNoteskinProperties(handle:NoteskinHandle, mania:Int) {
