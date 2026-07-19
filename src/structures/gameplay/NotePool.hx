@@ -60,13 +60,9 @@ class NotePool {
 	 * @return The allocated VirtualSustain at the given index.
 	 */
     function getSustain(id:Int, n:MetaNote, index:Int64):VirtualSustain {
-        var tex = TextureSystem.getTexture("sustainTex");
         var obj = inactiveVirtualSusses.pop();
         if (obj == null) {
-            obj = new VirtualSustain(-9999, -9999,
-                Math.floor(tex.width / tex.tilesX),
-                Math.floor(tex.height / tex.tilesY)
-            );
+            obj = new VirtualSustain(-9999, -9999, 0, 0);
         }
         obj.alpha = Sustain.defaultAlpha;
         return obj;

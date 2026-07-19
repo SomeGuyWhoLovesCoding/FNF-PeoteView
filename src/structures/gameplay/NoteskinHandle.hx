@@ -413,7 +413,7 @@ class NoteskinHandle {
                 return (rot > 45.0 && rot < 135.0) || (rot >= 225.0 && rot < 315.0);
             }
 
-            vec4 slice(int textureID, vec4 bodyCoord, vec4 tailCoord, float texRotation) {
+            vec4 slice(int textureID, vec4 bodyCoord, vec4 tailCoord, float texRotation, float invTileW, float invTileH) {
                 vec2 coord = vTexCoord;
 
                 // After rotation, the length-axis and thickness-axis may swap.
@@ -488,7 +488,7 @@ class NoteskinHandle {
                 // invTileW / invTileH are baked as float literals at shader
                 // injection time (1.0/texture.width, 1.0/texture.height).
                 vec2 rotated = sustainRotateUV(localCoord, texRotation);
-                vec2 uv = (rect.xy + rotated * rect.zw) * vec2($invTileW, $invTileH);
+                vec2 uv = (rect.xy + rotated * rect.zw) * vec2(invTileW, invTileH);
 
                 // Clamp to [0,1] to prevent out-of-bounds sampling when
                 // coords are near texture edges (which made the tail disappear).
@@ -498,7 +498,7 @@ class NoteskinHandle {
             }
         ');
 
-        program.setColorFormula('c * slice(noteTexV2_ID, vec4(bodyX, bodyY, bodyW, bodyH), vec4(tailX, tailY, tailW, tailH), texRotation)');
+        program.setColorFormula('c * slice(noteTexV2_ID, vec4(bodyX, bodyY, bodyW, bodyH), vec4(tailX, tailY, tailW, tailH), texRotation, invTileWidth, invTileHeight)');
     }
 
     /**

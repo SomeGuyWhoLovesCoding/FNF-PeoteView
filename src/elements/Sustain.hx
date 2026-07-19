@@ -88,6 +88,9 @@ class Sustain implements Element
     // Texture rotation in degrees: 0, 90, 180, or 270.
     @varying @custom @set("properties") public var texRotation:Float = 0.0;
 
+    @varying @custom public var invTileWidth:Float = 100.0;
+    @varying @custom public var invTileHeight:Float = 100.0;
+
     // ========================================================================
     // State
     // ========================================================================
@@ -136,6 +139,8 @@ class Sustain implements Element
         this.handle = handle;
         texUnit = handle.texUnit;
         texSlot = handle.texSlot;
+        invTileWidth = 1.0 / (handle.texture.width / handle.texture.slotsX);
+        invTileHeight = 1.0 / handle.texture.height;
     }
 
     /**
@@ -154,6 +159,8 @@ class Sustain implements Element
         tailY = tailClip.clipY;
         tailW = tailClip.clipW;
         tailH = tailClip.clipH;
+
+        h = Math.round(bodyH);
 
         texRotation = bodyClip.rotation.toDegrees();
     }

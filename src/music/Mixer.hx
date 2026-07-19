@@ -100,46 +100,7 @@ class Mixer {
 		if (playfield == null) return;
 		
 		if (isPlaying()) {
-			// 1. Accumulate audio time based on delta time (prediction)
-			accumulatedTime += deltaTime * speed;
-			
-			// 2. FIX: Get the actual AUDIBLE audio playback position by subtracting OS latency.
-			// We clamp to 0 to prevent negative values at the very start of playback.
-			var audioTime = Math.max(0, MiniAudio.getPlaybackPosition());
-			
-			// 3. Store the real timestamp in our 4000-size circular buffer
-			if (audioTimeWindow.length < WINDOW_SIZE) {
-				audioTimeWindow.push(audioTime);
-			} else {
-				audioTimeWindow[windowIndex] = audioTime;
-			}
-			windowIndex = (windowIndex + 1) % WINDOW_SIZE;
-			
-			// 4. Choose the best timestamp from the window
-			var bestTime = audioTime;
-			var minDiff = Math.POSITIVE_INFINITY;
-			
-			for (i in 0...audioTimeWindow.length) {
-				var t = audioTimeWindow[i];
-				var diff = Math.abs(t - accumulatedTime);
-				if (diff < minDiff) {
-					minDiff = diff;
-					bestTime = t;
-				}
-			}
-			
-			// 5. Smoothly correct the accumulated time towards the chosen timestamp
-			var drift = bestTime - accumulatedTime;
-			
-			if (Math.abs(drift) > 50.0) {
-				// Large drift (e.g., after a manual seek), snap directly to prevent desync
-				accumulatedTime = bestTime;
-			} else {
-				// Small drift: apply smooth correction to eliminate jitter without going overboard
-				accumulatedTime += drift * 0.1; 
-			}
-			
-			playfield.songPosition = accumulatedTime;
+			playfield.songPosition = MiniAudio.getPlaybackPosition();
 		}
 	}
 

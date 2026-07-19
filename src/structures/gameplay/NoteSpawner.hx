@@ -238,7 +238,10 @@ class NoteSpawner {
 						continue;
 					}
 
+					//trace("Let's see if see get any info bout this!");
                 	var handle = NoteSystem.typeToHandle[virtualNote.ref.type];
+					//trace("Oops, we null referenced!");
+
 					var note = new Note(virtualNote.Sx, virtualNote.Sy, 0, 0, handle,
 						virtualNote.scale, virtualNote.initialAlpha, virtualNote.addedAlpha);
 					note.mania_for_clipruntimehelper = strumline.length;
@@ -283,7 +286,9 @@ class NoteSpawner {
 					var virtualSustain:VirtualSustain = index[k];
 					if (virtualSustain == null) continue;
 
+					//trace("Let's see if see get any info bout this!");
                 	var handle = NoteSystem.typeToHandle[virtualSustain.ref.ref.type];
+					//trace("Oops, we null referenced!");
 
 					var sustain = new Sustain(virtualSustain.Sx, virtualSustain.Sy, virtualSustain.w, virtualSustain.h,
 						handle, virtualSustain.r, virtualSustain.speed, virtualSustain.scale, id);
@@ -300,6 +305,7 @@ class NoteSpawner {
 						sustain.scrollDirection += 180;
 					}
 					sustain.changeID(id);
+
 					NoteSystem.sustainsBuf.addElement(sustain);
 				}
 			}

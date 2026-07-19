@@ -245,16 +245,6 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 
 		// note movement callbacks
 
-		/*vm.addCallback('setCustomNoteMovementVar', function(name:String, value:Float) {
-			if (playField.noteSystem == null) return;
-			playField.noteSystem.customVariables.set(name, value);
-		});
-
-		vm.addCallback('getCustomNoteMovementVar', function(name:String) {
-			if (playField.noteSystem == null) return;
-			return playField.noteSystem.customVariables.get(name);
-		});*/
-
 		vm.addCallback('setCustomNoteMoveFormula', function(script:String) {
 			if (script == null) {
 				FunkinViewLua.error("Script cannot be nil. Use `resetCustomNoteMoveFormula` instead.");
@@ -266,6 +256,30 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 
 		vm.addCallback('resetCustomNoteMoveFormula', function() {
 			parent.resetNoteFormulaSource();
+			return FunkinViewLua.Function_Continue;
+		});
+
+		vm.addCallback('setNoteskinID', function(id:Int, value:String) {
+			if (id < 0 || id >= 256) {
+				FunkinViewLua.error('Notetype ID out of range! $id >= 256 or $id < 0');
+				return FunkinViewLua.Function_Stop;
+			}
+			NoteSystem.typeToHandle[id] = NoteskinManager.get(value);
+			return FunkinViewLua.Function_Continue;
+		});
+
+		vm.addCallback('setStrumlineNoteskinByID', function(id:Int, value:String) {
+			if (id < 0 || id >= 256) {
+				FunkinViewLua.error('Strumline index out of possibly range! $id >= 256 or $id < 0');
+				return FunkinViewLua.Function_Stop;
+			}
+
+			var targetStrumline = playField.noteSystem.strumlines[id];
+			if (targetStrumline == null) {
+				FunkinViewLua.error('Can\' do that - Strumline $id is null.');
+				return FunkinViewLua.Function_Stop;
+			}
+			targetStrumline.noteskinHandle = NoteskinManager.get(value);
 			return FunkinViewLua.Function_Continue;
 		});
 	}

@@ -53,9 +53,6 @@ class Note implements Element
     @texSizeX var clipSizeX:Int = 100;
     @texSizeY var clipSizeY:Int = 100;
 
-    public var rW:Int;
-    public var rH:Int;
-
     public var id:Int = 0;
     public var mania_for_clipruntimehelper:Int = 4;
 
@@ -65,7 +62,6 @@ class Note implements Element
     var handle:NoteskinHandle;
 
     inline public function new(x:Int, y:Int, w:Int, h:Int, handle:NoteskinHandle, scale:Float = 1.0, initialAlpha:Float = 1.0, addedAlpha:Float = 0.0) {
-        this.handle = handle;
         setProperties(x, y, w, h, scale, initialAlpha, addedAlpha);
         setHandle(handle);
         reset();
@@ -93,8 +89,6 @@ class Note implements Element
         if (handle == null) return;
         var clip = NoteskinRuntimeHelper.getIdleClip(handle, id, mania_for_clipruntimehelper);
         applyClip(clip);
-        rW = w;
-        rH = h;
     }
 
     public function toNote() {

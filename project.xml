@@ -39,21 +39,20 @@
 	<haxedef name="HXCPP_GC_BIG_BLOCKS" />
 
 	<!-- Latency-sensitive settings for funkin' view -->
-	<haxedef name="HX_MULTI_THREAD_MARKING" unless="debug" />
-	<haxedef name="HXCPP_GC_DYNAMIC_SIZE" />
+	<haxedef name="HXCPP_GC_DYNAMIC_SIZE" if="release" />
 	<!-- Compile-time feature functionality dedicated to Funkin' View -->
 	<haxedef name="HXCPP_TRACY" if="FV_PROFILE" />
 	<haxedef name="HXCPP_TELEMETRY" if="FV_PROFILE" />
-	<haxedef name="HXCPP_STACK_TRACE" if="debug" />
-	<haxedef name="HXCPP_STACK_LINE" if="debug" />
+	<!--<haxedef name="HXCPP_STACK_TRACE" if="debug" />-->
+	<!--<haxedef name="HXCPP_STACK_LINE" if="debug" />-->
 	<haxedef name="HXCPP_TRACY_ON_DEMAND" if="FV_PROFILE" />
 	<haxedef name="HXCPP_TRACY_MEMORY" if="FV_PROFILE" />
 	<!--<haxedef name="FV_DEBUG" />-->
 
-	<!--<haxedef name="HXCPP_CHECK_POINTER" if="release" />-->
-	<!--<haxedef name="HXCPP_STACK_LINE" if="release" />-->
-	<!--<haxedef name="HXCPP_STACK_TRACE" if="release" />-->
-	<!--<haxelib name="hxcpp-debug-server" if="debug" />-->
+	<haxedef name="HXCPP_CHECK_POINTER" if="release" />
+	<haxedef name="HXCPP_STACK_LINE" if="release" />
+	<haxedef name="HXCPP_STACK_TRACE" if="release" />
+	<haxelib name="hxcpp-debug-server" if="debug" />
 
 	<!-- Automatically compile externs, hxcpp does the same naturally -->
 	<prebuild command="haxelib run hxcpp hashlinkBuildXmls/miniaudioBuild.xml" if="hl linux" />

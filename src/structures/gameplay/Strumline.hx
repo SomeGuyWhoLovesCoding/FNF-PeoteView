@@ -114,12 +114,12 @@ class Strumline {
 
 		this.parent = parent;
 
+		this.scale = scale;
 		this.length = length;
 		this.noteskinHandle = noteskinHandle;
 		this.x = x;
 		this.y = y;
 		this.gap = gap;
-		this.scale = scale;
 	}
 
 	function applyNoteskinProperties(handle:NoteskinHandle, mania:Int) {
@@ -129,6 +129,7 @@ class Strumline {
 		this.gap = cfgM.gap;
 		this.scale = cfgM.scale;
 		this.length = mania + 1;
+		this.noteskinHandle = handle;
 	}
 
 	function draw(buf:Buffer<Note>) {

@@ -3609,7 +3609,6 @@ private class NoteskinEditorInputHandler {
                 default:            -1;
             };
             if (newStateIdx != -1) {
-                Main.current.playScrollSound();
                 state.renderer.updateReceptorState(newStateIdx);
                 return;
             }
@@ -3627,7 +3626,6 @@ private class NoteskinEditorInputHandler {
                 default:            -1;
             };
             if (newModeIdx != -1) {
-                Main.current.playScrollSound();
                 state.clipEditor.setEditMode(newModeIdx);
                 return;
             }

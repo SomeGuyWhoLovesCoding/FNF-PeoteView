@@ -44,6 +44,7 @@ class NoteSystem {
         }
 
         typeToHandle = [for (_ in 0...1 << 8) NoteskinManager.get("default")];
+		//trace(typeToHandle);
 		var handle = typeToHandle[0];
 
         handle.loadTexture();
@@ -297,6 +298,7 @@ class NoteSystem {
 		var receptor = strumline.receptors[index];
 		var rec = receptor.note;
 		var id = parent.inputSystem.receptorIds[index];
+		var handle = NoteSystem.typeToHandle[note.type];
 
 		var noteSpr = notePool.getNote(id, note, _id);
 		if (noteSpr == null) return noteSpr;
@@ -318,8 +320,8 @@ class NoteSystem {
 		if (parent.downScroll) d = -d;
 
 		noteSpr.diff = d;
-		noteSpr.Sx = Std.int(noteSprX + (d * Math.cos(strumline.scrollDirection * 0.01745329)));
-		noteSpr.Sy = Std.int(noteSprY + (d * Math.sin(strumline.scrollDirection * 0.01745329)));
+		noteSpr.Sx = Math.round(noteSprX + (d * Math.cos(strumline.scrollDirection * 0.01745329)));
+		noteSpr.Sy = Math.round(noteSprY + (d * Math.sin(strumline.scrollDirection * 0.01745329)));
 
 		noteSpr.scale = rec.scale;
 		noteSpr.globalIndex = _id;
@@ -479,6 +481,10 @@ class NoteSystem {
 				receptor.sustainActive = !isResolved;
 		}
 
+		if (_id == 5 && sustainExists) {
+			trace(sustainSpr.Sx,sustainSpr.Sy);
+		}
+
 		if (noteSpr != null) {
 			noteMovement.run(this, noteSpr, sustainSpr, rec, index, note.type, isHit);
 			if (sustainExists)
@@ -552,5 +558,9 @@ class NoteSystem {
 		display.removeProgram(notesProg);
 
 		NoteSpawner.minBottom = 0;
+		for (i in 0...256) {
+			var defaultHandle = NoteskinManager.get("default");
+			NoteSystem.typeToHandle[i] = defaultHandle;
+		}
 	}
 }
