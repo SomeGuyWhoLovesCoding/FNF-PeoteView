@@ -92,8 +92,6 @@ class TextureSystem {
 			}
 		}
 
-		image.dispose(); // turns out I forgot to call this the whole time, but oh well.
-
 		var texture = new Texture(textureData.width, textureData.height, null, {
 			format: textureData.format,
 			powerOfTwo: false,
