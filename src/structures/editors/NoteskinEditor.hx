@@ -2222,7 +2222,7 @@ private class NoteskinEditorRenderer {
                 });
                 gridTex.setData(gridTexData);
                 NoteskinEditor.backgroundTexture = gridTex;
-                TextureSystem.pool[NoteskinEditor.BACKGROUND_TEXTURE_NAME] = gridTex;
+                TextureSystem.pool.set(NoteskinEditor.BACKGROUND_TEXTURE_NAME, gridTex);
 
                 GridBackgroundSprite.init(
                     NoteskinEditor.backgroundProg,
