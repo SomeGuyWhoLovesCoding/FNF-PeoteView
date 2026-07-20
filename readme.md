@@ -9,3 +9,5 @@ Expect this repository to be somewhat active with a burst of commits during the 
 Refer to [the wiki](https://github.com/SomeGuyWhoLovesCoding/FNF-PeoteView/wiki/The-Basics) for more info.
 
 Oh, and for any of you who are wondering if a discord server exists for it, yes. There infact exists [a server you can join in](https://discord.gg/XrV2UmRbNM).
+
+**NOTE:** As of right now, funkin' view is less stable on AMD gpu's. Please be sure to test the latest stable action build with the green checkmark on it to see if you get any issues.
