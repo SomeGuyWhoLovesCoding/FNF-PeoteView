@@ -2,58 +2,70 @@ package peote.view.intern;
 
 import peote.view.PeoteGL.GLTexture;
 import peote.view.TextureConfig;
+import peote.view.TextureData;
 
 class TexUtils 
 {
-
-	// TODO: also let use optional Data here
 	public static function createEmptyTexture(gl:PeoteGL, width:Int, height:Int, format:TextureFormat,
 	                                          smoothExpand:Bool = false, smoothShrink:Bool = false,
-	                                          mipmap:Bool = false, smoothMipmap:Bool = false):GLTexture
+	                                          mipmap:Bool = false, smoothMipmap:Bool = false,
+                                              ?initialData:TextureData, ?x:Int = 0, ?y:Int = 0):GLTexture
 	{
-		// mabye better by using ARB-STORAGE (its like malloc!), loot at here:
-		// https://registry.khronos.org/OpenGL/extensions/ARB/ARB_texture_storage.txt
-		// https://www.khronos.org/opengl/wiki/Texture_Storage#Immutable_storage
 		var glTexture:GLTexture = gl.createTexture();
-		
 		gl.bindTexture(gl.TEXTURE_2D, glTexture);
 		
 		GLTool.clearGlErrorQueue(gl);
-		// <-- TODO: using only shared RAM on neko/cpp with "0" .. better using empty image-data or maybe ARB-STORAGE
-		if (format.isFloat) {
-			// sometimes 32 float is essential for multipass-rendering,
-			// needs EXT_color_buffer_float or OES_texture_float extension
 
-			// CHECK: ( at now only in Texture.hx -> createFramebuffer()  
-			// if (gl.getExtension("EXT_color_buffer_float") != null) {}
-			// else if (gl.getExtension("OES_texture_float") != null) {}
+        // OPTIMIZATION: Single-step allocation and upload if data perfectly matches the target area
+        if (initialData != null && x == 0 && y == 0 && initialData.width == width && initialData.height == height) {
+            if (format.isFloat) {
+                gl.texImage2D(gl.TEXTURE_2D, 0, format.float32(gl), width, height, 0, format.formatFloat(gl), gl.FLOAT, initialData);
+                if (GLTool.getLastGlError(gl) == gl.INVALID_VALUE) {
+                    gl.texImage2D(gl.TEXTURE_2D, 0, format.float16(gl), width, height, 0, format.formatFloat(gl), gl.FLOAT, initialData);
+                    if (GLTool.getLastGlError(gl) == gl.INVALID_VALUE) {
+                        gl.texImage2D(gl.TEXTURE_2D, 0, format.formatFloat(gl), width, height, 0, format.formatFloat(gl), gl.FLOAT, initialData);
+                    }
+                }
+            } else {
+                gl.texImage2D(gl.TEXTURE_2D, 0, format.integer(gl), width, height, 0, format.formatInteger(gl), gl.UNSIGNED_BYTE, initialData);
+            }
+        } else {
+            // Standard empty allocation (original logic)
+		    if (format.isFloat) {
+			    gl.texImage2D(gl.TEXTURE_2D, 0, format.float32(gl), width, height, 0, format.formatFloat(gl), gl.FLOAT, 0);
+			    if (GLTool.getLastGlError(gl) == gl.INVALID_VALUE) {
+				    #if peoteview_debug_texture
+				    trace("switching to lower float precision while texture creation");
+				    #end
+				    gl.texImage2D(gl.TEXTURE_2D, 0, format.float16(gl), width, height, 0, format.formatFloat(gl), gl.FLOAT, 0);
+				    if (GLTool.getLastGlError(gl) == gl.INVALID_VALUE) {
+					    #if peoteview_debug_texture
+					    trace("fallback for float precision while texture creation");
+					    #end
+					    gl.texImage2D(gl.TEXTURE_2D, 0, format.formatFloat(gl), width, height, 0, format.formatFloat(gl), gl.FLOAT, 0);
+				    }
+			    }
+		    } else {
+                gl.texImage2D(gl.TEXTURE_2D, 0, format.integer(gl), width, height, 0, format.formatInteger(gl), gl.UNSIGNED_BYTE, 0);
+            }
 
-
-			gl.texImage2D(gl.TEXTURE_2D, 0, format.float32(gl), width, height, 0, format.formatFloat(gl), gl.FLOAT, 0);
-			if (GLTool.getLastGlError(gl) == gl.INVALID_VALUE) {
-				#if peoteview_debug_texture
-				trace("switching to lower float precision while texture creation");
-				#end
-				gl.texImage2D(gl.TEXTURE_2D, 0, format.float16(gl), width, height, 0, format.formatFloat(gl), gl.FLOAT, 0);
-				if (GLTool.getLastGlError(gl) == gl.INVALID_VALUE) {
-					#if peoteview_debug_texture
-					trace("fallback for float precision while texture creation");
-					#end
-					gl.texImage2D(gl.TEXTURE_2D, 0, format.formatFloat(gl), width, height, 0, format.formatFloat(gl), gl.FLOAT, 0);
-				}
-			}
-		}
-		else gl.texImage2D(gl.TEXTURE_2D, 0, format.integer(gl), width, height, 0, format.formatInteger(gl), gl.UNSIGNED_BYTE, 0);
+            // If we have initial data but it didn't match the full texture size/position, upload it via subImage
+            if (initialData != null) {
+                if (format.isFloat) {
+                    gl.texSubImage2D_Float(gl.TEXTURE_2D, 0, x, y, initialData.width, initialData.height, format.formatFloat(gl), gl.FLOAT, initialData);
+                } else {
+                    gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, initialData.width, initialData.height, format.formatInteger(gl), gl.UNSIGNED_BYTE, initialData);
+                }
+            }
+        }
 		
 		if (GLTool.getLastGlError(gl) == gl.OUT_OF_MEMORY) throw("OUT OF GPU MEMORY while texture creation");
 		
 		setMinMagFilter(gl, smoothExpand, smoothShrink, (mipmap) ? smoothMipmap : null);
 		
-		// firefox needs this texture wrapping for gl.texSubImage2D if imagesize is non power of 2 
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
 		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 
-		//peoteView.glStateTexture.set(gl.getInteger(gl.ACTIVE_TEXTURE), null); // TODO: check with multiwindows (gl.getInteger did not work on html5)
 		gl.bindTexture(gl.TEXTURE_2D, null);
 		
 		return glTexture;

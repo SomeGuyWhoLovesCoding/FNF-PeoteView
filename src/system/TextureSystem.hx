@@ -72,7 +72,6 @@ class TextureSystem {
 		// I'm proud of this fix, but it couldn't be better be this:
 		var textureData = !premultiply ? TextureData.fromLimeImage(image) : new TextureData(image.width, image.height, TextureFormat.RGBA);
 		if (premultiply) {
-			textureData.bytes = haxe.io.Bytes.alloc(image.width * image.height * 4);
 			var bytes = image.data.toBytes();
 			for (i in 0...textureData.bytes.length >> 2) {
 				var fullARGB = bytes.getInt32(i << 2);
@@ -92,14 +91,14 @@ class TextureSystem {
 			}
 		}
 
-		image.dispose(); // turns out I forgot to call this the whole time, but oh well.
+		//image.dispose(); // turns out I forgot to call this the whole time, but oh well.
 
 		var texture = new Texture(textureData.width, textureData.height, null, {
 			format: textureData.format,
 			powerOfTwo: false,
 			smoothExpand: antialiasing,
 			smoothShrink: antialiasing
-		});
+		}, true);
 		texture.setData(textureData);
 
 		pool.set(key, texture);
