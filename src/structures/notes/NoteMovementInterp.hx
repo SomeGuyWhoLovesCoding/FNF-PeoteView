@@ -462,17 +462,19 @@ class NoteMovementInterp {
     var lower = name.toLowerCase();
     var idx = -1;
     
-    if (lower == "x") idx = 0;
-    else if (lower == "y") idx = 1;
-    else if (lower == "scale") idx = 2;
-    else if (lower == "sustainrot" || lower == "sustain_rotation") idx = 3;
-    else if (lower == "scrollmultiplier" || lower == "scroll_multiplier") idx = 4;
-    else if (lower == "diff") idx = 5;
-    else if (lower == "scrollspeed" || lower == "scroll_speed") idx = 6;
-    else if (lower == "receptorx" || lower == "receptor_x") idx = 7;
-    else if (lower == "receptory" || lower == "receptor_y") idx = 8;
-    else if (lower == "index") idx = 9;
-    else if (lower == "type") idx = 10;
+    switch (lower) {
+      case "x": idx = 0;
+      case "y": idx = 1;
+      case "scale": idx = 2;
+      case "sustainrot" | "sustain_rotation": idx = 3;
+      case "scrollmultiplier" | "scrol_multiplier": idx = 4;
+      case "diff": idx = 5;
+      case "scrollspeed" | "scroll_speed": idx = 6;
+      case "receptorx" | "receptor_x": idx = 7;
+      case "receptory" |  "receptor_y": idx = 8;
+      case "index": idx = 9;
+      case "type": idx = 10;
+    }
     
     if (idx == -1) {
       if (!varMap.exists(lower)) {
@@ -569,8 +571,8 @@ class NoteMovementInterp {
       var block = codeBlocks[blockPtr++];
       
       // Extract the 32-bit halves ONCE. No overflow checks!
-      var low = Int64.getLow(block);
-      var high = Int64.getHigh(block);
+      var low:NativeInt32 = block.low;
+      var high:NativeInt32 = block.high;
       
       // ----------------------------------------------------
       // UNROLLED SLOT 0 (Native 32-bit shift & mask)
@@ -797,4 +799,6 @@ class NoteMovementInterp {
     
     return baseResult;
   }
-      }
+}
+
+typedef NativeInt32 = #if cpp cpp.Int32 #else Int #end;
