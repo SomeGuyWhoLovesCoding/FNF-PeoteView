@@ -22,7 +22,7 @@ class NoteskinRuntimeHelper {
         return getClipForState(handle, lane, CONFIRM, mania);
     }
 
-    static public function getHoldBodyClip(handle:NoteskinHandle, lane:Int, mania:Int):BasicNoteskinClip {
+    inline static public function getHoldBodyClip(handle:NoteskinHandle, lane:Int, mania:Int):BasicNoteskinClip {
         var data = handle.data;
         var cfg = getConfigForLane(handle, lane, mania);
         
@@ -33,7 +33,7 @@ class NoteskinRuntimeHelper {
         return data.clip[clipIdx].holdBody;
     }
 
-    static public function getHoldTailClip(handle:NoteskinHandle, lane:Int, mania:Int):BasicNoteskinClip {
+    inline static public function getHoldTailClip(handle:NoteskinHandle, lane:Int, mania:Int):BasicNoteskinClip {
         var data = handle.data;
         var cfg = getConfigForLane(handle, lane, mania);
 
@@ -45,19 +45,11 @@ class NoteskinRuntimeHelper {
     }
 
     // Change getConfigForLane to use the passed mania
-    static private function getConfigForLane(handle:NoteskinHandle, lane:Int, mania:Int):NoteskinConfig {
+    inline static private function getConfigForLane(handle:NoteskinHandle, lane:Int, mania:Int):NoteskinConfig {
         var idx = mania - 1;  // ← use the passed mania, NOT handle.mania
         var configs = handle.data.configMania;
         if (configs != null && idx >= 0 && idx < configs.length) {
             return configs[idx];
-        }
-        // Fallback: try to find a config whose idleIndexes length matches mania
-        if (configs != null) {
-            for (cfg in configs) {
-                if (cfg.idleIndexes != null && cfg.idleIndexes.length == mania) {
-                    return cfg;
-                }
-            }
         }
         // Last resort
         if (configs != null && configs.length > 0) return configs[0];
@@ -65,7 +57,7 @@ class NoteskinRuntimeHelper {
     }
 
     // And the private helper
-    static private function getClipForState(handle:NoteskinHandle, lane:Int, state:NoteState, mania:Int):BasicNoteskinClip {
+    inline static private function getClipForState(handle:NoteskinHandle, lane:Int, state:NoteState, mania:Int):BasicNoteskinClip {
         var data = handle.data;
         var cfg = getConfigForLane(handle, lane, mania);
         if (data == null || cfg == null) return defaultClipForState(state);
@@ -91,7 +83,7 @@ class NoteskinRuntimeHelper {
         }
     }
 
-    static private function defaultClipForState(state:NoteState):BasicNoteskinClip {
+    inline static private function defaultClipForState(state:NoteState):BasicNoteskinClip {
         var def = defaultClip();
         return switch (state) {
             case IDLE:   def.idle;
@@ -102,7 +94,7 @@ class NoteskinRuntimeHelper {
         }
     }
 
-    static private function defaultClip():NoteskinReceptorProperties {
+    inline static private function defaultClip():NoteskinReceptorProperties {
         return {
             idle:     {clipX: 0, clipY: 0, clipW: 100, clipH: 100, offsX: 0, offsY: 0, rotation: 0},
             press:    {clipX: 0, clipY: 0, clipW: 100, clipH: 100, offsX: 0, offsY: 0, rotation: 0},

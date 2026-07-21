@@ -482,7 +482,7 @@ class NoteSystem {
 		}
 
 		if (noteSpr != null) {
-			noteMovement.run(this, noteSpr, sustainSpr, rec, index, note.type, isHit);
+			noteMovement.run(this, noteSpr, sustainSpr, receptor, index, note.type, isHit);
 			if (sustainExists)
 				virtualNoteBuffer.addSustain(sustainSpr, noteSpr);
 		}

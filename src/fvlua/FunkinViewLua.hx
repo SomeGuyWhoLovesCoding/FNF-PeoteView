@@ -5,19 +5,21 @@ import llua.State;
 import llua.Lua;
 import llua.LuaL;
 import llua.Convert;
+import haxe.ds.Vector;
+import haxe.Int64;
+import structures.gameplay.NoteFormulaResult;
+
 using StringTools;
 
-/**
-	Lua system of Funkin' View.
-	@since Development
-**/
+// ------------------------------------------------------------------
+// Main Lua / Movement System
+// ------------------------------------------------------------------
 @:publicFields
 class FunkinViewLua {
 	#if linc_luajit_funkinview
 	var vms(default, null):Array<FunkinViewLuaScript>;
 	var disposed(default, null):Bool;
 
-	//// THE VARIABLES ////
 	static inline var Function_Stop = "##FUNKINVIEWLUA_FUNCTION_STOP";
 	static inline var Function_Continue = "##FUNKINVIEWLUA_FUNCTION_CONTINUE";
 	static inline var Function_StopLua = "##FUNKINVIEWLUA_FUNCTION_STOPLUA";
@@ -30,8 +32,6 @@ class FunkinViewLua {
 		disposed = false;
 
 		var files = sys.FileSystem.readDirectory(path);
-		//Sys.println('Lua files? $files');
-
 		vms = [];
 		components = [];
 
@@ -72,8 +72,6 @@ class FunkinViewLua {
 
 	function addCallbacksList(luaScript:FunkinViewLuaScript) {
 		luaScript.addCallback("trace", function(string:String) Sys.println('FunkinViewLua: $string'));
-
-		// build target (windows, mac, linux, etc.)
 		luaScript.set('buildTarget', lime.system.System.platformName);
 	}
 
@@ -95,129 +93,55 @@ class FunkinViewLua {
 		return "unknown";
 	}
 
-	private var noteFormulaVM:State = null;
-	private var noteFormulaSource:String = null;
-	private var noteFormulaLoaded:Bool = false;
+	// --- Note Movement Formula System (Bytecode) ---
+	private var noteMovementInterp:NoteMovementInterp = null;
+	private var noteMovementSource:String = null;
+	private var noteMovementLoaded:Bool = false;
 
-	function setNoteFormulaSource(source:String) {
-		if (noteFormulaSource == source) return;
-		noteFormulaSource = source;
-		noteFormulaLoaded = false;
+	public function setNoteFormulaSource(source:String) {
+		if (noteMovementSource == source) return;
+		noteMovementSource = source;
+		noteMovementInterp = new NoteMovementInterp(noteMovementSource);
+		noteMovementLoaded = false;
 	}
 
-	function resetNoteFormulaSource() {
-		Lua.close(noteFormulaVM);
-		noteFormulaVM = null;
-		noteFormulaSource = null;
-		noteFormulaLoaded = false;
+	public function resetNoteFormulaSource() {
+		noteMovementInterp = null;
+		noteMovementSource = null;
+		noteMovementLoaded = false;
 	}
 
-	function ensureNoteFormulaVM():Bool {
-		if (noteFormulaSource == null) return false;
-
-		if (noteFormulaVM == null) {
-			noteFormulaVM = LuaL.newstate();
-			LuaL.openlibs(noteFormulaVM);
-			Lua.init_callbacks(noteFormulaVM);
-		}
+	function ensureNoteMovementInterp():Bool {
+		if (noteMovementSource == null) return false;
+		if (noteMovementLoaded && noteMovementInterp != null) return true;
 		
-		if (noteFormulaLoaded) return true;
-		if (noteFormulaSource == null) return false;
-		
-		var status:Int = LuaL.loadstring(noteFormulaVM, noteFormulaSource);
-		if (status != Lua.LUA_OK) {
-			error(getErrorMessage(noteFormulaVM, status) + " (loading noteFormula string)");
+		try {
+			noteMovementInterp = new NoteMovementInterp(noteMovementSource);
+			noteMovementLoaded = true;
+			return true;
+		} catch (e:Dynamic) {
+			error('Note movement formula compile error: $e');
 			return false;
 		}
-		
-		status = Lua.pcall(noteFormulaVM, 0, 0, 0);
-		if (status != Lua.LUA_OK) {
-			error(getErrorMessage(noteFormulaVM, status) + " (running noteFormula string)");
-			return false;
-		}
-		
-		noteFormulaLoaded = true;
-		return true;
 	}
 
-	private var noteFormulaResult:NoteFormulaResult = new NoteFormulaResult();
+	private var noteMovementResult:NoteFormulaResult = new NoteFormulaResult();
 
-	function callNoteFormula(diff:Float, scrollSpeed:Float, receptorX:Float, receptorY:Float, index:Float, type:Float):NoteFormulaResult {
-		if (!ensureNoteFormulaVM()) {
-			noteFormulaResult.x = 0;
-			noteFormulaResult.y = 0;
-			noteFormulaResult.scale = 1;
-			noteFormulaResult.sustainRot = 0;
-			noteFormulaResult.scrollMultiplier = 1;
-			return null;
-		}
-		
-		var lua:State = noteFormulaVM;
-		
-		Lua.getglobal(lua, "noteFormula");
-		if (Lua.type(lua, -1) != Lua.LUA_TFUNCTION) {
-			Lua.pop(lua, 1);
-			noteFormulaResult.x = 0;
-			noteFormulaResult.y = 0;
-			noteFormulaResult.scale = 1;
-			noteFormulaResult.sustainRot = 0;
-			noteFormulaResult.scrollMultiplier = 1;
-			return null;
-		}
-		
-		Lua.pushnumber(lua, diff);
-		Lua.pushnumber(lua, scrollSpeed);
-		Lua.pushnumber(lua, receptorX);
-		Lua.pushnumber(lua, receptorY);
-		Lua.pushnumber(lua, index);
-		Lua.pushnumber(lua, type);
-
-		var status:Int = Lua.pcall(lua, 6, 5, 0);
-
-		if (status != Lua.LUA_OK) {
-			error(getErrorMessage(lua, status) + " (noteFormula)");
-			noteFormulaResult.x = 0;
-			noteFormulaResult.y = 0;
-			noteFormulaResult.scale = 1;
-			noteFormulaResult.sustainRot = 0;
-			noteFormulaResult.scrollMultiplier = 1;
-			return null;
-		}
-    
-		// If any return is nil, cancel
-		if (Lua.type(lua, -5) == Lua.LUA_TNIL ||
-			Lua.type(lua, -4) == Lua.LUA_TNIL ||
-			Lua.type(lua, -3) == Lua.LUA_TNIL ||
-			Lua.type(lua, -2) == Lua.LUA_TNIL ||
-			Lua.type(lua, -1) == Lua.LUA_TNIL) {
-			Lua.pop(lua, 4);
-			return null;
-		}
-		
-		if (Lua.type(lua, -5) == Lua.LUA_TNUMBER) noteFormulaResult.x = Lua.tonumber(lua, -5);
-		else noteFormulaResult.x = 0;
-		if (Lua.type(lua, -4) == Lua.LUA_TNUMBER) noteFormulaResult.y = Lua.tonumber(lua, -4);
-		else noteFormulaResult.y = 0;
-		if (Lua.type(lua, -3) == Lua.LUA_TNUMBER) noteFormulaResult.scale = Lua.tonumber(lua, -3);
-		else noteFormulaResult.scale = 1;
-		if (Lua.type(lua, -2) == Lua.LUA_TNUMBER) noteFormulaResult.sustainRot = Lua.tonumber(lua, -2);
-		else noteFormulaResult.sustainRot = 0;
-		if (Lua.type(lua, -1) == Lua.LUA_TNUMBER) noteFormulaResult.scrollMultiplier = Lua.tonumber(lua, -1);
-		else noteFormulaResult.scrollMultiplier = 0;
-		
-		Lua.pop(lua, 5);
-		return noteFormulaResult;
+	public function callNoteFormula(diff:Float, scrollSpeed:Float, receptorX:Float, receptorY:Float, index:Float, type:Float):NoteFormulaResult {
+		if (!ensureNoteMovementInterp()) return null;
+		return noteMovementInterp.run(diff, scrollSpeed, receptorX, receptorY, index, type, noteMovementResult);
 	}
 
+	// --- Standard Lua Function Calls ---
 	private static var NO_ARGS(default, null):Array<Dynamic> = [];
 	private var returns(default, null):Array<Dynamic> = [];
-	function callFunction(fname:String, args:haxe.Rest<Dynamic>):Array<Dynamic> {
+	
+	public function callFunction(fname:String, args:haxe.Rest<Dynamic>):Array<Dynamic> {
 		returns.resize(0);
 		if (vms == null) return null;
 		for (script in vms) {
 			var lua:State = script.vm;
 
-			// this is a direct port from psych.
 			if(disposed) return [Function_Continue];
 
 			try {
@@ -233,7 +157,6 @@ class FunkinViewLua {
 					if (type > Lua.LUA_TNIL) {
 						error("attempt to call a " + typeToString(type) + " value at " + fname);
 					}
-
 					Lua.pop(lua, 1);
 					returns.push(Function_Continue);
 					continue;
@@ -243,7 +166,6 @@ class FunkinViewLua {
 				for (arg in argsArr) Convert.toLua(lua, arg);
 				var status:Int = Lua.pcall(lua, argsArr.length, 1, 0);
 
-				// Checks if it's not successful, then show a error.
 				if (status != Lua.LUA_OK) {
 					var errorMessage:String = getErrorMessage(lua, status);
 					error(errorMessage + "(at " + fname + ")");
@@ -251,7 +173,6 @@ class FunkinViewLua {
 					continue;
 				}
 
-				// If successful, pass and then return the result.
 				var result:Dynamic = cast Convert.fromLua(lua, -1);
 				if (result == null) result = Function_Continue;
 
@@ -259,9 +180,9 @@ class FunkinViewLua {
 				returns.push(result);
 				continue;
 			}
-			/*catch (e:Dynamic) {
+			catch (e:Dynamic) {
 				trace(e);
-			}*/
+			}
 			returns.push(Function_Continue);
 			continue;
 		}
@@ -311,20 +232,13 @@ class FunkinViewLua {
 		return colorSwatch;
 	}
 
-	// https://github.com/ShadowMario/FNF-PsychEngine/blob/5c67ced49e5a98535298a6daa3f8f4ec79ac8399/source/backend/CoolUtil.hx#L41
-	inline public static function capitalize(text:String)
+	inline public static function capitalize(text:String):String
 		return text.charAt(0).toUpperCase() + text.substr(1).toLowerCase();
 
-	function dispose() {
+	public function dispose() {
 		disposed = true;
     
-		// Clean up note formula VM
-		if (noteFormulaVM != null) {
-			Lua.close(noteFormulaVM);
-			noteFormulaVM = null;
-		}
-		noteFormulaSource = null;
-		noteFormulaLoaded = false;
+		resetNoteFormulaSource();
 
 		for (component in components) component.dispose();
 		components.resize(0);
@@ -335,16 +249,4 @@ class FunkinViewLua {
 		vms = null;
 	}
 	#end
-}
-
-@:publicFields
-@:structInit
-class NoteFormulaResult {
-	var x:Float = 0;
-	var y:Float = 0;
-	var scale:Float = 1;
-	var sustainRot:Float = 0;
-	var scrollMultiplier:Float = 1;
-
-	function new() {}
 }

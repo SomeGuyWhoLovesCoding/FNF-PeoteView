@@ -84,28 +84,28 @@ class Note implements Element
 
     // --- State methods ---
 
-    public function reset() {
+    inline public function reset() {
         state = IDLE;
         if (handle == null) return;
         var clip = NoteskinRuntimeHelper.getIdleClip(handle, id, mania_for_clipruntimehelper);
         applyClip(clip);
     }
 
-    public function toNote() {
+    inline public function toNote() {
         state = COLOR;
         if (handle == null) return;
         var clip = NoteskinRuntimeHelper.getColorClip(handle, id, mania_for_clipruntimehelper);
         applyClip(clip);
     }
 
-    public function press() {
+    inline public function press() {
         state = PRESS;
         if (handle == null) return;
         var clip = NoteskinRuntimeHelper.getPressClip(handle, id, mania_for_clipruntimehelper);
         applyClip(clip);
     }
 
-    public function confirm() {
+    inline public function confirm() {
         state = CONFIRM;
         if (handle == null) return;
         var clip = NoteskinRuntimeHelper.getConfirmClip(handle, id, mania_for_clipruntimehelper);

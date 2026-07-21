@@ -513,21 +513,16 @@ abstract Int128(__Int128) from __Int128 to __Int128 {
 **/
 private typedef __Int128 = ___Int128;
 
-@:struct
-private class ___Int128 {
-	public var high:Int64;
-	public var low:Int64;
+private abstract ___Int128(Array<Int64>) {
+	public var high(get, set):Int64;
+	public var low(get, set):Int64;
+
+	inline function get_high() return this[0];
+	inline function get_low() return this[1];
+	inline function set_high(value:Int64) return this[0] = value;
+	inline function set_low(value:Int64) return this[1] = value;
 
 	public inline function new(high, low) {
-		this.high = high;
-		this.low = low;
+		this = [high, low];
 	}
-
-	/**
-		We also define toString here to ensure we always get a pretty string
-		when tracing or calling `Std.string`. This tends not to happen when
-		`toString` is only in the abstract.
-	**/
-	public inline function toString():String
-		return Int128.toStr(this);
 }

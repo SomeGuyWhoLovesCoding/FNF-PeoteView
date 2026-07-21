@@ -67,7 +67,7 @@ class NoteSpawner {
 		var noteSpr:VirtualNote = null;
 		var j:Int = 0;
 
-		var time = haxe.Timer.stamp();
+		//var time = haxe.Timer.stamp();
 		while (i < top) {
 			var n = File.getNote(i);
 
@@ -104,7 +104,7 @@ class NoteSpawner {
 			prev = n;
 			++i;
 		}
-		timeSpentOnIt = haxe.Timer.stamp() - time;
+		//timeSpentOnIt = haxe.Timer.stamp() - time;
 
 		pos -= latencyI64;
 	}

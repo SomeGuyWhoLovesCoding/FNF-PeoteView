@@ -41,7 +41,7 @@ class NotePool {
 	 * @param index The global note index for array access.
 	 * @return The allocated VirtualNote at the given index.
 	 */
-    function getNote(id:Int, n:MetaNote, index:Int64):VirtualNote {
+    inline function getNote(id:Int, n:MetaNote, index:Int64):VirtualNote {
         var obj = inactiveVirtualNotes.pop();
         if (obj == null) obj = new VirtualNote(0, 0, 0);
         obj.initialAlpha = Note.defaultAlpha;
@@ -59,7 +59,7 @@ class NotePool {
 	 * @param index The global note index for array access.
 	 * @return The allocated VirtualSustain at the given index.
 	 */
-    function getSustain(id:Int, n:MetaNote, index:Int64):VirtualSustain {
+    inline function getSustain(id:Int, n:MetaNote, index:Int64):VirtualSustain {
         var obj = inactiveVirtualSusses.pop();
         if (obj == null) {
             obj = new VirtualSustain(-9999, -9999, 0, 0);
@@ -74,15 +74,7 @@ class NotePool {
 	 * @param n The underlying meta note to deactivate.
 	 * @param index The global note index.
 	 */
-    function putNote(n:MetaNote, index:Int64) {
-        // Reset sprite and return to free list
-        // No lookup needed — cullBottom calls this for the note leaving the window
-        /*n.flag = false;
-        File.setNote(index, n);
-        File.setJudgement(index, false);*/
-        // Note: the VirtualNote itself is returned via putNoteSprite
-        // called separately when the sprite reference is available
-    }
+    inline function putNote(n:MetaNote, index:Int64) {}
 
 	/**
 	 * Deactivates a sustain and returns it to the inactive pool.
@@ -90,7 +82,7 @@ class NotePool {
 	 * @param n The underlying meta note to deactivate.
 	 * @param index The global note index.
 	 */
-    function putSustain(n:MetaNote, index:Int64) {}
+    inline function putSustain(n:MetaNote, index:Int64) {}
 
 	/**
 	 * Cleans up all pool arrays and references for garbage collection.
