@@ -81,18 +81,9 @@ class NoteSpawner {
 
 			var ghost = isGhostNote(prev, n);
 
-			// FIX: Only read prevY if the previous note was in the EXACT same lane and index.
-			// If so, 'receptor' is the exact same object that processed 'prev', so its 
-			// fakeOverlapStorage already holds the correct previous Y value.
-			var prevY:Int = 0;
-			if (prev != null && prev.type == n.type && prev.index == n.index) {
-				prevY = receptor.fakeOverlapStorage;
-			}
+			receptor.ambientOccludeYCur = newY;
 
-			var shouldOverlap = noteSpr != null && shouldNotesOverlap(prev, n, noteSpr, rec, newY, prevY) && !ghost;
-
-			// Always update the current receptor's storage for the next iteration
-			receptor.fakeOverlapStorage = newY;
+			var shouldOverlap = noteSpr != null && shouldNotesOverlap(prev, n, noteSpr, rec, receptor.ambientOccludeYPrev, receptor.ambientOccludeYCur) && !ghost;
 
 			if (shouldOverlap) {
 				mergeNoteIntoSprite(noteSpr, i);
@@ -104,6 +95,7 @@ class NoteSpawner {
 			}
 
 			prev = n;
+			receptor.ambientOccludeYPrev = receptor.ambientOccludeYCur;
 			++i;
 		}
 
