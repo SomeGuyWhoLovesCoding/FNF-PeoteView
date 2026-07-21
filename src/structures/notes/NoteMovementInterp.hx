@@ -1,66 +1,64 @@
 package structures.notes;
 
 using StringTools;
+import haxe.Int64;
 
 // ------------------------------------------------------------------
-// Bytecode Opcodes
+// Bytecode Opcodes (Strictly 8-bit for SWAR packing)
 // ------------------------------------------------------------------
 enum abstract OnValue(Int64) from Int64 to Int64 {
-  var PLUS = 0x1000;
-  var MINUS = 0x1001;
-  var TIMES = 0x1002;
-  var DIVIDE = 0x1003;
-  var MOD = 0x1004;
-  var SIN = 0x1005;
-  var COS = 0x1006;
-  var MIN = 0x1007;
-  var MAX = 0x1008;
-  var ABS = 0x1009;
-  var NOT = 0x100A;
-  var AND = 0x100B;
-  var OR = 0x100C;
+  var PLUS = 0x00;
+  var MINUS = 0x01;
+  var TIMES = 0x02;
+  var DIVIDE = 0x03;
+  var MOD = 0x04;
+  var SIN = 0x05;
+  var COS = 0x06;
+  var MIN = 0x07;
+  var MAX = 0x08;
+  var ABS = 0x09;
+  var NOT = 0x0A;
+  var AND = 0x0B;
+  var OR = 0x0C;
   
-  var PUSH_CONST = 0x2000;
-  var PUSH_VAR = 0x4000;
-  var SET_VAR = 0x5000;
+  var PUSH_CONST = 0x10;
+  var PUSH_VAR = 0x11;
+  var SET_VAR = 0x20;
   
-  var ABORT = 0x6000;
-  var ABORT_IF_NOT_EQ = 0x6001;
-  var ABORT_IF_EQ = 0x6002;
+  var ABORT = 0x30;
+  var ABORT_IF_NOT_EQ = 0x31;
+  var ABORT_IF_EQ = 0x32;
+  var NOP = 0x33;
 }
 
-// ------------------------------------------------------------------
-// Lightweight Bytecode Compiler & Interpreter
-// Written by Qwen 3.7-plus a limited manual lua interpreter that
-// was done specifically for the function format of noteMoveFormula.
-// ------------------------------------------------------------------
 @:final
 class NoteMovementInterp {
-  var code:Array<Int64> = [];
+  var codeBlocks:Array<Int64> = [];
+  var args:Array<Int> = [];
   var constants:Array<Float> = [];
+  
   var varMap:FakeStringMap<Int>;
   var varCount:Int;
 
-  // Pre-allocated memory for zero-allocation execution
   var locals:Vector<Float>;
   var stack:Vector<Float>;
   var stackPtr:Int;
+  var argPtr:Int;
+
+  var opcodeBuffer:Array<Int> = [];
+  var argsBuffer:Array<Int> = [];
 
   public function new(codeStr:String) {
     varMap = new FakeStringMap<Int>();
     varCount = 0;
     compile(preprocess(codeStr));
-    
-    // Allocate execution buffers exactly once based on compiled requirements
     locals = new Vector<Float>(varCount + 100);
-    stack = new Vector<Float>(512); // 512 depth is more than enough for any modchart
-    
-    // trace("=== [NoteMovementInterp] Bytecode Compilation ===");
-    // trace("Constants Pool: " + constants);
-    // trace("Variable Map: " + varMap);
-    // trace("Total Instructions: " + code.length);
+    stack = new Vector<Float>(512);
   }
 
+  // ------------------------------------------------------------------
+  // Preprocessing & Lua Translation
+  // ------------------------------------------------------------------
   function preprocess(luaCode:String):String {
     if (luaCode == null || StringTools.trim(luaCode) == "") return "";
     var code = luaCode;
@@ -208,22 +206,19 @@ class NoteMovementInterp {
     }
     
     var finalCode = newLines.join(" ");
-    // trace("=== [NoteMovementInterp] Preprocessed Lua ===");
-    // trace(finalCode);
-    
     return finalCode;
   }
 
+  // ------------------------------------------------------------------
+  // Compilation (Tokenize -> Parse -> Pack into Int64 SWAR blocks)
+  // ------------------------------------------------------------------
   function compile(codeStr:String) {
     var tokens = tokenize(codeStr);
     var pos = 0;
     
     while (pos < tokens.length) {
       var token = tokens[pos];
-      if (token == ";") {
-        pos++;
-        continue;
-      }
+      if (token == ";") { pos++; continue; }
       
       var eqPos = -1;
       var commaBeforeEq = false;
@@ -235,9 +230,7 @@ class NoteMovementInterp {
       
       if (eqPos != -1 && (eqPos == pos + 1 || commaBeforeEq)) {
         var targets = [];
-        for (j in pos...eqPos) {
-          if (tokens[j] != ",") targets.push(tokens[j]);
-        }
+        for (j in pos...eqPos) { if (tokens[j] != ",") targets.push(tokens[j]); }
         
         pos = eqPos + 1;
         var exprs = [];
@@ -250,23 +243,19 @@ class NoteMovementInterp {
           else if (t == "," && depth == 0) {
             exprs.push(tokens.slice(currentExprStart, pos));
             currentExprStart = pos + 1;
-          } else if (t == ";" && depth == 0) {
-            break;
-          }
+          } else if (t == ";" && depth == 0) break;
           pos++;
         }
         exprs.push(tokens.slice(currentExprStart, pos));
         if (pos < tokens.length && tokens[pos] == ";") pos++;
         
-        for (expr in exprs) {
-          parseExpressionTokens(expr);
-        }
+        for (expr in exprs) parseExpressionTokens(expr);
         
         for (i in 0...targets.length) {
           var target = targets[targets.length - 1 - i];
           var vIdx = getVarIndex(target);
-          code.push(OnValue.SET_VAR);
-          code.push(Int64.ofInt(vIdx));
+          opcodeBuffer.push(0x20); // SET_VAR
+          argsBuffer.push(vIdx);
         }
       } else {
         var exprStart = pos;
@@ -275,6 +264,26 @@ class NoteMovementInterp {
         if (pos < tokens.length && tokens[pos] == ";") pos++;
       }
     }
+    
+    // Pack the 8-bit opcodes into Int64 blocks (8 slots per block)
+    var len = opcodeBuffer.length;
+    var numBlocks = Math.ceil(len / 8);
+    for (i in 0...numBlocks) {
+      var b0 = i * 8 < len ? opcodeBuffer[i * 8] : 0x33;
+      var b1 = i * 8 + 1 < len ? opcodeBuffer[i * 8 + 1] : 0x33;
+      var b2 = i * 8 + 2 < len ? opcodeBuffer[i * 8 + 2] : 0x33;
+      var b3 = i * 8 + 3 < len ? opcodeBuffer[i * 8 + 3] : 0x33;
+      var low = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
+      
+      var b4 = i * 8 + 4 < len ? opcodeBuffer[i * 8 + 4] : 0x33;
+      var b5 = i * 8 + 5 < len ? opcodeBuffer[i * 8 + 5] : 0x33;
+      var b6 = i * 8 + 6 < len ? opcodeBuffer[i * 8 + 6] : 0x33;
+      var b7 = i * 8 + 7 < len ? opcodeBuffer[i * 8 + 7] : 0x33;
+      var high = b4 | (b5 << 8) | (b6 << 16) | (b7 << 24);
+      
+      codeBlocks.push(Int64.make(high, low));
+    }
+    args = argsBuffer;
   }
 
   var currentPos:Int = 0;
@@ -285,15 +294,9 @@ class NoteMovementInterp {
     for (i in 0...codeStr.length) {
       var c = codeStr.charAt(i);
       if (c == " " || c == "\t" || c == "\n" || c == "\r") {
-        if (current != "") {
-          tokens.push(current);
-          current = "";
-        }
+        if (current != "") { tokens.push(current); current = ""; }
       } else if (c == "+" || c == "-" || c == "*" || c == "/" || c == "%" || c == "(" || c == ")" || c == "=" || c == "," || c == ";") {
-        if (current != "") {
-          tokens.push(current);
-          current = "";
-        }
+        if (current != "") { tokens.push(current); current = ""; }
         tokens.push(c);
       } else {
         current += c;
@@ -305,7 +308,7 @@ class NoteMovementInterp {
 
   function parseExpressionTokens(tokens:Array<String>):Void {
     currentPos = 0;
-    var output:Array<Int64> = [];
+    var output:Array<Int> = [];
     var operators:Array<String> = [];
     
     while (currentPos < tokens.length) {
@@ -316,8 +319,8 @@ class NoteMovementInterp {
         var val = Std.parseFloat(token);
         var cIdx = constants.length;
         constants.push(val);
-        output.push(OnValue.PUSH_CONST);
-        output.push(Int64.ofInt(cIdx));
+        output.push(0x10); // PUSH_CONST
+        argsBuffer.push(cIdx);
         currentPos++;
       }
       else if (token.toLowerCase() == "not") {
@@ -330,8 +333,8 @@ class NoteMovementInterp {
       }
       else if (isVariable(token)) {
         var vIdx = getVarIndex(token);
-        output.push(OnValue.PUSH_VAR);
-        output.push(Int64.ofInt(vIdx));
+        output.push(0x11); // PUSH_VAR
+        argsBuffer.push(vIdx);
         currentPos++;
       } 
       else if (token == "(") {
@@ -340,26 +343,26 @@ class NoteMovementInterp {
       } 
       else if (token == ")") {
         while (operators.length > 0 && operators[operators.length - 1] != "(") {
-          output.push(getOpOpcode(operators.pop()));
+          output.push(Int64.toInt(getOpOpcode(operators.pop())));
         }
         if (operators.length > 0) operators.pop();
         
         if (operators.length > 0 && isFunction(operators[operators.length - 1])) {
-          output.push(getOpOpcode(operators.pop()));
+          output.push(Int64.toInt(getOpOpcode(operators.pop())));
         }
         currentPos++;
       } 
       else if (token == ",") {
         while (operators.length > 0 && operators[operators.length - 1] != "(") {
-          output.push(getOpOpcode(operators.pop()));
+          output.push(Int64.toInt(getOpOpcode(operators.pop())));
         }
         currentPos++;
       } 
       else if (isOperator(token) || token.toLowerCase() == "and" || token.toLowerCase() == "or") {
         if ((token == "-" || token == "+") && (currentPos == 0 || isPrevTokenOperator(tokens, currentPos))) {
           if (token == "-") {
-            output.push(OnValue.PUSH_CONST);
-            output.push(Int64.ofInt(constants.length));
+            output.push(0x10); // PUSH_CONST
+            argsBuffer.push(constants.length);
             constants.push(0.0);
             token = "-"; 
           } else {
@@ -369,7 +372,7 @@ class NoteMovementInterp {
         }
         
         while (operators.length > 0 && precedence(operators[operators.length - 1]) >= precedence(token)) {
-          output.push(getOpOpcode(operators.pop()));
+          output.push(Int64.toInt(getOpOpcode(operators.pop())));
         }
         operators.push(token);
         currentPos++;
@@ -380,11 +383,10 @@ class NoteMovementInterp {
     }
     
     while (operators.length > 0) {
-      output.push(getOpOpcode(operators.pop()));
+      output.push(Int64.toInt(getOpOpcode(operators.pop())));
     }
     
-    // OPTIMIZATION: Avoid array concatenation allocation
-    for (j in 0...output.length) code.push(output[j]);
+    for (j in 0...output.length) opcodeBuffer.push(output[j]);
   }
 
   function isNumber(s:String):Bool return ~/^-?[0-9]+(\.[0-9]+)?$/.match(s);
@@ -476,9 +478,10 @@ class NoteMovementInterp {
     }
   }
 
-  // STRICTLY INLINED FOR ZERO OVERHEAD
-  public inline function run(diff:Float, scrollSpeed:Float, receptorX:Float, receptorY:Float, index:Float, type:Float, baseResult:NoteFormulaResult):NoteFormulaResult {
-    // Initialize locals (Zero allocation, direct memory write)
+  // ------------------------------------------------------------------
+  // STRICTLY INLINED 8-SLOT SWAR EXECUTION LOOP
+  // ------------------------------------------------------------------
+  public function run(diff:Float, scrollSpeed:Float, receptorX:Float, receptorY:Float, index:Float, type:Float, baseResult:NoteFormulaResult):NoteFormulaResult {
     locals[0] = baseResult.x;
     locals[1] = baseResult.y;
     locals[2] = baseResult.scale;
@@ -492,62 +495,232 @@ class NoteMovementInterp {
     locals[10] = type;
 
     stackPtr = 0;
-    var aborted = false;
-    var i = 0;
-    var codeLen = code.length;
+    argPtr = 0;
+    var blockPtr = 0;
+    var blocksLen = codeBlocks.length;
     
-    while (i < codeLen) {
-      var op = code[i];
+    while (blockPtr < blocksLen) {
+      var block = codeBlocks[blockPtr++];
       
-      if (op == OnValue.PUSH_CONST) {
-        i++;
-        stack[stackPtr++] = constants[Int64.toInt(code[i])];
-      }
-      else if (op == OnValue.PUSH_VAR) {
-        i++;
-        stack[stackPtr++] = locals[Int64.toInt(code[i])];
-      }
-      else if (op == OnValue.SET_VAR) {
-        i++;
-        locals[Int64.toInt(code[i])] = stack[--stackPtr];
-      }
-      else if (op == OnValue.ABORT) { aborted = true; break; }
-      else if (op == OnValue.ABORT_IF_NOT_EQ) { 
-          var b = stack[--stackPtr]; var a = stack[--stackPtr]; 
-          if (a != b) { aborted = true; break; } 
-      }
-      else if (op == OnValue.ABORT_IF_EQ) { 
-          var b = stack[--stackPtr]; var a = stack[--stackPtr]; 
-          if (a == b) { aborted = true; break; } 
-      }
-      // Math & Logic (In-place stack mutations to avoid pop/push overhead)
-      else if (op == OnValue.PLUS) { var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a + b; }
-      else if (op == OnValue.MINUS) { var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a - b; }
-      else if (op == OnValue.TIMES) { var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a * b; }
-      else if (op == OnValue.DIVIDE) { var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = b != 0 ? a / b : 0; }
-      else if (op == OnValue.MOD) { var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = b != 0 ? a % b : 0; }
-      else if (op == OnValue.SIN) { stack[stackPtr - 1] = Math.sin(stack[stackPtr - 1]); }
-      else if (op == OnValue.COS) { stack[stackPtr - 1] = Math.cos(stack[stackPtr - 1]); }
-      else if (op == OnValue.MIN) { 
-          var b = stack[--stackPtr]; 
-          if (b < stack[stackPtr - 1]) stack[stackPtr - 1] = b; 
-      }
-      else if (op == OnValue.MAX) { 
-          var b = stack[--stackPtr]; 
-          if (b > stack[stackPtr - 1]) stack[stackPtr - 1] = b; 
-      }
-      else if (op == OnValue.ABS) { stack[stackPtr - 1] = Math.abs(stack[stackPtr - 1]); }
-      else if (op == OnValue.NOT) { stack[stackPtr - 1] = stack[stackPtr - 1] == 0 ? 1.0 : 0.0; }
-      else if (op == OnValue.AND) { var b = stack[--stackPtr]; var a = stack[stackPtr - 1]; stack[stackPtr - 1] = a != 0 ? b : 0.0; }
-      else if (op == OnValue.OR)  { var b = stack[--stackPtr]; var a = stack[stackPtr - 1]; stack[stackPtr - 1] = a != 0 ? a : b; }
+      // Extract the 32-bit halves ONCE. No overflow checks!
+      var low = Int64.getLow(block);
+      var high = Int64.getHigh(block);
       
-      i++;
-    }
-    
-    if (aborted) {
-    //   trace("=== [NoteMovementInterp] Execution Result ===");
-    //   trace("Status: ABORTED (Falling back to default engine movement)");
-      return null;
+      // ----------------------------------------------------
+      // UNROLLED SLOT 0 (Native 32-bit shift & mask)
+      // ----------------------------------------------------
+      var op = low & 0xFF;
+      switch (op) {
+        case 0x10: stack[stackPtr++] = constants[args[argPtr++]];
+        case 0x11: stack[stackPtr++] = locals[args[argPtr++]];
+        case 0x20: locals[args[argPtr++]] = stack[--stackPtr];
+        case 0x30: return null;
+        case 0x31: var b = stack[--stackPtr]; var a = stack[--stackPtr]; if (a != b) return null;
+        case 0x32: var b = stack[--stackPtr]; var a = stack[--stackPtr]; if (a == b) return null;
+        case 0x00: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a + b;
+        case 0x01: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a - b;
+        case 0x02: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a * b;
+        case 0x03: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = b != 0 ? a / b : 0;
+        case 0x04: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = b != 0 ? a % b : 0;
+        case 0x05: stack[stackPtr - 1] = Math.sin(stack[stackPtr - 1]);
+        case 0x06: stack[stackPtr - 1] = Math.cos(stack[stackPtr - 1]);
+        case 0x07: var b = stack[--stackPtr]; if (b < stack[stackPtr - 1]) stack[stackPtr - 1] = b;
+        case 0x08: var b = stack[--stackPtr]; if (b > stack[stackPtr - 1]) stack[stackPtr - 1] = b;
+        case 0x09: stack[stackPtr - 1] = Math.abs(stack[stackPtr - 1]);
+        case 0x0A: stack[stackPtr - 1] = stack[stackPtr - 1] == 0 ? 1.0 : 0.0;
+        case 0x0B: var b = stack[--stackPtr]; var a = stack[stackPtr - 1]; stack[stackPtr - 1] = a != 0 ? b : 0.0;
+        case 0x0C: var b = stack[--stackPtr]; var a = stack[stackPtr - 1]; stack[stackPtr - 1] = a != 0 ? a : b;
+        case 0x33: {} // NOP
+      }
+      
+      // ----------------------------------------------------
+      // UNROLLED SLOT 1
+      // ----------------------------------------------------
+      op = (low >> 8) & 0xFF;
+      switch (op) {
+        case 0x10: stack[stackPtr++] = constants[args[argPtr++]];
+        case 0x11: stack[stackPtr++] = locals[args[argPtr++]];
+        case 0x20: locals[args[argPtr++]] = stack[--stackPtr];
+        case 0x30: return null;
+        case 0x31: var b = stack[--stackPtr]; var a = stack[--stackPtr]; if (a != b) return null;
+        case 0x32: var b = stack[--stackPtr]; var a = stack[--stackPtr]; if (a == b) return null;
+        case 0x00: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a + b;
+        case 0x01: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a - b;
+        case 0x02: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a * b;
+        case 0x03: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = b != 0 ? a / b : 0;
+        case 0x04: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = b != 0 ? a % b : 0;
+        case 0x05: stack[stackPtr - 1] = Math.sin(stack[stackPtr - 1]);
+        case 0x06: stack[stackPtr - 1] = Math.cos(stack[stackPtr - 1]);
+        case 0x07: var b = stack[--stackPtr]; if (b < stack[stackPtr - 1]) stack[stackPtr - 1] = b;
+        case 0x08: var b = stack[--stackPtr]; if (b > stack[stackPtr - 1]) stack[stackPtr - 1] = b;
+        case 0x09: stack[stackPtr - 1] = Math.abs(stack[stackPtr - 1]);
+        case 0x0A: stack[stackPtr - 1] = stack[stackPtr - 1] == 0 ? 1.0 : 0.0;
+        case 0x0B: var b = stack[--stackPtr]; var a = stack[stackPtr - 1]; stack[stackPtr - 1] = a != 0 ? b : 0.0;
+        case 0x0C: var b = stack[--stackPtr]; var a = stack[stackPtr - 1]; stack[stackPtr - 1] = a != 0 ? a : b;
+        case 0x33: {}
+      }
+
+      // ----------------------------------------------------
+      // UNROLLED SLOT 2
+      // ----------------------------------------------------
+      op = (low >> 16) & 0xFF;
+      switch (op) {
+        case 0x10: stack[stackPtr++] = constants[args[argPtr++]];
+        case 0x11: stack[stackPtr++] = locals[args[argPtr++]];
+        case 0x20: locals[args[argPtr++]] = stack[--stackPtr];
+        case 0x30: return null;
+        case 0x31: var b = stack[--stackPtr]; var a = stack[--stackPtr]; if (a != b) return null;
+        case 0x32: var b = stack[--stackPtr]; var a = stack[--stackPtr]; if (a == b) return null;
+        case 0x00: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a + b;
+        case 0x01: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a - b;
+        case 0x02: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a * b;
+        case 0x03: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = b != 0 ? a / b : 0;
+        case 0x04: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = b != 0 ? a % b : 0;
+        case 0x05: stack[stackPtr - 1] = Math.sin(stack[stackPtr - 1]);
+        case 0x06: stack[stackPtr - 1] = Math.cos(stack[stackPtr - 1]);
+        case 0x07: var b = stack[--stackPtr]; if (b < stack[stackPtr - 1]) stack[stackPtr - 1] = b;
+        case 0x08: var b = stack[--stackPtr]; if (b > stack[stackPtr - 1]) stack[stackPtr - 1] = b;
+        case 0x09: stack[stackPtr - 1] = Math.abs(stack[stackPtr - 1]);
+        case 0x0A: stack[stackPtr - 1] = stack[stackPtr - 1] == 0 ? 1.0 : 0.0;
+        case 0x0B: var b = stack[--stackPtr]; var a = stack[stackPtr - 1]; stack[stackPtr - 1] = a != 0 ? b : 0.0;
+        case 0x0C: var b = stack[--stackPtr]; var a = stack[stackPtr - 1]; stack[stackPtr - 1] = a != 0 ? a : b;
+        case 0x33: {}
+      }
+
+      // ----------------------------------------------------
+      // UNROLLED SLOT 3 (Unsigned shift >>> for top byte)
+      // ----------------------------------------------------
+      op = (low >>> 24) & 0xFF;
+      switch (op) {
+        case 0x10: stack[stackPtr++] = constants[args[argPtr++]];
+        case 0x11: stack[stackPtr++] = locals[args[argPtr++]];
+        case 0x20: locals[args[argPtr++]] = stack[--stackPtr];
+        case 0x30: return null;
+        case 0x31: var b = stack[--stackPtr]; var a = stack[--stackPtr]; if (a != b) return null;
+        case 0x32: var b = stack[--stackPtr]; var a = stack[--stackPtr]; if (a == b) return null;
+        case 0x00: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a + b;
+        case 0x01: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a - b;
+        case 0x02: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a * b;
+        case 0x03: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = b != 0 ? a / b : 0;
+        case 0x04: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = b != 0 ? a % b : 0;
+        case 0x05: stack[stackPtr - 1] = Math.sin(stack[stackPtr - 1]);
+        case 0x06: stack[stackPtr - 1] = Math.cos(stack[stackPtr - 1]);
+        case 0x07: var b = stack[--stackPtr]; if (b < stack[stackPtr - 1]) stack[stackPtr - 1] = b;
+        case 0x08: var b = stack[--stackPtr]; if (b > stack[stackPtr - 1]) stack[stackPtr - 1] = b;
+        case 0x09: stack[stackPtr - 1] = Math.abs(stack[stackPtr - 1]);
+        case 0x0A: stack[stackPtr - 1] = stack[stackPtr - 1] == 0 ? 1.0 : 0.0;
+        case 0x0B: var b = stack[--stackPtr]; var a = stack[stackPtr - 1]; stack[stackPtr - 1] = a != 0 ? b : 0.0;
+        case 0x0C: var b = stack[--stackPtr]; var a = stack[stackPtr - 1]; stack[stackPtr - 1] = a != 0 ? a : b;
+        case 0x33: {}
+      }
+
+      // ----------------------------------------------------
+      // UNROLLED SLOT 4
+      // ----------------------------------------------------
+      op = high & 0xFF;
+      switch (op) {
+        case 0x10: stack[stackPtr++] = constants[args[argPtr++]];
+        case 0x11: stack[stackPtr++] = locals[args[argPtr++]];
+        case 0x20: locals[args[argPtr++]] = stack[--stackPtr];
+        case 0x30: return null;
+        case 0x31: var b = stack[--stackPtr]; var a = stack[--stackPtr]; if (a != b) return null;
+        case 0x32: var b = stack[--stackPtr]; var a = stack[--stackPtr]; if (a == b) return null;
+        case 0x00: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a + b;
+        case 0x01: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a - b;
+        case 0x02: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a * b;
+        case 0x03: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = b != 0 ? a / b : 0;
+        case 0x04: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = b != 0 ? a % b : 0;
+        case 0x05: stack[stackPtr - 1] = Math.sin(stack[stackPtr - 1]);
+        case 0x06: stack[stackPtr - 1] = Math.cos(stack[stackPtr - 1]);
+        case 0x07: var b = stack[--stackPtr]; if (b < stack[stackPtr - 1]) stack[stackPtr - 1] = b;
+        case 0x08: var b = stack[--stackPtr]; if (b > stack[stackPtr - 1]) stack[stackPtr - 1] = b;
+        case 0x09: stack[stackPtr - 1] = Math.abs(stack[stackPtr - 1]);
+        case 0x0A: stack[stackPtr - 1] = stack[stackPtr - 1] == 0 ? 1.0 : 0.0;
+        case 0x0B: var b = stack[--stackPtr]; var a = stack[stackPtr - 1]; stack[stackPtr - 1] = a != 0 ? b : 0.0;
+        case 0x0C: var b = stack[--stackPtr]; var a = stack[stackPtr - 1]; stack[stackPtr - 1] = a != 0 ? a : b;
+        case 0x33: {}
+      }
+
+      // ----------------------------------------------------
+      // UNROLLED SLOT 5
+      // ----------------------------------------------------
+      op = (high >> 8) & 0xFF;
+      switch (op) {
+        case 0x10: stack[stackPtr++] = constants[args[argPtr++]];
+        case 0x11: stack[stackPtr++] = locals[args[argPtr++]];
+        case 0x20: locals[args[argPtr++]] = stack[--stackPtr];
+        case 0x30: return null;
+        case 0x31: var b = stack[--stackPtr]; var a = stack[--stackPtr]; if (a != b) return null;
+        case 0x32: var b = stack[--stackPtr]; var a = stack[--stackPtr]; if (a == b) return null;
+        case 0x00: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a + b;
+        case 0x01: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a - b;
+        case 0x02: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a * b;
+        case 0x03: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = b != 0 ? a / b : 0;
+        case 0x04: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = b != 0 ? a % b : 0;
+        case 0x05: stack[stackPtr - 1] = Math.sin(stack[stackPtr - 1]);
+        case 0x06: stack[stackPtr - 1] = Math.cos(stack[stackPtr - 1]);
+        case 0x07: var b = stack[--stackPtr]; if (b < stack[stackPtr - 1]) stack[stackPtr - 1] = b;
+        case 0x08: var b = stack[--stackPtr]; if (b > stack[stackPtr - 1]) stack[stackPtr - 1] = b;
+        case 0x09: stack[stackPtr - 1] = Math.abs(stack[stackPtr - 1]);
+        case 0x0A: stack[stackPtr - 1] = stack[stackPtr - 1] == 0 ? 1.0 : 0.0;
+        case 0x0B: var b = stack[--stackPtr]; var a = stack[stackPtr - 1]; stack[stackPtr - 1] = a != 0 ? b : 0.0;
+        case 0x0C: var b = stack[--stackPtr]; var a = stack[stackPtr - 1]; stack[stackPtr - 1] = a != 0 ? a : b;
+        case 0x33: {}
+      }
+
+      // ----------------------------------------------------
+      // UNROLLED SLOT 6
+      // ----------------------------------------------------
+      op = (high >> 16) & 0xFF;
+      switch (op) {
+        case 0x10: stack[stackPtr++] = constants[args[argPtr++]];
+        case 0x11: stack[stackPtr++] = locals[args[argPtr++]];
+        case 0x20: locals[args[argPtr++]] = stack[--stackPtr];
+        case 0x30: return null;
+        case 0x31: var b = stack[--stackPtr]; var a = stack[--stackPtr]; if (a != b) return null;
+        case 0x32: var b = stack[--stackPtr]; var a = stack[--stackPtr]; if (a == b) return null;
+        case 0x00: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a + b;
+        case 0x01: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a - b;
+        case 0x02: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a * b;
+        case 0x03: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = b != 0 ? a / b : 0;
+        case 0x04: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = b != 0 ? a % b : 0;
+        case 0x05: stack[stackPtr - 1] = Math.sin(stack[stackPtr - 1]);
+        case 0x06: stack[stackPtr - 1] = Math.cos(stack[stackPtr - 1]);
+        case 0x07: var b = stack[--stackPtr]; if (b < stack[stackPtr - 1]) stack[stackPtr - 1] = b;
+        case 0x08: var b = stack[--stackPtr]; if (b > stack[stackPtr - 1]) stack[stackPtr - 1] = b;
+        case 0x09: stack[stackPtr - 1] = Math.abs(stack[stackPtr - 1]);
+        case 0x0A: stack[stackPtr - 1] = stack[stackPtr - 1] == 0 ? 1.0 : 0.0;
+        case 0x0B: var b = stack[--stackPtr]; var a = stack[stackPtr - 1]; stack[stackPtr - 1] = a != 0 ? b : 0.0;
+        case 0x0C: var b = stack[--stackPtr]; var a = stack[stackPtr - 1]; stack[stackPtr - 1] = a != 0 ? a : b;
+        case 0x33: {}
+      }
+
+      // ----------------------------------------------------
+      // UNROLLED SLOT 7 (Unsigned shift >>> for top byte)
+      // ----------------------------------------------------
+      op = (high >>> 24) & 0xFF;
+      switch (op) {
+        case 0x10: stack[stackPtr++] = constants[args[argPtr++]];
+        case 0x11: stack[stackPtr++] = locals[args[argPtr++]];
+        case 0x20: locals[args[argPtr++]] = stack[--stackPtr];
+        case 0x30: return null;
+        case 0x31: var b = stack[--stackPtr]; var a = stack[--stackPtr]; if (a != b) return null;
+        case 0x32: var b = stack[--stackPtr]; var a = stack[--stackPtr]; if (a == b) return null;
+        case 0x00: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a + b;
+        case 0x01: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a - b;
+        case 0x02: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = a * b;
+        case 0x03: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = b != 0 ? a / b : 0;
+        case 0x04: var b = stack[--stackPtr]; var a = stack[--stackPtr]; stack[stackPtr++] = b != 0 ? a % b : 0;
+        case 0x05: stack[stackPtr - 1] = Math.sin(stack[stackPtr - 1]);
+        case 0x06: stack[stackPtr - 1] = Math.cos(stack[stackPtr - 1]);
+        case 0x07: var b = stack[--stackPtr]; if (b < stack[stackPtr - 1]) stack[stackPtr - 1] = b;
+        case 0x08: var b = stack[--stackPtr]; if (b > stack[stackPtr - 1]) stack[stackPtr - 1] = b;
+        case 0x09: stack[stackPtr - 1] = Math.abs(stack[stackPtr - 1]);
+        case 0x0A: stack[stackPtr - 1] = stack[stackPtr - 1] == 0 ? 1.0 : 0.0;
+        case 0x0B: var b = stack[--stackPtr]; var a = stack[stackPtr - 1]; stack[stackPtr - 1] = a != 0 ? b : 0.0;
+        case 0x0C: var b = stack[--stackPtr]; var a = stack[stackPtr - 1]; stack[stackPtr - 1] = a != 0 ? a : b;
+        case 0x33: {}
+      }
     }
     
     baseResult.x = locals[0];
@@ -555,10 +728,6 @@ class NoteMovementInterp {
     baseResult.scale = locals[2];
     baseResult.sustainRot = locals[3];
     baseResult.scrollMultiplier = locals[4];
-    
-    // trace("=== [NoteMovementInterp] Execution Result ===");
-    // trace("Status: SUCCESS");
-    // trace("Output Array: [" + locals[0] + ", " + locals[1] + ", " + locals[2] + ", " + locals[3] + ", " + locals[4] + "]");
     
     return baseResult;
   }

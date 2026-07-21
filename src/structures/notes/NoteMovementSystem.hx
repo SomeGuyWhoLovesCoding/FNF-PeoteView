@@ -24,7 +24,7 @@ class NoteMovementSystem {
 				if (noteSpr != null) {
 					noteSpr.Sx = Math.round(returnValue.x);
 					noteSpr.Sy = Math.round(returnValue.y);
-					noteSpr.scale = returnValue.scale;
+					noteSpr.scale = returnValue.scale * receptor.note.scale;
 					if (returnValue.scrollMultiplier != 1) noteSpr.diff = Math.round(noteSpr.diff * returnValue.scrollMultiplier);
 				}
 				if (sustainSpr != null) {
