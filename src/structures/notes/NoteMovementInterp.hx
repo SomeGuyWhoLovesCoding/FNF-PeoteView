@@ -516,7 +516,7 @@ class NoteMovementInterp {
       case "+", "-": 3;
       case "*", "/", "%": 4;
       case "not", "sin", "cos", "min", "max", "abs", "math.sin", "math.cos", "math.min", "math.max", "math.abs", 
-           "__abort", "_ab_neq", "_ab_eq": 5;
+           "_ab", "_ab_neq", "_ab_eq": 5;
       default: 0;
     }
   }
@@ -537,9 +537,9 @@ class NoteMovementInterp {
       case "not": 0x0A;
       case "and": 0x0B;
       case "or": 0x0C;
-      case "__abort": 0x30;
-      case "__abort_if_not_eq": 0x31;
-      case "__abort_if_eq": 0x32;
+      case "_ab": 0x30;
+      case "_ab_neq": 0x31;
+      case "_ab_eq": 0x32;
       default: 0x33;
     }
   }
