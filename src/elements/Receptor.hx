@@ -19,7 +19,9 @@ class Receptor {
     
     var botHitToCheck:Bool;
     var playerHitToCheck:Bool;
-    var fakeOverlapStorage:Int;
+
+    var ambientOccludeYPrev:Int;
+    var ambientOccludeYCur:Int;
     
     var confirmTimer:ReceptorTimer;
     var sustainActive:Bool;
