@@ -177,11 +177,11 @@ class NoteMovementInterp {
     code = ~/math\.abs/gi.replace(code, "abs");
     
     // 5. Translate Lua control flow into ABORT opcodes
-    code = ~/if\s+\(*\s*([a-zA-Z0-9_]+)\s*\)*\s*~=\s*([0-9.]+)\s+then\s+return\s+nil\s+end/gi.replace(code, "__abort_if_not_eq($1, $2);");
-    code = ~/if\s+\(*\s*([a-zA-Z0-9_]+)\s*\)*\s*==\s*([0-9.]+)\s+then\s+return\s+nil\s+end/gi.replace(code, "__abort_if_eq($1, $2);");
-    code = ~/\breturn\s+nil\b/gi.replace(code, "__abort();");
+    code = ~/if\s+\(*\s*([a-zA-Z0-9_]+)\s*\)*\s*~=\s*([0-9.]+)\s+then\s+return\s+nil\s+end/gi.replace(code, "_ab_neq($1, $2);");
+    code = ~/if\s+\(*\s*([a-zA-Z0-9_]+)\s*\)*\s*==\s*([0-9.]+)\s+then\s+return\s+nil\s+end/gi.replace(code, "_ab_eq($1, $2);");
+    code = ~/\breturn\s+nil\b/gi.replace(code, "_ab();");
     
-    // 6. Remove Lua-specific keywords
+    // 6. Remove Lua-Specific keywords
     code = ~/local\s+/gi.replace(code, "");
     code = ~/function\s+noteFormula\s*\([^)]*\)/i.replace(code, "");
     code = ~/\bend\b/gi.replace(code, "");
@@ -215,70 +215,78 @@ class NoteMovementInterp {
   function compile(codeStr:String) {
     var tokens = tokenize(codeStr);
     var pos = 0;
+    var len = tokens.length;
     
-    while (pos < tokens.length) {
+    while (pos < len) {
       var token = tokens[pos];
       if (token == ";") { pos++; continue; }
       
+      // Single-pass statement boundary detection (O(N) instead of O(N²))
+      var stmtEnd = pos;
       var eqPos = -1;
       var commaBeforeEq = false;
-      for (j in pos...tokens.length) {
-        if (tokens[j] == "=") { eqPos = j; break; }
-        if (tokens[j] == ";") break;
-        if (tokens[j] == ",") commaBeforeEq = true;
+      while (stmtEnd < len && tokens[stmtEnd] != ";") {
+        if (tokens[stmtEnd] == "=") {
+          if (eqPos == -1) eqPos = stmtEnd;
+        } else if (tokens[stmtEnd] == ",") {
+          if (eqPos == -1) commaBeforeEq = true;
+        }
+        stmtEnd++;
       }
       
       if (eqPos != -1 && (eqPos == pos + 1 || commaBeforeEq)) {
         var targets = [];
-        for (j in pos...eqPos) { if (tokens[j] != ",") targets.push(tokens[j]); }
+        for (j in pos...eqPos) { 
+          if (tokens[j] != ",") targets.push(tokens[j]); 
+        }
         
         pos = eqPos + 1;
         var exprs = [];
         var currentExprStart = pos;
         var depth = 0;
-        while (pos < tokens.length) {
+        while (pos < stmtEnd) {
           var t = tokens[pos];
           if (t == "(") depth++;
           else if (t == ")") depth--;
           else if (t == "," && depth == 0) {
             exprs.push(tokens.slice(currentExprStart, pos));
             currentExprStart = pos + 1;
-          } else if (t == ";" && depth == 0) break;
+          }
           pos++;
         }
         exprs.push(tokens.slice(currentExprStart, pos));
-        if (pos < tokens.length && tokens[pos] == ";") pos++;
+        pos = stmtEnd + 1; // skip ';'
         
         for (expr in exprs) parseExpressionTokens(expr);
         
-        for (i in 0...targets.length) {
-          var target = targets[targets.length - 1 - i];
+        var targetsLen = targets.length;
+        for (i in 0...targetsLen) {
+          var target = targets[targetsLen - 1 - i];
           var vIdx = getVarIndex(target);
           opcodeBuffer.push(0x20); // SET_VAR
           argsBuffer.push(vIdx);
         }
       } else {
-        var exprStart = pos;
-        while (pos < tokens.length && tokens[pos] != ";") pos++;
-        parseExpressionTokens(tokens.slice(exprStart, pos));
-        if (pos < tokens.length && tokens[pos] == ";") pos++;
+        parseExpressionTokens(tokens.slice(pos, stmtEnd));
+        pos = stmtEnd + 1; // skip ';'
       }
     }
     
-    // Pack the 8-bit opcodes into Int64 blocks (8 slots per block)
-    var len = opcodeBuffer.length;
-    var numBlocks = Math.ceil(len / 8);
+    // Pack the 8-bit opcodes into Int64 blocks (8 slots per block) using bitwise ops
+    var opLen = opcodeBuffer.length;
+    var numBlocks = (opLen + 7) >> 3;
     for (i in 0...numBlocks) {
-      var b0 = i * 8 < len ? opcodeBuffer[i * 8] : 0x33;
-      var b1 = i * 8 + 1 < len ? opcodeBuffer[i * 8 + 1] : 0x33;
-      var b2 = i * 8 + 2 < len ? opcodeBuffer[i * 8 + 2] : 0x33;
-      var b3 = i * 8 + 3 < len ? opcodeBuffer[i * 8 + 3] : 0x33;
+      var idx = i << 3;
+      var b0 = idx < opLen ? opcodeBuffer[idx] : 0x33;
+      var b1 = idx + 1 < opLen ? opcodeBuffer[idx + 1] : 0x33;
+      var b2 = idx + 2 < opLen ? opcodeBuffer[idx + 2] : 0x33;
+      var b3 = idx + 3 < opLen ? opcodeBuffer[idx + 3] : 0x33;
       var low = b0 | (b1 << 8) | (b2 << 16) | (b3 << 24);
       
-      var b4 = i * 8 + 4 < len ? opcodeBuffer[i * 8 + 4] : 0x33;
-      var b5 = i * 8 + 5 < len ? opcodeBuffer[i * 8 + 5] : 0x33;
-      var b6 = i * 8 + 6 < len ? opcodeBuffer[i * 8 + 6] : 0x33;
-      var b7 = i * 8 + 7 < len ? opcodeBuffer[i * 8 + 7] : 0x33;
+      var b4 = idx + 4 < opLen ? opcodeBuffer[idx + 4] : 0x33;
+      var b5 = idx + 5 < opLen ? opcodeBuffer[idx + 5] : 0x33;
+      var b6 = idx + 6 < opLen ? opcodeBuffer[idx + 6] : 0x33;
+      var b7 = idx + 7 < opLen ? opcodeBuffer[idx + 7] : 0x33;
       var high = b4 | (b5 << 8) | (b6 << 16) | (b7 << 24);
       
       codeBlocks.push(Int64.make(high, low));
@@ -288,21 +296,25 @@ class NoteMovementInterp {
 
   var currentPos:Int = 0;
 
+  // Zero-allocation tokenization using charCodeAt and substring
   function tokenize(codeStr:String):Array<String> {
     var tokens:Array<String> = [];
-    var current = "";
-    for (i in 0...codeStr.length) {
-      var c = codeStr.charAt(i);
-      if (c == " " || c == "\t" || c == "\n" || c == "\r") {
-        if (current != "") { tokens.push(current); current = ""; }
-      } else if (c == "+" || c == "-" || c == "*" || c == "/" || c == "%" || c == "(" || c == ")" || c == "=" || c == "," || c == ";") {
-        if (current != "") { tokens.push(current); current = ""; }
-        tokens.push(c);
-      } else {
-        current += c;
+    var len = codeStr.length;
+    var start = 0;
+    var i = 0;
+    while (i < len) {
+      var c = codeStr.charCodeAt(i);
+      if (c == 32 || c == 9 || c == 10 || c == 13) { // space, tab, newline, cr
+        if (i > start) tokens.push(codeStr.substring(start, i));
+        start = i + 1;
+      } else if (c == 43 || c == 45 || c == 42 || c == 47 || c == 37 || c == 40 || c == 41 || c == 61 || c == 44 || c == 59) { // + - * / % ( ) = , ;
+        if (i > start) tokens.push(codeStr.substring(start, i));
+        tokens.push(codeStr.charAt(i));
+        start = i + 1;
       }
+      i++;
     }
-    if (current != "") tokens.push(current);
+    if (i > start) tokens.push(codeStr.substring(start, i));
     return tokens;
   }
 
@@ -310,10 +322,13 @@ class NoteMovementInterp {
     currentPos = 0;
     var output:Array<Int> = [];
     var operators:Array<String> = [];
+    var len = tokens.length;
     
-    while (currentPos < tokens.length) {
+    while (currentPos < len) {
       var token = tokens[currentPos];
       if (token == ";") break;
+      
+      var lowerToken = token.toLowerCase();
       
       if (isNumber(token)) {
         var val = Std.parseFloat(token);
@@ -323,15 +338,15 @@ class NoteMovementInterp {
         argsBuffer.push(cIdx);
         currentPos++;
       }
-      else if (token.toLowerCase() == "not") {
+      else if (lowerToken == "not") {
         operators.push(token);
         currentPos++;
       }
-      else if (isFunction(token)) {
+      else if (isFunction(lowerToken)) {
         operators.push(token);
         currentPos++;
       }
-      else if (isVariable(token)) {
+      else if (isVariable(token, lowerToken)) {
         var vIdx = getVarIndex(token);
         output.push(0x11); // PUSH_VAR
         argsBuffer.push(vIdx);
@@ -343,36 +358,42 @@ class NoteMovementInterp {
       } 
       else if (token == ")") {
         while (operators.length > 0 && operators[operators.length - 1] != "(") {
-          output.push(Int64.toInt(getOpOpcode(operators.pop())));
+          output.push(getOpOpcode(operators.pop()));
         }
         if (operators.length > 0) operators.pop();
         
-        if (operators.length > 0 && isFunction(operators[operators.length - 1])) {
-          output.push(Int64.toInt(getOpOpcode(operators.pop())));
+        if (operators.length > 0 && isFunction(operators[operators.length - 1].toLowerCase())) {
+          output.push(getOpOpcode(operators.pop()));
         }
         currentPos++;
       } 
       else if (token == ",") {
         while (operators.length > 0 && operators[operators.length - 1] != "(") {
-          output.push(Int64.toInt(getOpOpcode(operators.pop())));
+          output.push(getOpOpcode(operators.pop()));
         }
         currentPos++;
       } 
-      else if (isOperator(token) || token.toLowerCase() == "and" || token.toLowerCase() == "or") {
+      else if (isOperator(token) || lowerToken == "and" || lowerToken == "or") {
         if ((token == "-" || token == "+") && (currentPos == 0 || isPrevTokenOperator(tokens, currentPos))) {
           if (token == "-") {
             output.push(0x10); // PUSH_CONST
             argsBuffer.push(constants.length);
             constants.push(0.0);
-            token = "-"; 
+            // token remains "-" so it acts as a binary minus with 0.0 on the left
           } else {
             currentPos++;
             continue; 
           }
         }
         
-        while (operators.length > 0 && precedence(operators[operators.length - 1]) >= precedence(token)) {
-          output.push(Int64.toInt(getOpOpcode(operators.pop())));
+        var prec = precedence(lowerToken);
+        while (operators.length > 0) {
+          var topOp = operators[operators.length - 1];
+          if (precedence(topOp.toLowerCase()) >= prec) {
+            output.push(getOpOpcode(operators.pop()));
+          } else {
+            break;
+          }
         }
         operators.push(token);
         currentPos++;
@@ -383,38 +404,75 @@ class NoteMovementInterp {
     }
     
     while (operators.length > 0) {
-      output.push(Int64.toInt(getOpOpcode(operators.pop())));
+      output.push(getOpOpcode(operators.pop()));
     }
     
-    for (j in 0...output.length) opcodeBuffer.push(output[j]);
+    var outLen = output.length;
+    for (j in 0...outLen) opcodeBuffer.push(output[j]);
   }
 
-  function isNumber(s:String):Bool return ~/^-?[0-9]+(\.[0-9]+)?$/.match(s);
+  // Ultra-fast number validation without regex
+  function isNumber(s:String):Bool {
+    var len = s.length;
+    if (len == 0) return false;
+    var i = 0;
+    var c = s.charCodeAt(i);
+    if (c == 45) { // '-'
+      i++;
+      if (i == len) return false;
+      c = s.charCodeAt(i);
+    }
+    var hasDigit = false;
+    var hasDot = false;
+    while (i < len) {
+      c = s.charCodeAt(i);
+      if (c >= 48 && c <= 57) {
+        hasDigit = true;
+      } else if (c == 46) { // '.'
+        if (hasDot) return false;
+        hasDot = true;
+      } else {
+        return false;
+      }
+      i++;
+    }
+    return hasDigit;
+  }
 
-  function isVariable(s:String):Bool {
-    if (isFunction(s)) return false;
-    var lower = s.toLowerCase();
+  // Ultra-fast variable validation without regex
+  function isVariable(s:String, lower:String):Bool {
+    var len = s.length;
+    if (len == 0) return false;
+    var c = s.charCodeAt(0);
+    if (!((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || c == 95)) return false;
+    
+    var i = 1;
+    while (i < len) {
+      c = s.charCodeAt(i);
+      if (!((c >= 65 && c <= 90) || (c >= 97 && c <= 122) || (c >= 48 && c <= 57) || c == 95)) return false;
+      i++;
+    }
+    
     if (lower == "and" || lower == "or" || lower == "not") return false;
-    return ~/^[a-zA-Z_][a-zA-Z0-9_]*$/.match(s);
+    if (isFunction(lower)) return false;
+    return true;
   }
 
   function getVarIndex(name:String):Int {
     var lower = name.toLowerCase();
     var idx = -1;
     
-    switch(lower) {
-      case "x": idx = 0;
-      case "y": idx = 1;
-      case "scale": idx = 2;
-      case "sustainrot", "sustain_rotation": idx = 3;
-      case "scrollmultiplier", "scroll_multiplier": idx = 4;
-      case "diff": idx = 5;
-      case "scrollspeed", "scroll_speed": idx = 6;
-      case "receptorx", "receptor_x": idx = 7;
-      case "receptory", "receptor_y": idx = 8;
-      case "index": idx = 9;
-      case "type": idx = 10;
-    }
+    if (lower == "x") idx = 0;
+    else if (lower == "y") idx = 1;
+    else if (lower == "scale") idx = 2;
+    else if (lower == "sustainrot" || lower == "sustain_rotation") idx = 3;
+    else if (lower == "scrollmultiplier" || lower == "scroll_multiplier") idx = 4;
+    else if (lower == "diff") idx = 5;
+    else if (lower == "scrollspeed" || lower == "scroll_speed") idx = 6;
+    else if (lower == "receptorx" || lower == "receptor_x") idx = 7;
+    else if (lower == "receptory" || lower == "receptor_y") idx = 8;
+    else if (lower == "index") idx = 9;
+    else if (lower == "type") idx = 10;
     
     if (idx == -1) {
       if (!varMap.exists(lower)) {
@@ -426,55 +484,63 @@ class NoteMovementInterp {
     return idx;
   }
 
-  function isOperator(s:String):Bool return s == "+" || s == "-" || s == "*" || s == "/" || s == "%";
-
-  function isFunction(s:String):Bool {
-    s = s.toLowerCase();
-    return s == "sin" || s == "cos" || s == "min" || s == "max" || s == "abs" ||
-           s == "math.sin" || s == "math.cos" || s == "math.min" || s == "math.max" || s == "math.abs" ||
-           s == "__abort" || s == "__abort_if_not_eq" || s == "__abort_if_eq";
+  inline function isOperator(s:String):Bool {
+    var c = s.charCodeAt(0);
+    return s.length == 1 && (c == 43 || c == 45 || c == 42 || c == 47 || c == 37); // + - * / %
   }
 
+  inline function isFunction(lower:String):Bool {
+    return lower == "sin" || lower == "cos" || lower == "min" || lower == "max" || lower == "abs" ||
+           lower == "math.sin" || lower == "math.cos" || lower == "math.min" || lower == "math.max" || lower == "math.abs" ||
+           lower == "_ab" || lower == "_ab_neq" || lower == "_ab_eq";
+  }
+
+  // Ultra-fast previous token operator check without regex
   function isPrevTokenOperator(tokens:Array<String>, pos:Int):Bool {
     if (pos == 0) return true;
     var prev = tokens[pos - 1];
+    var len = prev.length;
+    if (len == 1) {
+      var c = prev.charCodeAt(0);
+      // ( = , ; + - * / %
+      if (c == 40 || c == 61 || c == 44 || c == 59 || c == 43 || c == 45 || c == 42 || c == 47 || c == 37) return true;
+    }
     var lowerPrev = prev.toLowerCase();
-    return prev == "(" || prev == "=" || prev == "," || prev == ";" || 
-           isOperator(prev) || isFunction(prev) || 
-           lowerPrev == "not" || lowerPrev == "and" || lowerPrev == "or";
+    return lowerPrev == "not" || lowerPrev == "and" || lowerPrev == "or" || isFunction(lowerPrev);
   }
 
-  function precedence(op:String):Int {
-    return switch(op.toLowerCase()) {
+  inline function precedence(op:String):Int {
+    return switch(op) {
       case "or": 1;
       case "and": 2;
       case "+", "-": 3;
       case "*", "/", "%": 4;
       case "not", "sin", "cos", "min", "max", "abs", "math.sin", "math.cos", "math.min", "math.max", "math.abs", 
-           "__abort", "__abort_if_not_eq", "__abort_if_eq": 5;
+           "__abort", "_ab_neq", "_ab_eq": 5;
       default: 0;
     }
   }
 
-  function getOpOpcode(op:String):Int64 {
-    return switch(op.toLowerCase()) {
-      case "+": OnValue.PLUS;
-      case "-": OnValue.MINUS;
-      case "*": OnValue.TIMES;
-      case "/": OnValue.DIVIDE;
-      case "%": OnValue.MOD;
-      case "sin", "math.sin": OnValue.SIN;
-      case "cos", "math.cos": OnValue.COS;
-      case "min", "math.min": OnValue.MIN;
-      case "max", "math.max": OnValue.MAX;
-      case "abs", "math.abs": OnValue.ABS;
-      case "not": OnValue.NOT;
-      case "and": OnValue.AND;
-      case "or": OnValue.OR;
-      case "__abort": OnValue.ABORT;
-      case "__abort_if_not_eq": OnValue.ABORT_IF_NOT_EQ;
-      case "__abort_if_eq": OnValue.ABORT_IF_EQ;
-      default: OnValue.PLUS;
+  // Returns native Int to avoid Int64 overhead during compilation
+  inline function getOpOpcode(op:String):Int {
+    return switch(op) {
+      case "+": 0x00;
+      case "-": 0x01;
+      case "*": 0x02;
+      case "/": 0x03;
+      case "%": 0x04;
+      case "sin", "math.sin": 0x05;
+      case "cos", "math.cos": 0x06;
+      case "min", "math.min": 0x07;
+      case "max", "math.max": 0x08;
+      case "abs", "math.abs": 0x09;
+      case "not": 0x0A;
+      case "and": 0x0B;
+      case "or": 0x0C;
+      case "__abort": 0x30;
+      case "__abort_if_not_eq": 0x31;
+      case "__abort_if_eq": 0x32;
+      default: 0x33;
     }
   }
 
@@ -731,4 +797,4 @@ class NoteMovementInterp {
     
     return baseResult;
   }
-}
+      }
