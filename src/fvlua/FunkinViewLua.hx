@@ -7,7 +7,7 @@ import llua.LuaL;
 import llua.Convert;
 import haxe.ds.Vector;
 import haxe.Int64;
-import structures.gameplay.NoteFormulaResult;
+import structures.notes.NoteFormulaResult;
 
 using StringTools;
 

@@ -1,8 +1,8 @@
-package structures.gameplay;
+package structures.notes;
 
 import utils.Stack;
-import structures.gameplay.NoteVB.VirtualNote;
-import structures.gameplay.NoteVB.VirtualSustain;
+import structures.notes.NoteVB.VirtualNote;
+import structures.notes.NoteVB.VirtualSustain;
 
 /**
 	The pool of the note system.

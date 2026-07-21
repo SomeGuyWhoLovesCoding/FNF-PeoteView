@@ -19,7 +19,7 @@ class Receptor {
     
     var botHitToCheck:Bool;
     var playerHitToCheck:Bool;
-    var fakeOverlapStorage:Float;
+    var fakeOverlapStorage:Int;
     
     var confirmTimer:ReceptorTimer;
     var sustainActive:Bool;
@@ -44,7 +44,6 @@ class Receptor {
         
         botHitToCheck = false;
         playerHitToCheck = false;
-        fakeOverlapStorage = 0;
         
         confirmTimer = new ReceptorTimer(Math.POSITIVE_INFINITY, Math.POSITIVE_INFINITY, Math.POSITIVE_INFINITY);
         sustainActive = false;

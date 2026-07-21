@@ -1,4 +1,4 @@
-package structures.gameplay;
+package structures.notes;
 
 enum abstract NoteState(Int) from Int to Int {
 	var IDLE;

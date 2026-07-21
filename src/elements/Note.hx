@@ -1,7 +1,7 @@
 package elements;
 
-import structures.gameplay.NoteskinRuntimeHelper;
-import structures.gameplay.NoteskinHandle.BasicNoteskinClip;
+import structures.notes.NoteskinRuntimeHelper;
+import structures.notes.NoteskinHandle.BasicNoteskinClip;
 
 /**
     The note sprite of the note system. This is also used for the receptor.

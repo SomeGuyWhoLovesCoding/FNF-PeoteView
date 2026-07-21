@@ -40,6 +40,10 @@ import structures.editors.*;
 // gameplay structures
 import structures.gameplay.*;
 
+// notes structure
+// (cuz 11 classes start with `Note` funnily enough)
+import structures.notes.*;
+
 // and now the option structures
 import structures.options.*;
 

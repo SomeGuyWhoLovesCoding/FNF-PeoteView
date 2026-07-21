@@ -6,7 +6,6 @@ package structures.editors;
 
 // Standard library
 import haxe.Json;
-import StringTools;
 import sys.io.File as Sys_Fili;
 import sys.FileSystem;
 
@@ -20,15 +19,11 @@ import lime.ui.MouseCursor;
 import lime.ui.MouseWheelMode;
 
 // Project
-import structures.gameplay.NoteskinHandle;
-import structures.gameplay.NoteskinHandle.BasicNoteskinClip;
-import structures.gameplay.NoteskinHandle.NoteskinConfig;
-import structures.gameplay.NoteskinHandle.NoteskinData;
-import structures.gameplay.NoteskinHandle.NoteskinReceptorProperties;
-import structures.gameplay.NoteskinHandle.TextureRotation;
-import structures.gameplay.NoteskinManager;
-import elements.Sustain;
-import structures.gameplay.Strumline;
+import structures.notes.NoteskinHandle.BasicNoteskinClip;
+import structures.notes.NoteskinHandle.NoteskinConfig;
+import structures.notes.NoteskinHandle.NoteskinData;
+import structures.notes.NoteskinHandle.NoteskinReceptorProperties;
+import structures.notes.NoteskinHandle.TextureRotation;
 
 using StringTools;
 
@@ -1509,9 +1504,9 @@ private class NoteskinEditorManiaManager {
                 var groupKeyword:String = null;
 
                 // "arrow{DIR}" camelCase or "arrow {DIR}" -> idle
-                if (StringTools.startsWith(trimmed, "arrow")) {
+                if (trimmed.startsWith("arrow")) {
                     var dirPart = trimmed.substring(5);
-                    if (StringTools.startsWith(dirPart, " ")) dirPart = dirPart.substring(1);
+                    if (dirPart.startsWith(" ")) dirPart = dirPart.substring(1);
                     for (d in knownDirs) {
                         if (dirPart == d) {
                             clipType = "idle";

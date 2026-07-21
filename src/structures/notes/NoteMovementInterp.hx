@@ -1,4 +1,4 @@
-package structures.gameplay;
+package structures.notes;
 
 using StringTools;
 
@@ -15,9 +15,10 @@ enum abstract OnValue(Int64) from Int64 to Int64 {
   var COS = 0x1006;
   var MIN = 0x1007;
   var MAX = 0x1008;
-  var NOT = 0x1009;
-  var AND = 0x100A;
-  var OR = 0x100B;
+  var ABS = 0x1009;
+  var NOT = 0x100A;
+  var AND = 0x100B;
+  var OR = 0x100C;
   
   var PUSH_CONST = 0x2000;
   var PUSH_VAR = 0x4000;
@@ -175,6 +176,7 @@ class NoteMovementInterp {
     code = ~/math\.cos/gi.replace(code, "cos");
     code = ~/math\.min/gi.replace(code, "min");
     code = ~/math\.max/gi.replace(code, "max");
+    code = ~/math\.abs/gi.replace(code, "abs");
     
     // 5. Translate Lua control flow into ABORT opcodes
     code = ~/if\s+\(*\s*([a-zA-Z0-9_]+)\s*\)*\s*~=\s*([0-9.]+)\s+then\s+return\s+nil\s+end/gi.replace(code, "__abort_if_not_eq($1, $2);");
@@ -426,8 +428,8 @@ class NoteMovementInterp {
 
   function isFunction(s:String):Bool {
     s = s.toLowerCase();
-    return s == "sin" || s == "cos" || s == "min" || s == "max" ||
-           s == "math.sin" || s == "math.cos" || s == "math.min" || s == "math.max" ||
+    return s == "sin" || s == "cos" || s == "min" || s == "max" || s == "abs" ||
+           s == "math.sin" || s == "math.cos" || s == "math.min" || s == "math.max" || s == "math.abs" ||
            s == "__abort" || s == "__abort_if_not_eq" || s == "__abort_if_eq";
   }
 
@@ -446,7 +448,7 @@ class NoteMovementInterp {
       case "and": 2;
       case "+", "-": 3;
       case "*", "/", "%": 4;
-      case "not", "sin", "cos", "min", "max", "math.sin", "math.cos", "math.min", "math.max", 
+      case "not", "sin", "cos", "min", "max", "abs", "math.sin", "math.cos", "math.min", "math.max", "math.abs", 
            "__abort", "__abort_if_not_eq", "__abort_if_eq": 5;
       default: 0;
     }
@@ -463,6 +465,7 @@ class NoteMovementInterp {
       case "cos", "math.cos": OnValue.COS;
       case "min", "math.min": OnValue.MIN;
       case "max", "math.max": OnValue.MAX;
+      case "abs", "math.abs": OnValue.ABS;
       case "not": OnValue.NOT;
       case "and": OnValue.AND;
       case "or": OnValue.OR;
@@ -533,6 +536,7 @@ class NoteMovementInterp {
           var b = stack[--stackPtr]; 
           if (b > stack[stackPtr - 1]) stack[stackPtr - 1] = b; 
       }
+      else if (op == OnValue.ABS) { stack[stackPtr - 1] = Math.abs(stack[stackPtr - 1]); }
       else if (op == OnValue.NOT) { stack[stackPtr - 1] = stack[stackPtr - 1] == 0 ? 1.0 : 0.0; }
       else if (op == OnValue.AND) { var b = stack[--stackPtr]; var a = stack[stackPtr - 1]; stack[stackPtr - 1] = a != 0 ? b : 0.0; }
       else if (op == OnValue.OR)  { var b = stack[--stackPtr]; var a = stack[stackPtr - 1]; stack[stackPtr - 1] = a != 0 ? a : b; }

@@ -1,4 +1,4 @@
-package structures.gameplay;
+package structures.notes;
 
 @:publicFields
 #if cpp

@@ -1,7 +1,7 @@
-package structures.gameplay;
+package structures.notes;
 
-import structures.gameplay.NoteVB.VirtualNote;
-import structures.gameplay.NoteVB.VirtualSustain;
+import structures.notes.NoteVB.VirtualNote;
+import structures.notes.NoteVB.VirtualSustain;
 
 /**
  * This is where notes behave when interconnected to the note system.
@@ -67,7 +67,6 @@ class NoteSpawner {
 		var noteSpr:VirtualNote = null;
 		var j:Int = 0;
 
-		//var time = haxe.Timer.stamp();
 		while (i < top) {
 			var n = File.getNote(i);
 
@@ -82,14 +81,17 @@ class NoteSpawner {
 
 			var ghost = isGhostNote(prev, n);
 
-			var prevY:Float = 0;
-			if (prev != null) {
-				var prevReceptor = parent.strumlines[lane].receptors[prev.index];
-				prevY = prevReceptor.fakeOverlapStorage;
+			// FIX: Only read prevY if the previous note was in the EXACT same lane and index.
+			// If so, 'receptor' is the exact same object that processed 'prev', so its 
+			// fakeOverlapStorage already holds the correct previous Y value.
+			var prevY:Int = 0;
+			if (prev != null && prev.type == n.type && prev.index == n.index) {
+				prevY = receptor.fakeOverlapStorage;
 			}
 
 			var shouldOverlap = noteSpr != null && shouldNotesOverlap(prev, n, noteSpr, rec, newY, prevY) && !ghost;
 
+			// Always update the current receptor's storage for the next iteration
 			receptor.fakeOverlapStorage = newY;
 
 			if (shouldOverlap) {
@@ -104,7 +106,6 @@ class NoteSpawner {
 			prev = n;
 			++i;
 		}
-		//timeSpentOnIt = haxe.Timer.stamp() - time;
 
 		pos -= latencyI64;
 	}
@@ -266,6 +267,8 @@ class NoteSpawner {
 				NoteSystem.notesBuf.addElement(note);
 			}
 		}
+
+		trace("Notes length: " + NoteSystem.notesBuf.length);
 	}
 
 	function renderVirtualSustains(notes:NoteVB) {
@@ -315,7 +318,7 @@ class NoteSpawner {
 	}
 
 	inline function shouldNotesOverlap(prev:MetaNote, current:MetaNote, noteSpr:VirtualNote,
-		receptor:Note, newY:Float, prevY:Float):Bool {
+		receptor:Note, newY:Int, prevY:Int):Bool {
 
 		if (noteSpr == null || prev == null) return false;
 

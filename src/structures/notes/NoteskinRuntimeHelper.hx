@@ -1,9 +1,9 @@
-package structures.gameplay;
+package structures.notes;
 
-import structures.gameplay.NoteskinHandle.NoteskinData;
-import structures.gameplay.NoteskinHandle.NoteskinConfig;
-import structures.gameplay.NoteskinHandle.BasicNoteskinClip;
-import structures.gameplay.NoteskinHandle.NoteskinReceptorProperties;
+import structures.notes.NoteskinHandle.NoteskinData;
+import structures.notes.NoteskinHandle.NoteskinConfig;
+import structures.notes.NoteskinHandle.BasicNoteskinClip;
+import structures.notes.NoteskinHandle.NoteskinReceptorProperties;
 
 class NoteskinRuntimeHelper {
     inline static public function getIdleClip(handle:NoteskinHandle, lane:Int, mania:Int):BasicNoteskinClip {

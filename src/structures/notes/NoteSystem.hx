@@ -1,7 +1,7 @@
-package structures.gameplay;
+package structures.notes;
 
-import structures.gameplay.NoteVB.VirtualNote;
-import structures.gameplay.NoteVB.VirtualSustain;
+import structures.notes.NoteVB.VirtualNote;
+import structures.notes.NoteVB.VirtualSustain;
 
 /**
  * This is where notes and strumlines render in accordance to the note spawner.

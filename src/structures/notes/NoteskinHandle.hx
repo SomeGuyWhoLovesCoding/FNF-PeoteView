@@ -1,4 +1,4 @@
-package structures.gameplay;
+package structures.notes;
 
 import haxe.Json;
 import sys.io.File;

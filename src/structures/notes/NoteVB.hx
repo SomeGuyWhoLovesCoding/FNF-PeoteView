@@ -1,4 +1,4 @@
-package structures.gameplay;
+package structures.notes;
 
 /**
  * Note virtual buffer to check the range of note "elements" that need to be rendered,
