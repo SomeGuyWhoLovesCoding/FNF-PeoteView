@@ -2,6 +2,7 @@ package system;
 
 import lime.graphics.Image;
 import sys.io.File;
+using StringTools;
 
 /**
 	The texture system.
@@ -14,12 +15,12 @@ import sys.io.File;
 @:publicFields
 class TextureSystem {
 	/**
-		The texture pool.
+		Where all the cached texture come from.
 	**/
 	static var pool:FakeStringMap<Texture> = new FakeStringMap<Texture>();
 
 	/**
-		Get a pre-existing texture from pool.
+		Get an existing texture from the pool.
 		@param key The texture to get from.
 	**/
 	inline static function getTexture(key:String) {
@@ -38,10 +39,8 @@ class TextureSystem {
 	}
 
 	/**
-		Set the program's texture to the texture and key.
-		@param prgm The program to set its texture to.
-		@param key The texture to get from.
-		@param name The texture's new name.
+		Destroy the texture to free up VRAM.
+		@param key The texture to destroy.
 	**/
 	static function disposeTexture(key:String) {
 		if (!pool.exists(key)) return;
@@ -65,30 +64,38 @@ class TextureSystem {
 		var currentSaveState = SaveData.state.graphics;
 		var antialiasing = currentSaveState.antialiasing && !disableAntialiasing;
 
+		var textureData:TextureData = null;
 		var texPath = Paths.asset(path);
-		//trace("TEX PATH " + texPath);
-		var image = Image.fromFile(texPath);
+		var texPath2 = ASTCEncoder.run(texPath); // currentSaveState.compressTextures ? ASTCEncoder.run(texPath) : texPath;
 
-		// I'm proud of this fix, but it couldn't be better be this:
-		var textureData = !premultiply ? TextureData.fromLimeImage(image) : new TextureData(image.width, image.height, TextureFormat.RGBA);
-		if (premultiply) {
-			textureData.bytes = haxe.io.Bytes.alloc(image.width * image.height * 4);
-			var bytes = image.data.toBytes();
-			for (i in 0...textureData.bytes.length >> 2) {
-				var fullARGB = bytes.getInt32(i << 2);
+		if (texPath2.endsWith('.ktx')) {
+			var fileIo = File.getBytes(texPath2);
+			//textureData = new TextureData(image.width, image.height, TextureFormat.RGBA);
+		} else {
+			//trace("TEX PATH " + texPath);
+			var image = Image.fromFile(texPath);
 
-				var a = (fullARGB >>> 24) & 0xFF;
-				var r = (fullARGB >>> 16) & 0xFF;
-				var g = (fullARGB >>> 8)  & 0xFF;
-				var b = (fullARGB)        & 0xFF;
+			// I'm proud of this fix, but it couldn't be better be this:
+			textureData = !premultiply ? TextureData.fromLimeImage(image) : new TextureData(image.width, image.height, TextureFormat.RGBA);
+			if (premultiply) {
+				textureData.bytes = haxe.io.Bytes.alloc(image.width * image.height * 4);
+				var bytes = image.data.toBytes();
+				for (i in 0...textureData.bytes.length >> 2) {
+					var fullARGB = bytes.getInt32(i << 2);
 
-				// Scale RGB by alpha
-				r = (r * a) >> 8; // divide by 255
-				g = (g * a) >> 8;
-				b = (b * a) >> 8;
+					var a = (fullARGB >>> 24) & 0xFF;
+					var r = (fullARGB >>> 16) & 0xFF;
+					var g = (fullARGB >>> 8)  & 0xFF;
+					var b = (fullARGB)        & 0xFF;
 
-				var premul = (a << 24) | (r << 16) | (g << 8) | b;
-				textureData.bytes.setInt32(i << 2, premul);
+					// Scale RGB by alpha
+					r = (r * a) >> 8; // divide by 255
+					g = (g * a) >> 8;
+					b = (b * a) >> 8;
+
+					var premul = (a << 24) | (r << 16) | (g << 8) | b;
+					textureData.bytes.setInt32(i << 2, premul);
+				}
 			}
 		}
 

@@ -65,10 +65,6 @@ class CustomNoteUtilsComponent extends LuaComponentObject {
 		});
 	}
 
-	//override public function updateVariablesList(vm:FunkinViewLuaScript):Void {
-		// nothing here lmao
-	//}
-
 	override public function dispose():Void {
 		// any cleanup
 		super.dispose();

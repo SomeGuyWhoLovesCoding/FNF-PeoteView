@@ -1,1 +1,0 @@
-The note's spritesheet xml must be ordered correctly for the game to properly parse those frames to the list.
