@@ -65,7 +65,7 @@ class ASTCEncoder {
 		//trace(args.join(" "));
 		var processName = ENVPATH + '-' + VERSION;
 		#if linux
-		Sys.command("chmod", ["+x", processName])
+		Sys.command("chmod", ["+x", processName]);
 		#end
 		//var exitCode = Sys.command(processName, args);
 		//trace("Attempted with exitCode: " + exitCode);
