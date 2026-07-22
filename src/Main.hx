@@ -185,6 +185,8 @@ class Main extends Application
 		}
 
 		var peoteView = Main.current.peoteView;
+
+		TextureSystem.processQueue();
 	}
 
 	// ------------------------------------------------------------
@@ -243,73 +245,72 @@ class Main extends Application
 		FunkinMainLoop.run(frameRate, false);
 
 		peoteView = new PeoteView(window);
+		TextureSystem.processQueue();
 
 		haxe.Timer.delay(function() {
-			createSounds();
-			createTextures();
-			createDisplays();
+			haxe.Timer.delay(createSounds, Std.int(0.4000));
+			haxe.Timer.delay(createTextures, Std.int(0.6000));
+			haxe.Timer.delay(createDisplays, Std.int(0.8000)); // found that it doesn't consum its own RAM. Now that's amazing
 
-			prepareGameplayState();
+			haxe.Timer.delay(() -> {
+				controls = new Controls();
 
-			#if (!html5)
-			trace("Is es3? " + PeoteGL.Version.isES3);
-			if (PeoteGL.Version.isES3) window.context.gl.disable(0x8DB9); // GL_FRAMEBUFFER_SRGB_EXT
-			#end
+				#if (!html5)
+				trace("Is es3? " + PeoteGL.Version.isES3);
+				if (PeoteGL.Version.isES3) window.context.gl.disable(0x8DB9); // GL_FRAMEBUFFER_SRGB_EXT
+				#end
 
-			peoteView.start();
+				peoteView.start();
 
-			addDisplays();
+				addDisplays();
 
-			trace("1");
-			conductor = new Conductor();
+				trace("1");
+				conductor = new Conductor();
 
-			trace("2");
-			OptionsMenu.init(optionsScreen);
-			optionsMenu = new OptionsMenu();
+				trace("2");
+				OptionsMenu.init(optionsScreen);
+				optionsMenu = new OptionsMenu();
 
-			trace("3");
-			FreeplayMenu.init(freeplayScreen);
-			freeplayMenu = new FreeplayMenu();
+				trace("3");
+				FreeplayMenu.init(freeplayScreen);
+				freeplayMenu = new FreeplayMenu();
 
-			trace("4");
-			StoryMenu.init(storyScreen);
-			storyMenu = new StoryMenu();
+				trace("4");
+				StoryMenu.init(storyScreen);
+				storyMenu = new StoryMenu();
 
-			trace("4.a");
-			EditorMenu.preInit(middleDisplay);
+				trace("4.a");
+				EditorMenu.preInit(middleDisplay);
 
-			trace("4.b");
-			NoteskinEditor.preInit(middleDisplay, bottomDisplay);
+				trace("4.b");
+				NoteskinEditor.preInit(middleDisplay, bottomDisplay);
 
-			trace("5");
-			switchState(MAIN_MENU);
+				trace("5");
+				switchState(MAIN_MENU);
 
-			trace("6");
-			resize(peoteView.width, peoteView.height);
+				trace("6");
+				resize(peoteView.width, peoteView.height);
 
-			window.onResize.add(resize);
-			window.onKeyDown.add(controlVolume);
-			window.onClose.add(Chart.destroy);
+				window.onResize.add(resize);
+				window.onKeyDown.add(controlVolume);
+				window.onClose.add(Chart.destroy);
 
-			#if FV_DEBUG
-			DeveloperStuff.init(window, this);
-			#end
+				#if FV_DEBUG
+				DeveloperStuff.init(window, this);
+				#end
 
-			window.onMouseDown.add((x, y, button) -> {
-				if (mouseDown != null) mouseDown(x, y, button);
-			});
+				window.onMouseDown.add((x, y, button) -> {
+					if (mouseDown != null) mouseDown(x, y, button);
+				});
 
-			_started = true;
+				_started = true;
 
-			var title = Application.current.window.title;
-			var titleLen = title.length;
-			Application.current.window.title = title.substring(0, titleLen - 13);
-			//Application.current.window.hidden = false;
-		}, 100);
-	}
-
-	private function prepareGameplayState() {
-		controls = new Controls();
+				var title = Application.current.window.title;
+				var titleLen = title.length;
+				Application.current.window.title = title.substring(0, titleLen - 13);
+				//Application.current.window.hidden = false;
+			}, Std.int(0.10000));
+		}, Std.int(10000 / 1000));
 	}
 
 	private function createSounds() {
@@ -339,13 +340,13 @@ class Main extends Application
 		Tools.parseNoteskinData('assets/images/notes');
 		NoteskinManager.init(); // prepare
 
-		TextureSystem.createTexture("mainMenuBGTex", "assets/images/mainMenu/menuBG.png", false, true);
-		TextureSystem.createTexture("mainMenuSheet", "assets/images/mainMenu/sheet.png", false, true);
-		TextureSystem.createTexture("uiTex", "assets/images/ui/uiSheet.png", false, true);
-		TextureSystem.createTexture("hbTex", "assets/images/ui/hbSheet.png", false, true);
-		TextureSystem.createTexture("storyModeSheet", "assets/images/ui/storyModeSheet.png", false, true);
-		TextureSystem.createTexture("optionsMenuSheet", "assets/images/ui/optionsMenuSheet.png", false, true);
-		TextureSystem.createTexture("alphabetSheet", "assets/alphabetText/sheet.png", false, true);
+		TextureSystem.createTexture("mainMenuBGTex", "assets/images/mainMenu/menuBG.png", false, true, true);
+		TextureSystem.createTexture("mainMenuSheet", "assets/images/mainMenu/sheet.png", false, true, true);
+		TextureSystem.createTexture("uiTex", "assets/images/ui/uiSheet.png", false, true, true);
+		TextureSystem.createTexture("hbTex", "assets/images/ui/hbSheet.png", false, true, true);
+		TextureSystem.createTexture("storyModeSheet", "assets/images/ui/storyModeSheet.png", false, true, true);
+		TextureSystem.createTexture("optionsMenuSheet", "assets/images/ui/optionsMenuSheet.png", false, true, true);
+		TextureSystem.createTexture("alphabetSheet", "assets/alphabetText/sheet.png", false, true, true);
 
 		Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
 	}
@@ -391,9 +392,20 @@ class Main extends Application
 	}
 
 	var newDeltaTime:Float = 0;
+	var simulatedDeltaTime:Float = Math.POSITIVE_INFINITY;
+	var startSimulatedDeltaTime:Float = 0;
+	var averageFrames:Float = 0;
 
 	override function update(deltaTime:Float) {
 		Tools.profileFrame();
+
+		averageFrames++;
+
+		if (startSimulatedDeltaTime == Math.POSITIVE_INFINITY) {
+			startSimulatedDeltaTime = haxe.Timer.stamp();
+		}
+
+		simulatedDeltaTime = haxe.Timer.stamp();
 
 		var lastTitle = Application.current.window.title;
 
@@ -432,6 +444,14 @@ class Main extends Application
 				storyMenu.update(newDeltaTime);
 			}
 		}
+
+		var delta = simulatedDeltaTime - startSimulatedDeltaTime;
+		if (delta >= 1) {
+			Sys.println('FPS $averageFrames\nVRAM ${TextureSystem.VRAMCounter()}');
+			//Sys.println('FPS ${deltaTime} VRAM ${TextureSystem.VRAMCounter()}');
+			startSimulatedDeltaTime = haxe.Timer.stamp();
+			averageFrames = 0;
+		}
 	}
 
 	override function render(context:RenderContext) {
@@ -451,6 +471,8 @@ class Main extends Application
 				freeplayMenu.render(renderRate);
 			}
 		}
+
+		simulatedDeltaTime = haxe.Timer.stamp() - simulatedDeltaTime;
 	}
 
 	function popupOptionsMenu() {

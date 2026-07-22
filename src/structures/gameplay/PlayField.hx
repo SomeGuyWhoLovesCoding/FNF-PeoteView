@@ -87,8 +87,8 @@ class PlayField {
 
 	var latencyCompensation:Int;
 
-	var dispShake:Point = {x: 0, y: 0};
-	var viewShake:Point = {x: 0, y: 0};
+	var dispShake:Vec2 = {x: 0, y: 0};
+	var viewShake:Vec2 = {x: 0, y: 0};
 
 	// For Screen Shake event
 	var additiveDispShake:Point = {x: 0, y: 0, isSmooth: true};

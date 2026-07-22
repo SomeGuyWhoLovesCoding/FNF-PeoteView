@@ -1,90 +1,93 @@
 package elements.display;
 
-/**
-	CustomDisplay is a custom class that extends RotatableDisplay.
-	It adds a few extra properties to the Display class (such as scroll, scale, and fov), and most importantly, automatic rotating support at the vertex level,
-	as described in RotatableDisplay.
-	@since Development
-**/
 @:publicFields
 class CustomDisplay extends RotatableDisplay {
-	var scroll(default, null):Point = {x: 0, y: 0};
+    var scroll(default, null):Point = {x: 0, y: 0};
 
-	var scale(default, set):Float = 1;
+    var scale(default, set):Float = 1;
 
-	inline function set_scale(value:Float) {
-		if (value != scale) {
-			scale = value;
-			zoom = value * fov;
-			update();
-		}
-		return value;
-	}
+    inline function set_scale(value:Float) {
+        if (value != scale) {
+            scale = value;
+            zoom = value * fov;
+            update();
+        }
+        return value;
+    }
 
-	var fov(default, set):Float = 1;
+    var fov(default, set):Float = 1;
 
-	inline function set_fov(value:Float) {
-		if (value != fov) {
-			fov = value;
-			zoom = fov * scale;
-			update();
-		}
-		return value;
-	}
+    inline function set_fov(value:Float) {
+        if (value != fov) {
+            fov = value;
+            zoom = fov * scale;
+            update();
+        }
+        return value;
+    }
 
-	var r(get, set):Float;
+    var r(get, set):Float;
 
-	inline function get_r() {
-		return this.rotation;
-	}
+    inline function get_r() {
+        return this.rotation;
+    }
 
-	inline function set_r(value:Float) {
-		return this.rotation = value;
-	}
+    inline function set_r(value:Float) {
+        return this.rotation = value;
+    }
 
-	override function set_rotation(deg:Float):Float {
-		var result = super.set_rotation(deg);
-		update();
-		return result;
-	}
+    override function set_rotation(deg:Float):Float {
+        var result = super.set_rotation(deg);
+        update();
+        return result;
+    }
 
-	function new(x:Int, y:Int, w:Int, h:Int, c:Color) {
-		super(x, y, w, h, c);
+    // FIX: Pre-allocate array to prevent per-frame heap allocations
+    var centerArr:Array<Float>;
+    
+    // FIX: Store shake offsets so they aren't overwritten by update()
+    var shakeX:Float = 0;
+    var shakeY:Float = 0;
 
-		scroll.update = update;
-	}
+    function new(x:Int, y:Int, w:Int, h:Int, c:Color) {
+        super(x, y, w, h, c);
+        centerArr = [0.0, 0.0];
+        scroll.update = update;
+    }
 
-	function update() {
-		var scrollShiftMult = zoom - scale;
+    function update() {
+        var scrollShiftMult = zoom - scale;
 
-		// Rotate the scroll offset by the display angle
-		var scrollX = scroll.x;
-		var scrollY = scroll.y;
-		var rotatedScrollX = uCos.value * scrollX - uSin.value * scrollY;
-		var rotatedScrollY = uSin.value * scrollX + uCos.value * scrollY;
+        var scrollX = scroll.x;
+        var scrollY = scroll.y;
+        var rotatedScrollX = uSin.value.x * scrollX - uSin.value.y * scrollY;
+        var rotatedScrollY = uSin.value.y * scrollX + uSin.value.x * scrollY;
 
-		xOffset = -rotatedScrollX - ((Main.INITIAL_WIDTH  >> 1) * scrollShiftMult);
-		yOffset = -rotatedScrollY - ((Main.INITIAL_HEIGHT >> 1) * scrollShiftMult);
+        xOffset = -rotatedScrollX - ((Main.INITIAL_WIDTH  >> 1) * scrollShiftMult) + shakeX;
+        yOffset = -rotatedScrollY - ((Main.INITIAL_HEIGHT >> 1) * scrollShiftMult) + shakeY;
 
-		uCenter.value = [((Main.VARIABLE_WIDTH  >> 1) - xOffset) / zoom, ((Main.VARIABLE_HEIGHT >> 1) - yOffset) / zoom];
-	}
+        // FIX: Reuse the pre-allocated array
+        centerArr[0] = ((Main.VARIABLE_WIDTH  >> 1) - xOffset) / zoom;
+        centerArr[1] = ((Main.VARIABLE_HEIGHT >> 1) - yOffset) / zoom;
+        uCenter.value = centerArr;
+    }
 
-	function shake(x:Float, y:Float) {
-		if (x == 0) return;
-		var shakeX = (Math.random() - 0.5) * (x * 16);
-		xOffset += shakeX;
-		if (y == 0) return;
-		var shakeY = (Math.random() - 0.5) * (y * 16);
-		yOffset += shakeY;
-	}
+    function shake(x:Float, y:Float) {
+        // FIX: Store shake values to be applied in update()
+        if (x != 0) shakeX = (Math.random() - 0.5) * (x * 16);
+        if (y != 0) shakeY = (Math.random() - 0.5) * (y * 16);
+    }
 
-	function shakeValue(x:Float, y:Float):Point {
-		if (x == 0 || y == 0) return {x: 0, y: 0};
-		var point:Point = {x: 0, y: 0};
-		var shakeX = (Math.random() - 0.5) * (x * 16);
-		point.x = shakeX;
-		var shakeY = (Math.random() - 0.5) * (y * 16);
-		point.y = shakeY;
-		return point;
-	}
+    // FIX: Pre-allocate shake point
+    static var shakePoint:Point = {x: 0, y: 0};
+    function shakeValue(x:Float, y:Float):Point {
+        if (x == 0 || y == 0) {
+            shakePoint.x = 0;
+            shakePoint.y = 0;
+            return shakePoint;
+        }
+        shakePoint.x = (Math.random() - 0.5) * (x * 16);
+        shakePoint.y = (Math.random() - 0.5) * (y * 16);
+        return shakePoint;
+    }
 }

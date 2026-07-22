@@ -5,6 +5,7 @@
 // ENGINE
 import peote.view.*;
 import peote.view.intern.*;
+import peote.view.math.Vec2;
 
 // GAME
 import atlas.*;

@@ -121,8 +121,8 @@ class Field {
 		spectator.playAnimation(beatIsEven ? "danceLeft" : "danceRight");
 	}
 
-	var targetCamera:Point = {x: 0, y: 0};
-	var scrollCamera:Point = {x: 0, y: 0};
+	var targetCamera:Vec2 = {x: 0, y: 0};
+	var scrollCamera:Vec2 = {x: 0, y: 0};
 
 	inline function updateCamera(deltaTime:Float) {
 		var ratio = Math.min(deltaTime * 0.01, 1.0);

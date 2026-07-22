@@ -291,6 +291,9 @@ class Texture
 	private inline function setNewGLContext(newGl:PeoteGL) {
 		if (newGl != null && newGl != gl) // only if different GL - Context	
 		{
+			//if (format.isCompressed) {
+				//trace('Is GL null here? ${gl == null}');
+			//}
 			// check gl-context of all parents
 			for (p in programs)
 				if (p.gl != null && p.gl != newGl) throw("Error, texture can not used inside different gl-contexts");
@@ -307,11 +310,14 @@ class Texture
 			// TODO: optimize here to also setData while creation if there is only 1 slot and textureData already set
 			createTexture();
 			createFramebuffer();
-			// all slot data to gpu
-			gl.bindTexture(gl.TEXTURE_2D, glTexture);
-			for (slot => textureData in textureDataSlots) 
-				TexUtils.dataToTexture(gl, slotWidth * (slot % slotsX), slotHeight * Std.int(slot / slotsX), format, textureData, false);
-			if (mipmap) {
+            // all slot data to gpu
+            gl.bindTexture(gl.TEXTURE_2D, glTexture);
+            for (slot => textureData in textureDataSlots) {
+                if (textureData.bytes != null) {
+                    TexUtils.dataToTexture(gl, slotWidth * (slot % slotsX), slotHeight * Std.int(slot / slotsX), format, textureData, false);
+                }
+            }
+            if (mipmap) {
 				TexUtils.createMipmap(gl);
 				mipmapIsCreated = true;
 			}
@@ -397,28 +403,35 @@ class Texture
 		@param textureData TextureData instance
 		@param slot slot number in wich the texturedata is to be used
 	**/
-	public function setData(textureData:TextureData, slot:Int = 0) {
-		if (programs == null) throw("Error, texture is disposed.");
-		if (format.isFloat != textureData.format.isFloat)
-			throw('Error: Can not use ${(textureData.format.isFloat) ? "float" : "integer"} TextureData for ${(format.isFloat) ? "float" : "integer"} Texture');
-		else if (format.channels != textureData.format.channels) 
-			throw("Error: Number of colorchannels of TextureData and Texture don't match");
+    public function setData(textureData:TextureData, slot:Int = 0) {
+        if (programs == null) throw("Error, texture is disposed.");
+        if (format.isFloat != textureData.format.isFloat)
+            throw('Error: Can not use ${(textureData.format.isFloat) ? "float" : "integer"} TextureData for ${(format.isFloat) ? "float" : "integer"} Texture');
+        else if (format.channels != textureData.format.channels) 
+            throw("Error: Number of colorchannels of TextureData and Texture don't match");
 
-		#if peoteview_debug_texture
-		trace('Set TextureData (${textureData.format}) to Texture (${format}) into Slot' + slot);
-		if (format != textureData.format) trace("Warning: Textureformat of Texture and TextureData don't match");
-		#end
-		
-		textureDataSlots.set(slot, textureData);
+        #if peoteview_debug_texture
+        trace('Set TextureData (${textureData.format}) to Texture (${format}) into Slot' + slot);
+        if (format != textureData.format) trace("Warning: Textureformat of Texture and TextureData don't match");
+        #end
+        
+        textureDataSlots.set(slot, textureData);
 
-		if (gl != null) {
-			// TODO: optimize here to also setData while creation if there is only 1 slot and textureData already set
-			if (glTexture == null) createTexture();
-			TexUtils.dataToTexture(gl, slotWidth * (slot % slotsX), slotHeight * Std.int(slot / slotsX), format, textureData, mipmap, glTexture);
-			if (mipmap) mipmapIsCreated = true;
-			updated = true; // to reset peoteView.glStateTexture  <-- TODO: check isTextureStateChange()
-		}
-	}
+        if (gl != null) {
+            if (glTexture == null) createTexture();
+            
+            if (textureData.bytes != null) {
+                TexUtils.dataToTexture(gl, slotWidth * (slot % slotsX), slotHeight * Std.int(slot / slotsX), format, textureData, mipmap, glTexture);
+                // FIX: Free CPU memory immediately after compressed texture is uploaded to GPU
+                if (format.isCompressed) {
+                    textureData.bytes = null;
+                }
+            }
+            
+            if (mipmap) mipmapIsCreated = true;
+            updated = true; 
+        }
+    }
 	
 	// TODO: clear with color, save what need to clear if get gl-context later!
 	

@@ -149,7 +149,7 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 				FunkinViewLua.error("Display not found: " + fromDisplay.toLowerCase());
 				return FunkinViewLua.Function_Stop;
 			}
-			var shake:Point = null;
+			var shake:Vec2 = null;
 			switch (fromDisplay.toLowerCase()) {
 				case "view":
 					shake = playField.viewShake;

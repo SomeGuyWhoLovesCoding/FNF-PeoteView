@@ -95,7 +95,7 @@ class EventSystem {
         }
     }
 
-    var persistentShake:Point;
+    var persistentShake:Vec2;
 
     function triggerEvent(ev:EventObject) {
         Sys.println('${ev.evName} triggered [${ev.value1}, ${ev.value2}]');
