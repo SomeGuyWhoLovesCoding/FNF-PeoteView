@@ -5,6 +5,7 @@ import structures.notes.NoteVB.VirtualSustain;
 
 /**
  * This is where notes behave when interconnected to the note system.
+ * TODO: Rework Ambient Note occlusion system to be better than ever.
  * @since Development
  */
 @:publicFields
@@ -260,7 +261,7 @@ class NoteSpawner {
 			}
 		}
 
-		trace("Notes length: " + NoteSystem.notesBuf.length);
+		//trace("Notes length: " + NoteSystem.notesBuf.length);
 	}
 
 	function renderVirtualSustains(notes:NoteVB) {

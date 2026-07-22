@@ -165,6 +165,7 @@ class Strumline {
 	}
 
 	function applyNoteskinProperties(handle:NoteskinHandle, mania:Int) {
+		if (handle == null) return;
 		var cfgM = handle.data.configMania[mania];
 		this.offsetX = cfgM.offsetX;
 		this.offsetY = cfgM.offsetY;

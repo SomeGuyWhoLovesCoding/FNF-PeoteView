@@ -67,10 +67,52 @@ class TextureSystem {
 		var textureData:TextureData = null;
 		var texPath = Paths.asset(path);
 		var texPath2 = ASTCEncoder.run(texPath); // currentSaveState.compressTextures ? ASTCEncoder.run(texPath) : texPath;
+		trace(texPath2);
 
-		if (texPath2.endsWith('.ktx')) {
-			var fileIo = File.getBytes(texPath2);
-			//textureData = new TextureData(image.width, image.height, TextureFormat.RGBA);
+        if (texPath2.endsWith('.ktx')) {
+            var imgWidth:Int = 0;
+            var imgHeight:Int = 0;
+            var astcBytes:haxe.io.Bytes = null;
+            
+            // Open file in binary read mode
+            var input= File.read(texPath2, true);
+            
+            try {
+                // Check magic bytes
+                if (input.readByte() != 0xAB || input.readByte() != 0x4B || input.readByte() != 0x54 || input.readByte() != 0x58) {
+                    throw "Invalid KTX file";
+                }
+                
+                // Seek to byte 36 to read width and height
+                input.seek(36, SeekBegin);
+                imgWidth = input.readInt32();
+                imgHeight = input.readInt32();
+                
+                // Seek to byte 60 to read key-value data size
+                input.seek(60, SeekBegin);
+                var kvdSize:Int = input.readInt32();
+                
+                // Seek to the start of the image data size block
+                var imageDataOffset:Int = 64 + kvdSize;
+                input.seek(imageDataOffset, SeekBegin);
+                var imageSize:Int = input.readInt32();
+                
+                // Allocate exactly the memory needed for the ASTC payload ONLY
+                astcBytes = haxe.io.Bytes.alloc(imageSize);
+                
+                // Read directly from the file into our final buffer
+                var bytesRead:Int = input.readBytes(astcBytes, 0, imageSize);
+                if (bytesRead != imageSize) throw "Error: Reached end of KTX file unexpectedly.";
+            } catch(e:Dynamic) {
+                input.close();
+                throw e;
+            }
+            
+            // Close the file handle
+            input.close();
+            
+            // Pass the cleanly extracted data to TextureData
+            textureData = new TextureData(imgWidth, imgHeight, TextureFormat.ASTC_44, 0, astcBytes);
 		} else {
 			//trace("TEX PATH " + texPath);
 			var image = Image.fromFile(texPath);
@@ -78,7 +120,6 @@ class TextureSystem {
 			// I'm proud of this fix, but it couldn't be better be this:
 			textureData = !premultiply ? TextureData.fromLimeImage(image) : new TextureData(image.width, image.height, TextureFormat.RGBA);
 			if (premultiply) {
-				textureData.bytes = haxe.io.Bytes.alloc(image.width * image.height * 4);
 				var bytes = image.data.toBytes();
 				for (i in 0...textureData.bytes.length >> 2) {
 					var fullARGB = bytes.getInt32(i << 2);

@@ -23,6 +23,21 @@ class ASTCEncoder {
 	private static var ENVPATH = "assets/images/tools/astcenc";
 	private static var SUPPORT = true;
 
+	// thx glm 5.2
+    public static function checkAstcSupport(gl:PeoteGL):Bool {
+        #if js
+        return gl.getExtension("WEBGL_compressed_texture_astc") != null;
+        #else
+		//if (gl.getExtension("KHR_texture_compression_astc_ldr") != null) return true;
+        var exts = gl.getSupportedExtensions();
+        if (exts == null) return false;
+        for (ext in exts) {
+            if (ext == "KHR_texture_compression_astc_ldr") return true;
+        }
+        return false;
+        #end
+    }
+
 	static function run(img:String) {
 		var img_ktx = img.replace('.png', '.ktx');
 		#if android // no phone compress textures on the phone itself. No, that would be extremely wasteful. That's reserved for PC only.
@@ -30,8 +45,10 @@ class ASTCEncoder {
 		else if (FileSystem.exists(img)) return img;
 		else throw 'No image called $img found.'; return "";
 		#else
+		SUPPORT = checkAstcSupport(Main.current.peoteView.gl);
+		//trace('Is supported? $SUPPORT');
 		if (!SUPPORT) return img;
-		if (!SaveData.state.graphics.compressTextures) return img;
+		//if (!SaveData.state.graphics.compressTextures) return img;
 
 		var pngBytes = File.getContent(img);
 		var encoded = Sha256.encode(pngBytes);
@@ -43,23 +60,30 @@ class ASTCEncoder {
 
 		if (FileSystem.exists(img_ktx)) return img_ktx;
 
-		Sys.println('[ System ] Running astc encoder step for $img');
+		//Sys.println('[ System ] Running astc encoder step for $img');
 		var args = buildArgs(img);
+		//trace(args.join(" "));
 		var processName = ENVPATH + '-' + VERSION;
 		#if linux
 		Sys.command("chmod", ["+x", processName])
 		#end
+		//var exitCode = Sys.command(processName, args);
+		//trace("Attempted with exitCode: " + exitCode);
 		var proc:Process = new Process(processName, args);
 		if (proc.exitCode(true) != 0) { // unsuccessful or simd not supported
+			Sys.exit(1);
 			if (VERSION == "avx2") {
-				VERSION = "sse4.1" #if windows + ".exe" #end;
+				trace("AVX2 not supported");
+				VERSION = "sse4.1";
 				run(img);
 			}
-			else if (VERSION == "sse4.1") {
+			if (VERSION == "sse4.1") {
+				trace("SSE4.1 not supported");
 				VERSION = "sse2";
 				run(img);
 			}
-			else if (VERSION == "sse2") {
+			if (VERSION == "sse2") {
+				trace("Can't support anything these days");
 				SUPPORT = false; // Just don't at this point
 			}
 		} else {
@@ -72,7 +96,7 @@ class ASTCEncoder {
 	static function buildArgs(img:String) {
 		var img_str = Sys.getCwd() + img;
 		var img_ktx = img_str.replace('.png', '.ktx');
-		return ['-cs', img_str, img_ktx, '4x4', '-fast', '-pp-premultiply', '-y'];
+		return ['-cl', img_str, img_ktx, '4x4', '-fast', '-pp-premultiply'];
 	}
 
 	// SHA256 Coding
