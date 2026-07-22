@@ -128,12 +128,13 @@ class TextureSystem {
     static function actuallyCreateTexture(key:String, path:String, disableAntialiasing:Bool = false, premultiply:Bool = false) {
         var currentSaveState = SaveData.state.graphics;
         var antialiasing = currentSaveState.antialiasing && !disableAntialiasing;
+        var compressTextures = currentSaveState.compressTextures;
 
         var textureData:TextureData = null;
         var texPath = Paths.asset(path);
         var texPath2 = FVLZXEncoder.run(texPath);
 
-        if (texPath2.endsWith('.fvlzas')) {
+        if (texPath2.endsWith('.fvlzas') && compressTextures) {
             textureData = FVLZXEncoder.loadTextureData(texPath2);
         } else {
             var image = Image.fromFile(texPath);

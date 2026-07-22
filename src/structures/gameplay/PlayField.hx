@@ -17,7 +17,9 @@ class PlayField {
 	var view(default, null):CustomDisplay;
 
 	// lua
+	#if linc_luajit_funkinview
 	var funkinviewlua(default, null):FunkinViewLua;
+	#end
 
 	private var chartPath(default, null):String; // made this a variable due to complications with lua scripting. not a bug complication, but just an intentional design quirk.
 

@@ -23,6 +23,7 @@ class FunkinMainLoop {
         };
         var uncappedModeStr:String = uncapped ? "Soft" : "Off";
 		Sys.println('[ System ] Framerate set to $frameRate with uncapped mode set to ${uncappedModeStr}');
-        Application.current.configureFrameTiming(FrameProfile.Precision, FRAMEOPTS, VSyncMode.Adaptive);
+        Application.current.window.frameRate = FRAMERATE = frameRate;
+        Application.current.configureFrameTiming(FrameProfile.Precision, FRAMEOPTS, VSyncMode.Off);
     }
 }

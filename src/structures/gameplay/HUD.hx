@@ -35,8 +35,6 @@ class HUD {
 	var display(default, null):CustomDisplay;
 	var parent(default, null):PlayField;
 
-	static inline var WATERMARK_TEXT = 'FV TEST BUILD';
-
 	/**
 		Create the playfield UI.
 	**/
@@ -86,12 +84,12 @@ class HUD {
 		// TEXT SETUP
 
 		if (watermarkTxt == null) {
-			watermarkTxt = new Text("watermarkTxtPF", 0, 0, display, WATERMARK_TEXT);
+			watermarkTxt = new Text("watermarkTxtPF", 0, 0, display, 'FV v${MainMenu.fnfpVer}');
 		} else {
 			watermarkTxt.addProgram();
 		}
 
-		watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height;//
+		watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height;
 		watermarkTxt.outlineColor = 0x000000FF;
 		watermarkTxt.outlineSize = 1;
 
