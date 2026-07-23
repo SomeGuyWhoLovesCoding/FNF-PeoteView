@@ -69,9 +69,9 @@
 	<postbuild cmd='cp -r fontbmTool/posix/. bin/hl/bin/assets/fonts/' if="linux hl" />
 
 	<!-- Copy pc ASTC texture compression CLI files over to cwd -->
-	<postbuild cmd='robocopy ASTCtool\windows bin\windows\bin\assets\images\tools *.exe /NFL /NDL /NJH /NJS /NC /NS' if="windows" />
+	<postbuild cmd='robocopy ASTCtool\windows bin\windows\bin\assets\images\tools * /NFL /NDL /NJH /NJS /NC /NS' if="windows" />
 	<postbuild cmd='cp -r ASTCtool/linux/. bin/linux/bin/assets/images/tools' if="linux"/>
-	<postbuild cmd='robocopy ASTCtool\windows bin\hl\bin\assets\images\tools *.exe /NFL /NDL /NJH /NJS /NC /NS' if="hl windows" />
+	<postbuild cmd='robocopy ASTCtool\windows bin\hl\bin\assets\images\tools * /NFL /NDL /NJH /NJS /NC /NS' if="hl windows" />
 	<postbuild cmd='cp -r ASTCtool/linux/. bin/hl/bin/assets/images/tools' if="hl linux"/>
 
 	<haxedef name="HXCPP_CPP17" />
