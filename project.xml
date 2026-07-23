@@ -60,6 +60,8 @@
 
 			<haxedef name="HXCPP_CPP17" />
 
+      <!-- Allow intergration to scripting via lua -->
+      <haxelib name="linc_luajit_funkinview" unless="FV_NO_LUA" />
 
 
 
