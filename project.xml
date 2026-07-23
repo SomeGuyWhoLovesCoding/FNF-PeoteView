@@ -8,20 +8,19 @@
 	<app main="Main" path="bin" file="fopv" />
 
 
-
 	<!-- for html5 and loading inside onPreloadComplete-event the assets need to be embed=true -->
 	<assets path="assets" exclude="lime.svg" embed="false" />
 	<source path="src" />
 
 
-	<!-- Libraries -->
+			<!-- Libraries -->
 			<haxelib name="lime" />
 			<haxelib name="peote-view" />
 			<haxelib name="format" />
 			<!-- Allow intergration to input2action -->
 			<haxelib name="input2action" />
 			<!-- Allow intergration to customtitlebar -->
-			<haxelib name="customtitlebar" />
+			<haxelib name="customtitlebar" optional="true" />
 			<!-- Allow intergration to scripting via lua-->
 			<haxelib name="linc_luajit_funkinview" unless="FV_NO_LUA" />
 			<!-- For debugging -->
@@ -57,21 +56,15 @@
 			<haxedef name="HXCPP_STACK_LINE" if="release" />
 			<haxedef name="HXCPP_STACK_TRACE" if="release" />
 
-
 			<haxedef name="HXCPP_CPP17" />
 
-      <!-- Allow intergration to scripting via lua -->
-      <haxelib name="linc_luajit_funkinview" unless="FV_NO_LUA" />
 
-
+	<!-- Pre and Post-Compile -->
 
 			<!-- Automatically compile externs, hxcpp does the same naturally -->
 			<prebuild command="haxelib run hxcpp hashlinkBuildXmls/miniaudioBuild.xml" if="hl linux" />
 			<prebuild command="haxelib run hxcpp hashlinkBuildXmls/chartFileBuild.xml" if="hl linux" />
 
-
-
-	<!-- Post-Compile -->
 
 			<!-- Copy HDLL binaries over to cwd on hl -->
 			<postbuild cmd='robocopy hdlls\windows bin\hl\bin *.hdll /NFL /NDL /NJH /NJS /NC /NS' if="hl windows" />
@@ -83,10 +76,10 @@
 			<postbuild cmd='cp -r fontbmTool/posix/. bin/linux/bin/assets/fonts/' if="linux" />
 			<postbuild cmd='cp -r fontbmTool/posix/. bin/hl/bin/assets/fonts/' if="linux hl" />
 
-			<!-- Copy pc ASTC texture compression CLI files over to cwd -->
-			<postbuild cmd='robocopy ASTCtool\windows bin\windows\bin\assets\images\tools *.exe /NFL /NDL /NJH /NJS /NC /NS' if="windows" />
+			<!-- Copy bitmap font CLI files over to cwd -->
+			<postbuild cmd='robocopy ASTCtool\windows bin\windows\bin\assets\images\tools * /NFL /NDL /NJH /NJS /NC /NS' if="windows" />
 			<postbuild cmd='cp -r ASTCtool/linux/. bin/linux/bin/assets/images/tools' if="linux"/>
-			<postbuild cmd='robocopy ASTCtool\windows bin\hl\bin\assets\images\tools *.exe /NFL /NDL /NJH /NJS /NC /NS' if="hl windows" />
+			<postbuild cmd='robocopy ASTCtool\windows bin\hl\bin\assets\images\tools * /NFL /NDL /NJH /NJS /NC /NS' if="hl windows" />
 			<postbuild cmd='cp -r ASTCtool/linux/. bin/hl/bin/assets/images/tools' if="hl linux"/>
 
 	<!-- Extras -->
@@ -94,4 +87,5 @@
 	<icon path="assets/system/LimeFriend_32.png" size="32"/>
 	<icon path="assets/system/LimeFriend_64.png" size="64"/>
 	<icon path="assets/system/LimeFriend_128.png" size="128"/>
+
 </project>

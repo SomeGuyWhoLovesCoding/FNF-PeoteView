@@ -16,9 +16,9 @@ class MemoryTracker {
             throw "FINISH FIRST ONE FIRST!";
         }
         activeLabel = label;
-        
+
         #if hl
-        startMemory = Gc.stats().currentMemory;
+        startMemory = Std.int(Gc.stats().currentMemory);
         #elseif cpp
         startMemory = Gc.memInfo(Gc.MEM_INFO_CURRENT);
         #else
@@ -30,10 +30,10 @@ class MemoryTracker {
         if (activeLabel == null) {
             throw "NO MEASUREMENT RUNNING!";
         }
-        
+
         var label = activeLabel;
         activeLabel = null;
-        
+
         #if hl
         var endMemory = Gc.stats().currentMemory;
         #elseif cpp
@@ -41,12 +41,12 @@ class MemoryTracker {
         #else
         var endMemory = 0;
         #end
-        
+
         var delta = endMemory - startMemory;
-        
+
         var prevTotal = totalAllocations.exists(label) ? totalAllocations.get(label) : 0;
-        totalAllocations.set(label, prevTotal + delta);
-        
+        totalAllocations.set(label, Std.int(prevTotal + delta));
+
         //Sys.println('[MemoryTracker] "' + label + '" allocated: ' + delta + ' bytes (Total: ' + (prevTotal + delta) + ' bytes)');
     }
 }
