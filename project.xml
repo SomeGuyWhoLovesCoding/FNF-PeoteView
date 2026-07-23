@@ -30,7 +30,7 @@
 	<haxelib name="customtitlebar" />
 
 	<!-- Allow intergration to scripting via lua -->
-	<haxelib name="linc_luajit_funkinview" />
+	<haxelib name="linc_luajit_funkinview" unless="FV_NO_LUA" />
 
 	<!-- Enable full dce (originally to only prevent JIT ERROR 0 on jit.c line 541) -->
 	<haxeflag name="-dce" value="full" />
