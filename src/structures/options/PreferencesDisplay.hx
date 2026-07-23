@@ -8,7 +8,7 @@ import lime.ui.MouseButton;
 
 /**
 	Handles the display and interaction for preferences options in the options menu.
-	Now uses FreeplayAlphabet scrolling system for consistent UI.
+	Now uses a shared FreeplayAlphabet instance for consistent UI.
 	@since Development
 **/
 @:publicFields
@@ -25,8 +25,8 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 	
 	var parent(default, null):OptionsMenu;
 	var options(default, null):Array<OptionsSprite> = [];
-	static var alphabet(default, null):FreeplayAlphabet;
-	
+	var alphabet(default, null):FreeplayAlphabet; // shared instance
+
 	var xLerp:Float = 0.0;
 	var curSelectedLerp:Float = 0.0;
 	var curSelectedTarget:Float = 0.0;
@@ -39,32 +39,23 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 	var dragStartY:Float = 0.0;
 	var lastDragY:Float = 0.0;
 	var dragAccum:Float = 0.0;
-	
-	// fling impl
 	var dragVelocity:Float = 0.0;
 	var lastDragTime:Float = 0.0;
-	
-	private static inline var DRAG_THRESHOLD:Float = 1.0; // pixels per nav tick
-	
-	function new(parent:OptionsMenu) {
+	private static inline var DRAG_THRESHOLD:Float = 1.0;
+
+	function new(parent:OptionsMenu, alphabet:FreeplayAlphabet) {
 		this.parent = parent;
+		this.alphabet = alphabet;
 	}
 	
 	function reload() {
 		destroyOptions();
-		if (alphabet == null) {
-			alphabet = new FreeplayAlphabet(this, OptionsMenu.display);
-			alphabet.ensurePrograms();
-			alphabet.reload();
-		}
-		alphabet.addPrograms();
+		alphabet.setHost(this); // set this display as the host
+		alphabet.reload();
 		closed = false;
 		
-		// Reset state when reloading
 		resetHostState();
 		resetDragState();
-		
-		// Register input handlers
 		registerInputHandlers();
 	}
 	
@@ -105,17 +96,14 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		
 		alphaLerp = Tools.lerp(alphaLerp, parent.opened ? 1.0 : 0.0, ratio);
 		
-		// Handle fling inertia
 		if (!isDragging && Math.abs(dragVelocity) > 0.01) {
 			curSelectedTarget += (dragVelocity * deltaTime) / (156.0 / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT));
 			curSelectedTarget = Math.max(0, Math.min(prefsStr.length - 1, curSelectedTarget));
 			parent.optionsNav.setTo(Math.round(curSelectedTarget));
-			
-			dragVelocity *= Math.pow(0.92, deltaTime * 0.04); // exponential decay
+			dragVelocity *= Math.pow(0.92, deltaTime * 0.04);
 			if (Math.abs(dragVelocity) < 0.01) dragVelocity = 0.0;
 		}
 		
-		// Only update from parent nav when not dragging and no inertia
 		if (!isDragging && dragVelocity == 0.0) {
 			curSelectedTarget = parent.optionsNav.value();
 		}
@@ -136,7 +124,6 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 	
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
 		if (closed || alphabet == null) return;
-		
 		switch (button) {
 			case LEFT:
 				isDragging = true;
@@ -146,7 +133,6 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 				dragVelocity = 0.0;
 				lastDragTime = haxe.Timer.stamp();
 				curSelectedTarget = curSelectedLerp;
-			case RIGHT:
 			default:
 		}
 	}
@@ -155,28 +141,20 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		if (button != LEFT) return;
 		if (closed || alphabet == null) return;
 		
-		// If it was a click (not a drag), trigger enter
 		if (isDragging && Math.abs(dragStartY - y) < 4.0) {
 			curSelectedTarget += 0.3;
 			enter();
 			curSelectedTarget -= 0.3;
 		} else if (isDragging) {
-			// Snap to the nearest option after dragging
 			var nearestIndex = Math.round(curSelectedTarget);
 			curSelectedTarget = nearestIndex;
 			parent.optionsNav.setTo(nearestIndex);
-			
-			// Optionally trigger enter immediately on drag release
-			// Uncomment the next line if you want to toggle on release
-			// enter();
 		}
 		
 		isDragging = false;
 		dragAccum = 0.0;
-		// Reset drag start position for next interaction
 		dragStartY = 0.0;
 		lastDragY = 0.0;
-		// velocity carries over into update for fling inertia
 	}
 	
 	function mouseDrag(x:Float, y:Float) {
@@ -190,12 +168,10 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		lastDragTime = now;
 		
 		var _delta = (delta / (156.0 / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)));
-		
-		// Calculate velocity for fling
 		if (dt > 0) dragVelocity = _delta / 3;
 		
 		curSelectedTarget += _delta;
-		curSelectedTarget = Math.max(0, Math.min(prefsStr.length - 1, curSelectedTarget/* - 0.5*/));
+		curSelectedTarget = Math.max(0, Math.min(prefsStr.length - 1, curSelectedTarget));
 		parent.optionsNav.setTo(Math.round(curSelectedTarget));
 	}
 	
@@ -206,7 +182,6 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		var optionChecked = Reflect.getProperty(SaveData.state.preferences, field);
 		Reflect.setProperty(SaveData.state.preferences, field, !optionChecked);
 		
-		// Apply preference changes immediately
 		var pf = Main.current.playField;
 		if (pf != null) {
 			switch (field) {
@@ -221,11 +196,9 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 						if (healthBar != null) healthBar.update(0);
 					}
 				default:
-					// No immediate effect needed
 			}
 		}
 		
-		// Force update the display to show new ON/OFF state
 		if (alphabet != null && !closed) {
 			alphabet.updateBuffer();
 		}
@@ -235,21 +208,13 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 	
 	function destroyOptions() {
 		if (closed) return;
-		
 		closed = true;
 		
-		// Unregister input handlers before cleanup
 		unregisterInputHandlers();
-		
-		// Reset host state before disposing alphabet
 		resetHostState();
 		resetDragState();
 		
-		if (alphabet != null) {
-			// First remove from display, then dispose
-			alphabet.shutDown();
-		}
-		
+		// Remove only our own OptionsSprites, not the shared alphabet.
 		while (options.length != 0) {
 			var option = options.pop();
 			try {
@@ -260,10 +225,7 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 	
 	function dispose() {
 		destroyOptions();
-		if (alphabet != null) {
-			// First remove from display, then dispose
-			alphabet.dispose();
-		}
+		// Do not dispose alphabet – it is shared.
 	}
 	
 	// IAlphabetScrollHost implementation
@@ -284,7 +246,6 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		return str;
 	}
 	
-	// Convert internal preference names to user-friendly display names
 	function getDisplayName(prefName:String):String {
 		switch (prefName) {
 			case "downScroll": return "Down Scroll";

@@ -4,6 +4,7 @@ import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 import elements.text.TextCharSprite;
 import structures.options.*;
+import structures.FreeplayAlphabet;
 
 /**
 	The options submenu's display.
@@ -15,26 +16,33 @@ import structures.options.*;
 @:publicFields
 class OptionsDisplay {
 	private static var display(get, never):CustomDisplay;
-
 	inline private static function get_display() {
 		return OptionsMenu.display;
 	}
 
 	var parent(default, null):OptionsMenu;
-
 	var options(default, null):Array<OptionsSprite> = [];
 
 	var preferencesDisplay(default, null):PreferencesDisplay;
 	var graphicsDisplay(default, null):GraphicsDisplay;
 	var controlsDisplay(default, null):ControlsDisplay;
 
+	var sharedAlphabet(default, null):FreeplayAlphabet;
+
 	var closed:Bool = true;
 
 	function new(parent:OptionsMenu) {
 		this.parent = parent;
-		preferencesDisplay = new PreferencesDisplay(parent);
-		graphicsDisplay = new GraphicsDisplay(parent);
-		controlsDisplay = new ControlsDisplay(parent);
+
+		// Create the shared alphabet once and add its program.
+		sharedAlphabet = new FreeplayAlphabet(null, display); // host will be set later
+		sharedAlphabet.ensurePrograms();
+		sharedAlphabet.addPrograms();
+
+		// Pass the shared alphabet to all sub‑displays.
+		preferencesDisplay = new PreferencesDisplay(parent, sharedAlphabet);
+		graphicsDisplay = new GraphicsDisplay(parent, sharedAlphabet);
+		controlsDisplay = new ControlsDisplay(parent, sharedAlphabet);
 	}
 
 	function reload(selection:OptionsCategorySelection) {
@@ -92,12 +100,10 @@ class OptionsDisplay {
 		controlsDisplay.dispose();
 		preferencesDisplay.dispose();
 		graphicsDisplay.dispose();
+		// Do not dispose sharedAlphabet – it is reused.
 	}
 }
 
-/**
-	Enum abstract of the option selection.
-**/
 enum abstract OptionsCategorySelection(Int) from Int to Int {
 	var CONTROLS;
 	var PREFERENCES;

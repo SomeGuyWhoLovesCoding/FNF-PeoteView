@@ -274,7 +274,11 @@ class FreeplayAlphabet {
 			display.addProgram(songTextsProg);
 		}
 	}
-	
+
+	public function setHost(host:IAlphabetScrollHost) {
+		this.host = host;
+	}
+
 	function shutDown() {
 		if (songTextsProg != null && songTextsProg.isIn(display)) {
 			display.removeProgram(songTextsProg);
