@@ -249,8 +249,11 @@ class Main extends Application
 		TextureSystem.processQueue();
 
 		haxe.Timer.delay(function() {
+		trace("createSounds");
 			haxe.Timer.delay(createSounds, Std.int(0.4000));
+		trace("createTextures");
 			haxe.Timer.delay(createTextures, Std.int(0.6000));
+		trace("createDisplays");
 			haxe.Timer.delay(createDisplays, Std.int(0.8000)); // found that it doesn't consum its own RAM. Now that's amazing
 
 			haxe.Timer.delay(() -> {
