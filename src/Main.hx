@@ -51,7 +51,7 @@ class Main extends Application
 	// Internal variable for checking if the game has booted up
 	private var _started(default, null):Bool;
 
-	override function onWindowCreate()
+	override function onWindowCreate():Void
 	{
 		var titleBarColor:Color = SaveData.state.graphics.customTitleBarColor;
 
@@ -125,7 +125,8 @@ class Main extends Application
 		switch (window.context.type)
 		{
 			case WEBGL, OPENGL, OPENGLES:
-				startSample(window);
+				try startSample(window)
+				catch (_) trace(CallStack.toString(CallStack.exceptionStack()), _);
 			default: throw("Sorry, only works with OpenGL.");
 		}
 	}
