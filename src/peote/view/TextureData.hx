@@ -19,7 +19,8 @@ FLOAT_RGB         12
 FLOAT_RG           8
 FLOAT_R            4
 
-ASTC_44           1 (16 bytes per 4x4 block) - REQUIRES THE KTX EXTENSION
+ASTC_44            1 (16 bytes per 4x4 block) - REQUIRES THE KTX EXTENSION
+BC7                1 (16 bytes per 4x4 block) - PC ONLY
 */	
 
 /**
