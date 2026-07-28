@@ -59,8 +59,8 @@ class TextureSystem {
         for (key in pool.keys) {
             var texture = pool.get(key);
             if (texture != null) {
-                // 1 byte per pixel for ASTC/BC7, 4 bytes for RGBA
-                bytes += texture.width * texture.height * (texture.format.isCompressed ? 1 : 4);
+                // 1 byte per pixel for ASTC/BPTC, 4 bytes for RGBA
+                bytes += texture.width * texture.height * texture.format.bytesPerPixel;
             }
         }
 

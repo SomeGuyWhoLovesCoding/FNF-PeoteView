@@ -28,7 +28,7 @@ abstract TextureFormat(Int) from Int to Int
     
     // compressed formats
     public static inline var ASTC_44:Int = 12;
-    public static inline var BC7:Int = 13;
+    public static inline var BPTC_44:Int = 13;
 
     /**
         Returns the enum-identifier as a `String`.
@@ -47,6 +47,7 @@ abstract TextureFormat(Int) from Int to Int
             case FLOAT_RGB: "FLOAT_RGB";
             case FLOAT_RGBA: "FLOAT_RGBA";
             case ASTC_44: "ASTC_44";
+            case BPTC_44: "BPTC_44";
             default: "unknown";
         }
     }
@@ -61,7 +62,7 @@ abstract TextureFormat(Int) from Int to Int
         Is `true` if using a block-compressed format.
     **/
     public var isCompressed(get, never):Bool;
-    inline function get_isCompressed():Bool return (this == ASTC_44 || this == BC7);
+    inline function get_isCompressed():Bool return this >= ASTC_44;
 
     inline function isGreaterR():Bool return this > R && !isCompressed;
     inline function isGreaterRG():Bool return this > RG && !isCompressed;
