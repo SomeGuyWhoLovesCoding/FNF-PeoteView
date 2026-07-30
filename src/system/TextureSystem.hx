@@ -132,10 +132,10 @@ class TextureSystem {
 
         var textureData:TextureData = null;
         var texPath = Paths.asset(path);
-        var texPath2 = FVLZXEncoder.run(texPath);
+        var compTexRun = FVLZXEncoder.run(texPath);
 
-        if (texPath2.endsWith('.fvlzas') && compressTextures) {
-            textureData = FVLZXEncoder.loadTextureData(texPath2);
+        if (compTexRun != null && compressTextures) {
+            textureData = FVLZXEncoder.loadTextureData(texPath);
         } else {
             var image = Image.fromFile(texPath);
             textureData = !premultiply ? TextureData.fromLimeImage(image) : new TextureData(image.width, image.height, TextureFormat.RGBA);

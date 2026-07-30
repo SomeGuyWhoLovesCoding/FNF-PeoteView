@@ -74,6 +74,12 @@
 	<postbuild cmd='robocopy ASTCtool\windows bin\hl\bin\assets\images\tools * /NFL /NDL /NJH /NJS /NC /NS' if="hl windows" />
 	<postbuild cmd='cp -r ASTCtool/linux/. bin/hl/bin/assets/images/tools' if="hl linux"/>
 
+	<!-- Copy pc BPTC texture compression CLI files over to cwd -->
+	<postbuild cmd='robocopy BC7tool\windows bin\windows\bin\assets\images\tools * /NFL /NDL /NJH /NJS /NC /NS' if="windows" />
+	<postbuild cmd='cp -r BC7tool/linux/. bin/linux/bin/assets/images/tools' if="linux"/>
+	<postbuild cmd='robocopy BC7tool\windows bin\hl\bin\assets\images\tools * /NFL /NDL /NJH /NJS /NC /NS' if="hl windows" />
+	<postbuild cmd='cp -r BC7tool/linux/. bin/hl/bin/assets/images/tools' if="hl linux"/>
+
 	<haxedef name="HXCPP_CPP17" />
 
 	<icon path="assets/system/LimeFriend_16.png" size="16"/>

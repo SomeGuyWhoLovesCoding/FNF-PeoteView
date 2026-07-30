@@ -12,20 +12,32 @@ using StringTools;
 /**
 	Official ASTC+BC7 encoder class for Funkin' View.
 	Under the hood, it uses ASTCENC (ARM's ASTC encoder) that
-	support multiple instruction sets, like SSE2, and all the
-	way up to AVX2. And, it also uses texconv (windows)
+	supports multiple instruction sets, like SSE2, and all the
+	way up to AVX2. It also utilizes a custom multithreaded 
+	scalar BC7 encoder with atomic work stealing for optimal 
+	CPU load balancing and minimal tail latency.
 
 	Info: ASTC texture compression is natively supported on android
 	whilst on desktop it's reserved for OpenGL extensions that
 	have first been introduced since around 2014. Meanwhile,
-    a secondary PC-primary BC7 texture compression is used by
-    default and a png is compressed to it the background in parallel.
+    a secondary PC-primary BC7 texture compression is used as
+    the primary format, processed synchronously to prevent race 
+    conditions and CPU oversubscription.
+    
+    Output extensions:
+    - ASTC: .fvlzas
+    - BC7:  .fvlzbs
+    
+    Returns:
+    - The path to the compressed texture (.fvlzbs or .fvlzas) on success.
+    - null if compression is unsuccessful, unsupported, or falls back to uncompressed.
 **/
 @:final
 @:publicFields
 class FVLZXEncoder {
     private static var VERSION = "avx2";
     private static var ENVPATH = "assets/images/tools/astcenc";
+    private static var BC7_ENVPATH = "assets/images/tools/bc7";
     private static var SUPPORT = true;
 
     private static var staticReadBuffer:Bytes = Bytes.alloc(65536);
@@ -46,26 +58,38 @@ class FVLZXEncoder {
         #end
     }
 
-    static function run(img:String):String {
-        var img_ktx = img.replace('.png', '.fvlzas');
-        #if android
-        if (FileSystem.exists(img_ktx)) return img_ktx;
-        else if (FileSystem.exists(img)) return img;
-        else throw 'No image called $img found.';
-        #else
+    /**
+     * Main entry point. Prioritizes BC7 first (guarded behind !android), 
+     * then falls back to ASTC second.
+     * Returns the compressed path on success, or null if it must fall back to the original PNG.
+     */
+    public static function run(img:String):Null<String> {
+        #if !android
+        // Priority 1: BC7 (PC-primary, multithreaded scalar with atomic work stealing)
+        var bc7Result = runBC7(img);
+        if (bc7Result != null) return bc7Result;
+        #end
+
+        // Priority 2: ASTC (Primary for Android, fallback for PC if BC7 fails)
+        return runASTC(img);
+    }
+
+    private static function runASTC(img:String):Null<String> {
+        var img_fvlzas = img.replace('.png', '.fvlzas');
+        if (FileSystem.exists(img_fvlzas)) return img_fvlzas;
+
         SUPPORT = checkAstcSupport(Main.current.peoteView.gl);
-        if (!SUPPORT) return img;
+        if (!SUPPORT) return null;
 
         var encoded = FVLZXHashCode.hashEncode(img);
-
-        if (FVLZXHashCode.matches(img, encoded) && FileSystem.exists(img_ktx))
-            return img_ktx;
+        if (FVLZXHashCode.matches(img, encoded) && FileSystem.exists(img_fvlzas))
+            return img_fvlzas;
         else
             File.saveContent(FVLZXHashCode.file(img), encoded);
 
-        if (FileSystem.exists(img_ktx)) return img_ktx;
+        if (FileSystem.exists(img_fvlzas)) return img_fvlzas;
 
-        var args = buildArgs(img);
+        var args = buildASTCArgs(img);
         var processName = ENVPATH + '-' + VERSION;
         #if linux
         Sys.command("chmod", ["+x", processName]);
@@ -82,21 +106,22 @@ class FVLZXEncoder {
             if (VERSION == "avx2") {
                 trace("AVX2 not supported, falling back to sse4.1");
                 VERSION = "sse4.1";
-                return run(img);
+                return runASTC(img);
             }
             if (VERSION == "sse4.1") {
                 trace("SSE4.1 not supported, falling back to sse2");
                 VERSION = "sse2";
-                return run(img);
+                return runASTC(img);
             }
             if (VERSION == "sse2") {
                 trace("CPU does not support required SIMD instructions for ASTC encoding.");
                 SUPPORT = false;
+                return null;
             }
         } else {
             var img_ktxRaw = img.replace('.png', '.ktx');
             if (FileSystem.exists(img_ktxRaw)) {
-                MemoryTracker.start("FVLZXEncoder.run (Compress)");
+                MemoryTracker.start("FVLZXEncoder.run (Compress ASTC)");
                 try {
                     var fin = File.read(img_ktxRaw);
                     var bin = new haxe.io.BufferInput(fin, staticReadBuffer);
@@ -108,9 +133,6 @@ class FVLZXEncoder {
                     
                     bin.readFullBytes(staticSizeBytes, 0, 4);
                     var originalImageSize = readInt32(staticSizeBytes, 0);
-                    
-                    //trace("Compressing ASTC payload with LZ4...");
-                    var pngSize = FileSystem.stat(img).size;
                     
                     var fout = File.write(img_ktxRaw + ".tmp", true);
                     var bout = new BufferOutput(fout, staticWriteBuffer);
@@ -126,7 +148,6 @@ class FVLZXEncoder {
                     bout.writeByte(0); bout.writeByte(0); bout.writeByte(0); bout.writeByte(0);
                     
                     var compressedLen = LZ4.compressStream(bin, originalImageSize, bout);
-                    //trace("LZ4 compressed: " + originalImageSize + " -> " + compressedLen + " bytes (PNG: " + pngSize + " bytes)");
                     
                     bin.close();
                     fin.close();
@@ -142,7 +163,8 @@ class FVLZXEncoder {
                     fpatch.close();
                     
                     FileSystem.deleteFile(img_ktxRaw);
-                    FileSystem.rename(img_ktxRaw + ".tmp", img_ktx);
+                    FileSystem.rename(img_ktxRaw + ".tmp", img_fvlzas);
+                    return img_fvlzas;
                 } catch (e:Dynamic) {
                     MemoryTracker.end();
                     throw e;
@@ -150,80 +172,164 @@ class FVLZXEncoder {
                 MemoryTracker.end();
             } else {
                 trace("Warning: astcenc succeeded, but KTX file not found at: " + img_ktxRaw);
+                return null;
             }
-            return img_ktx;
         }
-        return img;
-        #end
+        return null;
     }
 
-    static function buildArgs(img:String):Array<String> {
+    /**
+     * Runs the custom multithreaded scalar BC7 encoder synchronously.
+     * Outputs a BC7 compressed file with a .fvlzbs extension.
+     * Returns the path to the .fvlzbs file on success, or null on failure.
+     */
+    public static function runBC7(img:String):Null<String> {
+        var img_fvlzbs = img.replace('.png', '.fvlzbs');
+        
+        if (FileSystem.exists(img_fvlzbs)) return img_fvlzbs;
+
+        var processName = BC7_ENVPATH;
+        #if linux
+        Sys.command("chmod", ["+x", processName]);
+        #end
+        #if windows
+        processName += ".exe";
+        #end
+
+        var img_str = Sys.getCwd() + img;
+        var img_fvlzbs_str = Sys.getCwd() + img_fvlzbs;
+        var args = [img_str, img_fvlzbs_str, '-pmalpha'];
+
+        try {
+            var proc = new Process(processName, args);
+            var exitCode = proc.exitCode(true);
+            proc.close();
+
+            if (exitCode != 0) {
+                trace("BC7 encoding failed for " + img + " (exit code: " + exitCode + ")");
+                return null; 
+            }
+            
+            return img_fvlzbs;
+        } catch (e:Dynamic) {
+            trace("BC7 encoding exception for " + img + ": " + e);
+            return null; 
+        }
+    }
+
+    static function buildASTCArgs(img:String):Array<String> {
         var img_str = Sys.getCwd() + img;
         var img_ktx = img_str.replace('.png', '.ktx');
         return ['-cl', img_str, img_ktx, '4x4', '-fast', '-pp-premultiply', '-thread_count', '1'];
     }
 
-    public static function loadTextureData(ktxPath:String):TextureData {
-        if (!FileSystem.exists(ktxPath)) return null;
+    /**
+     * Loads compressed texture data, automatically detecting whether it is 
+     * a KTX (ASTC) or DDS (BC7/BPTC_44) file based on magic bytes.
+     * 
+     * FOOLPROOFING: If the original .png path is accidentally passed, 
+     * it will automatically redirect to the .fvlzbs or .fvlzas equivalent.
+     */
+    public static function loadTextureData(texPath:String):TextureData {
+        // Automatically resolve .png paths to their compressed counterparts
+        var compPath = texPath;
+        if (compPath.endsWith(".png")) {
+            var fvlzbsPath = compPath.replace(".png", ".fvlzbs");
+            if (FileSystem.exists(fvlzbsPath)) {
+                compPath = fvlzbsPath;
+            } else {
+                var fvlzasPath = compPath.replace(".png", ".fvlzas");
+                if (FileSystem.exists(fvlzasPath)) {
+                    compPath = fvlzasPath;
+                }
+            }
+        }
 
-        var fin = File.read(ktxPath);
+        if (!FileSystem.exists(compPath)) return null;
+
+        var fin = File.read(compPath);
         var bin = new haxe.io.BufferInput(fin, staticReadBuffer);
 
         try {
-            bin.readFullBytes(staticHeader, 0, 64);
+            var header = Bytes.alloc(148); // Max needed for DDS (148), KTX only needs 64
+            bin.readFullBytes(header, 0, 4);
             
-            if (staticHeader.get(0) != 0xAB || staticHeader.get(1) != 0x4B || staticHeader.get(2) != 0x54 || staticHeader.get(3) != 0x58) {
-                throw "Invalid KTX file magic bytes";
+            var isDDS = header.get(0) == 0x44 && header.get(1) == 0x44 && header.get(2) == 0x53 && header.get(3) == 0x20; // "DDS "
+            var isKTX = header.get(0) == 0xAB && header.get(1) == 0x4B && header.get(2) == 0x54 && header.get(3) == 0x58; // "KTX "
+            
+            if (!isDDS && !isKTX) {
+                var hex = [for (i in 0...4) StringTools.hex(header.get(i), 2)].join(" ");
+                throw 'Invalid compressed texture file magic bytes (expected KTX or DDS, got: $hex)';
             }
-            
-            var imgWidth = readInt32(staticHeader, 36);
-            var imgHeight = readInt32(staticHeader, 40);
-            var kvdSize = readInt32(staticHeader, 60);
-            var payloadOffset = 64 + kvdSize;
-            
-            if (kvdSize > 0) {
-                var dummyKvd = Bytes.alloc(kvdSize);
-                bin.readFullBytes(dummyKvd, 0, kvdSize);
-                dummyKvd = null;
-            }
-            
-            bin.readFullBytes(staticSizeBytes, 0, 4);
-            var storedSize = readInt32(staticSizeBytes, 0);
-            
-            var blocksX = Math.ceil(imgWidth / 4);
-            var blocksY = Math.ceil(imgHeight / 4);
-            var expectedRawSize = Std.int(blocksX * blocksY * 16);
 
-            // Start tracking. This allocation is the absolute minimum required 
-            // to hand the data to the OpenGL driver.
-            MemoryTracker.start("FVLZXEncoder.loadTextureData");
-            
-            // Allocate the final buffer directly. No scratchpad, no sub() copy!
-            var astcBytes = Bytes.alloc(expectedRawSize);
-
-            if (storedSize == expectedRawSize) {
-                bin.readFullBytes(astcBytes, 0, expectedRawSize);
-            } else {
-                var written = LZ4.decompressFromInput(bin, astcBytes, expectedRawSize);
-                if (written != expectedRawSize) {
-                    MemoryTracker.end();
-                    throw "Decompressed size mismatch! Expected " + expectedRawSize + " but got " + written;
+            if (isKTX) {
+                // --- ASTC / KTX Path ---
+                bin.readFullBytes(header, 4, 60); // Read remaining 60 bytes of 64-byte KTX header
+                
+                var imgWidth = readInt32(header, 36);
+                var imgHeight = readInt32(header, 40);
+                var kvdSize = readInt32(header, 60);
+                
+                if (kvdSize > 0) {
+                    var dummyKvd = Bytes.alloc(kvdSize);
+                    bin.readFullBytes(dummyKvd, 0, kvdSize);
+                    dummyKvd = null;
                 }
+                
+                bin.readFullBytes(staticSizeBytes, 0, 4);
+                var storedSize = readInt32(staticSizeBytes, 0);
+                
+                var blocksX = Math.ceil(imgWidth / 4);
+                var blocksY = Math.ceil(imgHeight / 4);
+                var expectedRawSize = Std.int(blocksX * blocksY * 16);
+
+                MemoryTracker.start("FVLZXEncoder.loadTextureData (ASTC)");
+                
+                var astcBytes = Bytes.alloc(expectedRawSize);
+
+                if (storedSize == expectedRawSize) {
+                    bin.readFullBytes(astcBytes, 0, expectedRawSize);
+                } else {
+                    var written = LZ4.decompressFromInput(bin, astcBytes, expectedRawSize);
+                    if (written != expectedRawSize) {
+                        MemoryTracker.end();
+                        throw "Decompressed size mismatch! Expected " + expectedRawSize + " but got " + written;
+                    }
+                }
+                
+                bin.close();
+                fin.close();
+                
+                var result = new TextureData(imgWidth, imgHeight, TextureFormat.ASTC_44, 0, astcBytes);
+                MemoryTracker.end();
+                return result;
+            } else {
+                // --- BC7 / DDS Path ---
+                bin.readFullBytes(header, 4, 144); // Read remaining 144 bytes (total 148 bytes for DDS + DX10 header)
+                
+                var imgWidth = readInt32(header, 16); // width is at offset 16 (4 byte magic + 12)
+                var imgHeight = readInt32(header, 12); // height is at offset 12 (4 byte magic + 8)
+                var bc7Size = readInt32(header, 20); // pitchOrLinearSize is at offset 20 (4 byte magic + 16)
+                
+                var expectedRawSize = bc7Size;
+                
+                MemoryTracker.start("FVLZXEncoder.loadTextureData (BC7)");
+                
+                var bc7Bytes = Bytes.alloc(expectedRawSize);
+                bin.readFullBytes(bc7Bytes, 0, expectedRawSize);
+                
+                bin.close();
+                fin.close();
+                
+                var result = new TextureData(imgWidth, imgHeight, TextureFormat.BPTC_44, 0, bc7Bytes);
+                MemoryTracker.end();
+                return result;
             }
-            
-            bin.close();
-            fin.close();
-            
-            var result = new TextureData(imgWidth, imgHeight, TextureFormat.ASTC_44, 0, astcBytes);
-            
-            MemoryTracker.end();
-			//Sys.println('[MemoryTracker] Texture size was $imgWidth x $imgHeight');
-            return result;
         } catch(e:Dynamic) {
             bin.close();
             fin.close();
             try { MemoryTracker.end(); } catch(e:Dynamic) {}
-            throw "Failed to parse KTX at " + ktxPath + ": " + e;
+            throw "Failed to parse compressed texture at " + compPath + ": " + e;
         }
     }
 

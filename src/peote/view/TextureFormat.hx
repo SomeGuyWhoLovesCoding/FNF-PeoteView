@@ -185,6 +185,7 @@ abstract TextureFormat(Int) from Int to Int
     inline function compressedInternalFormat(gl:PeoteGL):Int {
         return switch(this) {
             case ASTC_44: COMPRESSED_RGBA_ASTC_4x4_KHR;
+            case BPTC_44: COMPRESSED_RGBA_BPTC_UNORM;
             default: 0;
         }
     }
