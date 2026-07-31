@@ -28,6 +28,10 @@ class OptionsDisplay {
 	var controlsDisplay(default, null):ControlsDisplay;
 
 	var sharedAlphabet(default, null):FreeplayAlphabet;
+	var infoText(default, null):Text; // shared description text
+
+	// Points to the currently active sub‑display
+	var activeDisplay:{ function update(deltaTime:Float):Void; };
 
 	var closed:Bool = true;
 
@@ -35,26 +39,40 @@ class OptionsDisplay {
 		this.parent = parent;
 
 		// Create the shared alphabet once and add its program.
-		sharedAlphabet = new FreeplayAlphabet(null, display); // host will be set later
+		sharedAlphabet = new FreeplayAlphabet(null, display);
 		sharedAlphabet.ensurePrograms();
 		sharedAlphabet.addPrograms();
 
-		// Pass the shared alphabet to all sub‑displays.
-		preferencesDisplay = new PreferencesDisplay(parent, sharedAlphabet);
-		graphicsDisplay = new GraphicsDisplay(parent, sharedAlphabet);
-		controlsDisplay = new ControlsDisplay(parent, sharedAlphabet);
+		// Create the shared info text and add it once.
+		infoText = new Text("FUNKIN_OPTIONS_INFO", 0, 0, display, "", "vcr");
+		infoText.multiline = true;
+		infoText.alignment = RIGHT;
+		infoText.alpha = 0; // initially hidden
+		infoText.outlineColor = Color.BLACK;
+		infoText.outlineSize = 1.4;
+		infoText.scale = 0.75;
+		infoText.addProgram();
+
+		// Pass the shared alphabet and infoText to all sub‑displays.
+		preferencesDisplay = new PreferencesDisplay(parent, sharedAlphabet, infoText);
+		graphicsDisplay = new GraphicsDisplay(parent, sharedAlphabet, infoText);
+		controlsDisplay = new ControlsDisplay(parent, sharedAlphabet, infoText);
 	}
 
 	function reload(selection:OptionsCategorySelection) {
 		destroyOptions();
 
+		// Activate the corresponding display and set it as the active one.
 		switch (selection) {
 			case CONTROLS:
 				controlsDisplay.reload();
+				activeDisplay = controlsDisplay;
 			case PREFERENCES:
 				preferencesDisplay.reload();
+				activeDisplay = preferencesDisplay;
 			case GAMEPLAY:
 				graphicsDisplay.reload();
+				activeDisplay = graphicsDisplay;
 		}
 	}
 
@@ -66,10 +84,12 @@ class OptionsDisplay {
 			case GAMEPLAY:
 				graphicsDisplay.enter();
 			default:
+				// ControlsDisplay does not handle enter for toggling; it uses TAB.
 		}
 	}
 
 	function update(deltaTime:Float) {
+		// Update any generic OptionsSprites (currently none, but keep for future)
 		for (i in 0...options.length) {
 			var option = options[i];
 			option.c.aF = parent.alphaLerp;
@@ -77,9 +97,10 @@ class OptionsDisplay {
 			OptionsMenu.optionsBuf.updateElement(option);
 		}
 		
-		controlsDisplay.update(deltaTime);
-		preferencesDisplay.update(deltaTime);
-		graphicsDisplay.update(deltaTime);
+		// Only update the active display – this prevents text/alpha conflicts.
+		if (activeDisplay != null) {
+			activeDisplay.update(deltaTime);
+		}
 	}
 
 	function destroyOptions() {
@@ -90,6 +111,7 @@ class OptionsDisplay {
 			} catch (e) {}
 		}
 		
+		// Each display will clean up its own sprites and reset its state.
 		controlsDisplay.destroyOptions();
 		preferencesDisplay.destroyOptions();
 		graphicsDisplay.destroyOptions();
@@ -100,6 +122,12 @@ class OptionsDisplay {
 		controlsDisplay.dispose();
 		preferencesDisplay.dispose();
 		graphicsDisplay.dispose();
+		
+		// Remove shared infoText
+		if (infoText != null) {
+			infoText.removeProgram();
+			infoText = null;
+		}
 		// Do not dispose sharedAlphabet – it is reused.
 	}
 }

@@ -1,11 +1,7 @@
 package structures.options;
 
-import data.SaveData;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
-import structures.FreeplayAlphabet;
-import structures.IAlphabetScrollHost;
-import structures.OptionsMenu;
 
 /**
 	Handles the display and interaction for the controls options in the options menu.
@@ -40,6 +36,20 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		"game.debug"
 	];
 
+	// Descriptions for each control label (matching order)
+	static var controlDescriptions:Array<String> = [
+		"Move cursor left in menus.",
+		"Move cursor down in menus.",
+		"Move cursor up in menus.",
+		"Move cursor right in menus.",
+		"Select / confirm an option.",
+		"Go back to previous menu.",
+		"Pause the game during gameplay.",
+		"Instantly blueball in the current song.",
+		"Enter the gameplay's play area (debug mode).",
+		"Unique keybinds per key count (Mania mode)."
+	];
+
 	inline static var INSTRUCTIONS_TEXT = "KEYBINDING Instructions:\nPress TAB to begin binding\nPress ESC to cancel binding\n\n" +
 		"MANIA Instructions:\nPress DEBUG to swap between #M1#KEY1#M1# and #M2#KEY2#M2# modes\n" +
 		"\nWhile you bind your mania, you press each key in order\nWhen you bind:\nPress CTRL+Left or CTRL+Right to change MANIA\n" +
@@ -49,6 +59,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 	var parent(default, null):OptionsMenu;
 	var options(default, null):Array<OptionsSprite> = [];
 	var alphabet(default, null):FreeplayAlphabet; // shared instance
+	var infoText(default, null):Text; // shared description/instruction text
 
 	var bindingIndex:Int = -1;
 	var binding:Bool = false;
@@ -77,40 +88,20 @@ class ControlsDisplay implements IAlphabetScrollHost {
 	var curSelectedTarget:Float = 0.0;
 	var alphaLerp:Float = 0.0;
 
-	// Combined Text – created once and reused.
-	static var infoText(default, null):Text;
-	static var textInitialized:Bool = false;
-
 	var closed:Bool;
 
-	function new(parent:OptionsMenu, alphabet:FreeplayAlphabet) {
+	function new(parent:OptionsMenu, alphabet:FreeplayAlphabet, infoText:Text) {
 		this.parent = parent;
 		this.alphabet = alphabet;
-		initTexts();
-	}
-
-	static function initTexts() {
-		if (textInitialized) return;
-		var display = OptionsMenu.display;
+		this.infoText = infoText;
+		
+		// Set marker pairs on the shared infoText (only needed once)
 		var subBindMarkup = [
 			new TextFormatMarkerPair('#M1#', Color.CYAN),
 			new TextFormatMarkerPair('#M2#', 0xFF5353FF),
 			new TextFormatMarkerPair('#M3#', 0xFFFF5353)
 		];
-
-		infoText = new Text("FUNKIN_VIEW_CONTROLS_INFO", 0, 0, display, "", "vcr");
-		infoText.multiline = true;
-		infoText.alignment = RIGHT;
-		infoText.alpha = 0;
-		infoText.outlineColor = Color.BLACK;
-		infoText.outlineSize = 1.4;
-		infoText.scale = 0.75;
 		infoText.setMarkerPairs(subBindMarkup);
-		// Position will be updated each frame to stay at top‑right.
-		infoText.x = Main.INITIAL_WIDTH - infoText.width - 4;
-		infoText.y = 4;
-
-		textInitialized = true;
 	}
 
 	function reload() {
@@ -119,20 +110,10 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		alphabet.reload();
 		closed = false;
 
-		if (!OptionsMenu.optionsDisplay.closed) showTexts();
-
 		resetHostState();
 		binding = false;
 		bindingIndex = -1;
 		processingBinding = false;
-	}
-
-	function showTexts() {
-		if (infoText != null) infoText.addProgram();
-	}
-
-	function removeTexts() {
-		if (infoText != null) infoText.removeProgram();
 	}
 
 	function resetHostState() {
@@ -165,9 +146,21 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelectedTarget, ratio);
 		xLerp = 20 - (curSelectedLerp * 20);
 
-		// Build the combined text
-		var combined = INSTRUCTIONS_TEXT + "\n\n";
+		// Build the combined text for the info box
+		var combined = "";
+		var selectedIndex = Math.round(curSelectedTarget);
+		
+		// Add description of the selected item (if not in mania or binding)
+		if (!bindingMania && !binding && selectedIndex >= 0 && selectedIndex < controlLabels.length) {
+			var desc = controlDescriptions[selectedIndex] != null ? controlDescriptions[selectedIndex] : "";
+			if (desc != "") {
+				combined += controlLabels[selectedIndex] + ": " + desc + "\n\n";
+			}
+		}
+		
+		// Append instructions and dynamic binding info
 		if (bindingMania) {
+			combined += INSTRUCTIONS_TEXT + "\n\n";
 			var str = "KEYBINDS\nUSING " + (maniaSubBindNum == 1 ? "#M2#KEY2#M2#" : "#M1#KEY1#M1#") + "\n";
 			if (alertDupebind) {
 				str += '#M3#${alertDupebindKeyName} is already bound to:\n${alertDupebindConflictName}\nTry a different key.#M3#\n';
@@ -204,8 +197,8 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		infoText.x = Main.INITIAL_WIDTH - infoText.width - 4;
 		infoText.y = 4;
 
-		// Show/hide based on conditions (same logic as before)
-		var show = parent.opened && (curSelectedTarget >= controlFields.length || alertDupebind || binding || bindingMania);
+		// Show/hide based on conditions
+		var show = parent.opened && ((curSelectedTarget >= 0 && curSelectedTarget < controlFields.length + 1) || alertDupebind || binding || bindingMania);
 		infoText.alpha = Tools.lerp(infoText.alpha, show ? 1.0 : 0.0, ratio);
 
 		alphabet.setDeltaTime(deltaTime);
@@ -494,8 +487,6 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		if (closed) return;
 		closed = true;
 
-		removeTexts();
-
 		if (binding) cancelBinding();
 		resetHostState();
 
@@ -509,7 +500,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 
 	function dispose() {
 		destroyOptions();
-		// Do not dispose alphabet – it is shared.
+		// Do not dispose infoText or alphabet – they are shared.
 	}
 
 	function alphabetListLength():Int {

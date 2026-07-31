@@ -1,9 +1,5 @@
 package structures.options;
 
-import data.SaveData;
-import structures.FreeplayAlphabet;
-import structures.IAlphabetScrollHost;
-import structures.OptionsMenu;
 import lime.ui.MouseButton;
 
 /**
@@ -23,9 +19,21 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		"iconBopping"
 	];
 	
+	// Descriptions for each preference, in the same order.
+	static var prefDescriptions:Array<String> = [
+		"Flips your strumline direction upside down.",
+		"Might help your gameplay be seen clearer...",
+		"Applies real time interpolation to the moving character icons.",
+		"Show 'Sick' or 'Good' when hitting notes.",
+		"Bounces your score text whenever you hit a Sick or better.",
+		"Applies a slow bounce to the camera per measure.",
+		"Applies a snappy bounce to your character icons."
+	];
+	
 	var parent(default, null):OptionsMenu;
 	var options(default, null):Array<OptionsSprite> = [];
 	var alphabet(default, null):FreeplayAlphabet; // shared instance
+	var infoText(default, null):Text; // shared description text (owned by OptionsDisplay)
 
 	var xLerp:Float = 0.0;
 	var curSelectedLerp:Float = 0.0;
@@ -43,9 +51,11 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 	var lastDragTime:Float = 0.0;
 	private static inline var DRAG_THRESHOLD:Float = 1.0;
 
-	function new(parent:OptionsMenu, alphabet:FreeplayAlphabet) {
+	// Constructor now accepts the shared infoText
+	function new(parent:OptionsMenu, alphabet:FreeplayAlphabet, infoText:Text) {
 		this.parent = parent;
 		this.alphabet = alphabet;
+		this.infoText = infoText;
 	}
 	
 	function reload() {
@@ -111,6 +121,25 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelectedTarget, ratio);
 		xLerp = 20 - (curSelectedLerp * 20);
 		
+		// Update description text (shared infoText)
+		var index = Math.round(curSelectedTarget);
+		if (index >= 0 && index < prefsStr.length) {
+			var prefName = prefsStr[index];
+			var desc = prefDescriptions[index];
+			var isOn = Reflect.getProperty(SaveData.state.preferences, prefName);
+			var status = isOn ? "ON" : "OFF";
+			infoText.text = '${getDisplayName(prefName)}: $desc\nStatus: $status\nPress ENTER to toggle.';
+		} else {
+			infoText.text = "";
+		}
+		// Position at top-right
+		infoText.x = Main.INITIAL_WIDTH - infoText.width - 4;
+		infoText.y = 4;
+		
+		// Fade text based on menu alpha
+		var show = parent.opened && index >= 0 && index < prefsStr.length;
+		infoText.alpha = Tools.lerp(infoText.alpha, show ? 1.0 : 0.0, ratio);
+		
 		alphabet.setDeltaTime(deltaTime);
 		var incrementBest = prefsStr.length > 7
 			? Math.floor(Math.min(Math.max(curSelectedLerp - 3, 0), prefsStr.length - 7))
@@ -121,6 +150,8 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		}
 		alphabet.updateBuffer();
 	}
+	
+	// -------------------- MOUSE HANDLERS (full implementation) --------------------
 	
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
 		if (closed || alphabet == null) return;
@@ -175,6 +206,8 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		parent.optionsNav.setTo(Math.round(curSelectedTarget));
 	}
 	
+	// -------------------- END MOUSE HANDLERS --------------------
+	
 	function enter() {
 		if (closed || alphabet == null) return;
 		
@@ -214,7 +247,7 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		resetHostState();
 		resetDragState();
 		
-		// Remove only our own OptionsSprites, not the shared alphabet.
+		// Remove only our own OptionsSprites, not the shared alphabet or infoText.
 		while (options.length != 0) {
 			var option = options.pop();
 			try {
@@ -225,7 +258,7 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 	
 	function dispose() {
 		destroyOptions();
-		// Do not dispose alphabet – it is shared.
+		// Do not dispose infoText or alphabet – they are shared.
 	}
 	
 	// IAlphabetScrollHost implementation
