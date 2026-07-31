@@ -24,11 +24,11 @@ using StringTools;
     default and a png is compressed to it synchronously.
     
     Output extensions:
-    - ASTC: .fvlzas (LZ4 compressed KTX payload)
-    - BC7:  .fvlzbs (LZ4 compressed DDS payload)
+    - ASTC: .fvlza - Funkin' View LZ4 ASTC (LZ4 compressed KTX payload)
+    - BC7:  .fvlzbc - Funkin' View LZ4 BC7 (LZ4 compressed DDS payload)
     
     Returns:
-    - The path to the compressed texture (.fvlzbs or .fvlzas) on success.
+    - The path to the compressed texture (.fvlzbc or .fvlza) on success.
     - null if compression is unsuccessful, unsupported, or falls back to uncompressed.
 **/
 @:final
@@ -65,19 +65,19 @@ class FVLZXEncoder {
         #end
 
         // 2. FALLBACK: ASTC (Android primary, PC fallback)
-        var img_fvlzas = img.replace('.png', '.fvlzas');
-        if (FileSystem.exists(img_fvlzas)) return img_fvlzas;
+        var img_fvlza = img.replace('.png', '.fvlza');
+        if (FileSystem.exists(img_fvlza)) return img_fvlza;
 
         SUPPORT = checkAstcSupport(Main.current.peoteView.gl);
         if (!SUPPORT) return null;
 
         var encoded = FVLZXHashCode.hashEncode(img);
-        if (FVLZXHashCode.matches(img, encoded) && FileSystem.exists(img_fvlzas))
-            return img_fvlzas;
+        if (FVLZXHashCode.matches(img, encoded) && FileSystem.exists(img_fvlza))
+            return img_fvlza;
         else
             File.saveContent(FVLZXHashCode.file(img), encoded);
 
-        if (FileSystem.exists(img_fvlzas)) return img_fvlzas;
+        if (FileSystem.exists(img_fvlza)) return img_fvlza;
 
         var args = buildArgs(img);
         var processName = ENVPATH + '-' + VERSION;
@@ -119,24 +119,27 @@ class FVLZXEncoder {
                     bin.readFullBytes(staticHeader, 0, 64);
                     
                     var kvdSize = readInt32(staticHeader, 60);
-                    var payloadOffset = 64 + kvdSize;
+                    
+                    // 1. Skip any existing KVD data in the source file so it's completely excluded
+                    if (kvdSize > 0) {
+                        bin.readFullBytes(null, 0, kvdSize);
+                    }
                     
                     bin.readFullBytes(staticSizeBytes, 0, 4);
                     var originalImageSize = readInt32(staticSizeBytes, 0);
                     
-                    var pngSize = FileSystem.stat(img).size;
-                    
                     var fout = File.write(img_ktxRaw + ".tmp", true);
                     var bout = new BufferOutput(fout, staticWriteBuffer);
                     
+                    // 2. Force KVD size to 0 in the output header
+                    staticHeader.set(60, 0);
+                    staticHeader.set(61, 0);
+                    staticHeader.set(62, 0);
+                    staticHeader.set(63, 0);
+                    
                     bout.writeBytes(staticHeader, 0, 64);
-                    if (kvdSize > 0) {
-                        var kvd = Bytes.alloc(kvdSize);
-                        bin.readFullBytes(kvd, 0, kvdSize);
-                        bout.writeBytes(kvd, 0, kvdSize);
-                        kvd = null;
-                    }
-
+                    
+                    // 3. Write 4 zero bytes as placeholder for the compressed length
                     bout.writeByte(0); bout.writeByte(0); bout.writeByte(0); bout.writeByte(0);
                     
                     var compressedLen = LZ4.compressStream(bin, originalImageSize, bout);
@@ -146,7 +149,8 @@ class FVLZXEncoder {
                     bout.close();
                     
                     var fpatch = File.update(img_ktxRaw + ".tmp");
-                    fpatch.seek(payloadOffset, SeekBegin);
+                    // 4. Patch the compressed length at offset 64 (immediately after the 64-byte header)
+                    fpatch.seek(64, SeekBegin);
                     fpatch.writeByte(compressedLen & 0xFF);
                     fpatch.writeByte((compressedLen >> 8) & 0xFF);
                     fpatch.writeByte((compressedLen >> 16) & 0xFF);
@@ -154,13 +158,13 @@ class FVLZXEncoder {
                     fpatch.close();
                     
                     FileSystem.deleteFile(img_ktxRaw);
-                    FileSystem.rename(img_ktxRaw + ".tmp", img_fvlzas);
+                    FileSystem.rename(img_ktxRaw + ".tmp", img_fvlza);
                 } catch (e:Dynamic) {
                     MemoryTracker.end();
                     throw e;
                 }
                 MemoryTracker.end();
-                return img_fvlzas;
+                return img_fvlza;
             } else {
                 trace("Warning: astcenc succeeded, but KTX file not found at: " + img_ktxRaw);
                 return null;
@@ -174,8 +178,8 @@ class FVLZXEncoder {
      * Mirrors the ASTC workflow exactly using memory-efficient streaming.
      */
     public static function runBC7(img:String):Null<String> {
-        var img_fvlzbs = img.replace('.png', '.fvlzbs');
-        if (FileSystem.exists(img_fvlzbs)) return img_fvlzbs;
+        var img_fvlzbc = img.replace('.png', '.fvlzbc');
+        if (FileSystem.exists(img_fvlzbc)) return img_fvlzbc;
 
         var img_ddsRaw = img.replace('.png', '.dds');
         var processName = BC7_ENVPATH;
@@ -216,13 +220,6 @@ class FVLZXEncoder {
                 throw "Invalid DDS file magic bytes";
             }
             
-            // CORRECTED DDS OFFSETS:
-            // File layout: [4: "DDS "][144: DDS_HEADER]
-            // Within DDS_HEADER: [0:size][4:flags][8:height][12:width][16:pitchOrLinearSize]
-            // Therefore, in the full file buffer:
-            // height = 4 + 8 = 12
-            // width  = 4 + 12 = 16
-            // pitchOrLinearSize = 4 + 16 = 20
             var height = readInt32(ddsHeader, 12);
             var width = readInt32(ddsHeader, 16);
             var bc7Size = readInt32(ddsHeader, 20);
@@ -251,7 +248,7 @@ class FVLZXEncoder {
             fpatch.close();
             
             FileSystem.deleteFile(img_ddsRaw);
-            FileSystem.rename(img_ddsRaw + ".tmp", img_fvlzbs);
+            FileSystem.rename(img_ddsRaw + ".tmp", img_fvlzbc);
         } catch (e:Dynamic) {
             MemoryTracker.end();
             if (FileSystem.exists(img_ddsRaw)) FileSystem.deleteFile(img_ddsRaw);
@@ -259,25 +256,25 @@ class FVLZXEncoder {
             throw e;
         }
         MemoryTracker.end();
-        return img_fvlzbs;
+        return img_fvlzbc;
     }
 
     static function buildArgs(img:String):Array<String> {
         var img_str = Sys.getCwd() + img;
         var img_ktx = img_str.replace('.png', '.ktx');
-        return ['-cl', img_str, img_ktx, '4x4', '-fast', '-pp-premultiply', '-thread_count', '1'];
+        return ['-cl', img_str, img_ktx, '4x4', '-fast', '-pp-premultiply'];
     }
 
     public static function loadTextureData(texPath:String):TextureData {
         var compPath = texPath;
         if (compPath.endsWith(".png")) {
-            var fvlzbsPath = compPath.replace(".png", ".fvlzbs");
-            if (FileSystem.exists(fvlzbsPath)) {
-                compPath = fvlzbsPath;
+            var fvlzbcPath = compPath.replace(".png", ".fvlzbc");
+            if (FileSystem.exists(fvlzbcPath)) {
+                compPath = fvlzbcPath;
             } else {
-                var fvlzasPath = compPath.replace(".png", ".fvlzas");
-                if (FileSystem.exists(fvlzasPath)) {
-                    compPath = fvlzasPath;
+                var fvlzaPath = compPath.replace(".png", ".fvlza");
+                if (FileSystem.exists(fvlzaPath)) {
+                    compPath = fvlzaPath;
                 }
             }
         }
@@ -307,37 +304,33 @@ class FVLZXEncoder {
                 var imgHeight = readInt32(header, 40);
                 var kvdSize = readInt32(header, 60);
                 
+                // 1. Skip any KVD data (will be 0 now, but safe to skip for backwards compatibility)
                 if (kvdSize > 0) {
-                    var dummyKvd = Bytes.alloc(kvdSize);
-                    bin.readFullBytes(dummyKvd, 0, kvdSize);
-                    dummyKvd = null;
+                    var skipKvd = Bytes.alloc(kvdSize);
+                    bin.readFullBytes(skipKvd, 0, kvdSize);
                 }
                 
-                bin.readFullBytes(staticSizeBytes, 0, 4);
-                var storedSize = readInt32(staticSizeBytes, 0);
+                // 2. CRITICAL FIX: Skip the 4-byte compressed length field before decompressing
+                var skipLen = Bytes.alloc(4);
+                bin.readFullBytes(skipLen, 0, 4);
+                
+                var result = new TextureData(imgWidth, imgHeight, TextureFormat.ASTC_44, 0);
                 
                 var blocksX = Math.ceil(imgWidth / 4);
                 var blocksY = Math.ceil(imgHeight / 4);
                 var expectedRawSize = Std.int(blocksX * blocksY * 16);
 
                 MemoryTracker.start("FVLZXEncoder.loadTextureData (ASTC)");
-                
-                var astcBytes = Bytes.alloc(expectedRawSize);
 
-                if (storedSize == expectedRawSize) {
-                    bin.readFullBytes(astcBytes, 0, expectedRawSize);
-                } else {
-                    var written = LZ4.decompressFromInput(bin, astcBytes, expectedRawSize);
-                    if (written != expectedRawSize) {
-                        MemoryTracker.end();
-                        throw "Decompressed size mismatch! Expected " + expectedRawSize + " but got " + written;
-                    }
+                var written = LZ4.decompressFromInput(bin, result.bytes, expectedRawSize);
+                if (written != expectedRawSize) {
+                    MemoryTracker.end();
+                    throw "Decompressed size mismatch! Expected " + expectedRawSize + " but got " + written;
                 }
                 
                 bin.close();
                 fin.close();
                 
-                var result = new TextureData(imgWidth, imgHeight, TextureFormat.ASTC_44, 0, astcBytes);
                 MemoryTracker.end();
                 return result;
             } else if (isFVBS) {
@@ -348,11 +341,11 @@ class FVLZXEncoder {
                 var imgWidth = readInt32(meta, 0);
                 var imgHeight = readInt32(meta, 4);
                 var uncompressedSize = readInt32(meta, 8);
+                var result = new TextureData(imgWidth, imgHeight, TextureFormat.BPTC_44, 0);
                 
                 MemoryTracker.start("FVLZXEncoder.loadTextureData (BC7)");
-                
-                var bc7Bytes = Bytes.alloc(uncompressedSize);
-                var written = LZ4.decompressFromInput(bin, bc7Bytes, uncompressedSize);
+
+                var written = LZ4.decompressFromInput(bin, result.bytes, uncompressedSize);
                 if (written != uncompressedSize) {
                     MemoryTracker.end();
                     throw "Decompressed size mismatch! Expected " + uncompressedSize + " but got " + written;
@@ -361,26 +354,6 @@ class FVLZXEncoder {
                 bin.close();
                 fin.close();
                 
-                var result = new TextureData(imgWidth, imgHeight, TextureFormat.BPTC_44, 0, bc7Bytes);
-                MemoryTracker.end();
-                return result;
-            } else {
-                // Raw DDS fallback
-                bin.readFullBytes(header, 4, 144);
-                
-                var imgHeight = readInt32(header, 12);
-                var imgWidth = readInt32(header, 16);
-                var bc7Size = readInt32(header, 20);
-                
-                MemoryTracker.start("FVLZXEncoder.loadTextureData (BC7 Raw)");
-                
-                var bc7Bytes = Bytes.alloc(bc7Size);
-                bin.readFullBytes(bc7Bytes, 0, bc7Size);
-                
-                bin.close();
-                fin.close();
-                
-                var result = new TextureData(imgWidth, imgHeight, TextureFormat.BPTC_44, 0, bc7Bytes);
                 MemoryTracker.end();
                 return result;
             }
@@ -390,10 +363,11 @@ class FVLZXEncoder {
             try { MemoryTracker.end(); } catch(e:Dynamic) {}
             throw "Failed to parse compressed texture at " + compPath + ": " + e;
         }
+
+        return null;
     }
 
     private static inline function readInt32(b:Bytes, pos:Int):Int {
-        // This is correct for little-endian (DDS and FVBS are both little-endian)
         return b.get(pos) | (b.get(pos + 1) << 8) | (b.get(pos + 2) << 16) | (b.get(pos + 3) << 24);
     }
 
