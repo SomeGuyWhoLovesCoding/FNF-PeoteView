@@ -41,7 +41,7 @@ sudo apt update
 
 # Install 32-bit dependencies
 log_info "Installing 32-bit dependencies..."
-sudo apt-get install -y libglib2.0-dev-bin:i386 libglib2.0-dev-bin-linux:i386 libgl1-mesa-dev:i386 libglu1-mesa-dev:i386 g++-multilib:i386 gcc-multilib:i386 libasound2-dev:i386 libx11-dev:i386 libxext-dev:i386 libxi-dev:i386 libxrandr-dev:i386 libxinerama-dev:i386 libpulse-dev:i386 libmbedtls-dev:i386 libpng-dev:i386 libturbojpeg-dev:i386 libuv1-dev:i386 libvorbis-dev:i386 libvulkan-dev:i386
+sudo apt-get install -y libglib2.0-dev-bin:i386 libglib2.0-dev-bin-linux:i386 python3-packaging:i386 libgl1-mesa-dev:i386 libglu1-mesa-dev:i386 g++-multilib:i386 gcc-multilib:i386 libasound2-dev:i386 libx11-dev:i386 libxext-dev:i386 libxi-dev:i386 libxrandr-dev:i386 libxinerama-dev:i386 libpulse-dev:i386 libmbedtls-dev:i386 libpng-dev:i386 libturbojpeg-dev:i386 libuv1-dev:i386 libvorbis-dev:i386 libvulkan-dev:i386
 
 # Setup haxelib
 log_info "Setting up haxelib..."
