@@ -2,7 +2,6 @@
 # Compiled and build artifacts
 *.o
 *.obj
-*.exe
 *.dll
 *.so
 *.a
@@ -72,5 +71,3 @@ htmlcov/
 *.tar.xz
 *.tar.zst
 ```
-
-BC7Tool/

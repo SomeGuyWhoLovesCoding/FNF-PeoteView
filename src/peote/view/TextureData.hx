@@ -19,7 +19,8 @@ FLOAT_RGB         12
 FLOAT_RG           8
 FLOAT_R            4
 
-ASTC_44           1 (16 bytes per 4x4 block) - REQUIRES THE KTX EXTENSION
+ASTC_44            1 (16 bytes per 4x4 block) - REQUIRES THE KTX EXTENSION
+BPTC_44            1 (16 bytes per 4x4 block) - PC ONLY
 */	
 
 /**
@@ -64,7 +65,7 @@ class TextureDataImpl
         this.format = format;
         
         if (bytes == null) {
-            if (format == TextureFormat.ASTC_44) {
+            if (format.isCompressed) {
                 // ASTC 4x4 uses 16 bytes per 4x4 block. 
                 // Texture dimensions must be padded to multiples of 4 for allocation.
                 var blocksX = Math.ceil(width / 4);
@@ -85,9 +86,9 @@ class TextureDataImpl
     **/
     public function clear(color:Color = 0)
     {
-        if (format == TextureFormat.ASTC_44) {
+        if (format.isCompressed) {
             #if peoteview_debug_texture
-            trace("Warning: clear() on ASTC texture initializes with zeros, not the specified color.");
+            trace("Warning: clear() on compressed texture initializes with zeros, not the specified color.");
             #end
             for (i in 0...bytes.length) bytes.set(i, 0);
             return;
@@ -137,7 +138,7 @@ class TextureDataImpl
     **/
     public function clearFloat(red:Float=0.0, green:Float=0.0, blue:Float=0.0, alpha:Float=0.0)
     {
-        if ( format == TextureFormat.ASTC_44 ) throw("error, use clear() for ASTC textureformats");
+        if ( format.isCompressed ) throw("error, use clear() for compressed textureformats");
         if ( !format.isFloat ) throw("error, use clear() for INTEGER textureformats");
         var pos:Int = 0;
         switch (format) {
@@ -183,7 +184,7 @@ class TextureDataImpl
         The alpha value will be 255 (opaque) if the source texturedata have no alpha channel.
     **/
     public function toRGBA():TextureData {
-        if (format == TextureFormat.ASTC_44) throw("Error: CPU-side conversion from ASTC_44 is not supported without a decoder.");
+        if (format.isCompressed) throw("Error: CPU-side conversion from compressed texture is not supported without a decoder.");
         var t = new TextureData(width, height, TextureFormat.RGBA);
         var d:Int = 0; // destination pos
         var s:Int = 0; // source pos
@@ -251,7 +252,7 @@ class TextureDataImpl
         If the source format is of type `ALPHA`, the alpha value will be converted into the red colorchannel.
     **/
     public function toRGB():TextureData {
-        if (format == TextureFormat.ASTC_44) throw("Error: CPU-side conversion from ASTC_44 is not supported without a decoder.");
+        if (format.isCompressed) throw("Error: CPU-side conversion from compressed texture is not supported without a decoder.");
         var t = new TextureData(width, height, TextureFormat.RGB);
         var d:Int = 0; // destination pos
         var s:Int = 0; // source pos
@@ -312,7 +313,7 @@ class TextureDataImpl
         If the source format is of type `ALPHA`, the alpha value will be converted into the red colorchannel.
     **/
     public function toRG():TextureData {
-        if (format == TextureFormat.ASTC_44) throw("Error: CPU-side conversion from ASTC_44 is not supported without a decoder.");
+        if (format.isCompressed) throw("Error: CPU-side conversion from compressed texture is not supported without a decoder.");
         var t = new TextureData(width, height, TextureFormat.RG);
         var d:Int = 0; // destination pos
         var s:Int = 0; // source pos
@@ -365,7 +366,7 @@ class TextureDataImpl
         If the source format is of type `ALPHA`, the alpha value will be converted into the red colorchannel.
     **/
     public function toR():TextureData {
-        if (format == TextureFormat.ASTC_44) throw("Error: CPU-side conversion from ASTC_44 is not supported without a decoder.");
+        if (format.isCompressed) throw("Error: CPU-side conversion from compressed texture is not supported without a decoder.");
         var t = new TextureData(width, height, TextureFormat.R);
         var d:Int = 0; // destination pos
         var s:Int = 0; // source pos
@@ -407,7 +408,7 @@ class TextureDataImpl
         The alpha value will be 255 (opaque) if the source texturedata have no alpha channel.
     **/
     public function toLuminanceAlpha():TextureData {
-        if (format == TextureFormat.ASTC_44) throw("Error: CPU-side conversion from ASTC_44 is not supported without a decoder.");
+        if (format.isCompressed) throw("Error: CPU-side conversion from compressed texture is not supported without a decoder.");
         var t = new TextureData(width, height, TextureFormat.LUMINANCE_ALPHA);
         var d:Int = 0; // destination pos
         var s:Int = 0; // source pos
@@ -464,7 +465,7 @@ class TextureDataImpl
         If the source format is of type `ALPHA`, the alpha value will be used for luminance.
     **/
     public function toLuminance():TextureData {
-        if (format == TextureFormat.ASTC_44) throw("Error: CPU-side conversion from ASTC_44 is not supported without a decoder.");
+        if (format.isCompressed) throw("Error: CPU-side conversion from compressed texture is not supported without a decoder.");
         var t = new TextureData(width, height, TextureFormat.LUMINANCE);
         var d:Int = 0; // destination pos
         var s:Int = 0; // source pos
@@ -509,7 +510,7 @@ class TextureDataImpl
         If the source have no alpha channel it will convert the red color channel into alpha.
     **/
     public function toAlpha():TextureData {
-        if (format == TextureFormat.ASTC_44) throw("Error: CPU-side conversion from ASTC_44 is not supported without a decoder.");
+        if (format.isCompressed) throw("Error: CPU-side conversion from compressed texture is not supported without a decoder.");
         var t = new TextureData(width, height, TextureFormat.ALPHA);
         var d:Int = 0; // destination pos
         var s:Int = 0; // source pos
@@ -551,7 +552,7 @@ class TextureDataImpl
         The alpha value will be 1.0 (opaque) if the source texturedata have no alpha channel.
     **/
     public function toFloatRGBA():TextureData {
-        if (format == TextureFormat.ASTC_44) throw("Error: CPU-side conversion from ASTC_44 is not supported without a decoder.");
+        if (format.isCompressed) throw("Error: CPU-side conversion from compressed texture is not supported without a decoder.");
         var t = new TextureData(width, height, TextureFormat.FLOAT_RGBA);
         var d:Int = 0; // destination pos
         var s:Int = 0; // source pos
@@ -624,7 +625,7 @@ class TextureDataImpl
         If the source format is of type `ALPHA`, the alpha value will be converted into the red colorchannel.
     **/
     public function toFloatRGB():TextureData {
-        if (format == TextureFormat.ASTC_44) throw("Error: CPU-side conversion from ASTC_44 is not supported without a decoder.");
+        if (format.isCompressed) throw("Error: CPU-side conversion from compressed texture is not supported without a decoder.");
         var t = new TextureData(width, height, TextureFormat.FLOAT_RGB);
         var d:Int = 0; // destination pos
         var s:Int = 0; // source pos
@@ -684,7 +685,7 @@ class TextureDataImpl
         If the source format is of type `ALPHA`, the alpha value will be converted into the red colorchannel.
     **/
     public function toFloatRG():TextureData {
-        if (format == TextureFormat.ASTC_44) throw("Error: CPU-side conversion from ASTC_44 is not supported without a decoder.");
+        if (format.isCompressed) throw("Error: CPU-side conversion from compressed texture is not supported without a decoder.");
         var t = new TextureData(width, height, TextureFormat.FLOAT_RG);
         var d:Int = 0; // destination pos
         var s:Int = 0; // source pos
@@ -738,7 +739,7 @@ class TextureDataImpl
         If the source format is of type `ALPHA`, the alpha value will be converted into the red colorchannel.
     **/
     public function toFloatR():TextureData {
-        if (format == TextureFormat.ASTC_44) throw("Error: CPU-side conversion from ASTC_44 is not supported without a decoder.");
+        if (format.isCompressed) throw("Error: CPU-side conversion from compressed texture is not supported without a decoder.");
         var t = new TextureData(width, height, TextureFormat.FLOAT_R);
         var d:Int = 0; // destination pos
         var s:Int = 0; // source pos
@@ -785,7 +786,7 @@ class TextureDataImpl
     **/
     public function setColor(x:Int, y:Int, color:Color)
     {
-        if (format == TextureFormat.ASTC_44) throw("Error: Cannot set pixels directly on ASTC compressed data.");
+        if (format.isCompressed) throw("Error: Cannot set pixels directly on compressed data.");
         if ( format.isFloat ) throw("error, use setFloat() for FLOAT textureformats");
         var pos = (y * width + x) * format.bytesPerPixelInt;
         switch (format) {
@@ -981,7 +982,7 @@ class TextureDataImpl
     **/
     public function getColor(x:Int, y:Int):Color
     {
-        if (format == TextureFormat.ASTC_44) throw("Error: Cannot get pixels directly from ASTC compressed data.");
+        if (format.isCompressed) throw("Error: Cannot get pixels directly from compressed data.");
         if ( format.isFloat ) throw("error, use getFloat...() for FLOAT textureformats");
         var pos = (y * width + x) * format.bytesPerPixelInt;
         return switch (format) {
@@ -1166,7 +1167,7 @@ class TextureDataImpl
     **/
     public inline function setFloat(x:Int, y:Int, red:Float, green:Float, blue:Float, alpha:Float = 0.0)
     {
-        if (format == TextureFormat.ASTC_44) throw("Error: Cannot set pixels directly on ASTC compressed data.");
+        if (format.isCompressed) throw("Error: Cannot set pixels directly on compressed data.");
         if ( !format.isFloat ) throw("error, use setPixel() for INTEGER textureformats");
         
         var pos:Int = (y * width + x) * format.bytesPerPixelFloat;

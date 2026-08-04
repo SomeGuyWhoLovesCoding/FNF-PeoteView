@@ -11,6 +11,8 @@ class LZ4 {
     private static inline var HASH_SIZE = 1 << HASH_LOG;
 
     private static var hashTable:Vector<Int> = null;
+    private static var hashTableGen:Vector<Int> = null; // NEW: Generation tracking
+    private static var currentGen:Int = 0;
     private static var compressStreamBuffer:Bytes = null;
 
     public static function compress(src:Bytes):Bytes {
@@ -26,8 +28,16 @@ class LZ4 {
         if (srcLen < 0) srcLen = src.length - srcBase;
         if (srcLen == 0) return 0;
 
-        if (hashTable == null) hashTable = new Vector<Int>(HASH_SIZE);
-        for (i in 0...HASH_SIZE) hashTable[i] = -1;
+        if (hashTable == null) {
+            hashTable = new Vector<Int>(HASH_SIZE);
+            hashTableGen = new Vector<Int>(HASH_SIZE);
+        }
+        currentGen++;
+        if (currentGen == 0) { // Prevent overflow after millions of compressions
+            var i = 0;
+            while (i < HASH_SIZE) { hashTableGen[i] = 0; i++; }
+            currentGen = 1;
+        }
         
         var srcIdx = srcBase, dstIdx = dstBase, anchor = srcBase;
         var matchLimit = srcBase + srcLen - MINMATCH;
@@ -36,8 +46,11 @@ class LZ4 {
         while (srcIdx <= matchLimit) {
             var seq = read32(src, srcIdx);
             var hash = (seq * -1640531535) >>> (32 - HASH_LOG);
-            var matchIdx = hashTable[hash];
+            
+            // OPTIMIZATION: Check generation instead of clearing the whole table
+            var matchIdx = (hashTableGen[hash] == currentGen) ? hashTable[hash] : -1;
             hashTable[hash] = srcIdx;
+            hashTableGen[hash] = currentGen;
 
             if (matchIdx >= srcBase && srcIdx - matchIdx < 65536 && read32(src, matchIdx) == seq) {
                 while (srcIdx > anchor && matchIdx > srcBase && src.get(srcIdx - 1) == src.get(matchIdx - 1)) {
@@ -67,6 +80,7 @@ class LZ4 {
                         var seq2 = read32(src, srcIdx);
                         var hash2 = (seq2 * -1640531535) >>> (32 - HASH_LOG);
                         hashTable[hash2] = srcIdx;
+                        hashTableGen[hash2] = currentGen;
                     }
                     srcIdx++;
                 }
@@ -104,8 +118,18 @@ class LZ4 {
         var anchor = 0;
         var writtenBytes = 0;
 
-        if (hashTable == null) hashTable = new Vector<Int>(HASH_SIZE);
-        for (i in 0...HASH_SIZE) hashTable[i] = -1;
+        if (hashTable == null) {
+            hashTable = new Vector<Int>(HASH_SIZE);
+            hashTableGen = new Vector<Int>(HASH_SIZE);
+        }
+        
+        // OPTIMIZATION: Increment generation instead of clearing 131,072 elements!
+        currentGen++;
+        if (currentGen == 0) {
+            var i = 0;
+            while (i < HASH_SIZE) { hashTableGen[i] = 0; i++; }
+            currentGen = 1;
+        }
 
         var toRead = totalLen < CHUNK_SIZE ? totalLen : CHUNK_SIZE;
         input.readFullBytes(buf, 0, toRead);
@@ -136,7 +160,6 @@ class LZ4 {
                 toRead = totalLen - endGlobalPos;
                 if (toRead > CHUNK_SIZE) toRead = CHUNK_SIZE;
                 
-                // FIX: Prevent buffer overflow
                 var available = BUF_SIZE - bufLen;
                 if (toRead > available) toRead = available;
                 
@@ -154,8 +177,11 @@ class LZ4 {
 
                 var seq = read32(buf, bufIdx);
                 var hash = (seq * -1640531535) >>> (32 - HASH_LOG);
-                var matchGlobal = hashTable[hash];
+                
+                // OPTIMIZATION: Check generation to avoid stale matches
+                var matchGlobal = (hashTableGen[hash] == currentGen) ? hashTable[hash] : -1;
                 hashTable[hash] = globalPos;
+                hashTableGen[hash] = currentGen;
 
                 if (matchGlobal != -1 && globalPos - matchGlobal <= 65535) {
                     var offset = globalPos - matchGlobal;
@@ -188,6 +214,7 @@ class LZ4 {
                                 var seq2 = read32(buf, bufIdx);
                                 var hash2 = (seq2 * -1640531535) >>> (32 - HASH_LOG);
                                 hashTable[hash2] = globalPos;
+                                hashTableGen[hash2] = currentGen;
                             }
                             bufIdx++; globalPos++;
                         }

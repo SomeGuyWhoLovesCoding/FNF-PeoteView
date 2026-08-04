@@ -451,8 +451,7 @@ class Main extends Application
 
 		var delta = simulatedDeltaTime - startSimulatedDeltaTime;
 		if (delta >= 1) {
-			Sys.println('FPS $averageFrames\nVRAM ${TextureSystem.VRAMCounter()}\n');
-			//Sys.println('FPS ${deltaTime} VRAM ${TextureSystem.VRAMCounter()}');
+			//Sys.println('FPS $averageFrames\nVRAM ${TextureSystem.VRAMCounter()}\n');
 			startSimulatedDeltaTime = haxe.Timer.stamp();
 			averageFrames = 0;
 		}
