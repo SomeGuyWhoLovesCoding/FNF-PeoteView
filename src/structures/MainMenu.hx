@@ -82,7 +82,7 @@ class MainMenu {
 			watermarkTxt.text = '[ NO WIFI / OUTDATED VERSION - PLEASE GO TO GAMEBANA PAGE & RUN INSTALLER TO UPDATE ]\n$watermarkText';
 		}
 
-		watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height - 1;
+		watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height - 3;
 
 		if (optionProg == null) {
 			var texName = "mainMenuSheet";

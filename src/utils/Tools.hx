@@ -38,63 +38,6 @@ class Tools {
 		return !versionsDontMatch; // we're in the clear
 	}
 
-	static var iconGridMap:Map<String, Array<Int>> = [];
-
-	static function parseNoteskinData(path:String) {
-/*		while (Note.offsetAndSizeFrames.length != 0) Note.offsetAndSizeFrames.pop();
-		//while (Sustain.offsets.length != 0) Sustain.offsets.pop();
-		//while (Sustain.tailPoints.length != 0) Sustain.tailPoints.pop();
-
-		var contents = File.getContent(Paths.asset('$path/noteData.xml'));
-		var xml = Xml.parse(contents);
-		var root = xml.firstElement();
-
-		for (element in root.elementsNamed("SubTexture")) {
-			var name = element.get("name");
-			var x = Std.parseInt(element.get("x"));
-			var y = Std.parseInt(element.get("y"));
-			var width = Std.parseInt(element.get("width"));
-			var height = Std.parseInt(element.get("height"));
-			var frameX = element.exists("frameX") ? Std.parseInt(element.get("frameX")) : 0;
-			var frameY = element.exists("frameY") ? Std.parseInt(element.get("frameY")) : 0;
-
-			Note.offsetAndSizeFrames.push(x);
-			Note.offsetAndSizeFrames.push(y);
-			Note.offsetAndSizeFrames.push(width);
-			Note.offsetAndSizeFrames.push(height);
-			Note.offsetAndSizeFrames.push(frameX);
-			Note.offsetAndSizeFrames.push(frameY);
-		}
-
-		var floatKeys = Math.ffloor(Note.offsetAndSizeFrames.length / 4) / 6;
-		if (floatKeys != Std.int(floatKeys)) throw "Noteskin not supported! KEYS is not integral!";
-		Note.KEYS = Std.int(floatKeys);
-
-		// these two lines were there because I forgot for all this time that I SPECIFICALLY needed to include it inside here before the sustain note texture.
-		TextureSystem.disposeTexture("noteTex");
-		TextureSystem.createTexture("noteTex", '$path/noteSheet.png', false, true);
-
-		var data = File.read(Paths.asset('$path/sustainProperties.txt'));
-
-		TextureSystem.disposeTexture("sustainTex");
-		TextureSystem.createTiledTexture("sustainTex", '$path/sustainSheet.png', 1, Std.parseInt(data.readLine()), false, true);
-
-		var w = TextureSystem.getTexture("sustainTex").width;
-
-		while (!data.eof()) {
-			var line = data.readLine();
-			var split = line.split(", ");
-			if (split.length != 3) throw "ARGUMENTS ARE NOT EQUAL TO THREE!";
-
-			var x = Std.parseInt(split[0]);
-			var y = Std.parseInt(split[1]);
-			var t = Std.parseInt(split[2]);
-
-			//Sustain.offsets.push([x, y]);
-			//Sustain.tailPoints.push(w - t); // this will be removed
-		}*/
-	}
-
 	static function parseHealthBarConfig(path:String) {
 		var finalData:Array<Float> = [];
 
@@ -145,12 +88,11 @@ class Tools {
 		return finalData;
 	}
 
-	private static var _fontsCached(default, null):Map<String, Array<elements.text.TextCharData>> = [];
-	private static var _process(default, null):Process;
-	static function parseFont(name:String):Array<elements.text.TextCharData> {
+	private static var _fontsCached(default, null):FakeStringMap<Array<TextCharData>> = new FakeStringMap<Array<TextCharData>>();
+	static function parseFont(name:String):Array<TextCharData> {
 		//Sys.println('QUERY GAME FONT: $name');
 		if (_fontsCached.exists(name))
-			return _fontsCached[name];
+			return _fontsCached.get(name);
 
 		var path = Paths.asset('assets/fonts/$name');
 		var fontPathSub = '$path/$name';
@@ -216,10 +158,11 @@ class Tools {
 		parsedData[256][1] = padding[0]; // up    (used for vertical)
 		parsedData[256][2] = padding[1]; // right
 		parsedData[256][3] = padding[2]; // down
+		parsedData[256][4] = data.common.lineHeight; // down
 
 		TextureSystem.createTexture(name + "Font", fontPNGPath, false, true);
 
-		_fontsCached[name] = parsedData;
+		_fontsCached.set(name, parsedData);
 		return parsedData;
 	}
 
@@ -283,6 +226,8 @@ class Tools {
 		return a + (b - a) * ratio;
 	}
 
+
+	static var iconGridMap:Map<String, Array<Int>> = [];
 	static function getIconGridMap(path:String) {
 		var contents = File.getContent('$path/iconData.xml');
 		var xml = Xml.parse(contents);
@@ -296,12 +241,12 @@ class Tools {
 		}
 	}
 
-	inline static function fixElementAlphaFromFadingLerp(v:Float) {
-		return Math.max((v * 1.002) - 0.002, 0);
-	}
-
 	static function fromIconGridXMLCharacter(path:String):Array<Int> {
 		return iconGridMap.get(path);
+	}
+
+	inline static function fixElementAlphaFromFadingLerp(v:Float) {
+		return Math.max((v * 1.002) - 0.002, 0);
 	}
 
 	static function parseHeader(path:String):Header {

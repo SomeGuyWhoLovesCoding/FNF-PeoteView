@@ -311,26 +311,6 @@ class Text {
         }
         return totalWidth;
     }
-    
-    private function calculateLineHeight():Float {
-        if (_lines.length == 0) return 0;
-        
-        var maxHeight:Float = 0;
-        var quarterScale = scale / 2;
-        
-        for (line in _lines) {
-            for (ci in 0...line.length) {
-                var code = line.charCodeAt(ci);
-                var data = parsedTextAtlasData[code];
-                if (data != null) {
-                    var charHeight = data[3] * quarterScale;
-                    if (charHeight > maxHeight) maxHeight = charHeight;
-                }
-            }
-        }
-        
-        return maxHeight + lineSpacing;
-    }
 
     // ── set_text (updated with pre-allocation and combined dimension pass) ────
 
@@ -348,15 +328,11 @@ class Text {
         _lines = multiline ? wrapText(str) : [str.replace("\n", " ")];
         
         var quarterScale = scale / 2;
+        lineHeight = parsedTextAtlasData[256][4] * quarterScale;
         _lineWidths = [];
         var maxLineWidth:Float = 0;
-        var totalHeight:Float = 0;
-        var lineHeight:Float = 0;
         
-        // Single pass for widths and height frequency analysis (avoids iterating text multiple times)
-        var uniqueHeights:Array<Float> = [];
-        var heightCounts:Array<Int> = [];
-        var maxFreq = 0;
+        // Single pass for width frequency analysis (avoids iterating text multiple times)
 
         for (lineIdx in 0..._lines.length) {
             var line = _lines[lineIdx];
@@ -367,25 +343,6 @@ class Text {
                 if (data != null) {
                     var charWidth = data[6] * quarterScale;
                     lineWidth += charWidth + (charWidth * spacerPercent);
-                    
-                    // Track height frequency without Map allocation
-                    var h = data[3];
-                    var hIdx = -1;
-                    for (ui in 0...uniqueHeights.length) {
-                        if (uniqueHeights[ui] == h) {
-                            hIdx = ui;
-                            break;
-                        }
-                    }
-                    
-                    if (hIdx == -1) {
-                        hIdx = uniqueHeights.length;
-                        uniqueHeights.push(h);
-                        heightCounts.push(0);
-                    }
-                    
-                    heightCounts[hIdx]++;
-                    if (heightCounts[hIdx] > maxFreq) maxFreq = heightCounts[hIdx];
                 }
             }
             
@@ -393,20 +350,9 @@ class Text {
             if (lineWidth > maxLineWidth) maxLineWidth = lineWidth;
         }
         
-        // Find highest height among most frequent
-        var maxHeightInFont:Float = 0;
-        for (i in 0...uniqueHeights.length) {
-            if (heightCounts[i] == maxFreq && uniqueHeights[i] > maxHeightInFont) {
-                maxHeightInFont = uniqueHeights[i];
-            }
-        }
-        
-        lineHeight = (maxHeightInFont * quarterScale) + lineSpacing;
-        totalHeight = _lines.length * lineHeight;
-        
         // Store actual dimensions
         width = maxLineWidth;
-        height = totalHeight;
+        height = _lines.length * lineHeight;
         
         // Count total characters to render
         var totalChars = 0;
@@ -581,6 +527,7 @@ class Text {
     // ── Font ──────────────────────────────────────────────────────────────────
 
     var font(default, set):String;
+    var lineHeight(default, null):Float;
 
     function set_font(value:String) {
         if (font == value) return value;
