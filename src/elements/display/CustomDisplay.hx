@@ -42,8 +42,10 @@ class CustomDisplay extends RotatableDisplay {
 		return result;
 	}
 
+	// FIX: Pre-allocate array to prevent per-frame heap allocations
 	var centerArr:Array<Float>;
 
+	// FIX: Store shake offsets so they aren't overwritten by update()
 	var shakeX:Float = 0;
 	var shakeY:Float = 0;
 
@@ -55,8 +57,7 @@ class CustomDisplay extends RotatableDisplay {
 
 	function update() {
 		if (zoom <= 0)
-			return; // doesn't prevent crash happening from after the trace "6" which is the `Main` `resize` function but that doesn't matter anymore anyway
-
+			return;
 		var scrollShiftMult = zoom - scale;
 
 		var scrollX = scroll.x;

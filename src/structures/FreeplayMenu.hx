@@ -15,7 +15,6 @@ import lime.ui.MouseWheelMode;
 @:publicFields
 class FreeplayMenu {
 	//////////////////////// MAIN ////////////////////////
-
 	static var display(default, null):CustomDisplay;
 
 	var active(default, null):Bool;
@@ -47,17 +46,21 @@ class FreeplayMenu {
 		freeplayScreen.preWarm();
 
 		actions = [
-			Controls.Action.UI_UP => { action: up },
-			Controls.Action.UI_DOWN => { action: down },
-			Controls.Action.UI_BACK => { action: back },
-			Controls.Action.UI_ACCEPT => { action: enter },
+			Controls.Action.UI_UP => {action: up},
+			Controls.Action.UI_DOWN => {action: down},
+			Controls.Action.UI_BACK => {action: back},
+			Controls.Action.UI_ACCEPT => {action: enter},
 			// Todo: move chapters
-			Controls.Action.UI_LEFT => { action: cast function (isDown:Bool, param:Int) {
-				//reload('chapter1');
-			 } },
-			Controls.Action.UI_RIGHT => { action: cast function (isDown:Bool, param:Int) {
-				//reload('chapter1');
-			 } }
+			Controls.Action.UI_LEFT => {
+				action: cast function(isDown:Bool, param:Int) {
+					// reload('chapter1');
+				}
+			},
+			Controls.Action.UI_RIGHT => {
+				action: cast function(isDown:Bool, param:Int) {
+					// reload('chapter1');
+				}
+			}
 		];
 	}
 
@@ -72,7 +75,8 @@ class FreeplayMenu {
 			nav.setTo(Math.round(freeplayScreen.curSelectedTarget));
 
 			dragVelocity *= Math.pow(0.92, deltaTime * 0.04); // exponential decay
-			if (Math.abs(dragVelocity) < 0.01) dragVelocity = 0.0;
+			if (Math.abs(dragVelocity) < 0.01)
+				dragVelocity = 0.0;
 		}
 
 		freeplayScreen.render(deltaTime);
@@ -124,28 +128,35 @@ class FreeplayMenu {
 	}
 
 	function back(isDown:Bool, param:Int) {
-		if (!isDown) return;
+		if (!isDown)
+			return;
 		close();
 		Main.current.playCancelSound();
 	}
 
 	function down(isDown:Bool, param:Int) {
-		if (!isDown) return;
+		if (!isDown)
+			return;
 		nav.scroll(1);
 		nav.resetIfOver(freeplayScreen.songsAvailable.length);
 		Main.current.playScrollSound();
 	}
 
 	function up(isDown:Bool, param:Int) {
-		if (!isDown) return;
+		if (!isDown)
+			return;
 		nav.scroll(-1);
 		nav.resetIfUnder(freeplayScreen.songsAvailable.length - 1);
 		Main.current.playScrollSound();
 	}
 
 	function enter(isDown:Bool, param:Int) {
-		if (!isDown) return;
+		if (!isDown)
+			return;
 		Main.songChosen = freeplayScreen.songsAvailable[nav.value()].dir;
+		close();
+		freeplayScreen.shutDown();
+		active = false;
 		Main.switchState(GAMEPLAY);
 	}
 
@@ -159,7 +170,7 @@ class FreeplayMenu {
 				dragVelocity = 0.0;
 				lastDragTime = haxe.Timer.stamp();
 				freeplayScreen.curSelectedTarget = freeplayScreen.curSelectedLerp;
-				//Main.current.playScrollSound();
+			// Main.current.playScrollSound();
 			case RIGHT:
 				back(true, 0);
 			default:
@@ -167,7 +178,8 @@ class FreeplayMenu {
 	}
 
 	function mouseRelease(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
-		if (button != LEFT) return;
+		if (button != LEFT)
+			return;
 
 		if (isDragging && Math.abs(dragStartY - y) < 4.0) {
 			enter(true, 0);
@@ -179,7 +191,8 @@ class FreeplayMenu {
 	}
 
 	function mouseDrag(x:Float, y:Float) {
-		if (!isDragging) return;
+		if (!isDragging)
+			return;
 
 		var delta = lastDragY - y;
 		lastDragY = y;
@@ -190,7 +203,8 @@ class FreeplayMenu {
 
 		var _delta = (delta / (156.0 / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)));
 
-		if (dt > 0) dragVelocity = _delta / 3;
+		if (dt > 0)
+			dragVelocity = _delta / 3;
 
 		freeplayScreen.curSelectedTarget += _delta;
 		freeplayScreen.curSelectedTarget = Math.max(0, Math.min(freeplayScreen.songsAvailable.length - 1, freeplayScreen.curSelectedTarget));

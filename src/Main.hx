@@ -24,8 +24,7 @@ private enum abstract StateSelection(Int) {
 	@since Zero
 **/
 @:publicFields
-class Main extends Application
-{
+class Main extends Application {
 	static inline var BUILD = 1;
 
 	/**
@@ -34,6 +33,7 @@ class Main extends Application
 	 * unless you create a higher resolution version of your images.
 	**/
 	static inline var INITIAL_WIDTH = 1280;
+
 	static inline var INITIAL_HEIGHT = 720;
 	static var VARIABLE_WIDTH(get, never):Int;
 	static var VARIABLE_HEIGHT(get, never):Int;
@@ -51,8 +51,7 @@ class Main extends Application
 	// Internal variable for checking if the game has booted up
 	private var _started(default, null):Bool;
 
-	override function onWindowCreate():Void
-	{
+	override function onWindowCreate():Void {
 		var titleBarColor:Color = SaveData.state.graphics.customTitleBarColor;
 
 		UP_TO_DATE = Tools.checkForUpdates();
@@ -79,7 +78,7 @@ class Main extends Application
 			while (i < len) {
 				var note = File.getNote(i);
 				var noteTime = MetaNote.metaNotePositionToSongTime(note.position);
-				//trace("Processed time: " + noteTime + " | Note time (combined): " + (note.position) + " | Note time: " + note.position);
+				// trace("Processed time: " + noteTime + " | Note time (combined): " + (note.position) + " | Note time: " + note.position);
 				i++;
 			}
 			// Start initializing total time variables
@@ -88,31 +87,31 @@ class Main extends Application
 
 			for (i in 0...1000) {
 				var stamp = haxe.Timer.stamp();
-				//trace("Insert 1,000,000 notes (array)");f
-				//Sys.println("Insert 1,000,000 notes (function)");
+				// trace("Insert 1,000,000 notes (array)");f
+				// Sys.println("Insert 1,000,000 notes (function)");
 				var stamp2 = haxe.Timer.stamp();
 				for (i in 0...20) {
 					var pos = Tools.betterInt64FromFloat((0.0 + (200000000.0 * i)));
 					var dur = 100 * 2;
 					var ind = i % 9;
 					var typ = 1;
-					//trace('adding note ${i+1} (pos,dur,ind,type)',pos,dur,ind,typ);
+					// trace('adding note ${i+1} (pos,dur,ind,type)',pos,dur,ind,typ);
 					File.insertNote(pos, dur, /* Equal to `note.duration(ms) * 2`. */ ind, typ);
 				}
 				insertTime += haxe.Timer.stamp() - stamp2;
-				//Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp2) * 1000}ms');
+				// Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp2) * 1000}ms');
 				// Remove notes
 				var stamp3 = haxe.Timer.stamp();
-				//Sys.println("Remove 1,000,000 notes (function)");
-				//Sys.println(arr.length);
+				// Sys.println("Remove 1,000,000 notes (function)");
+				// Sys.println(arr.length);
 				/*for (i in 5...6) {
-					trace('removing note (index)',i);
-					File.removeNote(i);
-				}
-				removalTime += haxe.Timer.stamp() - stamp3;*/
-				//Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp3) * 1000}ms');
-				//Sys.println('Inserting 1,000,000 notes fully done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
-				//Sys.println('Iteration $i done');
+							trace('removing note (index)',i);
+							File.removeNote(i);
+					}
+					removalTime += haxe.Timer.stamp() - stamp3; */
+				// Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp3) * 1000}ms');
+				// Sys.println('Inserting 1,000,000 notes fully done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
+				// Sys.println('Iteration $i done');
 			}
 			// Average it out
 			Sys.println('Total insert time: ' + ((insertTime * 1000) / 1) + 'ms');
@@ -122,12 +121,14 @@ class Main extends Application
 		}, 8000);
 		#end
 
-		switch (window.context.type)
-		{
+		switch (window.context.type) {
 			case WEBGL, OPENGL, OPENGLES:
-				try startSample(window)
-				catch (_) trace(CallStack.toString(CallStack.exceptionStack()), _);
-			default: throw("Sorry, only works with OpenGL.");
+				try
+					startSample(window)
+				catch (_)
+					trace(CallStack.toString(CallStack.exceptionStack()), _);
+			default:
+				throw("Sorry, only works with OpenGL.");
 		}
 	}
 
@@ -193,9 +194,9 @@ class Main extends Application
 	// ------------------------------------------------------------
 	// --------------------- GAME STARTS HERE ---------------------
 	// ------------------------------------------------------------
-
 	// STARTING POINT
 	static var current:Main;
+
 	var peoteView:PeoteView;
 
 	// MUSIC
@@ -226,7 +227,7 @@ class Main extends Application
 	var controls(default, null):Controls;
 
 	// This is a replacement for Application.current.window.onMouseDown as it's a rogue piece a shit I've noticed was especially targetable on hashlink where the freeplay mouse click bug arose
-	var mouseDown:(Float, Float, MouseButton)->Void;
+	var mouseDown:(Float, Float, MouseButton) -> Void;
 
 	// NOW FOR THE SOUND EFFECTS
 	var sound_scrollIdx:Int;
@@ -236,8 +237,7 @@ class Main extends Application
 	// UPSCALE CONDITION - WHENEVER YOU WANT YOUR GAME TO RUN LIKE COCK OR RUN LIKE WHEELS
 	var upscale:Bool = false;
 
-	public function startSample(window:Window)
-	{
+	public function startSample(window:Window) {
 		current = this;
 
 		SaveData.init(window);
@@ -249,19 +249,20 @@ class Main extends Application
 		TextureSystem.processQueue();
 
 		haxe.Timer.delay(function() {
-		trace("createSounds");
-			haxe.Timer.delay(createSounds, Std.int(0.4000));
-		trace("createTextures");
-			haxe.Timer.delay(createTextures, Std.int(0.6000));
-		trace("createDisplays");
-			haxe.Timer.delay(createDisplays, Std.int(0.8000)); // found that it doesn't consum its own RAM. Now that's amazing
+			trace("createSounds");
+			haxe.Timer.delay(createSounds, 400);
+			trace("createTextures");
+			haxe.Timer.delay(createTextures, 600);
+			trace("createDisplays");
+			haxe.Timer.delay(createDisplays, 800); // found that it doesn't consum its own RAM. Now that's amazing
 
 			haxe.Timer.delay(() -> {
 				controls = new Controls();
 
 				#if (!html5)
 				trace("Is es3? " + PeoteGL.Version.isES3);
-				if (PeoteGL.Version.isES3) window.context.gl.disable(0x8DB9); // GL_FRAMEBUFFER_SRGB_EXT
+				if (PeoteGL.Version.isES3)
+					window.context.gl.disable(0x8DB9); // GL_FRAMEBUFFER_SRGB_EXT
 				#end
 
 				peoteView.start();
@@ -292,6 +293,9 @@ class Main extends Application
 				trace("5");
 				switchState(MAIN_MENU);
 
+				trace("6");
+				resize(peoteView.width, peoteView.height);
+
 				window.onResize.add(resize);
 				window.onKeyDown.add(controlVolume);
 				window.onClose.add(Chart.destroy);
@@ -301,7 +305,8 @@ class Main extends Application
 				#end
 
 				window.onMouseDown.add((x, y, button) -> {
-					if (mouseDown != null) mouseDown(x, y, button);
+					if (mouseDown != null)
+						mouseDown(x, y, button);
 				});
 
 				_started = true;
@@ -309,8 +314,8 @@ class Main extends Application
 				var title = Application.current.window.title;
 				var titleLen = title.length;
 				Application.current.window.title = title.substring(0, titleLen - 13);
-				//Application.current.window.hidden = false;
-			}, Std.int(0.10000));
+				// Application.current.window.hidden = false;
+			}, 1000);
 		}, Std.int(10000 / 1000));
 	}
 
@@ -323,9 +328,11 @@ class Main extends Application
 	public function playScrollSound() {
 		MiniAudio.playSoundEffect(sound_scrollIdx, 0.7);
 	}
+
 	public function playConfirmSound() {
 		MiniAudio.playSoundEffect(sound_confIdx, 0.7);
 	}
+
 	public function playCancelSound() {
 		MiniAudio.playSoundEffect(sound_cancelIdx, 0.7);
 	}
@@ -379,7 +386,7 @@ class Main extends Application
 	}
 
 	private function controlVolume(keyCode:KeyCode, keyModifier:KeyModifier) {
-		//Sys.println('INITIAL VOLUME: ${Mixer.globalVolume}');
+		// Sys.println('INITIAL VOLUME: ${Mixer.globalVolume}');
 		switch (keyCode) {
 			case KeyCode.EQUALS:
 				Mixer.globalVolume = Math.min(Mixer.globalVolume + 0.1, 1);
@@ -395,7 +402,6 @@ class Main extends Application
 	var simulatedDeltaTime:Float = Math.POSITIVE_INFINITY;
 	var startSimulatedDeltaTime:Float = 0;
 	var averageFrames:Float = 0;
-	var _hasInitResizedYet:Bool = false;
 
 	override function update(deltaTime:Float) {
 		Tools.profileFrame();
@@ -411,48 +417,29 @@ class Main extends Application
 		var lastTitle = Application.current.window.title;
 
 		if (_started) {
-			if (!_hasInitResizedYet) {
-				trace("No it's not that");
-				resize(peoteView.width, peoteView.height);
-				trace("Alright just fuck you");
-				_hasInitResizedYet = true;
-			}
-
 			newDeltaTime = 1000.0 / FunkinMainLoop.FRAMERATE;
-			//if (deltaTime > 50) newDeltaTime = deltaTime;
+			// if (deltaTime > 50) newDeltaTime = deltaTime;
 
-			trace("black green n purple shits");
-			try {
-				if (mainMenu != null && !mainMenu.disposed) {
-					mainMenu.update(newDeltaTime);
-				}
-			} catch (e) {
-				trace('ERROR CAUGHT-FUCK! $e is here!');
+			if (mainMenu != null && !mainMenu.disposed) {
+				mainMenu.update(newDeltaTime);
 			}
 
-			trace("this is so stupid why");
-			if (playField != null) {
-				trace("istg");
-				if (!playField.disposed) {
-					if (playField.pauseScreen != null) {
-						trace("ok come on");
-						var pauseScreen = playField.pauseScreen;
-						if (!pauseScreen.disposed) pauseScreen.update(newDeltaTime);
-					}
+			if (playField != null && !playField.disposed) {
+				if (playField.pauseScreen != null) {
+					var pauseScreen = playField.pauseScreen;
+					if (!pauseScreen.disposed)
+						pauseScreen.update(newDeltaTime);
+				}
 
-					trace("alr fuck this");
-					if (!playField.paused && !RenderingMode.enabled) {
-						playField.update(newDeltaTime);
-					}
+				if (!playField.paused && !RenderingMode.enabled) {
+					playField.update(newDeltaTime);
 				}
 			}
 
-			trace("lmfao i just have to manually debug everything fr");
 			if (noteskinEditor != null && !noteskinEditor.disposed) {
 				noteskinEditor.update(newDeltaTime);
 			}
 
-			trace("seriously why");
 			if (editorMenu != null && !editorMenu.disposed) {
 				editorMenu.update(newDeltaTime);
 			}
@@ -468,7 +455,7 @@ class Main extends Application
 
 		var delta = simulatedDeltaTime - startSimulatedDeltaTime;
 		if (delta >= 1) {
-			//Sys.println('FPS $averageFrames\nVRAM ${TextureSystem.VRAMCounter()}\n');
+			// Sys.println('FPS $averageFrames\nVRAM ${TextureSystem.VRAMCounter()}\n');
 			startSimulatedDeltaTime = haxe.Timer.stamp();
 			averageFrames = 0;
 		}
@@ -486,8 +473,7 @@ class Main extends Application
 			}
 		}
 		if (freeplayMenu != null) {
-			if (freeplayMenu.active) {
-				//Sys.println(renderRate);
+            if (freeplayMenu.active && currentState != GAMEPLAY) {
 				freeplayMenu.render(renderRate);
 			}
 		}
@@ -496,29 +482,34 @@ class Main extends Application
 	}
 
 	function popupOptionsMenu() {
-		if (!optionsScreen.isVisible) optionsScreen.show();
+		if (!optionsScreen.isVisible)
+			optionsScreen.show();
 	}
 
 	function removeOptionsMenu() {
-		if (optionsScreen.isVisible) optionsScreen.hide();
+		if (optionsScreen.isVisible)
+			optionsScreen.hide();
 	}
 
 	function popupFreeplayMenu() {
-		if (!freeplayScreen.isVisible) freeplayScreen.show();
+		if (!freeplayScreen.isVisible)
+			freeplayScreen.show();
 	}
 
 	function removeFreeplayMenu() {
-		if (freeplayScreen.isVisible) freeplayScreen.hide();
+		if (freeplayScreen.isVisible)
+			freeplayScreen.hide();
 	}
 
 	function popupStoryMenu() {
-		if (!storyScreen.isVisible) storyScreen.show();
+		if (!storyScreen.isVisible)
+			storyScreen.show();
 	}
 
 	function removeStoryMenu() {
-		if (storyScreen.isVisible) storyScreen.hide();
+		if (storyScreen.isVisible)
+			storyScreen.hide();
 	}
-
 
 	function resize(w:Int, h:Int) {
 		peoteView.resize(w, h);

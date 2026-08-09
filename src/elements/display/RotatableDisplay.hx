@@ -11,14 +11,14 @@ class RotatableDisplay extends Display {
 	var uSin:UniformVec2;
 	var uCenter:UniformVec2;
 
-	static var sinVec:Vec2 = {x: 1.0, y: 0.0};
+	// Per-instance sinVec — static was causing all displays to share rotation state
+	var sinVec:Vec2;
 
 	public function new(x:Int, y:Int, width:Int, height:Int, color = 0x00000000) {
 		super(x, y, width, height, color);
 		uAngle = new UniformFloat(0.0);
 
-		sinVec.x = 1.0;
-		sinVec.y = 0.0;
+		sinVec = {x: 1.0, y: 0.0};
 		uSin = new UniformVec2(sinVec);
 		uCenter = new UniformVec2({x: x + width * 0.5, y: y + height * 0.5});
 	}

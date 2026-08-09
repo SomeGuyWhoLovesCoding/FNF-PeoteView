@@ -14,7 +14,12 @@ import lime.ui.MouseWheelMode;
 class MainMenu {
 	inline static var fnfpVer = '0.94';
 
-	static var optionAnims:Array<String> = ['story mode', 'freeplay', /*'awards', 'credits',*/ 'options', 'backspace to exit'];
+	static var optionAnims:Array<String> = [
+		'story mode',
+		'freeplay', /*'awards', 'credits',*/
+		'options',
+		'backspace to exit'
+	];
 
 	var display:CustomDisplay;
 	var view:CustomDisplay;
@@ -37,7 +42,8 @@ class MainMenu {
 
 	function init(roof:CustomDisplay, display:CustomDisplay, view:CustomDisplay) {
 		selectedAlpha = 1.0;
-		for (i in 0...alphaLerps.length) alphaLerps[i] = 1.0;
+		for (i in 0...alphaLerps.length)
+			alphaLerps[i] = 1.0;
 		this.display = display;
 		this.view = view;
 		this.roof = roof;
@@ -111,8 +117,8 @@ class MainMenu {
 			if (Main.current.upscale) {
 				optionProg.injectIntoFragmentShader(Shaders.UPSCALE_FRAGMENT_SHADER);
 				optionProg.setColorFormula('
-					iconPixel(${texName}_ID, vTexCoord, vec2(spriteW, 0.0), vec2(spriteH, 0.0)) * color
-				');
+                                        iconPixel(${texName}_ID, vTexCoord, vec2(spriteW, 0.0), vec2(spriteH, 0.0)) * color
+                                ');
 			}
 		}
 
@@ -124,12 +130,12 @@ class MainMenu {
 		haxe.Timer.delay(addEvents, 100);
 
 		actions = [
-			Controls.Action.UI_DOWN => { action: down },
-			Controls.Action.UI_UP => { action: up },
-			Controls.Action.UI_LEFT => { action: left },
-			Controls.Action.UI_RIGHT => { action: right },
-			Controls.Action.UI_ACCEPT => { action: accept },
-			Controls.Action.GAME_DEBUG => { action: goToEditors }
+			Controls.Action.UI_DOWN => {action: down},
+			Controls.Action.UI_UP => {action: up},
+			Controls.Action.UI_LEFT => {action: left},
+			Controls.Action.UI_RIGHT => {action: right},
+			Controls.Action.UI_ACCEPT => {action: accept},
+			Controls.Action.GAME_DEBUG => {action: goToEditors}
 		];
 	}
 
@@ -143,33 +149,26 @@ class MainMenu {
 	 * @param o `nav.value()`.
 	 */
 	inline function optionYFormula(i:Int, o:Int) {
-		return (
-			(150 -
-				(24 * (optionAnims.length - 1)
-			)
-		) + (125 * i)
-		) - (
-			6 * Math.min(o, optionAnims.length - 2)
-		);
+		return ((150 - (24 * (optionAnims.length - 1))) + (125 * i)) - (6 * Math.min(o, optionAnims.length - 2));
 	}
 
 	function update(deltaTime:Float) {
 		trace("shit dick");
-		if (optionBuf == null) return; // stupid
+		if (optionBuf == null)
+			return; // stupid
 		for (i in 0...optionBuf.length) {
-			trace("alr yes i'm getting there");
 			var option = optionBuf.getElement(i);
-			trace("HOLY SHIT YES I FUCKING KNEW IT");
 
 			var t = Math.min(deltaTime * 0.0115, 1);
-			if (t == 1) t = (1/lime.app.Application.current.window.frameRate) * 0.0115;
+			if (t == 1)
+				t = (1 / lime.app.Application.current.window.frameRate) * 0.0115;
 
-			trace("YES, PLEASE, I NEED THIS");
 			var anim = optionAnims[i];
 			trace("WOOHOOO!");
-			if (i == nav.value()) option.playAnimation(anim + ' white', true);
-			else option.playAnimation(anim + ' basic', true);
-			trace("NO FUCKING WAY YESSSS!");
+			if (i == nav.value())
+				option.playAnimation(anim + ' white', true);
+			else
+				option.playAnimation(anim + ' basic', true);
 
 			if (anim != 'backspace to exit') {
 				optionYLerps[i] = Tools.lerp(optionYLerps[i], optionYFormula(i, nav.value()), t);
@@ -185,37 +184,44 @@ class MainMenu {
 	}
 
 	function up(isDown:Bool, param:Int) {
-		if (!isDown || disposed) return;
+		if (!isDown || disposed)
+			return;
 		nav.scroll(-1);
 		nav.resetIfUnder(optionBuf.length - 1);
 		Main.current.playScrollSound();
 	}
 
 	function down(isDown:Bool, param:Int) {
-		if (!isDown || disposed) return;
+		if (!isDown || disposed)
+			return;
 		nav.scroll(1);
 		nav.resetIfOver(optionBuf.length);
 		Main.current.playScrollSound();
 	}
 
 	function left(isDown:Bool, param:Int) {
-		if (!isDown || disposed) return;
+		if (!isDown || disposed)
+			return;
 		nav.setTo(optionBuf.length - 1);
 		Main.current.playScrollSound();
 	}
 
 	function right(isDown:Bool, param:Int) {
-		if (!isDown || disposed) return;
+		if (!isDown || disposed)
+			return;
 		nav.setTo(optionBuf.length - 2);
 		Main.current.playScrollSound();
 	}
 
 	function accept(isDown:Bool, param:Int) {
-		if (!isDown || disposed) return;
+		if (!isDown || disposed)
+			return;
 		doIt();
 	}
 
 	function updateMenuOptions_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
+		if (disposed || optionBuf == null)
+			return;
 		nav.scroll(-Math.floor(y));
 		nav.resetIfBoth(optionBuf.length, optionBuf.length - 1);
 		Main.current.playScrollSound();
@@ -255,14 +261,16 @@ class MainMenu {
 	}
 
 	function mouseDown(x:Float, y:Float, button:MouseButton) {
+		if (disposed || optionBuf == null || view == null)
+			return;
 		var peoteView = Main.current.peoteView;
 		x = view.localX(x, peoteView);
 		y = view.localY(y, peoteView);
-		if (button != MouseButton.LEFT) return;
+		if (button != MouseButton.LEFT)
+			return;
 		for (i in 0...optionBuf.length) {
 			var option = optionBuf.getElement(i);
-			if (x >= option.x && x <= option.x + option.w
-			&& y >= (option.y - 15) && y <= option.y + (option.h - 15)) {
+			if (x >= option.x && x <= option.x + option.w && y >= (option.y - 15) && y <= option.y + (option.h - 15)) {
 				nav.setTo(i);
 				return;
 			}
@@ -270,21 +278,23 @@ class MainMenu {
 	}
 
 	function mouseUp(x:Float, y:Float, button:MouseButton) {
+		if (disposed || optionBuf == null || view == null)
+			return;
 		var peoteView = Main.current.peoteView;
 		x = view.localX(x, peoteView);
 		y = view.localY(y, peoteView);
-		if (button != MouseButton.LEFT) return;
+		if (button != MouseButton.LEFT)
+			return;
 		for (i in 0...optionBuf.length) {
 			var option = optionBuf.getElement(i);
-			if (x >= option.x && x <= option.x + option.w
-			&& y >= (option.y - 15) && y <= option.y + (option.h - 15)
-			&& i == nav.value())
+			if (x >= option.x && x <= option.x + option.w && y >= (option.y - 15) && y <= option.y + (option.h - 15) && i == nav.value())
 				doIt();
 		}
 	}
 
 	function goToEditors(isDown:Bool, param:Int) {
-		if (!isDown) return;
+		if (!isDown)
+			return;
 		removeEvents();
 		Main.switchState(EDITOR_MENU);
 	}
@@ -322,8 +332,6 @@ class MainMenu {
 
 		view.removeProgram(backgroundProg);
 		view = null;
-
-		Main.current.freeplayMenu.dispose();
 
 		disposed = true;
 	}
