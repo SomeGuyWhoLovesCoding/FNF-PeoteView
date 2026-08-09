@@ -221,7 +221,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		for (i in 0...7) {
 			alphabet.updateRowText(i, incrementBest);
 		}
-		alphabet.updateBuffer();
+		alphabet.buffer.update();
 	}
 
 	function cancelBinding() {
@@ -391,7 +391,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		Main.current.controls.reload();
 
 		if (alphabet != null && !closed) {
-			alphabet.updateBuffer();
+			alphabet.buffer.update();
 		}
 
 		if (parent != null && parent.opened) {

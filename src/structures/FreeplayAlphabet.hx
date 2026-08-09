@@ -75,8 +75,8 @@ class FreeplayAlphabet {
 		if (Main.current.upscale) {
 			songTextsProg.injectIntoFragmentShader(Shaders.UPSCALE_FRAGMENT_SHADER);
 			songTextsProg.setColorFormula('
-				iconPixel(${texName}_ID, vTexCoord, vec2(spriteW, 0.0), vec2(spriteH, 0.0)) * color
-			');
+                                iconPixel(${texName}_ID, vTexCoord, vec2(spriteW, 0.0), vec2(spriteH, 0.0)) * color
+                        ');
 		}
 	}
 
@@ -279,10 +279,11 @@ class FreeplayAlphabet {
 		return iconX;
 	}
 
-	function updateBuffer() {
-		if (isDisposed || songTextsBuf == null)
-			return;
-		songTextsBuf.update();
+	/** Expose the underlying buffer so callers can do `alphabet.buffer.update()` directly. **/
+	var buffer(get, never):Buffer<Actor>;
+
+	inline function get_buffer():Buffer<Actor> {
+		return songTextsBuf;
 	}
 
 	function addPrograms() {

@@ -150,7 +150,7 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		for (i in 0...7) {
 			alphabet.updateRowText(i, incrementBest);
 		}
-		alphabet.updateBuffer();
+		alphabet.buffer.update();
 	}
 
 	// -------------------- MOUSE HANDLERS (full implementation) --------------------
@@ -242,7 +242,7 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		}
 
 		if (alphabet != null && !closed) {
-			alphabet.updateBuffer();
+			alphabet.buffer.update();
 		}
 
 		Main.current.playCancelSound();

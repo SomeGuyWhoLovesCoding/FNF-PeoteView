@@ -20,6 +20,14 @@ class FreeplayScreen implements IAlphabetScrollHost {
 	}
 
 	static var songIconsBuf(default, null):Buffer<HealthBarSprite>;
+
+	/** Expose the song-icons buffer so callers can do `freeplayScreen.buffer.update()` directly. **/
+	static var buffer(get, never):Buffer<HealthBarSprite>;
+
+	inline static function get_buffer():Buffer<HealthBarSprite> {
+		return songIconsBuf;
+	}
+
 	static var songIconsProg(default, null):CustomProgram;
 
 	var songsAvailable(default, null):Array<ChapterSong> = [];
@@ -254,10 +262,8 @@ class FreeplayScreen implements IAlphabetScrollHost {
 			updateSongIcon(i, incrementBest, iconX);
 		}
 
-		alphabet.updateBuffer();
-		if (songIconsBuf != null) {
-			songIconsBuf.update();
-		}
+		alphabet.buffer.update();
+		buffer.update();
 
 		xLerpPrev = xLerp;
 	}
