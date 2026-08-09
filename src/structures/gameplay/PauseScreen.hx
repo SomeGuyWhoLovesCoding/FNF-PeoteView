@@ -16,6 +16,7 @@ import lime.ui.MouseWheelMode;
 @:publicFields
 class PauseScreen {
 	var disposed(default, null):Bool = false;
+
 	private static var display(default, null):CustomDisplay;
 	static var pauseBuf(default, null):Buffer<StoryModeSprite>;
 	static var pauseProg(default, null):CustomProgram;
@@ -59,10 +60,10 @@ class PauseScreen {
 		diffText.y = 1;
 
 		actions = [
-			Controls.Action.UI_UP => { action: up },
-			Controls.Action.UI_DOWN => { action: down },
-			Controls.Action.UI_ACCEPT => { action: accept },
-			Controls.Action.UI_BACK => { action: back }
+			Controls.Action.UI_UP => {action: up},
+			Controls.Action.UI_DOWN => {action: down},
+			Controls.Action.UI_ACCEPT => {action: accept},
+			Controls.Action.UI_BACK => {action: back}
 		];
 	}
 
@@ -70,7 +71,8 @@ class PauseScreen {
 	var bgAlphaLerp:Float = 0.0;
 
 	function update(deltaTime:Float) {
-		if (display == null) return;
+		if (display == null)
+			return;
 
 		if (!opened && display.color.aF == 0) {
 			shutDown();
@@ -78,7 +80,8 @@ class PauseScreen {
 		}
 
 		var ratio = Math.min(deltaTime * 0.015, 1.0);
-		if (ratio == 1) ratio = (1/lime.app.Application.current.window.frameRate) * 0.015;
+		if (ratio == 1)
+			ratio = (1 / lime.app.Application.current.window.frameRate) * 0.015;
 
 		alphaLerp = Tools.lerp(alphaLerp, (opened && !atOptionsMenu) ? 1.0 : 0.0, ratio);
 		bgAlphaLerp = Tools.lerp(bgAlphaLerp, opened ? 1.0 : 0.0, ratio);
@@ -154,8 +157,7 @@ class PauseScreen {
 			case LEFT:
 				for (i in 0...pauseOptions.length) {
 					var option = pauseOptions[i];
-					if (x >= option.x && x <= option.x + option.w
-					&& y >= option.y && y <= option.y + option.h) {
+					if (x >= option.x && x <= option.x + option.w && y >= option.y && y <= option.y + option.h) {
 						pauseNav.setTo(i);
 						haxe.Timer.delay(doIt, 20);
 						return;
@@ -180,8 +182,10 @@ class PauseScreen {
 		try {
 			for (i in 0...pauseOptions.length) {
 				var pauseOption = pauseOptions[i];
-				if (i == pauseNav.value()) pauseOption.c = Color.GREY3;
-				else pauseOption.c = Color.WHITE;
+				if (i == pauseNav.value())
+					pauseOption.c = Color.GREY3;
+				else
+					pauseOption.c = Color.WHITE;
 				pauseOption.c.aF = 0.0;
 				pauseOption.c.luminanceF = 0.0;
 				pauseBuf.addElement(pauseOptions[i]);
@@ -194,7 +198,7 @@ class PauseScreen {
 		} catch (e) {}
 
 		haxe.Timer.delay(function() {
-    		haxe.Timer.delay(addEvents, 1);
+			haxe.Timer.delay(addEvents, 1);
 		}, 1);
 
 		if (!pauseProg.isIn(display)) {
@@ -205,7 +209,8 @@ class PauseScreen {
 	var eventsActive(default, null):Bool = false;
 
 	function addEvents() {
-		if (eventsActive) return;
+		if (eventsActive)
+			return;
 		eventsActive = true;
 		var window = lime.app.Application.current.window;
 		Main.current.controls.bindTo(actions);
@@ -214,7 +219,8 @@ class PauseScreen {
 	}
 
 	function removeEvents() {
-		if (!eventsActive) return;
+		if (!eventsActive)
+			return;
 		eventsActive = false;
 		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
@@ -233,7 +239,8 @@ class PauseScreen {
 	}
 
 	function shutDown() {
-		if (!pauseProg.isIn(display)) return;
+		if (!pauseProg.isIn(display))
+			return;
 
 		try {
 			for (i in 0...pauseOptions.length) {

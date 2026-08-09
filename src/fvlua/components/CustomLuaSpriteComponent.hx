@@ -22,7 +22,7 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 	public var customTexts(default, null):FakeStringMap<Text>;
 
 	public function new(_parent:FunkinViewLua) {
-        super(_parent);
+		super(_parent);
 
 		customBuffers = new FakeStringMap<Buffer<LuaSprite>>();
 		customPrograms = new FakeStringMap<LuaProgram>();
@@ -67,27 +67,28 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 
 			return FunkinViewLua.Function_Continue;
 		});
-		vm.addCallback("customTextNew", (textElem:String, x:Int, y:Int, toDisplay:String, text:String, font:String = "vcr",
-			color:String = "white", outlineSize:Int = 0, outlineColor:String = "black") -> {
-			if (textElem == "" || textElem == null) {
-				FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
-				return FunkinViewLua.Function_Stop;
-			}
-			var displayValue = toDisplay.toLowerCase();
-			var display = Reflect.field(playField, toDisplay.toLowerCase());
-			if (display == null) {
-				FunkinViewLua.error("Display not found: " + toDisplay.toLowerCase());
-				return FunkinViewLua.Function_Stop;
-			}
-			var sprite = new Text(textElem, x, y, display, text, font);
+		vm.addCallback("customTextNew",
+			(textElem:String, x:Int, y:Int, toDisplay:String, text:String, font:String = "vcr", color:String = "white", outlineSize:Int = 0,
+					outlineColor:String = "black") -> {
+					if (textElem == "" || textElem == null) {
+						FunkinViewLua.error("Custom Text's Key cannot be empty or nil!");
+						return FunkinViewLua.Function_Stop;
+					}
+					var displayValue = toDisplay.toLowerCase();
+					var display = Reflect.field(playField, toDisplay.toLowerCase());
+					if (display == null) {
+						FunkinViewLua.error("Display not found: " + toDisplay.toLowerCase());
+						return FunkinViewLua.Function_Stop;
+					}
+					var sprite = new Text(textElem, x, y, display, text, font);
 
-			sprite.color = FunkinViewLua.colorFromStringUtil(color);
-			sprite.outlineSize = outlineSize;
-			sprite.outlineColor = FunkinViewLua.colorFromStringUtil(outlineColor);
-			customTexts.set(textElem, sprite);
+					sprite.color = FunkinViewLua.colorFromStringUtil(color);
+					sprite.outlineSize = outlineSize;
+					sprite.outlineColor = FunkinViewLua.colorFromStringUtil(outlineColor);
+					customTexts.set(textElem, sprite);
 
-			return FunkinViewLua.Function_Continue;
-		});
+					return FunkinViewLua.Function_Continue;
+				});
 
 		vm.addCallback("customTextHide", (textElem:String) -> {
 			if (textElem == "" || textElem == null) {
@@ -137,7 +138,7 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 			var program = customPrograms.get(programName);
-			//trace('Custom Program: $program');
+			// trace('Custom Program: $program');
 			var texPath = Paths.asset(texturePNG);
 			if (!FileSystem.exists(texPath)) {
 				FunkinViewLua.error("Image not found: " + texPath);
@@ -743,7 +744,7 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 			for (entry in colors) {
 				var marker:String = entry.marker;
 				var color:Color = FunkinViewLua.colorFromStringUtil(entry.color);
-				//trace("Color: " + color, entry.color);
+				// trace("Color: " + color, entry.color);
 				var outlineColor:Color = FunkinViewLua.colorFromStringUtil(entry.outlineColor ?? "0x00000000");
 				var outlineSize:Float = entry.outlineSize ?? 0.0;
 				pairs.push(new TextFormatMarkerPair(marker, color, outlineColor, outlineSize));
@@ -760,7 +761,9 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 			var sprite = customTexts.get(elemName);
-			try { sprite.removeProgram(); } catch(E) {}
+			try {
+				sprite.removeProgram();
+			} catch (E) {}
 			return FunkinViewLua.Function_Continue;
 		});
 		vm.addCallback("showText", (elemName:String) -> {
@@ -772,7 +775,9 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 			var sprite = customTexts.get(elemName);
-			try { sprite.addProgram(); } catch(E) {}
+			try {
+				sprite.addProgram();
+			} catch (E) {}
 			return FunkinViewLua.Function_Continue;
 		});
 
@@ -810,7 +815,7 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 	}
 
 	override public function dispose() {
-        super.dispose();
+		super.dispose();
 
 		for (customBuffer in customBuffers) {
 			if (customBuffer != null) {
@@ -848,7 +853,8 @@ class CustomLuaSpriteComponent extends LuaComponentObject {
 		customSprites = null;
 
 		for (customText in customTexts) {
-			if (customText != null && (customText != customTexts.get(GLOBAL_SCORE_TXT) && customText != customTexts.get(GLOBAL_WATMK_TXT))) {
+			if (customText != null
+				&& (customText != customTexts.get(GLOBAL_SCORE_TXT) && customText != customTexts.get(GLOBAL_WATMK_TXT))) {
 				customText.dispose();
 				customText = null;
 			}

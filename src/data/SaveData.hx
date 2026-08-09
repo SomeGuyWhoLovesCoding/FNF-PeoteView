@@ -51,12 +51,50 @@ class SaveData {
 						[[KeyCode.SPACE]],
 						[[KeyCode.A], [KeyCode.RIGHT]],
 						[[KeyCode.A], [KeyCode.SPACE], [KeyCode.RIGHT]],
-						[[KeyCode.A, KeyCode.LEFT], [KeyCode.S, KeyCode.DOWN], [KeyCode.W, KeyCode.UP], [KeyCode.D, KeyCode.RIGHT]],
-						[[KeyCode.A, KeyCode.LEFT], [KeyCode.S, KeyCode.DOWN], [KeyCode.SPACE], [KeyCode.W, KeyCode.UP], [KeyCode.D, KeyCode.RIGHT]],
+						[
+							[KeyCode.A, KeyCode.LEFT],
+							[KeyCode.S, KeyCode.DOWN],
+							[KeyCode.W, KeyCode.UP],
+							[KeyCode.D, KeyCode.RIGHT]
+						],
+						[
+							[KeyCode.A, KeyCode.LEFT],
+							[KeyCode.S, KeyCode.DOWN],
+							[KeyCode.SPACE],
+							[KeyCode.W, KeyCode.UP],
+							[KeyCode.D, KeyCode.RIGHT]
+						],
 						[[KeyCode.S], [KeyCode.D], [KeyCode.F], [KeyCode.J], [KeyCode.K], [KeyCode.L]],
-						[[KeyCode.S], [KeyCode.D], [KeyCode.F], [KeyCode.SPACE], [KeyCode.J], [KeyCode.K], [KeyCode.L]],
-						[[KeyCode.A], [KeyCode.S], [KeyCode.D], [KeyCode.F], [KeyCode.H], [KeyCode.J], [KeyCode.K], [KeyCode.L]],
-						[[KeyCode.A], [KeyCode.S], [KeyCode.D], [KeyCode.F], [KeyCode.SPACE], [KeyCode.H], [KeyCode.J], [KeyCode.K], [KeyCode.L]]
+						[
+							[KeyCode.S],
+							[KeyCode.D],
+							[KeyCode.F],
+							[KeyCode.SPACE],
+							[KeyCode.J],
+							[KeyCode.K],
+							[KeyCode.L]
+						],
+						[
+							[KeyCode.A],
+							[KeyCode.S],
+							[KeyCode.D],
+							[KeyCode.F],
+							[KeyCode.H],
+							[KeyCode.J],
+							[KeyCode.K],
+							[KeyCode.L]
+						],
+						[
+							[KeyCode.A],
+							[KeyCode.S],
+							[KeyCode.D],
+							[KeyCode.F],
+							[KeyCode.SPACE],
+							[KeyCode.H],
+							[KeyCode.J],
+							[KeyCode.K],
+							[KeyCode.L]
+						]
 					],
 					reset: KeyCode.R,
 					pause: KeyCode.RETURN,
@@ -113,7 +151,7 @@ class SaveData {
 			var fo:FileOutput = File.write("save.dat");
 			fo.writeString(result);
 			fo.close();
-		} catch(e) {} // for rare cases like actually editing the save file itself
+		} catch (e) {} // for rare cases like actually editing the save file itself
 	}
 
 	var controls:SaveData_Controls;
@@ -163,7 +201,6 @@ class Controls_Game {
 	var reset:Int;
 	var debug:Int;
 }
-
 
 /**
 	The save data preferences category.

@@ -7,14 +7,7 @@ package structures.options;
 **/
 @:publicFields
 class GraphicsDisplay {
-	public static var graphicsStr(default, null):Array<String> = [
-		"resolution",
-		"fullscreen",
-		"vsync",
-		"antiAliasing",
-		"frameRate",
-		"shaders"
-	];
+	public static var graphicsStr(default, null):Array<String> = ["resolution", "fullscreen", "vsync", "antiAliasing", "frameRate", "shaders"];
 
 	// Descriptions for each graphics option (placeholder, modify as needed)
 	static var graphicsDescriptions:Array<String> = [
@@ -58,7 +51,7 @@ class GraphicsDisplay {
 			// TODO: Update graphics option display based on current settings
 			OptionsMenu.optionsBuf.updateElement(option);
 		}
-		
+
 		// Update description text for the selected option.
 		var ratio = Math.min(deltaTime * 0.015, 1.0);
 		var selectedIndex = parent.optionsNav.value();
@@ -73,13 +66,14 @@ class GraphicsDisplay {
 		}
 		infoText.x = Main.INITIAL_WIDTH - infoText.width - 4;
 		infoText.y = 4;
-		
+
 		var show = parent.opened && selectedIndex >= 0 && selectedIndex < graphicsStr.length;
 		infoText.alpha = Tools.lerp(infoText.alpha, show ? 1.0 : 0.0, ratio);
 	}
 
 	function destroyOptions() {
-		if (closed) return;
+		if (closed)
+			return;
 		closed = true;
 		while (options.length != 0) {
 			var option = options.pop();

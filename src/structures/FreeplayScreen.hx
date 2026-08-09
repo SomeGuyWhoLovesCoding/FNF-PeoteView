@@ -23,9 +23,11 @@ class FreeplayScreen implements IAlphabetScrollHost {
 	static var songIconsProg(default, null):CustomProgram;
 
 	var songsAvailable(default, null):Array<ChapterSong> = [];
+
 	static var songIconGroup(default, null):Array<HealthBarSprite> = [];
 
 	var parent(default, null):FreeplayMenu;
+
 	static var alphabet(default, null):FreeplayAlphabet;
 
 	var disposed(default, null):Bool = true;
@@ -49,9 +51,9 @@ class FreeplayScreen implements IAlphabetScrollHost {
 		if (FreeplayMenu.display == null) {
 			throw "FreeplayMenu.display not initialized!";
 		}
-		
+
 		clearSongIcons();
-		
+
 		// Create once, reuse forever
 		if (alphabet == null) {
 			alphabet = new FreeplayAlphabet(this, display);
@@ -60,9 +62,9 @@ class FreeplayScreen implements IAlphabetScrollHost {
 			alphabet.addPrograms();
 		} else {
 			// Reset existing alphabet without recreating
-			alphabet.unloadChars();        // Clear all characters
-			alphabet.host = this;          // Update host reference
-			alphabet.reload();             // Recreate characters
+			alphabet.unloadChars(); // Clear all characters
+			alphabet.host = this; // Update host reference
+			alphabet.reload(); // Recreate characters
 		}
 
 		if (songIconsBuf == null) {
@@ -110,7 +112,8 @@ class FreeplayScreen implements IAlphabetScrollHost {
 		adds them with zero stall. Call once after display is initialized.
 	**/
 	function preWarm() {
-		if (display == null) return;
+		if (display == null)
+			return;
 
 		// Do a full reload to create alphabet, song icons buffer/program, and
 		// populate icon elements — this is where all the heavy allocation lives.
@@ -131,7 +134,7 @@ class FreeplayScreen implements IAlphabetScrollHost {
 		songIconGroup = [];
 		disposed = true;
 	}
-	
+
 	function clearSongIcons() {
 		// Remove all existing icons from buffer
 		for (icon in songIconGroup) {
@@ -145,18 +148,19 @@ class FreeplayScreen implements IAlphabetScrollHost {
 	}
 
 	function unload() {
-		if (disposed) return;
-		
+		if (disposed)
+			return;
+
 		// Properly dispose alphabet instance
 		if (alphabet != null) {
 			alphabet.shutDown();
 		}
-		
+
 		songsAvailable.splice(0, songsAvailable.length);
-		
+
 		// Clear song icons
 		clearSongIcons();
-		
+
 		disposed = true;
 	}
 
@@ -171,7 +175,8 @@ class FreeplayScreen implements IAlphabetScrollHost {
 
 	inline function calcRatio(deltaTime:Float):Float {
 		var ratio = Math.max(Math.min(deltaTime * 0.015, 1), 0.00001);
-		if (ratio == 1) ratio = (1 / lime.app.Application.current.window.frameRate) * 0.015;
+		if (ratio == 1)
+			ratio = (1 / lime.app.Application.current.window.frameRate) * 0.015;
 		return ratio;
 	}
 
@@ -194,14 +199,13 @@ class FreeplayScreen implements IAlphabetScrollHost {
 	}
 
 	inline function calcIncrementBest():Int {
-		return songsAvailable.length > 7
-			? Math.floor(Math.min(Math.max(curSelectedLerp - 3, 0), songsAvailable.length - 7))
-			: 0;
+		return songsAvailable.length > 7 ? Math.floor(Math.min(Math.max(curSelectedLerp - 3, 0), songsAvailable.length - 7)) : 0;
 	}
 
 	function updateSongIcon(i:Int, incrementBest:Int, iconX:Float) {
-		if (i >= songIconGroup.length) return;
-		
+		if (i >= songIconGroup.length)
+			return;
+
 		var k = i + incrementBest;
 		if (k < 0 || k >= songsAvailable.length) {
 			// Hide icon if out of range
@@ -216,8 +220,9 @@ class FreeplayScreen implements IAlphabetScrollHost {
 		var song = songsAvailable[kClamped];
 
 		var icon = songIconGroup[i];
-		if (icon == null) return;
-		
+		if (icon == null)
+			return;
+
 		icon.changeID(Tools.fromIconGridXMLCharacter(song.icon)[0]);
 		var alpha = alphabet.calcItemAlpha(k) * alphaLerp;
 		icon.alpha = alpha;
@@ -235,7 +240,8 @@ class FreeplayScreen implements IAlphabetScrollHost {
 			return;
 		}
 
-		if (alphabet == null || alphabet.isDisposed) return;
+		if (alphabet == null || alphabet.isDisposed)
+			return;
 
 		alphabet.setDeltaTime(deltaTime);
 

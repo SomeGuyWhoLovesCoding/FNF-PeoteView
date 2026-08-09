@@ -12,10 +12,10 @@ class ColorSpan {
 	public var outlineSize:Float;
 
 	public function new(start:Int, end:Int, color:Color, outlineColor:Color, outlineSize:Float) {
-		this.start        = start;
-		this.end          = end;
-		this.color        = color;
+		this.start = start;
+		this.end = end;
+		this.color = color;
 		this.outlineColor = outlineColor;
-		this.outlineSize  = outlineSize;
+		this.outlineSize = outlineSize;
 	}
 }

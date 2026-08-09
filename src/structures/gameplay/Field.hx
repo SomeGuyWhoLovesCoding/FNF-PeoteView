@@ -92,13 +92,14 @@ class Field {
 	}
 
 	function stepHit(step:Float) {
-		if (isInGameOver) return;
+		if (isInGameOver)
+			return;
 		for (actor in actors) {
 			if (actor.singAnimationRunning) {
-				//actor.singStepElapsed++;
+				// actor.singStepElapsed++;
 				// ok yea this is it
 				// this is how psych did its sustain note play
-				// 
+				//
 				if (actor.shake)
 					actor.singDurationElapsed = 0;
 			}
@@ -115,8 +116,10 @@ class Field {
 
 		var beatIsEven = beat % 2 == 0;
 		for (actor in actors) {
-			if (actor == spectator) continue;
-			if (!actor.animationRunning && beatIsEven) actor.playAnimation("idle");
+			if (actor == spectator)
+				continue;
+			if (!actor.animationRunning && beatIsEven)
+				actor.playAnimation("idle");
 		}
 		spectator.playAnimation(beatIsEven ? "danceLeft" : "danceRight");
 	}
@@ -178,7 +181,8 @@ class Field {
 
 	function sing(index:Int, char:Actor, miss:Bool = false, shake:Bool = false, skipAnimation:Bool = false) {
 		char.shake = shake;
-		if (skipAnimation) return;
+		if (skipAnimation)
+			return;
 		if (miss) {
 			char.playAnimationFromMissId(index);
 			return;
@@ -200,7 +204,8 @@ class Field {
 
 		// defaults to when you want to implement your own custom camera logic
 		// whether you want to replicate the logic of vanilla's or if you just want some mid-song cutscene camera
-		if (turnoncustomcamera) return;
+		if (turnoncustomcamera)
+			return;
 
 		targetCamera.x = defaultCameraXpos[note.type];
 		targetCamera.y = defaultCameraYpos[note.type];
@@ -213,7 +218,7 @@ class Field {
 
 	inline function completeSustain(note:MetaNote) {
 		var char = charFromNoteType(note.type);
-		//char.singAnimationFinished = true;
+		// char.singAnimationFinished = true;
 		sing(note.index, char, false, false, true);
 	}
 
@@ -234,13 +239,12 @@ class Field {
 	}
 
 	// GAME OVER IMPL
-
 	var isInGameOver:Bool;
 	var gameOverSound:Int = -1;
 	var gameOverMusic:Int = -1;
 	var gameOverConfirm:Int = -1;
 	var actorOnGameOver:Actor;
-    var gameOverConfirmed:Bool;
+	var gameOverConfirmed:Bool;
 
 	function gameOver() {
 		_gameover_end_call = (x:Float, y:Float, button:MouseButton) -> {
@@ -313,5 +317,5 @@ class Field {
 	}
 
 	// to fix the stupid shit that can't be fixed anywhere else
-	var _gameover_end_call:(Float, Float, MouseButton)->Void;
+	var _gameover_end_call:(Float, Float, MouseButton) -> Void;
 }

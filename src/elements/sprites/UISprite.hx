@@ -1,17 +1,16 @@
 // Note to self: 2 months into funkin view development, I did a stress test on this by rendering 4000 and it turns out the bigger the texture dimensions the slower it runs
 // You're rendering more pixels
 // Also EVERYTHING RELATED TO THE UI SHEET IN THE CLASS IS 100% HARDCODED.
-
 package elements.sprites;
 
 /**
-	* This is a class containing texture coordinate hacks to stuff sprites related to the UI to one image.
-	* @since Development
+ * This is a class containing texture coordinate hacks to stuff sprites related to the UI to one image.
+ * @since Development
 **/
 @:publicFields
 class UISprite implements Element {
 	// position in pixel (relative to upper left corner of Display)
-	@posX @formula("uDisplayRotateX(aPos)")  var x:Float = 0.0;
+	@posX @formula("uDisplayRotateX(aPos)") var x:Float = 0.0;
 	@posY @formula("uDisplayRotateY(aPos)") var y:Float = 0.0;
 
 	// size in pixel
@@ -25,8 +24,8 @@ class UISprite implements Element {
 	@texH var clipHeight:Int = 200;
 
 	// extra tex attributes to adjust texture within the clip
-	@texPosX  var clipPosX:Int = 0;
-	@texPosY  var clipPosY:Int = 0;
+	@texPosX var clipPosX:Int = 0;
+	@texPosY var clipPosY:Int = 0;
 	@custom @varying @texSizeX var clipSizeX:Int = 200;
 	@custom @varying @texSizeY var clipSizeY:Int = 200;
 
@@ -66,37 +65,37 @@ class UISprite implements Element {
 
 	var type:UISpriteType = NONE;
 
-    var isNone(get, never):Bool;
+	var isNone(get, never):Bool;
 
 	inline function get_isNone() {
 		return type == NONE;
 	}
 
-    var isTimeBar(get, never):Bool;
+	var isTimeBar(get, never):Bool;
 
 	inline function get_isTimeBar() {
 		return type == TIME_BAR;
 	}
 
-    var isRatingPopup(get, never):Bool;
+	var isRatingPopup(get, never):Bool;
 
 	inline function get_isRatingPopup() {
 		return type == RATING_POPUP;
 	}
 
-    var isComboNumber(get, never):Bool;
+	var isComboNumber(get, never):Bool;
 
 	inline function get_isComboNumber() {
 		return type == COMBO_NUMBER;
 	}
 
-    var isCountdownPopup(get, never):Bool;
+	var isCountdownPopup(get, never):Bool;
 
 	inline function get_isCountdownPopup() {
 		return type == COUNTDOWN_POPUP;
 	}
 
-    var isPauseOption(get, never):Bool;
+	var isPauseOption(get, never):Bool;
 
 	inline function get_isPauseOption() {
 		return type == PAUSE_OPTION;
@@ -104,14 +103,10 @@ class UISprite implements Element {
 
 	var curID(default, null):Int;
 
-	var OPTIONS = { texRepeatX: false, texRepeatY: false, blend: true };
+	var OPTIONS = {texRepeatX: false, texRepeatY: false, blend: true};
 
 	// This makes it so we don't have create a separate spritesheet for it and leave it in the ui spritesheet.
-	private static var hardcoded_pause_option_values(default, null):Array<Array<Int>> = [
-		[0, 600, 300, 75],
-		[0, 675, 300, 75],
-		[300, 600, 300, 150]
-	];
+	private static var hardcoded_pause_option_values(default, null):Array<Array<Int>> = [[0, 600, 300, 75], [0, 675, 300, 75], [300, 600, 300, 150]];
 
 	static function init(program:CustomProgram, name:String, texture:Texture) {
 		// creates a texture-layer named "name"
@@ -124,8 +119,7 @@ class UISprite implements Element {
 			program.setColorFormula('
 				mix(iconPixel(${name}_ID, vTexCoord, vec2(clipSizeX, 0.0), vec2(clipSizeY, 0.0)), c, plainColor) * alphaColor
 			');
-		}
-		else {
+		} else {
 			program.injectIntoFragmentShader('
 				vec4 getTexColor( int textureID, vec4 c, float plainColor )
 				{
@@ -138,13 +132,13 @@ class UISprite implements Element {
 
 	function new() {}
 
-    inline function changeID(id:Int) {
+	inline function changeID(id:Int) {
 		var wValue = 300;
 		var hValue = 150;
 		var xValue = 0;
 		var yValue = 0;
 
-        if (isComboNumber) {
+		if (isComboNumber) {
 			wValue = 60;
 			hValue = 72;
 			yValue = 300;
@@ -198,7 +192,7 @@ class UISprite implements Element {
 		clipY = yValue;
 
 		curID = id;
-    }
+	}
 }
 
 private enum abstract UISpriteType(Int) {

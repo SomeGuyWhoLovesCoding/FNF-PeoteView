@@ -15,12 +15,12 @@ class TextCharSprite implements Element {
 	// extra tex attributes for clipping
 	@texX var clipX:Int = 0;
 	@texY var clipY:Int = 0;
-	@texW var clipWidth:Int  = 1;
+	@texW var clipWidth:Int = 1;
 	@texH var clipHeight:Int = 1;
 
 	// extra tex attributes to adjust texture within the clip
-	@texPosX  var clipPosX:Int = 0;
-	@texPosY  var clipPosY:Int = 0;
+	@texPosX var clipPosX:Int = 0;
+	@texPosY var clipPosY:Int = 0;
 	@varying @custom @texSizeX var clipSizeX:Int = 1;
 	@varying @custom @texSizeY var clipSizeY:Int = 1;
 
@@ -43,7 +43,6 @@ class TextCharSprite implements Element {
 	}
 
 	// outline implementation
-
 	@color var oc:Color = 0x000000FF;
 	@varying @custom var os:Float = 0.0;
 

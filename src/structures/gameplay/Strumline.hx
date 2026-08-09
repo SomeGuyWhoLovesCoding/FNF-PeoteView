@@ -153,11 +153,12 @@ class Strumline {
 
 		for (i in 0...length) {
 			var keybindArray = SaveData.state.controls.game.keybindArray;
-			var bind = keybindArray[length-1];
-			if (bind == null) return;
+			var bind = keybindArray[length - 1];
+			if (bind == null)
+				return;
 			var len = bind.length;
 			var keybind = bind[i];
-			//trace('On index $i on length $length');
+			// trace('On index $i on length $length');
 			keybinds[i] = i < len ? keybind[0] : -1;
 			if (keybind.length == 2)
 				keybindsTwo[i] = i < len ? keybind[1] : -1;
@@ -165,7 +166,8 @@ class Strumline {
 	}
 
 	function applyNoteskinProperties(handle:NoteskinHandle, mania:Int) {
-		if (handle == null) return;
+		if (handle == null)
+			return;
 		var cfgM = handle.data.configMania[mania];
 		this.offsetX = cfgM.offsetX;
 		this.offsetY = cfgM.offsetY;
@@ -243,10 +245,7 @@ class Strumline {
 
 		// Sustain release fires if: note exists, correct lane, was hit, and not yet resolved
 		var hitflag = File.getHitFlag(sustainIndex);
-		var sustainReleaseCallbackCanRun = sustainToRelease != null
-			&& sustainToRelease.index == index
-			&& File.getJudgement(sustainIndex)
-			&& !hitflag
+		var sustainReleaseCallbackCanRun = sustainToRelease != null && sustainToRelease.index == index && File.getJudgement(sustainIndex) && !hitflag
 			&& !rec.sustainResolved;
 
 		if (sustainReleaseCallbackCanRun) {
@@ -281,11 +280,11 @@ class Strumline {
 
 	function resetInputs() {
 		for (i in 0...length) {
-            var rec = receptors[i];
-            if (rec != null) {
-                rec.resetState();
-            }
-        }
+			var rec = receptors[i];
+			if (rec != null) {
+				rec.resetState();
+			}
+		}
 	}
 
 	function resetAnimations() {

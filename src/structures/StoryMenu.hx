@@ -14,15 +14,13 @@ class StoryMenu {
 
 	var nav(default, null):Navigation = new Navigation();
 
-	function new() {
-	}
+	function new() {}
 
 	static function init(disp:CustomDisplay):Void {
 		display = disp;
 	}
 
-	function update(deltaTime:Float) {
-	}
+	function update(deltaTime:Float) {}
 
 	function open() {
 		active = opened = true;
@@ -33,30 +31,33 @@ class StoryMenu {
 	}
 
 	function back(isDown:Bool, param:Int) {
-		if (!isDown) return;
+		if (!isDown)
+			return;
 		close();
 	}
 
 	function down(isDown:Bool, param:Int) {
-		if (!isDown) return;
+		if (!isDown)
+			return;
 		nav.scroll(1);
 		nav.resetIfOver(chaptersAvailable.length);
 	}
 
 	function up(isDown:Bool, param:Int) {
-		if (!isDown) return;
+		if (!isDown)
+			return;
 		nav.scroll(-1);
 		nav.resetIfUnder(chaptersAvailable.length - 1);
 	}
 
 	function enter(isDown:Bool, param:Int) {
-		if (!isDown) return;
+		if (!isDown)
+			return;
 	}
 
 	function shutDown() {
 		active = false;
 	}
 
-	function dispose() {
-	}
+	function dispose() {}
 }

@@ -14,39 +14,33 @@ import elements.actor.*;
 	@since Development
 **/
 @:publicFields
-class Actor extends ActorElement
-{
+class Actor extends ActorElement {
 	// ── Static caches ────────────────────────────────────────────────────────
-
-	static var buffers:Map<String, Buffer<ActorElement>>  = [];
-	static var programs:Map<String, CustomProgram>        = [];
-	static var cachedActorDatas:Map<String, ActorData>    = [];
-	static var cachedAtlases:Map<String, Any>         = [];
+	static var buffers:Map<String, Buffer<ActorElement>> = [];
+	static var programs:Map<String, CustomProgram> = [];
+	static var cachedActorDatas:Map<String, ActorData> = [];
+	static var cachedAtlases:Map<String, Any> = [];
 
 	// ── Instance identity ────────────────────────────────────────────────────
-
 	var name(default, null):String;
 	var tag(default, null):Null<String>;
 	var atlasType(default, null):AtlasType;
 	var data(default, null):ActorData;
 
 	// ── Render infrastructure ────────────────────────────────────────────────
-
 	var buffer(default, null):Buffer<ActorElement>;
 	var program(default, null):CustomProgram;
 	var display(default, null):CustomDisplay;
 	var folder:String = "";
 
 	// ── Animation callbacks ──────────────────────────────────────────────────
-
-	var finishAnim:String     = "";
+	var finishAnim:String = "";
 	var finishCallback:Void->Void;
 
 	// ── Animation state ──────────────────────────────────────────────────────
-
 	var startingFrameIndex:Int = 0;
-	var endingFrameIndex:Int   = 0;
-	var frameIndex:Int         = 0;
+	var endingFrameIndex:Int = 0;
+	var frameIndex:Int = 0;
 	var fps:Float;
 	var frameDurationMs:Float;
 	var frameTimeRemaining:Float;
@@ -60,52 +54,47 @@ class Actor extends ActorElement
 	var endingShakeFrame:Int;
 
 	var singDurationElapsed:Float = 0;
-	//var singAnimationFinished:Bool; //you set this manually on completeSustain
 
+	// var singAnimationFinished:Bool; //you set this manually on completeSustain
 	var animationRunning(default, null):Bool;
 	var singAnimationRunning(default, null):Bool;
 
 	// ── Precomputed pose caches ──────────────────────────────────────────────
-
 	private var precomputedSingPoses_animData:Array<ActorAnimationData> = [];
-	private var precomputedSingPoses_range:Array<Array<Int>>            = [];
+	private var precomputedSingPoses_range:Array<Array<Int>> = [];
 	private var precomputedMissPoses_animData:Array<ActorAnimationData> = [];
-	private var precomputedMissPoses_range:Array<Array<Int>>            = [];
+	private var precomputedMissPoses_range:Array<Array<Int>> = [];
 
 	// ── Construction ─────────────────────────────────────────────────────────
 
-	function new(display:CustomDisplay, tag:Null<String>, name:String,
-				 x:Int = 0, y:Int = 0, fps:Int = 24,
-				 ?folder:String = "images/characters/", addBufferAndProgram:Bool = true)
-	{
+	function new(display:CustomDisplay, tag:Null<String>, name:String, x:Int = 0, y:Int = 0, fps:Int = 24, ?folder:String = "images/characters/",
+			addBufferAndProgram:Bool = true) {
 		this.display = display;
 		super(Math.ffloor(x), Math.ffloor(y));
 
 		this.folder = folder;
-		this.name   = name;
-		this.tag    = tag;
+		this.name = name;
+		this.tag = tag;
 
 		setFps(fps);
 	}
 
 	// ── Create helper ────────────────────────────────────────────────────────
 
-	static function create(display:CustomDisplay, tag:String, name:String,
-				 x:Int = 0, y:Int = 0, fps:Int = 24,
-				 ?folder:String = "images/characters/", addBufferAndProgram:Bool = true):Actor {
+	static function create(display:CustomDisplay, tag:String, name:String, x:Int = 0, y:Int = 0, fps:Int = 24, ?folder:String = "images/characters/",
+			addBufferAndProgram:Bool = true):Actor {
 		var atlasKey = '$name/$folder';
-		var useAnimate = cachedAtlases[atlasKey] != null
-			? Std.isOfType(cachedAtlases[atlasKey], AnimateAtlas)
-			: pathExists(name, folder, SPRITEMAP) && pathExists(name, folder, ANIMATION);
-		return useAnimate
-			? new AnimateActor(display, tag, name, x, y, fps, folder, addBufferAndProgram)
-			: new SparrowActor(display, tag, name, x, y, fps, folder, addBufferAndProgram);
+		var useAnimate = cachedAtlases[atlasKey] != null ? Std.isOfType(cachedAtlases[atlasKey],
+			AnimateAtlas) : pathExists(name, folder, SPRITEMAP) && pathExists(name, folder, ANIMATION);
+		return useAnimate ? new AnimateActor(display, tag, name, x, y, fps, folder,
+			addBufferAndProgram) : new SparrowActor(display, tag, name, x, y, fps, folder, addBufferAndProgram);
 	}
 
 	// ── Buffer helpers ───────────────────────────────────────────────────────
 
 	inline function addToBuffer() {
-		if (buffer != null) buffer.addElement(this);
+		if (buffer != null)
+			buffer.addElement(this);
 	}
 
 	// ── Path helpers ─────────────────────────────────────────────────────────
@@ -113,11 +102,16 @@ class Actor extends ActorElement
 	static function path(name:String, folder:String, type:CharacterPathType) {
 		var result = 'assets/$folder$name';
 		switch (type) {
-			case SPRITESHEET: result += '/sheet.png';
-			case XML:         result += '/data.xml';
-			case ANIMATION:   result += '/Animation.json';
-			case SPRITEMAP:   result += '/spritemap1.png';
-			case DATA:        result += '/charData.json';
+			case SPRITESHEET:
+				result += '/sheet.png';
+			case XML:
+				result += '/data.xml';
+			case ANIMATION:
+				result += '/Animation.json';
+			case SPRITEMAP:
+				result += '/spritemap1.png';
+			case DATA:
+				result += '/charData.json';
 			default:
 		}
 		return result;
@@ -130,8 +124,8 @@ class Actor extends ActorElement
 	// ── FPS ──────────────────────────────────────────────────────────────────
 
 	function setFps(fps:Float) {
-		this.fps           = fps;
-		frameDurationMs    = 1000.0 / fps;
+		this.fps = fps;
+		frameDurationMs = 1000.0 / fps;
 		frameTimeRemaining = frameDurationMs;
 	}
 
@@ -141,7 +135,8 @@ class Actor extends ActorElement
 		var dat = data.data;
 		for (i in 0...anims.length) {
 			var str = anims[i];
-			if (!dat.exists(str)) continue;
+			if (!dat.exists(str))
+				continue;
 			var animData = data.data.get(str);
 			precomputedSingPoses_animData[i] = animData;
 			precomputeSingRange(i, animData);
@@ -152,7 +147,8 @@ class Actor extends ActorElement
 		var dat = data.data;
 		for (i in 0...anims.length) {
 			var str = anims[i];
-			if (!dat.exists(str)) continue;
+			if (!dat.exists(str))
+				continue;
 			var animData = data.data.get(str);
 			precomputedMissPoses_animData[i] = animData;
 			precomputeMissRange(i, animData);
@@ -161,6 +157,7 @@ class Actor extends ActorElement
 
 	/** Override in subclasses to cache atlas-specific range data. */
 	private function precomputeSingRange(i:Int, animData:ActorAnimationData) {}
+
 	private function precomputeMissRange(i:Int, animData:ActorAnimationData) {}
 
 	// ── Core animation setup ─────────────────────────────────────────────────
@@ -169,23 +166,23 @@ class Actor extends ActorElement
 	 * Apply charData animation metadata and delegate atlas-specific
 	 * frame-range setup to the subclass via `resolveAnimationRange`.
 	 */
-	function setupAnimation(symbolName:String, animData:ActorAnimationData,
-							sparrowRange:Array<Int>) {
+	function setupAnimation(symbolName:String, animData:ActorAnimationData, sparrowRange:Array<Int>) {
 		frameIndex = 0;
 
 		if (animData != null) {
 			adjust_x = -animData.offsets[0];
-			if (mirror) adjust_x = -adjust_x;
+			if (mirror)
+				adjust_x = -adjust_x;
 			adjust_y = -animData.offsets[1];
 
-			var ind  = animData.indices;
+			var ind = animData.indices;
 			indicesMode = ind != null && ind.length != 0;
-			indices     = ind;
-			loop        = animData.loop;
+			indices = ind;
+			loop = animData.loop;
 			setFps(animData.fps);
 		} else {
 			indicesMode = false;
-			indices     = null;
+			indices = null;
 		}
 
 		resolveAnimationRange(symbolName, sparrowRange);
@@ -199,10 +196,10 @@ class Actor extends ActorElement
 	// ── Public play / stop ───────────────────────────────────────────────────
 
 	function playAnimation(animKey:String, loop:Bool = false) {
-		this.loop  = loop;
-		var animData   = data.data.exists(animKey) ? data.data.get(animKey) : null;
+		this.loop = loop;
+		var animData = data.data.exists(animKey) ? data.data.get(animKey) : null;
 		var symbolName = animData != null ? animData.name : animKey;
-		this.name      = symbolName;
+		this.name = symbolName;
 
 		singAnimationRunning = false;
 		singDurationElapsed = 0;
@@ -212,11 +209,12 @@ class Actor extends ActorElement
 	}
 
 	function playAnimationFromSingId(id:Int, loop:Bool = false) {
-		id       %= precomputedSingPoses_animData.length;
+		id %= precomputedSingPoses_animData.length;
 		this.loop = loop;
 
 		var animData = precomputedSingPoses_animData[id];
-		if (animData == null) return;
+		if (animData == null)
+			return;
 		this.name = animData.name;
 
 		singAnimationRunning = true;
@@ -226,11 +224,12 @@ class Actor extends ActorElement
 	}
 
 	function playAnimationFromMissId(id:Int, loop:Bool = false) {
-		id       %= precomputedMissPoses_animData.length;
+		id %= precomputedMissPoses_animData.length;
 		this.loop = loop;
 
 		var animData = precomputedMissPoses_animData[id];
-		if (animData == null) return;
+		if (animData == null)
+			return;
 		this.name = animData.name;
 
 		singAnimationRunning = false;
@@ -245,7 +244,9 @@ class Actor extends ActorElement
 	}
 
 	/** Override to return the Sparrow frame range for a symbol (null for Animate). */
-	private function sparrowRangeFor(symbolName:String):Array<Int> { return null; }
+	private function sparrowRangeFor(symbolName:String):Array<Int> {
+		return null;
+	}
 
 	// ── Update / render ──────────────────────────────────────────────────────
 
@@ -254,7 +255,10 @@ class Actor extends ActorElement
 			|| (!data.disableSingDur && singDurationElapsed > data.singDur * Main.conductor.stepCrochet)) {
 			animationRunning = false;
 			if (finishAnim != "") {
-				if (finishCallback != null) { finishCallback(); finishCallback = null; }
+				if (finishCallback != null) {
+					finishCallback();
+					finishCallback = null;
+				}
 				playAnimation(finishAnim);
 				finishAnim = "";
 				singDurationElapsed = 0;
@@ -265,7 +269,8 @@ class Actor extends ActorElement
 	}
 
 	function update(deltaTime:Float) {
-		if (!animationRunning) return;
+		if (!animationRunning)
+			return;
 
 		// i think this is how psych engine does sing duration
 		// but i'm not entirely sure on that since this is
@@ -276,13 +281,16 @@ class Actor extends ActorElement
 
 		frameTimeRemaining -= deltaTime;
 		if (frameTimeRemaining <= 0) {
-			if (loop) frameIndex = (frameIndex + 1) % (endingFrameIndex - startingFrameIndex);
-			else      frameIndex++;
+			if (loop)
+				frameIndex = (frameIndex + 1) % (endingFrameIndex - startingFrameIndex);
+			else
+				frameIndex++;
 
 			if (shake && frameIndex > endingShakeFrame)
 				frameIndex = startingShakeFrame;
 
-			if (endOfAnimation() && !loop) return;
+			if (endOfAnimation() && !loop)
+				return;
 
 			changeFrame();
 			frameTimeRemaining = frameDurationMs;
@@ -293,7 +301,9 @@ class Actor extends ActorElement
 		renderImpl();
 	}
 
-	function updateBuffer() { render(); }
+	function updateBuffer() {
+		render();
+	}
 
 	/** Override in subclasses to push the right elements to the buffer. */
 	private function renderImpl() {}
@@ -304,7 +314,9 @@ class Actor extends ActorElement
 	// ── Dispose ──────────────────────────────────────────────────────────────
 
 	function dispose() {
-		if (buffer  != null) buffer.clear();
-		if (program != null) display.removeProgram(program);
+		if (buffer != null)
+			buffer.clear();
+		if (program != null)
+			display.removeProgram(program);
 	}
 }

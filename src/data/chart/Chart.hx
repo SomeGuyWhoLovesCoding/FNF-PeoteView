@@ -29,7 +29,8 @@ class Chart {
 		Sys.println('  [ Chart System ]  Parsing chart(s) from folder...');
 
 		var preferredPath = '$path/chart.json';
-		if (FileSystem.exists('$path/chart.fvc')) preferredPath = '$path/chart.fvc';
+		if (FileSystem.exists('$path/chart.fvc'))
+			preferredPath = '$path/chart.fvc';
 		var stamp = haxe.Timer.stamp();
 		File.loadChart(preferredPath);
 		Sys.println('  [ Chart System ]  Done! Took ${Tools.formatTime((haxe.Timer.stamp() - stamp) * 1000.0, true)} to load.');

@@ -22,7 +22,6 @@ class EditorMenu {
 	var roof:CustomDisplay;
 
 	// ── Cached buffers & programs ─────────────────────────────────────────
-
 	static var backgroundBuf:Buffer<Sprite>;
 	static var backgroundProg:CustomProgram;
 
@@ -30,7 +29,6 @@ class EditorMenu {
 	static var markupTxt:Text;
 
 	// ── Selection state ───────────────────────────────────────────────────
-
 	static var editorIndex:Int = 0;
 
 	// Lerp state for smooth markup movement
@@ -118,7 +116,8 @@ class EditorMenu {
 
 		view.addProgram(backgroundProg);
 
-		for (txt in optionTexts) txt.addProgram();
+		for (txt in optionTexts)
+			txt.addProgram();
 		markupTxt.addProgram();
 
 		markupTxt.alpha = 1.0;
@@ -133,7 +132,6 @@ class EditorMenu {
 	}
 
 	// ── Layout helpers ────────────────────────────────────────────────────
-
 	static inline var OPTION_START_Y:Float = 150;
 	static inline var OPTION_SPACING:Float = 125;
 
@@ -145,7 +143,8 @@ class EditorMenu {
 
 	function update(deltaTime:Float) {
 		var t = Math.min(deltaTime * 0.0115, 1);
-		if (t == 1) t = (1 / lime.app.Application.current.window.frameRate) * 0.0115;
+		if (t == 1)
+			t = (1 / lime.app.Application.current.window.frameRate) * 0.0115;
 
 		// Lerp markup Y to the selected option
 		var targetY = optionY(editorIndex);
@@ -163,21 +162,26 @@ class EditorMenu {
 	// ── Navigation ────────────────────────────────────────────────────────
 
 	function up(isDown:Bool, param:Int) {
-		if (!isDown || disposed) return;
+		if (!isDown || disposed)
+			return;
 		editorIndex--;
-		if (editorIndex < 0) editorIndex = optionLabels.length - 1;
+		if (editorIndex < 0)
+			editorIndex = optionLabels.length - 1;
 		Main.current.playScrollSound();
 	}
 
 	function down(isDown:Bool, param:Int) {
-		if (!isDown || disposed) return;
+		if (!isDown || disposed)
+			return;
 		editorIndex++;
-		if (editorIndex >= optionLabels.length) editorIndex = 0;
+		if (editorIndex >= optionLabels.length)
+			editorIndex = 0;
 		Main.current.playScrollSound();
 	}
 
 	function accept(isDown:Bool, param:Int) {
-		if (!isDown || disposed) return;
+		if (!isDown || disposed)
+			return;
 		switch (editorIndex) {
 			case 0: // Noteskin Editor
 				Main.switchState(NOTE_VIEW);
@@ -192,7 +196,8 @@ class EditorMenu {
 	// ── Key handler for BACKSPACE exit ────────────────────────────────────
 
 	function handleKeyDown(key:KeyCode, modifier:KeyModifier) {
-		if (disposed) return;
+		if (disposed)
+			return;
 
 		if (key == KeyCode.BACKSPACE || key == KeyCode.ESCAPE) {
 			Main.current.playCancelSound();
@@ -221,7 +226,8 @@ class EditorMenu {
 	function dispose() {
 		removeEvents();
 
-		for (txt in optionTexts) txt.removeProgram();
+		for (txt in optionTexts)
+			txt.removeProgram();
 		markupTxt.removeProgram();
 
 		view.removeProgram(backgroundProg);

@@ -36,7 +36,7 @@ class HealthBar {
 
 	public static var tex:Texture;
 
-	//var playerOGIcon:Any; // Tracks the player's original icon.
+	// var playerOGIcon:Any; // Tracks the player's original icon.
 
 	/**
 		Initializes the health bar.
@@ -46,7 +46,7 @@ class HealthBar {
 		if (hbBuf == null) {
 			hbBuf = new Buffer<HealthBarSprite>(16, 16);
 			hbProg = new CustomProgram(hbBuf);
-	
+
 			tex = TextureSystem.getTexture("hbTex");
 			HealthBarSprite.init(hbProg, "hbTex", tex);
 		}
@@ -110,8 +110,8 @@ class HealthBar {
 		var iconP1 = healthIcons[1] = new HealthBarSprite(); // Made more like FNF, so P1 is da player LOL.
 		iconP1.type = HEALTH_ICON;
 		iconP1.changeID(healthIconIDs[1][0]);
-		//playerOGIcon = healthIconIDs[1][0];
-		//trace(playerOGIcon + "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"); //alory's done that print lol
+		// playerOGIcon = healthIconIDs[1][0];
+		// trace(playerOGIcon + "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n"); //alory's done that print lol
 
 		iconP2.y = iconP1.y = bg.y - 75;
 		iconP1.flip = true;
@@ -120,8 +120,8 @@ class HealthBar {
 		iconP1.texH = 150;
 		iconP2.texW = 150;
 		iconP2.texH = 150;
-		//trace('tex dimensions: ${tex.width} x ${tex.height}');
-		//trace('iconP1 texW: ${iconP1.texW}, texH: ${iconP1.texH}');
+		// trace('tex dimensions: ${tex.width} x ${tex.height}');
+		// trace('iconP1 texW: ${iconP1.texW}, texH: ${iconP1.texH}');
 
 		hbBuf.addElement(iconP2);
 		hbBuf.addElement(iconP1);
@@ -146,7 +146,8 @@ class HealthBar {
 		Updates the health bar's body.
 	**/
 	function updateBar() {
-		if (parent.disposed || parent.died) return;
+		if (parent.disposed || parent.died)
+			return;
 
 		bg.y = parent.downScroll ? 90 : Main.INITIAL_HEIGHT - 90;
 
@@ -154,7 +155,8 @@ class HealthBar {
 
 		var part1 = parts[0];
 
-		if (part1 == null) return;
+		if (part1 == null)
+			return;
 
 		var healthIconColor = actors[(parent.flipHealthBar ? 1 : 0) + 1].data.colors;
 
@@ -166,11 +168,13 @@ class HealthBar {
 		part1.x = bg.x + healthBarXA;
 		part1.y = bg.y + healthBarYA;
 
-		if (part1.w < 0) part1.w = 0;
+		if (part1.w < 0)
+			part1.w = 0;
 
 		var part2 = parts[1];
 
-		if (part2 == null) return;
+		if (part2 == null)
+			return;
 
 		var healthIconColor = actors[(parent.flipHealthBar ? 0 : 1) + 1].data.colors;
 
@@ -183,18 +187,21 @@ class HealthBar {
 		part2.x = (bg.x + part1.w) + healthBarXA;
 		part2.y = bg.y + healthBarYA;
 
-		if (part2.w < 0) part2.w = 0;
+		if (part2.w < 0)
+			part2.w = 0;
 	}
 
 	/**
 		Updates the health icons.
 	**/
 	function updateHealthIcons() {
-		if (parent.disposed || parent.died) return;
+		if (parent.disposed || parent.died)
+			return;
 
 		var part1 = parts[1];
 
-		if (part1 == null) return;
+		if (part1 == null)
+			return;
 
 		var health = parent.health;
 		var icons = healthIcons;
@@ -214,11 +221,15 @@ class HealthBar {
 		var oppIco = parent.flipHealthBar ? iconP1 : iconP2;
 		var plrIco = parent.flipHealthBar ? iconP2 : iconP1;
 
-		if (health > 0.75) oppIco.changeID(ids[0][1]);
-		else oppIco.changeID(ids[0][0]);
+		if (health > 0.75)
+			oppIco.changeID(ids[0][1]);
+		else
+			oppIco.changeID(ids[0][0]);
 
-		if (health < 0.25) plrIco.changeID(ids[1][1]);
-		else plrIco.changeID(ids[1][0]);
+		if (health < 0.25)
+			plrIco.changeID(ids[1][1]);
+		else
+			plrIco.changeID(ids[1][0]);
 	}
 
 	/**

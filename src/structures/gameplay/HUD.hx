@@ -110,9 +110,9 @@ class HUD {
 		}
 		scoreTxt.addProgram();
 		/*scoreTxt.color = 0xFFDC8CFF;
-		scoreTxt.setMarkerPairs([new TextFormatMarkerPair('#1#', Color.WHITE, Color.RED),
-			new TextFormatMarkerPair('#2#', Color.GREEN, Color.BLUE),
-			new TextFormatMarkerPair('#3#', Color.BLACK, Color.PURPLE)]);*/
+			scoreTxt.setMarkerPairs([new TextFormatMarkerPair('#1#', Color.WHITE, Color.RED),
+				new TextFormatMarkerPair('#2#', Color.GREEN, Color.BLUE),
+				new TextFormatMarkerPair('#3#', Color.BLACK, Color.PURPLE)]); */
 
 		updateScoreText(0.0);
 
@@ -125,7 +125,8 @@ class HUD {
 		ratingPopup.alpha = 0.0;
 		uiBuf.addElement(ratingPopup);
 
-		for (i in 0...3) addComboNumber();
+		for (i in 0...3)
+			addComboNumber();
 
 		setHUDAlpha(0.0);
 	}
@@ -210,9 +211,11 @@ class HUD {
 		Updates the rating popup.
 	**/
 	function updateRatingPopup(deltaTime:Float) {
-		if (parent.disposed || parent.died) return;
+		if (parent.disposed || parent.died)
+			return;
 
-		if (ratingPopup == null) return;
+		if (ratingPopup == null)
+			return;
 
 		ratingPopup.alpha = Tools.fixElementAlphaFromFadingLerp(Tools.lerp(ratingPopup.alpha, 0.0, Math.min(deltaTime * 0.005, 1.0)));
 		ratingPopup.y = Tools.lerp(ratingPopup.y, 320, Math.min(deltaTime * 0.0125, 1.0));
@@ -224,15 +227,18 @@ class HUD {
 		Updates the combo numbers.
 	**/
 	function updateComboNumbers() {
-		if (parent.disposed || parent.died) return;
+		if (parent.disposed || parent.died)
+			return;
 
 		var numStr = Int64.toStr(parent.combo);
 
 		var comboNumberStrLen = numStr.length;
 
-		if (comboNumberStrLen <= 3) comboNumberStrLen = 3;
+		if (comboNumberStrLen <= 3)
+			comboNumberStrLen = 3;
 
-		while (comboNumbers.length < comboNumberStrLen) addComboNumber();
+		while (comboNumbers.length < comboNumberStrLen)
+			addComboNumber();
 
 		while (comboNumbers.length > comboNumberStrLen) {
 			var comboNumber = comboNumbers.pop();
@@ -242,7 +248,8 @@ class HUD {
 		for (i in 0...comboNumbers.length) {
 			var comboNumber = comboNumbers[i];
 
-			if (comboNumber == null) continue;
+			if (comboNumber == null)
+				continue;
 
 			var digit = numStr.charCodeAt(i <= numStr.length ? (numStr.length - 1) - i : numStr.length - 1) - 48;
 
@@ -255,7 +262,8 @@ class HUD {
 				}
 			}
 
-			if (comboNumber.curID != digit) comboNumber.changeID(i >= numStr.length ? 0 : digit);
+			if (comboNumber.curID != digit)
+				comboNumber.changeID(i >= numStr.length ? 0 : digit);
 
 			uiBuf.updateElement(comboNumber);
 		}
@@ -281,7 +289,8 @@ class HUD {
 	**/
 	function updateScoreText(deltaTime:Float) {
 		var scoreText = 'Score: ${parent.score} | Misses: ${parent.misses} | Accuracy: ${parent.accuracy.toString()}';
-		if (scoreTxt.text != scoreText) scoreTxt.text = scoreText;
+		if (scoreTxt.text != scoreText)
+			scoreTxt.text = scoreText;
 		scoreTxt.scale = Tools.lerp(scoreTxt.scale, 1.0, Math.min(deltaTime * 0.02, 1.0));
 		scoreTxt.x = healthBar.bg.x + ((healthBar.bg.w - scoreTxt.width) * 0.5);
 		scoreTxt.y = healthBar.bg.y + (healthBar.bg.h + 6);
@@ -291,17 +300,20 @@ class HUD {
 		Updates the timebar text.
 	**/
 	function updateTimeBarParts() {
-		if (parent.disposed || parent.died) return;
+		if (parent.disposed || parent.died)
+			return;
 
 		var part = timeBarParts[1];
 
-		if (part == null) return;
+		if (part == null)
+			return;
 
 		part.w = (timeBarBG.w - (timeBarWS * 2.0)) * (parent.songPosition / Mixer.length);
 		part.x = timeBarBG.x + timeBarXA;
 		part.y = timeBarBG.y + timeBarYA;
 
-		if (part.w < 0) part.w = 0;
+		if (part.w < 0)
+			part.w = 0;
 
 		uiBuf.updateElement(part);
 	}
@@ -319,7 +331,8 @@ class HUD {
 		Hides the rating popup.
 	**/
 	function hideRatingPopup() {
-		if (parent.disposed || parent.died) return;
+		if (parent.disposed || parent.died)
+			return;
 
 		ratingPopup.alpha = 0.0;
 		uiBuf.updateElement(ratingPopup);
@@ -329,7 +342,8 @@ class HUD {
 		Wakes up the rating popup.
 	**/
 	function respondWithRatingID(id:Int) {
-		if (parent.disposed || parent.died) return;
+		if (parent.disposed || parent.died)
+			return;
 
 		ratingPopup.alpha = 1.0;
 		ratingPopup.y = 300;

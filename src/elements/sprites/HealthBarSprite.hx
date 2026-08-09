@@ -1,8 +1,8 @@
 package elements.sprites;
 
 /**
-	* This is another copy of UISprite, but with a different name and different properties, SPECIFICALLY for the health bar group.
-	* @since Development
+ * This is another copy of UISprite, but with a different name and different properties, SPECIFICALLY for the health bar group.
+ * @since Development
 **/
 @:publicFields
 class HealthBarSprite implements Element {
@@ -43,8 +43,8 @@ class HealthBarSprite implements Element {
 	@texH var clipHeight:Int = 200;
 
 	// extra tex attributes to adjust texture within the clip
-	@texPosX  var clipPosX:Int = 0;
-	@texPosY  var clipPosY:Int = 0;
+	@texPosX var clipPosX:Int = 0;
+	@texPosY var clipPosY:Int = 0;
 	@texSizeX var clipSizeX:Int = 200;
 	@texSizeY var clipSizeY:Int = 200;
 
@@ -99,19 +99,19 @@ class HealthBarSprite implements Element {
 
 	var type:HealthBarSpriteType = NONE;
 
-    var isNone(get, never):Bool;
+	var isNone(get, never):Bool;
 
 	inline function get_isNone() {
 		return type == NONE;
 	}
 
-    var isHealthBar(get, never):Bool;
+	var isHealthBar(get, never):Bool;
 
 	inline function get_isHealthBar() {
 		return type == HEALTH_BAR;
 	}
 
-    var isHealthIcon(get, never):Bool;
+	var isHealthIcon(get, never):Bool;
 
 	inline function get_isHealthIcon() {
 		return type == HEALTH_ICON;
@@ -119,7 +119,7 @@ class HealthBarSprite implements Element {
 
 	var curID(default, null):Int;
 
-	var OPTIONS = { texRepeatX: false, texRepeatY: false, blend: true };
+	var OPTIONS = {texRepeatX: false, texRepeatY: false, blend: true};
 
 	@varying @custom var texW:Float = 0.0;
 	@varying @custom var texH:Float = 0.0;
@@ -143,7 +143,7 @@ class HealthBarSprite implements Element {
 
 	function new() {}
 
-    inline function changeID(id:Int) {
+	inline function changeID(id:Int) {
 		var wValue = 300;
 		var hValue = 150;
 		var xValue = 0;
@@ -172,7 +172,7 @@ class HealthBarSprite implements Element {
 		clipY = yValue;
 
 		curID = id;
-    }
+	}
 }
 
 private enum abstract HealthBarSpriteType(Int) {

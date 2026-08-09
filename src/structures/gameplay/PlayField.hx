@@ -21,7 +21,8 @@ class PlayField {
 	var funkinviewlua(default, null):FunkinViewLua;
 	#end
 
-	private var chartPath(default, null):String; // made this a variable due to complications with lua scripting. not a bug complication, but just an intentional design quirk.
+	private var chartPath(default,
+		null):String; // made this a variable due to complications with lua scripting. not a bug complication, but just an intentional design quirk.
 
 	function new(path:String) {
 		chartPath = Paths.asset(path);
@@ -52,29 +53,14 @@ class PlayField {
 	// https://github.com/ShadowMario/FNF-PsychEngine/blob/main/source/backend/Rating.hx#L29
 	var ratingJudgementList:Array<Judgement> = [
 		[
-			1.0-0.67, // target
+			1.0 - 0.67, // target
 			0, // id
 			1, // accuracy
 			400 // score
 		],
-		[
-			1.0-0.34,
-			1,
-			0.8,
-			200
-		],
-		[
-			1.0,
-			2,
-			0.675,
-			100
-		],
-		[
-			Math.POSITIVE_INFINITY,
-			3,
-			0.5,
-			50
-		]
+		[1.0 - 0.34, 1, 0.8, 200],
+		[1.0, 2, 0.675, 100],
+		[Math.POSITIVE_INFINITY, 3, 0.5, 50]
 	]; // how this new modifiable system works: you simply just set this array to a new selection of ratings, however you want.
 
 	var score:Int64 = 0;
@@ -97,12 +83,15 @@ class PlayField {
 	var additiveViewShake:Point = {x: 0, y: 0, isSmooth: true};
 
 	var scrollSpeed(default, set):Float = 1.0;
+
 	function set_scrollSpeed(value:Float) {
-		if (noteSystem != null) noteSystem.setScrollSpeed(scrollSpeed = value);
+		if (noteSystem != null)
+			noteSystem.setScrollSpeed(scrollSpeed = value);
 		return value;
 	}
 
 	var downScroll(default, set):Bool;
+
 	function set_downScroll(value:Bool) {
 		downScroll = value;
 		if (noteSystem != null) {
@@ -126,6 +115,7 @@ class PlayField {
 	var paused(default, null):Bool;
 	var died(default, null):Bool;
 	var botplay(default, set):Bool;
+
 	function set_botplay(value:Bool) {
 		if (noteSystem != null) {
 			var pos = MetaNote.floatToMetaNotePosition(songPosition);
@@ -145,12 +135,14 @@ class PlayField {
 	}
 
 	inline function set_mania(value:Int) {
-		if (mania > 256) mania = 256;
-		if (mania < 1) mania = 1;
+		if (mania > 256)
+			mania = 256;
+		if (mania < 1)
+			mania = 1;
 
 		/*#if linc_luajit_funkinview
-		funkinviewlua.callFunction('postManiaChange', value);
-		#end*/
+			funkinviewlua.callFunction('postManiaChange', value);
+			#end */
 
 		return mania = value;
 	}
@@ -182,15 +174,18 @@ class PlayField {
 	var ready:Bool = false;
 
 	function setTime(value:Float, pushToOffset:Float = 0) {
-		if (disposed || !songStarted || songEnded || paused || died) return;
-		if (value > Mixer.length - 1000) value = Mixer.length - 1000;
+		if (disposed || !songStarted || songEnded || paused || died)
+			return;
+		if (value > Mixer.length - 1000)
+			value = Mixer.length - 1000;
 
 		if (value < songPosition) {
 			onRestartingForBackwardTimeSetting = true;
 			timeForRestartingBackwardTime = value;
 
-			if (eventSystem != null) eventSystem.clearEventTimers(); // immediately clear out any event timers to prevent them flooding the rest of the song through
-			
+			if (eventSystem != null)
+				eventSystem.clearEventTimers(); // immediately clear out any event timers to prevent them flooding the rest of the song through
+
 			#if linc_luajit_funkinview
 			funkinviewlua.callFunction('preTimeChange', timeForRestartingBackwardTime, Chart.header);
 			#end
@@ -202,12 +197,14 @@ class PlayField {
 		}
 
 		Mixer.setTime(Math.max(value, 0.0), this);
-		if (hud != null && SaveData.state.preferences.ratingPopup) hud.hideRatingPopup();
+		if (hud != null && SaveData.state.preferences.ratingPopup)
+			hud.hideRatingPopup();
 		if (noteSystem != null) {
 			var pos = MetaNote.floatToMetaNotePosition(value);
 			noteSystem.onSongPositionJump(pos, pushToOffset);
 		}
-		if (field != null) field.resetCharacters();
+		if (field != null)
+			field.resetCharacters();
 	}
 
 	var songPosition:Float;
@@ -251,7 +248,8 @@ class PlayField {
 		field = new Field(this);
 
 		HUD.init();
-		if (!SaveData.state.preferences.hideHUD) hud = new HUD(display, this);
+		if (!SaveData.state.preferences.hideHUD)
+			hud = new HUD(display, this);
 
 		inputSystem = new InputSystem(initialMania, this);
 
@@ -281,7 +279,9 @@ class PlayField {
 		startedCountdown = !onRestartingForBackwardTimeSetting;
 
 		#if linc_luajit_funkinview
-		startedCountdown = startedCountdown || funkinviewlua.callFunction('startCountdown', formatCustomSongName(Chart.header.title), Chart.header.difficulty)[0] != FunkinViewLua.Function_Stop;
+		startedCountdown = startedCountdown
+			|| funkinviewlua.callFunction('startCountdown', formatCustomSongName(Chart.header.title),
+				Chart.header.difficulty)[0] != FunkinViewLua.Function_Stop;
 		funkinviewlua.callFunction('createPost', null);
 		#end
 
@@ -289,7 +289,7 @@ class PlayField {
 			onRestartingForBackwardTimeSetting = false;
 			startSong(Chart.header);
 			setTime(timeForRestartingBackwardTime);
-			
+
 			#if linc_luajit_funkinview
 			funkinviewlua.callFunction('postTimeChange', timeForRestartingBackwardTime, Chart.header);
 			#end
@@ -332,18 +332,13 @@ class PlayField {
 		var content = sys.io.File.getContent(eventsPath);
 		var rawJsonParent = haxe.Json.parse(content);
 
-		//rawJsonParent.events.sort((a, b) -> a.evTime > b.evTime);
+		// rawJsonParent.events.sort((a, b) -> a.evTime > b.evTime);
 
 		var rawJson:Array<EventSystem.RawEventObject> = rawJsonParent.events;
 
 		for (event in rawJson) {
-			e.parsedObjects.push(new EventSystem.EventObject(
-				event.evName,
-				event.value1,
-				event.value2 != null ? event.value2 : "",
-				event.evTime
-			));
-			//trace(event.evName,event.value1,event.value2,event.evTime);
+			e.parsedObjects.push(new EventSystem.EventObject(event.evName, event.value1, event.value2 != null ? event.value2 : "", event.evTime));
+			// trace(event.evName,event.value1,event.value2,event.evTime);
 		}
 
 		e.init();
@@ -355,8 +350,10 @@ class PlayField {
 		Updates the playfield.
 	**/
 	var eventTimers:Array<EventTimer> = [];
+
 	function update(deltaTime:Float) {
-		if (disposed || paused) return;
+		if (disposed || paused)
+			return;
 
 		#if linc_luajit_funkinview
 		funkinviewlua.updateVariablesList();
@@ -376,20 +373,25 @@ class PlayField {
 		additiveViewShake.x = 0;
 		additiveViewShake.y = 0;
 
-		if (field != null) field.update(deltaTime);
+		if (field != null)
+			field.update(deltaTime);
 
 		var ratio = Math.max(Math.min((deltaTime * 0.01), 1), 0);
-		if (display.fov != 1) display.fov = Tools.lerp(display.fov, 1, ratio);
-		if (view.fov != 1) view.fov = Tools.lerp(view.fov, 1, ratio);
+		if (display.fov != 1)
+			display.fov = Tools.lerp(display.fov, 1, ratio);
+		if (view.fov != 1)
+			view.fov = Tools.lerp(view.fov, 1, ratio);
 
-		if (countdownDisp != null) countdownDisp.update(deltaTime);
+		if (countdownDisp != null)
+			countdownDisp.update(deltaTime);
 
 		if (eventSystem != null && !died) {
 			eventSystem.update(deltaTime, songPosition);
 		}
 
 		display.shake(dispShake.x + additiveDispShake.x, dispShake.y + additiveDispShake.y);
-		if (field != null) field.updateCamera(deltaTime);
+		if (field != null)
+			field.updateCamera(deltaTime);
 
 		if (!died) {
 			if (startedCountdown) {
@@ -410,7 +412,8 @@ class PlayField {
 			}
 
 			var renderingModeEnabled = RenderingMode.enabled;
-			if (hud != null) hud.update(renderingModeEnabled ? (1000 / RenderingMode.frameRate) : deltaTime);
+			if (hud != null)
+				hud.update(renderingModeEnabled ? (1000 / RenderingMode.frameRate) : deltaTime);
 
 			Main.conductor.time = songPosition;
 
@@ -463,7 +466,8 @@ class PlayField {
 		#end
 
 		var renderingModeEnabled = RenderingMode.enabled;
-		if (renderingModeEnabled) update(1000 / RenderingMode.frameRate);
+		if (renderingModeEnabled)
+			update(1000 / RenderingMode.frameRate);
 		var noteSystem = noteSystem;
 		if (noteSystem != null) {
 			var pos = MetaNote.floatToMetaNotePosition(songPosition);
@@ -481,13 +485,14 @@ class PlayField {
 
 			var scoreTxt = HUD.scoreTxt;
 			var noteSpawner = noteSystem.noteSpawner;
-			//if (scoreTxt != null) scoreTxt.text = ((noteSpawner.timeSpentOnIt * 1000000000) / Tools.int64ToFloat(noteSpawner.top - noteSpawner.bottom)) + "ns";
-			//if (scoreTxt != null) scoreTxt.text = (noteSpawner.timeSpentOnIt * 1000) + "ms";
+			// if (scoreTxt != null) scoreTxt.text = ((noteSpawner.timeSpentOnIt * 1000000000) / Tools.int64ToFloat(noteSpawner.top - noteSpawner.bottom)) + "ns";
+			// if (scoreTxt != null) scoreTxt.text = (noteSpawner.timeSpentOnIt * 1000) + "ms";
 
 			hud.updateBuffers();
 		}
 
-		if (renderingModeEnabled) RenderingMode.pipeFrame();
+		if (renderingModeEnabled)
+			RenderingMode.pipeFrame();
 
 		#if linc_luajit_funkinview
 		funkinviewlua.callFunction('renderPost', null);
@@ -499,23 +504,29 @@ class PlayField {
 		Pauses the playfield.
 	**/
 	function pause(showpausescreen:Bool = true) {
-		if (disposed || paused || died || RenderingMode.enabled) return;
+		if (disposed || paused || died || RenderingMode.enabled)
+			return;
 
 		#if linc_luajit_funkinview
-		if (funkinviewlua.callFunction('pause', null)[0] == FunkinViewLua.Function_Stop) return;
+		if (funkinviewlua.callFunction('pause', null)[0] == FunkinViewLua.Function_Stop)
+			return;
 		#end
 
-		if (showpausescreen) pauseScreen.open();
-		if (songStarted) Mixer.stopMusic();
+		if (showpausescreen)
+			pauseScreen.open();
+		if (songStarted)
+			Mixer.stopMusic();
 		if (noteSystem != null) {
 			var pos = MetaNote.floatToMetaNotePosition(songPosition);
 			noteSystem.resetStrumlines();
 		}
-		if (inputSystem != null) inputSystem.removeEvents();
+		if (inputSystem != null)
+			inputSystem.removeEvents();
 
 		paused = true;
 
-		if (showpausescreen) Main.current.playScrollSound();
+		if (showpausescreen)
+			Main.current.playScrollSound();
 
 		#if linc_luajit_funkinview
 		funkinviewlua.callFunction('pausePost', null);
@@ -527,15 +538,18 @@ class PlayField {
 		Resumes the playfield.
 	**/
 	function resume() {
-		if (disposed || !paused || died) return;
+		if (disposed || !paused || died)
+			return;
 
 		#if linc_luajit_funkinview
 		funkinviewlua.callFunction('resume', null);
 		#end
 
 		pauseScreen.close();
-		if (!RenderingMode.enabled && songStarted && !songEnded) Mixer.startMusic();
-		if (inputSystem != null) Tools.forSync(inputSystem.addEvents);
+		if (!RenderingMode.enabled && songStarted && !songEnded)
+			Mixer.startMusic();
+		if (inputSystem != null)
+			Tools.forSync(inputSystem.addEvents);
 
 		paused = false;
 
@@ -551,7 +565,8 @@ class PlayField {
 
 			// When the game actually begins, remove countdown listener immediately
 			// to avoid duplicate triggers and let Main.conductor take over.
-			if (countdownDisp.conductor != null) countdownDisp.conductor.onBeatUnoffsetted.remove(countdownBeatHit);
+			if (countdownDisp.conductor != null)
+				countdownDisp.conductor.onBeatUnoffsetted.remove(countdownBeatHit);
 			Main.conductor.onStep.add(stepHit);
 			Main.conductor.onBeat.add(beatHit);
 			Main.conductor.onMeasure.add(measureHit);
@@ -597,8 +612,10 @@ class PlayField {
 		var lane = note.type;
 
 		var index = 1 + lane;
-		if (Chart.header.voicesDirs.length > 1) index = 1;
-		if (index > 0 && index <= Mixer.trackCount) Mixer.changeTrackVolume(index, 1);
+		if (Chart.header.voicesDirs.length > 1)
+			index = 1;
+		if (index > 0 && index <= Mixer.trackCount)
+			Mixer.changeTrackVolume(index, 1);
 
 		var playable = noteSystem.strumlines[lane].playable;
 
@@ -626,7 +643,7 @@ class PlayField {
 
 		var absTiming = Math.abs(timing);
 		var notesInOne_accuracy = notesInOne * 10000;
-		//static var ratingList = [];
+		// static var ratingList = [];
 
 		// determine rating list based on 0%..100%
 
@@ -637,7 +654,8 @@ class PlayField {
 			var judgementID = Std.int(worstJudgement[1]);
 			var judgementAcc = haxe.Int64Helper.fromFloat(worstJudgement[2] * 10000);
 			var judgementScore = Std.int(worstJudgement[3]);
-			if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(judgementID);
+			if (hud != null && preferences.ratingPopup)
+				hud.respondWithRatingID(judgementID);
 			accuracy.increment(judgementAcc, false, notesInOne * 10000);
 			score += judgementScore * notesInOne;
 			postHitNote(#if linc_luajit_funkinview notePos, #end note, timing, notesInOne);
@@ -651,7 +669,8 @@ class PlayField {
 				var judgementID = Std.int(judgement[1]);
 				var judgementAcc = haxe.Int64Helper.fromFloat(judgement[2] * 10000);
 				var judgementScore = Std.int(judgement[3]);
-				if (hud != null && preferences.ratingPopup) hud.respondWithRatingID(judgementID);
+				if (hud != null && preferences.ratingPopup)
+					hud.respondWithRatingID(judgementID);
 				accuracy.increment(judgementAcc, false, notesInOne * 10000);
 				score += judgementScore * notesInOne;
 				postHitNote(#if linc_luajit_funkinview notePos, #end note, timing, notesInOne);
@@ -682,8 +701,10 @@ class PlayField {
 		var lane = note.type;
 
 		var index = 1 + lane;
-		if (Chart.header.voicesDirs.length > 1) index = 1;
-		if (index > 0 && index <= Mixer.trackCount) Mixer.changeTrackVolume(index, 0);
+		if (Chart.header.voicesDirs.length > 1)
+			index = 1;
+		if (index > 0 && index <= Mixer.trackCount)
+			Mixer.changeTrackVolume(index, 0);
 
 		health -= healthLoss[lane] * Tools.int64ToFloat(notesInOne);
 
@@ -709,7 +730,8 @@ class PlayField {
 
 		var lane = note.type;
 
-		if (noteSystem != null && noteSystem.strumlines[lane].confirmed(note.index)) return;
+		if (noteSystem != null && noteSystem.strumlines[lane].confirmed(note.index))
+			return;
 
 		var playable = noteSystem.strumlines[lane].playable;
 
@@ -764,7 +786,7 @@ class PlayField {
 		songEnded = false;
 
 		if (countdownDisp != null) {
-			if (countdownDisp.conductor != null) 
+			if (countdownDisp.conductor != null)
 				countdownDisp.conductor.onBeatUnoffsetted.remove(countdownBeatHit);
 		}
 
@@ -830,7 +852,8 @@ class PlayField {
 		Mixer.setTime(0, null);
 
 		var char = field.actors[lane + field.numSpectators];
-		if (char == null) char = field.actors[1 + field.numSpectators];
+		if (char == null)
+			char = field.actors[1 + field.numSpectators];
 
 		field.actorOnGameOver = char;
 
@@ -928,8 +951,18 @@ class PlayField {
 
 		Chart.destroy();
 
-		if (display.fov != 1) { display.fov = 1; display.x = 0; display.y = 0; display.r = 0; }
-		if (view.fov != 1) { view.fov = 1; view.x = 0; view.y = 0; view.r = 0; }
+		if (display.fov != 1) {
+			display.fov = 1;
+			display.x = 0;
+			display.y = 0;
+			display.r = 0;
+		}
+		if (view.fov != 1) {
+			view.fov = 1;
+			view.x = 0;
+			view.y = 0;
+			view.r = 0;
+		}
 
 		#if linc_luajit_funkinview
 		funkinviewlua.callFunction('disposePost', null);

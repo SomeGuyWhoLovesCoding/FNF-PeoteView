@@ -42,15 +42,19 @@ class InputSystem {
 	var _lane = 0;
 
 	function detectIndexLaneFromKey(code:KeyCode) {
-		if (parent == null) return false;
+		if (parent == null)
+			return false;
 		var noteSystem = parent.noteSystem;
-		if (noteSystem == null) return false;
+		if (noteSystem == null)
+			return false;
 		var strumlines = noteSystem.strumlines;
-		if (strumlines == null) return false;
+		if (strumlines == null)
+			return false;
 
 		for (i in 0...strumlines.length) {
 			var strumline = strumlines[i];
-			if (!strumline.playable) continue;
+			if (!strumline.playable)
+				continue;
 			var foundIndex = false;
 			for (j in 0...strumline.length) {
 				if (code == strumline.keybinds[j] || code == strumline.keybindsTwo[j]) {
@@ -68,26 +72,25 @@ class InputSystem {
 		return false;
 	}
 
-	function press(code:KeyCode, mod:KeyModifier)
-	{
+	function press(code:KeyCode, mod:KeyModifier) {
 		var field = parent.field;
 		var isInGameOver = field.isInGameOver;
 		var controls = SaveData.state.controls;
 		var game = controls.game;
 		var ui = controls.ui;
 
-		if (gameCondition(code)) return;
+		if (gameCondition(code))
+			return;
 
-		if (parent.disposed || parent.botplay
-			|| isInGameOver
-			|| RenderingMode.enabled || parent.paused) {
+		if (parent.disposed || parent.botplay || isInGameOver || RenderingMode.enabled || parent.paused) {
 			return;
 		}
 
-		if (!detectIndexLaneFromKey(code)) return;
+		if (!detectIndexLaneFromKey(code))
+			return;
 
 		#if linc_luajit_funkinview
-        parent.funkinviewlua.callFunction('keyPress', _index, _lane);
+		parent.funkinviewlua.callFunction('keyPress', _index, _lane);
 		#end
 
 		var noteSystem = parent.noteSystem;
@@ -104,23 +107,21 @@ class InputSystem {
 		parent.onKeyPress.dispatch(code);
 
 		#if linc_luajit_funkinview
-        parent.funkinviewlua.callFunction('keyPressPost', _index, _lane);
-        parent.funkinviewlua.callFunction('postKeyPress', _index, _lane); // alternative syntax
+		parent.funkinviewlua.callFunction('keyPressPost', _index, _lane);
+		parent.funkinviewlua.callFunction('postKeyPress', _index, _lane); // alternative syntax
 		#end
 	}
 
-	function release(code:KeyCode, mod:KeyModifier)
-	{
-		if (parent.disposed || parent.botplay
-			|| parent.field.isInGameOver
-			|| RenderingMode.enabled || parent.paused) {
+	function release(code:KeyCode, mod:KeyModifier) {
+		if (parent.disposed || parent.botplay || parent.field.isInGameOver || RenderingMode.enabled || parent.paused) {
 			return;
 		}
 
-		if (!detectIndexLaneFromKey(code)) return;
+		if (!detectIndexLaneFromKey(code))
+			return;
 
 		#if linc_luajit_funkinview
-        parent.funkinviewlua.callFunction('keyRelease', _index, _lane);
+		parent.funkinviewlua.callFunction('keyRelease', _index, _lane);
 		#end
 
 		var noteSystem = parent.noteSystem;
@@ -137,8 +138,8 @@ class InputSystem {
 		parent.onKeyRelease.dispatch(code);
 
 		#if linc_luajit_funkinview
-        parent.funkinviewlua.callFunction('keyReleasePost', _index, _lane);
-        parent.funkinviewlua.callFunction('postKeyRelease', _index, _lane); // alternative syntax
+		parent.funkinviewlua.callFunction('keyReleasePost', _index, _lane);
+		parent.funkinviewlua.callFunction('postKeyRelease', _index, _lane); // alternative syntax
 		#end
 	}
 
@@ -154,15 +155,13 @@ class InputSystem {
 			return true;
 		}
 
-		if (parent.ready && keyCode == game.pause
-			&& !parent.songEnded) {
-			if (!parent.paused) parent.pause();
+		if (parent.ready && keyCode == game.pause && !parent.songEnded) {
+			if (!parent.paused)
+				parent.pause();
 			return true;
 		}
 
-		if (parent.ready && !parent.botplay
-			&& !isInGameOver && !parent.songEnded
-			&& !parent.paused && keyCode == game.reset && !RenderingMode.enabled) {
+		if (parent.ready && !parent.botplay && !isInGameOver && !parent.songEnded && !parent.paused && keyCode == game.reset && !RenderingMode.enabled) {
 			parent.gameOver(Chart.header, 1);
 			return true;
 		}
@@ -171,7 +170,8 @@ class InputSystem {
 	}
 
 	function mousePress(x:Float, y:Float, mouseButton:MouseButton) {
-		if (mouseButton != MouseButton.LEFT) return;
+		if (mouseButton != MouseButton.LEFT)
+			return;
 		parent.pause();
 	}
 

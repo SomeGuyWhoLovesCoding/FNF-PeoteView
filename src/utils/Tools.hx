@@ -4,11 +4,12 @@ import sys.io.File;
 import sys.FileSystem;
 import data.chart.Header;
 import sys.io.Process;
+
 using StringTools;
 
 /**
-	* Some helper shit. idc 
-	* @since Development
+ * Some helper shit. idc 
+ * @since Development
 **/
 @:publicFields
 class Tools {
@@ -19,11 +20,10 @@ class Tools {
 		var versionsDontMatch = false;
 		trace('checking for updates...');
 		var http = new haxe.Http(url);
-		http.onData = function (data:String)
-		{
+		http.onData = function(data:String) {
 			var newVersion = Std.parseInt(data);
 			trace('build version online: $newVersion, your build version: $version');
-			if(newVersion != version) {
+			if (newVersion != version) {
 				trace('versions arent matching! please update');
 				versionsDontMatch;
 				http.onData = null;
@@ -31,7 +31,7 @@ class Tools {
 				http = null;
 			}
 		}
-		http.onError = function (error) {
+		http.onError = function(error) {
 			trace('error: $error');
 		}
 		http.request();
@@ -44,7 +44,8 @@ class Tools {
 		var line = File.getContent(Paths.asset('$path/healthBarConfig.txt'));
 
 		var split = line.split(", ");
-		if (split.length != 6) throw "ARGUMENTS ARE NOT EQUAL TO SIX!";
+		if (split.length != 6)
+			throw "ARGUMENTS ARE NOT EQUAL TO SIX!";
 
 		var w = Std.parseFloat(split[0].split(" ")[1]);
 		var h = Std.parseFloat(split[1].split(" ")[1]);
@@ -69,7 +70,8 @@ class Tools {
 		var line = File.getContent(Paths.asset('$path/timeBarConfig.txt'));
 
 		var split = line.split(", ");
-		if (split.length != 6) throw "ARGUMENTS ARE NOT EQUAL TO SIX!";
+		if (split.length != 6)
+			throw "ARGUMENTS ARE NOT EQUAL TO SIX!";
 
 		var w = Std.parseFloat(split[0].split(" ")[1]);
 		var h = Std.parseFloat(split[1].split(" ")[1]);
@@ -89,8 +91,9 @@ class Tools {
 	}
 
 	private static var _fontsCached(default, null):FakeStringMap<Array<TextCharData>> = new FakeStringMap<Array<TextCharData>>();
+
 	static function parseFont(name:String):Array<TextCharData> {
-		//Sys.println('QUERY GAME FONT: $name');
+		// Sys.println('QUERY GAME FONT: $name');
 		if (_fontsCached.exists(name))
 			return _fontsCached.get(name);
 
@@ -109,14 +112,14 @@ class Tools {
 			var outputPath = 'assets/fonts/$name/$name';
 
 			var args = [
-				'--font-file', fontFile,
-				'--font-size', '40',
-				'--data-format', 'json',
-				'--padding-up', '8',
-				'--padding-right', '8',
-				'--padding-down', '8',
-				'--padding-left', '8',
-				'--output', outputPath
+				    '--font-file', fontFile,
+				    '--font-size',     '40',
+				  '--data-format',   'json',
+				   '--padding-up',      '8',
+				'--padding-right',      '8',
+				 '--padding-down',      '8',
+				 '--padding-left',      '8',
+				       '--output', outputPath
 			];
 
 			#if (linux || android)
@@ -176,9 +179,9 @@ class Tools {
 	/**
 		Converts an Int64 to a float, since there's absolutely no `Int64.toFloat` function.
 	**/
-    inline static function int64ToFloat(value:Int64):Float {
-        return (value.high * 4294967296.0) + value.low;
-    }
+	inline static function int64ToFloat(value:Int64):Float {
+		return (value.high * 4294967296.0) + value.low;
+	}
 
 	inline static function profileFrame() {
 		#if FV_PROFILE
@@ -186,8 +189,7 @@ class Tools {
 		#end
 	}
 
-	static function formatTime(ms:Float, showMS:Bool = false):String
-	{
+	static function formatTime(ms:Float, showMS:Bool = false):String {
 		var milliseconds:Int = Std.int(ms * 0.1) % 100;
 		var seconds:Int = Std.int(ms * 0.001);
 		var hours:Int = Std.int(seconds / 3600);
@@ -201,10 +203,14 @@ class Tools {
 		var time:String = '';
 
 		if (!Math.isNaN(ms)) {
-			if (hours > 0) time += '$hours$t';
-			if (minutes < 10 && hours > 0) time += '0$minutes$t';
-			else time += '$minutes$t';
-			if (seconds < 10) time += '0';
+			if (hours > 0)
+				time += '$hours$t';
+			if (minutes < 10 && hours > 0)
+				time += '0$minutes$t';
+			else
+				time += '$minutes$t';
+			if (seconds < 10)
+				time += '0';
 			time += seconds;
 		} else {
 			time = 'null';
@@ -226,8 +232,8 @@ class Tools {
 		return a + (b - a) * ratio;
 	}
 
-
 	static var iconGridMap:Map<String, Array<Int>> = [];
+
 	static function getIconGridMap(path:String) {
 		var contents = File.getContent('$path/iconData.xml');
 		var xml = Xml.parse(contents);
@@ -317,17 +323,21 @@ class Tools {
 			voicesDirs: voicesDirs,
 			mania: mania,
 			difficulty: difficulty,
-			gameOver: {theme: gameOverTheme, bpm: gameOverBPM},
+			gameOver: {
+				theme: gameOverTheme,
+				bpm: gameOverBPM
+			},
 			actors: actors
 		};
 
-		//trace('Parsed header: $result');
+		// trace('Parsed header: $result');
 
 		return result;
 	}
 
 	static function convertToSixColors(col:Array<Null<Int>>) {
-		if (col == null) return [for (i in 0...6) 0];
+		if (col == null)
+			return [for (i in 0...6) 0];
 		var arr:Array<Int> = [for (i in 0...6) 0];
 		for (i in 0...col.length) {
 			if (col[i] == null)
@@ -335,11 +345,14 @@ class Tools {
 		}
 		switch (col.length) {
 			case 1:
-				for (i in 0...6) arr[i] = col[0];
+				for (i in 0...6)
+					arr[i] = col[0];
 			case 2:
-				for (i in 0...6) arr[i] = col[Std.int(i/3)];
+				for (i in 0...6)
+					arr[i] = col[Std.int(i / 3)];
 			case 3:
-				for (i in 0...6) arr[i] = col[Std.int(i/4)];
+				for (i in 0...6)
+					arr[i] = col[Std.int(i / 4)];
 			case 4:
 				for (i in 0...6) {
 					var iCustom = 0;
@@ -362,12 +375,13 @@ class Tools {
 	}
 
 	static function hexesToOpaqueColor(col:Array<String>) {
-		if (col == null) return [for (i in 0...6) 0];
+		if (col == null)
+			return [for (i in 0...6) 0];
 		var arr:Array<Int> = [];
 		for (i in 0...col.length) {
 			var str = col[i];
 			var argbColor:Color = Std.parseInt('0x${str}ff');
-			arr.push((argbColor:Int));
+			arr.push((argbColor : Int));
 		}
 		return arr;
 	}

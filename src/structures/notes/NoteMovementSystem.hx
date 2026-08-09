@@ -5,8 +5,7 @@ import structures.notes.NoteVB.VirtualSustain;
 
 @:publicFields
 class NoteMovementSystem {
-	function new(parent:NoteSystem) {
-	}
+	function new(parent:NoteSystem) {}
 
 	function run(parent:NoteSystem, noteSpr:VirtualNote, sustainSpr:VirtualSustain, receptor:Receptor, index:Int, type:Float, isHit:Bool) {
 		/**
@@ -25,19 +24,20 @@ class NoteMovementSystem {
 					noteSpr.Sx = Math.round(returnValue.x);
 					noteSpr.Sy = Math.round(returnValue.y);
 					noteSpr.scale = returnValue.scale * receptor.note.scale;
-					if (returnValue.scrollMultiplier != 1) noteSpr.diff = Math.round(noteSpr.diff * returnValue.scrollMultiplier);
+					if (returnValue.scrollMultiplier != 1)
+						noteSpr.diff = Math.round(noteSpr.diff * returnValue.scrollMultiplier);
 				}
 				if (sustainSpr != null) {
 					sustainSpr.r = returnValue.sustainRot;
-					if (returnValue.scrollMultiplier != 1) sustainSpr.w = Math.round(sustainSpr.w * returnValue.scrollMultiplier);
-					sustainSpr.followNote((isHit ? receptor.note.x : noteSpr.Sx) + receptor.sustainPivotX, (isHit ? receptor.note.y : noteSpr.Sy) + receptor.sustainPivotY, index);
+					if (returnValue.scrollMultiplier != 1)
+						sustainSpr.w = Math.round(sustainSpr.w * returnValue.scrollMultiplier);
+					sustainSpr.followNote((isHit ? receptor.note.x : noteSpr.Sx) + receptor.sustainPivotX,
+						(isHit ? receptor.note.y : noteSpr.Sy) + receptor.sustainPivotY, index);
 				}
 			}
 		}
 		#end
 	}
 
-	function dispose() {
-
-	}
+	function dispose() {}
 }

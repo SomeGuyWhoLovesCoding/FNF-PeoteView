@@ -1,17 +1,16 @@
 // EVERYTHING RELATED TO THE STORY MENU SHEET IN THE CLASS IS 100% HARDCODED.
-
 package elements.sprites;
 
 /**
-	* This is a cheap copy of UISprite with less things in mind because it's meant for the story menu.
-	* This was originally meant for the pause menu, but it was later used for the story menu.
-	* But currently, this is unused. I'll try and figure out what's possible relying on this class.
-	* @since Development
+ * This is a cheap copy of UISprite with less things in mind because it's meant for the story menu.
+ * This was originally meant for the pause menu, but it was later used for the story menu.
+ * But currently, this is unused. I'll try and figure out what's possible relying on this class.
+ * @since Development
 **/
 @:publicFields
 class StoryModeSprite implements Element {
 	// position in pixel (relative to upper left corner of Display)
-	@posX @formula("uDisplayRotateX(aPos)")  var x:Float = 0.0;
+	@posX @formula("uDisplayRotateX(aPos)") var x:Float = 0.0;
 	@posY @formula("uDisplayRotateY(aPos)") var y:Float = 0.0;
 
 	// size in pixel
@@ -25,8 +24,8 @@ class StoryModeSprite implements Element {
 	@texH var clipHeight:Int = 200;
 
 	// extra tex attributes to adjust texture within the clip
-	@texPosX  var clipPosX:Int = 0;
-	@texPosY  var clipPosY:Int = 0;
+	@texPosX var clipPosX:Int = 0;
+	@texPosY var clipPosY:Int = 0;
 	@custom @varying @texSizeX var clipSizeX:Int = 200;
 	@custom @varying @texSizeY var clipSizeY:Int = 200;
 
@@ -62,7 +61,7 @@ class StoryModeSprite implements Element {
 
 	var curID(default, null):Int;
 
-	var OPTIONS = { texRepeatX: false, texRepeatY: false, blend: true };
+	var OPTIONS = {texRepeatX: false, texRepeatY: false, blend: true};
 
 	private static var hardcoded_difficulty_corner_text_values(default, null):Array<Array<Int>> = [
 		[0, 456, 85, 32],
@@ -75,10 +74,7 @@ class StoryModeSprite implements Element {
 		[295, 488, 80, 32]
 	];
 
-	private static var hardcoded_story_menu_piece_values(default, null):Array<Array<Int>> = [
-		[0, 555, 300, 45],
-		[360, 555, 165, 45]
-	];
+	private static var hardcoded_story_menu_piece_values(default, null):Array<Array<Int>> = [[0, 555, 300, 45], [360, 555, 165, 45]];
 
 	static function init(program:CustomProgram, name:String, texture:Texture) {
 		// creates a texture-layer named "name"

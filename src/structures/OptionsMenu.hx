@@ -31,7 +31,7 @@ class OptionsMenu {
 	static var optionsDisplay(default, null):OptionsDisplay;
 
 	var actions(default, null):ActionMap;
-	
+
 	static function init(disp:CustomDisplay) {
 		display = disp;
 
@@ -41,7 +41,7 @@ class OptionsMenu {
 
 			var tex = TextureSystem.getTexture("optionsMenuSheet");
 			OptionsSprite.init(optionsProg, "optionsMenuSheet", tex);
-			
+
 			display.addProgram(optionsProg);
 			display.removeProgram(optionsProg);
 		}
@@ -63,12 +63,12 @@ class OptionsMenu {
 		optionsDisplay.reload(cast optionsNav.value());
 
 		actions = [
-			Controls.Action.UI_LEFT => { action: left },
-			Controls.Action.UI_RIGHT => { action: right },
-			Controls.Action.UI_UP => { action: up },
-			Controls.Action.UI_DOWN => { action: down },
-			Controls.Action.UI_BACK => { action: back },
-			Controls.Action.UI_ACCEPT => { action: enter }
+			Controls.Action.UI_LEFT => {action: left},
+			Controls.Action.UI_RIGHT => {action: right},
+			Controls.Action.UI_UP => {action: up},
+			Controls.Action.UI_DOWN => {action: down},
+			Controls.Action.UI_BACK => {action: back},
+			Controls.Action.UI_ACCEPT => {action: enter}
 		];
 	}
 
@@ -81,7 +81,8 @@ class OptionsMenu {
 		}
 
 		var ratio = Math.min(deltaTime * 0.015, 1.0);
-		if (ratio == 1) ratio = (1/lime.app.Application.current.window.frameRate) * 0.015; // When loading the options menu the first time it gets stuck at 1.0 for a single frame
+		if (ratio == 1)
+			ratio = (1 / lime.app.Application.current.window.frameRate) * 0.015; // When loading the options menu the first time it gets stuck at 1.0 for a single frame
 
 		alphaLerp = Tools.lerp(alphaLerp, opened ? 1.0 : 0.0, ratio);
 
@@ -90,7 +91,8 @@ class OptionsMenu {
 			var originalLuminance = categorySprite.c.luminanceF;
 			categorySprite.c.luminanceF = alphaLerp * (i != categoryNav.value() ? 0.5 : 1);
 			categorySprite.c.aF = alphaLerp;
-			if (originalLuminance != categorySprite.c.luminanceF) optionsBuf.updateElement(categorySprite);
+			if (originalLuminance != categorySprite.c.luminanceF)
+				optionsBuf.updateElement(categorySprite);
 		}
 
 		optionsDisplay.update(deltaTime);
@@ -100,7 +102,7 @@ class OptionsMenu {
 		Tools.forSync(() -> {
 			var window = lime.app.Application.current.window;
 			Main.current.controls.bindTo(actions);
-			
+
 			Main.current.mouseDown = mousePress;
 			window.onMouseWheel.add(moveCategory_mouse);
 			window.onKeyDown.add(handleKeyDown);
@@ -146,7 +148,7 @@ class OptionsMenu {
 		if (optionsDisplay.controlsDisplay.binding) {
 			optionsDisplay.controlsDisplay.cancelBinding();
 		}
-		
+
 		removeEvents();
 
 		optionsDisplay.closed = true;
@@ -163,7 +165,8 @@ class OptionsMenu {
 	}
 
 	function back(isDown:Bool, param:Int) {
-		if (!isDown) return;
+		if (!isDown)
+			return;
 		close();
 		Main.current.playCancelSound();
 	}
@@ -171,13 +174,13 @@ class OptionsMenu {
 	function getOptionCountofState() {
 		var result = 0;
 
-		switch ((categoryNav.value():OptionsCategorySelection)) {
+		switch ((categoryNav.value() : OptionsCategorySelection)) {
 			case CONTROLS:
 				result = ControlsDisplay.controlLabels.length;
 			case PREFERENCES:
 				result = PreferencesDisplay.prefsStr.length;
 			case GAMEPLAY:
-				//result = GraphicsDisplay.graphicsStr.length;
+				// result = GraphicsDisplay.graphicsStr.length;
 				result = 0; // TODO
 		}
 
@@ -190,7 +193,8 @@ class OptionsMenu {
 	}
 
 	function down(isDown:Bool, param:Int) {
-		if (!isDown || isInvalidKeyState()) return;
+		if (!isDown || isInvalidKeyState())
+			return;
 		optionsNav.scroll(1);
 		var optionssLen = getOptionCountofState();
 		optionsNav.resetIfOver(optionssLen);
@@ -198,7 +202,8 @@ class OptionsMenu {
 	}
 
 	function up(isDown:Bool, param:Int) {
-		if (!isDown || isInvalidKeyState()) return;
+		if (!isDown || isInvalidKeyState())
+			return;
 		optionsNav.scroll(-1);
 		var optionssLen = getOptionCountofState();
 		optionsNav.resetIfUnder(optionssLen - 1);
@@ -206,7 +211,8 @@ class OptionsMenu {
 	}
 
 	function left(isDown:Bool, param:Int) {
-		if (!isDown || isInvalidKeyState()) return;
+		if (!isDown || isInvalidKeyState())
+			return;
 		optionsNav.setTo(0);
 		categoryNav.scroll(-1);
 		categoryNav.resetIfUnder(2);
@@ -215,7 +221,8 @@ class OptionsMenu {
 	}
 
 	function right(isDown:Bool, param:Int) {
-		if (!isDown || isInvalidKeyState()) return;
+		if (!isDown || isInvalidKeyState())
+			return;
 		optionsNav.setTo(0);
 		categoryNav.scroll(1);
 		categoryNav.resetIfOver(categorySprites.length);
@@ -224,7 +231,8 @@ class OptionsMenu {
 	}
 
 	function enter(isDown:Bool, param:Int) {
-		if (!isDown || isInvalidKeyState()) return;
+		if (!isDown || isInvalidKeyState())
+			return;
 		optionsDisplay.enter();
 	}
 
@@ -236,8 +244,10 @@ class OptionsMenu {
 	}
 
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
-		if (button == LEFT) enter(true, 0);
-		if (button != RIGHT) return;
+		if (button == LEFT)
+			enter(true, 0);
+		if (button != RIGHT)
+			return;
 		close();
 		Main.current.playScrollSound();
 	}
@@ -250,7 +260,8 @@ class OptionsMenu {
 	}
 
 	function shutDown() {
-		if (!optionsProg.isIn(display)) return;
+		if (!optionsProg.isIn(display))
+			return;
 
 		for (i in 0...categorySprites.length) {
 			var categorySprite = categorySprites[i];

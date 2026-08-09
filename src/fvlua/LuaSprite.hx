@@ -5,8 +5,7 @@ package fvlua;
 	@since Development
 **/
 @:publicFields
-class LuaSprite implements Element
-{
+class LuaSprite implements Element {
 	/**
 		The sprite's x position.
 	**/
@@ -108,14 +107,13 @@ class LuaSprite implements Element
 	 * 
 	 * ported from flixel.
 	 */
-	public function setGraphicSize(width = 0, height = 0):Void
-	{
+	public function setGraphicSize(width = 0, height = 0):Void {
 		if (width <= 0 && height <= 0)
 			return;
 
 		var newScaleX:Float = width / w;
 		var newScaleY:Float = height / h;
-		//scale.set(newScaleX, newScaleY);
+		// scale.set(newScaleX, newScaleY);
 
 		if (width <= 0)
 			w = Std.int(newScaleY);

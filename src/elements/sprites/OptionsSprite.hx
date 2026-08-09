@@ -1,15 +1,14 @@
 // EVERYTHING RELATED TO THE OPTIONS SCREEN SHEET IN THE CLASS IS 100% HARDCODED.
-
 package elements.sprites;
 
 /**
-	* This is a cheap copy of UISprite with less things in mind because it's meant for the options screen.
-	* @since Development
+ * This is a cheap copy of UISprite with less things in mind because it's meant for the options screen.
+ * @since Development
 **/
 @:publicFields
 class OptionsSprite implements Element {
 	// position in pixel (relative to upper left corner of Display)
-	@posX @formula("uDisplayRotateX(aPos)")  var x:Float = 0.0;
+	@posX @formula("uDisplayRotateX(aPos)") var x:Float = 0.0;
 	@posY @formula("uDisplayRotateY(aPos)") var y:Float = 0.0;
 
 	// size in pixel
@@ -23,8 +22,8 @@ class OptionsSprite implements Element {
 	@texH var clipHeight:Int = 200;
 
 	// extra tex attributes to adjust texture within the clip
-	@texPosX  var clipPosX:Int = 0;
-	@texPosY  var clipPosY:Int = 0;
+	@texPosX var clipPosX:Int = 0;
+	@texPosY var clipPosY:Int = 0;
 	@custom @varying @texSizeX var clipSizeX:Int = 200;
 	@custom @varying @texSizeY var clipSizeY:Int = 200;
 
@@ -66,7 +65,7 @@ class OptionsSprite implements Element {
 
 	var curID(default, null):Int;
 
-	var OPTIONS = { texRepeatX: false, texRepeatY: false, blend: true };
+	var OPTIONS = {texRepeatX: false, texRepeatY: false, blend: true};
 
 	static function init(program:CustomProgram, name:String, texture:Texture) {
 		// creates a texture-layer named "name"

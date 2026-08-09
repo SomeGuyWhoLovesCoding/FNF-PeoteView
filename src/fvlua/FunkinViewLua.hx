@@ -43,14 +43,17 @@ class FunkinViewLua {
 		var luaFilesFound = 0;
 		for (i in 0...files.length) {
 			var scriptFile = '$path/${files[i]}';
-			if (!scriptFile.endsWith(".lua")) continue;
+			if (!scriptFile.endsWith(".lua"))
+				continue;
 			Sys.println('Lua File Found : $scriptFile');
-			if (initScript(scriptFile) == null) continue;
+			if (initScript(scriptFile) == null)
+				continue;
 			luaFilesFound++;
 		}
 
 		var stageLuaFile = '${path.split("/")[0]}/stages/${header.stage}.lua';
-		if (FileSystem.exists(stageLuaFile)) initScript(stageLuaFile);
+		if (FileSystem.exists(stageLuaFile))
+			initScript(stageLuaFile);
 
 		callFunction('create', null);
 	}
@@ -65,7 +68,8 @@ class FunkinViewLua {
 			return null;
 		}
 		addCallbacksList(script);
-		for (component in components) component.addCallbacksList(script);
+		for (component in components)
+			component.addCallbacksList(script);
 		vms.push(script);
 		return script;
 	}
@@ -82,14 +86,20 @@ class FunkinViewLua {
 	}
 
 	static function typeToString(type:Int):String {
-		switch(type) {
-			case Lua.LUA_TBOOLEAN: return "boolean";
-			case Lua.LUA_TNUMBER: return "number";
-			case Lua.LUA_TSTRING: return "string";
-			case Lua.LUA_TTABLE: return "table";
-			case Lua.LUA_TFUNCTION: return "function";
+		switch (type) {
+			case Lua.LUA_TBOOLEAN:
+				return "boolean";
+			case Lua.LUA_TNUMBER:
+				return "number";
+			case Lua.LUA_TSTRING:
+				return "string";
+			case Lua.LUA_TTABLE:
+				return "table";
+			case Lua.LUA_TFUNCTION:
+				return "function";
 		}
-		if (type <= Lua.LUA_TNIL) return "nil";
+		if (type <= Lua.LUA_TNIL)
+			return "nil";
 		return "unknown";
 	}
 
@@ -99,7 +109,8 @@ class FunkinViewLua {
 	private var noteMovementLoaded:Bool = false;
 
 	public function setNoteFormulaSource(source:String) {
-		if (noteMovementSource == source) return;
+		if (noteMovementSource == source)
+			return;
 		noteMovementSource = source;
 		noteMovementInterp = new NoteMovementInterp(noteMovementSource);
 		noteMovementLoaded = false;
@@ -112,9 +123,11 @@ class FunkinViewLua {
 	}
 
 	function ensureNoteMovementInterp():Bool {
-		if (noteMovementSource == null) return false;
-		if (noteMovementLoaded && noteMovementInterp != null) return true;
-		
+		if (noteMovementSource == null)
+			return false;
+		if (noteMovementLoaded && noteMovementInterp != null)
+			return true;
+
 		try {
 			noteMovementInterp = new NoteMovementInterp(noteMovementSource);
 			noteMovementLoaded = true;
@@ -128,24 +141,28 @@ class FunkinViewLua {
 	private var noteMovementResult:NoteFormulaResult = new NoteFormulaResult();
 
 	public function callNoteFormula(diff:Float, scrollSpeed:Float, receptorX:Float, receptorY:Float, index:Float, type:Float):NoteFormulaResult {
-		if (!ensureNoteMovementInterp()) return null;
+		if (!ensureNoteMovementInterp())
+			return null;
 		return noteMovementInterp.run(diff, scrollSpeed, receptorX, receptorY, index, type, noteMovementResult);
 	}
 
 	// --- Standard Lua Function Calls ---
 	private static var NO_ARGS(default, null):Array<Dynamic> = [];
+
 	private var returns(default, null):Array<Dynamic> = [];
-	
+
 	public function callFunction(fname:String, args:haxe.Rest<Dynamic>):Array<Dynamic> {
 		returns.resize(0);
-		if (vms == null) return null;
+		if (vms == null)
+			return null;
 		for (script in vms) {
 			var lua:State = script.vm;
 
-			if(disposed) return [Function_Continue];
+			if (disposed)
+				return [Function_Continue];
 
 			try {
-				if(lua == null) {
+				if (lua == null) {
 					returns.push(Function_Continue);
 					continue;
 				}
@@ -163,7 +180,8 @@ class FunkinViewLua {
 				}
 
 				var argsArr:Array<Any> = args == null ? NO_ARGS : args.toArray();
-				for (arg in argsArr) Convert.toLua(lua, arg);
+				for (arg in argsArr)
+					Convert.toLua(lua, arg);
 				var status:Int = Lua.pcall(lua, argsArr.length, 1, 0);
 
 				if (status != Lua.LUA_OK) {
@@ -174,13 +192,13 @@ class FunkinViewLua {
 				}
 
 				var result:Dynamic = cast Convert.fromLua(lua, -1);
-				if (result == null) result = Function_Continue;
+				if (result == null)
+					result = Function_Continue;
 
 				Lua.pop(lua, 1);
 				returns.push(result);
 				continue;
-			}
-			catch (e:Dynamic) {
+			} catch (e:Dynamic) {
 				trace(e);
 			}
 			returns.push(Function_Continue);
@@ -195,7 +213,7 @@ class FunkinViewLua {
 
 	function getErrorMessage(lua:State, status:Int):String {
 		if (Lua.gettop(lua) == 0) {
-			return switch(status) {
+			return switch (status) {
 				case Lua.LUA_ERRRUN: "Runtime Error";
 				case Lua.LUA_ERRMEM: "Memory Allocation Error";
 				case Lua.LUA_ERRERR: "Critical Error";
@@ -207,9 +225,10 @@ class FunkinViewLua {
 		var v:String = Lua.tostring(lua, -1);
 		Lua.pop(lua, 1);
 
-		if (v != null) v = v.trim();
+		if (v != null)
+			v = v.trim();
 		if (v == null || v == "") {
-			return switch(status) {
+			return switch (status) {
 				case Lua.LUA_ERRRUN: "Runtime Error";
 				case Lua.LUA_ERRMEM: "Memory Allocation Error";
 				case Lua.LUA_ERRERR: "Critical Error";
@@ -228,7 +247,8 @@ class FunkinViewLua {
 		}
 
 		var colorSwatch:Null<Int> = Std.parseInt(color);
-		if (colorSwatch == null) return Color.WHITE;
+		if (colorSwatch == null)
+			return Color.WHITE;
 		return colorSwatch;
 	}
 
@@ -237,14 +257,16 @@ class FunkinViewLua {
 
 	public function dispose() {
 		disposed = true;
-    
+
 		resetNoteFormulaSource();
 
-		for (component in components) component.dispose();
+		for (component in components)
+			component.dispose();
 		components.resize(0);
 		components = null;
-		for (script in vms) script.dispose();
-		
+		for (script in vms)
+			script.dispose();
+
 		vms.resize(0);
 		vms = null;
 	}

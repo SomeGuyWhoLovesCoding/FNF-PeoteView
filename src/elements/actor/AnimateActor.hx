@@ -17,8 +17,7 @@ import elements.actor.*;
 	@since Development
 **/
 @:publicFields
-class AnimateActor extends Actor
-{
+class AnimateActor extends Actor {
 	private static inline var ANIMATE_FRAGMENT_SHADER = '
 		vec4 getColor(int texId, vec4 _m, float _rotated, float _originU, float _originV)
 		{
@@ -61,6 +60,7 @@ class AnimateActor extends Actor
 
 	/** Live pool of leaf ActorElements. Grows as needed, never shrinks. */
 	var leafPool:Array<ActorElement> = [];
+
 	/** How many leaves are active in the current frame. */
 	var activeLeafCount:Int = 0;
 
@@ -69,11 +69,8 @@ class AnimateActor extends Actor
 
 	// ── Construction ─────────────────────────────────────────────────────────
 
-	function new(display:CustomDisplay, tag:Null<String>, name:String,
-				 x:Int = 0, y:Int = 0, fps:Int = 24,
-				 folder:String = "images/characters/",
-				 addBufferAndProgram:Bool = true)
-	{
+	function new(display:CustomDisplay, tag:Null<String>, name:String, x:Int = 0, y:Int = 0, fps:Int = 24, folder:String = "images/characters/",
+			addBufferAndProgram:Bool = true) {
 		super(display, tag, name, x, y, fps, folder, addBufferAndProgram);
 
 		atlasType = ANIMATE;
@@ -89,7 +86,7 @@ class AnimateActor extends Actor
 			if (!Actor.pathExists(name, folder, SPRITEMAP) || !Actor.pathExists(name, folder, ANIMATION))
 				throw "Animate atlas data doesn't exist for: " + name;
 
-			var dataPath         = StringTools.replace(spritemapPath, "spritemap1.png", "spritemap1.json");
+			var dataPath = StringTools.replace(spritemapPath, "spritemap1.png", "spritemap1.json");
 			var spritemapContent = sys.io.File.getContent(dataPath);
 			var animationContent = sys.io.File.getContent(animationPath);
 
@@ -110,13 +107,14 @@ class AnimateActor extends Actor
 		// ── Buffer & program ───────────────────────────────────────────────
 
 		if (animateAtlas.imagePath != "" && addBufferAndProgram) {
-			if (tag == null) throw "Tag cannot be null when addBufferAndProgram is true";
+			if (tag == null)
+				throw "Tag cannot be null when addBufferAndProgram is true";
 
-			if (Actor.buffers[tag] == null) Actor.buffers[tag] = new Buffer<ActorElement>(16, 16);
+			if (Actor.buffers[tag] == null)
+				Actor.buffers[tag] = new Buffer<ActorElement>(16, 16);
 			buffer = Actor.buffers[tag];
 
 			if (Actor.programs[tag] == null) {
-				
 				Actor.programs[tag] = new CustomProgram(buffer);
 				program = Actor.programs[tag];
 
@@ -132,15 +130,10 @@ class AnimateActor extends Actor
 				// Inside the program creation block, after setColorFormula:
 				if (Main.current.upscale) {
 					program.injectIntoFragmentShader(ANIMATE_FRAGMENT_SHADER + "\n\n" + Shaders.UPSCALE_FRAGMENT_SHADER);
-					program.setColorFormula(
-						'iconPixel(${texName}_ID, getColorReturnJustUV(${texName}_ID, vec4(_ma, _mb, _mc, _md), _rotated, _originU, _originV), vec2(spriteW, 0.0), vec2(spriteH, 0.0))'
-					);
-				}
-				else {
+					program.setColorFormula('iconPixel(${texName}_ID, getColorReturnJustUV(${texName}_ID, vec4(_ma, _mb, _mc, _md), _rotated, _originU, _originV), vec2(spriteW, 0.0), vec2(spriteH, 0.0))');
+				} else {
 					program.injectIntoFragmentShader(ANIMATE_FRAGMENT_SHADER);
-					program.setColorFormula(
-						'getColor(${texName}_ID, vec4(_ma, _mb, _mc, _md), _rotated, _originU, _originV)'
-					);
+					program.setColorFormula('getColor(${texName}_ID, vec4(_ma, _mb, _mc, _md), _rotated, _originU, _originV)');
 				}
 			} else {
 				program = Actor.programs[tag];
@@ -150,16 +143,17 @@ class AnimateActor extends Actor
 		}
 
 		mirror = !data.flip;
-		scale  = data.scale;
+		scale = data.scale;
 	}
 
 	// ── Leaf pool management (used by AnimateActor) ──────────────────────────
 
 	function ensureLeafPool(count:Int) {
 		while (leafPool.length < count) {
-			var el    = new ActorElement(this.x, this.y);
-			el.scale  = this.scale;
-			if (buffer != null) buffer.addElement(el);
+			var el = new ActorElement(this.x, this.y);
+			el.scale = this.scale;
+			if (buffer != null)
+				buffer.addElement(el);
 			leafPool.push(el);
 		}
 	}
@@ -169,34 +163,37 @@ class AnimateActor extends Actor
 			leafPool[i].w = 0;
 			leafPool[i].h = 0;
 		}
-		if (buffer != null) buffer.update();
+		if (buffer != null)
+			buffer.update();
 		activeLeafCount = count;
 	}
 
 	// ── Atlas range resolution ────────────────────────────────────────────────
 
 	override private function resolveAnimationRange(symbolName:String, _sparrowRange:Array<Int>) {
-		var frames = indicesMode
-			? animateAtlas.getResolvedFramesSubset(symbolName, indices)
-			: animateAtlas.getResolvedFrames(symbolName);
+		var frames = indicesMode ? animateAtlas.getResolvedFramesSubset(symbolName, indices) : animateAtlas.getResolvedFrames(symbolName);
 
-		if (frames == null || frames.length == 0) return;
+		if (frames == null || frames.length == 0)
+			return;
 		currentResolvedFrames = frames;
-		startingFrameIndex    = 0;
-		endingFrameIndex      = frames.length;
+		startingFrameIndex = 0;
+		endingFrameIndex = frames.length;
 	}
 
 	// ── Frame rendering ───────────────────────────────────────────────────────
 
 	override function changeFrame() {
-		if (currentResolvedFrames == null || frameIndex >= currentResolvedFrames.length) return;
+		if (currentResolvedFrames == null || frameIndex >= currentResolvedFrames.length)
+			return;
 		applyResolvedFrame(currentResolvedFrames[frameIndex]);
-    	if (buffer != null) buffer.update();
+		if (buffer != null)
+			buffer.update();
 	}
 
 	override private function renderImpl() {
 		for (i in 0...activeLeafCount) {
-			if (buffer != null) buffer.updateElement(leafPool[i]);
+			if (buffer != null)
+				buffer.updateElement(leafPool[i]);
 		}
 	}
 
@@ -248,41 +245,45 @@ class AnimateActor extends Actor
 	 */
 	function applyLeafTransform(el:ActorElement, leaf:ResolvedLeaf, leafIndex:Int) {
 		var sprite = leaf.sprite;
-		var s      = this.scale;
+		var s = this.scale;
 
-		var a  = this.mirror ? -leaf.a  : leaf.a;
-		var b  = leaf.b;
-		var c  = this.mirror ? -leaf.c  : leaf.c;
-		var d  = leaf.d;
+		var a = this.mirror ? -leaf.a : leaf.a;
+		var b = leaf.b;
+		var c = this.mirror ? -leaf.c : leaf.c;
+		var d = leaf.d;
 		var tx = this.mirror ? -leaf.tx : leaf.tx;
 		var ty = leaf.ty;
 
-		el.mirror  = false;
-		el.flipX   = false;
-		el.flipY   = false;
+		el.mirror = false;
+		el.flipX = false;
+		el.flipY = false;
 		el._mirror = 0.0;
 
 		var aw:Float = sprite.rotated ? sprite.height : sprite.width;
-		var ah:Float = sprite.rotated ? sprite.width  : sprite.height;
+		var ah:Float = sprite.rotated ? sprite.width : sprite.height;
 
 		// ── AABB of the four transformed corners ───────────────────────────
 
-		var minX =  Math.POSITIVE_INFINITY;
-		var minY =  Math.POSITIVE_INFINITY;
-		var maxX =  Math.NEGATIVE_INFINITY;
-		var maxY =  Math.NEGATIVE_INFINITY;
+		var minX = Math.POSITIVE_INFINITY;
+		var minY = Math.POSITIVE_INFINITY;
+		var maxX = Math.NEGATIVE_INFINITY;
+		var maxY = Math.NEGATIVE_INFINITY;
 
-		for (corner in [{x:0.0,y:0.0},{x:aw,y:0.0},{x:aw,y:ah},{x:0.0,y:ah}]) {
+		for (corner in [{x: 0.0, y: 0.0}, {x: aw, y: 0.0}, {x: aw, y: ah}, {x: 0.0, y: ah}]) {
 			var wx = (a * corner.x + c * corner.y + tx) * s;
 			var wy = (b * corner.x + d * corner.y + ty) * s;
-			if (wx < minX) minX = wx;
-			if (wx > maxX) maxX = wx;
-			if (wy < minY) minY = wy;
-			if (wy > maxY) maxY = wy;
+			if (wx < minX)
+				minX = wx;
+			if (wx > maxX)
+				maxX = wx;
+			if (wy < minY)
+				minY = wy;
+			if (wy > maxY)
+				maxY = wy;
 		}
 
-		var vws     = maxX - minX;
-		var vhs     = maxY - minY;
+		var vws = maxX - minX;
+		var vhs = maxY - minY;
 		var centerX = (minX + maxX) * 0.5;
 		var centerY = (minY + maxY) * 0.5;
 
@@ -293,25 +294,29 @@ class AnimateActor extends Actor
 		el.adjust_x = this.adjust_x * s + centerX - vws * 0.5;
 		el.adjust_y = this.adjust_y * s + centerY - vhs * 0.5;
 
-		el.clipX      = sprite.x;
-		el.clipY      = sprite.y;
-		el.rotated    = sprite.rotated;
-		el.clipWidth  = sprite.width;
+		el.clipX = sprite.x;
+		el.clipY = sprite.y;
+		el.rotated = sprite.rotated;
+		el.clipWidth = sprite.width;
 		el.clipHeight = sprite.height;
-		el.spriteW    = sprite.width;
-		el.spriteH    = sprite.height;
+		el.spriteW = sprite.width;
+		el.spriteH = sprite.height;
 
 		// ── Inverse matrix for UV distortion ──────────────────────────────
 
 		var det = a * d - b * c;
 		if (Math.abs(det) < 1e-8) {
-			el._ma = 1.0; el._mb = 0.0; el._mc = 0.0; el._md = 1.0;
-			el._originU = 0.0; el._originV = 0.0;
+			el._ma = 1.0;
+			el._mb = 0.0;
+			el._mc = 0.0;
+			el._md = 1.0;
+			el._originU = 0.0;
+			el._originV = 0.0;
 		} else {
-			var invA =  d / det;
+			var invA = d / det;
 			var invB = -b / det;
 			var invC = -c / det;
-			var invD =  a / det;
+			var invD = a / det;
 
 			var vwsU = vws / s;
 			var vhsU = vhs / s;
@@ -321,7 +326,7 @@ class AnimateActor extends Actor
 			el._mc = invC * vhsU / aw;
 			el._md = invD * vhsU / ah;
 			/*if (leafIndex == 0)
-				trace(el._ma, el._mb, el._mc, el._md);*/
+				trace(el._ma, el._mb, el._mc, el._md); */
 
 			var originLocalX = invA * (minX / s - tx) + invC * (minY / s - ty);
 			var originLocalY = invB * (minX / s - tx) + invD * (minY / s - ty);
@@ -333,7 +338,8 @@ class AnimateActor extends Actor
 		el.x = this.x;
 		el.y = this.y;
 
-		if (leafIndex == 0 && frameIndex == 0) firstFrameWidth = vws;
+		if (leafIndex == 0 && frameIndex == 0)
+			firstFrameWidth = vws;
 	}
 
 	// ── Dispose ──────────────────────────────────────────────────────────────
@@ -342,9 +348,10 @@ class AnimateActor extends Actor
 		for (el in leafPool) {
 			el.w = 0;
 			el.h = 0;
-			if (buffer != null) buffer.updateElement(el);
+			if (buffer != null)
+				buffer.updateElement(el);
 		}
-		leafPool        = [];
+		leafPool = [];
 		activeLeafCount = 0;
 		super.dispose();
 	}

@@ -11,25 +11,25 @@ package data.chart;
 @:publicFields
 abstract MetaNote(MetaNoteImpl) from MetaNoteImpl to MetaNoteImpl {
 	// Masks and shifts matching C++ layout
-	static var SHIFT_POSITION = 0;   // 48 bits: bits 0-47
-	static var SHIFT_DURATION = 48;  // 16 bits: bits 49-63
-	static var SHIFT_INDEX    = 64;  // 8 bits:  bits 64-71
-	static var SHIFT_TYPE     = 72;  // 8 bits:  bits 72-79
+	static var SHIFT_POSITION = 0; // 48 bits: bits 0-47
+	static var SHIFT_DURATION = 48; // 16 bits: bits 49-63
+	static var SHIFT_INDEX = 64; // 8 bits:  bits 64-71
+	static var SHIFT_TYPE = 72; // 8 bits:  bits 72-79
 
-	static var POSITION_MASK = Int64.sub(Int64.shl(Int64.ofInt(1), 48), Int64.ofInt(1)); 
-	static var DURATION_MASK = 0xFFFF;    // 16 bits
-	static var INDEX_MASK    = 0xFF;       // 8 bits
-	static var TYPE_MASK     = 0xFF;       // 8 bits
+	static var POSITION_MASK = Int64.sub(Int64.shl(Int64.ofInt(1), 48), Int64.ofInt(1));
+	static var DURATION_MASK = 0xFFFF; // 16 bits
+	static var INDEX_MASK = 0xFF; // 8 bits
+	static var TYPE_MASK = 0xFF; // 8 bits
 
 	// Constructor
 	inline function new(position:Int64, duration:Int, index:Int, type:Int) {
 		// Pack into the low 64 bits
 		var high:Int64 = (position & POSITION_MASK) | (Int64.ofInt(duration & DURATION_MASK) << SHIFT_DURATION);
-		
+
 		// Pack into the high 64 bits
-		var low:Int = ((index >> (SHIFT_INDEX-64)) & INDEX_MASK) // upper 9 bits of duration
-		              | ((type & TYPE_MASK) << (SHIFT_TYPE-64));      // type at bits 9-15
-		
+		var low:Int = ((index >> (SHIFT_INDEX - 64)) & INDEX_MASK) // upper 9 bits of duration
+			| ((type & TYPE_MASK) << (SHIFT_TYPE - 64)); // type at bits 9-15
+
 		this = new MetaNoteImpl(high, low); // Adjust parameter order if your library expects (low, high)
 	}
 
@@ -49,11 +49,11 @@ abstract MetaNote(MetaNoteImpl) from MetaNoteImpl to MetaNoteImpl {
 	}
 
 	inline function get_index():Int {
-		return ((this.low >> SHIFT_INDEX-64) & INDEX_MASK);
+		return ((this.low >> SHIFT_INDEX - 64) & INDEX_MASK);
 	}
 
 	inline function get_type():Int {
-		return ((this.low >> SHIFT_TYPE-64) & TYPE_MASK);
+		return ((this.low >> SHIFT_TYPE - 64) & TYPE_MASK);
 	}
 
 	// Time conversion - IMPORTANT: position is in 100 nanosecond ticks

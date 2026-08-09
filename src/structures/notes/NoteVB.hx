@@ -55,9 +55,7 @@ class NoteVB {
 	inline function addNote(note:VirtualNote) {
 		var ref = note.ref;
 		var lane = ref.type;
-		notes[lane][ref.index][
-			noteLength[note.ref.type][ref.index]
-		] = note;
+		notes[lane][ref.index][noteLength[note.ref.type][ref.index]] = note;
 		noteLength[note.ref.type][ref.index]++;
 	}
 
@@ -67,14 +65,12 @@ class NoteVB {
 	inline function addSustain(sustain:VirtualSustain, note:VirtualNote) {
 		var ref = note.ref;
 		var lane = ref.type;
-		sustains[note.ref.type][ref.index][
-			sustainLength[note.ref.type][ref.index]
-		] = sustain;
+		sustains[note.ref.type][ref.index][sustainLength[note.ref.type][ref.index]] = sustain;
 		sustainLength[note.ref.type][ref.index]++;
 	}
 
 	function clear() {
-    	for (i in 0...noteLength.length)
+		for (i in 0...noteLength.length)
 			for (j in 0...noteLength[i].length)
 				noteLength[i][j] = 0;
 
@@ -116,7 +112,7 @@ class VirtualNote {
 	// the note diff relative to strum time (4 bytes)
 	var diff:Int;
 
-	// the current strum position 
+	// the current strum position
 	var Sxy:Int;
 	var Sx(get, set):Int;
 	var Sy(get, set):Int;
@@ -190,7 +186,7 @@ class VirtualSustain {
 	// the note diff relative to strum time (4 bytes)
 	var diff:Int;
 
-	// the current strum position 
+	// the current strum position
 	var Sxy:Int;
 	var Sx(get, set):Int;
 	var Sy(get, set):Int;

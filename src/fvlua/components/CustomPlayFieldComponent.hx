@@ -48,15 +48,15 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 
 		// WIP, for story mode
 		/*set('isStoryMode', PlayState.isStoryMode);
-		set('difficulty', PlayState.storyDifficulty);
+			set('difficulty', PlayState.storyDifficulty);
 
-		set('difficultyName', Difficulty.getString(false));
-		set('difficultyPath', Difficulty.getFilePath());
-		set('difficultyNameTranslation', Difficulty.getString(true));
-		set('weekRaw', PlayState.storyWeek);
-		set('week', WeekData.weeksList[PlayState.storyWeek]);
-		set('seenCutscene', PlayState.seenCutscene);
-		set('hasVocals', PlayState.SONG.needsVoices);*/
+			set('difficultyName', Difficulty.getString(false));
+			set('difficultyPath', Difficulty.getFilePath());
+			set('difficultyNameTranslation', Difficulty.getString(true));
+			set('weekRaw', PlayState.storyWeek);
+			set('week', WeekData.weeksList[PlayState.storyWeek]);
+			set('seenCutscene', PlayState.seenCutscene);
+			set('hasVocals', PlayState.SONG.needsVoices); */
 
 		// regular old bullshit from psych engine
 		vm.addCallback("getProperty", (name:String) -> {
@@ -76,7 +76,8 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 		});
 		vm.addCallback("setDefaultCameraPosition", (lane:Int, x:Float, y:Float) -> {
 			var field = playField.field;
-			if (field == null) return;
+			if (field == null)
+				return;
 			field.defaultCameraXpos[lane] = x;
 			field.defaultCameraYpos[lane] = y;
 		});
@@ -89,7 +90,7 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 
 		// .
 		vm.addCallback("triggerEvent", function(name:String, values:Array<String>) {
-			//trace('Triggered event: ' + name + ', ' + value1 + ', ' + value2);
+			// trace('Triggered event: ' + name + ', ' + value1 + ', ' + value2);
 			return true;
 		}); // this one specifically is a wip.
 		var exitSongCallback = function() {
@@ -113,7 +114,8 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 		});
 		vm.addCallback("setSongPosition", (time:Float) -> {
 			var pf = playField; // FunkinViewLua.playField : PlayField
-			if (pf == null || pf.disposed || !pf.songStarted || pf.songEnded || pf.paused || pf.died) return;
+			if (pf == null || pf.disposed || !pf.songStarted || pf.songEnded || pf.paused || pf.died)
+				return;
 			pf.setTime(time);
 		});
 
@@ -142,25 +144,25 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 			var shake = playField.viewShake;
 			shake.x = x;
 			shake.y = y;
-			
-		vm.addCallback("setCameraShake", (fromDisplay:String, x:Float, y:Float) -> {
-			var display = Reflect.field(playField, fromDisplay.toLowerCase());
-			if (display == null) {
-				FunkinViewLua.error("Display not found: " + fromDisplay.toLowerCase());
-				return FunkinViewLua.Function_Stop;
-			}
-			var shake:Vec2 = null;
-			switch (fromDisplay.toLowerCase()) {
-				case "view":
-					shake = playField.viewShake;
-				case "display":
-					shake = playField.dispShake;
-				default:
-			}
-			shake.x = x;
-			shake.y = y;
-			return FunkinViewLua.Function_Continue;
-		});
+
+			vm.addCallback("setCameraShake", (fromDisplay:String, x:Float, y:Float) -> {
+				var display = Reflect.field(playField, fromDisplay.toLowerCase());
+				if (display == null) {
+					FunkinViewLua.error("Display not found: " + fromDisplay.toLowerCase());
+					return FunkinViewLua.Function_Stop;
+				}
+				var shake:Vec2 = null;
+				switch (fromDisplay.toLowerCase()) {
+					case "view":
+						shake = playField.viewShake;
+					case "display":
+						shake = playField.dispShake;
+					default:
+				}
+				shake.x = x;
+				shake.y = y;
+				return FunkinViewLua.Function_Continue;
+			});
 		});
 
 		vm.addCallback('addScore', function(value:Int) {
@@ -218,27 +220,35 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 		});
 
 		vm.addCallback('turnOnCustomHealthBarColor', function() {
-			if (playField.hud == null) return;
-			if (playField.hud.healthBar == null) return;
+			if (playField.hud == null)
+				return;
+			if (playField.hud.healthBar == null)
+				return;
 			playField.hud.healthBar.customHealthBarColorEnabled = true;
 		});
 
 		vm.addCallback('turnOffCustomHealthBarColor', function() {
-			if (playField.hud == null) return;
-			if (playField.hud.healthBar == null) return;
+			if (playField.hud == null)
+				return;
+			if (playField.hud.healthBar == null)
+				return;
 			playField.hud.healthBar.customHealthBarColorEnabled = false;
 		});
 
 		vm.addCallback('setHealthBarColorsLeft', function(left:Array<String>) {
-			if (playField.hud == null) return;
-			if (playField.hud.healthBar == null) return;
+			if (playField.hud == null)
+				return;
+			if (playField.hud.healthBar == null)
+				return;
 			var colorArray:Array<Color> = Tools.hexesToOpaqueColor(left);
 			playField.hud.healthBar.healthIconColors[0] = Tools.convertToSixColors(colorArray);
 		});
 
 		vm.addCallback('setHealthBarColorsRight', function(right:Array<String>) {
-			if (playField.hud == null) return;
-			if (playField.hud.healthBar == null) return;
+			if (playField.hud == null)
+				return;
+			if (playField.hud.healthBar == null)
+				return;
 			var colorArray:Array<Color> = Tools.hexesToOpaqueColor(right);
 			playField.hud.healthBar.healthIconColors[1] = Tools.convertToSixColors(colorArray);
 		});

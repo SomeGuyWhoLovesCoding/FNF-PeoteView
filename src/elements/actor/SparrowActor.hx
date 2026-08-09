@@ -14,17 +14,13 @@ import elements.actor.*;
 	@since Development
 **/
 @:publicFields
-class SparrowActor extends Actor
-{
+class SparrowActor extends Actor {
 	var sparrowAtlas(default, null):SparrowAtlas;
 
 	// ── Construction ─────────────────────────────────────────────────────────
 
-	function new(display:CustomDisplay, tag:Null<String>, name:String,
-				 x:Int = 0, y:Int = 0, fps:Int = 24,
-				 folder:String = "images/characters/",
-				 addBufferAndProgram:Bool = true)
-	{
+	function new(display:CustomDisplay, tag:Null<String>, name:String, x:Int = 0, y:Int = 0, fps:Int = 24, folder:String = "images/characters/",
+			addBufferAndProgram:Bool = true) {
 		super(display, tag, name, x, y, fps, folder, addBufferAndProgram);
 
 		atlasType = SPARROW;
@@ -37,9 +33,7 @@ class SparrowActor extends Actor
 			if (!Actor.pathExists(name, folder, XML))
 				throw "Sparrow atlas data doesn't exist for: " + name;
 
-			sparrowAtlas = SparrowAtlas.parse(
-				sys.io.File.getContent(Actor.path(name, folder, XML))
-			);
+			sparrowAtlas = SparrowAtlas.parse(sys.io.File.getContent(Actor.path(name, folder, XML)));
 			Actor.cachedAtlases[atlasKey] = sparrowAtlas;
 		} else {
 			sparrowAtlas = Actor.cachedAtlases[atlasKey];
@@ -56,9 +50,11 @@ class SparrowActor extends Actor
 		// ── Buffer & program ───────────────────────────────────────────────
 
 		if (sparrowAtlas.imagePath != "" && addBufferAndProgram) {
-			if (tag == null) throw "Tag cannot be null when addBufferAndProgram is true";
+			if (tag == null)
+				throw "Tag cannot be null when addBufferAndProgram is true";
 
-			if (Actor.buffers[tag] == null) Actor.buffers[tag] = new Buffer<ActorElement>(16, 16);
+			if (Actor.buffers[tag] == null)
+				Actor.buffers[tag] = new Buffer<ActorElement>(16, 16);
 			buffer = Actor.buffers[tag];
 
 			var texName = name + "Char";
@@ -87,7 +83,7 @@ class SparrowActor extends Actor
 		}
 
 		mirror = !data.flip;
-		scale  = data.scale;
+		scale = data.scale;
 	}
 
 	// ── Pose precomputation ───────────────────────────────────────────────────
@@ -107,11 +103,10 @@ class SparrowActor extends Actor
 	}
 
 	override private function resolveAnimationRange(symbolName:String, sparrowRange:Array<Int>) {
-		if (sparrowRange == null) return;
+		if (sparrowRange == null)
+			return;
 		startingFrameIndex = sparrowRange[0];
-		endingFrameIndex   = indicesMode
-			? startingFrameIndex + indices.length
-			: sparrowRange[1];
+		endingFrameIndex = indicesMode ? startingFrameIndex + indices.length : sparrowRange[1];
 	}
 
 	// ── Frame rendering ───────────────────────────────────────────────────────
@@ -122,7 +117,8 @@ class SparrowActor extends Actor
 	}
 
 	override private function renderImpl() {
-		if (buffer != null) buffer.updateElement(this);
+		if (buffer != null)
+			buffer.updateElement(this);
 	}
 
 	// ── Sparrow frame configuration ───────────────────────────────────────────
@@ -133,36 +129,43 @@ class SparrowActor extends Actor
 	 * values so the shared UV distortion shader is a transparent no-op.
 	 */
 	public function configure(subTexture:Dynamic) {
-		if (!Std.isOfType(subTexture, SubTexture)) return;
+		if (!Std.isOfType(subTexture, SubTexture))
+			return;
 		var config:SubTexture = cast subTexture;
 
-		var width  = config.width;
+		var width = config.width;
 		var height = config.height;
-		rotated    = config.rotated;
+		rotated = config.rotated;
 
-		if (frameIndex == 0) firstFrameWidth = width;
+		if (frameIndex == 0)
+			firstFrameWidth = width;
 
-		var xOffset    = config.frameX     == null ? 0     : config.frameX;
-		var yOffset    = config.frameY     == null ? 0     : config.frameY;
-		var flipX      = config.flipX      == null ? false : config.flipX;
-		var flipY      = config.flipY      == null ? false : config.flipY;
-		var frameWidth = config.frameWidth == null ? 0     : config.frameWidth;
+		var xOffset = config.frameX == null ? 0 : config.frameX;
+		var yOffset = config.frameY == null ? 0 : config.frameY;
+		var flipX = config.flipX == null ? false : config.flipX;
+		var flipY = config.flipY == null ? false : config.flipY;
+		var frameWidth = config.frameWidth == null ? 0 : config.frameWidth;
 
 		off_x = -xOffset * scale;
-		if (mirror) off_x = -off_x + (frameWidth - width);
+		if (mirror)
+			off_x = -off_x + (frameWidth - width);
 		off_y = -yOffset * scale;
 
-		if (rotated) { var t = width; width = height; height = t; }
+		if (rotated) {
+			var t = width;
+			width = height;
+			height = t;
+		}
 
-		clipX      = config.x;
-		clipY      = config.y;
-		w          = width;
-		h          = height;
+		clipX = config.x;
+		clipY = config.y;
+		w = width;
+		h = height;
 		this.flipX = flipX;
 		this.flipY = flipY;
-		clipWidth  = width;
+		clipWidth = width;
 		clipHeight = height;
-		spriteW  = width;
+		spriteW = width;
 		spriteH = height;
 	}
 }

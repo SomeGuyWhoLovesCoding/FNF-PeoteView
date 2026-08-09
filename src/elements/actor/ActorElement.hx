@@ -32,7 +32,7 @@ class ActorElement implements Element {
 	@varying @custom var _flipY:Float = 0.0;
 	@varying @custom var _mirror:Float = 0.0;
 	@varying @custom var _rotated:Float = 0.0;
-	
+
 	@varying @custom var _ma:Float = 1.0;
 	@varying @custom var _mb:Float = 0.0;
 	@varying @custom var _mc:Float = 0.0;

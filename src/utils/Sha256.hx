@@ -17,42 +17,56 @@ class Sha256 {
 	];
 
 	public static function makeFromInput(input:Input, totalLength:Int):Bytes {
-		var HASH:Array<Int> = [0x6A09E667, 0xBB67AE85, 0x3C6EF372, 0xA54FF53A, 0x510E527F, 0x9B05688C, 0x1F83D9AB, 0x5BE0CD19];
+		var HASH:Array<Int> = [
+			0x6A09E667,
+			0xBB67AE85,
+			0x3C6EF372,
+			0xA54FF53A,
+			0x510E527F,
+			0x9B05688C,
+			0x1F83D9AB,
+			0x5BE0CD19
+		];
 		var W = new Array<Int>();
 		W[64] = 0;
 		var m = new Array<Int>();
-		for (i in 0...16) m[i] = 0;
+		for (i in 0...16)
+			m[i] = 0;
 
 		var buf = Bytes.alloc(64);
 		var processed = 0;
-		
+
 		while (processed + 64 <= totalLength) {
 			input.readFullBytes(buf, 0, 64);
 			for (i in 0...16) {
-				m[i] = (buf.get(i*4) << 24) | (buf.get(i*4+1) << 16) | (buf.get(i*4+2) << 8) | buf.get(i*4+3);
+				m[i] = (buf.get(i * 4) << 24) | (buf.get(i * 4 + 1) << 16) | (buf.get(i * 4 + 2) << 8) | buf.get(i * 4 + 3);
 			}
 			processBlock(m, W, HASH);
 			processed += 64;
 		}
 
 		var remaining = totalLength - processed;
-		if (remaining > 0) input.readFullBytes(buf, 0, remaining);
-		
+		if (remaining > 0)
+			input.readFullBytes(buf, 0, remaining);
+
 		buf.set(remaining, 0x80);
-		for (i in (remaining+1)...64) buf.set(i, 0);
-		
+		for (i in (remaining + 1)...64)
+			buf.set(i, 0);
+
 		for (i in 0...16) {
-			m[i] = (buf.get(i*4) << 24) | (buf.get(i*4+1) << 16) | (buf.get(i*4+2) << 8) | buf.get(i*4+3);
+			m[i] = (buf.get(i * 4) << 24) | (buf.get(i * 4 + 1) << 16) | (buf.get(i * 4 + 2) << 8) | buf.get(i * 4 + 3);
 		}
-		
+
 		if (remaining >= 56) {
 			processBlock(m, W, HASH);
-			for (i in 0...14) m[i] = 0;
+			for (i in 0...14)
+				m[i] = 0;
 			m[14] = totalLength >>> 29;
 			m[15] = (totalLength & 0x1FFFFFFF) << 3;
 			processBlock(m, W, HASH);
 		} else {
-			for (i in (remaining+1)...14) m[i] = 0;
+			for (i in (remaining + 1)...14)
+				m[i] = 0;
 			m[14] = totalLength >>> 29;
 			m[15] = (totalLength & 0x1FFFFFFF) << 3;
 			processBlock(m, W, HASH);
@@ -73,16 +87,24 @@ class Sha256 {
 		var a:Int = HASH[0], b:Int = HASH[1], c:Int = HASH[2], d:Int = HASH[3];
 		var e:Int = HASH[4], f:Int = HASH[5], g:Int = HASH[6], h:Int = HASH[7];
 		var T1, T2;
-		
+
 		for (j in 0...64) {
-			if (j < 16) W[j] = m[j];
-			else W[j] = safeAdd(safeAdd(safeAdd(Gamma1256(W[j - 2]), W[j - 7]), Gamma0256(W[j - 15])), W[j - 16]);
+			if (j < 16)
+				W[j] = m[j];
+			else
+				W[j] = safeAdd(safeAdd(safeAdd(Gamma1256(W[j - 2]), W[j - 7]), Gamma0256(W[j - 15])), W[j - 16]);
 			T1 = safeAdd(safeAdd(safeAdd(safeAdd(h, Sigma1256(e)), Ch(e, f, g)), K[j]), W[j]);
 			T2 = safeAdd(Sigma0256(a), Maj(a, b, c));
-			h = g; g = f; f = e; e = safeAdd(d, T1);
-			d = c; c = b; b = a; a = safeAdd(T1, T2);
+			h = g;
+			g = f;
+			f = e;
+			e = safeAdd(d, T1);
+			d = c;
+			c = b;
+			b = a;
+			a = safeAdd(T1, T2);
 		}
-		
+
 		HASH[0] = safeAdd(a, HASH[0]);
 		HASH[1] = safeAdd(b, HASH[1]);
 		HASH[2] = safeAdd(c, HASH[2]);
@@ -93,14 +115,30 @@ class Sha256 {
 		HASH[7] = safeAdd(h, HASH[7]);
 	}
 
-	inline static function S(X, n) return (X >>> n) | (X << (32 - n));
-	inline static function R(X, n) return (X >>> n);
-	inline static function Ch(x, y, z) return ((x & y) ^ ((~x) & z));
-	inline static function Maj(x, y, z) return ((x & y) ^ (x & z) ^ (y & z));
-	inline static function Sigma0256(x) return (S(x, 2) ^ S(x, 13) ^ S(x, 22));
-	inline static function Sigma1256(x) return (S(x, 6) ^ S(x, 11) ^ S(x, 25));
-	inline static function Gamma0256(x) return (S(x, 7) ^ S(x, 18) ^ R(x, 3));
-	inline static function Gamma1256(x) return (S(x, 17) ^ S(x, 19) ^ R(x, 10));
+	inline static function S(X, n)
+		return (X >>> n) | (X << (32 - n));
+
+	inline static function R(X, n)
+		return (X >>> n);
+
+	inline static function Ch(x, y, z)
+		return ((x & y) ^ ((~x) & z));
+
+	inline static function Maj(x, y, z)
+		return ((x & y) ^ (x & z) ^ (y & z));
+
+	inline static function Sigma0256(x)
+		return (S(x, 2) ^ S(x, 13) ^ S(x, 22));
+
+	inline static function Sigma1256(x)
+		return (S(x, 6) ^ S(x, 11) ^ S(x, 25));
+
+	inline static function Gamma0256(x)
+		return (S(x, 7) ^ S(x, 18) ^ R(x, 3));
+
+	inline static function Gamma1256(x)
+		return (S(x, 17) ^ S(x, 19) ^ R(x, 10));
+
 	inline static function safeAdd(x, y) {
 		var lsw = (x & 0xFFFF) + (y & 0xFFFF);
 		var msw = (x >> 16) + (y >> 16) + (lsw >> 16);

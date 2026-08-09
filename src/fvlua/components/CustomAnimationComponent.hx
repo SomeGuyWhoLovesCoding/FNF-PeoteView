@@ -18,7 +18,7 @@ class CustomAnimationComponent extends LuaComponentObject {
 	public var customActors(default, null):FakeStringMap<Actor>;
 
 	public function new(_parent:FunkinViewLua) {
-        super(_parent);
+		super(_parent);
 
 		customActors = new FakeStringMap<Actor>();
 	}
@@ -54,7 +54,7 @@ class CustomAnimationComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 			var customActor = customActors.get(actorName);
-            customActor.playAnimation(anim, loop);
+			customActor.playAnimation(anim, loop);
 			return FunkinViewLua.Function_Continue;
 		});
 		vm.addCallback("stopCustomActorAnimation", (actorName:String) -> {
@@ -63,7 +63,7 @@ class CustomAnimationComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 			var customActor = customActors.get(actorName);
-            customActor.stopAnimation();
+			customActor.stopAnimation();
 			return FunkinViewLua.Function_Continue;
 		});
 		vm.addCallback("setCustomActorFinishAnim", (actorName:String, anim:String) -> {
@@ -72,18 +72,18 @@ class CustomAnimationComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 			var customActor = customActors.get(actorName);
-            customActor.finishAnim = anim;
+			customActor.finishAnim = anim;
 			return FunkinViewLua.Function_Continue;
 		});
 
-        // these four are here just in case you want to replicate the sing poses of >4 mania
+		// these four are here just in case you want to replicate the sing poses of >4 mania
 		vm.addCallback("playSingIdCustomActorAnimation", (actorName:String, index:Int, loop:Bool) -> {
 			if (actorName == "" || actorName == null) {
 				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;
 			}
 			var customActor = customActors.get(actorName);
-            customActor.playAnimationFromSingId(index, loop);
+			customActor.playAnimationFromSingId(index, loop);
 			return FunkinViewLua.Function_Continue;
 		});
 		vm.addCallback("playMissIdCustomActorAnimation", (actorName:String, index:Int, loop:Bool) -> {
@@ -92,7 +92,7 @@ class CustomAnimationComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 			var customActor = customActors.get(actorName);
-            customActor.playAnimationFromMissId(index, loop);
+			customActor.playAnimationFromMissId(index, loop);
 			return FunkinViewLua.Function_Continue;
 		});
 		vm.addCallback("preComputeCustomActorSingPoses", (actorName:String, anims:Array<String>) -> {
@@ -101,7 +101,7 @@ class CustomAnimationComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 			var customActor = customActors.get(actorName);
-            customActor.preComputeSingPosesOfAnimations(anims);
+			customActor.preComputeSingPosesOfAnimations(anims);
 			return FunkinViewLua.Function_Continue;
 		});
 		vm.addCallback("preComputeCustomActorMissPoses", (actorName:String, anims:Array<String>) -> {
@@ -110,19 +110,19 @@ class CustomAnimationComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 			var customActor = customActors.get(actorName);
-            customActor.preComputeMissPosesOfAnimations(anims);
+			customActor.preComputeMissPosesOfAnimations(anims);
 			return FunkinViewLua.Function_Continue;
 		});
 
-        // Now for the property get/set
+		// Now for the property get/set
 		vm.addCallback("setCustomActorPos", (actorName:String, x:Float, y:Float) -> {
 			if (actorName == "" || actorName == null) {
 				FunkinViewLua.error("Custom Actor's Key cannot be empty or nil!");
 				return FunkinViewLua.Function_Stop;
 			}
 			var customActor = customActors.get(actorName);
-            customActor.x = x;
-            customActor.y = y;
+			customActor.x = x;
+			customActor.y = y;
 			return FunkinViewLua.Function_Continue;
 		});
 		vm.addCallback("getCustomActorPosX", (actorName:String) -> {
@@ -147,7 +147,7 @@ class CustomAnimationComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 			var customActor = customActors.get(actorName);
-            customActor.r = r;
+			customActor.r = r;
 			return FunkinViewLua.Function_Continue;
 		});
 		vm.addCallback("getCustomActorPosAngle", (actorName:String) -> {
@@ -164,7 +164,7 @@ class CustomAnimationComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 			var customActor = customActors.get(actorName);
-            customActor.setFps(fps);
+			customActor.setFps(fps);
 			return FunkinViewLua.Function_Continue;
 		});
 		vm.addCallback("getCustomActorFPS", (actorName:String) -> {
@@ -197,7 +197,7 @@ class CustomAnimationComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 			var customActor = customActors.get(actorName);
-            customActor.shake = shake;
+			customActor.shake = shake;
 			return FunkinViewLua.Function_Continue;
 		});
 		vm.addCallback("setCustomActorStartToEndShakeFrames", (actorName:String, start:Int, end:Int) -> {
@@ -206,8 +206,8 @@ class CustomAnimationComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 			var customActor = customActors.get(actorName);
-            customActor.startingShakeFrame = start;
-            customActor.endingShakeFrame = end;
+			customActor.startingShakeFrame = start;
+			customActor.endingShakeFrame = end;
 			return FunkinViewLua.Function_Continue;
 		});
 		vm.addCallback("getCustomActorFrameRange", (actorName:String) -> {
@@ -219,61 +219,63 @@ class CustomAnimationComponent extends LuaComponentObject {
 			return customActor.endingFrameIndex - customActor.startingFrameIndex;
 		});
 
-        // now ofc we don't want to forget about our pals that access vanilla field characters that are always present in the song no matter what
+		// now ofc we don't want to forget about our pals that access vanilla field characters that are always present in the song no matter what
 		vm.addCallback("getPlayer", function() {
 			var bf = playField?.field?.player;
-            if (!customActors.exists(GLOBAL_BF)) {
-                customActors.set(GLOBAL_BF, bf);
-            }
+			if (!customActors.exists(GLOBAL_BF)) {
+				customActors.set(GLOBAL_BF, bf);
+			}
 			return GLOBAL_BF;
 		});
 		vm.addCallback("getBF", function() { // alt syntax (same api)
 			var bf = playField?.field?.player;
-            if (!customActors.exists(GLOBAL_BF)) {
-                customActors.set(GLOBAL_BF, bf);
-            }
+			if (!customActors.exists(GLOBAL_BF)) {
+				customActors.set(GLOBAL_BF, bf);
+			}
 			return GLOBAL_BF;
 		});
 		vm.addCallback("getSpectator", function() {
 			var gf = playField?.field?.spectator;
-            if (!customActors.exists(GLOBAL_GF)) {
-                customActors.set(GLOBAL_GF, gf);
-            }
+			if (!customActors.exists(GLOBAL_GF)) {
+				customActors.set(GLOBAL_GF, gf);
+			}
 			return GLOBAL_GF;
 		});
 		vm.addCallback("getGF", function() {
 			var gf = playField?.field?.spectator;
-            if (!customActors.exists(GLOBAL_GF)) {
-                customActors.set(GLOBAL_GF, gf);
-            }
+			if (!customActors.exists(GLOBAL_GF)) {
+				customActors.set(GLOBAL_GF, gf);
+			}
 			return GLOBAL_GF;
 		});
 		vm.addCallback("getOpponent", function() {
 			var opp = playField?.field?.opponent;
-            if (!customActors.exists(GLOBAL_OP)) {
-                customActors.set(GLOBAL_OP, opp);
-            }
+			if (!customActors.exists(GLOBAL_OP)) {
+				customActors.set(GLOBAL_OP, opp);
+			}
 			return GLOBAL_OP;
 		});
 
-        /*// if you want a more object-oriented way of doing things
-        vm.addCallback("playCustomAnimOfActorObject", function(actor:Actor, anim:String) {
-			if (actor == null) {
-				FunkinViewLua.error("Field Actor's cannot be nil!");
-				return FunkinViewLua.Function_Stop;
-			}
-            actor.playAnimation(anim, loop);
-			return FunkinViewLua.Function_Continue;
-        });*/
+		/*// if you want a more object-oriented way of doing things
+			vm.addCallback("playCustomAnimOfActorObject", function(actor:Actor, anim:String) {
+				if (actor == null) {
+					FunkinViewLua.error("Field Actor's cannot be nil!");
+					return FunkinViewLua.Function_Stop;
+				}
+				actor.playAnimation(anim, loop);
+				return FunkinViewLua.Function_Continue;
+		});*/
 	}
 
 	override public function dispose() {
-        super.dispose();
+		super.dispose();
 
 		for (customActor in customActors) {
 			if (customActor != null) {
 				// they will all dispose naturally since playfield's going to be disposed
-				if (customActors.get(GLOBAL_BF) != customActor && customActors.get(GLOBAL_GF) != customActor && customActors.get(GLOBAL_OP) != customActor)
+				if (customActors.get(GLOBAL_BF) != customActor
+					&& customActors.get(GLOBAL_GF) != customActor
+					&& customActors.get(GLOBAL_OP) != customActor)
 					customActor.dispose();
 				customActor = null;
 			}

@@ -16,6 +16,7 @@ import structures.FreeplayAlphabet;
 @:publicFields
 class OptionsDisplay {
 	private static var display(get, never):CustomDisplay;
+
 	inline private static function get_display() {
 		return OptionsMenu.display;
 	}
@@ -31,7 +32,7 @@ class OptionsDisplay {
 	var infoText(default, null):Text; // shared description text
 
 	// Points to the currently active sub‑display
-	var activeDisplay:{ function update(deltaTime:Float):Void; };
+	var activeDisplay:{function update(deltaTime:Float):Void;};
 
 	var closed:Bool = true;
 
@@ -77,8 +78,9 @@ class OptionsDisplay {
 	}
 
 	function enter() {
-		if (closed) return;
-		switch ((parent.categoryNav.value():OptionsCategorySelection)) {
+		if (closed)
+			return;
+		switch ((parent.categoryNav.value() : OptionsCategorySelection)) {
 			case PREFERENCES:
 				preferencesDisplay.enter();
 			case GAMEPLAY:
@@ -96,7 +98,7 @@ class OptionsDisplay {
 			option.c.luminanceF = parent.alphaLerp;
 			OptionsMenu.optionsBuf.updateElement(option);
 		}
-		
+
 		// Only update the active display – this prevents text/alpha conflicts.
 		if (activeDisplay != null) {
 			activeDisplay.update(deltaTime);
@@ -110,7 +112,7 @@ class OptionsDisplay {
 				OptionsMenu.optionsBuf.removeElement(option);
 			} catch (e) {}
 		}
-		
+
 		// Each display will clean up its own sprites and reset its state.
 		controlsDisplay.destroyOptions();
 		preferencesDisplay.destroyOptions();
@@ -122,7 +124,7 @@ class OptionsDisplay {
 		controlsDisplay.dispose();
 		preferencesDisplay.dispose();
 		graphicsDisplay.dispose();
-		
+
 		// Remove shared infoText
 		if (infoText != null) {
 			infoText.removeProgram();
