@@ -12,65 +12,6 @@
 	<assets path="assets" exclude="lime.svg" embed="false" />
 	<source path="src" />
 
-	<!-- Allow intergration to input2action -->
-	<haxelib name="input2action" />
-
-	<!-- Allow intergration to customtitlebar -->
-	<haxelib name="customtitlebar" />
-
-	<!-- Allow intergration to scripting via lua -->
-	<haxelib name="linc_luajit_funkinview" unless="FV_NO_LUA" />
-
-	<!-- Enable full dce (originally to only prevent JIT ERROR 0 on jit.c line 541) -->
-	<haxeflag name="-dce" value="full" />
-
-	<!-- Allow working memory greater than 1 gigabyte -->
-	<haxedef name="HXCPP_GC_BIG_BLOCKS" />
-
-	<!-- Latency-sensitive settings for funkin' view -->
-	<haxedef name="HXCPP_GC_DYNAMIC_SIZE" if="release" />
-	<!-- Compile-time feature functionality dedicated to Funkin' View -->
-	<haxedef name="HXCPP_TRACY" if="FV_PROFILE" />
-	<haxedef name="HXCPP_TELEMETRY" if="FV_PROFILE" />
-	<!--<haxedef name="HXCPP_STACK_TRACE" if="debug" />-->
-	<!--<haxedef name="HXCPP_STACK_LINE" if="debug" />-->
-	<haxedef name="HXCPP_TRACY_ON_DEMAND" if="FV_PROFILE" />
-	<haxedef name="HXCPP_TRACY_MEMORY" if="FV_PROFILE" />
-	<!--<haxedef name="FV_DEBUG" />-->
-
-	<haxedef name="HXCPP_CHECK_POINTER" if="release" />
-	<haxedef name="HXCPP_STACK_LINE" if="release" />
-	<haxedef name="HXCPP_STACK_TRACE" if="release" />
-	<haxelib name="hxcpp-debug-server" if="debug" />
-
-	<!-- Automatically compile externs, hxcpp does the same naturally -->
-	<prebuild command="haxelib run hxcpp hashlinkBuildXmls/miniaudioBuild.xml" if="hl linux" />
-	<prebuild command="haxelib run hxcpp hashlinkBuildXmls/chartFileBuild.xml" if="hl linux" />
-
-	<!-- Copy HDLL binaries over to cwd on hl -->
-	<postbuild cmd='robocopy hdlls\windows bin\hl\bin *.hdll /NFL /NDL /NJH /NJS /NC /NS' if="hl windows" />
-	<postbuild cmd='cp -r hdlls/linux/. bin/hl/bin' if="hl linux"/>
-
-	<!-- Copy bitmap font CLI files over to cwd -->
-	<postbuild cmd='robocopy fontbmTool\windows bin\windows\bin\assets\fonts * /NFL /NDL /NJH /NJS /NC /NS' if="windows" />
-	<postbuild cmd='robocopy fontbmTool\windows bin\hl\bin\assets\fonts * /NFL /NDL /NJH /NJS /NC /NS' if="windows hl" />
-	<postbuild cmd='cp -r fontbmTool/posix/. bin/linux/bin/assets/fonts/' if="linux" />
-	<postbuild cmd='cp -r fontbmTool/posix/. bin/hl/bin/assets/fonts/' if="linux hl" />
-
-	<!-- Copy pc ASTC texture compression CLI files over to cwd -->
-	<postbuild cmd='robocopy ASTCtool\windows bin\windows\bin\assets\images\tools * /NFL /NDL /NJH /NJS /NC /NS' if="windows" />
-	<postbuild cmd='cp -r ASTCtool/linux/. bin/linux/bin/assets/images/tools' if="linux"/>
-	<postbuild cmd='robocopy ASTCtool\windows bin\hl\bin\assets\images\tools * /NFL /NDL /NJH /NJS /NC /NS' if="hl windows" />
-	<postbuild cmd='cp -r ASTCtool/linux/. bin/hl/bin/assets/images/tools' if="hl linux"/>
-
-	<!-- Copy pc BPTC texture compression CLI files over to cwd -->
-	<postbuild cmd='robocopy BC7tool\windows bin\windows\bin\assets\images\tools * /NFL /NDL /NJH /NJS /NC /NS' if="windows" />
-	<postbuild cmd='cp -r BC7tool/linux/. bin/linux/bin/assets/images/tools' if="linux"/>
-	<postbuild cmd='robocopy BC7tool\windows bin\hl\bin\assets\images\tools * /NFL /NDL /NJH /NJS /NC /NS' if="hl windows" />
-	<postbuild cmd='cp -r BC7tool/linux/. bin/hl/bin/assets/images/tools' if="hl linux"/>
-
-	<haxedef name="HXCPP_CPP17" />
-
 			<!-- Libraries -->
 			<haxelib name="lime" />
 			<haxelib name="peote-view" />
@@ -78,7 +19,7 @@
 			<!-- Allow intergration to input2action -->
 			<haxelib name="input2action" />
 			<!-- Allow intergration to customtitlebar -->
-			<haxelib name="customtitlebar" optional="true" />
+			<!--<haxelib name="customtitlebar" optional="true" />-->
 			<!-- Allow intergration to scripting via lua-->
 			<haxelib name="linc_luajit_funkinview" unless="FV_NO_LUA" />
 			<!-- For debugging -->
@@ -139,6 +80,12 @@
 			<postbuild cmd='cp -r ASTCtool/linux/. bin/linux/bin/assets/images/tools' if="linux"/>
 			<postbuild cmd='robocopy ASTCtool\windows bin\hl\bin\assets\images\tools * /NFL /NDL /NJH /NJS /NC /NS' if="hl windows" />
 			<postbuild cmd='cp -r ASTCtool/linux/. bin/hl/bin/assets/images/tools' if="hl linux"/>
+
+			<!-- Copy bitmap font CLI files over to cwd -->
+			<postbuild cmd='robocopy BC7Tool\windows bin\windows\bin\assets\images\tools * /NFL /NDL /NJH /NJS /NC /NS' if="windows" />
+			<postbuild cmd='cp -r BC7Tool/linux/. bin/linux/bin/assets/images/tools' if="linux"/>
+			<postbuild cmd='robocopy BC7Tool\windows bin\hl\bin\assets\images\tools * /NFL /NDL /NJH /NJS /NC /NS' if="hl windows" />
+			<postbuild cmd='cp -r BC7Tool/linux/. bin/hl/bin/assets/images/tools' if="hl linux"/>
 
 	<!-- Extras -->
 	<icon path="assets/system/LimeFriend_16.png" size="16"/>

@@ -422,8 +422,12 @@ class Main extends Application
 			//if (deltaTime > 50) newDeltaTime = deltaTime;
 
 			trace("black green n purple shits");
-			if (mainMenu != null && !mainMenu.disposed) {
-				mainMenu.update(newDeltaTime);
+			try {
+				if (mainMenu != null && !mainMenu.disposed) {
+					mainMenu.update(newDeltaTime);
+				}
+			} catch (e) {
+				trace('ERROR CAUGHT-FUCK! $e is here!');
 			}
 
 			trace("this is so stupid why");
