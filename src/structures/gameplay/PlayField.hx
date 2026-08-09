@@ -278,8 +278,10 @@ class PlayField {
 			RenderingMode.initRender();
 		}
 
+		startedCountdown = !onRestartingForBackwardTimeSetting;
+
 		#if linc_luajit_funkinview
-		startedCountdown = !onRestartingForBackwardTimeSetting || funkinviewlua.callFunction('startCountdown', formatCustomSongName(Chart.header.title), Chart.header.difficulty)[0] != FunkinViewLua.Function_Stop;
+		startedCountdown = startedCountdown || funkinviewlua.callFunction('startCountdown', formatCustomSongName(Chart.header.title), Chart.header.difficulty)[0] != FunkinViewLua.Function_Stop;
 		funkinviewlua.callFunction('createPost', null);
 		#end
 

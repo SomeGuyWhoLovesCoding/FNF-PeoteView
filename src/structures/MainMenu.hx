@@ -153,7 +153,6 @@ class MainMenu {
 	}
 
 	function update(deltaTime:Float) {
-		trace("shit dick");
 		if (optionBuf == null)
 			return; // stupid
 		for (i in 0...optionBuf.length) {
@@ -164,7 +163,6 @@ class MainMenu {
 				t = (1 / lime.app.Application.current.window.frameRate) * 0.0115;
 
 			var anim = optionAnims[i];
-			trace("WOOHOOO!");
 			if (i == nav.value())
 				option.playAnimation(anim + ' white', true);
 			else
