@@ -85,37 +85,30 @@ class HUD {
 
 		if (watermarkTxt == null) {
 			watermarkTxt = new Text("watermarkTxtPF", 0, 0, display, 'FV v${MainMenu.fnfpVer}');
-		} else {
-			watermarkTxt.addProgram();
+			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height;
+			watermarkTxt.outlineColor = 0x000000FF;
+			watermarkTxt.outlineSize = 1;
 		}
-
-		watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height;
-		watermarkTxt.outlineColor = 0x000000FF;
-		watermarkTxt.outlineSize = 1;
+		watermarkTxt.addProgram();
 
 		if (timeBarTxt == null) {
 			timeBarTxt = new Text("timeBarTxt", 0, 0, display, Tools.formatTime(Mixer.length - Math.max(parent.songPosition, 0)));
-		} else {
-			timeBarTxt.addProgram();
+			timeBarTxt.x = (Main.INITIAL_WIDTH - timeBarTxt.width) * 0.5;
+			timeBarTxt.y = timeBarBG.y - 2;
+			timeBarTxt.scale = 1.15;
+			timeBarTxt.outlineColor = 0x000000FF;
+			timeBarTxt.outlineSize = 2;
 		}
-
-		timeBarTxt.x = (Main.INITIAL_WIDTH - timeBarTxt.width) * 0.5;
-		timeBarTxt.y = timeBarBG.y - 2;
-		timeBarTxt.scale = 1.15;
-		timeBarTxt.outlineColor = 0x000000FF;
-		timeBarTxt.outlineSize = 2;
+		timeBarTxt.addProgram();
 
 		updateTimeBarText();
 
 		if (scoreTxt == null) {
 			scoreTxt = new Text("scoreTxt", 0, 0, display, "", "inconsolata");
-			//scoreTxt.outlineSize = 12.5;
-		} else {
-			scoreTxt.addProgram();
+			scoreTxt.outlineColor = 0x000000FF;
+			scoreTxt.outlineSize = 1.25;
 		}
-
-		scoreTxt.outlineColor = 0x000000FF;
-		scoreTxt.outlineSize = 1.25;
+		scoreTxt.addProgram();
 		/*scoreTxt.color = 0xFFDC8CFF;
 		scoreTxt.setMarkerPairs([new TextFormatMarkerPair('#1#', Color.WHITE, Color.RED),
 			new TextFormatMarkerPair('#2#', Color.GREEN, Color.BLUE),

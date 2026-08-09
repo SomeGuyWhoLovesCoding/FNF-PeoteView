@@ -292,9 +292,6 @@ class Main extends Application
 				trace("5");
 				switchState(MAIN_MENU);
 
-				trace("6");
-				resize(peoteView.width, peoteView.height);
-
 				window.onResize.add(resize);
 				window.onKeyDown.add(controlVolume);
 				window.onClose.add(Chart.destroy);
@@ -398,6 +395,7 @@ class Main extends Application
 	var simulatedDeltaTime:Float = Math.POSITIVE_INFINITY;
 	var startSimulatedDeltaTime:Float = 0;
 	var averageFrames:Float = 0;
+	var _hasInitResizedYet:Bool = false;
 
 	override function update(deltaTime:Float) {
 		Tools.profileFrame();
@@ -413,28 +411,44 @@ class Main extends Application
 		var lastTitle = Application.current.window.title;
 
 		if (_started) {
+			if (!_hasInitResizedYet) {
+				trace("No it's not that");
+				resize(peoteView.width, peoteView.height);
+				trace("Alright just fuck you");
+				_hasInitResizedYet = true;
+			}
+
 			newDeltaTime = 1000.0 / FunkinMainLoop.FRAMERATE;
 			//if (deltaTime > 50) newDeltaTime = deltaTime;
 
+			trace("black green n purple shits");
 			if (mainMenu != null && !mainMenu.disposed) {
 				mainMenu.update(newDeltaTime);
 			}
 
-			if (playField != null && !playField.disposed) {
-				if (playField.pauseScreen != null) {
-					var pauseScreen = playField.pauseScreen;
-					if (!pauseScreen.disposed) pauseScreen.update(newDeltaTime);
-				}
+			trace("this is so stupid why");
+			if (playField != null) {
+				trace("istg");
+				if (!playField.disposed) {
+					if (playField.pauseScreen != null) {
+						trace("ok come on");
+						var pauseScreen = playField.pauseScreen;
+						if (!pauseScreen.disposed) pauseScreen.update(newDeltaTime);
+					}
 
-				if (!playField.paused && !RenderingMode.enabled) {
-					playField.update(newDeltaTime);
+					trace("alr fuck this");
+					if (!playField.paused && !RenderingMode.enabled) {
+						playField.update(newDeltaTime);
+					}
 				}
 			}
 
+			trace("lmfao i just have to manually debug everything fr");
 			if (noteskinEditor != null && !noteskinEditor.disposed) {
 				noteskinEditor.update(newDeltaTime);
 			}
 
+			trace("seriously why");
 			if (editorMenu != null && !editorMenu.disposed) {
 				editorMenu.update(newDeltaTime);
 			}

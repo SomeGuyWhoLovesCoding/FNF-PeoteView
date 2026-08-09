@@ -89,6 +89,14 @@ class Text {
     var _key:String;
     var display:Display;
 
+    // ── Safe GL upload ────────────────────────────────────────────────────────
+
+    /** Only uploads buffer to GL when the program is actively in a display. */
+    private inline function safeUpdate() {
+        if (display != null && program.isIn(display))
+            buffer.update();
+    }
+
     // ── Markup ────────────────────────────────────────────────────────────────
 
     var markerPairs(default, null):Array<TextFormatMarkerPair> = [];
@@ -371,7 +379,6 @@ class Text {
                 spr.x = spr.y = -999999999;
                 spr.w = spr.h = 0;
                 spr.alpha = 0;
-                buffer.updateElement(spr);
             }
         }
         _activeCount = totalChars;
@@ -438,7 +445,6 @@ class Text {
                 spr.alpha = alpha;
                 
                 advanceX += totalAdvance;
-                buffer.updateElement(spr);
                 globalCharIdx++;
                 rawCharIdx++;
             }
@@ -448,6 +454,8 @@ class Text {
                 rawCharIdx++;
             }
         }
+
+        safeUpdate();
         
         return str;
     }
@@ -461,8 +469,8 @@ class Text {
             var spr = buffer.getElement(ci);
             if (spr == null) continue;
             spr.x += delta;
-            buffer.updateElement(spr);
         }
+        safeUpdate();
         return x = value;
     }
 
@@ -473,8 +481,8 @@ class Text {
             var spr = buffer.getElement(ci);
             if (spr == null) continue;
             spr.y += delta;
-            buffer.updateElement(spr);
         }
+        safeUpdate();
         return y = value;
     }
 
@@ -490,8 +498,8 @@ class Text {
         for (ci in 0..._activeCount) {
             var spr = buffer.getElement(ci);
             if (spr != null) spr.alpha = value;
-            buffer.updateElement(spr);
         }
+        safeUpdate();
         return alpha = value;
     }
 
@@ -499,9 +507,8 @@ class Text {
         for (ci in 0..._activeCount) {
             var spr = buffer.getElement(ci);
             if (spr != null) spr.c = value;
-            buffer.updateElement(spr);
         }
-        buffer.update();
+        safeUpdate();
         return color = value;
     }
 
@@ -509,8 +516,8 @@ class Text {
         for (ci in 0..._activeCount) {
             var spr = buffer.getElement(ci);
             if (spr != null) spr.oc = value;
-            buffer.updateElement(spr);
         }
+        safeUpdate();
         return outlineColor = value;
     }
 
@@ -518,9 +525,8 @@ class Text {
         for (ci in 0..._activeCount) {
             var spr = buffer.getElement(ci);
             if (spr != null) spr.os = value;
-            buffer.updateElement(spr);
         }
-        buffer.update();
+        safeUpdate();
         return outlineSize = value;
     }
 
@@ -627,9 +633,12 @@ class Text {
         }
         program.setColorFormula('pixelAlpha(font_ID, c, oc, os, rw, rh) * alphaColor');
 
-        this.font = font;
         this.display = display;
-        display.addProgram(program);
+        // Don't add to display here — callers use addProgram() when ready.
+        // This avoids the chicken-and-egg between texture registration
+        // (needed for shader compilation) and GL context (needed for buffer.update).
+
+        this.font = font; // registers texture + populates buffer (safeUpdate is no-op)
 
         this.x = x;
         this.y = y;
@@ -642,7 +651,7 @@ class Text {
         maxWidth = 0;
 
         if (txt == null || txt.length == 0) txt = "Sample text";
-        text = txt;
+        text = txt; // populates buffer (safeUpdate is no-op until addProgram)
     }
 
     // ── Utilities (updated) ───────────────────────────────────────────────────
@@ -657,7 +666,7 @@ class Text {
         }
     }
     
-    // New: Force text recalculation (useful after changing properties)
+    // Force text recalculation (useful after changing properties)
     function refresh() {
         set_text(_rawText);
     }
@@ -675,6 +684,10 @@ class Text {
     }
 
     function addProgram() {
-        if (!program.isIn(display)) display.addProgram(program);
+        if (!program.isIn(display)) {
+            display.addProgram(program);
+            _dirty = true;
+            refresh(); // re-populate and upload with GL now available
+        }
     }
 }

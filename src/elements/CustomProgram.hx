@@ -4,10 +4,10 @@ import peote.view.PeoteGL.GLUniformLocation;
 import peote.view.Program;
 
 @:publicFields
-class CustomProgram extends Program
-{
-    private var hasVertexInserted(default, null):Bool;
-    private static inline var DISPLAY_ROTATION_VERTEX_CODE = '
+class CustomProgram extends Program {
+	private var hasVertexInserted(default, null):Bool;
+
+	private static inline var DISPLAY_ROTATION_VERTEX_CODE = '
         float uDisplayRotateX(vec2 p) {
             vec2 r = p - uDisplayC;
             return uSin.x*r.x - uSin.y*r.y + uDisplayC.x;
@@ -28,28 +28,28 @@ class CustomProgram extends Program
         }
     ';
 
-    function new(buffer:BufferInterface) {
-        super(buffer);
+	function new(buffer:BufferInterface) {
+		super(buffer);
 
-        blendEnabled = true;
-        blendSrc = blendSrcAlpha = BlendFactor.ONE;
-        blendDst = blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
-    }
+		blendEnabled = true;
+		blendSrc = blendSrcAlpha = BlendFactor.ONE;
+		blendDst = blendDstAlpha = BlendFactor.ONE_MINUS_SRC_ALPHA;
+	}
 
-    override public function addToDisplay(display:Display, ?atProgram:Program, addBefore:Bool=false)
-    {
-        if (!hasVertexInserted) {
-            var rd = Std.downcast(display, RotatableDisplay);
-            if (rd == null) throw "CustomProgram must be added to a RotatableDisplay";
+	override public function addToDisplay(display:Display, ?atProgram:Program, addBefore:Bool = false) {
+		if (!hasVertexInserted) {
+			var rd = Std.downcast(display, RotatableDisplay);
+			if (rd == null)
+				throw "CustomProgram must be added to a RotatableDisplay";
 
-            injectIntoVertexShader(DISPLAY_ROTATION_VERTEX_CODE, false, ["uDisplayAngle" => rd.uAngle, "uSin" => rd.uSin, "uDisplayC" => rd.uCenter], false);
+			injectIntoVertexShader(DISPLAY_ROTATION_VERTEX_CODE, false, ["uDisplayAngle" => rd.uAngle, "uSin" => rd.uSin, "uDisplayC" => rd.uCenter], false);
 
-            //setFormula("rotation", "uDisplayRotation(aRot.z)", false);
+			// setFormula("rotation", "uDisplayRotation(aRot.z)", false);
 
-            update();
-            hasVertexInserted = true;
-        }
+			update();
+			hasVertexInserted = true;
+		}
 
-        super.addToDisplay(display, atProgram, addBefore);
-    }
+		super.addToDisplay(display, atProgram, addBefore);
+	}
 }

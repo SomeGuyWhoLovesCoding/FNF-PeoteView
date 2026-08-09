@@ -12,6 +12,7 @@ import structures.notes.NoteVB.VirtualSustain;
 class NoteSpawner {
 	var bottom:Int64;
 	var top:Int64;
+
 	static var minBottom:Int64 = -1;
 
 	var _lastbottom:Int64;
@@ -84,7 +85,9 @@ class NoteSpawner {
 
 			receptor.ambientOccludeYCur = newY;
 
-			var shouldOverlap = noteSpr != null && shouldNotesOverlap(prev, n, noteSpr, rec, receptor.ambientOccludeYPrev, receptor.ambientOccludeYCur) && !ghost;
+			var shouldOverlap = noteSpr != null
+				&& shouldNotesOverlap(prev, n, noteSpr, rec, receptor.ambientOccludeYPrev, receptor.ambientOccludeYCur)
+				&& !ghost;
 
 			if (shouldOverlap) {
 				mergeNoteIntoSprite(noteSpr, i);
@@ -109,18 +112,21 @@ class NoteSpawner {
 		// === FORWARD: Include notes now within spawn range ===
 		while (top < len) {
 			var n = File.getNote(top);
-			if (n.position - pos >= spawnDist) break;
+			if (n.position - pos >= spawnDist)
+				break;
 			++top;
 		}
 
 		// === BACKWARD: Exclude notes now too far ahead ===
 		while (top > bottom) {
 			var n = File.getNote(top - 1);
-			if (n.position - pos < spawnDist) break;
+			if (n.position - pos < spawnDist)
+				break;
 			--top;
 		}
 
-		if (top < len) curTopNote = File.getNote(top);
+		if (top < len)
+			curTopNote = File.getNote(top);
 	}
 
 	function cullBottom(pos:Int64) {
@@ -130,7 +136,8 @@ class NoteSpawner {
 		while (bottom < len) {
 			var n = File.getNote(bottom);
 			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - n.position;
-			if (despawnCheck <= despawnDist) break;
+			if (despawnCheck <= despawnDist)
+				break;
 			var notePool = parent.notePool;
 			notePool.putNote(n, bottom);
 			notePool.putSustain(n, bottom);
@@ -141,21 +148,25 @@ class NoteSpawner {
 		while (bottom > 0 && bottom < top) {
 			var n = File.getNote(bottom - 1);
 			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - n.position;
-			if (despawnCheck > despawnDist) break;
+			if (despawnCheck > despawnDist)
+				break;
 			--bottom;
 		}
 
-		if (bottom < len) curBottomNote = File.getNote(bottom);
+		if (bottom < len)
+			curBottomNote = File.getNote(bottom);
 	}
 
 	function resetNotes(songPosition:Float, pushToOffset:Float = 0) {
 		var pf = parent.parent;
-		if (pf.disposed || pf.died) return;
+		if (pf.disposed || pf.died)
+			return;
 
 		parent.notePool.reset();
 
 		var len = File.getLength();
-		if (len <= 0) return;
+		if (len <= 0)
+			return;
 
 		var songPos = MetaNote.floatToMetaNotePosition(songPosition);
 		var minPos:Int64 = songPos;
@@ -205,63 +216,51 @@ class NoteSpawner {
 		renderVirtualSustains(notes);
 	}
 
-	var regularNoteList:Array<Note> = [];
-
 	function renderVirtualNotes(notes:NoteVB, pos:Int64) {
 		var downScroll = parent.parent.downScroll;
-		var numIterations = 0;
 		var virtualNotes = notes.notes;
-		var averageNotesPerOne:Int64 = 0;
 		for (i in 0...virtualNotes.length) {
 			var lane = virtualNotes[i];
 			var strumline = parent.strumlines[i];
-			for (j in 0...lane.length) {
+			var maxReceptor = strumline.receptors.length;
+			for (j in 0...Std.int(Math.min(lane.length, maxReceptor))) {
 				var index = lane[j];
 				var length = notes.noteLength[i][j];
-				//trace('RECEPTOR LENGTH: ${strumline.receptors.length}');
-				var receptor = strumline.receptors[i];
+				if (length == 0)
+					continue;
+				var receptor = strumline.receptors[j];
 				var strumReceptor = receptor.note;
 				var k = 0;
-				if (length == 0) continue;
 				while (k < length) {
-					var increment = 1;
 					var virtualNote:VirtualNote = index[k];
-
-					if (virtualNote == null) {
-						k += increment;
+					k++;
+					if (virtualNote == null)
 						continue;
-					}
 
-                	var handle = NoteSystem.typeToHandle[virtualNote.ref.type];
+					var handle = NoteSystem.typeToHandle[virtualNote.ref.type];
+					var note = parent.notePool.acquireNote();
 
-					var note = new Note(virtualNote.Sx, virtualNote.Sy, 0, 0, handle,
-						virtualNote.scale, virtualNote.initialAlpha, virtualNote.addedAlpha);
+					note.setHandle(handle);
+					note.x = virtualNote.Sx;
+					note.y = virtualNote.Sy;
+					note.scale = virtualNote.scale;
+					note.initialAlpha = virtualNote.initialAlpha;
+					note.addedAlpha = virtualNote.addedAlpha;
+
 					note.mania_for_clipruntimehelper = strumline.length;
 					note.diff = -virtualNote.diff;
 					note.scrollDirection = strumReceptor.scrollDirection;
-					if (downScroll) note.scrollDirection += 180;
+					if (downScroll)
+						note.scrollDirection += 180;
 
 					note.changeID(j);
 					note.toNote();
 
 					var noteToHitIdx = receptor.noteToHit_index;
 					receptor.noteToHit_sprite = noteToHitIdx == virtualNote.globalIndex ? note : null;
-
-					regularNoteList.push(note);
-
-					k += increment;
-					numIterations++;
-					averageNotesPerOne += 1;
 				}
 			}
-
-			while (regularNoteList.length != 0) {
-				var note = regularNoteList.pop();
-				NoteSystem.notesBuf.addElement(note);
-			}
 		}
-
-		//trace("Notes length: " + NoteSystem.notesBuf.length);
 	}
 
 	function renderVirtualSustains(notes:NoteVB) {
@@ -270,19 +269,26 @@ class NoteSpawner {
 		for (i in 0...virtualSustains.length) {
 			var lane = virtualSustains[i];
 			var strumline = parent.strumlines[i];
-			for (j in 0...lane.length) {
+			var maxReceptor = strumline.receptors.length;
+			for (j in 0...Std.int(Math.min(lane.length, maxReceptor))) {
 				var index = lane[j];
 				var length = notes.sustainLength[i][j];
-				var receptor = strumline.receptors[i];
+				var receptor = strumline.receptors[j];
 				var strumReceptor = receptor.note;
 				for (k in 0...length) {
 					var virtualSustain:VirtualSustain = index[k];
-					if (virtualSustain == null) continue;
+					if (virtualSustain == null)
+						continue;
 
-                	var handle = NoteSystem.typeToHandle[virtualSustain.ref.ref.type];
+					var handle = NoteSystem.typeToHandle[virtualSustain.ref.ref.type];
+					var sustain = parent.notePool.acquireSustain();
 
-					var sustain = new Sustain(virtualSustain.Sx, virtualSustain.Sy, virtualSustain.w, virtualSustain.h,
-						handle, virtualSustain.r, virtualSustain.speed, virtualSustain.scale, i);
+					sustain.setHandle(handle);
+					sustain.x = virtualSustain.Sx;
+					sustain.y = virtualSustain.Sy;
+					sustain.w = virtualSustain.w;
+					sustain.speed = virtualSustain.speed;
+					sustain.scale = virtualSustain.scale;
 
 					sustain.mania_for_clipruntimehelper = strumline.length;
 					sustain.length = virtualSustain.length;
@@ -296,31 +302,23 @@ class NoteSpawner {
 						sustain.scrollDirection += 180;
 					}
 					sustain.changeID(j);
-
-					NoteSystem.sustainsBuf.addElement(sustain);
 				}
 			}
 		}
 	}
 
 	inline function isGhostNote(prev:MetaNote, current:MetaNote):Bool {
-		return prev != null
-			&& prev.position == current.position
-			&& prev.index == current.index
-			&& prev.type == current.type;
+		return prev != null && prev.position == current.position && prev.index == current.index && prev.type == current.type;
 	}
 
-	inline function shouldNotesOverlap(prev:MetaNote, current:MetaNote, noteSpr:VirtualNote,
-		receptor:Note, newY:Int, prevY:Int):Bool {
-
-		if (noteSpr == null || prev == null) return false;
+	inline function shouldNotesOverlap(prev:MetaNote, current:MetaNote, noteSpr:VirtualNote, receptor:Note, newY:Int, prevY:Int):Bool {
+		if (noteSpr == null || prev == null)
+			return false;
 
 		var OVERLAP_PIXEL_THRESHOLD = 0;
 
-		var pixelDiff = Math.abs(
-			Math.floor(newY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)) -
-			Math.floor(prevY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT))
-		);
+		var pixelDiff = Math.abs(Math.floor(newY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT))
+			- Math.floor(prevY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)));
 
 		return pixelDiff <= OVERLAP_PIXEL_THRESHOLD
 			&& prev.type == current.type

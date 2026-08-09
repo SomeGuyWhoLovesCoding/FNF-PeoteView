@@ -39,15 +39,15 @@ class NoteSystem {
 	static var NOTE_HOLD_TIME_FAR_FACTOR = 4.0;
 
 	static function init() {
-        if (NoteskinManager.textureCache == null) {
-            NoteskinManager.init();
-        }
+		if (NoteskinManager.textureCache == null) {
+			NoteskinManager.init();
+		}
 
-        typeToHandle = [for (_ in 0...1 << 8) NoteskinManager.get("default")];
-		//trace(typeToHandle);
+		typeToHandle = [for (_ in 0...1 << 8) NoteskinManager.get("default")];
+		// trace(typeToHandle);
 		var handle = typeToHandle[0];
 
-        handle.loadTexture();
+		handle.loadTexture();
 
 		if (notesBuf == null) {
 			notesBuf = new Buffer<Note>(16, 16, true);
@@ -56,8 +56,8 @@ class NoteSystem {
 		if (notesProg == null) {
 			notesProg = new CustomProgram(notesBuf);
 			Note.init(notesProg);
-            handle.setProgramsTexture(notesProg);
-            handle.setProgramsNoteShader(notesProg);
+			handle.setProgramsTexture(notesProg);
+			handle.setProgramsNoteShader(notesProg);
 		}
 
 		if (sustainsBuf == null) {
@@ -67,8 +67,8 @@ class NoteSystem {
 		if (sustainProg == null) {
 			sustainProg = new CustomProgram(sustainsBuf);
 			Sustain.init(sustainProg);
-            handle.setProgramsTexture(sustainProg);
-            handle.setProgramsSustainShader(sustainProg);
+			handle.setProgramsTexture(sustainProg);
+			handle.setProgramsSustainShader(sustainProg);
 		}
 	}
 
@@ -78,7 +78,7 @@ class NoteSystem {
 	var notePool(default, null):NotePool;
 	var virtualNoteBuffer(default, null):NoteVB;
 
-    static var typeToHandle:Array<NoteskinHandle> = [];
+	static var typeToHandle:Array<NoteskinHandle> = [];
 
 	var parent(default, null):PlayField;
 
@@ -97,8 +97,7 @@ class NoteSystem {
 
 		for (i in 0...2) {
 			var strumline = new Strumline(STRUMLINE_X_OFFSET + Std.int(Main.INITIAL_WIDTH * (i * 0.5)),
-				parent.downScroll ? Main.INITIAL_HEIGHT - STRUMLINE_Y_OFFSET_DOWNSCROLL : STRUMLINE_Y_OFFSET,
-				typeToHandle[i], 0, 0, mania, this);
+				parent.downScroll ? Main.INITIAL_HEIGHT - STRUMLINE_Y_OFFSET_DOWNSCROLL : STRUMLINE_Y_OFFSET, typeToHandle[i], 0, 0, mania, this);
 			strumline.playable = i == 1;
 			strumline.applyNoteskinProperties(typeToHandle[i], mania - 1);
 			strumlines.push(strumline);
@@ -109,6 +108,14 @@ class NoteSystem {
 		notePool = new NotePool(this);
 		noteSpawner = new NoteSpawner(this);
 		noteMovement = new NoteMovementSystem(this);
+
+		// Add receptor notes to the buffer once — they are persistent
+		// and never cleared during normal rendering.
+		for (strumline in strumlines) {
+			for (receptor in strumline.receptors) {
+				notesBuf.addElement(receptor.note);
+			}
+		}
 
 		setScrollSpeed(Chart.header.speed);
 
@@ -138,8 +145,8 @@ class NoteSystem {
 	}
 
 	private function refreshRendering(songPosition:Float) {
-		notesBuf.clear();
-		sustainsBuf.clear();
+		// Receptors are persistent in the buffer — just update animations.
+		// Pooled spawned notes are managed by notePool.beginFrame/endFrame.
 
 		for (i in 0...strumlines.length) {
 			var strumline = strumlines[i];
@@ -147,18 +154,29 @@ class NoteSystem {
 			for (j in 0...strumline.receptors.length) {
 				var receptor = strumline.receptors[j];
 				var rec = receptor.note;
-				if (parent.botplay) canMess = true;
+				if (parent.botplay)
+					canMess = true;
 				if (canMess) {
 					receptor.updateAnimation(songPosition);
 				}
 			}
-			strumline.draw(notesBuf);
 		}
 	}
 
 	function renderNotes(pos:Int64) {
 		refreshRendering(parent.songPosition);
+		notePool.beginFrame();
 		noteSpawner.renderNotes(pos);
+		notePool.endFrame();
+		// Pooled elements had their @set("properties") fields modified in-place.
+		// Flush all pending CPU→GPU changes so the new positions/alphas/etc.
+		// actually take effect this frame.
+		try
+			notesBuf.update()
+		catch (e) {}
+		try
+			sustainsBuf.update()
+		catch (e) {}
 	}
 
 	/**
@@ -196,27 +214,26 @@ class NoteSystem {
 	 *                         note; otherwise 0.
 	 * @return                 Dynamic threshold in ms.
 	 */
-	function computeDynamicHoldThreshold(currentNote:MetaNote, _id:Int64,
-		baseThreshold:Float, sustainDuration:Float = 0):Float {
+	function computeDynamicHoldThreshold(currentNote:MetaNote, _id:Int64, baseThreshold:Float, sustainDuration:Float = 0):Float {
 		var len = File.getLength();
 		var nextId = _id + 1;
 
 		// No next note — nothing to scale against, use the full base threshold.
-		if (nextId >= len) return baseThreshold;
+		if (nextId >= len)
+			return baseThreshold;
 
 		var nextNote = File.getNote(nextId);
 
 		// Time gap (ms) between the start of this note and the start of the next.
-		var timeGapMs = MetaNote.metaNotePositionToSongTime(
-			nextNote.position - currentNote.position
-		);
+		var timeGapMs = MetaNote.metaNotePositionToSongTime(nextNote.position - currentNote.position);
 
 		// For sustain notes, the receptor is held for `sustainDuration` ms first,
 		// so the time available for the *post-hold* threshold is reduced.
 		var availableTime = timeGapMs - sustainDuration;
 
 		// Chords / overlapping notes — no room to hold; collapse to the minimum.
-		if (availableTime <= 0) return NOTE_HOLD_THRESHOLD_MIN;
+		if (availableTime <= 0)
+			return NOTE_HOLD_THRESHOLD_MIN;
 
 		// === Factor 1: time proximity ===
 		// 1.0 = next note is right on top of us, 0.0 = next note is far away.
@@ -232,8 +249,7 @@ class NoteSystem {
 		var proximity = indexProximity * timeProximity;
 
 		// Interpolate between the base threshold and the minimum.
-		var dynamicThreshold = baseThreshold
-			- (baseThreshold - NOTE_HOLD_THRESHOLD_MIN) * proximity;
+		var dynamicThreshold = baseThreshold - (baseThreshold - NOTE_HOLD_THRESHOLD_MIN) * proximity;
 
 		// === Hard cap for same-lane successors ===
 		// We must scan forward to find the next note on the SAME LANE, because
@@ -253,12 +269,12 @@ class NoteSystem {
 		while (nextSameLaneId < len) {
 			var n = File.getNote(nextSameLaneId);
 			var gapMs = MetaNote.metaNotePositionToSongTime(n.position - currentNote.position);
-			
+
 			// Stop scanning if we've passed the window where the cap could matter
 			if (gapMs >= maxScanGapMs) {
 				break;
 			}
-			
+
 			if (n.index == currentNote.index) {
 				foundSameLane = true;
 				sameLaneTimeGap = gapMs;
@@ -271,10 +287,7 @@ class NoteSystem {
 			var sameLaneAvailableTime = sameLaneTimeGap - sustainDuration;
 
 			if (sameLaneAvailableTime > 0) {
-				var maxThreshold = Math.max(
-					NOTE_HOLD_THRESHOLD_MIN,
-					sameLaneAvailableTime - NOTE_HOLD_RESET_BUFFER
-				);
+				var maxThreshold = Math.max(NOTE_HOLD_THRESHOLD_MIN, sameLaneAvailableTime - NOTE_HOLD_RESET_BUFFER);
 				if (dynamicThreshold > maxThreshold) {
 					dynamicThreshold = maxThreshold;
 				}
@@ -301,23 +314,25 @@ class NoteSystem {
 		var handle = NoteSystem.typeToHandle[note.type];
 
 		var noteSpr = notePool.getNote(index, note, _id);
-		if (noteSpr == null) return noteSpr;
+		if (noteSpr == null)
+			return noteSpr;
 		var sustainSpr = duration != 0 ? notePool.getSustain(index, note, _id) : null;
 		var sustainExists = duration != 0;
 
 		var leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
 
 		// Judgement-gated state reads
-		var judged:Bool   = File.getJudgement(_id);
-		var isHit:Bool    = judged && !File.getHitFlag(_id);   // judged + flag=false → hit
-		var isMissed:Bool = judged && File.getHitFlag(_id);  // judged + flag=true → missed
+		var judged:Bool = File.getJudgement(_id);
+		var isHit:Bool = judged && !File.getHitFlag(_id); // judged + flag=false → hit
+		var isMissed:Bool = judged && File.getHitFlag(_id); // judged + flag=true → missed
 		var isResolved:Bool = receptor.sustainResolved;
 
 		var noteSprX = rec.x;
 		var noteSprY = rec.y;
 
 		var d = Std.int(-diff);
-		if (parent.downScroll) d = -d;
+		if (parent.downScroll)
+			d = -d;
 
 		noteSpr.diff = d;
 		noteSpr.Sx = Math.round(noteSprX + (d * Math.cos(strumline.scrollDirection * 0.01745329)));
@@ -344,9 +359,7 @@ class NoteSystem {
 						receptor.noteToHit = note;
 						receptor.noteToHit_index = noteSpr.globalIndex;
 					} else {
-						var _pos = MetaNote.metaNotePositionToSongTime(
-							noteToHit.position - pos
-						) * _cachedScrollSpeed;  // Match diff's units
+						var _pos = MetaNote.metaNotePositionToSongTime(noteToHit.position - pos) * _cachedScrollSpeed; // Match diff's units
 						if (receptor.noteToHit_index != noteSpr.globalIndex && Math.abs(diff) < Math.abs(_pos)) {
 							receptor.noteToHit = note;
 							receptor.noteToHit_index = _id;
@@ -356,7 +369,7 @@ class NoteSystem {
 
 				if (diff < -_cachedHitbox - offset && !isMissed) {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
-					File.setHitFlag(_id, true);	   // chosen to miss
+					File.setHitFlag(_id, true); // chosen to miss
 					isMissed = true;
 					File.setJudgement(_id, true);
 
@@ -385,7 +398,6 @@ class NoteSystem {
 				}
 			}
 		}
-
 		// --- Opponent side ---
 		else {
 			if (!isHit && diff < 0) {
@@ -394,7 +406,8 @@ class NoteSystem {
 				isHit = true;
 				File.setJudgement(_id, true);
 
-				if (!rec.confirmed()) rec.confirm();
+				if (!rec.confirmed())
+					rec.confirm();
 
 				receptor.confirmTimer.startTime = parent.songPosition - offset; // don't do MetaNote.metaNotePositionToSongTime(position). That doesn't account for latency
 
@@ -402,19 +415,14 @@ class NoteSystem {
 				// and shortens the confirm window the closer that note is in time, so
 				// the receptor can visually reset before the next press instead of
 				// holding across the gap.
-				var baseThreshold = sustainExists
-					? NOTE_HOLD_THRESHOLD_SUSTAIN
-					: NOTE_HOLD_THRESHOLD;
-				var dynamicThreshold = computeDynamicHoldThreshold(
-					note, _id, baseThreshold, sustainExists ? duration : 0
-				);
+				var baseThreshold = sustainExists ? NOTE_HOLD_THRESHOLD_SUSTAIN : NOTE_HOLD_THRESHOLD;
+				var dynamicThreshold = computeDynamicHoldThreshold(note, _id, baseThreshold, sustainExists ? duration : 0);
 
-				var confirmWindow = sustainExists
-					? duration + dynamicThreshold
-					: dynamicThreshold;
-				if (sustainExists) receptor.confirmTimer.tailTime = receptor.confirmTimer.startTime + duration - (SUSTAIN_TAIL + SUSTAIN_TAIL_END);
+				var confirmWindow = sustainExists ? duration + dynamicThreshold : dynamicThreshold;
+				if (sustainExists)
+					receptor.confirmTimer.tailTime = receptor.confirmTimer.startTime + duration - (SUSTAIN_TAIL + SUSTAIN_TAIL_END);
 				receptor.confirmTimer.endTime = receptor.confirmTimer.startTime + confirmWindow;
-				//trace("started confirm" + parent.songPosition);
+				// trace("started confirm" + parent.songPosition);
 
 				receptor.sustainToHold_duration = 0;
 
@@ -423,7 +431,8 @@ class NoteSystem {
 					receptor.sustainToHold_duration = duration;
 					sustainSpr.followNote(rec.x + receptor.sustainPivotX, rec.y + receptor.sustainPivotY, index);
 					sustainSpr.w = sustainSpr.length - leftover;
-					if (sustainSpr.w < 0) sustainSpr.w = 0;
+					if (sustainSpr.w < 0)
+						sustainSpr.w = 0;
 				}
 
 				if (@:privateAccess parent.onNoteHit.__listeners.length != 0)
@@ -455,7 +464,8 @@ class NoteSystem {
 				if (sustainSpr.w >= 0) {
 					sustainSpr.followNote(rec.x + receptor.sustainPivotX, rec.y + receptor.sustainPivotY, index);
 					sustainSpr.w = sustainLength - leftover;
-					if (sustainSpr.w < 0) sustainSpr.w = 0;
+					if (sustainSpr.w < 0)
+						sustainSpr.w = 0;
 				}
 
 				if (sustainCompleted && !isResolved) {
@@ -464,7 +474,8 @@ class NoteSystem {
 						isResolved = true;
 					}
 
-					if (playable && rec.confirmed()) rec.press();
+					if (playable && rec.confirmed())
+						rec.press();
 
 					receptor.sustainToHold = null;
 					receptor.sustainToHold_index = 0;
@@ -509,7 +520,8 @@ class NoteSystem {
 			var strumline = strumlines[i];
 			strumline.x = STRUMLINE_X_OFFSET + Std.int(Main.INITIAL_WIDTH * (i * 0.5));
 			strumline.y = parent.downScroll ? Main.INITIAL_HEIGHT - STRUMLINE_Y_OFFSET_DOWNSCROLL : STRUMLINE_Y_OFFSET;
-			if (resetAnims) strumline.resetAnimations();
+			if (resetAnims)
+				strumline.resetAnimations();
 			strumline.resetInputs();
 		}
 	}
@@ -517,10 +529,12 @@ class NoteSystem {
 	function resetPlayerStrumlines(resetAnims:Bool = true) {
 		for (i in 0...strumlines.length) {
 			var strumline = strumlines[i];
-			if (!strumline.playable) continue;
+			if (!strumline.playable)
+				continue;
 			strumline.x = STRUMLINE_X_OFFSET + Std.int(Main.INITIAL_WIDTH * (i * 0.5));
 			strumline.y = parent.downScroll ? Main.INITIAL_HEIGHT - STRUMLINE_Y_OFFSET_DOWNSCROLL : STRUMLINE_Y_OFFSET;
-			if (resetAnims) strumline.resetAnimations();
+			if (resetAnims)
+				strumline.resetAnimations();
 			strumline.resetInputs();
 		}
 	}
@@ -531,6 +545,12 @@ class NoteSystem {
 
 	function dispose() {
 		virtualNoteBuffer.clear();
+
+		if (notePool != null) {
+			notePool.dispose();
+			notePool = null;
+		}
+
 		notesBuf.clear();
 		sustainsBuf.clear();
 
@@ -542,12 +562,8 @@ class NoteSystem {
 			strumlines = null;
 		}
 
-		if (noteSpawner != null) noteSpawner = null;
-
-		if (notePool != null) {
-			notePool.dispose();
-			notePool = null;
-		}
+		if (noteSpawner != null)
+			noteSpawner = null;
 
 		var display = parent.display;
 		display.removeProgram(sustainProg);

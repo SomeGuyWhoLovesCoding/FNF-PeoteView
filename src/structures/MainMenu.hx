@@ -154,15 +154,22 @@ class MainMenu {
 	}
 
 	function update(deltaTime:Float) {
+		trace("shit dick");
+		if (optionBuf == null) return; // stupid
 		for (i in 0...optionBuf.length) {
+			trace("alr yes i'm getting there");
 			var option = optionBuf.getElement(i);
+			trace("HOLY SHIT YES I FUCKING KNEW IT");
 
 			var t = Math.min(deltaTime * 0.0115, 1);
 			if (t == 1) t = (1/lime.app.Application.current.window.frameRate) * 0.0115;
 
+			trace("YES, PLEASE, I NEED THIS");
 			var anim = optionAnims[i];
+			trace("WOOHOOO!");
 			if (i == nav.value()) option.playAnimation(anim + ' white', true);
 			else option.playAnimation(anim + ' basic', true);
+			trace("NO FUCKING WAY YESSSS!");
 
 			if (anim != 'backspace to exit') {
 				optionYLerps[i] = Tools.lerp(optionYLerps[i], optionYFormula(i, nav.value()), t);
@@ -173,8 +180,8 @@ class MainMenu {
 			var alpha = alphaLerps[i] = Tools.lerp(alphaLerps[i], selectedAlpha, t);
 			option.color.aF = alpha;
 			option.color.luminanceF = alpha;
-			optionBuf.updateElement(option);
 		}
+		optionBuf.update();
 	}
 
 	function up(isDown:Bool, param:Int) {

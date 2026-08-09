@@ -70,6 +70,8 @@ class PauseScreen {
 	var bgAlphaLerp:Float = 0.0;
 
 	function update(deltaTime:Float) {
+		if (display == null) return;
+
 		if (!opened && display.color.aF == 0) {
 			shutDown();
 			return;
