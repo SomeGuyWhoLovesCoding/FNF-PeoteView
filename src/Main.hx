@@ -249,74 +249,72 @@ class Main extends Application {
 		TextureSystem.processQueue();
 
 		haxe.Timer.delay(function() {
+			controls = new Controls();
+
+			#if (!html5)
+			trace("Is es3? " + PeoteGL.Version.isES3);
+			if (PeoteGL.Version.isES3)
+				window.context.gl.disable(0x8DB9); // GL_FRAMEBUFFER_SRGB_EXT
+			#end
+
+			peoteView.start();
+
 			trace("createSounds");
-			haxe.Timer.delay(createSounds, 400);
+			createSounds();
 			trace("createTextures");
-			haxe.Timer.delay(createTextures, 600);
+			createTextures();
 			trace("createDisplays");
-			haxe.Timer.delay(createDisplays, 800); // found that it doesn't consum its own RAM. Now that's amazing
+			createDisplays(); // found that it doesn't consum its own RAM. Now that's amazing
 
-			haxe.Timer.delay(() -> {
-				controls = new Controls();
+			addDisplays();
 
-				#if (!html5)
-				trace("Is es3? " + PeoteGL.Version.isES3);
-				if (PeoteGL.Version.isES3)
-					window.context.gl.disable(0x8DB9); // GL_FRAMEBUFFER_SRGB_EXT
-				#end
+			trace("1");
+			conductor = new Conductor();
 
-				peoteView.start();
+			trace("2");
+			OptionsMenu.init(optionsScreen);
+			optionsMenu = new OptionsMenu();
 
-				addDisplays();
+			trace("3");
+			FreeplayMenu.init(freeplayScreen);
+			freeplayMenu = new FreeplayMenu();
 
-				trace("1");
-				conductor = new Conductor();
+			trace("4");
+			StoryMenu.init(storyScreen);
+			storyMenu = new StoryMenu();
 
-				trace("2");
-				OptionsMenu.init(optionsScreen);
-				optionsMenu = new OptionsMenu();
+			trace("4.a");
+			EditorMenu.preInit(middleDisplay);
 
-				trace("3");
-				FreeplayMenu.init(freeplayScreen);
-				freeplayMenu = new FreeplayMenu();
+			trace("4.b");
+			NoteskinEditor.preInit(middleDisplay, bottomDisplay);
 
-				trace("4");
-				StoryMenu.init(storyScreen);
-				storyMenu = new StoryMenu();
+			trace("5");
+			switchState(MAIN_MENU);
 
-				trace("4.a");
-				EditorMenu.preInit(middleDisplay);
+			trace("6");
+			resize(peoteView.width, peoteView.height);
 
-				trace("4.b");
-				NoteskinEditor.preInit(middleDisplay, bottomDisplay);
+			window.onResize.add(resize);
+			window.onKeyDown.add(controlVolume);
+			window.onClose.add(Chart.destroy);
 
-				trace("5");
-				switchState(MAIN_MENU);
+			#if FV_DEBUG
+			DeveloperStuff.init(window, this);
+			#end
 
-				trace("6");
-				resize(peoteView.width, peoteView.height);
+			window.onMouseDown.add((x, y, button) -> {
+				if (mouseDown != null)
+					mouseDown(x, y, button);
+			});
 
-				window.onResize.add(resize);
-				window.onKeyDown.add(controlVolume);
-				window.onClose.add(Chart.destroy);
+			_started = true;
 
-				#if FV_DEBUG
-				DeveloperStuff.init(window, this);
-				#end
-
-				window.onMouseDown.add((x, y, button) -> {
-					if (mouseDown != null)
-						mouseDown(x, y, button);
-				});
-
-				_started = true;
-
-				var title = Application.current.window.title;
-				var titleLen = title.length;
-				Application.current.window.title = title.substring(0, titleLen - 13);
-				// Application.current.window.hidden = false;
-			}, 1000);
-		}, Std.int(10000 / 1000));
+			var title = Application.current.window.title;
+			var titleLen = title.length;
+			Application.current.window.title = title.substring(0, titleLen - 13);
+			// Application.current.window.hidden = false;
+		}, 1000);
 	}
 
 	private function createSounds() {
