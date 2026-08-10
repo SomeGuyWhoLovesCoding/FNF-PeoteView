@@ -147,6 +147,7 @@ class SaveData {
 	static function save() {
 		trace('Saving data...');
 		try {
+			//BOTTLENECK: low full haxe.Serializer graph serialization + blocking File.write on main thread (init/window-close only) | FIX: skip save when state unchanged; defer to background thread if call frequency grows
 			var result = SaveData_Securer.lock(state);
 			var fo:FileOutput = File.write("save.dat");
 			fo.writeString(result);

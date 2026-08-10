@@ -60,6 +60,7 @@ class GraphicsDisplay {
 			var desc = graphicsDescriptions[selectedIndex];
 			// For now, show placeholder value; replace with actual setting when implemented.
 			var value = "N/A";
+			//BOTTLENECK: low per-frame infoText setter rebuilds the string and hits the Text relayout path each frame | FIX: only assign when the string differs
 			infoText.text = '$name: $desc\nCurrent: $value\n(Not yet implemented)';
 		} else {
 			infoText.text = "";

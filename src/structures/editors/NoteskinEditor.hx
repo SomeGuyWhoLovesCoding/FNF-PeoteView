@@ -2882,6 +2882,7 @@ private class NoteskinEditorRenderer {
 		}
 	}
 
+	//BOTTLENECK: high updateGridPosition removes + re-creates every grid RepeatSprite (1 new alloc per receptor + buffer add/remove) on every visual update; called from updateReceptorVisuals on every drag-frame, so preview mania (~64 clips) churns 64 allocations per mouse move | FIX: pool grid sprites and updateElement x/y/w/h in place instead of re-creating
 	function updateGridPosition() {
 		for (sprite in state.gridSprites) {
 			NoteskinEditor.receptorGridBuf.removeElement(sprite);
@@ -3252,6 +3253,7 @@ private class NoteskinEditorRenderer {
 		state.ui.updateInstructionsText();
 	}
 
+	//BOTTLENECK: high updateReceptorVisuals full re-stamps every receptor (setHandle + applyClipToNote + getReceptorPosition alloc + noteBuf.updateElement) then always runs updateSustainVisuals + updateGridPosition + updateInstructionsText; invoked per-frame during preview-scroll lerp and per mousemove while dragging/scroll-dragging | FIX: dirty-flag per note and only restamp when state/clip actually changed; avoid per-note {x,y} allocation in getReceptorPosition
 	function updateReceptorVisuals() {
 		if (state.strumline == null)
 			return;
@@ -3396,6 +3398,7 @@ private class NoteskinEditorRenderer {
 		}
 	}
 
+	//BOTTLENECK: mid updateSustainVisuals recomputes every clip lookup + setHandle + updateElement for all sustains on every visual update even when only scroll position changed, doubling updateReceptorVisuals' work per frame | FIX: skip unchanged sustains or do a position-only pass during scroll
 	function updateSustainVisuals() {
 		var gap = state.currentConfig.gap != 0 ? state.currentConfig.gap : 112;
 		var offsetX = state.currentConfig.offsetX;
@@ -5683,6 +5686,7 @@ class NoteskinEditor {
 				wrapY += S;
 
 			// 2x2 grid offsets: each square is SxS, shifted by -S as needed.
+			//BOTTLENECK: low per-frame allocation of ox/oy arrays + wrap math in update() for the 4-sprite background scroll runs every frame | FIX: hoist ox/oy to statics and skip updateElement when position unchanged
 			var ox = [0.0, -S, 0.0, -S];
 			var oy = [0.0, 0.0, -S, -S];
 			for (i in 0...backgroundSprites.length) {

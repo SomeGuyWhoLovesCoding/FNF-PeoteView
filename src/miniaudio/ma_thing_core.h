@@ -1048,6 +1048,7 @@ public:
             s.asyncState.asyncNextBuffer    = s.pcmBufferB;
             s.asyncState.asyncLoadingBuffer = s.pcmBufferC;
 
+            //BOTTLENECK: mid synchronous decode of ~3 full buffers (initial + 2 prefetch) per stream on the main thread during loadFiles; multi-stem songs stall playback start for seconds | FIX: fill initial/prefetch buffers via the AsyncLoader worker and wait on it instead of inline decode
             fillInitialBuffer(i, 0);
 
             if (s.active.load(std::memory_order_acquire)) {
@@ -1349,6 +1350,7 @@ private:
             if (vol != 0.0f) g_mix_func(dst, src, samples, vol);
 
             s.localReadPos  += toRead;
+            //BOTTLENECK: low atomic RMW (fetch_add) on the audio thread for every read chunk of every stream | FIX: accumulate locally and do a single store to filePosition at the end of readFromBuffer
             s.filePosition.fetch_add(toRead, std::memory_order_relaxed);
             framesRead      += toRead;
 
@@ -1373,6 +1375,7 @@ private:
         ma_uint64 framesSinceLastLoad = sys->totalFramesProcessed - sys->lastLoadFrame;
         ma_uint64 loadIntervalFrames = (SAMPLE_RATE * BG_LOAD_CHECK_INTERVAL) / 1000;
 
+        //BOTTLENECK: low full scan of every stream (multiple acquire atomics each) on the audio thread every ~8ms inside the realtime callback | FIX: move the request loop into the AsyncLoader worker; audio thread only sets one dirty flag
         if (framesSinceLastLoad >= loadIntervalFrames) {
             sys->lastLoadFrame = sys->totalFramesProcessed;
             sys->doBackgroundLoading();
@@ -1426,6 +1429,7 @@ private:
                     sys->stretch = new signalsmith::stretch::SignalsmithStretch();
                     sys->stretch->presetCheaper(CHANNEL_COUNT, SAMPLE_RATE);
                 }
+                //BOTTLENECK: high FFT time-stretch of the entire mix synchronously in the realtime audio callback on every buffer (SignalsmithStretch) -> dropout source whenever playback rate != 1.0 | FIX: use the fastest preset / larger block, or run stretch on a dedicated thread with double buffering
                 sys->stretch->process(inputMix, maxToRead, stretchedOutput, frameCount);
                 memcpy(out, stretchedOutput, sizeof(float) * frameCount * CHANNEL_COUNT);
             }
@@ -1516,6 +1520,7 @@ struct BackgroundTrack {
             printf("Background track has zero length: %s\n", path);
             return false;
         }
+        //BOTTLENECK: mid blocking full-track decode + multi-MB PCM allocation on the calling (main) thread at load time | FIX: decode on a worker thread and swap the buffer in when ready
         pcmData = (float*)malloc(sizeof(float) * length * CHANNEL_COUNT);
         if (!pcmData) {
             ma_decoder_uninit(&decoder);

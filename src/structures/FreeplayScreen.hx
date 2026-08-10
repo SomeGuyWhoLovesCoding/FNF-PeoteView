@@ -231,6 +231,7 @@ class FreeplayScreen implements IAlphabetScrollHost {
 		if (icon == null)
 			return;
 
+		//BOTTLENECK: mid changeID() re-run on all 7 icons every frame re-sets clip props + triggers attribute dirty even when id unchanged | FIX: skip when icon.curID already matches the target id
 		icon.changeID(Tools.fromIconGridXMLCharacter(song.icon)[0]);
 		var alpha = alphabet.calcItemAlpha(k) * alphaLerp;
 		icon.alpha = alpha;

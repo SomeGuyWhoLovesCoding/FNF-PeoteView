@@ -163,6 +163,7 @@ class AnimateActor extends Actor {
 			leafPool[i].w = 0;
 			leafPool[i].h = 0;
 		}
+		//BOTTLENECK: mid redundant full-buffer GPU re-upload on every animation frame - changeFrame() calls buffer.update() again right after applyResolvedFrame() | FIX: drop one of the two buffer.update() calls (this one or the one in changeFrame)
 		if (buffer != null)
 			buffer.update();
 		activeLeafCount = count;
@@ -191,6 +192,7 @@ class AnimateActor extends Actor {
 	}
 
 	override private function renderImpl() {
+		//BOTTLENECK: high re-uploads every leaf element to the GPU every render frame even though leaf transforms only change on animation-frame switches | FIX: track a dirty flag per leaf (or per actor) and only updateElement on changeFrame
 		for (i in 0...activeLeafCount) {
 			if (buffer != null)
 				buffer.updateElement(leafPool[i]);
@@ -269,6 +271,7 @@ class AnimateActor extends Actor {
 		var maxX = Math.NEGATIVE_INFINITY;
 		var maxY = Math.NEGATIVE_INFINITY;
 
+		//BOTTLENECK: high allocates a fresh 4-element anon-object array per leaf per animation frame - GC thrash on composite characters with many leaves | FIX: unroll the 4 corners into scalar locals and reuse
 		for (corner in [{x: 0.0, y: 0.0}, {x: aw, y: 0.0}, {x: aw, y: ah}, {x: 0.0, y: ah}]) {
 			var wx = (a * corner.x + c * corner.y + tx) * s;
 			var wy = (b * corner.x + d * corner.y + ty) * s;

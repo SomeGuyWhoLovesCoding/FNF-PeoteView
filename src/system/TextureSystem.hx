@@ -140,6 +140,7 @@ class TextureSystem {
 
 		// FIX: Now that all textures are uploaded and all intermediate bytes are orphaned,
 		// force a single GC sweep to instantly reclaim the 180MB of spike memory.
+		//BOTTLENECK: [mid] two full stop-the-world GC sweeps (cpp.vm.Gc.run(false)+run(true)) per queue batch -> GC pause stall on load/state-switch path | FIX: trigger GC on idle frame hook instead of inline; single sweep only
 		GC.run(1);
 		// haxe.Timer.delay(() -> {
 		// 	GC.run(5);
@@ -153,6 +154,7 @@ class TextureSystem {
 
 		var textureData:TextureData = null;
 		var texPath = Paths.asset(path);
+		//BOTTLENECK: [ultra] synchronous external-process spawn (astcenc/bc7) + blocking encode/disk IO on main thread for EVERY texture load, including mid-gameplay actor/noteskin swaps -> multi-second framerate hitch | FIX: run texture load+encode on a worker/async thread, cache compressed artifacts, only block on GPU upload
 		var compTexRun = FVLZXEncoder.run(texPath);
 
 		if (compTexRun != null && compressTextures) {
@@ -163,6 +165,7 @@ class TextureSystem {
 
 			if (premultiply) {
 				var bytes = image.data.toBytes();
+				//BOTTLENECK: [high] per-pixel premultiply loop = getInt32/setInt32 native call per pixel (~2-12M calls on a 2048x2048 atlas) plus a full image.data.toBytes() copy of every loaded texture | FIX: premultiply in-place on the image buffer with a tight byte loop, or vectorize per-row; reuse one scratch buffer
 				for (i in 0...textureData.bytes.length >> 2) {
 					var fullARGB = bytes.getInt32(i << 2);
 					var a = (fullARGB >>> 24) & 0xFF;

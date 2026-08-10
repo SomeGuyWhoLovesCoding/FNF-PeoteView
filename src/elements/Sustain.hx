@@ -143,6 +143,7 @@ class Sustain implements Element {
 		Set the body/tail coords and rotation from the helper for this lane.
 	**/
 	inline public function changeID(id:Int) {
+		//BOTTLENECK: high per-sustain per-frame changeID does 2 clip lookups + ~10 @set("properties") writes, re-uploading every sustain's clip coords each frame | FIX: cache body/tail clip per lane; only set fields when changed
 		var bodyClip = NoteskinRuntimeHelper.getHoldBodyClip(handle, id, mania_for_clipruntimehelper);
 		var tailClip = NoteskinRuntimeHelper.getHoldTailClip(handle, id, mania_for_clipruntimehelper);
 

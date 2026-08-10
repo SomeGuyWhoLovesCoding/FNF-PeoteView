@@ -291,6 +291,7 @@ class AnimateAtlas {
 			// elem.firstFrame is the keyframe index within the child's own timeline.
 			var ff = elem.firstFrame;
 			var childFrame:AnimateFrame = null;
+			//BOTTLENECK: [low] linear scan over all child frames per SI reference -> O(frames) per lookup, O(frames^2) for timelines referencing large symbols, in one-time resolve pass | FIX: pre-build symbolName -> {frameIndex -> frame} lookup map once
 			for (f in childAnim.frames) {
 				if (f.index == ff) { childFrame = f; break; }
 			}
@@ -299,6 +300,7 @@ class AnimateAtlas {
 				childFrame = childAnim.frames[childAnim.frames.length - 1];
 			if (childFrame == null) return;
 
+			//BOTTLENECK: [mid] visiting.concat([childName]) allocates a fresh array at every recursion level + visiting.indexOf linear cycle-guard scan -> O(depth^2) garbage churn on large Animate atlases during resolve pass (hundreds of symbols x frames) | FIX: reuse a mutable stack (push on enter, pop on exit) with an IntMap visited set
 			var nextVisiting = visiting.concat([childName]);
 			for (childElem in childFrame.elements) {
 				collectLeaves(childElem, na, nb, nc, nd, ntx, nty, out, nextVisiting);

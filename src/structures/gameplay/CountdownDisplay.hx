@@ -122,6 +122,7 @@ class CountdownDisplay {
 		var a = sprite.alpha;
 		var ratio = Math.min((deltaTime * 0.00725), 1);
 		sprite.alpha = Tools.fixElementAlphaFromFadingLerp(Tools.lerp(sprite.alpha, 0, ratio));
+		//BOTTLENECK: low [per-frame buffer.updateElement runs for the entire song even after alpha settles at 0] | FIX: [skip upload while sprite.alpha is 0 and no state changed]
 		buffer.updateElement(sprite);
 	}
 

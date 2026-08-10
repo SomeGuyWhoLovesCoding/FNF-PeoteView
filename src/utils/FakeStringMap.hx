@@ -41,6 +41,7 @@ class FakeStringMap<V> {
 		var v = values;
 		var len = k.length;
 
+		//BOTTLENECK: mid O(n) linear string scan per lookup; degrades to O(n^2) if called per frame over a growing map | FIX: replace with haxe.ds.StringMap (hash) or keep keys sorted for binary search
 		for (i in 0...len) {
 			if (k[i] == key)
 				return v[i];

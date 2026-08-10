@@ -255,6 +255,7 @@ class Field {
 		var theme = gameOverMeta.theme;
 		var bpm = gameOverMeta.bpm;
 
+		//BOTTLENECK: low [synchronous main-thread disk load + decode of 3 death audio assets mid-gameplay] | FIX: [preload death music/sfx/confirm at song load]
 		gameOverMusic = MiniAudio.loadBackgroundTrack('assets/death/fnf_loss_music-${theme}.ogg');
 
 		gameOverSound = MiniAudio.loadSoundEffect('assets/death/fnf_loss_sfx-${theme}.ogg');

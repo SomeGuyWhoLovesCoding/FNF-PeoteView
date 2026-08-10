@@ -169,6 +169,7 @@ class FreeplayAlphabet {
 	}
 
 	function resolveChar(title:String, j:Int):String {
+		//BOTTLENECK: high per-frame per-char lowercase string alloc + hash map lookup for every alphabet char (7 rows x 24 chars) | FIX: pre-normalize titles once and cache resolved char strings per title
 		var char = j >= ALPHABET_CHARACTER_LIMIT - 3 ? "." : title.charAt(j).toLowerCase();
 		if (charCorrectionMap.exists(char))
 			return charCorrectionMap.get(char);
@@ -186,6 +187,7 @@ class FreeplayAlphabet {
 		}
 
 		if (state.lastAnim != animName) {
+			//BOTTLENECK: mid per-char per-frame string interpolation + playAnimation() call even when the anim is unchanged (checked only after the call) | FIX: compare state.lastAnim first; precompute the anim name string
 			spr.playAnimation('$animName bold instance 1', false);
 			state.lastAnim = animName;
 			state.frames = 0;
@@ -246,6 +248,7 @@ class FreeplayAlphabet {
 		var x:Float = 20;
 		var iconX:Float = 0.0;
 
+		//BOTTLENECK: high 7 rows x 24 chars re-updated every frame: map gets, anim Int64 math, per-char sprite property writes | FIX: only update moving/visible chars; batch property writes and reuse per-char state
 		for (j in 0...ALPHABET_CHARACTER_LIMIT) {
 			if (j >= grp.length)
 				break;

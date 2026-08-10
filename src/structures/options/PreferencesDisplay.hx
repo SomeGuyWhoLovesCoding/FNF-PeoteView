@@ -132,6 +132,7 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 			var desc = prefDescriptions[index];
 			var isOn = Reflect.getProperty(SaveData.state.preferences, prefName);
 			var status = isOn ? "ON" : "OFF";
+			//BOTTLENECK: mid per-frame infoText setter: string interp alloc + Text set_text() full compare per frame | FIX: cache the string and only assign when it actually changes
 			infoText.text = '${getDisplayName(prefName)}: $desc\nStatus: $status\nPress ENTER to toggle.';
 		} else {
 			infoText.text = "";

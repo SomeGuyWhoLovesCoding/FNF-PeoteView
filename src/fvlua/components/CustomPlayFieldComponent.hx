@@ -59,6 +59,7 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 			set('hasVocals', PlayState.SONG.needsVoices); */
 
 		// regular old bullshit from psych engine
+		//BOTTLENECK: mid dynamic reflection (string->field lookup via Reflect) on every getProperty/setProperty call, typically fired per frame from Lua mod update loops | FIX: resolve and cache typed getters/setters per property name (e.g. Map<String, Getter/Setter>) at registration
 		vm.addCallback("getProperty", (name:String) -> {
 			return Reflect.getProperty(playField, name);
 		});
@@ -254,6 +255,7 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 		});
 	}
 
+	//BOTTLENECK: mid marshals ~20 globals (Convert.toLua + setglobal per script) on every refresh; songPosition/health/score/combo/curBeat change per frame so this runs per frame per script | FIX: set constant globals once at init and sync only mutating globals, or expose live object refs instead of scalar globals
 	override public function updateVariablesList(vm:FunkinViewLuaScript):Void {
 		// Screen stuff
 		vm.set('screenWidth', Main.VARIABLE_WIDTH);

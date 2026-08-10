@@ -5,6 +5,7 @@ package utils;
 **/
 @:publicFields
 class Shaders {
+	//BOTTLENECK: [mid] upscale fragment shader costs ~17 texture taps/pixel (bicubic ravuSample + 4-tap alphaEdgeReconstruct + 8-tap diagonalSnap with ~30 color-diff comparisons) applied to every character/icon sprite when upscale is enabled -> heavy fill-rate cost | FIX: reduce taps with early-out edge masking, share fetches between passes, or run upscale on a lower-res intermediate target
 	static inline var UPSCALE_FRAGMENT_SHADER = '
 		vec4 ravuSample(int textureID, vec2 uv, vec2 texelSize, vec2 lo, vec2 hi) {
 			// Bicubic interpolation

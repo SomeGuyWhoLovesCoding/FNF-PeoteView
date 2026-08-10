@@ -220,6 +220,7 @@ class HUD {
 		ratingPopup.alpha = Tools.fixElementAlphaFromFadingLerp(Tools.lerp(ratingPopup.alpha, 0.0, Math.min(deltaTime * 0.005, 1.0)));
 		ratingPopup.y = Tools.lerp(ratingPopup.y, 320, Math.min(deltaTime * 0.0125, 1.0));
 
+		//BOTTLENECK: low [per-frame uiBuf.updateElement even when rating popup is fully faded] | FIX: [skip updateElement while alpha is 0]
 		uiBuf.updateElement(ratingPopup);
 	}
 
@@ -230,6 +231,7 @@ class HUD {
 		if (parent.disposed || parent.died)
 			return;
 
+		//BOTTLENECK: mid [per-frame Int64.toStr + per-digit uiBuf.updateElement in combo counter (ratingPopup pref)] | FIX: [cache last combo value and skip rebuild when unchanged]
 		var numStr = Int64.toStr(parent.combo);
 
 		var comboNumberStrLen = numStr.length;
@@ -288,6 +290,7 @@ class HUD {
 		Updates the score text.
 	**/
 	function updateScoreText(deltaTime:Float) {
+		//BOTTLENECK: mid [per-frame string interpolation + accuracy.toString() allocation every frame] | FIX: [cache last score/misses/accuracy and rebuild string only when any changes]
 		var scoreText = 'Score: ${parent.score} | Misses: ${parent.misses} | Accuracy: ${parent.accuracy.toString()}';
 		if (scoreTxt.text != scoreText)
 			scoreTxt.text = scoreText;
@@ -322,6 +325,7 @@ class HUD {
 		Updates the timebar text.
 	**/
 	function updateTimeBarText() {
+		//BOTTLENECK: mid [unconditional per-frame text assignment forces a text remesh/GPU upload every frame] | FIX: [cache last formatted string and only assign when it changes (once per second)]
 		timeBarTxt.text = Tools.formatTime(Mixer.length - Math.max(parent.songPosition, 0));
 		timeBarTxt.x = (Main.INITIAL_WIDTH - timeBarTxt.width) * 0.5;
 		timeBarTxt.y = timeBarBG.y - 2;

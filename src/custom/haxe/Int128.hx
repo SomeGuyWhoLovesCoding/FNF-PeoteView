@@ -47,6 +47,7 @@ abstract Int128(__Int128) from __Int128 to __Int128 {
 	/**
 		Construct an Int128 from two 64-bit words `high` and `low`.
 	**/
+	//BOTTLENECK: high every Int128 operation allocates a 2-element Array<Int64> (___Int128 backing) on the heap - persistent GC churn on all big-int arithmetic | FIX: back Int128 with two @:structInit Int64 fields (value type) instead of Array
 	public static function make(high:Int64, low:Int64):Int128
 		return new Int128(new __Int128(high, low));
 
@@ -174,6 +175,7 @@ abstract Int128(__Int128) from __Int128 to __Int128 {
 		Performs signed integer divison of `dividend` by `divisor`.
 		Returns `{ quotient : Int128, modulus : Int128 }`.
 	**/
+	//BOTTLENECK: high O(128-bit) bit-division loop allocating multiple Int128 temporaries per iteration - executed every frame via HUD score text calling Accuracy.toString() | FIX: cache last rendered accuracy string / only recompute on score change, or store accuracy as Int64/Float
 	public static function divMod(dividend:Int128, divisor:Int128):{quotient:Int128, modulus:Int128} {
 		// Handle special cases of 0 and 1
 		if (divisor.high == 0) {

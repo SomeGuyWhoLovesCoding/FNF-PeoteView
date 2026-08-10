@@ -231,6 +231,7 @@ class NoteSpawner {
 				var receptor = strumline.receptors[j];
 				var strumReceptor = receptor.note;
 				var k = 0;
+				//BOTTLENECK: high per-frame per-note render pass re-derives clip state (changeID+toNote) and rewrites every pooled note's properties, dirty-flagging them all for notesBuf.update() even when unchanged | FIX: only mutate fields that changed; cache per-lane clip state
 				while (k < length) {
 					var virtualNote:VirtualNote = index[k];
 					k++;
