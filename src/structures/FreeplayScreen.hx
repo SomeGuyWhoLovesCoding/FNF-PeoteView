@@ -232,7 +232,12 @@ class FreeplayScreen implements IAlphabetScrollHost {
 			return;
 
 		//BOTTLENECK: mid changeID() re-run on all 7 icons every frame re-sets clip props + triggers attribute dirty even when id unchanged | FIX: skip when icon.curID already matches the target id
-		icon.changeID(Tools.fromIconGridXMLCharacter(song.icon)[0]);
+		var iconID = Tools.fromIconGridXMLCharacter(song.icon)[0];
+		// changeID() masks the id (& 0x7) and derives clipX/clipY from it; skip only when
+		// the resulting clip rect is already applied (guards the id==0 first frame too).
+		if (icon.curID != (iconID & 0x7) || icon.clipX != ((iconID & 0x7) * 150) || icon.clipY != (150 + (150 * (iconID >> 3)))) {
+			icon.changeID(iconID);
+		}
 		var alpha = alphabet.calcItemAlpha(k) * alphaLerp;
 		icon.alpha = alpha;
 		icon.x = iconX + ((icon.w * 0.35) + 12);

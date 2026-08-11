@@ -12,7 +12,8 @@ class FreeplayAlphabet {
 	var songTextsBuf:Buffer<Actor>;
 	var songTextsProg:CustomProgram;
 	var songTextCharGroup:Array<Array<Actor>> = [];
-	var spriteAnimState:Map<Actor, SpriteAnimState> = new Map();
+	var songTextAnimStateGroup:Array<Array<SpriteAnimState>> = [];
+	var titleCharCache:Map<String, TitleCharInfo> = new Map();
 
 	var host:IAlphabetScrollHost;
 	var display(default, null):CustomDisplay;
@@ -96,8 +97,14 @@ class FreeplayAlphabet {
 					spr.color.luminanceF = 0.0;
 
 					songTextsBuf.addElement(spr);
-					spriteAnimState.set(spr, new SpriteAnimState(0, 0.0, ""));
 					spr;
+				}
+			]
+		];
+		songTextAnimStateGroup = [
+			for (i in 0...7) [
+				for (j in 0...ALPHABET_CHARACTER_LIMIT) {
+					new SpriteAnimState(0, 0.0, "");
 				}
 			]
 		];
@@ -126,12 +133,11 @@ class FreeplayAlphabet {
 			songTextsBuf = null;
 		}
 
-		// Clear maps to release all references
-		spriteAnimState.clear();
-		spriteAnimState = null;
-
-		// Clear arrays
+		// Clear arrays to release all references
 		songTextCharGroup = null;
+		songTextAnimStateGroup = null;
+		titleCharCache.clear();
+		titleCharCache = null;
 
 		// Null out all references
 		songTextsProg = null;
@@ -154,10 +160,15 @@ class FreeplayAlphabet {
 			while (elements.length != 0) {
 				var elem = elements.pop();
 				if (elem != null) {
-					spriteAnimState.remove(elem);
 					songTextsBuf.removeElement(elem);
 					elem.dispose();
 				}
+			}
+		}
+		while (songTextAnimStateGroup.length != 0) {
+			var states = songTextAnimStateGroup.pop();
+			while (states.length != 0) {
+				states.pop();
 			}
 		}
 	}
@@ -171,36 +182,53 @@ class FreeplayAlphabet {
 	function resolveChar(title:String, j:Int):String {
 		//BOTTLENECK: high per-frame per-char lowercase string alloc + hash map lookup for every alphabet char (7 rows x 24 chars) | FIX: pre-normalize titles once and cache resolved char strings per title
 		var char = j >= ALPHABET_CHARACTER_LIMIT - 3 ? "." : title.charAt(j).toLowerCase();
-		if (charCorrectionMap.exists(char))
-			return charCorrectionMap.get(char);
-		return char;
+		var corrected = charCorrectionMap.get(char);
+		return corrected != null ? corrected : char;
 	}
 
-	inline function advanceAnimFrame(spr:Actor, animName:String) {
-		if (isDisposed || spr == null)
-			return;
-
-		var state = spriteAnimState.get(spr);
-		if (state == null) {
-			state = new SpriteAnimState(0, 0.0, "");
-			spriteAnimState.set(spr, state);
+	function getTitleCharInfo(title:String):TitleCharInfo {
+		var info = titleCharCache.get(title);
+		if (info == null) {
+			info = buildTitleCharInfo(title);
+			titleCharCache.set(title, info);
 		}
+		return info;
+	}
+
+	function buildTitleCharInfo(title:String):TitleCharInfo {
+		var chars:Array<String> = [];
+		var animKeys:Array<String> = [];
+		var rawChars:Array<String> = [];
+		for (j in 0...ALPHABET_CHARACTER_LIMIT) {
+			var raw = title.charAt(j).toLowerCase();
+			chars[j] = resolveChar(title, j);
+			rawChars[j] = raw;
+			animKeys[j] = chars[j] + " bold instance 1";
+		}
+		return new TitleCharInfo(title.length, chars, animKeys, rawChars);
+	}
+
+	inline function advanceAnimFrame(spr:Actor, animName:String, animKey:String, state:SpriteAnimState) {
+		if (isDisposed || spr == null || state == null)
+			return;
 
 		if (state.lastAnim != animName) {
 			//BOTTLENECK: mid per-char per-frame string interpolation + playAnimation() call even when the anim is unchanged (checked only after the call) | FIX: compare state.lastAnim first; precompute the anim name string
-			spr.playAnimation('$animName bold instance 1', false);
+			spr.playAnimation(animKey, false);
 			state.lastAnim = animName;
 			state.frames = 0;
 			state.duration = spr.frameDurationMs;
+			state.frameDurationMs = spr.frameDurationMs;
+			state.rangeFrames = Std.int(Math.max(spr.endingFrameIndex - spr.startingFrameIndex, 1));
 		}
 
 		state.duration -= _currentDeltaTime;
 		if (state.duration <= 0) {
 			state.frames++;
-			state.duration = spr.frameDurationMs;
+			state.duration = state.frameDurationMs;
 		}
 
-		spr.frameIndex = Int64.toInt(state.frames % Std.int(Math.max(spr.endingFrameIndex - spr.startingFrameIndex, 1)));
+		spr.frameIndex = state.frames % state.rangeFrames;
 		spr.changeFrame();
 	}
 
@@ -244,6 +272,11 @@ class FreeplayAlphabet {
 		var grp = songTextCharGroup[i];
 		if (grp == null)
 			return 0.0;
+		var states = songTextAnimStateGroup[i];
+		if (states == null)
+			return 0.0;
+
+		var info = getTitleCharInfo(title);
 
 		var x:Float = 20;
 		var iconX:Float = 0.0;
@@ -253,14 +286,14 @@ class FreeplayAlphabet {
 			if (j >= grp.length)
 				break;
 
-			var char = resolveChar(title, j);
-			var isInvalidCharacter = j >= title.length || title.charAt(j).toLowerCase() == ' ';
-
 			var spr = grp[j];
 			if (spr == null)
 				continue;
 
-			advanceAnimFrame(spr, char);
+			var char = info.chars[j];
+			var isInvalidCharacter = j >= info.titleLength || info.rawChars[j] == ' ';
+
+			advanceAnimFrame(spr, char, info.animKeys[j], states[j]);
 			positionCharSprite(spr, char, x, k);
 
 			// Use host's alphaLerp for fade in/out
@@ -268,7 +301,7 @@ class FreeplayAlphabet {
 			spr.color.aF = alpha;
 			spr.color.luminanceF = alpha;
 
-			if (j == Math.min(title.length - 1, ALPHABET_CHARACTER_LIMIT - 3)) {
+			if (j == Math.min(info.titleLength - 1, ALPHABET_CHARACTER_LIMIT - 3)) {
 				iconX = spr.x;
 			}
 
@@ -314,10 +347,29 @@ private class SpriteAnimState {
 	var frames:Int;
 	var duration:Float;
 	var lastAnim:String;
+	var frameDurationMs:Float;
+	var rangeFrames:Int;
 
 	function new(f:Int, dur:Float, lA:String) {
 		frames = f;
 		duration = dur;
 		lastAnim = lA;
+		frameDurationMs = 0.0;
+		rangeFrames = 1;
+	}
+}
+
+@:publicFields
+private class TitleCharInfo {
+	var titleLength:Int;
+	var chars:Array<String>;
+	var animKeys:Array<String>;
+	var rawChars:Array<String>;
+
+	function new(len:Int, c:Array<String>, a:Array<String>, r:Array<String>) {
+		titleLength = len;
+		chars = c;
+		animKeys = a;
+		rawChars = r;
 	}
 }
