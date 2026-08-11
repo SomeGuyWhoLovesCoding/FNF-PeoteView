@@ -13,11 +13,13 @@ import miniaudio.MiniAudio;
 @:publicFields
 class PerformanceDisplay implements IAlphabetScrollHost {
 	public static var perfStr(default, null):Array<String> = [
-		"timeStretch"
+		"timeStretch",
+		"antialiasing"
 	];
 
 	static var perfDescriptions:Array<String> = [
-		"Keep pitch when song speed != 1x (uses FFT time-stretch).\nOFF uses a cheaper linear resample (pitch shifts).\nTurn OFF if you get audio dropouts on slower/faster sections."
+		"Keep pitch when song speed != 1x (uses FFT time-stretch).\nOFF uses a cheaper linear resample (pitch shifts).\nTurn OFF if you get audio dropouts on slower/faster sections.",
+		"Toggle anti-aliasing for smoother edges\napplies to new textures or session restart.",
 	];
 
 	var parent(default, null):OptionsMenu;
@@ -279,10 +281,16 @@ class PerformanceDisplay implements IAlphabetScrollHost {
 		return str;
 	}
 
+	public function alphabetItemDisabled(index:Int):Bool {
+		return false;
+	}
+
 	function getDisplayName(prefName:String):String {
 		switch (prefName) {
 			case "timeStretch":
 				return "Time Stretch";
+			case "antialiasing":
+				return "Anti-aliasing";
 			default:
 				return prefName;
 		}

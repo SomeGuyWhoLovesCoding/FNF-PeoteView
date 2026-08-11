@@ -38,6 +38,35 @@ class Tools {
 		return !versionsDontMatch; // we're in the clear
 	}
 
+	/**
+		Returns true if the given song/chart directory is complete and playable:
+		it needs a chart file (`chart.json` or `chart.fvc`), a `header.txt`,
+		and every audio file referenced by the header must exist.
+	**/
+	public static function isChartComplete(path:String):Bool {
+		if (path == null || path == "")
+			return false;
+
+		if (!FileSystem.exists('$path/chart.json') && !FileSystem.exists('$path/chart.fvc'))
+			return false;
+		if (!FileSystem.exists('$path/header.txt'))
+			return false;
+
+		try {
+			var header = parseHeader(path);
+			if (header.instDir == null || header.instDir == "" || !FileSystem.exists(Paths.asset(header.instDir)))
+				return false;
+			if (header.voicesDirs != null)
+				for (voicesDir in header.voicesDirs)
+					if (voicesDir != null && voicesDir != "" && !FileSystem.exists(Paths.asset(voicesDir)))
+						return false;
+		} catch (e) {
+			return false;
+		}
+
+		return true;
+	}
+
 	static function parseHealthBarConfig(path:String) {
 		var finalData:Array<Float> = [];
 

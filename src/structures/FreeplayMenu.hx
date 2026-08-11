@@ -153,7 +153,15 @@ class FreeplayMenu {
 	function enter(isDown:Bool, param:Int) {
 		if (!isDown)
 			return;
-		Main.songChosen = freeplayScreen.songsAvailable[nav.value()].dir;
+
+		var index = Math.round(nav.value());
+		if (index >= 0 && index < freeplayScreen.songsAvailable.length && freeplayScreen.alphabetItemDisabled(index)) {
+			// The selected song's chart is incomplete; do not try to play it.
+			Main.current.playCancelSound();
+			return;
+		}
+
+		Main.songChosen = freeplayScreen.songsAvailable[index].dir;
 		close();
 		freeplayScreen.shutDown();
 		active = false;

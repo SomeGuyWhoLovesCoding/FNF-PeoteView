@@ -1,6 +1,7 @@
 package structures;
 
 import data.gameplay.ChapterData.ChapterSong;
+import utils.Tools;
 
 /**
 	The freeplay submenu's screen.
@@ -42,6 +43,8 @@ class FreeplayScreen implements IAlphabetScrollHost {
 
 	var chapter(default, null):String;
 
+	var songCompleteness:Array<Bool> = [];
+
 	function new(parent:FreeplayMenu, chapterName:String) {
 		this.parent = parent;
 		chapter = chapterName;
@@ -53,6 +56,12 @@ class FreeplayScreen implements IAlphabetScrollHost {
 
 	function alphabetItemTitle(index:Int):String {
 		return songsAvailable[index].title;
+	}
+
+	function alphabetItemDisabled(index:Int):Bool {
+		if (index < 0 || index >= songCompleteness.length)
+			return true;
+		return !songCompleteness[index];
 	}
 
 	function reload(chapterName:String) {
@@ -91,8 +100,10 @@ class FreeplayScreen implements IAlphabetScrollHost {
 		var songs:Array<ChapterSong> = chapterData.songs;
 
 		songsAvailable = [];
+		songCompleteness = [];
 		for (i in 0...songs.length) {
 			songsAvailable.push(songs[i]);
+			songCompleteness.push(Tools.isChartComplete(songs[i].dir));
 		}
 
 		// Create new icons
@@ -240,6 +251,7 @@ class FreeplayScreen implements IAlphabetScrollHost {
 		}
 		var alpha = alphabet.calcItemAlpha(k) * alphaLerp;
 		icon.alpha = alpha;
+		icon.c.luminanceF = alphabetItemDisabled(kClamped) ? 0.25 : 1.0;
 		icon.x = iconX + ((icon.w * 0.35) + 12);
 		icon.y = ((-curSelectedLerp * 156) + (156 * k) + 320) - 30;
 		icon.texW = 150;

@@ -294,6 +294,10 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		return str;
 	}
 
+	public function alphabetItemDisabled(index:Int):Bool {
+		return false;
+	}
+
 	function getDisplayName(prefName:String):String {
 		switch (prefName) {
 			case "downScroll":

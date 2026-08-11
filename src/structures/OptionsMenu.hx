@@ -20,7 +20,7 @@ class OptionsMenu {
 	static var optionsProg(default, null):CustomProgram;
 
 	static inline var CATEGORY_COUNT = 4;
-	static inline var NAV_HINT_TEXT = "CTRL+LEFT/RIGHT Navigate | UP/DOWN Navigate option | ACCEPT Toggle option (shows live preview at gameplay state)";
+	static inline var NAV_HINT_TEXT = #if !android "Mousewheel or " + #end "CTRL+LEFT/RIGHT Navigate | UP/DOWN Navigate option | ACCEPT Toggle option (shows live preview at gameplay state)";
 
 	var categoryNav(default, null):Navigation = new Navigation();
 	var optionsNav(default, null):Navigation = new Navigation();
@@ -267,10 +267,8 @@ class OptionsMenu {
 	}
 
 	function moveCategory_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
-		categoryNav.scroll(-Math.floor(y));
-		categoryNav.resetIfBoth(CATEGORY_COUNT, CATEGORY_COUNT - 1);
-		optionsDisplay.reload(cast categoryNav.value());
-		Main.current.playScrollSound();
+		if (Math.floor(y) > 0) left(true, 0);
+		else right(true, 0);
 	}
 
 	function shutDown() {

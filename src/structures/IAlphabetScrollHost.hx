@@ -12,4 +12,10 @@ interface IAlphabetScrollHost {
 
 	function alphabetListLength():Int;
 	function alphabetItemTitle(index:Int):String;
+
+	/**
+		Returns true if the item at `index` should be displayed grayed out
+		(meaning it's visible but not playable / selectable right now).
+	**/
+	function alphabetItemDisabled(index:Int):Bool;
 }

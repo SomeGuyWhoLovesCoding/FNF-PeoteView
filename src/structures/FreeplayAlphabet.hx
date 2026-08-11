@@ -266,6 +266,7 @@ class FreeplayAlphabet {
 
 		var kClamped = Math.floor(Math.min(Math.max(k, 0), host.alphabetListLength() - 1));
 		var title = host.alphabetItemTitle(kClamped);
+		var disabled = host.alphabetItemDisabled(kClamped);
 
 		if (i >= songTextCharGroup.length)
 			return 0.0;
@@ -299,7 +300,7 @@ class FreeplayAlphabet {
 			// Use host's alphaLerp for fade in/out
 			var alpha = isInvalidCharacter ? 0.0 : calcItemAlpha(k) * host.alphaLerp;
 			spr.color.aF = alpha;
-			spr.color.luminanceF = alpha;
+			spr.color.luminanceF = disabled ? alpha * 0.25 : alpha;
 
 			if (j == Math.min(info.titleLength - 1, ALPHABET_CHARACTER_LIMIT - 3)) {
 				iconX = spr.x;

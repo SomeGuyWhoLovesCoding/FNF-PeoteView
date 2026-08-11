@@ -151,9 +151,9 @@ class TextureSystem {
 	}
 
 	static function actuallyCreateTexture(key:String, path:String, disableAntialiasing:Bool = false, premultiply:Bool = false) {
-		var currentSaveState = SaveData.state.graphics;
-		var antialiasing = currentSaveState.antialiasing && !disableAntialiasing;
-		var compressTextures = currentSaveState.compressTextures;
+		var currentSaveState = SaveData.state;
+		var antialiasing = currentSaveState.preferences.antialiasing && !disableAntialiasing;
+		var compressTextures = currentSaveState.graphics.compressTextures;
 
 		var textureData:TextureData = null;
 		var texPath = Paths.asset(path);

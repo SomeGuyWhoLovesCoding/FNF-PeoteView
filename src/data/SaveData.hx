@@ -110,11 +110,11 @@ class SaveData {
 				scoreTxtBopping: false,
 				cameraZooming: true,
 				iconBopping: true,
-				timeStretch: true
+				timeStretch: true,
+				antialiasing: true
 			},
 			graphics: {
 				frameRate: 60,
-				antialiasing: true,
 				compressTextures: true,
 				customTitleBarColor: 0x3d3f4177, // RGB then opacity at the end. Except opacity doesn't work.
 				customWindowOutlineColor: 0x27292b77,
@@ -220,6 +220,7 @@ class SaveData_Preferences {
 	var cameraZooming:Bool;
 	var iconBopping:Bool;
 	var timeStretch:Bool;
+	var antialiasing:Bool;
 }
 
 /**
@@ -231,7 +232,6 @@ class SaveData_Preferences {
 @:publicFields
 class SaveData_Graphics {
 	var frameRate:Float;
-	var antialiasing:Bool;
 	var compressTextures:Bool;
 	var customTitleBarColor:Int;
 	var customWindowOutlineColor:Int;

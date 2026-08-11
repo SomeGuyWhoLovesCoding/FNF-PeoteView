@@ -571,6 +571,10 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		return controlLabels[index];
 	}
 
+	function alphabetItemDisabled(index:Int):Bool {
+		return false;
+	}
+
 	function keyNameForIndex(index:Int):String {
 		var rawKey:KeyCode = 0;
 		switch (index) {

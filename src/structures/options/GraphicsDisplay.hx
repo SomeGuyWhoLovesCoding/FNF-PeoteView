@@ -15,7 +15,7 @@ import lime.app.VSyncMode;
 **/
 @:publicFields
 class GraphicsDisplay implements IAlphabetScrollHost {
-	public static var graphicsStr(default, null):Array<String> = ["resolution", "fullscreen", "vsync", "antiAliasing", "frameRate", "shaders"];
+	public static var graphicsStr(default, null):Array<String> = ["resolution", "fullscreen", "vsync", "frameRate", "shaders"];
 
 	// Descriptions for each graphics option, in the same order.
 	static var graphicsDescriptions:Array<String> = [
@@ -26,7 +26,6 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 		#else
 		"Not supported on lime versions under 8.4.0.",
 		#end
-		"Toggle anti-aliasing for smoother edges (applies to new textures).",
 		"Set the maximum frame rate. SHIFT+LEFT/RIGHT changes the value.",
 		"Enable/disable shader effects (applies to newly created sprites)."
 	];
@@ -238,7 +237,12 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 	function onKeyDown(keyCode:KeyCode, keyModifier:KeyModifier) {
 		if (closed || !parent.opened)
 			return;
-		if (!keyModifier.shiftKey)
+
+		var index = Math.floor(curSelectedTarget);
+		if (index < 0 || index >= graphicsStr.length)
+			return;
+
+		if (!keyModifier.shiftKey || graphicsStr[index] == "frameRate")
 			return;
 		switch (keyCode) {
 			case KeyCode.LEFT:
@@ -266,8 +270,6 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 				#if LIME_840
 				toggleVsync();
 				#end
-			case "antiAliasing":
-				toggleAntiAliasing();
 			case "frameRate":
 				changeFrameRate(1);
 			case "shaders":
@@ -330,12 +332,6 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 	}
 	#end
 
-	function toggleAntiAliasing() {
-		var state = SaveData.state.graphics;
-		state.antialiasing = !state.antialiasing;
-		SaveData.save();
-	}
-
 	function toggleShaders() {
 		Main.current.upscale = !Main.current.upscale;
 	}
@@ -367,10 +363,8 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 				#if LIME_840
 				return window.vsyncMode == VSyncMode.On ? "ON" : "OFF";
 				#else
-				return false;
+				return "OFF";
 				#end
-			case "antiAliasing":
-				return SaveData.state.graphics.antialiasing ? "ON" : "OFF";
 			case "frameRate":
 				return '${Std.int(SaveData.state.graphics.frameRate)}';
 			case "shaders":
@@ -418,6 +412,19 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 		return str;
 	}
 
+	/**
+		VSync is only supported on lime 8.4.0+, so gray it out on older limes.
+	**/
+	public function alphabetItemDisabled(index:Int):Bool {
+		#if LIME_840
+		return false;
+		#else
+		if (index < 0 || index >= graphicsStr.length)
+			return true;
+		return graphicsStr[index] == "vsync";
+		#end
+	}
+
 	function getDisplayName(index:Int):String {
 		switch (graphicsStr[index]) {
 			case "resolution":
@@ -426,8 +433,6 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 				return "Fullscreen";
 			case "vsync":
 				return "VSync";
-			case "antiAliasing":
-				return "Anti Aliasing";
 			case "frameRate":
 				return "Frame Rate";
 			case "shaders":
