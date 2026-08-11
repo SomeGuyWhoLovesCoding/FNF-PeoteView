@@ -129,7 +129,6 @@ abstract Int128(__Int128) from __Int128 to __Int128 {
 
 	function toString() {
 		var i = this;
-		var str = "";
 
 		if (i == Int128Helper.minValue) {
 			return "-170141183460469231731687303715884105728";
@@ -141,18 +140,18 @@ abstract Int128(__Int128) from __Int128 to __Int128 {
 			i = Int128.neg(i);
 		}
 
-		var i1 = null;
+		var i1 = Int128.divMod(i, Int128Helper.QUINTILLION);
+		var low = Int64.toStr(i1.modulus.toInt64());
+		var str = low;
 
-		i1 = Int128.divMod(i, Int128Helper.QUINTILLION);
-
-		str = Int64.toStr(i1.modulus.toInt64()) + str;
-
-		if (i > Int128Helper.QUINTILLION) {
+		if (i1.quotient > 0) {
 			i1 = Int128.divMod(i1.quotient, Int128Helper.QUINTILLION);
-			str = Int64.toStr(i1.modulus.toInt64()) + str;
+			var mid = Int64.toStr(i1.modulus.toInt64());
 
-			if (i > Int128Helper.UNDECILLION) {
-				str = Std.string(Int64.divMod(i1.quotient.low, Int128Helper.QUINTILLION.low).modulus.low) + str;
+			if (i1.quotient > 0) {
+				str = Std.string(Int64.divMod(i1.quotient.low, Int128Helper.QUINTILLION.low).modulus.low) + StringTools.lpad(mid, "0", 18) + StringTools.lpad(low, "0", 18);
+			} else {
+				str = mid + StringTools.lpad(low, "0", 18);
 			}
 		}
 
@@ -515,16 +514,13 @@ abstract Int128(__Int128) from __Int128 to __Int128 {
 **/
 private typedef __Int128 = ___Int128;
 
-private abstract ___Int128(Array<Int64>) {
-	public var high(get, set):Int64;
-	public var low(get, set):Int64;
+@:structInit
+private class ___Int128 {
+	public var high:Int64;
+	public var low:Int64;
 
-	inline function get_high() return this[0];
-	inline function get_low() return this[1];
-	inline function set_high(value:Int64) return this[0] = value;
-	inline function set_low(value:Int64) return this[1] = value;
-
-	public inline function new(high, low) {
-		this = [high, low];
+	public inline function new(high:Int64, low:Int64) {
+		this.high = high;
+		this.low = low;
 	}
 }
