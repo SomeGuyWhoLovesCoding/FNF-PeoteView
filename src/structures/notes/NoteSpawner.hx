@@ -241,7 +241,8 @@ class NoteSpawner {
 					var handle = NoteSystem.typeToHandle[virtualNote.ref.type];
 					var note = parent.notePool.acquireNote();
 
-					note.setHandle(handle);
+					if (note.handle != handle || note.texUnit != handle.texUnit || note.texSlot != handle.texSlot)
+						note.setHandle(handle);
 					note.x = virtualNote.Sx;
 					note.y = virtualNote.Sy;
 					note.scale = virtualNote.scale;
@@ -284,7 +285,8 @@ class NoteSpawner {
 					var handle = NoteSystem.typeToHandle[virtualSustain.ref.ref.type];
 					var sustain = parent.notePool.acquireSustain();
 
-					sustain.setHandle(handle);
+					if (sustain.handle != handle || sustain.texUnit != handle.texUnit || sustain.texSlot != handle.texSlot)
+						sustain.setHandle(handle);
 					sustain.x = virtualSustain.Sx;
 					sustain.y = virtualSustain.Sy;
 					sustain.w = virtualSustain.w;
