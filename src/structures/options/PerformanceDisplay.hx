@@ -17,7 +17,7 @@ class PerformanceDisplay implements IAlphabetScrollHost {
 	];
 
 	static var perfDescriptions:Array<String> = [
-		"Keep pitch when song speed != 1x (uses FFT time-stretch). OFF uses a cheaper linear resample (pitch shifts). Turn OFF if you get audio dropouts on slower/faster sections."
+		"Keep pitch when song speed != 1x (uses FFT time-stretch).\nOFF uses a cheaper linear resample (pitch shifts).\nTurn OFF if you get audio dropouts on slower/faster sections."
 	];
 
 	var parent(default, null):OptionsMenu;

@@ -19,10 +19,15 @@ class OptionsMenu {
 	static var optionsBuf(default, null):Buffer<OptionsSprite>;
 	static var optionsProg(default, null):CustomProgram;
 
+	static inline var CATEGORY_COUNT = 4;
+	static inline var NAV_HINT_TEXT = "CTRL+LEFT/RIGHT Navigate | UP/DOWN Navigate option | ACCEPT Toggle option (shows live preview at gameplay state)";
+
 	var categoryNav(default, null):Navigation = new Navigation();
 	var optionsNav(default, null):Navigation = new Navigation();
 
-	var categorySprites(default, null):Array<OptionsSprite> = [];
+	var navHint(default, null):Text;
+
+	var shiftHeld:Bool = false;
 
 	var active:Bool = false;
 
@@ -39,22 +44,19 @@ class OptionsMenu {
 			optionsBuf = new Buffer<OptionsSprite>(15);
 			optionsProg = new CustomProgram(optionsBuf);
 
-			var tex = TextureSystem.getTexture("optionsMenuSheet");
-			OptionsSprite.init(optionsProg, "optionsMenuSheet", tex);
-
 			display.addProgram(optionsProg);
 			display.removeProgram(optionsProg);
 		}
 	}
 
 	function new() {
-		for (i in 0...4) {
-			var option = new OptionsSprite();
-			option.type = CATEGORY_TEXT;
-			option.changeID(i);
-			option.y = option.h * i;
-			categorySprites.push(option);
-		}
+		navHint = new Text("optionsNavHint", 0, 0, display, NAV_HINT_TEXT, "vcr");
+		navHint.scale = 0.75;
+		navHint.alignment = CENTER;
+		navHint.color = Color.GREY3;
+		navHint.alpha = 0;
+		navHint.screenCenter(X);
+		navHint.y = 12;
 
 		if (optionsDisplay == null) {
 			optionsDisplay = new OptionsDisplay(this);
@@ -86,14 +88,7 @@ class OptionsMenu {
 
 		alphaLerp = Tools.lerp(alphaLerp, opened ? 1.0 : 0.0, ratio);
 
-		for (i in 0...categorySprites.length) {
-			var categorySprite = categorySprites[i];
-			var originalLuminance = categorySprite.c.luminanceF;
-			categorySprite.c.luminanceF = alphaLerp * (i != categoryNav.value() ? 0.5 : 1);
-			categorySprite.c.aF = alphaLerp;
-			if (originalLuminance != categorySprite.c.luminanceF)
-				optionsBuf.updateElement(categorySprite);
-		}
+		navHint.alpha = alphaLerp;
 
 		optionsDisplay.update(deltaTime);
 	}
@@ -106,6 +101,7 @@ class OptionsMenu {
 			Main.current.mouseDown = mousePress;
 			window.onMouseWheel.add(moveCategory_mouse);
 			window.onKeyDown.add(handleKeyDown);
+			window.onKeyUp.add(handleKeyUp);
 		});
 	}
 
@@ -115,21 +111,17 @@ class OptionsMenu {
 		Main.current.mouseDown = null;
 		window.onMouseWheel.remove(moveCategory_mouse);
 		window.onKeyDown.remove(handleKeyDown);
+		window.onKeyUp.remove(handleKeyUp);
 	}
 
 	function open() {
 		optionsDisplay.closed = false;
 		active = opened = true;
+		shiftHeld = false;
 		Main.current.popupOptionsMenu();
 
 		try {
-			for (i in 0...categorySprites.length) {
-				var categorySprite = categorySprites[i];
-				categorySprite.c.luminanceF = alphaLerp * (i != categoryNav.value() ? 0.5 : 1);
-				categorySprite.c.aF = alphaLerp;
-				optionsBuf.addElement(categorySprite);
-			}
-
+			navHint.addProgram();
 			alphaLerp = 0.0;
 		} catch (e) {}
 
@@ -180,8 +172,7 @@ class OptionsMenu {
 			case PREFERENCES:
 				result = PreferencesDisplay.prefsStr.length;
 			case GAMEPLAY:
-				// result = GraphicsDisplay.graphicsStr.length;
-				result = 0; // TODO
+				result = GraphicsDisplay.graphicsStr.length;
 			case PERFORMANCE:
 				result = PerformanceDisplay.perfStr.length;
 		}
@@ -215,6 +206,8 @@ class OptionsMenu {
 	function left(isDown:Bool, param:Int) {
 		if (!isDown || isInvalidKeyState())
 			return;
+		if (shiftHeld && (cast categoryNav.value() : OptionsCategorySelection) == GAMEPLAY)
+			return;
 		optionsNav.setTo(0);
 		categoryNav.scroll(-1);
 		categoryNav.resetIfUnder(3);
@@ -225,9 +218,11 @@ class OptionsMenu {
 	function right(isDown:Bool, param:Int) {
 		if (!isDown || isInvalidKeyState())
 			return;
+		if (shiftHeld && (cast categoryNav.value() : OptionsCategorySelection) == GAMEPLAY)
+			return;
 		optionsNav.setTo(0);
 		categoryNav.scroll(1);
-		categoryNav.resetIfOver(categorySprites.length);
+		categoryNav.resetIfOver(CATEGORY_COUNT);
 		optionsDisplay.reload(cast categoryNav.value());
 		Main.current.playScrollSound();
 	}
@@ -239,10 +234,27 @@ class OptionsMenu {
 	}
 
 	function handleKeyDown(keyCode:KeyCode, keyModifier:KeyModifier) {
+		if (keyCode == KeyCode.LEFT_SHIFT || keyCode == KeyCode.RIGHT_SHIFT)
+			shiftHeld = true;
+
+		if (optionsDisplay.closed)
+			return;
+
 		var disp = optionsDisplay.controlsDisplay;
-		if (disp != null && !disp.closed && !optionsDisplay.closed) {
+		if (disp != null && !disp.closed) {
 			disp.onKeyDown(keyCode, keyModifier);
+			return;
 		}
+
+		var gfx = optionsDisplay.graphicsDisplay;
+		if (gfx != null && !gfx.closed) {
+			gfx.onKeyDown(keyCode, keyModifier);
+		}
+	}
+
+	function handleKeyUp(keyCode:KeyCode, keyModifier:KeyModifier) {
+		if (keyCode == KeyCode.LEFT_SHIFT || keyCode == KeyCode.RIGHT_SHIFT)
+			shiftHeld = false;
 	}
 
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
@@ -256,7 +268,7 @@ class OptionsMenu {
 
 	function moveCategory_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
 		categoryNav.scroll(-Math.floor(y));
-		categoryNav.resetIfBoth(categorySprites.length, categorySprites.length - 1);
+		categoryNav.resetIfBoth(CATEGORY_COUNT, CATEGORY_COUNT - 1);
 		optionsDisplay.reload(cast categoryNav.value());
 		Main.current.playScrollSound();
 	}
@@ -265,11 +277,7 @@ class OptionsMenu {
 		if (!optionsProg.isIn(display))
 			return;
 
-		for (i in 0...categorySprites.length) {
-			var categorySprite = categorySprites[i];
-			categorySprite.c.aF = 0.0;
-			optionsBuf.removeElement(categorySprite);
-		}
+		navHint.removeProgram();
 
 		display.color = 0x00000000;
 		display.removeProgram(optionsProg);
@@ -282,12 +290,9 @@ class OptionsMenu {
 		close();
 		shutDown();
 
-		if (opened) {
-			while (categorySprites.length != 0) {
-				var categorySprite = categorySprites.pop();
-				optionsBuf.removeElement(categorySprite);
-				categorySprite = null;
-			}
+		if (navHint != null) {
+			navHint.dispose();
+			navHint = null;
 		}
 
 		optionsDisplay.dispose();

@@ -350,7 +350,6 @@ class Main extends Application {
 		TextureSystem.createTexture("uiTex", "assets/images/ui/uiSheet.png", false, true, true);
 		TextureSystem.createTexture("hbTex", "assets/images/ui/hbSheet.png", false, true, true);
 		TextureSystem.createTexture("storyModeSheet", "assets/images/ui/storyModeSheet.png", false, true, true);
-		TextureSystem.createTexture("optionsMenuSheet", "assets/images/ui/optionsMenuSheet.png", false, true, true);
 		TextureSystem.createTexture("alphabetSheet", "assets/alphabetText/sheet.png", false, true, true);
 
 		Sys.println('Done! Took ${(haxe.Timer.stamp() - stamp) * 1000}ms');
