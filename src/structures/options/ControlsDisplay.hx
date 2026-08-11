@@ -75,7 +75,9 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			value = 0;
 		if (value < 0)
 			value = 8;
-		return curManiaNum = value;
+		curManiaNum = value;
+		_invalidateCaches();
+		return value;
 	}
 
 	var bindingMania:Bool = false;
@@ -89,6 +91,16 @@ class ControlsDisplay implements IAlphabetScrollHost {
 	var alertKeybindReset:Bool = false;
 
 	var _lastInfoText:String = null; // last string pushed to the shared infoText
+	var _infoVersion:Int = -1; // discrete state version; skips the combined rebuild when nothing changed
+	var _lastAlertKey:String = null;
+	var _lastAlertConflict:String = null;
+
+	// Cached rendered list-row titles; rebuilt only when binding/key/mana state changes.
+	var _titleCache:Array<String> = [];
+
+	inline function _invalidateCaches() {
+		_titleCache = [];
+	}
 
 	var xLerp:Float = 0.0;
 	var curSelectedLerp:Float = 0.0;
@@ -117,6 +129,8 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		alphabet.reload();
 		closed = false;
 		_lastInfoText = null;
+		_infoVersion = -1;
+		_invalidateCaches();
 
 		resetHostState();
 		binding = false;
@@ -141,6 +155,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		else
 			binding = true;
 
+		_invalidateCaches();
 		parent.removeEvents();
 		Application.current.window.onKeyDown.add(onKeyDown);
 		Main.current.playScrollSound();
@@ -159,57 +174,68 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelectedTarget, ratio);
 		xLerp = 20 - (curSelectedLerp * 20);
 
-		// Build the combined text for the info box
-		var combined = "";
+		// Build the combined text for the info box (only when discrete state changed)
 		var selectedIndex = Math.round(curSelectedTarget);
+		var version = selectedIndex;
+		version = version * 3 + (binding ? 1 : 0);
+		version = version * 3 + (bindingMania ? 1 : 0);
+		version = version * 3 + (bindingIndex + 1);
+		version = version * 3 + (maniaBindNum + 1);
+		version = version * 3 + (maniaSubBindNum + 1);
+		version = version * 3 + curManiaNum;
+		version = version * 3 + (alertDupebind ? 1 : 0);
+		version = version * 3 + (alertKeybindReset ? 1 : 0);
+		if (version != _infoVersion || alertDupebindKeyName != _lastAlertKey || alertDupebindConflictName != _lastAlertConflict) {
+			_infoVersion = version;
+			_lastAlertKey = alertDupebindKeyName;
+			_lastAlertConflict = alertDupebindConflictName;
 
-		// Add description of the selected item (if not in mania or binding)
-		if (!bindingMania && !binding && selectedIndex >= 0 && selectedIndex < controlLabels.length) {
-			var desc = controlDescriptions[selectedIndex] != null ? controlDescriptions[selectedIndex] : "";
-			if (desc != "") {
-				combined += controlLabels[selectedIndex] + ": " + desc + "\n\n";
-			}
-		}
-
-		// Append instructions and dynamic binding info
-		if (bindingMania) {
-			combined += INSTRUCTIONS_TEXT + "\n\n";
-			var str = "KEYBINDS\nUSING " + (maniaSubBindNum == 1 ? "#M2#KEY2#M2#" : "#M1#KEY1#M1#") + "\n";
-			if (alertDupebind) {
-				str += '#M3#${alertDupebindKeyName} is already bound to:\n${alertDupebindConflictName}\nTry a different key.#M3#\n';
-			} else if (alertKeybindReset) {
-				str += '#M3#Successfully reset current MANIA.#M3#\n';
-			} else {
-				str += "#M3#Currently binding...#M3#\n";
-			}
-			var keybindArr = SaveData.state.controls.game.keybindArray[curManiaNum];
-			for (k in 0...keybindArr.length) {
-				var maniaBinds = keybindArr[k];
-				str += (maniaBindNum == k && maniaSubBindNum == 0) ? "#M1#[ #M1#" : "[ ";
-				for (i in 0...maniaBinds.length) {
-					if (maniaSubBindNum == i)
-						str += '#M${maniaSubBindNum + 1}#';
-					str += KeyCodeConverter.getSimpleKeyName(maniaBinds[i]);
-					if (maniaSubBindNum == i)
-						str += '#M${maniaSubBindNum + 1}#';
-					if (i != maniaBinds.length - 1)
-						str += ", ";
+			var combined = "";
+			// Add description of the selected item (if not in mania or binding)
+			if (!bindingMania && !binding && selectedIndex >= 0 && selectedIndex < controlLabels.length) {
+				var desc = controlDescriptions[selectedIndex] != null ? controlDescriptions[selectedIndex] : "";
+				if (desc != "") {
+					combined += controlLabels[selectedIndex] + ": " + desc + "\n\n";
 				}
-				str += (maniaBindNum == k && maniaSubBindNum == 1) ? "#M2# ]#M2#" : " ]";
-				str += "\n";
 			}
-			combined += str;
-		} else {
-			if (alertDupebind) {
-				combined += '#M3#${alertDupebindKeyName} is already bound to:\n${alertDupebindConflictName}\nTry a different key.#M3#\n';
-			} else {
-				combined += "KEYBINDS\n";
-				combined += binding ? "#M3#Currently binding...#M3#\n" : "...";
-			}
-		}
 
-		//BOTTLENECK: high per-frame info-text rebuild: string concat allocations + set_text() full compare/relayout every frame | FIX: only rebuild when selection/binding/mania state changed; cache last built string
-		if (combined != _lastInfoText) {
+			// Append instructions and dynamic binding info
+			if (bindingMania) {
+				combined += INSTRUCTIONS_TEXT + "\n\n";
+				var str = "KEYBINDS\nUSING " + (maniaSubBindNum == 1 ? "#M2#KEY2#M2#" : "#M1#KEY1#M1#") + "\n";
+				if (alertDupebind) {
+					str += '#M3#${alertDupebindKeyName} is already bound to:\n${alertDupebindConflictName}\nTry a different key.#M3#\n';
+				} else if (alertKeybindReset) {
+					str += '#M3#Successfully reset current MANIA.#M3#\n';
+				} else {
+					str += "#M3#Currently binding...#M3#\n";
+				}
+				var keybindArr = SaveData.state.controls.game.keybindArray[curManiaNum];
+				for (k in 0...keybindArr.length) {
+					var maniaBinds = keybindArr[k];
+					str += (maniaBindNum == k && maniaSubBindNum == 0) ? "#M1#[ #M1#" : "[ ";
+					for (i in 0...maniaBinds.length) {
+						if (maniaSubBindNum == i)
+							str += '#M${maniaSubBindNum + 1}#';
+						str += KeyCodeConverter.getSimpleKeyName(maniaBinds[i]);
+						if (maniaSubBindNum == i)
+							str += '#M${maniaSubBindNum + 1}#';
+						if (i != maniaBinds.length - 1)
+							str += ", ";
+					}
+					str += (maniaBindNum == k && maniaSubBindNum == 1) ? "#M2# ]#M2#" : " ]";
+					str += "\n";
+				}
+				combined += str;
+			} else {
+				if (alertDupebind) {
+					combined += '#M3#${alertDupebindKeyName} is already bound to:\n${alertDupebindConflictName}\nTry a different key.#M3#\n';
+				} else {
+					combined += "KEYBINDS\n";
+					combined += binding ? "#M3#Currently binding...#M3#\n" : "...";
+				}
+			}
+
 			_lastInfoText = combined;
 			infoText.text = combined;
 			// Position at top-right (align right by setting x = width‑4)
@@ -249,6 +275,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			Application.current.window.onKeyDown.remove(onKeyDown);
 			Main.current.playCancelSound();
 		}
+		_invalidateCaches();
 		SaveData.save();
 	}
 
@@ -394,6 +421,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 
 		binding = false;
 		bindingIndex = -1;
+		_invalidateCaches();
 		SaveData.save();
 		Main.current.controls.reload();
 
@@ -505,6 +533,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 
 		bindingMania = false;
 		maniaBindNum = 0;
+		_invalidateCaches();
 		fixMania();
 		SaveData.save();
 		Main.current.controls.reload();
@@ -555,7 +584,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 	function alphabetItemTitle(index:Int):String {
 		if (index < 0 || index >= controlLabels.length)
 			return "";
-		if (index < controlLabels.length) {
+		if (index >= _titleCache.length || _titleCache[index] == null) {
 			var str = controlLabels[index];
 			for (i in 0...16 - str.length)
 				str += " ";
@@ -566,9 +595,9 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			} else {
 				str += '${curManiaNum + 1}K';
 			}
-			return str;
+			_titleCache[index] = str;
 		}
-		return controlLabels[index];
+		return _titleCache[index];
 	}
 
 	function alphabetItemDisabled(index:Int):Bool {
