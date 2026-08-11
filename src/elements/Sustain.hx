@@ -107,7 +107,7 @@ class Sustain implements Element {
 
 	public var mania_for_clipruntimehelper:Int = 4;
 
-	var handle:NoteskinHandle; // new
+	public var handle:NoteskinHandle; // new
 
 	var cachedClipHandle:NoteskinHandle;
 	var cachedClipId:Int = -1;

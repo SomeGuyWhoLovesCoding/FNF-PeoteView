@@ -219,6 +219,7 @@ class SaveData_Preferences {
 	var scoreTxtBopping:Bool;
 	var cameraZooming:Bool;
 	var iconBopping:Bool;
+	var timeStretch:Bool;
 }
 
 /**
