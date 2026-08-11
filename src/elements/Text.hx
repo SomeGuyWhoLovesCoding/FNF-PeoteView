@@ -132,6 +132,8 @@ class Text {
 		return _rawText;
 
 	private var _rawText:String = "";
+	// Clean string actually laid out to the buffer (used to skip redundant relayouts)
+	private var _lastRenderedText:String = null;
 	var text(default, set):String = "";
 
 	// New: Line array for multiline
@@ -333,9 +335,10 @@ class Text {
 
 	//BOTTLENECK: ultra set_text() re-runs parseMarkup + wrapText + per-char layout + buffer GPU upload on every call; menu HUDs invoke the text setter every frame (full re-layout when content shifts) | FIX: cache last rendered string, relayout only when it changes, and decouple layout from GL upload
 	function set_text(raw:String) {
-		if (!_dirty)
-			if (raw == _rawText)
-				return text;
+		if (!_dirty && (raw == _rawText || raw == _lastRenderedText)) {
+			_rawText = raw;
+			return text;
+		}
 		_dirty = false;
 		_rawText = raw;
 
@@ -469,6 +472,8 @@ class Text {
 			}
 		}
 
+		_lastRenderedText = str;
+
 		safeUpdate();
 
 		return str;
@@ -516,6 +521,8 @@ class Text {
 	}
 
 	function set_alpha(value:Float):Float {
+		if (value == alpha)
+			return alpha;
 		//BOTTLENECK: high set_alpha() loops all char sprites + uploads buffer every frame when UI lerps text alpha (menus set text.alpha per frame) | FIX: skip upload when value unchanged; batch alpha writes into one pass
 		for (ci in 0..._activeCount) {
 			var spr = buffer.getElement(ci);

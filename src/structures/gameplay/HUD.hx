@@ -32,6 +32,13 @@ class HUD {
 	var timeBarXA(default, null):Float;
 	var timeBarYA(default, null):Float;
 
+	/** Last rendered score line; rebuilt only when score/misses/accuracy change. */
+	var lastScoreText:String = null;
+	var lastScore:Int64 = 0;
+	var lastMisses:Int64 = 0;
+	var lastAccLeft:Int128 = 0;
+	var lastAccRight:Int128 = 0;
+
 	var display(default, null):CustomDisplay;
 	var parent(default, null):PlayField;
 
@@ -291,9 +298,16 @@ class HUD {
 	**/
 	function updateScoreText(deltaTime:Float) {
 		//BOTTLENECK: mid [per-frame string interpolation + accuracy.toString() allocation every frame] | FIX: [cache last score/misses/accuracy and rebuild string only when any changes]
-		var scoreText = 'Score: ${parent.score} | Misses: ${parent.misses} | Accuracy: ${parent.accuracy.toString()}';
-		if (scoreTxt.text != scoreText)
-			scoreTxt.text = scoreText;
+		if (lastScoreText == null || parent.score != lastScore || parent.misses != lastMisses
+			|| parent.accuracy.left != lastAccLeft || parent.accuracy.right != lastAccRight) {
+			lastScore = parent.score;
+			lastMisses = parent.misses;
+			lastAccLeft = parent.accuracy.left;
+			lastAccRight = parent.accuracy.right;
+			lastScoreText = 'Score: ${parent.score} | Misses: ${parent.misses} | Accuracy: ${parent.accuracy.toString()}';
+		}
+		if (scoreTxt.text != lastScoreText)
+			scoreTxt.text = lastScoreText;
 		scoreTxt.scale = Tools.lerp(scoreTxt.scale, 1.0, Math.min(deltaTime * 0.02, 1.0));
 		scoreTxt.x = healthBar.bg.x + ((healthBar.bg.w - scoreTxt.width) * 0.5);
 		scoreTxt.y = healthBar.bg.y + (healthBar.bg.h + 6);

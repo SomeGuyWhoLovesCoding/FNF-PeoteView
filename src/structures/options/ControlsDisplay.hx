@@ -88,6 +88,8 @@ class ControlsDisplay implements IAlphabetScrollHost {
 	var alertDupebindConflictName:String = "";
 	var alertKeybindReset:Bool = false;
 
+	var _lastInfoText:String = null; // last string pushed to the shared infoText
+
 	var xLerp:Float = 0.0;
 	var curSelectedLerp:Float = 0.0;
 	var curSelectedTarget:Float = 0.0;
@@ -114,6 +116,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		alphabet.setHost(this);
 		alphabet.reload();
 		closed = false;
+		_lastInfoText = null;
 
 		resetHostState();
 		binding = false;
@@ -206,10 +209,13 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		}
 
 		//BOTTLENECK: high per-frame info-text rebuild: string concat allocations + set_text() full compare/relayout every frame | FIX: only rebuild when selection/binding/mania state changed; cache last built string
-		infoText.text = combined;
-		// Position at top-right (align right by setting x = width‑4)
-		infoText.x = Main.INITIAL_WIDTH - infoText.width - 4;
-		infoText.y = 4;
+		if (combined != _lastInfoText) {
+			_lastInfoText = combined;
+			infoText.text = combined;
+			// Position at top-right (align right by setting x = width‑4)
+			infoText.x = Main.INITIAL_WIDTH - infoText.width - 4;
+			infoText.y = 4;
+		}
 
 		// Show/hide based on conditions
 		var show = parent.opened
