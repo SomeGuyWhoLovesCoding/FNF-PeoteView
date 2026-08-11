@@ -414,7 +414,9 @@ class Main extends Application {
 		var lastTitle = Application.current.window.title;
 
 		if (_started) {
-			newDeltaTime = 1000.0 / FunkinMainLoop.FRAMERATE;
+			// Use the live window frame rate so changing the framerate option at
+			// runtime keeps the simulated delta in sync (otherwise lerp speeds up).
+			newDeltaTime = 1000.0 / Application.current.window.frameRate;
 			// if (deltaTime > 50) newDeltaTime = deltaTime;
 
 			if (mainMenu != null && !mainMenu.disposed) {

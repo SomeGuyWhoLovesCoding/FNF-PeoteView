@@ -8,8 +8,8 @@ import cpp.vm.Gc;
 
 class MemoryTracker {
 	static var activeLabel:String = null;
-	static var startMemory:Int = 0;
-	static var totalAllocations:FakeStringMap<Int> = new FakeStringMap<Int>();
+	static var startMemory:Float = 0;
+	static var totalAllocations:FakeStringMap<Float> = new FakeStringMap<Float>();
 
 	public static function start(label:String):Void {
 		if (activeLabel != null) {
