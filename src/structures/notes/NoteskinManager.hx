@@ -73,6 +73,7 @@ class NoteskinManager {
 				+ 'First $MAX_CACHED_NOTESKINS get textures; ${totalSkins - MAX_CACHED_NOTESKINS} parked.');
 		}
 
+		//BOTTLENECK: low init() synchronously loadTexture()s up to MAX_CACHED_NOTESKINS full sheets (PNG decode + premultiply on main thread) — multi-hundred-ms stall at startup/editor entry | FIX: lazy-load the active skin first, queue the rest
 		for (i => skinName in skinNames) {
 			var handle = new NoteskinHandle(skinName);
 			if (i < MAX_CACHED_NOTESKINS) {

@@ -74,6 +74,7 @@ abstract MetaNote(MetaNoteImpl) from MetaNoteImpl to MetaNoteImpl {
 		var isNegative = pos < 0;
 		var absPos = isNegative ? -pos : pos;
 
+		//BOTTLENECK: mid Int64 division + modulo per note-time conversion; heavy when called per note per frame | FIX: single Float divide (ticks are 48-bit, no usable precision lost) or fixed-point with precomputed reciprocal
 		var scaled:Int64 = absPos / TICKS_PER_MS;
 		var remainder:Int64 = absPos % TICKS_PER_MS;
 

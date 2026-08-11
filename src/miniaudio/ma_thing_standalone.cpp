@@ -33,6 +33,7 @@ double getDuration()                           { return g_audioSystem.getDuratio
 void deactivate_decoder(int index)             { g_audioSystem.deactivate_decoder(index); }
 void amplify_decoder(int index, double volume) { g_audioSystem.amplify_decoder(index, volume); }
 void setPlaybackRate(float value)              { g_audioSystem.setPlaybackRate(value); }
+void setStretchEnabled(bool value)            { g_audioSystem.setStretchEnabled(value); }
 double getGlobalVolume()                       { return g_audioSystem.getGlobalVolume(); }
 double setGlobalVolume(double value)           { return g_audioSystem.setGlobalVolume(value); }
 

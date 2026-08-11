@@ -109,6 +109,10 @@ class Sustain implements Element {
 
 	var handle:NoteskinHandle; // new
 
+	var cachedClipHandle:NoteskinHandle;
+	var cachedClipId:Int = -1;
+	var cachedClipMania:Int = -1;
+
 	static public function init(program:CustomProgram) {}
 
 	inline public function new(x:Int, y:Int, w:Int, h:Int, handle:NoteskinHandle, r:Float, s:Float, sc:Float, tile:Int) {
@@ -143,6 +147,9 @@ class Sustain implements Element {
 		Set the body/tail coords and rotation from the helper for this lane.
 	**/
 	inline public function changeID(id:Int) {
+		//BOTTLENECK: high per-sustain per-frame changeID does 2 clip lookups + ~10 @set("properties") writes, re-uploading every sustain's clip coords each frame | FIX: cache body/tail clip per lane; only set fields when changed
+		if (cachedClipHandle == handle && cachedClipId == id && cachedClipMania == mania_for_clipruntimehelper)
+			return;
 		var bodyClip = NoteskinRuntimeHelper.getHoldBodyClip(handle, id, mania_for_clipruntimehelper);
 		var tailClip = NoteskinRuntimeHelper.getHoldTailClip(handle, id, mania_for_clipruntimehelper);
 
@@ -159,5 +166,9 @@ class Sustain implements Element {
 		h = Math.round(bodyH);
 
 		texRotation = bodyClip.rotation.toDegrees();
+
+		cachedClipHandle = handle;
+		cachedClipId = id;
+		cachedClipMania = mania_for_clipruntimehelper;
 	}
 }

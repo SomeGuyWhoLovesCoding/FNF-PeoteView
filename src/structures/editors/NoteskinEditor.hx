@@ -21,6 +21,7 @@ import structures.notes.NoteskinHandle.NoteskinConfig;
 import structures.notes.NoteskinHandle.NoteskinData;
 import structures.notes.NoteskinHandle.NoteskinReceptorProperties;
 import structures.notes.NoteskinHandle.TextureRotation;
+import structures.notes.NoteskinRuntimeHelper;
 
 using StringTools;
 
@@ -2490,6 +2491,28 @@ private class NoteskinEditorManiaManager {
 private class NoteskinEditorRenderer {
 	var state:NoteskinEditor;
 
+	// Dirty-flag caches for updateReceptorVisuals / updateSustainVisuals
+	// (see the //BOTTLENECK markers at lines 3256 and 3401). These let the
+	// per-frame visual updates skip the expensive setHandle + clip re-apply +
+	// updateElement restamps when nothing actually changed.
+	var receptorPosScratch:{x:Float, y:Float} = {x: 0.0, y: 0.0};
+	var lastReceptorStrumline:Strumline;
+	var lastReceptorHandle:NoteskinHandle;
+	var lastReceptorTexUnit:Int = -1;
+	var lastReceptorTexSlot:Int = -1;
+	var lastReceptorState:EditState = IDLE;
+	var lastReceptorScale:Float = -1.0;
+	var lastReceptorSheetMode:Bool = false;
+	var lastReceptorSelectedIndex:Int = -1;
+	var lastSustainArray:Array<Sustain>;
+	var lastSustainHandle:NoteskinHandle;
+	var lastSustainTexUnit:Int = -1;
+	var lastSustainTexSlot:Int = -1;
+	var lastSustainTexW:Int = -1;
+	var lastSustainTexH:Int = -1;
+	var lastSustainTexSlotsX:Int = -1;
+	var lastSustainPreview:Bool = false;
+
 	public function new(state:NoteskinEditor) {
 		this.state = state;
 	}
@@ -2882,18 +2905,19 @@ private class NoteskinEditorRenderer {
 		}
 	}
 
+	//BOTTLENECK: high updateGridPosition removes + re-creates every grid RepeatSprite (1 new alloc per receptor + buffer add/remove) on every visual update; called from updateReceptorVisuals on every drag-frame, so preview mania (~64 clips) churns 64 allocations per mouse move | FIX: pool grid sprites and updateElement x/y/w/h in place instead of re-creating
 	function updateGridPosition() {
-		for (sprite in state.gridSprites) {
-			NoteskinEditor.receptorGridBuf.removeElement(sprite);
-		}
-		state.gridSprites = [];
-
 		var gap = state.currentConfig.gap != 0 ? state.currentConfig.gap : 112;
 		var offsetX = state.currentConfig.offsetX;
 		var offsetY = state.currentConfig.offsetY;
-		var startX = (Main.INITIAL_WIDTH - (state.maxReceptors * gap)) / 2 + offsetX;
-		var y = Main.INITIAL_HEIGHT / 2 + offsetY;
 		var scale = state.currentConfig.scale;
+
+		// Pool grid sprites: reuse existing RepeatSprites and updateElement
+		// x/y/w/h in place instead of removing + re-creating (1 alloc + buffer
+		// add/remove per receptor per call).
+		var pooled = state.gridSprites;
+		var buf = NoteskinEditor.receptorGridBuf;
+		var count = 0;
 
 		for (i in 0...state.maxReceptors) {
 			if (state.strumline == null || i >= state.strumline.length)
@@ -2904,20 +2928,38 @@ private class NoteskinEditorRenderer {
 			var clip = state.clipEditor.getClipForIndex(clipIndex);
 			var basicClip = state.clipEditor.getBasicClipForState(clip, state.currentState);
 
-			var gridSprite = new RepeatSprite(Math.round(receptor.x + (basicClip.offsX * scale)), Math.round(receptor.y + (basicClip.offsY * scale)),
-				Math.round(basicClip.clipW * scale), Math.round(basicClip.clipH * scale));
-
-			gridSprite.c.setFloatRGB(0, 1, 1);
-			gridSprite.c.aF = 0.125;
-			gridSprite.c.luminanceF = 0.125;
+			var gx = Math.round(receptor.x + (basicClip.offsX * scale));
+			var gy = Math.round(receptor.y + (basicClip.offsY * scale));
+			var gw = Math.round(basicClip.clipW * scale);
+			var gh = Math.round(basicClip.clipH * scale);
 
 			if (state.spriteSheetMode && i == state.spritesheetSelectedIndex) {
-				gridSprite.x += Math.round(NoteskinEditor.SPRITESHEET_VIEW_OFFSET * scale);
-				gridSprite.y += Math.round(NoteskinEditor.SPRITESHEET_VIEW_OFFSET * scale);
+				gx += Math.round(NoteskinEditor.SPRITESHEET_VIEW_OFFSET * scale);
+				gy += Math.round(NoteskinEditor.SPRITESHEET_VIEW_OFFSET * scale);
 			}
 
-			state.gridSprites.push(gridSprite);
-			NoteskinEditor.receptorGridBuf.addElement(gridSprite);
+			var gridSprite = count < pooled.length ? pooled[count] : null;
+			if (gridSprite == null) {
+				gridSprite = new RepeatSprite(gx, gy, gw, gh);
+				gridSprite.c.setFloatRGB(0, 1, 1);
+				gridSprite.c.aF = 0.125;
+				gridSprite.c.luminanceF = 0.125;
+				pooled.push(gridSprite);
+				buf.addElement(gridSprite);
+			} else if (gridSprite.x != gx || gridSprite.y != gy || gridSprite.w != gw || gridSprite.h != gh) {
+				gridSprite.x = gx;
+				gridSprite.y = gy;
+				gridSprite.w = gw;
+				gridSprite.h = gh;
+				buf.updateElement(gridSprite);
+			}
+			count++;
+		}
+
+		// Shrink the pool when the receptor count dropped so stale sprites
+		// don't linger in the buffer.
+		while (pooled.length > count) {
+			buf.removeElement(pooled.pop());
 		}
 
 		NoteskinEditor.receptorGridBuf.update();
@@ -3096,6 +3138,9 @@ private class NoteskinEditorRenderer {
 	}
 
 	function getReceptorPosition(i:Int, gap:Float, offsetX:Float, offsetY:Float):{x:Float, y:Float} {
+		// Reuses a scratch object instead of allocating a fresh {x,y} per call.
+		// Callers must consume the result before the next call — all current
+		// callers do (positions are read immediately).
 		if (isPreviewMania()) {
 			var col = i % PREVIEW_COLS;
 			var row = Math.floor(i / PREVIEW_COLS);
@@ -3106,14 +3151,14 @@ private class NoteskinEditorRenderer {
 			// Vertically center the whole block of rows around the usual y baseline.
 			var centerY = Main.INITIAL_HEIGHT / 2.36 + offsetY;
 			var rowHeight = gap; // square grid
-			var x = startX + (col * gap);
-			var y = centerY + (row - (totalRows - 1) / 2) * rowHeight + state.previewScrollOffset;
-			return {x: x, y: y};
+			receptorPosScratch.x = startX + (col * gap);
+			receptorPosScratch.y = centerY + (row - (totalRows - 1) / 2) * rowHeight + state.previewScrollOffset;
 		} else {
 			var startX = (Main.INITIAL_WIDTH - (state.maxReceptors * gap)) / 2 + offsetX;
-			var y = Main.INITIAL_HEIGHT / 1.4 + offsetY;
-			return {x: startX + (i * gap), y: y};
+			receptorPosScratch.x = startX + (i * gap);
+			receptorPosScratch.y = Main.INITIAL_HEIGHT / 1.4 + offsetY;
 		}
+		return receptorPosScratch;
 	}
 
 	function createReceptors() {
@@ -3246,12 +3291,42 @@ private class NoteskinEditorRenderer {
 		note.scale = scale;
 	}
 
+	/** Resolve the BasicNoteskinClip a Note would render for the current edit
+		state — mirrors applyClipToNote / Note's state methods exactly so the
+		dirty-check in updateReceptorVisuals can't drift from what's applied. */
+	function resolveNoteClip(note:Note):BasicNoteskinClip {
+		return switch (state.currentState) {
+			case IDLE: NoteskinRuntimeHelper.getIdleClip(state.noteskinHandle, note.id, note.mania_for_clipruntimehelper);
+			case COLOR: NoteskinRuntimeHelper.getColorClip(state.noteskinHandle, note.id, note.mania_for_clipruntimehelper);
+			case PRESS: NoteskinRuntimeHelper.getPressClip(state.noteskinHandle, note.id, note.mania_for_clipruntimehelper);
+			case CONFIRM: NoteskinRuntimeHelper.getConfirmClip(state.noteskinHandle, note.id, note.mania_for_clipruntimehelper);
+			case HOLD_BODY, HOLD_TAIL:
+				var clipIndex = state.clipEditor.getClipIndexForReceptor(note.id);
+				var clip = state.clipEditor.getClipForIndex(clipIndex);
+				state.clipEditor.getBasicClipForState(clip, state.currentState);
+			default: null;
+		}
+	}
+
+	/** Mirror of Note.applyClipIfChanged: true when re-applying the clip would
+		change any of the note's texture/geometry fields. */
+	function noteClipChanged(note:Note, clip:BasicNoteskinClip):Bool {
+		if (clip == null)
+			return false;
+		return note.clipX != clip.clipX || note.clipY != clip.clipY
+			|| note.w != clip.clipW || note.h != clip.clipH
+			|| note.clipWidth != clip.clipW || note.clipHeight != clip.clipH
+			|| note.clipSizeX != clip.clipW || note.clipSizeY != clip.clipH
+			|| note.ox != clip.offsX || note.oy != clip.offsY;
+	}
+
 	function updateGlobalTransform() {
 		createReceptors();
 		updateReceptorVisuals();
 		state.ui.updateInstructionsText();
 	}
 
+	//BOTTLENECK: high updateReceptorVisuals full re-stamps every receptor (setHandle + applyClipToNote + getReceptorPosition alloc + noteBuf.updateElement) then always runs updateSustainVisuals + updateGridPosition + updateInstructionsText; invoked per-frame during preview-scroll lerp and per mousemove while dragging/scroll-dragging | FIX: dirty-flag per note and only restamp when state/clip actually changed; avoid per-note {x,y} allocation in getReceptorPosition
 	function updateReceptorVisuals() {
 		if (state.strumline == null)
 			return;
@@ -3261,73 +3336,105 @@ private class NoteskinEditorRenderer {
 		var offsetY = state.currentConfig.offsetY;
 		var scale = state.currentConfig.scale;
 
+		// Dirty flags keyed on the inputs that change receptor visuals: the
+		// noteskin handle (+ its tex slot), the clip index / clip values, and
+		// the current clip state. When nothing changed we skip the expensive
+		// setHandle + clip re-apply + noteBuf.updateElement for that receptor
+		// and only refresh its position (drag / preview-scroll).
+		var handle = state.noteskinHandle;
+		var rebuilt = lastReceptorStrumline != state.strumline;
+		var texChanged = rebuilt
+			|| handle != lastReceptorHandle
+			|| (handle != null && (handle.texUnit != lastReceptorTexUnit || handle.texSlot != lastReceptorTexSlot));
+		var stateChanged = lastReceptorState != state.currentState;
+		var scaleChanged = lastReceptorScale != scale;
+		var sheetModeChanged = lastReceptorSheetMode != state.spriteSheetMode;
+
 		for (i in 0...state.strumline.length) {
 			var note = state.strumline.receptors[i].note;
 
-			// Propagate the current handle's texUnit/texSlot on every visual
-			// update — this is what makes noteskin switching actually switch
-			// the texture on screen (the @texUnit attribute selects which slot
-			// of the multi-texture the shader samples from).
-			note.setHandle(state.noteskinHandle);
-
-			var clipIndex = state.clipEditor.getClipIndexForReceptor(i);
-			var clip = state.clipEditor.getClipForIndex(clipIndex);
-
+			// Position changes always apply — Note x/y are @set("properties"),
+			// so plain writes auto-flag the buffer upload (flushed by the
+			// noteBuf.update() below).
 			var pos = getReceptorPosition(i, gap, offsetX, offsetY);
 			note.x = Std.int(pos.x);
 			note.y = Std.int(pos.y);
 
-			// Keep `note.id = i` (lane index). The Strumline constructor
-			// already set this via `note.changeID(i)`, and we deliberately
-			// do NOT override it with `clipIndex` — Note.reset()/toNote()/
-			// press()/confirm() rely on `note.id` being the lane index so
-			// NoteskinRuntimeHelper can resolve the right per-state clip.
-			//
-			// (The clip pool index is still tracked locally via `clipIndex`
-			//  for grid/sustain lookups below.)
+			var isSheetSel = state.spriteSheetMode && i == state.spritesheetSelectedIndex;
+			var colorChanged = (i == state.selectedIndex) != (i == lastReceptorSelectedIndex);
 
-			if (state.spriteSheetMode && i == state.spritesheetSelectedIndex) {
-				var basicClip = state.clipEditor.getBasicClipForState(clip, state.currentState);
+			var restamp = texChanged || stateChanged || scaleChanged || sheetModeChanged || colorChanged;
 
-				note.c = 0xFF66FFFF;
-				note.initialAlpha = 0.5;
-
-				// Spritesheet mode: override clip properties to show the full
-				// texture around the selected clip region.
-				// Uses image.width/image.height — the handle's source Image
-				// (the actual sheet dimensions; the cache's master texture is
-				// sized to the BUCKET, which may be bigger than this image).
-				var sheetW = state.noteskinHandle.texture.width;
-				var sheetH = state.noteskinHandle.texture.height;
-				note.clipX = basicClip.clipX - NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-				note.clipY = basicClip.clipY - NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-				note.clipWidth = sheetW + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-				note.clipHeight = sheetH + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-				note.clipSizeX = sheetW + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-				note.clipSizeY = sheetH + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-				note.w = sheetW + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-				note.h = sheetH + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-				note.ox = basicClip.offsX;
-				note.oy = basicClip.offsY;
-				note.x -= Math.round(NoteskinEditor.SPRITESHEET_VIEW_OFFSET * scale);
-				note.y -= Math.round(NoteskinEditor.SPRITESHEET_VIEW_OFFSET * scale);
-			} else {
-				if (i == state.selectedIndex) {
-					note.c = 0x00FFAAFF;
-				} else {
-					note.c = 0xFFFFFFFF;
-				}
-				note.initialAlpha = 1.0;
-				// Apply the clip via Note's state methods (reset/toNote/press/
-				// confirm) for IDLE/COLOR/PRESS/CONFIRM, or direct field
-				// writes for HOLD_BODY/HOLD_TAIL. See applyClipToNote.
-				applyClipToNote(note, state.currentState);
+			if (!restamp) {
+				// Clip edits mutate state.noteskinData.clip in place without
+				// changing the flags above, so compare against what a re-apply
+				// would write (mirror of Note.applyClipIfChanged).
+				restamp = noteClipChanged(note, resolveNoteClip(note));
 			}
 
-			NoteskinEditor.noteBuf.updateElement(note);
+			if (restamp) {
+				// Propagate the current handle's texUnit/texSlot on every
+				// restamp — this is what makes noteskin switching actually
+				// switch the texture on screen (the @texUnit attribute selects
+				// which slot of the multi-texture the shader samples from).
+				note.setHandle(handle);
+
+				if (isSheetSel) {
+					var clipIndex = state.clipEditor.getClipIndexForReceptor(i);
+					var clip = state.clipEditor.getClipForIndex(clipIndex);
+					var basicClip = state.clipEditor.getBasicClipForState(clip, state.currentState);
+
+					note.c = 0xFF66FFFF;
+					note.initialAlpha = 0.5;
+
+					// Spritesheet mode: override clip properties to show the full
+					// texture around the selected clip region.
+					// Uses image.width/image.height — the handle's source Image
+					// (the actual sheet dimensions; the cache's master texture is
+					// sized to the BUCKET, which may be bigger than this image).
+					var sheetW = state.noteskinHandle.texture.width;
+					var sheetH = state.noteskinHandle.texture.height;
+					note.clipX = basicClip.clipX - NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+					note.clipY = basicClip.clipY - NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+					note.clipWidth = sheetW + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+					note.clipHeight = sheetH + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+					note.clipSizeX = sheetW + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+					note.clipSizeY = sheetH + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+					note.w = sheetW + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+					note.h = sheetH + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+					note.ox = basicClip.offsX;
+					note.oy = basicClip.offsY;
+					note.x -= Math.round(NoteskinEditor.SPRITESHEET_VIEW_OFFSET * scale);
+					note.y -= Math.round(NoteskinEditor.SPRITESHEET_VIEW_OFFSET * scale);
+				} else {
+					if (i == state.selectedIndex) {
+						note.c = 0x00FFAAFF;
+					} else {
+						note.c = 0xFFFFFFFF;
+					}
+					note.initialAlpha = 1.0;
+					// Apply the clip via Note's state methods (reset/toNote/press/
+					// confirm) for IDLE/COLOR/PRESS/CONFIRM, or direct field
+					// writes for HOLD_BODY/HOLD_TAIL. See applyClipToNote.
+					applyClipToNote(note, state.currentState);
+				}
+
+				NoteskinEditor.noteBuf.updateElement(note);
+			}
 		}
 
 		NoteskinEditor.noteBuf.update();
+		lastReceptorStrumline = state.strumline;
+		lastReceptorHandle = handle;
+		if (handle != null) {
+			lastReceptorTexUnit = handle.texUnit;
+			lastReceptorTexSlot = handle.texSlot;
+		}
+		lastReceptorState = state.currentState;
+		lastReceptorScale = scale;
+		lastReceptorSheetMode = state.spriteSheetMode;
+		lastReceptorSelectedIndex = state.selectedIndex;
+
 		updateSustainVisuals();
 		updateGridPosition();
 		state.ui.updateInstructionsText();
@@ -3396,70 +3503,115 @@ private class NoteskinEditorRenderer {
 		}
 	}
 
+	//BOTTLENECK: mid updateSustainVisuals recomputes every clip lookup + setHandle + updateElement for all sustains on every visual update even when only scroll position changed, doubling updateReceptorVisuals' work per frame | FIX: skip unchanged sustains or do a position-only pass during scroll
 	function updateSustainVisuals() {
 		var gap = state.currentConfig.gap != 0 ? state.currentConfig.gap : 112;
 		var offsetX = state.currentConfig.offsetX;
 		var offsetY = state.currentConfig.offsetY;
 		var scale = state.currentConfig.scale;
 
+		var bodyIdxArr = state.clipEditor.getIndexesForState(HOLD_BODY);
+		var tailIdxArr = state.clipEditor.getIndexesForState(HOLD_TAIL);
+		var idleIdxArr = state.clipEditor.getIndexesForState(IDLE);
+
+		// Dirty flags keyed on the same inputs as updateReceptorVisuals: the
+		// noteskin handle (+ tex slot / sheet dims for invTile scaling), the
+		// clip values, and the current clip state. When nothing changed we
+		// skip the setHandle + clip re-write + updateElement for that sustain
+		// and only refresh its position (preview-scroll).
+		var handle = state.noteskinHandle;
+		var rebuilt = lastSustainArray != state.sustainSprites;
+		var texChanged = rebuilt
+			|| handle != lastSustainHandle
+			|| (handle != null
+				&& (handle.texUnit != lastSustainTexUnit
+					|| handle.texSlot != lastSustainTexSlot
+					|| (handle.texture != null
+						&& (handle.texture.width != lastSustainTexW
+							|| handle.texture.height != lastSustainTexH
+							|| handle.texture.slotsX != lastSustainTexSlotsX))));
+		var previewChanged = lastSustainPreview != state.showSustainPreview;
+
 		for (i in 0...state.sustainSprites.length) {
 			var sustain = state.sustainSprites[i];
 			if (sustain == null)
 				continue;
 
-			// Propagate the current handle's texUnit/texSlot (same rationale
-			// as updateReceptorVisuals — keeps the sustain's sampler in sync
-			// with the current skin after a switch).
-			sustain.setHandle(state.noteskinHandle);
-
 			// Use per-state indexes: body from holdBodyIndexes, tail from holdTailIndexes.
-			var bodyIdxArr = state.clipEditor.getIndexesForState(HOLD_BODY);
-			var tailIdxArr = state.clipEditor.getIndexesForState(HOLD_TAIL);
 			var bodyClip = state.clipEditor.getClipForIndex(bodyIdxArr[i]);
 			var tailClip = state.clipEditor.getClipForIndex(tailIdxArr[i]);
 
-			var pos = getReceptorPosition(i, gap, offsetX, offsetY);
+			if (texChanged || previewChanged) {
+				// Propagate the current handle's texUnit/texSlot (same rationale
+				// as updateReceptorVisuals — keeps the sustain's sampler in sync
+				// with the current skin after a switch) and refresh the preview
+				// alpha. These aren't @set("properties") fields, so they need an
+				// explicit updateElement.
+				sustain.setHandle(handle);
+				sustain.c.aF = state.showSustainPreview ? 0.5 : 0.0;
+				sustain.c.luminanceF = state.showSustainPreview ? 0.5 : 0.0;
+				NoteskinEditor.sustainBuf.updateElement(sustain);
+			}
 
-			// Center sustain on the receptor's visual center so it
-			// pokes out of the middle of the receptor (growing upward).
-			// xOffset centers horizontally, yOffset centers vertically.
-			var idleIdxArr = state.clipEditor.getIndexesForState(IDLE);
+			// Only re-apply clip-derived properties when their values changed.
+			var texRot = bodyClip.holdBody.rotation.toDegrees();
+			var sustainR = i < state.sustainRotations.length ? state.sustainRotations[i] : -90.0;
+			if (sustain.bodyX != bodyClip.holdBody.clipX
+				|| sustain.bodyY != bodyClip.holdBody.clipY
+				|| sustain.bodyW != bodyClip.holdBody.clipW
+				|| sustain.bodyH != bodyClip.holdBody.clipH
+				|| sustain.tailX != tailClip.holdTail.clipX
+				|| sustain.tailY != tailClip.holdTail.clipY
+				|| sustain.tailW != tailClip.holdTail.clipW
+				|| sustain.tailH != tailClip.holdTail.clipH
+				|| sustain.texRotation != texRot
+				|| sustain.scale != scale
+				|| sustain.r != sustainR) {
+				sustain.bodyX = bodyClip.holdBody.clipX;
+				sustain.bodyY = bodyClip.holdBody.clipY;
+				sustain.bodyW = bodyClip.holdBody.clipW;
+				sustain.bodyH = bodyClip.holdBody.clipH;
+				sustain.tailX = tailClip.holdTail.clipX;
+				sustain.tailY = tailClip.holdTail.clipY;
+				sustain.tailW = tailClip.holdTail.clipW;
+				sustain.tailH = tailClip.holdTail.clipH;
+				sustain.texRotation = texRot;
+				sustain.scale = scale;
+				sustain.r = sustainR;
+			}
+
+			// Position (center on the receptor's visual center). Always
+			// recompute so preview-scroll shifts the sustain even when no other
+			// input changed. x/y are @set("properties") — writes auto-flag the
+			// upload flushed by sustainBuf.update() below.
+			var pos = getReceptorPosition(i, gap, offsetX, offsetY);
 			var idleClip = state.clipEditor.getClipForIndex(idleIdxArr[i]).idle;
 			var idleDrawnW = idleClip.clipW * scale;
 			var idleDrawnH = idleClip.clipH * scale;
 			// NoteVB.hx followNote approach: place sustain at receptor center.
 			var xOffset = Std.int(idleClip.offsX * scale + idleDrawnW / 2);
 			var yOffset = Std.int(idleClip.offsY * scale + idleDrawnH / 2);
-
-			sustain.x = Std.int(pos.x) + xOffset;
-			sustain.y = Std.int(pos.y) + yOffset;
-			sustain.scale = scale;
-
-			sustain.bodyX = bodyClip.holdBody.clipX;
-			sustain.bodyY = bodyClip.holdBody.clipY;
-			sustain.bodyW = bodyClip.holdBody.clipW;
-			sustain.bodyH = bodyClip.holdBody.clipH;
-			sustain.tailX = tailClip.holdTail.clipX;
-			sustain.tailY = tailClip.holdTail.clipY;
-			sustain.tailW = tailClip.holdTail.clipW;
-			sustain.tailH = tailClip.holdTail.clipH;
-
-			sustain.texRotation = bodyClip.holdBody.rotation.toDegrees();
-
-			// Apply stored visual rotation for this receptor
-			if (i < state.sustainRotations.length) {
-				sustain.r = state.sustainRotations[i];
-			} else {
-				sustain.r = -90.0;
+			var newX = Std.int(pos.x) + xOffset;
+			var newY = Std.int(pos.y) + yOffset;
+			if (sustain.x != newX || sustain.y != newY) {
+				sustain.x = newX;
+				sustain.y = newY;
 			}
-
-			sustain.c.aF = state.showSustainPreview ? 0.5 : 0.0;
-			sustain.c.luminanceF = state.showSustainPreview ? 0.5 : 0.0;
-
-			NoteskinEditor.sustainBuf.updateElement(sustain);
 		}
 
 		NoteskinEditor.sustainBuf.update();
+		lastSustainArray = state.sustainSprites;
+		lastSustainHandle = handle;
+		if (handle != null) {
+			lastSustainTexUnit = handle.texUnit;
+			lastSustainTexSlot = handle.texSlot;
+			if (handle.texture != null) {
+				lastSustainTexW = handle.texture.width;
+				lastSustainTexH = handle.texture.height;
+				lastSustainTexSlotsX = handle.texture.slotsX;
+			}
+		}
+		lastSustainPreview = state.showSustainPreview;
 	}
 
 	function updateReceptorState(newState:EditState) {
@@ -5683,6 +5835,7 @@ class NoteskinEditor {
 				wrapY += S;
 
 			// 2x2 grid offsets: each square is SxS, shifted by -S as needed.
+			//BOTTLENECK: low per-frame allocation of ox/oy arrays + wrap math in update() for the 4-sprite background scroll runs every frame | FIX: hoist ox/oy to statics and skip updateElement when position unchanged
 			var ox = [0.0, -S, 0.0, -S];
 			var oy = [0.0, 0.0, -S, -S];
 			for (i in 0...backgroundSprites.length) {

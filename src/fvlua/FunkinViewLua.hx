@@ -179,6 +179,7 @@ class FunkinViewLua {
 					continue;
 				}
 
+				//BOTTLENECK: mid args.toArray() allocates a fresh Array copy on every script dispatch of every callback that receives args (incl. per-frame update calls) | FIX: iterate the Rest directly (Rest IS an Array) and skip the copy
 				var argsArr:Array<Any> = args == null ? NO_ARGS : args.toArray();
 				for (arg in argsArr)
 					Convert.toLua(lua, arg);

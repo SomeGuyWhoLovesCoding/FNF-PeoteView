@@ -52,6 +52,7 @@ class File {
 		return 0;
 	}
 
+	//BOTTLENECK: low per-call heap allocation of MetaNoteImpl in the note-read path; GC churn if called per-frame in note loops | FIX: return the packed Int64 and decode in the caller, or fill a reusable scratch MetaNote via out-param
 	@:runtime inline public static function getNote(atIndex:Int64):MetaNote {
 		return new MetaNote.MetaNoteImpl(getNote_first8(atIndex), Int64.toInt(getNote_last2(atIndex)));
 	}

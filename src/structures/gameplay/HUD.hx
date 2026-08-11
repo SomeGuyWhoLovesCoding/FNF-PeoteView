@@ -32,6 +32,13 @@ class HUD {
 	var timeBarXA(default, null):Float;
 	var timeBarYA(default, null):Float;
 
+	/** Last rendered score line; rebuilt only when score/misses/accuracy change. */
+	var lastScoreText:String = null;
+	var lastScore:Int64 = 0;
+	var lastMisses:Int64 = 0;
+	var lastAccLeft:Int128 = 0;
+	var lastAccRight:Int128 = 0;
+
 	var display(default, null):CustomDisplay;
 	var parent(default, null):PlayField;
 
@@ -220,6 +227,7 @@ class HUD {
 		ratingPopup.alpha = Tools.fixElementAlphaFromFadingLerp(Tools.lerp(ratingPopup.alpha, 0.0, Math.min(deltaTime * 0.005, 1.0)));
 		ratingPopup.y = Tools.lerp(ratingPopup.y, 320, Math.min(deltaTime * 0.0125, 1.0));
 
+		//BOTTLENECK: low [per-frame uiBuf.updateElement even when rating popup is fully faded] | FIX: [skip updateElement while alpha is 0]
 		uiBuf.updateElement(ratingPopup);
 	}
 
@@ -230,6 +238,7 @@ class HUD {
 		if (parent.disposed || parent.died)
 			return;
 
+		//BOTTLENECK: mid [per-frame Int64.toStr + per-digit uiBuf.updateElement in combo counter (ratingPopup pref)] | FIX: [cache last combo value and skip rebuild when unchanged]
 		var numStr = Int64.toStr(parent.combo);
 
 		var comboNumberStrLen = numStr.length;
@@ -288,9 +297,17 @@ class HUD {
 		Updates the score text.
 	**/
 	function updateScoreText(deltaTime:Float) {
-		var scoreText = 'Score: ${parent.score} | Misses: ${parent.misses} | Accuracy: ${parent.accuracy.toString()}';
-		if (scoreTxt.text != scoreText)
-			scoreTxt.text = scoreText;
+		//BOTTLENECK: mid [per-frame string interpolation + accuracy.toString() allocation every frame] | FIX: [cache last score/misses/accuracy and rebuild string only when any changes]
+		if (lastScoreText == null || parent.score != lastScore || parent.misses != lastMisses
+			|| parent.accuracy.left != lastAccLeft || parent.accuracy.right != lastAccRight) {
+			lastScore = parent.score;
+			lastMisses = parent.misses;
+			lastAccLeft = parent.accuracy.left;
+			lastAccRight = parent.accuracy.right;
+			lastScoreText = 'Score: ${parent.score} | Misses: ${parent.misses} | Accuracy: ${parent.accuracy.toString()}';
+		}
+		if (scoreTxt.text != lastScoreText)
+			scoreTxt.text = lastScoreText;
 		scoreTxt.scale = Tools.lerp(scoreTxt.scale, 1.0, Math.min(deltaTime * 0.02, 1.0));
 		scoreTxt.x = healthBar.bg.x + ((healthBar.bg.w - scoreTxt.width) * 0.5);
 		scoreTxt.y = healthBar.bg.y + (healthBar.bg.h + 6);
@@ -322,6 +339,7 @@ class HUD {
 		Updates the timebar text.
 	**/
 	function updateTimeBarText() {
+		//BOTTLENECK: mid [unconditional per-frame text assignment forces a text remesh/GPU upload every frame] | FIX: [cache last formatted string and only assign when it changes (once per second)]
 		timeBarTxt.text = Tools.formatTime(Mixer.length - Math.max(parent.songPosition, 0));
 		timeBarTxt.x = (Main.INITIAL_WIDTH - timeBarTxt.width) * 0.5;
 		timeBarTxt.y = timeBarBG.y - 2;

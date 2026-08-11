@@ -972,6 +972,7 @@ public:
     std::atomic<float> playbackRate{1.0f};
     std::atomic<int> mixerState{3};
     std::atomic<bool> exists{false};
+    std::atomic<bool> stretchEnabled{true}; //BOTTLENECK: high改善 [opt-in] FFT time-stretch toggle; when false, pitched playback uses linear resample instead of SignalsmithStretch
 
     float pitchInputMix[MAX_CALLBACK_FRAMES * CHANNEL_COUNT]      = {};
     float pitchStretchedOut[MAX_CALLBACK_FRAMES * CHANNEL_COUNT]  = {};
@@ -1048,6 +1049,7 @@ public:
             s.asyncState.asyncNextBuffer    = s.pcmBufferB;
             s.asyncState.asyncLoadingBuffer = s.pcmBufferC;
 
+            //BOTTLENECK: mid synchronous decode of ~3 full buffers (initial + 2 prefetch) per stream on the main thread during loadFiles; multi-stem songs stall playback start for seconds | FIX: fill initial/prefetch buffers via the AsyncLoader worker and wait on it instead of inline decode
             fillInitialBuffer(i, 0);
 
             if (s.active.load(std::memory_order_acquire)) {
@@ -1187,6 +1189,7 @@ public:
     }
 
     void   setPlaybackRate(float value) { playbackRate.store(value, std::memory_order_release); }
+    void   setStretchEnabled(bool value) { stretchEnabled.store(value, std::memory_order_release); }
     double getGlobalVolume() const      { return MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed); }
     double setGlobalVolume(double v)    { MUSIC_MASTER_VOLUME_099.store(v, std::memory_order_relaxed); return v; }
     int    getMixerState() const        { return mixerState.load(std::memory_order_acquire); }
@@ -1349,6 +1352,7 @@ private:
             if (vol != 0.0f) g_mix_func(dst, src, samples, vol);
 
             s.localReadPos  += toRead;
+            //BOTTLENECK: low atomic RMW (fetch_add) on the audio thread for every read chunk of every stream | FIX: accumulate locally and do a single store to filePosition at the end of readFromBuffer
             s.filePosition.fetch_add(toRead, std::memory_order_relaxed);
             framesRead      += toRead;
 
@@ -1373,6 +1377,7 @@ private:
         ma_uint64 framesSinceLastLoad = sys->totalFramesProcessed - sys->lastLoadFrame;
         ma_uint64 loadIntervalFrames = (SAMPLE_RATE * BG_LOAD_CHECK_INTERVAL) / 1000;
 
+        //BOTTLENECK: low full scan of every stream (multiple acquire atomics each) on the audio thread every ~8ms inside the realtime callback | FIX: move the request loop into the AsyncLoader worker; audio thread only sets one dirty flag
         if (framesSinceLastLoad >= loadIntervalFrames) {
             sys->lastLoadFrame = sys->totalFramesProcessed;
             sys->doBackgroundLoading();
@@ -1422,12 +1427,30 @@ private:
             }
 
             if (anyActive) {
-                if (!sys->stretch) {
-                    sys->stretch = new signalsmith::stretch::SignalsmithStretch();
-                    sys->stretch->presetCheaper(CHANNEL_COUNT, SAMPLE_RATE);
+                if (sys->stretchEnabled.load(std::memory_order_acquire)) {
+                    if (!sys->stretch) {
+                        sys->stretch = new signalsmith::stretch::SignalsmithStretch();
+                        sys->stretch->presetCheaper(CHANNEL_COUNT, SAMPLE_RATE);
+                    }
+                    //BOTTLENECK: high FFT time-stretch of the entire mix synchronously in the realtime audio callback on every buffer (SignalsmithStretch) -> dropout source whenever playback rate != 1.0 | FIX: use the fastest preset / larger block, or run stretch on a dedicated thread with double buffering
+                    sys->stretch->process(inputMix, maxToRead, stretchedOutput, frameCount);
+                    memcpy(out, stretchedOutput, sizeof(float) * frameCount * CHANNEL_COUNT);
+                } else if (maxToRead > 0) {
+                    // Toggle OFF: cheap linear resample (pitch-shift style) instead of FFT stretch.
+                    double step = (frameCount > 1) ? (double)(maxToRead - 1) / (frameCount - 1) : 0.0;
+                    for (ma_uint32 o = 0; o < frameCount; o++) {
+                        double srcPos = o * step;
+                        ma_uint32 i0 = (ma_uint32)srcPos;
+                        if (i0 >= maxToRead) i0 = maxToRead - 1;
+                        ma_uint32 i1 = (i0 + 1 < maxToRead) ? i0 + 1 : i0;
+                        double frac = srcPos - (double)i0;
+                        for (int c = 0; c < CHANNEL_COUNT; c++) {
+                            float s0 = inputMix[i0 * CHANNEL_COUNT + c];
+                            float s1 = inputMix[i1 * CHANNEL_COUNT + c];
+                            out[o * CHANNEL_COUNT + c] = (float)(s0 + frac * (s1 - s0));
+                        }
+                    }
                 }
-                sys->stretch->process(inputMix, maxToRead, stretchedOutput, frameCount);
-                memcpy(out, stretchedOutput, sizeof(float) * frameCount * CHANNEL_COUNT);
             }
         }
 
@@ -1456,6 +1479,7 @@ private:
         playbackRate.store(other.playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
         mixerState.store(other.mixerState.load(std::memory_order_relaxed), std::memory_order_relaxed);
         exists.store(other.exists.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        stretchEnabled.store(other.stretchEnabled.load(std::memory_order_relaxed), std::memory_order_relaxed);
 
         other.stretch = nullptr;  other.asyncLoader    = nullptr;
         other.longestDecoderIndex = 0;  other.playbackRate.store(1.0f, std::memory_order_relaxed);
@@ -1516,6 +1540,7 @@ struct BackgroundTrack {
             printf("Background track has zero length: %s\n", path);
             return false;
         }
+        //BOTTLENECK: mid blocking full-track decode + multi-MB PCM allocation on the calling (main) thread at load time | FIX: decode on a worker thread and swap the buffer in when ready
         pcmData = (float*)malloc(sizeof(float) * length * CHANNEL_COUNT);
         if (!pcmData) {
             ma_decoder_uninit(&decoder);

@@ -30,6 +30,7 @@ extern class MiniAudio {
 	@:native("getMixerState") static function getMixerState():Int;
 
 	@:native("setPlaybackRate") static function setPlaybackRate(playbackRate:Float):Void;
+	@:native("setStretchEnabled") static function setStretchEnabled(enabled:Bool):Void;
 	@:native("seekToPCMFrame") static function seekToPCMFrame(pos:Int64):Void;
 	@:native("deactivate_decoder") static function deactivate_decoder(index:Int):Void;
 	@:native("amplify_decoder") static function amplify_decoder(index:Int, volume:Float):Void;
@@ -96,6 +97,8 @@ class MiniAudio {
 	}
 
 	@:hlNative("ma_thing", "setPlaybackRate") public static function setPlaybackRate(playbackRate:Float):Void {}
+
+	@:hlNative("ma_thing", "setStretchEnabled") public static function setStretchEnabled(enabled:Bool):Void {}
 
 	@:hlNative("ma_thing", "seek_to_pcm_frame") public static function seekToPCMFrame(pos:hl.I64):Void {}
 
@@ -177,6 +180,8 @@ class MiniAudio {
 	}
 
 	public static function setPlaybackRate(playbackRate:Float):Void {}
+
+	public static function setStretchEnabled(enabled:Bool):Void {}
 
 	public static function seekToPCMFrame(pos:hl.I64):Void {}
 

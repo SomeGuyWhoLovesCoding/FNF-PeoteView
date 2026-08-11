@@ -102,6 +102,7 @@ class NoteskinRuntimeHelper {
 		}
 	}
 
+	//BOTTLENECK: mid defaultClip() allocates a full 6-clip NoteskinReceptorProperties on every guard-path hit from inline per-note/per-sustain clip lookups; a lane/mania mismatch in gameplay (hundreds-thousands of notes) makes it allocate per note and thrash GC | FIX: return a cached static fallback instead of allocating
 	inline static private function defaultClip():NoteskinReceptorProperties {
 		return {
 			idle: {

@@ -167,6 +167,7 @@ class EventSystem {
 					return;
 				var view = parent.view;
 
+				//BOTTLENECK: mid [per-frame String.split + parse of shake params every frame while shake EventTimer is active] | FIX: [pre-parse split values once at EventTimer creation and cache floats]
 				var v1split = value1.split(',');
 				var v2split = value2.split(',');
 				var dispSplit:Float = Std.parseFloat(v1split[1].trim());

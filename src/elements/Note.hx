@@ -90,15 +90,16 @@ class Note implements Element {
 		if (handle == null)
 			return;
 		var clip = NoteskinRuntimeHelper.getIdleClip(handle, id, mania_for_clipruntimehelper);
-		applyClip(clip);
+		applyClipIfChanged(clip);
 	}
 
 	inline public function toNote() {
 		state = COLOR;
 		if (handle == null)
 			return;
+		//BOTTLENECK: high per-note per-frame getColorClip lookup + applyClip (10 @set("properties") writes) dirty-flags every note for GPU re-upload; clip is lane-constant | FIX: cache clip per (handle, lane); skip re-derivation when state+id unchanged
 		var clip = NoteskinRuntimeHelper.getColorClip(handle, id, mania_for_clipruntimehelper);
-		applyClip(clip);
+		applyClipIfChanged(clip);
 	}
 
 	inline public function press() {
@@ -106,7 +107,7 @@ class Note implements Element {
 		if (handle == null)
 			return;
 		var clip = NoteskinRuntimeHelper.getPressClip(handle, id, mania_for_clipruntimehelper);
-		applyClip(clip);
+		applyClipIfChanged(clip);
 	}
 
 	inline public function confirm() {
@@ -114,7 +115,7 @@ class Note implements Element {
 		if (handle == null)
 			return;
 		var clip = NoteskinRuntimeHelper.getConfirmClip(handle, id, mania_for_clipruntimehelper);
-		applyClip(clip);
+		applyClipIfChanged(clip);
 	}
 
 	// --- Checking methods ---
@@ -149,5 +150,15 @@ class Note implements Element {
 		ox = clip.offsX;
 		oy = clip.offsY;
 		// Rotation is not used for Note sprites (handled separately if needed)
+	}
+
+	private inline function applyClipIfChanged(clip:BasicNoteskinClip) {
+		if (clipX == clip.clipX && clipY == clip.clipY
+			&& w == clip.clipW && h == clip.clipH
+			&& clipWidth == clip.clipW && clipHeight == clip.clipH
+			&& clipSizeX == clip.clipW && clipSizeY == clip.clipH
+			&& ox == clip.offsX && oy == clip.offsY)
+			return;
+		applyClip(clip);
 	}
 }

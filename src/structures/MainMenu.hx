@@ -163,6 +163,7 @@ class MainMenu {
 				t = (1 / lime.app.Application.current.window.frameRate) * 0.0115;
 
 			var anim = optionAnims[i];
+			//BOTTLENECK: mid per-frame playAnimation() call + string concat for every menu option (restarts anim state each frame) | FIX: play the animation only on nav selection change
 			if (i == nav.value())
 				option.playAnimation(anim + ' white', true);
 			else

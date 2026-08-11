@@ -162,6 +162,7 @@ class HealthBar {
 
 		if (customHealthBarColorEnabled)
 			healthIconColor = healthIconColors[(parent.flipHealthBar ? 1 : 0)];
+		//BOTTLENECK: mid [per-frame setAllColors re-uploads part colors every frame though palette is static all song] | FIX: [cache last applied palette and only set colors on change]
 		part1.setAllColors(healthIconColor);
 
 		part1.w = (bg.w - Math.floor(bg.w * (parent.flipHealthBar ? 1 - _smoothHealth : _smoothHealth))) - (healthBarWS * 2.0);
@@ -221,6 +222,7 @@ class HealthBar {
 		var oppIco = parent.flipHealthBar ? iconP1 : iconP2;
 		var plrIco = parent.flipHealthBar ? iconP2 : iconP1;
 
+		//BOTTLENECK: mid [per-frame changeID re-uploads icon texcoords every frame though ID rarely changes] | FIX: [skip changeID when curID already equals target id]
 		if (health > 0.75)
 			oppIco.changeID(ids[0][1]);
 		else

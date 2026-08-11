@@ -1,39 +1,29 @@
 package structures.options;
 
 import lime.ui.MouseButton;
+import miniaudio.MiniAudio;
 
 /**
-	Handles the display and interaction for preferences options in the options menu.
-	Now uses a shared FreeplayAlphabet instance for consistent UI.
+	Handles the display and interaction for performance options in the options menu.
+	Mirrors `PreferencesDisplay` but for performance-related toggles that gate optional
+	engine mechanics. Currently exposes a single toggle: `timeStretch` (pitch-preserving
+	time-stretch when playback rate != 1.0; disabling it swaps in a cheap linear resampler).
 	@since Development
 **/
 @:publicFields
-class PreferencesDisplay implements IAlphabetScrollHost {
-	public static var prefsStr(default, null):Array<String> = [
-		"downScroll",
-		"hideHUD",
-		"smoothHealthbar",
-		"ratingPopup",
-		"scoreTxtBopping",
-		"cameraZooming",
-		"iconBopping"
+class PerformanceDisplay implements IAlphabetScrollHost {
+	public static var perfStr(default, null):Array<String> = [
+		"timeStretch"
 	];
 
-	// Descriptions for each preference, in the same order.
-	static var prefDescriptions:Array<String> = [
-		"Flips your strumline direction upside down.",
-		"Might help your gameplay be seen clearer...",
-		"Applies real time interpolation to the moving character icons.",
-		"Show 'Sick' or 'Good' when hitting notes.",
-		"Bounces your score text whenever you hit a Sick or better.",
-		"Applies a slow bounce to the camera per measure.",
-		"Applies a snappy bounce to your character icons."
+	static var perfDescriptions:Array<String> = [
+		"Keep pitch when song speed != 1x (uses FFT time-stretch). OFF uses a cheaper linear resample (pitch shifts). Turn OFF if you get audio dropouts on slower/faster sections."
 	];
 
 	var parent(default, null):OptionsMenu;
 	var options(default, null):Array<OptionsSprite> = [];
-	var alphabet(default, null):FreeplayAlphabet; // shared instance
-	var infoText(default, null):Text; // shared description text (owned by OptionsDisplay)
+	var alphabet(default, null):FreeplayAlphabet;
+	var infoText(default, null):Text;
 
 	var xLerp:Float = 0.0;
 	var curSelectedLerp:Float = 0.0;
@@ -52,7 +42,9 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 
 	private static inline var DRAG_THRESHOLD:Float = 1.0;
 
-	// Constructor now accepts the shared infoText
+	// Cached last pushed info string (avoid per-frame Text relayout).
+	var _lastInfoText:String = null;
+
 	function new(parent:OptionsMenu, alphabet:FreeplayAlphabet, infoText:Text) {
 		this.parent = parent;
 		this.alphabet = alphabet;
@@ -61,13 +53,14 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 
 	function reload() {
 		destroyOptions();
-		alphabet.setHost(this); // set this display as the host
+		alphabet.setHost(this);
 		alphabet.reload();
 		closed = false;
 
 		resetHostState();
 		resetDragState();
 		registerInputHandlers();
+		_lastInfoText = null;
 	}
 
 	function resetHostState() {
@@ -111,7 +104,7 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 
 		if (!isDragging && Math.abs(dragVelocity) > 0.01) {
 			curSelectedTarget += (dragVelocity * deltaTime) / (156.0 / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT));
-			curSelectedTarget = Math.max(0, Math.min(prefsStr.length - 1, curSelectedTarget));
+			curSelectedTarget = Math.max(0, Math.min(perfStr.length - 1, curSelectedTarget));
 			parent.optionsNav.setTo(Math.round(curSelectedTarget));
 			dragVelocity *= Math.pow(0.92, deltaTime * 0.04);
 			if (Math.abs(dragVelocity) < 0.01)
@@ -125,28 +118,31 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelectedTarget, ratio);
 		xLerp = 20 - (curSelectedLerp * 20);
 
-		// Update description text (shared infoText)
 		var index = Math.round(curSelectedTarget);
-		if (index >= 0 && index < prefsStr.length) {
-			var prefName = prefsStr[index];
-			var desc = prefDescriptions[index];
+		if (index >= 0 && index < perfStr.length) {
+			var prefName = perfStr[index];
+			var desc = perfDescriptions[index];
 			var isOn = Reflect.getProperty(SaveData.state.preferences, prefName);
 			var status = isOn ? "ON" : "OFF";
-			//BOTTLENECK: mid per-frame infoText setter: string interp alloc + Text set_text() full compare per frame | FIX: cache the string and only assign when it actually changes
-			infoText.text = '${getDisplayName(prefName)}: $desc\nStatus: $status\nPress ENTER to toggle.';
+			var combined = '${getDisplayName(prefName)}: $desc\nStatus: $status\nPress ENTER to toggle.';
+			if (combined != _lastInfoText) {
+				_lastInfoText = combined;
+				infoText.text = combined;
+				infoText.x = Main.INITIAL_WIDTH - infoText.width - 4;
+				infoText.y = 4;
+			}
 		} else {
-			infoText.text = "";
+			if (_lastInfoText != "") {
+				_lastInfoText = "";
+				infoText.text = "";
+			}
 		}
-		// Position at top-right
-		infoText.x = Main.INITIAL_WIDTH - infoText.width - 4;
-		infoText.y = 4;
 
-		// Fade text based on menu alpha
-		var show = parent.opened && index >= 0 && index < prefsStr.length;
+		var show = parent.opened && index >= 0 && index < perfStr.length;
 		infoText.alpha = Tools.lerp(infoText.alpha, show ? 1.0 : 0.0, ratio);
 
 		alphabet.setDeltaTime(deltaTime);
-		var incrementBest = prefsStr.length > 7 ? Math.floor(Math.min(Math.max(curSelectedLerp - 3, 0), prefsStr.length - 7)) : 0;
+		var incrementBest = perfStr.length > 7 ? Math.floor(Math.min(Math.max(curSelectedLerp - 3, 0), perfStr.length - 7)) : 0;
 
 		for (i in 0...7) {
 			alphabet.updateRowText(i, incrementBest);
@@ -154,7 +150,7 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		alphabet.buffer.update();
 	}
 
-	// -------------------- MOUSE HANDLERS (full implementation) --------------------
+	// -------------------- MOUSE HANDLERS --------------------
 
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
 		if (closed || alphabet == null)
@@ -210,7 +206,7 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 			dragVelocity = _delta / 3;
 
 		curSelectedTarget += _delta;
-		curSelectedTarget = Math.max(0, Math.min(prefsStr.length - 1, curSelectedTarget));
+		curSelectedTarget = Math.max(0, Math.min(perfStr.length - 1, curSelectedTarget));
 		parent.optionsNav.setTo(Math.round(curSelectedTarget));
 	}
 
@@ -220,26 +216,17 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		if (closed || alphabet == null)
 			return;
 
-		var field = prefsStr[Math.floor(curSelectedTarget)];
+		var field = perfStr[Math.floor(curSelectedTarget)];
 		var optionChecked = Reflect.getProperty(SaveData.state.preferences, field);
 		Reflect.setProperty(SaveData.state.preferences, field, !optionChecked);
 
-		var pf = Main.current.playField;
-		if (pf != null) {
-			switch (field) {
-				case "downScroll":
-					pf.downScroll = !optionChecked;
-				case "hideHUD" | "ratingPopup":
-					pf.resetHUD();
-				case "smoothHealthbar":
-					var hud = pf.hud;
-					if (hud != null) {
-						var healthBar = hud.healthBar;
-						if (healthBar != null)
-							healthBar.update(0);
-					}
-				default:
-			}
+		// Apply side effects per-toggle.
+		switch (field) {
+			case "timeStretch":
+				#if (cpp || hl)
+				MiniAudio.setStretchEnabled(!optionChecked);
+				#end
+			default:
 		}
 
 		if (alphabet != null && !closed) {
@@ -258,7 +245,6 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		resetHostState();
 		resetDragState();
 
-		// Remove only our own OptionsSprites, not the shared alphabet or infoText.
 		while (options.length != 0) {
 			var option = options.pop();
 			try {
@@ -269,18 +255,17 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 
 	function dispose() {
 		destroyOptions();
-		// Do not dispose infoText or alphabet – they are shared.
 	}
 
 	// IAlphabetScrollHost implementation
 	public function alphabetListLength():Int {
-		return prefsStr.length;
+		return perfStr.length;
 	}
 
 	public function alphabetItemTitle(index:Int):String {
-		if (index < 0 || index >= prefsStr.length)
+		if (index < 0 || index >= perfStr.length)
 			return "";
-		var prefName = prefsStr[index];
+		var prefName = perfStr[index];
 		var isOn = Reflect.getProperty(SaveData.state.preferences, prefName);
 		var displayText = getDisplayName(prefName);
 		var str = displayText;
@@ -296,20 +281,8 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 
 	function getDisplayName(prefName:String):String {
 		switch (prefName) {
-			case "downScroll":
-				return "Down Scroll";
-			case "hideHUD":
-				return "Hide HUD";
-			case "smoothHealthbar":
-				return "Smooth Health";
-			case "ratingPopup":
-				return "Rating Popup";
-			case "scoreTxtBopping":
-				return "Score Bop";
-			case "cameraZooming":
-				return "Camera Zoom";
-			case "iconBopping":
-				return "Icon Bop";
+			case "timeStretch":
+				return "Time Stretch";
 			default:
 				return prefName;
 		}

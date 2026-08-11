@@ -1,7 +1,10 @@
 package system;
 
+import haxe.io.Bytes;
 import lime.graphics.Image;
+import sys.FileSystem;
 import sys.io.File;
+import utils.Sha256;
 
 using StringTools;
 
@@ -140,6 +143,7 @@ class TextureSystem {
 
 		// FIX: Now that all textures are uploaded and all intermediate bytes are orphaned,
 		// force a single GC sweep to instantly reclaim the 180MB of spike memory.
+		//BOTTLENECK: [mid] two full stop-the-world GC sweeps (cpp.vm.Gc.run(false)+run(true)) per queue batch -> GC pause stall on load/state-switch path | FIX: trigger GC on idle frame hook instead of inline; single sweep only
 		GC.run(1);
 		// haxe.Timer.delay(() -> {
 		// 	GC.run(5);
@@ -153,28 +157,38 @@ class TextureSystem {
 
 		var textureData:TextureData = null;
 		var texPath = Paths.asset(path);
-		var compTexRun = FVLZXEncoder.run(texPath);
+		//BOTTLENECK: [ultra] synchronous external-process spawn (astcenc/bc7) + blocking encode/disk IO on main thread for EVERY texture load, including mid-gameplay actor/noteskin swaps -> multi-second framerate hitch | FIX: run texture load+encode on a worker/async thread, cache compressed artifacts, only block on GPU upload
+		// FIX: safe-scope subset - reuse a verified-fresh compressed artifact (skips the encoder subprocess entirely) and never invoke the encoder when compression is disabled
+		var compTexRun:Null<String> = null;
+		if (compressTextures) {
+			if (texPath.endsWith(".png")) {
+				compTexRun = getCachedCompressedTexture(texPath);
+				if (compTexRun == null) {
+					var hadBC7 = FileSystem.exists(compressedPath(texPath, "fvlzbc"));
+					var hadASTC = FileSystem.exists(compressedPath(texPath, "fvlza"));
+					compTexRun = FVLZXEncoder.run(texPath);
+					if (compTexRun != null) {
+						var fresh = compTexRun.endsWith(".fvlzbc") ? !hadBC7 : compTexRun.endsWith(".fvlza") ? !hadASTC : false;
+						if (fresh)
+							writeCompressedArtifactMeta(texPath, compTexRun);
+					}
+				}
+			} else {
+				compTexRun = FVLZXEncoder.run(texPath);
+			}
+		}
 
 		if (compTexRun != null && compressTextures) {
 			textureData = FVLZXEncoder.loadTextureData(texPath);
 		} else {
 			var image = Image.fromFile(texPath);
-			textureData = !premultiply ? TextureData.fromLimeImage(image) : new TextureData(image.width, image.height, TextureFormat.RGBA);
-
-			if (premultiply) {
+			if (!premultiply) {
+				textureData = TextureData.fromLimeImage(image);
+			} else {
 				var bytes = image.data.toBytes();
-				for (i in 0...textureData.bytes.length >> 2) {
-					var fullARGB = bytes.getInt32(i << 2);
-					var a = (fullARGB >>> 24) & 0xFF;
-					var r = (fullARGB >>> 16) & 0xFF;
-					var g = (fullARGB >>> 8) & 0xFF;
-					var b = (fullARGB) & 0xFF;
-					r = (r * a) >> 8;
-					g = (g * a) >> 8;
-					b = (b * a) >> 8;
-					var premul = (a << 24) | (r << 16) | (g << 8) | b;
-					textureData.bytes.setInt32(i << 2, premul);
-				}
+				//BOTTLENECK: [high] per-pixel premultiply loop = getInt32/setInt32 native call per pixel (~2-12M calls on a 2048x2048 atlas) plus a full image.data.toBytes() copy of every loaded texture | FIX: premultiply in-place on the image buffer with a tight byte loop, or vectorize per-row; reuse one scratch buffer
+				premultiplyAlphaInPlace(bytes);
+				textureData = new TextureData(image.width, image.height, TextureFormat.RGBA, 0, bytes);
 			}
 		}
 
@@ -193,5 +207,70 @@ class TextureSystem {
 
 		pool.set(key, texture);
 		textureData = null;
+	}
+
+	// FIX: safe-scope compressed-artifact cache (see [ultra] marker in actuallyCreateTexture).
+	// A sidecar "<artifact>.meta" stores "<settingsSignature>\n<pngSha256>\n"; a hit needs
+	// the artifact AND sidecar present AND both fields to match, so a stale artifact is never served.
+	static function compressedPath(texPath:String, ext:String):String {
+		return texPath.replace(".png", "." + ext);
+	}
+
+	static function getCachedCompressedTexture(texPath:String):Null<String> {
+		var bc7 = compressedPath(texPath, "fvlzbc");
+		var astc = compressedPath(texPath, "fvlza");
+		if (FileSystem.exists(bc7) && artifactIsFresh(texPath, bc7))
+			return bc7;
+		if (FileSystem.exists(astc) && artifactIsFresh(texPath, astc))
+			return astc;
+		return null;
+	}
+
+	static function artifactIsFresh(texPath:String, artifactPath:String):Bool {
+		var sidecar = artifactPath + ".meta";
+		if (!FileSystem.exists(sidecar))
+			return false;
+		var expected = artifactSettingsSignature(artifactPath) + "\n" + pngSha256(texPath) + "\n";
+		return File.getContent(sidecar) == expected;
+	}
+
+	static function writeCompressedArtifactMeta(texPath:String, artifactPath:String):Void {
+		// Only called right after FVLZXEncoder freshly produced the artifact, so the
+		// recorded PNG hash + settings signature provably describe that artifact.
+		try {
+			var meta = artifactSettingsSignature(artifactPath) + "\n" + pngSha256(texPath) + "\n";
+			File.saveContent(artifactPath + ".meta", meta);
+		} catch (e:Dynamic) {
+			// Immutable/read-only assets dir: cache just never engages.
+		}
+	}
+
+	static function artifactSettingsSignature(artifactPath:String):String {
+		// MUST mirror FVLZXEncoder.buildArgs()/runBC7() flags; bump the version when those change.
+		if (artifactPath.endsWith(".fvlzbc"))
+			return "bc7:v1:pmalpha";
+		return "astc:v1:4x4:fast:pp-premultiply";
+	}
+
+	static function pngSha256(texPath:String):String {
+		var fin = File.read(texPath);
+		var hashBytes = Sha256.makeFromInput(fin, FileSystem.stat(texPath).size);
+		fin.close();
+		return hashBytes.toHex();
+	}
+
+	static inline function premultiplyAlphaInPlace(bytes:Bytes):Void {
+		var n = bytes.length;
+		var p = 0;
+		while (p < n) {
+			var r = bytes.get(p);
+			var g = bytes.get(p + 1);
+			var b = bytes.get(p + 2);
+			var a = bytes.get(p + 3);
+			bytes.set(p, (r * a) >> 8);
+			bytes.set(p + 1, (g * a) >> 8);
+			bytes.set(p + 2, (b * a) >> 8);
+			p += 4;
+		}
 	}
 }

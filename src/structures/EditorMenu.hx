@@ -155,6 +155,7 @@ class EditorMenu {
 		for (i in 0...optionTexts.length) {
 			var targetAlpha:Float = (i == editorIndex) ? 1.0 : 0.5;
 			var a = alphaLerps[i] = Tools.lerp(alphaLerps[i], targetAlpha, t);
+			//BOTTLENECK: mid per-frame Text.alpha setter loops every char of each option text + GPU-uploads 3 buffers/frame | FIX: lerp into a local value, apply only when the alpha actually changed
 			optionTexts[i].alpha = a;
 		}
 	}

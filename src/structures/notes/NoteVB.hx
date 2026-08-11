@@ -69,6 +69,7 @@ class NoteVB {
 		sustainLength[note.ref.type][ref.index]++;
 	}
 
+	//BOTTLENECK: low per-frame full re-scan+zero of all lane×index length arrays (2×256×2 writes) even when few notes are active | FIX: track touched (lane,index) slots and only clear those
 	function clear() {
 		for (i in 0...noteLength.length)
 			for (j in 0...noteLength[i].length)

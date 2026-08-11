@@ -374,6 +374,7 @@ class NoteskinHandle {
 		folder = 'assets/images/noteskins/$skin';
 		var path = Paths.asset('$folder/data.json');
 
+		//BOTTLENECK: low synchronous File.getContent + Json.parse on main thread for every skin load (constructor) — NoteskinManager.init loads up to 15 skins and each editor skin-switch blocks here | FIX: pre-parse + cache data once, background-load new skins
 		var rawData:Dynamic = null;
 		try {
 			var content = File.getContent(path);

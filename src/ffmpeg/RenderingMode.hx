@@ -222,6 +222,7 @@ class RenderingMode {
 		if (queueDepth > 2) {
 			var pressure = (queueDepth - 2) / QUEUE_SIZE;        // 0.0..1.0+
 			var sleepMs = pressure * pressure * 50.0;             // quadratic: gentle at first, firm when deep
+			//BOTTLENECK: mid Sys.sleep on the MAIN thread (up to ~50ms/frame) stalls the render loop whenever the encoder queue is deep | FIX: non-blocking backpressure (skip/sample frames or wait off-main-thread via condition variable)
 			Sys.sleep(sleepMs / 1000.0);
 		}
 	}

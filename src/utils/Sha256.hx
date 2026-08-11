@@ -36,6 +36,7 @@ class Sha256 {
 		var buf = Bytes.alloc(64);
 		var processed = 0;
 
+		//BOTTLENECK: mid pure-Haxe 64-round block kernel + 4 bounds-checked byte reads per word over the entire input; slow for multi-GB data | FIX: native/C SHA-256 kernel or batch word assembly with a single unaligned 32-bit load
 		while (processed + 64 <= totalLength) {
 			input.readFullBytes(buf, 0, 64);
 			for (i in 0...16) {

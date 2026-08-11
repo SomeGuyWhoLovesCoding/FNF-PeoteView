@@ -67,6 +67,9 @@ class AnimateActor extends Actor {
 	/** The resolved frames for the currently playing animation. */
 	var currentResolvedFrames:Array<atlas.AnimateAtlas.ResolvedFrame> = [];
 
+	/** True while leaf transforms changed (after an animation-frame switch) and a GPU upload is pending. */
+	var leafDirty:Bool = true;
+
 	// ── Construction ─────────────────────────────────────────────────────────
 
 	function new(display:CustomDisplay, tag:Null<String>, name:String, x:Int = 0, y:Int = 0, fps:Int = 24, folder:String = "images/characters/",
@@ -163,8 +166,7 @@ class AnimateActor extends Actor {
 			leafPool[i].w = 0;
 			leafPool[i].h = 0;
 		}
-		if (buffer != null)
-			buffer.update();
+		//BOTTLENECK: mid redundant full-buffer GPU re-upload on every animation frame - changeFrame() calls buffer.update() again right after applyResolvedFrame() | FIX: drop one of the two buffer.update() calls (this one or the one in changeFrame)
 		activeLeafCount = count;
 	}
 
@@ -186,11 +188,16 @@ class AnimateActor extends Actor {
 		if (currentResolvedFrames == null || frameIndex >= currentResolvedFrames.length)
 			return;
 		applyResolvedFrame(currentResolvedFrames[frameIndex]);
+		leafDirty = true;
 		if (buffer != null)
 			buffer.update();
 	}
 
 	override private function renderImpl() {
+		//BOTTLENECK: high re-uploads every leaf element to the GPU every render frame even though leaf transforms only change on animation-frame switches | FIX: track a dirty flag per leaf (or per actor) and only updateElement on changeFrame
+		if (!leafDirty)
+			return;
+		leafDirty = false;
 		for (i in 0...activeLeafCount) {
 			if (buffer != null)
 				buffer.updateElement(leafPool[i]);
@@ -269,18 +276,34 @@ class AnimateActor extends Actor {
 		var maxX = Math.NEGATIVE_INFINITY;
 		var maxY = Math.NEGATIVE_INFINITY;
 
-		for (corner in [{x: 0.0, y: 0.0}, {x: aw, y: 0.0}, {x: aw, y: ah}, {x: 0.0, y: ah}]) {
-			var wx = (a * corner.x + c * corner.y + tx) * s;
-			var wy = (b * corner.x + d * corner.y + ty) * s;
-			if (wx < minX)
-				minX = wx;
-			if (wx > maxX)
-				maxX = wx;
-			if (wy < minY)
-				minY = wy;
-			if (wy > maxY)
-				maxY = wy;
-		}
+		//BOTTLENECK: high allocates a fresh 4-element anon-object array per leaf per animation frame - GC thrash on composite characters with many leaves | FIX: unroll the 4 corners into scalar locals and reuse
+		var wx = (a * 0.0 + c * 0.0 + tx) * s;
+		var wy = (b * 0.0 + d * 0.0 + ty) * s;
+		if (wx < minX) minX = wx;
+		if (wx > maxX) maxX = wx;
+		if (wy < minY) minY = wy;
+		if (wy > maxY) maxY = wy;
+
+		wx = (a * aw + c * 0.0 + tx) * s;
+		wy = (b * aw + d * 0.0 + ty) * s;
+		if (wx < minX) minX = wx;
+		if (wx > maxX) maxX = wx;
+		if (wy < minY) minY = wy;
+		if (wy > maxY) maxY = wy;
+
+		wx = (a * aw + c * ah + tx) * s;
+		wy = (b * aw + d * ah + ty) * s;
+		if (wx < minX) minX = wx;
+		if (wx > maxX) maxX = wx;
+		if (wy < minY) minY = wy;
+		if (wy > maxY) maxY = wy;
+
+		wx = (a * 0.0 + c * ah + tx) * s;
+		wy = (b * 0.0 + d * ah + ty) * s;
+		if (wx < minX) minX = wx;
+		if (wx > maxX) maxX = wx;
+		if (wy < minY) minY = wy;
+		if (wy > maxY) maxY = wy;
 
 		var vws = maxX - minX;
 		var vhs = maxY - minY;

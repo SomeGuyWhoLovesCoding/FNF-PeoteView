@@ -5,6 +5,7 @@ import miniaudio.MiniAudio;
 import miniaudio.StdVectorString;
 import utils.Tools;
 import lime.ui.Window;
+import data.SaveData;
 
 @:publicFields
 @:noDebug
@@ -27,7 +28,17 @@ class Mixer {
 	static function set_speed(value:Float) {
 		speed = Math.max(value, 0.1);
 		MiniAudio.setPlaybackRate(speed);
+		// Apply the performance preference: keep pitch-preserving time-stretch only when enabled.
+		#if (cpp || hl)
+		MiniAudio.setStretchEnabled(SaveData.state.preferences.timeStretch != false);
+		#end
 		return speed;
+	}
+
+	static function applyTimeStretchPreference() {
+		#if (cpp || hl)
+		MiniAudio.setStretchEnabled(SaveData.state.preferences.timeStretch != false);
+		#end
 	}
 
 	static function setTime(value:Float, playfield:PlayField) {
@@ -60,6 +71,11 @@ class Mixer {
 		windowIndex = 0;
 		
 		Sys.println("  [ Audio Pipeline ]   Song initialized. (Length: " + Tools.formatTime(length, true) + ")");
+
+		// Apply the time-stretch performance preference once the audio system is up.
+		#if (cpp || hl)
+		MiniAudio.setStretchEnabled(SaveData.state.preferences.timeStretch != false);
+		#end
 	}
 
 	static public function startMusic():Void {

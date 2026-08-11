@@ -12,6 +12,7 @@ void seekToPCMFrame(int64_t pos);
 void deactivate_decoder(int index);
 void amplify_decoder(int index, double volume);
 void setPlaybackRate(float value);
+void setStretchEnabled(bool enabled);
 void destroy(void);
 void start(void);
 void stop(void);

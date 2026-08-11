@@ -28,6 +28,7 @@ abstract Accuracy(Array<Int128>) {
 
 	function toString():String {
 		var denominator = right == Int128.ofInt(0) ? Int128.ofInt(10000) : right;
+		//BOTTLENECK: mid Int128 division plus lpad/substr string allocs on every accuracy-string build; costly if HUD refreshes per frame | FIX: track accuracy scaled by 10000 as Int and reformat only when the value changes
 		var calc = left / denominator;
 
 		var str = Std.string(Int128.toInt(calc));

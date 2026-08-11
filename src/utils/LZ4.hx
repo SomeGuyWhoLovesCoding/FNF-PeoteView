@@ -14,15 +14,21 @@ class LZ4 {
 	private static var hashTableGen:Vector<Int> = null; // NEW: Generation tracking
 	private static var currentGen:Int = 0;
 	private static var compressStreamBuffer:Bytes = null;
+	private static var compressBuffer:Bytes = null;
+	private static var streamOutBuffer:Bytes = null;
+	private static var streamOutPos:Int = 0;
 
 	public static function compress(src:Bytes):Bytes {
 		var srcLen = src.length;
 		if (srcLen == 0)
 			return Bytes.alloc(0);
 		var maxOutLen = srcLen + Std.int(srcLen / 255) + 16;
-		var dst = Bytes.alloc(maxOutLen);
-		var len = compressTo(src, dst, 0, srcLen, 0);
-		return dst.sub(0, len);
+		if (compressBuffer == null || compressBuffer.length < maxOutLen) {
+			compressBuffer = Bytes.alloc(maxOutLen);
+		}
+		var len = compressTo(src, compressBuffer, 0, srcLen, 0);
+		//BOTTLENECK: mid Bytes.sub allocates a second full-size buffer + memcpy after every compress; doubles peak memory and GC churn | FIX: size dst exactly and return it, or reuse a persistent scratch buffer
+		return compressBuffer.sub(0, len);
 	}
 
 	public static function compressTo(src:Bytes, dst:Bytes, srcBase:Int = 0, srcLen:Int = -1, dstBase:Int = 0):Int {
@@ -150,6 +156,10 @@ class LZ4 {
 		}
 		var buf = compressStreamBuffer;
 
+		if (streamOutBuffer == null)
+			streamOutBuffer = Bytes.alloc(8192);
+		streamOutPos = 0;
+
 		var bufLen = 0;
 		var bufIdx = 0;
 		var globalPos = 0;
@@ -180,16 +190,17 @@ class LZ4 {
 			if (bufIdx + 16 > bufLen && globalPos + (bufLen - bufIdx) < totalLen) {
 				if (bufIdx - anchor > 32768) {
 					var litLen = bufIdx - anchor;
-					out.writeByte(0xF0);
+					streamPut(out, 0xF0);
 					writtenBytes++;
 					var len = litLen - 15;
 					while (len >= 255) {
-						out.writeByte(255);
+						streamPut(out, 255);
 						writtenBytes++;
 						len -= 255;
 					}
-					out.writeByte(len);
+					streamPut(out, len);
 					writtenBytes++;
+					streamFlush(out);
 					out.writeBytes(buf, anchor, litLen);
 					writtenBytes += litLen;
 					anchor = bufIdx;
@@ -253,34 +264,36 @@ class LZ4 {
 
 						var ml = matchLen - MINMATCH;
 						var token = (litLen >= 15 ? 0xF0 : litLen << 4) | (ml >= 15 ? 0x0F : ml);
-						out.writeByte(token);
+						//BOTTLENECK: high per-byte virtual Output.writeByte for every token/offset/literal byte over the whole stream; billions of calls on multi-GB charts | FIX: accumulate tokens in a Bytes block and flush with writeBytes
+						streamPut(out, token);
 						writtenBytes++;
 
 						if (litLen >= 15) {
 							var len = litLen - 15;
 							while (len >= 255) {
-								out.writeByte(255);
+								streamPut(out, 255);
 								writtenBytes++;
 								len -= 255;
 							}
-							out.writeByte(len);
+							streamPut(out, len);
 							writtenBytes++;
 						}
 						if (litLen > 0) {
+							streamFlush(out);
 							out.writeBytes(buf, anchor, litLen);
 							writtenBytes += litLen;
 						}
-						out.writeByte(offset & 0xFF);
-						out.writeByte((offset >> 8) & 0xFF);
+						streamPut(out, offset & 0xFF);
+						streamPut(out, (offset >> 8) & 0xFF);
 						writtenBytes += 2;
 						if (ml >= 15) {
 							var len = ml - 15;
 							while (len >= 255) {
-								out.writeByte(255);
+								streamPut(out, 255);
 								writtenBytes++;
 								len -= 255;
 							}
-							out.writeByte(len);
+							streamPut(out, len);
 							writtenBytes++;
 						}
 
@@ -309,32 +322,52 @@ class LZ4 {
 
 		var lastLitLen = bufLen - anchor;
 		var token = lastLitLen >= 15 ? 0xF0 : lastLitLen << 4;
-		out.writeByte(token);
+		streamPut(out, token);
 		writtenBytes++;
 		if (lastLitLen >= 15) {
 			var len = lastLitLen - 15;
 			while (len >= 255) {
-				out.writeByte(255);
+				streamPut(out, 255);
 				writtenBytes++;
 				len -= 255;
 			}
-			out.writeByte(len);
+			streamPut(out, len);
 			writtenBytes++;
 		}
 		if (lastLitLen > 0) {
+			streamFlush(out);
 			out.writeBytes(buf, anchor, lastLitLen);
 			writtenBytes += lastLitLen;
 		}
 
+		streamFlush(out);
 		return writtenBytes;
+	}
+
+	private static inline function streamPut(out:Output, b:Int):Void {
+		if (streamOutPos >= streamOutBuffer.length) {
+			out.writeBytes(streamOutBuffer, 0, streamOutPos);
+			streamOutPos = 0;
+		}
+		streamOutBuffer.set(streamOutPos++, b);
+	}
+
+	private static inline function streamFlush(out:Output):Void {
+		if (streamOutPos > 0) {
+			out.writeBytes(streamOutBuffer, 0, streamOutPos);
+			streamOutPos = 0;
+		}
 	}
 
 	public static function decompress(src:Bytes, outSize:Int = -1):Bytes {
 		var srcLen = src.length;
 		if (srcLen == 0)
 			return Bytes.alloc(0);
+		//BOTTLENECK: mid output allocated twice (oversized guess + Bytes.sub copy), doubling peak memory for large decompressions | FIX: allocate exact size once and return without the sub copy
 		var out = outSize > 0 ? Bytes.alloc(outSize) : Bytes.alloc(srcLen * 4 < 1024 ? 1024 : srcLen * 4);
 		var outIdx = decompressTo(src, out, 0, srcLen, 0);
+		if (outIdx == out.length)
+			return out;
 		return out.sub(0, outIdx);
 	}
 
@@ -469,6 +502,7 @@ class LZ4 {
 		return outIdx;
 	}
 
+	//BOTTLENECK: mid 4 bounds-checked Bytes.get calls per 32-bit load inside the hot compress/match loops (byte-level) | FIX: unaligned native int load via cpp.Pointer / hl BytesInt32
 	private static inline function read32(b:Bytes, i:Int):Int {
 		return b.get(i) | (b.get(i + 1) << 8) | (b.get(i + 2) << 16) | (b.get(i + 3) << 24);
 	}

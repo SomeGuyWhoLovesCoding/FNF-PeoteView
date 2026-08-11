@@ -132,6 +132,8 @@ class Text {
 		return _rawText;
 
 	private var _rawText:String = "";
+	// Clean string actually laid out to the buffer (used to skip redundant relayouts)
+	private var _lastRenderedText:String = null;
 	var text(default, set):String = "";
 
 	// New: Line array for multiline
@@ -331,10 +333,12 @@ class Text {
 
 	// ── set_text (updated with pre-allocation and combined dimension pass) ────
 
+	//BOTTLENECK: ultra set_text() re-runs parseMarkup + wrapText + per-char layout + buffer GPU upload on every call; menu HUDs invoke the text setter every frame (full re-layout when content shifts) | FIX: cache last rendered string, relayout only when it changes, and decouple layout from GL upload
 	function set_text(raw:String) {
-		if (!_dirty)
-			if (raw == _rawText)
-				return text;
+		if (!_dirty && (raw == _rawText || raw == _lastRenderedText)) {
+			_rawText = raw;
+			return text;
+		}
 		_dirty = false;
 		_rawText = raw;
 
@@ -468,6 +472,8 @@ class Text {
 			}
 		}
 
+		_lastRenderedText = str;
+
 		safeUpdate();
 
 		return str;
@@ -479,6 +485,7 @@ class Text {
 		if (value == x)
 			return x;
 		var delta = value - x;
+		//BOTTLENECK: high set_x() shifts every char sprite + uploads buffer on each per-frame x movement | FIX: defer repositioning to a single per-frame layout pass instead of per-char writes
 		for (ci in 0..._activeCount) {
 			var spr = buffer.getElement(ci);
 			if (spr == null)
@@ -493,6 +500,7 @@ class Text {
 		if (value == y)
 			return y;
 		var delta = value - y;
+		//BOTTLENECK: high set_y() shifts every char sprite + uploads buffer on each per-frame y movement | FIX: defer repositioning to a single per-frame layout pass instead of per-char writes
 		for (ci in 0..._activeCount) {
 			var spr = buffer.getElement(ci);
 			if (spr == null)
@@ -513,6 +521,9 @@ class Text {
 	}
 
 	function set_alpha(value:Float):Float {
+		if (value == alpha)
+			return alpha;
+		//BOTTLENECK: high set_alpha() loops all char sprites + uploads buffer every frame when UI lerps text alpha (menus set text.alpha per frame) | FIX: skip upload when value unchanged; batch alpha writes into one pass
 		for (ci in 0..._activeCount) {
 			var spr = buffer.getElement(ci);
 			if (spr != null)

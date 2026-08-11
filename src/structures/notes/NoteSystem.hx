@@ -335,6 +335,7 @@ class NoteSystem {
 			d = -d;
 
 		noteSpr.diff = d;
+		//BOTTLENECK: mid per-note per-frame Math.cos/Math.sin of lane-constant scrollDirection = thousands of trig calls/frame on dense charts | FIX: precompute cos/sin once per strumline when scrollDirection changes
 		noteSpr.Sx = Math.round(noteSprX + (d * Math.cos(strumline.scrollDirection * 0.01745329)));
 		noteSpr.Sy = Math.round(noteSprY + (d * Math.sin(strumline.scrollDirection * 0.01745329)));
 

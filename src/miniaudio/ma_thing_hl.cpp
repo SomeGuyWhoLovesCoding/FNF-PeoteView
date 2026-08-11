@@ -46,6 +46,7 @@ HL_PRIM double HL_NAME(get_duration)(_NO_ARG)           { return g_audioSystem.g
 HL_PRIM void   HL_NAME(deactivate_decoder)(int index)            { g_audioSystem.deactivate_decoder(index); }
 HL_PRIM void   HL_NAME(amplify_decoder)(int index, double volume){ g_audioSystem.amplify_decoder(index, volume); }
 HL_PRIM void   HL_NAME(setPlaybackRate)(double value)             { g_audioSystem.setPlaybackRate(value); }
+HL_PRIM void   HL_NAME(setStretchEnabled)(bool value)             { g_audioSystem.setStretchEnabled(value); }
 HL_PRIM double HL_NAME(getGlobalVolume)(_NO_ARG)                 { return g_audioSystem.getGlobalVolume(); }
 HL_PRIM double HL_NAME(setGlobalVolume)(double value)            { return g_audioSystem.setGlobalVolume(value); }
 
@@ -87,6 +88,7 @@ DEFINE_PRIM(_F64,  get_duration,           _NO_ARG)
 DEFINE_PRIM(_VOID, deactivate_decoder,     _I32)
 DEFINE_PRIM(_VOID, amplify_decoder,        _I32 _F64)
 DEFINE_PRIM(_VOID, setPlaybackRate,        _F64)
+DEFINE_PRIM(_VOID, setStretchEnabled,      _BOOL)
 DEFINE_PRIM(_F64,  getGlobalVolume,        _NO_ARG)
 DEFINE_PRIM(_F64,  setGlobalVolume,        _F64)
 DEFINE_PRIM(_I32,  detectLatency,          _NO_ARG)
