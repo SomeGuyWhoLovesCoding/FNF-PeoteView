@@ -66,7 +66,7 @@ class FreeplayAlphabet {
 		if (songTextsBuf != null)
 			return;
 
-		songTextsBuf = new Buffer<Actor>(16, 16);
+		songTextsBuf = new Buffer<Actor>(7 * ALPHABET_CHARACTER_LIMIT + 2);
 		songTextsProg = new CustomProgram(songTextsBuf);
 
 		var texName = "alphabetSheet";
@@ -344,6 +344,8 @@ class FreeplayAlphabet {
 }
 
 @:publicFields
+@:structInit
+@:struct
 private class SpriteAnimState {
 	var frames:Int;
 	var duration:Float;
@@ -361,6 +363,8 @@ private class SpriteAnimState {
 }
 
 @:publicFields
+@:structInit
+@:struct
 private class TitleCharInfo {
 	var titleLength:Int;
 	var chars:Array<String>;
