@@ -55,8 +55,8 @@ class OptionsMenu {
 		navHint.alignment = CENTER;
 		navHint.color = Color.GREY3;
 		navHint.alpha = 0;
-		navHint.screenCenter(X);
-		navHint.y = 12;
+		navHint.x = 12;
+		navHint.y = Main.INITIAL_HEIGHT - navHint.height - 50;
 
 		if (optionsDisplay == null) {
 			optionsDisplay = new OptionsDisplay(this);

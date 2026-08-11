@@ -242,7 +242,7 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 		if (index < 0 || index >= graphicsStr.length)
 			return;
 
-		if (!keyModifier.shiftKey || graphicsStr[index] == "frameRate")
+		if (!keyModifier.shiftKey || graphicsStr[index] != "frameRate")
 			return;
 		switch (keyCode) {
 			case KeyCode.LEFT:
