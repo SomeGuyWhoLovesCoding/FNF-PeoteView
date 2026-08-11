@@ -48,7 +48,7 @@ class OptionsMenu {
 	}
 
 	function new() {
-		for (i in 0...3) {
+		for (i in 0...4) {
 			var option = new OptionsSprite();
 			option.type = CATEGORY_TEXT;
 			option.changeID(i);
@@ -182,6 +182,8 @@ class OptionsMenu {
 			case GAMEPLAY:
 				// result = GraphicsDisplay.graphicsStr.length;
 				result = 0; // TODO
+			case PERFORMANCE:
+				result = PerformanceDisplay.perfStr.length;
 		}
 
 		return result;
@@ -215,7 +217,7 @@ class OptionsMenu {
 			return;
 		optionsNav.setTo(0);
 		categoryNav.scroll(-1);
-		categoryNav.resetIfUnder(2);
+		categoryNav.resetIfUnder(3);
 		optionsDisplay.reload(cast categoryNav.value());
 		Main.current.playScrollSound();
 	}

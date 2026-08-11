@@ -109,7 +109,8 @@ class SaveData {
 				ratingPopup: true,
 				scoreTxtBopping: false,
 				cameraZooming: true,
-				iconBopping: true
+				iconBopping: true,
+				timeStretch: true
 			},
 			graphics: {
 				frameRate: 60,
