@@ -77,7 +77,10 @@ class OptionsMenu {
 	var alphaLerp:Float = 0.0;
 
 	function update(deltaTime:Float) {
-		if (!opened && alphaLerp == 0.0) {
+		// alphaLerp decays asymptotically and never reaches an exact 0.0, so shutting
+		// down only at `== 0.0` would leave the options overlay rendering for minutes
+		// (and thrashes CPU while playing a song). Tear it down once it's invisible.
+		if (!opened && alphaLerp <= 0.001) {
 			shutDown();
 			return;
 		}
