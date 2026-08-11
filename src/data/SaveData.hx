@@ -116,6 +116,7 @@ class SaveData {
 			graphics: {
 				frameRate: 60,
 				compressTextures: true,
+				vsync: false,
 				customTitleBarColor: 0x3d3f4177, // RGB then opacity at the end. Except opacity doesn't work.
 				customWindowOutlineColor: 0x27292b77,
 				customTitleTextFont: "Inconsolata"
@@ -233,6 +234,7 @@ class SaveData_Preferences {
 class SaveData_Graphics {
 	var frameRate:Float;
 	var compressTextures:Bool;
+	var vsync:Bool;
 	var customTitleBarColor:Int;
 	var customWindowOutlineColor:Int;
 	var customTitleTextFont:String;

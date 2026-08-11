@@ -243,7 +243,8 @@ class Main extends Application {
 		SaveData.init(window);
 
 		var frameRate = SaveData.state.graphics.frameRate;
-		FunkinMainLoop.run(frameRate, false);
+		var vsync = SaveData.state.graphics.vsync;
+		FunkinMainLoop.run(frameRate, false, vsync);
 
 		peoteView = new PeoteView(window);
 		TextureSystem.processQueue();

@@ -52,6 +52,12 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 
 	private static inline var DRAG_THRESHOLD:Float = 1.0;
 
+	// Cached last pushed info string (avoid per-frame string build + Text relayout).
+	var _lastInfoText:String = null;
+
+	// Cached rendered list-row titles; rebuilt only when a value changes.
+	var _titleCache:Array<String> = [];
+
 	// Constructor now accepts the shared infoText
 	function new(parent:OptionsMenu, alphabet:FreeplayAlphabet, infoText:Text) {
 		this.parent = parent;
@@ -68,6 +74,8 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		resetHostState();
 		resetDragState();
 		registerInputHandlers();
+		_lastInfoText = null;
+		_titleCache = [];
 	}
 
 	function resetHostState() {
@@ -132,9 +140,13 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 			var desc = prefDescriptions[index];
 			var isOn = Reflect.getProperty(SaveData.state.preferences, prefName);
 			var status = isOn ? "ON" : "OFF";
-			//BOTTLENECK: mid per-frame infoText setter: string interp alloc + Text set_text() full compare per frame | FIX: cache the string and only assign when it actually changes
-			infoText.text = '${getDisplayName(prefName)}: $desc\nStatus: $status\nPress ENTER to toggle.';
-		} else {
+			var combined = '${getDisplayName(prefName)}: $desc\nStatus: $status\nPress ENTER to toggle.';
+			if (combined != _lastInfoText) {
+				_lastInfoText = combined;
+				infoText.text = combined;
+			}
+		} else if (_lastInfoText != "") {
+			_lastInfoText = "";
 			infoText.text = "";
 		}
 		// Position at top-right
@@ -223,6 +235,7 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		var field = prefsStr[Math.floor(curSelectedTarget)];
 		var optionChecked = Reflect.getProperty(SaveData.state.preferences, field);
 		Reflect.setProperty(SaveData.state.preferences, field, !optionChecked);
+		_titleCache = [];
 
 		var pf = Main.current.playField;
 		if (pf != null) {
@@ -280,18 +293,21 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 	public function alphabetItemTitle(index:Int):String {
 		if (index < 0 || index >= prefsStr.length)
 			return "";
-		var prefName = prefsStr[index];
-		var isOn = Reflect.getProperty(SaveData.state.preferences, prefName);
-		var displayText = getDisplayName(prefName);
-		var str = displayText;
-		var strLen = isOn ? 18 : 17;
-		for (i in 0...Math.floor((strLen - displayText.length) * 1.3) - 3)
-			str += " ";
-		if (isOn)
-			str += "ON";
-		else
-			str += "OFF";
-		return str;
+		if (index >= _titleCache.length || _titleCache[index] == null) {
+			var prefName = prefsStr[index];
+			var isOn = Reflect.getProperty(SaveData.state.preferences, prefName);
+			var displayText = getDisplayName(prefName);
+			var str = displayText;
+			var strLen = isOn ? 18 : 17;
+			for (i in 0...Math.floor((strLen - displayText.length) * 1.3) - 3)
+				str += " ";
+			if (isOn)
+				str += "ON";
+			else
+				str += "OFF";
+			_titleCache[index] = str;
+		}
+		return _titleCache[index];
 	}
 
 	public function alphabetItemDisabled(index:Int):Bool {

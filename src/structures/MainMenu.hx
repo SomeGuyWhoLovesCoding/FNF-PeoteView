@@ -142,6 +142,7 @@ class MainMenu {
 	static var optionYLerps:Array<Float> = [for (i in 0...5) 1];
 	static var alphaLerps:Array<Float> = [for (i in 0...6) 1];
 	static var selectedAlpha:Float = 1.0;
+	static var lastNavValue:Int = -1;
 
 	/**
 	 * This is here to clear up duplicated code.
@@ -155,6 +156,15 @@ class MainMenu {
 	function update(deltaTime:Float) {
 		if (optionBuf == null)
 			return; // stupid
+
+		var cur = nav.value();
+		if (cur != lastNavValue) {
+			lastNavValue = cur;
+			for (i in 0...optionBuf.length) {
+				optionBuf.getElement(i).playAnimation(optionAnims[i] + (i == cur ? ' white' : ' basic'), true);
+			}
+		}
+
 		for (i in 0...optionBuf.length) {
 			var option = optionBuf.getElement(i);
 
@@ -163,14 +173,9 @@ class MainMenu {
 				t = (1 / lime.app.Application.current.window.frameRate) * 0.0115;
 
 			var anim = optionAnims[i];
-			//BOTTLENECK: mid per-frame playAnimation() call + string concat for every menu option (restarts anim state each frame) | FIX: play the animation only on nav selection change
-			if (i == nav.value())
-				option.playAnimation(anim + ' white', true);
-			else
-				option.playAnimation(anim + ' basic', true);
 
 			if (anim != 'backspace to exit') {
-				optionYLerps[i] = Tools.lerp(optionYLerps[i], optionYFormula(i, nav.value()), t);
+				optionYLerps[i] = Tools.lerp(optionYLerps[i], optionYFormula(i, cur), t);
 				option.y = optionYLerps[i];
 				option.x = (Main.INITIAL_WIDTH - option.w) * 0.5;
 			}

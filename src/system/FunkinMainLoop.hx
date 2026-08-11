@@ -19,7 +19,7 @@ class FunkinMainLoop {
 	static var FRAMEOPTS:FrameOptions;
 	#end
 
-	static function run(frameRate:Float, uncapped:Bool) {
+	static function run(frameRate:Float, uncapped:Bool, vsync:Bool = false) {
 		#if LIME_840
 		FRAMEOPTS = {
 			timePrecision: TimePrecision.HighResolution,
@@ -28,10 +28,10 @@ class FunkinMainLoop {
 		};
 		#end
 		var uncappedModeStr:String = uncapped ? "Soft" : "Off";
-		Sys.println('[ System ] Framerate set to $frameRate with uncapped mode set to ${uncappedModeStr}');
+		Sys.println('[ System ] Framerate set to $frameRate with uncapped mode set to ${uncappedModeStr} and vsync set to ${vsync}');
 		Application.current.window.frameRate = FRAMERATE = frameRate;
 		#if LIME_840
-		Application.current.configureFrameTiming(FrameProfile.Precision, FRAMEOPTS, VSyncMode.Off);
+		Application.current.configureFrameTiming(FrameProfile.Precision, FRAMEOPTS, vsync ? VSyncMode.Adaptive : VSyncMode.Off);
 		#end
 	}
 }

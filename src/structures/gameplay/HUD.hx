@@ -39,6 +39,14 @@ class HUD {
 	var lastAccLeft:Int128 = 0;
 	var lastAccRight:Int128 = 0;
 
+	/** Last formatted time-bar string; rebuilt only when the displayed second changes. */
+	var lastTimeText:String = null;
+	var lastTimeSecond:Int = -1;
+
+	/** Last combo string; rebuilt only when the combo changes. */
+	var lastComboNum:Int64 = 0;
+	var comboNumStr:String = "0";
+
 	var display(default, null):CustomDisplay;
 	var parent(default, null):PlayField;
 
@@ -238,8 +246,11 @@ class HUD {
 		if (parent.disposed || parent.died)
 			return;
 
-		//BOTTLENECK: mid [per-frame Int64.toStr + per-digit uiBuf.updateElement in combo counter (ratingPopup pref)] | FIX: [cache last combo value and skip rebuild when unchanged]
-		var numStr = Int64.toStr(parent.combo);
+		if (parent.combo != lastComboNum) {
+			lastComboNum = parent.combo;
+			comboNumStr = Int64.toStr(parent.combo);
+		}
+		var numStr = comboNumStr;
 
 		var comboNumberStrLen = numStr.length;
 
@@ -339,8 +350,13 @@ class HUD {
 		Updates the timebar text.
 	**/
 	function updateTimeBarText() {
-		//BOTTLENECK: mid [unconditional per-frame text assignment forces a text remesh/GPU upload every frame] | FIX: [cache last formatted string and only assign when it changes (once per second)]
-		timeBarTxt.text = Tools.formatTime(Mixer.length - Math.max(parent.songPosition, 0));
+		var timeLeft = Mixer.length - Math.max(parent.songPosition, 0);
+		if (Std.int(timeLeft) != lastTimeSecond) {
+			lastTimeSecond = Std.int(timeLeft);
+			lastTimeText = Tools.formatTime(timeLeft);
+		}
+		if (timeBarTxt.text != lastTimeText)
+			timeBarTxt.text = lastTimeText;
 		timeBarTxt.x = (Main.INITIAL_WIDTH - timeBarTxt.width) * 0.5;
 		timeBarTxt.y = timeBarBG.y - 2;
 	}

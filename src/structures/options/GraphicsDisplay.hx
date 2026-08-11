@@ -15,22 +15,22 @@ import lime.app.VSyncMode;
 **/
 @:publicFields
 class GraphicsDisplay implements IAlphabetScrollHost {
-	public static var graphicsStr(default, null):Array<String> = ["resolution", "fullscreen", "vsync", "frameRate", "shaders"];
+	public static var graphicsStr(default, null):Array<String> = ["resolution", "fullscreen", "vsync", "frameRate", "compressTextures"];
 
 	// Descriptions for each graphics option, in the same order.
 	static var graphicsDescriptions:Array<String> = [
 		"Set the game window resolution. ENTER cycles through presets.",
 		"Toggle fullscreen mode.",
 		#if LIME_840
-		"Enable vertical sync (limit frame rate to monitor refresh).",
+		"Enable vertical sync (limit frame rate to monitor refresh).\nIf supported, adaptive vsync is used for better input latency.",
 		#else
 		"Not supported on lime versions under 8.4.0.",
 		#end
 		"Set the maximum frame rate. SHIFT+LEFT/RIGHT changes the value.",
-		"Enable/disable shader effects (applies to newly created sprites)."
+		"Enable/disable compressed texture support.\n\nFunkin' View has two main methods: ASTC and BC7\nBC7 is mainstream for PC and ASTC is mainstream on mobile devices, like android.\n\nThis requires a session restart for changes to be made."
 	];
 
-	static var FRAMERATES:Array<Float> = [30, 60, 75, 120, 144, 240];
+	static var FRAMERATES:Array<Float> = [30, 50, 60, 75, 120, 144, 165, 240];
 	static var RESOLUTIONS:Array<Array<Int>> = [
 		[1280, 720],
 		[1600, 900],
@@ -63,6 +63,11 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 	// Cached last pushed info string (avoid per-frame Text relayout).
 	var _lastInfoText:String = null;
 
+	// Cached rendered list-row titles; rebuilt only when a value changes.
+	var _titleCache:Array<String> = [];
+	var _lastWinW:Int = -1;
+	var _lastWinH:Int = -1;
+
 	function new(parent:OptionsMenu, alphabet:FreeplayAlphabet, infoText:Text) {
 		this.parent = parent;
 		this.alphabet = alphabet;
@@ -79,6 +84,7 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 		resetDragState();
 		registerInputHandlers();
 		_lastInfoText = null;
+		_titleCache = [];
 	}
 
 	function resetHostState() {
@@ -119,6 +125,13 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 			ratio = (1 / lime.app.Application.current.window.frameRate) * 0.015;
 
 		alphaLerp = Tools.lerp(alphaLerp, parent.opened ? 1.0 : 0.0, ratio);
+
+		var win = lime.app.Application.current.window;
+		if (win.width != _lastWinW || win.height != _lastWinH) {
+			_lastWinW = win.width;
+			_lastWinH = win.height;
+			_titleCache = [];
+		}
 
 		if (!isDragging && Math.abs(dragVelocity) > 0.01) {
 			curSelectedTarget += (dragVelocity * deltaTime) / (156.0 / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT));
@@ -242,7 +255,7 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 		if (index < 0 || index >= graphicsStr.length)
 			return;
 
-		if (!keyModifier.shiftKey || graphicsStr[index] != "frameRate")
+		if (!keyModifier.shiftKey && graphicsStr[index] != "frameRate")
 			return;
 		switch (keyCode) {
 			case KeyCode.LEFT:
@@ -270,18 +283,21 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 				#if LIME_840
 				toggleVsync();
 				#end
+			case "compressTextures":
+				SaveData.state.graphics.compressTextures = !SaveData.state.graphics.compressTextures;
+				SaveData.save();
 			case "frameRate":
 				changeFrameRate(1);
-			case "shaders":
-				toggleShaders();
 		}
 
 		_lastInfoText = null;
+		_titleCache = [];
 		if (alphabet != null && !closed) {
 			alphabet.buffer.update();
 		}
 
-		Main.current.playCancelSound();
+		if (graphicsStr[index] != "frameRate")
+			Main.current.playCancelSound();
 	}
 
 	// -------------------- GRAPHICS SETTINGS --------------------
@@ -317,6 +333,7 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 		SaveData.save();
 
 		_lastInfoText = null;
+		_titleCache = [];
 		Main.current.playScrollSound();
 	}
 
@@ -327,14 +344,11 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 
 	#if LIME_840
 	function toggleVsync() {
-		var window = Application.current.window;
-		window.vsyncMode = window.vsyncMode == VSyncMode.On ? VSyncMode.Off : VSyncMode.On;
+		FunkinMainLoop.run(FunkinMainLoop.FRAMERATE, false, !SaveData.state.graphics.vsync);
+		SaveData.state.graphics.vsync = !SaveData.state.graphics.vsync;
+		SaveData.save();
 	}
 	#end
-
-	function toggleShaders() {
-		Main.current.upscale = !Main.current.upscale;
-	}
 
 	function cycleResolution() {
 		var window = Application.current.window;
@@ -359,16 +373,16 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 				return '${window.width}x${window.height}';
 			case "fullscreen":
 				return window.fullscreen ? "ON" : "OFF";
+			case "compressTextures":
+				return SaveData.state.graphics.compressTextures ? "ON" : "OFF";
 			case "vsync":
 				#if LIME_840
-				return window.vsyncMode == VSyncMode.On ? "ON" : "OFF";
+				return window.vsyncMode == VSyncMode.Adaptive ? "ON" : "OFF";
 				#else
 				return "OFF";
 				#end
 			case "frameRate":
 				return '${Std.int(SaveData.state.graphics.frameRate)}';
-			case "shaders":
-				return Main.current.upscale ? "ON" : "OFF";
 		}
 		return "";
 	}
@@ -404,12 +418,16 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 	public function alphabetItemTitle(index:Int):String {
 		if (index < 0 || index >= graphicsStr.length)
 			return "";
-		var displayText = getDisplayName(index);
-		var str = displayText;
-		for (i in 0...Math.floor((14 - displayText.length) * 1.3))
+		if (index >= _titleCache.length || _titleCache[index] == null) {
+			var displayText = getDisplayName(index);
+			var str = displayText;
+			for (i in 0...Math.floor((14 - displayText.length) * 1.13))
+				str += " ";
 			str += " ";
-		str += getValueString(index);
-		return str;
+			str += getValueString(index);
+			_titleCache[index] = str;
+		}
+		return _titleCache[index];
 	}
 
 	/**
@@ -435,8 +453,8 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 				return "VSync";
 			case "frameRate":
 				return "Frame Rate";
-			case "shaders":
-				return "Shaders";
+			case "compressTextures":
+				return "Texture Compression";
 		}
 		return graphicsStr[index];
 	}

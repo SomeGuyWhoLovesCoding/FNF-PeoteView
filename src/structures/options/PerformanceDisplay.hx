@@ -8,7 +8,7 @@ import miniaudio.MiniAudio;
 	Mirrors `PreferencesDisplay` but for performance-related toggles that gate optional
 	engine mechanics. Currently exposes a single toggle: `timeStretch` (pitch-preserving
 	time-stretch when playback rate != 1.0; disabling it swaps in a cheap linear resampler).
-	@since Development
+	@since 0.94
 **/
 @:publicFields
 class PerformanceDisplay implements IAlphabetScrollHost {
@@ -47,6 +47,9 @@ class PerformanceDisplay implements IAlphabetScrollHost {
 	// Cached last pushed info string (avoid per-frame Text relayout).
 	var _lastInfoText:String = null;
 
+	// Cached rendered list-row titles; rebuilt only when a value changes.
+	var _titleCache:Array<String> = [];
+
 	function new(parent:OptionsMenu, alphabet:FreeplayAlphabet, infoText:Text) {
 		this.parent = parent;
 		this.alphabet = alphabet;
@@ -63,6 +66,7 @@ class PerformanceDisplay implements IAlphabetScrollHost {
 		resetDragState();
 		registerInputHandlers();
 		_lastInfoText = null;
+		_titleCache = [];
 	}
 
 	function resetHostState() {
@@ -221,6 +225,7 @@ class PerformanceDisplay implements IAlphabetScrollHost {
 		var field = perfStr[Math.floor(curSelectedTarget)];
 		var optionChecked = Reflect.getProperty(SaveData.state.preferences, field);
 		Reflect.setProperty(SaveData.state.preferences, field, !optionChecked);
+		_titleCache = [];
 
 		// Apply side effects per-toggle.
 		switch (field) {
@@ -267,18 +272,21 @@ class PerformanceDisplay implements IAlphabetScrollHost {
 	public function alphabetItemTitle(index:Int):String {
 		if (index < 0 || index >= perfStr.length)
 			return "";
-		var prefName = perfStr[index];
-		var isOn = Reflect.getProperty(SaveData.state.preferences, prefName);
-		var displayText = getDisplayName(prefName);
-		var str = displayText;
-		var strLen = isOn ? 18 : 17;
-		for (i in 0...Math.floor((strLen - displayText.length) * 1.3) - 3)
-			str += " ";
-		if (isOn)
-			str += "ON";
-		else
-			str += "OFF";
-		return str;
+		if (index >= _titleCache.length || _titleCache[index] == null) {
+			var prefName = perfStr[index];
+			var isOn = Reflect.getProperty(SaveData.state.preferences, prefName);
+			var displayText = getDisplayName(prefName);
+			var str = displayText;
+			var strLen = isOn ? 18 : 17;
+			for (i in 0...Math.floor((strLen - displayText.length) * 1.3) - 3)
+				str += " ";
+			if (isOn)
+				str += "ON";
+			else
+				str += "OFF";
+			_titleCache[index] = str;
+		}
+		return _titleCache[index];
 	}
 
 	public function alphabetItemDisabled(index:Int):Bool {

@@ -20,7 +20,7 @@ class FreeplayAlphabet {
 	var _currentDeltaTime:Float = 0.0;
 	var isDisposed:Bool = false;
 
-	static var ALPHABET_CHARACTER_LIMIT = 24; // This is a final limit.
+	static var ALPHABET_CHARACTER_LIMIT = 26; // This is the final limit.
 
 	// Static shared resources (read-only, no state)
 	private static var _charCorrectionMapOG:Map<String, String> = [
