@@ -65,7 +65,6 @@ class NoteSpawner {
 
 		var i = (minBottom != -1 && bottom < minBottom) ? minBottom : bottom;
 		var scrollSpeed = parent.parent.scrollSpeed;
-		var prev:MetaNote = null;
 		var noteSpr:VirtualNote = null;
 		var j:Int = 0;
 
@@ -73,7 +72,8 @@ class NoteSpawner {
 			var n = File.getNote(i);
 
 			var lane = n.type % parent.strumlines.length;
-			var receptor = parent.strumlines[lane].receptors[n.index];
+			var strumline = parent.strumlines[lane];
+			var receptor = strumline.receptors[n.index];
 			var rec = receptor.note;
 
 			var n_position = n.position;
@@ -81,12 +81,13 @@ class NoteSpawner {
 			var diff = (MetaNote.metaNotePositionToSongTime(n_position - pos)) * scrollSpeed;
 			var newY = rec.y + Math.floor(diff);
 
-			var ghost = isGhostNote(prev, n);
+			var prevNote = strumline.getPrevNote(n.index);
+			var ghost = isGhostNote(prevNote, n);
 
 			receptor.ambientOccludeYCur = newY;
 
 			var shouldOverlap = noteSpr != null
-				&& shouldNotesOverlap(prev, n, noteSpr, rec, receptor.ambientOccludeYPrev, receptor.ambientOccludeYCur)
+				&& shouldNotesOverlap(prevNote, n, noteSpr, rec, receptor.ambientOccludeYPrev, receptor.ambientOccludeYCur)
 				&& !ghost;
 
 			if (shouldOverlap) {
@@ -98,7 +99,7 @@ class NoteSpawner {
 				}
 			}
 
-			prev = n;
+			strumline.setPrevNote(n.index, n);
 			receptor.ambientOccludeYPrev = receptor.ambientOccludeYCur;
 			++i;
 		}
