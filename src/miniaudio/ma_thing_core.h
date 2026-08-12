@@ -982,6 +982,8 @@ public:
     ma_uint64 lastLoadFrame = 0;         // Last frame when background load was triggered
     int bgLoadCounter = 0;
 
+    std::atomic<ma_uint64> preciseSampleCount{0};  // Sample-accurate position updated per callback
+
     AudioSystem()  {
         memset(&device, 0, sizeof(ma_device));
         
@@ -1195,17 +1197,8 @@ public:
     int    getMixerState() const        { return mixerState.load(std::memory_order_acquire); }
 
     double getPlaybackPosition() const {
-        static double smoothedPosition = 0.0;
-        ma_uint64 pos = 0;
-        if (!streams.empty() && streams[longestDecoderIndex].active.load(std::memory_order_acquire))
-            pos = streams[longestDecoderIndex].filePosition.load(std::memory_order_acquire);
-        else if (!streams.empty())
-            pos = streams[longestDecoderIndex].decoderLength;
-        
-        // Smooth the position to reduce 10ms buffer stepping
-        smoothedPosition = (smoothedPosition * 0.95) + ((double)pos / (SAMPLE_RATE * 0.001) * 0.05);
-        
-        return smoothedPosition * 1000.0;  // Return milliseconds as float
+        ma_uint64 samples = preciseSampleCount.load(std::memory_order_acquire);
+        return (double)samples / (double)SAMPLE_RATE * 1000.0;  // Return milliseconds
     }
 
     double getDuration() const {
@@ -1395,7 +1388,10 @@ private:
             for (size_t i = 0; i < sys->streams.size(); i++) {
                 if (!sys->streams[i].active.load(std::memory_order_acquire)) continue;
                 ma_uint32 read = sys->readFromBuffer(i, out, frameCount);
-                if (read > 0) anyActive = true;
+                if (read > 0) {
+                    anyActive = true;
+                    sys->preciseSampleCount.fetch_add(read, std::memory_order_relaxed);
+                }
                 if (read < frameCount && sys->streams[i].active.load(std::memory_order_acquire))
                     sys->streams[i].asyncState.needsLoad.store(true, std::memory_order_release);
             }
@@ -1423,12 +1419,19 @@ private:
 
             positionError = exactRead - maxToRead;
 
+            ma_uint32 totalReadThisCallback = 0;
             for (size_t i = 0; i < sys->streams.size(); i++) {
                 if (!sys->streams[i].active.load(std::memory_order_acquire)) continue;
                 ma_uint32 read = sys->readFromBuffer(i, inputMix, maxToRead);
-                if (read > 0) anyActive = true;
+                if (read > 0) {
+                    anyActive = true;
+                    totalReadThisCallback += read;
+                }
                 if (read < maxToRead && sys->streams[i].active.load(std::memory_order_acquire))
                     sys->streams[i].asyncState.needsLoad.store(true, std::memory_order_release);
+            }
+            if (totalReadThisCallback > 0) {
+                sys->preciseSampleCount.fetch_add(totalReadThisCallback, std::memory_order_relaxed);
             }
 
             if (anyActive) {
