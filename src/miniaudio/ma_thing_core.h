@@ -978,14 +978,9 @@ public:
     float pitchStretchedOut[MAX_CALLBACK_FRAMES * CHANNEL_COUNT]  = {};
 
     static constexpr int BG_LOAD_CHECK_INTERVAL = 8;
-    std::atomic<ma_uint64> totalFramesProcessed{0};  // Track total frames for time-based loading (thread-safe)
+    ma_uint64 totalFramesProcessed = 0;  // Track total frames for time-based loading
     ma_uint64 lastLoadFrame = 0;         // Last frame when background load was triggered
     int bgLoadCounter = 0;
-
-    // Prediction state for smooth 0.1ms audio time between callback updates
-    mutable std::atomic<ma_uint64> lastQueriedFrames{0};
-    mutable std::atomic<long long> lastQuerySystemTime{0};  // steady_clock ns
-    mutable std::atomic<double> lastQueryPlaybackRate{1.0};
 
     AudioSystem()  {
         memset(&device, 0, sizeof(ma_device));
@@ -1118,12 +1113,6 @@ public:
         playbackRate.store(1.0f, std::memory_order_release);
         mixerState.store(3, std::memory_order_release);
         
-        // Reset prediction state
-        lastQueriedFrames.store(0, std::memory_order_relaxed);
-        lastQuerySystemTime.store(0, std::memory_order_relaxed);
-        lastQueryPlaybackRate.store(1.0, std::memory_order_relaxed);
-        totalFramesProcessed.store(0, std::memory_order_relaxed);  // <-- Critical: reset frame counter
-        
         memset(&device, 0, sizeof(ma_device));
     }
 
@@ -1134,16 +1123,6 @@ public:
         
         // FIX: Set to playing BEFORE starting the device so the callback immediately knows the state
         mixerState.store(1, std::memory_order_release); 
-        
-        // Initialize prediction anchor at current position (frame 0 or seek position)
-        ma_uint64 startFrame = 0;
-        if (!streams.empty()) {
-            startFrame = streams[longestDecoderIndex].filePosition.load(std::memory_order_relaxed);
-        }
-        lastQueriedFrames.store(startFrame, std::memory_order_relaxed);
-        lastQuerySystemTime.store(std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_relaxed);
-        lastQueryPlaybackRate.store(playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        
         ma_device_start(&device);
     }
 
@@ -1192,11 +1171,6 @@ public:
 
         mixerState.store((pos < (int64_t)streams[longestDecoderIndex].decoderLength) ? 2 : 3, std::memory_order_release);
 
-        // Always reset prediction anchor on seek (regardless of wasPlaying state)
-        lastQueriedFrames.store((ma_uint64)pos, std::memory_order_relaxed);
-        lastQuerySystemTime.store(std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_relaxed);
-        lastQueryPlaybackRate.store(playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
-
         if (wasPlaying && mixerState.load(std::memory_order_acquire) == 2) {
             if (asyncLoader) asyncLoader->resumeLoading();
             mixerState.store(1, std::memory_order_release); // Set state before starting device
@@ -1220,47 +1194,13 @@ public:
     double setGlobalVolume(double v)    { MUSIC_MASTER_VOLUME_099.store(v, std::memory_order_relaxed); return v; }
     int    getMixerState() const        { return mixerState.load(std::memory_order_acquire); }
 
-    // Returns smooth predicted playback position in milliseconds (0.1ms resolution)
-    // Automatically interpolates between audio callback updates using system clock
     double getPlaybackPosition() const {
-        if (!exists.load(std::memory_order_acquire)) return 0.0;
-        if (streams.empty()) return 0.0;
-        
-        const DecoderStream& s = streams[longestDecoderIndex];
-        if (!s.active.load(std::memory_order_acquire))
-            return (double)s.decoderLength / (SAMPLE_RATE * 0.001);
-        
-        // Use callback frame counter (updated every ~10ms) as anchor + system clock interpolation
-        ma_uint64 baseFrames = lastQueriedFrames.load(std::memory_order_relaxed);
-        long long baseTimeNs = lastQuerySystemTime.load(std::memory_order_relaxed);
-        double rate = lastQueryPlaybackRate.load(std::memory_order_relaxed);
-        
-        if (baseFrames == 0 && baseTimeNs == 0) {
-            // First call - initialize anchor from callback frame counter
-            ma_uint64 frames = totalFramesProcessed.load(std::memory_order_relaxed);
-            lastQueriedFrames.store(frames, std::memory_order_relaxed);
-            lastQuerySystemTime.store(
-                std::chrono::steady_clock::now().time_since_epoch().count(),
-                std::memory_order_relaxed
-            );
-            lastQueryPlaybackRate.store(playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
-            baseFrames = frames;
-            baseTimeNs = lastQuerySystemTime.load(std::memory_order_relaxed);
-            rate = lastQueryPlaybackRate.load(std::memory_order_relaxed);
-        }
-        
-        // Interpolate: baseFrames + elapsedTime * sampleRate * rate
-        long long nowNs = std::chrono::steady_clock::now().time_since_epoch().count();
-        double elapsedSeconds = (nowNs - baseTimeNs) * 1e-9;
-        double predictedFramesD = baseFrames + elapsedSeconds * SAMPLE_RATE * rate;
-        ma_uint64 predictedFrames = (ma_uint64)predictedFramesD;
-        
-        if (predictedFrames >= s.decoderLength) predictedFrames = s.decoderLength;
-        
-        // Round to 0.1ms (5 frames @ 48kHz) for consistent smooth stepping
-        predictedFrames = (predictedFrames / 5) * 5;
-        
-        return (double)predictedFrames / (SAMPLE_RATE * 0.001);
+        ma_uint64 pos = 0;
+        if (!streams.empty() && streams[longestDecoderIndex].active.load(std::memory_order_acquire))
+            pos = streams[longestDecoderIndex].filePosition.load(std::memory_order_acquire);
+        else if (!streams.empty())
+            pos = streams[longestDecoderIndex].decoderLength;
+        return (double)pos / (SAMPLE_RATE * 0.001);
     }
 
     double getDuration() const {
@@ -1433,21 +1373,13 @@ private:
         float* out = (float*)pOutput;
         memset(out, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
 
-        ma_uint64 newTotalFrames = sys->totalFramesProcessed.fetch_add(frameCount, std::memory_order_relaxed) + frameCount;
-        
-        // Update prediction anchor every callback (~10ms) to prevent drift
-        sys->lastQueriedFrames.store(newTotalFrames, std::memory_order_relaxed);
-        sys->lastQuerySystemTime.store(
-            std::chrono::steady_clock::now().time_since_epoch().count(),
-            std::memory_order_relaxed
-        );
-        sys->lastQueryPlaybackRate.store(sys->playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        ma_uint64 framesSinceLastLoad = newTotalFrames - sys->lastLoadFrame;
+        sys->totalFramesProcessed += frameCount;
+        ma_uint64 framesSinceLastLoad = sys->totalFramesProcessed - sys->lastLoadFrame;
         ma_uint64 loadIntervalFrames = (SAMPLE_RATE * BG_LOAD_CHECK_INTERVAL) / 1000;
 
         //BOTTLENECK: low full scan of every stream (multiple acquire atomics each) on the audio thread every ~8ms inside the realtime callback | FIX: move the request loop into the AsyncLoader worker; audio thread only sets one dirty flag
         if (framesSinceLastLoad >= loadIntervalFrames) {
-            sys->lastLoadFrame = newTotalFrames;
+            sys->lastLoadFrame = sys->totalFramesProcessed;
             sys->doBackgroundLoading();
         }
 
@@ -1555,18 +1487,10 @@ private:
         other.exists.store(false, std::memory_order_relaxed);
 
         // Move frame tracking state for background loading
-        totalFramesProcessed.store(other.totalFramesProcessed.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        totalFramesProcessed = other.totalFramesProcessed;
         lastLoadFrame        = other.lastLoadFrame;
-        other.totalFramesProcessed.store(0, std::memory_order_relaxed);
+        other.totalFramesProcessed = 0;
         other.lastLoadFrame        = 0;
-
-        // Move prediction state for smooth audio time
-        lastQueriedFrames.store(other.lastQueriedFrames.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        lastQuerySystemTime.store(other.lastQuerySystemTime.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        lastQueryPlaybackRate.store(other.lastQueryPlaybackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        other.lastQueriedFrames.store(0, std::memory_order_relaxed);
-        other.lastQuerySystemTime.store(0, std::memory_order_relaxed);
-        other.lastQueryPlaybackRate.store(1.0, std::memory_order_relaxed);
     }
 };
 
