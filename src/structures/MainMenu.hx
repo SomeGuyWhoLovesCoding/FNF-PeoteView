@@ -307,17 +307,17 @@ class MainMenu {
 		var window = lime.app.Application.current.window;
 
 		Main.current.controls.bindTo(actions);
+		Main.current.mouseDown = mouseDown;
 		window.onMouseWheel.add(updateMenuOptions_mouse);
 		window.onMouseUp.add(mouseUp);
-		window.onMouseDown.add(mouseDown);
 	}
 
 	function removeEvents() {
 		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
+		Main.current.mouseDown = null;
 		window.onMouseWheel.remove(updateMenuOptions_mouse);
 		window.onMouseUp.remove(mouseUp);
-		window.onMouseDown.remove(mouseDown);
 	}
 
 	function dispose() {
