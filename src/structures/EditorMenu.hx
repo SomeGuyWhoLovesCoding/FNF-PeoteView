@@ -37,6 +37,7 @@ class EditorMenu {
 
 	var disposed:Bool = false;
 	var actions:ActionMap;
+	var inputCtx:InputContext;
 
 	function new() {}
 
@@ -209,17 +210,17 @@ class EditorMenu {
 	// ── Event management ──────────────────────────────────────────────────
 
 	function addEvents() {
-		var window = lime.app.Application.current.window;
-
+		if (inputCtx == null) {
+			inputCtx = new InputContext();
+			inputCtx.keyDown = handleKeyDown;
+		}
 		Main.current.controls.bindTo(actions);
-		window.onKeyDown.add(handleKeyDown);
+		Main.current.input.push(inputCtx);
 	}
 
 	function removeEvents() {
-		var window = lime.app.Application.current.window;
-
 		Main.current.controls.unBind();
-		window.onKeyDown.remove(handleKeyDown);
+		Main.current.input.pop(inputCtx);
 	}
 
 	// ── Dispose ───────────────────────────────────────────────────────────

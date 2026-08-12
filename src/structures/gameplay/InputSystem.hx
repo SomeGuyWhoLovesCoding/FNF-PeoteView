@@ -14,6 +14,7 @@ import lime.ui.MouseButton;
 @:publicFields
 class InputSystem {
 	var parent:PlayField;
+	var inputCtx:InputContext;
 
 	function new(mania:Int, parent:PlayField) {
 		this.parent = parent;
@@ -21,21 +22,21 @@ class InputSystem {
 	}
 
 	function addEvents() {
-		var window = lime.app.Application.current.window;
 		#if !android
-		window.onKeyDown.add(press);
-		window.onKeyUp.add(release);
+		if (inputCtx == null) {
+			inputCtx = new InputContext();
+			inputCtx.keyDown = press;
+			inputCtx.keyUp = release;
+			inputCtx.mouseDown = mousePress;
+		}
+		Main.current.input.push(inputCtx);
 		#end
-		Main.current.mouseDown = mousePress;
 	}
 
 	function removeEvents() {
-		var window = lime.app.Application.current.window;
 		#if !android
-		window.onKeyDown.remove(press);
-		window.onKeyUp.remove(release);
+		Main.current.input.pop(inputCtx);
 		#end
-		Main.current.mouseDown = null;
 	}
 
 	var _index = 0;

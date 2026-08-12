@@ -96,6 +96,7 @@ class ControlsDisplay implements IAlphabetScrollHost {
 	var alphaLerp:Float = 0.0;
 
 	var closed:Bool;
+	var bindingCtx:InputContext;
 
 	function new(parent:OptionsMenu, alphabet:FreeplayAlphabet, infoText:Text) {
 		this.parent = parent;
@@ -141,8 +142,13 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		else
 			binding = true;
 
+		// unpush options base context, then push binding context on top
 		parent.removeEvents();
-		Application.current.window.onKeyDown.add(onKeyDown);
+		if (bindingCtx == null) {
+			bindingCtx = new InputContext();
+		}
+		bindingCtx.keyDown = onKeyDown;
+		Main.current.input.push(bindingCtx);
 		Main.current.playScrollSound();
 	}
 
@@ -245,11 +251,16 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			removeEvents = true;
 		}
 		if (parent != null && parent.opened && removeEvents) {
+			stopBinding();
 			parent.addEvents();
-			Application.current.window.onKeyDown.remove(onKeyDown);
 			Main.current.playCancelSound();
 		}
 		SaveData.save();
+	}
+
+	/** Pop the binding context so the options base context regains input. */
+	inline function stopBinding() {
+		Main.current.input.pop(bindingCtx);
 	}
 
 	function onKeyDown(keyCode:KeyCode, keyModifier:KeyModifier) {
@@ -402,8 +413,8 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		}
 
 		if (parent != null && parent.opened) {
+			stopBinding();
 			parent.addEvents();
-			Application.current.window.onKeyDown.remove(onKeyDown);
 		}
 
 		Main.current.playConfirmSound();
@@ -510,8 +521,8 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		Main.current.controls.reload();
 
 		if (parent != null && parent.opened) {
+			stopBinding();
 			parent.addEvents();
-			Application.current.window.onKeyDown.remove(onKeyDown);
 		}
 	}
 

@@ -36,6 +36,7 @@ class OptionsMenu {
 	static var optionsDisplay(default, null):OptionsDisplay;
 
 	var actions(default, null):ActionMap;
+	var inputCtx:InputContext;
 
 	static function init(disp:CustomDisplay) {
 		display = disp;
@@ -98,23 +99,29 @@ class OptionsMenu {
 
 	function addEvents() {
 		Tools.forSync(() -> {
-			var window = lime.app.Application.current.window;
 			Main.current.controls.bindTo(actions);
 
-			Main.current.mouseDown = mousePress;
-			window.onMouseWheel.add(moveCategory_mouse);
-			window.onKeyDown.add(handleKeyDown);
-			window.onKeyUp.add(handleKeyUp);
+			if (inputCtx == null) {
+				inputCtx = new InputContext();
+				inputCtx.mouseDown = mousePress;
+				inputCtx.mouseWheel = moveCategory_mouse;
+				inputCtx.keyDown = handleKeyDown;
+				inputCtx.keyUp = handleKeyUp;
+			}
+			// options are the base layer; the active sub-display stacks on top
+			Main.current.input.push(inputCtx);
+			var displayCtx = optionsDisplay.currentInputContext();
+			if (displayCtx != null)
+				Main.current.input.push(displayCtx);
 		});
 	}
 
 	function removeEvents() {
-		var window = lime.app.Application.current.window;
+		var displayCtx = optionsDisplay.currentInputContext();
+		if (displayCtx != null)
+			Main.current.input.pop(displayCtx);
+		Main.current.input.pop(inputCtx);
 		Main.current.controls.unBind();
-		Main.current.mouseDown = null;
-		window.onMouseWheel.remove(moveCategory_mouse);
-		window.onKeyDown.remove(handleKeyDown);
-		window.onKeyUp.remove(handleKeyUp);
 	}
 
 	function open() {

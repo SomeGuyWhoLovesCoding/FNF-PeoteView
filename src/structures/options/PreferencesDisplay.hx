@@ -58,6 +58,8 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 	// Cached rendered list-row titles; rebuilt only when a value changes.
 	var _titleCache:Array<String> = [];
 
+	var inputCtx:InputContext;
+
 	// Constructor now accepts the shared infoText
 	function new(parent:OptionsMenu, alphabet:FreeplayAlphabet, infoText:Text) {
 		this.parent = parent;
@@ -92,19 +94,18 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 	}
 
 	function registerInputHandlers() {
-		var window = lime.app.Application.current.window;
-		Main.current.mouseDown = mousePress;
-		window.onMouseUp.add(mouseRelease);
-		window.onMouseMove.add(mouseDrag);
+		if (inputCtx == null) {
+			inputCtx = new InputContext();
+			inputCtx.mouseDown = mousePress;
+			inputCtx.mouseUp = mouseRelease;
+			inputCtx.mouseMove = mouseDrag;
+		}
+		Main.current.input.push(inputCtx);
 	}
 
 	function unregisterInputHandlers() {
-		var window = lime.app.Application.current.window;
-		if (Main.current.mouseDown == mousePress) {
-			Main.current.mouseDown = null;
-		}
-		window.onMouseUp.remove(mouseRelease);
-		window.onMouseMove.remove(mouseDrag);
+		Main.current.input.pop(inputCtx);
+		inputCtx = null;
 	}
 
 	function update(deltaTime:Float) {

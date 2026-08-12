@@ -228,6 +228,8 @@ class Field {
 	}
 
 	function dispose() {
+		Main.current.input.pop(gameOverCtx);
+
 		for (actor in actors)
 			actor.dispose();
 
@@ -245,11 +247,18 @@ class Field {
 	var gameOverConfirm:Int = -1;
 	var actorOnGameOver:Actor;
 	var gameOverConfirmed:Bool;
+	var gameOverCtx(default, null):InputContext;
 
 	function gameOver() {
-		_gameover_end_call = (x:Float, y:Float, button:MouseButton) -> {
+		var endCall:(Float, Float, MouseButton) -> Void = (x, y, button) -> {
 			endGameOver(button == MouseButton.RIGHT);
 		};
+
+		if (gameOverCtx == null) {
+			gameOverCtx = new InputContext();
+		}
+		gameOverCtx.mouseDown = endCall;
+		Main.current.input.push(gameOverCtx);
 
 		var gameOverMeta = Chart.header.gameOver;
 		var theme = gameOverMeta.theme;
@@ -280,6 +289,7 @@ class Field {
 	}
 
 	function endGameOver(goBack:Bool = false) {
+		Main.current.input.pop(gameOverCtx);
 		MiniAudio.stopBackgroundTrack(gameOverMusic);
 
 		if (goBack) {
@@ -310,13 +320,8 @@ class Field {
 	}
 
 	function updateGameOver(deltaTime:Float) {
-		Main.current.mouseDown = gameOverConfirmed ? null : _gameover_end_call;
-
 		if (MiniAudio.isBackgroundTrackPlaying(gameOverMusic)) {
 			Main.conductor.time += deltaTime;
 		}
 	}
-
-	// to fix the stupid shit that can't be fixed anywhere else
-	var _gameover_end_call:(Float, Float, MouseButton) -> Void;
 }
