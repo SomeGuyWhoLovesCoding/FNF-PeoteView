@@ -982,11 +982,6 @@ public:
     ma_uint64 lastLoadFrame = 0;         // Last frame when background load was triggered
     int bgLoadCounter = 0;
 
-    // High-resolution timer for sample-precise filePosition (uses miniaudio device timer)
-    // No custom timer needed - we use ma_device_get_time_in_pcm_frames() which is
-    // initialized in the worker thread when the device actually starts outputting audio
-    std::atomic<ma_uint64> callbackFramesProcessed{0};  // Frames processed in audio callback
-
     AudioSystem()  {
         memset(&device, 0, sizeof(ma_device));
         
@@ -1087,11 +1082,6 @@ public:
             return;
         }
 
-        // Initialize stretch on the main thread (single-threaded context)
-        if (stretch) { delete stretch; }
-        stretch = new signalsmith::stretch::SignalsmithStretch();
-        stretch->configure(CHANNEL_COUNT, int(SAMPLE_RATE * 0.1), int(SAMPLE_RATE * 0.05));
-
         exists.store(true, std::memory_order_release);
         mixerState.store(3, std::memory_order_release);
     }
@@ -1100,33 +1090,24 @@ public:
         if (!exists.load(std::memory_order_acquire)) return;
         
         exists.store(false, std::memory_order_release);
-        
-        // Signal audio thread to stop using stretch before stopping device
-        stretchEnabled.store(false, std::memory_order_release);
-        
-        // Stop device first - this synchronizes with audio callback completion
         ma_device_stop(&device);
         
-        // Wait for asyncLoader to finish any work
         if (asyncLoader) {
-            asyncLoader->pauseLoading();
-            asyncLoader->waitUntilIdle();
             delete asyncLoader;
             asyncLoader = nullptr;
         }
         
         ma_device_uninit(&device);
         
-        // Now safe to delete stretch (audio callback has stopped)
-        if (stretch) {
-            delete stretch;
-            stretch = nullptr;
-        }
-        
         streams.clear();
         decoderVolumes.clear();
         filePaths.clear();
         streamPtrs.clear();
+        
+        if (stretch) {
+            delete stretch;
+            stretch = nullptr;
+        }
         
         longestDecoderIndex = 0;
         playbackRate.store(1.0f, std::memory_order_release);
@@ -1142,11 +1123,6 @@ public:
         
         // FIX: Set to playing BEFORE starting the device so the callback immediately knows the state
         mixerState.store(1, std::memory_order_release); 
-        
-        // Timer is initialized in miniaudio's worker thread when device actually starts
-        // Use ma_device_get_time_in_pcm_frames() for sample-precise position
-        callbackFramesProcessed.store(0, std::memory_order_release);
-        
         ma_device_start(&device);
     }
 
@@ -1171,11 +1147,10 @@ public:
             mixerState.store(2, std::memory_order_release); 
         }
 
-        // Stop device BEFORE pausing asyncLoader to prevent callback races
-        if (wasPlaying) ma_device_stop(&device);
-
         if (asyncLoader) asyncLoader->pauseLoading();
         if (asyncLoader) asyncLoader->waitUntilIdle();
+
+        if (wasPlaying) ma_device_stop(&device);
 
         for (size_t i = 0; i < streams.size(); i++) {
             DecoderStream& s = streams[i];
@@ -1199,11 +1174,6 @@ public:
         if (wasPlaying && mixerState.load(std::memory_order_acquire) == 2) {
             if (asyncLoader) asyncLoader->resumeLoading();
             mixerState.store(1, std::memory_order_release); // Set state before starting device
-            
-            // After seek, reset callback frame counter to match seek position
-            // The miniaudio device timer will continue from its current position
-            callbackFramesProcessed.store((ma_uint64)pos, std::memory_order_release);
-            
             ma_device_start(&device);
         }
     }
@@ -1224,47 +1194,18 @@ public:
     double setGlobalVolume(double v)    { MUSIC_MASTER_VOLUME_099.store(v, std::memory_order_relaxed); return v; }
     int    getMixerState() const        { return mixerState.load(std::memory_order_acquire); }
 
-    // Returns sample-precise playback position in milliseconds using miniaudio's device timer
     double getPlaybackPosition() const {
-        if (streams.empty()) return 0.0;
-        
-        const DecoderStream& s = streams[longestDecoderIndex];
-        if (!s.active.load(std::memory_order_acquire))
-            return (double)s.decoderLength / (SAMPLE_RATE * 0.001);
-        
-        // Use miniaudio's high-resolution device timer (initialized in worker thread)
-        ma_uint64 frames = 0;
-        if (ma_device_get_time_in_pcm_frames(&device, &frames) == MA_SUCCESS) {
-            if (frames >= s.decoderLength) frames = s.decoderLength;
-            return (double)frames / (SAMPLE_RATE * 0.001);
-        }
-        
-        // Fallback to atomic filePosition
-        ma_uint64 pos = s.filePosition.load(std::memory_order_acquire);
+        ma_uint64 pos = 0;
+        if (!streams.empty() && streams[longestDecoderIndex].active.load(std::memory_order_acquire))
+            pos = streams[longestDecoderIndex].filePosition.load(std::memory_order_acquire);
+        else if (!streams.empty())
+            pos = streams[longestDecoderIndex].decoderLength;
         return (double)pos / (SAMPLE_RATE * 0.001);
     }
 
     double getDuration() const {
         if (streams.empty()) return 0.0;
         return (double)streams[longestDecoderIndex].decoderLength / (SAMPLE_RATE * 0.001);
-    }
-
-    // Returns sample-precise playback position in frames using miniaudio's device timer
-    ma_uint64 getPlaybackPositionFrames() const {
-        if (streams.empty()) return 0;
-        
-        const DecoderStream& s = streams[longestDecoderIndex];
-        if (!s.active.load(std::memory_order_acquire))
-            return s.decoderLength;
-        
-        // Use miniaudio's high-resolution device timer
-        ma_uint64 frames = 0;
-        if (ma_device_get_time_in_pcm_frames(&device, &frames) == MA_SUCCESS) {
-            if (frames >= s.decoderLength) frames = s.decoderLength;
-            return frames;
-        }
-        
-        return s.filePosition.load(std::memory_order_acquire);
     }
 
 private:
@@ -1382,14 +1323,13 @@ private:
         if (nextBufferReady && s.shouldSwapBuffers() || s.isBufferLow()) s.trySwapBuffers();
 
         ma_uint32 framesRead = 0;
-        ma_uint64 localFilePosition = s.filePosition.load(std::memory_order_relaxed);
 
         while (framesRead < requestedFrames && isActive) {
             ma_uint64 available = (s.localReadPos < s.validFrames)
                                 ? s.validFrames - s.localReadPos : 0;
 
             if (available == 0) {
-                if (localFilePosition < s.decoderLength) {
+                if (s.filePosition.load(std::memory_order_acquire) < s.decoderLength) {
                     if (s.asyncState.nextBufferReady.load(std::memory_order_acquire)) {
                         s.trySwapBuffers();
                         continue;
@@ -1412,18 +1352,16 @@ private:
             if (vol != 0.0f) g_mix_func(dst, src, samples, vol);
 
             s.localReadPos  += toRead;
-            localFilePosition += toRead;
+            //BOTTLENECK: low atomic RMW (fetch_add) on the audio thread for every read chunk of every stream | FIX: accumulate locally and do a single store to filePosition at the end of readFromBuffer
+            s.filePosition.fetch_add(toRead, std::memory_order_relaxed);
             framesRead      += toRead;
 
-            if (localFilePosition >= s.decoderLength) { 
+            if (s.filePosition.load(std::memory_order_relaxed) >= s.decoderLength) { 
                 s.active.store(false, std::memory_order_release); 
                 isActive = false;
                 break; 
             }
         }
-
-        // Single atomic store at the end (reduces atomic RMW operations)
-        s.filePosition.store(localFilePosition, std::memory_order_relaxed);
         return framesRead;
     }
 
@@ -1436,7 +1374,6 @@ private:
         memset(out, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
 
         sys->totalFramesProcessed += frameCount;
-        sys->callbackFramesProcessed.fetch_add(frameCount, std::memory_order_relaxed);
         ma_uint64 framesSinceLastLoad = sys->totalFramesProcessed - sys->lastLoadFrame;
         ma_uint64 loadIntervalFrames = (SAMPLE_RATE * BG_LOAD_CHECK_INTERVAL) / 1000;
 
@@ -1489,9 +1426,13 @@ private:
                     sys->streams[i].asyncState.needsLoad.store(true, std::memory_order_release);
             }
 
-if (anyActive) {
+            if (anyActive) {
                 if (sys->stretchEnabled.load(std::memory_order_acquire)) {
-                    // stretch is guaranteed initialized in loadFiles()
+                    if (!sys->stretch) {
+                        sys->stretch = new signalsmith::stretch::SignalsmithStretch();
+                        sys->stretch->configure(CHANNEL_COUNT, int(SAMPLE_RATE * 0.1), int(SAMPLE_RATE * 0.05)); // ratio = 2.0
+                    }
+                    //BOTTLENECK: high FFT time-stretch of the entire mix synchronously in the realtime audio callback on every buffer (SignalsmithStretch) -> dropout source whenever playback rate != 1.0 | FIX: use the fastest preset / larger block, or run stretch on a dedicated thread with double buffering
                     sys->stretch->process(inputMix, maxToRead, stretchedOutput, frameCount);
                     memcpy(out, stretchedOutput, sizeof(float) * frameCount * CHANNEL_COUNT);
                 } else if (maxToRead > 0) {
@@ -1550,9 +1491,6 @@ if (anyActive) {
         lastLoadFrame        = other.lastLoadFrame;
         other.totalFramesProcessed = 0;
         other.lastLoadFrame        = 0;
-
-        callbackFramesProcessed.store(other.callbackFramesProcessed.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        other.callbackFramesProcessed.store(0, std::memory_order_relaxed);
     }
 };
 
