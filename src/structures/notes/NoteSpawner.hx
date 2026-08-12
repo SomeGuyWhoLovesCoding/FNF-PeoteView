@@ -82,21 +82,17 @@ class NoteSpawner {
 			var newY = rec.y + Math.floor(diff);
 
 			var prevNote = strumline.getPrevNote(n.index);
-			var ghost = isGhostNote(prevNote, n);
 
 			receptor.ambientOccludeYCur = newY;
 
 			var shouldOverlap = noteSpr != null
-				&& shouldNotesOverlap(prevNote, n, noteSpr, rec, receptor.ambientOccludeYPrev, receptor.ambientOccludeYCur)
-				&& !ghost;
+				&& shouldNotesOverlap(prevNote, n, noteSpr, rec, receptor.ambientOccludeYPrev, receptor.ambientOccludeYCur);
 
 			if (shouldOverlap) {
 				mergeNoteIntoSprite(noteSpr, i);
 			} else {
-				if (!ghost) {
-					++j;
-					noteSpr = parent.drawNote(pos, n, diff, i);
-				}
+				++j;
+				noteSpr = parent.drawNote(pos, n, diff, i);
 			}
 
 			strumline.setPrevNote(n.index, n);
@@ -309,10 +305,6 @@ class NoteSpawner {
 				}
 			}
 		}
-	}
-
-	inline function isGhostNote(prev:MetaNote, current:MetaNote):Bool {
-		return prev != null && prev.position == current.position && prev.index == current.index && prev.type == current.type;
 	}
 
 	inline function shouldNotesOverlap(prev:MetaNote, current:MetaNote, noteSpr:VirtualNote, receptor:Note, newY:Int, prevY:Int):Bool {
