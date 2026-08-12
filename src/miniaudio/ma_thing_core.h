@@ -982,6 +982,13 @@ public:
     ma_uint64 lastLoadFrame = 0;         // Last frame when background load was triggered
     int bgLoadCounter = 0;
 
+    // High-resolution timer for sample-precise filePosition
+    std::chrono::steady_clock::time_point timerStartTime;
+    std::chrono::steady_clock::time_point timerLastTime;
+    double timerAccumulatedSeconds = 0.0;
+    ma_uint64 timerStartFrame = 0;
+    bool timerInitialized = false;
+
     AudioSystem()  {
         memset(&device, 0, sizeof(ma_device));
         
@@ -1100,6 +1107,13 @@ public:
         stretchEnabled.store(false, std::memory_order_release);
         
         // Stop device first - this synchronizes with audio callback completion
+        // Accumulate timer before stopping device for sample-precise timing
+        if (timerInitialized) {
+            auto now = std::chrono::steady_clock::now();
+            double elapsed = std::chrono::duration<double>(now - timerLastTime).count();
+            timerAccumulatedSeconds += elapsed;
+            timerInitialized = false;
+        }
         ma_device_stop(&device);
         
         // Wait for asyncLoader to finish any work
@@ -1137,6 +1151,18 @@ public:
         
         // FIX: Set to playing BEFORE starting the device so the callback immediately knows the state
         mixerState.store(1, std::memory_order_release); 
+        
+        // Initialize high-resolution timer for sample-precise filePosition
+        timerStartTime = std::chrono::steady_clock::now();
+        timerLastTime = timerStartTime;
+        timerAccumulatedSeconds = 0.0;
+        if (!streams.empty()) {
+            timerStartFrame = streams[longestDecoderIndex].filePosition.load(std::memory_order_acquire);
+        } else {
+            timerStartFrame = 0;
+        }
+        timerInitialized = true;
+        
         ma_device_start(&device);
     }
 
@@ -1147,6 +1173,14 @@ public:
         mixerState.store(2, std::memory_order_release); 
         if (asyncLoader) asyncLoader->pauseLoading();
         ma_device_stop(&device);
+        
+        // Accumulate elapsed time for sample-precise timing
+        if (timerInitialized) {
+            auto now = std::chrono::steady_clock::now();
+            double elapsed = std::chrono::duration<double>(now - timerLastTime).count();
+            timerAccumulatedSeconds += elapsed;
+            timerInitialized = false;
+        }
     }
 
     bool stopped() const { return mixerState.load(std::memory_order_acquire) == 3; }
@@ -1189,6 +1223,14 @@ public:
         if (wasPlaying && mixerState.load(std::memory_order_acquire) == 2) {
             if (asyncLoader) asyncLoader->resumeLoading();
             mixerState.store(1, std::memory_order_release); // Set state before starting device
+            
+            // Reset timer for sample-precise timing after seek
+            timerStartTime = std::chrono::steady_clock::now();
+            timerLastTime = timerStartTime;
+            timerAccumulatedSeconds = 0.0;
+            timerStartFrame = (ma_uint64)pos;
+            timerInitialized = true;
+            
             ma_device_start(&device);
         }
     }
@@ -1209,18 +1251,51 @@ public:
     double setGlobalVolume(double v)    { MUSIC_MASTER_VOLUME_099.store(v, std::memory_order_relaxed); return v; }
     int    getMixerState() const        { return mixerState.load(std::memory_order_acquire); }
 
+    // Returns sample-precise playback position in milliseconds using high-resolution timer
     double getPlaybackPosition() const {
-        ma_uint64 pos = 0;
-        if (!streams.empty() && streams[longestDecoderIndex].active.load(std::memory_order_acquire))
-            pos = streams[longestDecoderIndex].filePosition.load(std::memory_order_acquire);
-        else if (!streams.empty())
-            pos = streams[longestDecoderIndex].decoderLength;
+        if (streams.empty()) return 0.0;
+        
+        const DecoderStream& s = streams[longestDecoderIndex];
+        if (!s.active.load(std::memory_order_acquire))
+            return (double)s.decoderLength / (SAMPLE_RATE * 0.001);
+        
+        if (timerInitialized) {
+            // Use high-resolution timer for sample-precise position
+            auto now = std::chrono::steady_clock::now();
+            double elapsed = timerAccumulatedSeconds + std::chrono::duration<double>(now - timerLastTime).count();
+            ma_uint64 preciseFrames = timerStartFrame + (ma_uint64)(elapsed * SAMPLE_RATE);
+            // Clamp to decoder length
+            if (preciseFrames >= s.decoderLength) preciseFrames = s.decoderLength;
+            return (double)preciseFrames / (SAMPLE_RATE * 0.001);
+        }
+        
+        // Fallback to atomic filePosition (may have ~10ms stepping)
+        ma_uint64 pos = s.filePosition.load(std::memory_order_acquire);
         return (double)pos / (SAMPLE_RATE * 0.001);
     }
 
     double getDuration() const {
         if (streams.empty()) return 0.0;
         return (double)streams[longestDecoderIndex].decoderLength / (SAMPLE_RATE * 0.001);
+    }
+
+    // Returns sample-precise playback position in frames using high-resolution timer
+    ma_uint64 getPlaybackPositionFrames() const {
+        if (streams.empty()) return 0;
+        
+        const DecoderStream& s = streams[longestDecoderIndex];
+        if (!s.active.load(std::memory_order_acquire))
+            return s.decoderLength;
+        
+        if (timerInitialized) {
+            auto now = std::chrono::steady_clock::now();
+            double elapsed = timerAccumulatedSeconds + std::chrono::duration<double>(now - timerLastTime).count();
+            ma_uint64 preciseFrames = timerStartFrame + (ma_uint64)(elapsed * SAMPLE_RATE);
+            if (preciseFrames >= s.decoderLength) preciseFrames = s.decoderLength;
+            return preciseFrames;
+        }
+        
+        return s.filePosition.load(std::memory_order_acquire);
     }
 
 private:
@@ -1338,13 +1413,14 @@ private:
         if (nextBufferReady && s.shouldSwapBuffers() || s.isBufferLow()) s.trySwapBuffers();
 
         ma_uint32 framesRead = 0;
+        ma_uint64 localFilePosition = s.filePosition.load(std::memory_order_relaxed);
 
         while (framesRead < requestedFrames && isActive) {
             ma_uint64 available = (s.localReadPos < s.validFrames)
                                 ? s.validFrames - s.localReadPos : 0;
 
             if (available == 0) {
-                if (s.filePosition.load(std::memory_order_acquire) < s.decoderLength) {
+                if (localFilePosition < s.decoderLength) {
                     if (s.asyncState.nextBufferReady.load(std::memory_order_acquire)) {
                         s.trySwapBuffers();
                         continue;
@@ -1367,16 +1443,18 @@ private:
             if (vol != 0.0f) g_mix_func(dst, src, samples, vol);
 
             s.localReadPos  += toRead;
-            //BOTTLENECK: low atomic RMW (fetch_add) on the audio thread for every read chunk of every stream | FIX: accumulate locally and do a single store to filePosition at the end of readFromBuffer
-            s.filePosition.fetch_add(toRead, std::memory_order_relaxed);
+            localFilePosition += toRead;
             framesRead      += toRead;
 
-            if (s.filePosition.load(std::memory_order_relaxed) >= s.decoderLength) { 
+            if (localFilePosition >= s.decoderLength) { 
                 s.active.store(false, std::memory_order_release); 
                 isActive = false;
                 break; 
             }
         }
+
+        // Single atomic store at the end (reduces atomic RMW operations)
+        s.filePosition.store(localFilePosition, std::memory_order_relaxed);
         return framesRead;
     }
 
@@ -1502,6 +1580,14 @@ if (anyActive) {
         lastLoadFrame        = other.lastLoadFrame;
         other.totalFramesProcessed = 0;
         other.lastLoadFrame        = 0;
+
+        // Move timer state for sample-precise filePosition
+        timerStartTime         = other.timerStartTime;
+        timerLastTime          = other.timerLastTime;
+        timerAccumulatedSeconds = other.timerAccumulatedSeconds;
+        timerStartFrame        = other.timerStartFrame;
+        timerInitialized       = other.timerInitialized;
+        other.timerInitialized = false;
     }
 };
 
