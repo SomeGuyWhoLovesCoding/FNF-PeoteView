@@ -127,8 +127,6 @@ class MainMenu {
 
 		watermarkTxt.addProgram();
 
-		haxe.Timer.delay(addEvents, 100);
-
 		actions = [
 			Controls.Action.UI_DOWN => {action: down},
 			Controls.Action.UI_UP => {action: up},
@@ -137,6 +135,8 @@ class MainMenu {
 			Controls.Action.UI_ACCEPT => {action: accept},
 			Controls.Action.GAME_DEBUG => {action: goToEditors}
 		];
+
+		haxe.Timer.delay(addEvents, 100);
 	}
 
 	static var optionYLerps:Array<Float> = [for (i in 0...5) 1];
