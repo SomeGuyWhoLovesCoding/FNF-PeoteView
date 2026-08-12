@@ -63,6 +63,8 @@ extern "C" {
 #include <iostream>
 #include <cmath> // Required for std::fma
 #include <chrono>
+#include <memory>
+#include <mutex>
 
 #ifdef __SSE__
 #include <emmintrin.h>
@@ -202,7 +204,7 @@ static bool refreshDeviceState() {
     // Lock-free triple buffer update
     int n = g_currentDeviceState.infoNewestIndex.load(std::memory_order_acquire);
     int r = g_currentDeviceState.infoReaderIndex.load(std::memory_order_acquire);
-    
+
     // The free buffer is the one that is neither the reader's nor the newest.
     // If the reader has caught up to the newest (r == n), we have two free buffers.
     int next;
@@ -211,19 +213,35 @@ static bool refreshDeviceState() {
     } else {
         next = 3 - r - n;
     }
-    
-    AudioDeviceState::DeviceInfo& newInfo = g_currentDeviceState.infoBuffers[next];
-    newInfo.isPnP = newIsPnP;
-    newInfo.isHeadphones = newIsHeadphones;
-    newInfo.deviceName = newDeviceName;
-    newInfo.deviceId = newDeviceId;
-    
+
+    int slot = next;
+    AudioDeviceState::DeviceInfo& newInfo = g_currentDeviceState.infoBuffers[slot];
+
+    // Re-validate the slot selection right before publication.  If the reader
+    // advanced while we were assembling, the slot we picked might be one the
+    // reader is about to consume; fall back to the other free slot instead so a
+    // writer never tears data a reader is reading.
+    int rAfter = g_currentDeviceState.infoReaderIndex.load(std::memory_order_acquire);
+    int nAfter = g_currentDeviceState.infoNewestIndex.load(std::memory_order_acquire);
+    if (rAfter != r || nAfter != n) {
+        int fallback = (rAfter == nAfter) ? ((rAfter + 1) % 3) : (3 - rAfter - nAfter);
+        if (fallback != next) {
+            g_currentDeviceState.infoBuffers[fallback] = newInfo;
+            slot = fallback;
+        }
+    }
+    AudioDeviceState::DeviceInfo& publishedInfo = g_currentDeviceState.infoBuffers[slot];
+    publishedInfo.isPnP = newIsPnP;
+    publishedInfo.isHeadphones = newIsHeadphones;
+    publishedInfo.deviceName = newDeviceName;
+    publishedInfo.deviceId = newDeviceId;
+
     // Compare against the LAST PUBLISHED state (n), not the reader's state (r)
     AudioDeviceState::DeviceInfo& oldInfo = g_currentDeviceState.infoBuffers[n];
-    bool deviceChanged = (newInfo.isPnP != oldInfo.isPnP) ||
-                         (newInfo.isHeadphones != oldInfo.isHeadphones) ||
-                         (newInfo.deviceName != oldInfo.deviceName) ||
-                         (newInfo.deviceId != oldInfo.deviceId);
+    bool deviceChanged = (publishedInfo.isPnP != oldInfo.isPnP) ||
+                         (publishedInfo.isHeadphones != oldInfo.isHeadphones) ||
+                         (publishedInfo.deviceName != oldInfo.deviceName) ||
+                         (publishedInfo.deviceId != oldInfo.deviceId);
 
     if (deviceChanged) {
         printf("[Audio] Device changed: %s (PnP: %s, Headphones: %s)\n",
@@ -233,7 +251,7 @@ static bool refreshDeviceState() {
         g_currentDeviceState.deviceChanged.store(true, std::memory_order_release);
     }
 
-    g_currentDeviceState.infoNewestIndex.store(next, std::memory_order_release);
+    g_currentDeviceState.infoNewestIndex.store(slot, std::memory_order_release);
 
     if (comInitialized) CoUninitialize();
 
@@ -398,14 +416,38 @@ static inline void mix_scalar(float* dst, const float* src, int samples, float v
     #include <cpuid.h>
 #endif
 
+// AVX2 requires the OS to have actually enabled XMM/YMM state saving
+// (CR4.OSXSAVE + XCR0 bits 1|2), otherwise executing _mm256_* instructions
+// traps.  CPUID leaf 7 alone is not enough.
+static inline bool os_has_avx_support() {
+#if defined(_MSC_VER)
+    int regs[4];
+    __cpuid(regs, 1);
+    if (!(regs[2] & (1 << 27))) return false;              // no OSXSAVE
+    unsigned long long xcr0 = _xgetbv(0);
+    return (xcr0 & 0x6) == 0x6;                            // XMM + YMM state
+#elif defined(__GNUC__) || defined(__clang__)
+    unsigned int eax, ebx, ecx, edx;
+    if (!__get_cpuid(1, &eax, &ebx, &ecx, &edx)) return false;
+    if (!(ecx & (1 << 27))) return false;
+    unsigned int xcr0lo = 0, xcr0hi = 0;
+    __asm__ __volatile__("xgetbv" : "=a"(xcr0lo), "=d"(xcr0hi) : "c"(0));
+    unsigned long long xcr0 = ((unsigned long long)xcr0hi << 32) | xcr0lo;
+    return (xcr0 & 0x6) == 0x6;
+#else
+    return false;
+#endif
+}
+
 static inline bool has_avx2_runtime() {
 #if defined(_MSC_VER)
     int regs[4];
     __cpuidex(regs, 7, 0);
-    return (regs[1] & (1 << 5)) != 0; // EBX bit 5 = AVX2
+    return ((regs[1] & (1 << 5)) != 0) && os_has_avx_support(); // EBX bit 5 = AVX2
 #elif defined(__GNUC__) || defined(__clang__)
     unsigned int eax, ebx, ecx, edx;
-    return __get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx) && ((ebx >> 5) & 1);
+    return __get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx) &&
+           ((ebx >> 5) & 1) && os_has_avx_support();
 #else
     return false;
 #endif
@@ -486,10 +528,19 @@ struct DecoderStream {
     } asyncState;
 
     std::atomic<bool> active{false};
-    ma_decoder decoder;
     ma_uint64 decoderLength = 0;
+    std::string decoderPath;
 
-    DecoderStream()  { memset(&decoder, 0, sizeof(ma_decoder)); }
+    // The seekable ma_decoder used for async prefetch.  It is R/W owned by the
+    // AsyncLoader worker thread ONLY.  Neither the audio callback nor the
+    // game/main thread may touch it, so its internal read/seek position can
+    // never be corrupted by a second thread.  Any synchronous decode performed
+    // during loadFiles()/seekToPCMFrame() uses a short-lived temporary decoder
+    // instead (see fillBufferTemp) so the two never share a handle.
+    ma_decoder workerDecoder;
+    bool workerDecoderInitialized = false;
+
+    DecoderStream()  { memset(&workerDecoder, 0, sizeof(ma_decoder)); }
     ~DecoderStream() { cleanup(); }
 
     DecoderStream(DecoderStream&& other) noexcept { moveFrom(std::move(other)); }
@@ -499,6 +550,58 @@ struct DecoderStream {
     }
     DecoderStream(const DecoderStream&)            = delete;
     DecoderStream& operator=(const DecoderStream&) = delete;
+
+    // Open a throw-away decoder for MAIN-thread synchronous decode.  Creates a
+    // fresh handle every time, so it never shares state with workerDecoder.
+    bool openTempDecoder(ma_decoder* out) const {
+        if (decoderPath.empty()) return false;
+        ma_decoder_config cfg = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
+        if (ma_decoder_init_file(decoderPath.c_str(), &cfg, out) != MA_SUCCESS) return false;
+        ma_data_source_set_looping(out, MA_FALSE);
+        return true;
+    }
+
+    void fillBufferTemp(ma_uint64 decodeStart, float* buffer, ma_uint64* framesRead) {
+        *framesRead = 0;
+        ma_decoder dec;
+        if (!openTempDecoder(&dec)) {
+            memset(buffer, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
+            return;
+        }
+
+        ma_uint64 maxFrames = TOTAL_BUFFER_FRAMES;
+        if (decodeStart + TOTAL_BUFFER_FRAMES > decoderLength)
+            maxFrames = decoderLength - decodeStart;
+
+        memset(buffer, 0, maxFrames * CHANNEL_COUNT * sizeof(float));
+
+        if (maxFrames > 0 && decodeStart < decoderLength) {
+            if (ma_decoder_seek_to_pcm_frame(&dec, decodeStart) == MA_SUCCESS)
+                ma_decoder_read_pcm_frames(&dec, buffer, maxFrames, framesRead);
+        }
+
+        ma_decoder_uninit(&dec);
+    }
+
+    // R/W worker-owned decoder.  Called from the AsyncLoader worker thread only.
+    void fillBufferWorker(ma_uint64 decodeStart, float* buffer, ma_uint64* framesRead) {
+        *framesRead = 0;
+        if (!workerDecoderInitialized) {
+            memset(buffer, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
+            return;
+        }
+
+        ma_uint64 maxFrames = TOTAL_BUFFER_FRAMES;
+        if (decodeStart + TOTAL_BUFFER_FRAMES > decoderLength)
+            maxFrames = decoderLength - decodeStart;
+
+        memset(buffer, 0, maxFrames * CHANNEL_COUNT * sizeof(float));
+
+        if (maxFrames > 0 && decodeStart < decoderLength) {
+            if (ma_decoder_seek_to_pcm_frame(&workerDecoder, decodeStart) == MA_SUCCESS)
+                ma_decoder_read_pcm_frames(&workerDecoder, buffer, maxFrames, framesRead);
+        }
+    }
 
     bool trySwapBuffers() {
         if (!asyncState.nextBufferReady.load(std::memory_order_acquire))
@@ -584,40 +687,14 @@ struct DecoderStream {
             asyncState.requestNextBuffer.store(true, std::memory_order_release);
     }
 
-    void fillBuffer(float* buffer, ma_uint64 decodeStart, ma_uint64* framesRead) {
-        ma_uint64 maxFrames = TOTAL_BUFFER_FRAMES;
-        if (decodeStart + TOTAL_BUFFER_FRAMES > decoderLength)
-            maxFrames = decoderLength - decodeStart;
-
-        memset(buffer, 0, maxFrames * CHANNEL_COUNT * sizeof(float));
-
-        if (maxFrames > 0) {
-            ma_decoder_seek_to_pcm_frame(&decoder, decodeStart);
-            ma_decoder_read_pcm_frames(&decoder, buffer, maxFrames, framesRead);
-        } else {
-            *framesRead = 0;
-        }
-    }
-
-    void fillBufferAsync(ma_uint64 decodeStart, float* buffer, ma_uint64* framesRead) {
-        ma_uint64 maxFrames = TOTAL_BUFFER_FRAMES;
-        if (decodeStart + TOTAL_BUFFER_FRAMES > decoderLength)
-            maxFrames = decoderLength - decodeStart;
-
-        memset(buffer, 0, maxFrames * CHANNEL_COUNT * sizeof(float));
-
-        if (maxFrames > 0) {
-            ma_decoder_seek_to_pcm_frame(&decoder, decodeStart);
-            ma_decoder_read_pcm_frames(&decoder, buffer, maxFrames, framesRead);
-        } else {
-            *framesRead = 0;
-        }
-    }
-
 private:
     void cleanup() {
-        if (decoder.onRead != nullptr || decoder.onSeek != nullptr)
-            ma_decoder_uninit(&decoder);
+        if (workerDecoderInitialized) {
+            ma_decoder_uninit(&workerDecoder);
+            workerDecoderInitialized = false;
+        }
+        memset(&workerDecoder, 0, sizeof(ma_decoder));
+        decoderPath.clear();
 
         if (pcmBufferA) { free(pcmBufferA); pcmBufferA = nullptr; }
         if (pcmBufferB) { free(pcmBufferB); pcmBufferB = nullptr; }
@@ -635,7 +712,9 @@ private:
         nextBuffer    = other.nextBuffer;
         loadingBuffer = other.loadingBuffer;
 
-        memcpy(&decoder, &other.decoder, sizeof(ma_decoder));
+        memcpy(&workerDecoder, &other.workerDecoder, sizeof(ma_decoder));
+        workerDecoderInitialized = other.workerDecoderInitialized;
+        decoderPath = std::move(other.decoderPath);
 
         filePosition.store(other.filePosition.load(std::memory_order_relaxed), std::memory_order_relaxed);
         bufferStartPos = other.bufferStartPos;
@@ -654,7 +733,9 @@ private:
         other.pcmBufferA = other.pcmBufferB = other.pcmBufferC = nullptr;
         other.activeBuffer = other.nextBuffer = other.loadingBuffer = nullptr;
         other.asyncState.asyncNextBuffer = other.asyncState.asyncLoadingBuffer = nullptr;
-        memset(&other.decoder, 0, sizeof(ma_decoder));
+        other.workerDecoderInitialized = false;
+        memset(&other.workerDecoder, 0, sizeof(ma_decoder));
+        other.decoderPath.clear();
     }
 };
 
@@ -906,7 +987,7 @@ private:
         }
 
         ma_uint64 framesRead = 0;
-        s->fillBufferAsync(start, s->asyncState.asyncNextBuffer, &framesRead);
+        s->fillBufferWorker(start, s->asyncState.asyncNextBuffer, &framesRead);
 
         if (!stopRequested.load(std::memory_order_acquire) && running.load(std::memory_order_acquire)) {
             s->asyncState.nextBufferStartPos    = start;
@@ -942,7 +1023,7 @@ private:
         }
 
         ma_uint64 framesRead = 0;
-        s->fillBufferAsync(start, s->asyncState.asyncLoadingBuffer, &framesRead);
+        s->fillBufferWorker(start, s->asyncState.asyncLoadingBuffer, &framesRead);
 
         if (!stopRequested.load(std::memory_order_acquire) && running.load(std::memory_order_acquire)) {
             s->asyncState.loadingBufferStartPos    = start;
@@ -1024,22 +1105,24 @@ public:
         decoderVolumes.resize(argv.size(), 1.0f);
 
         ma_uint64 longestLength = 0;
-        ma_decoder_config decoderConfig =
-            ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
 
         for (size_t i = 0; i < argv.size(); i++) {
             DecoderStream& s = streams[i];
+            s.decoderPath = argv[i];
 
-            if (ma_decoder_init_file(argv[i], &decoderConfig, &s.decoder) != MA_SUCCESS) {
-                for (size_t j = 0; j < i; j++) ma_decoder_uninit(&streams[j].decoder);
+            // Probe with a throw-away decoder to validate the file and learn its
+            // length.  The stream's own worker decode handle isn't opened yet, so
+            // a failure here never leaves a half-initialized decoder behind and
+            // the streams.clear() below can uninit cleanly (no double-uninit).
+            ma_decoder probe;
+            if (!s.openTempDecoder(&probe)) {
                 streams.clear(); decoderVolumes.clear(); filePaths.clear();
                 printf("Failed to load %s.\n", argv[i]);
                 exists.store(false, std::memory_order_release);
                 return;
             }
-
-            ma_data_source_set_looping(&s.decoder, MA_FALSE);
-            ma_decoder_get_length_in_pcm_frames(&s.decoder, &s.decoderLength);
+            ma_decoder_get_length_in_pcm_frames(&probe, &s.decoderLength);
+            ma_decoder_uninit(&probe);
 
             s.pcmBufferA = (float*)malloc(sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
             s.pcmBufferB = (float*)malloc(sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
@@ -1053,6 +1136,25 @@ public:
             s.loadingBuffer = s.pcmBufferC;
             s.asyncState.asyncNextBuffer    = s.pcmBufferB;
             s.asyncState.asyncLoadingBuffer = s.pcmBufferC;
+
+            // Open the persistent decode handle that only the AsyncLoader worker
+            // thread will ever touch.  No other thread accesses it afterwards.
+            bool workerOpened = false;
+            {
+                ma_decoder_config workerConfig =
+                    ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
+                if (ma_decoder_init_file(argv[i], &workerConfig, &s.workerDecoder) == MA_SUCCESS) {
+                    ma_data_source_set_looping(&s.workerDecoder, MA_FALSE);
+                    s.workerDecoderInitialized = true;
+                    workerOpened = true;
+                }
+            }
+            if (!workerOpened) {
+                streams.clear(); decoderVolumes.clear(); filePaths.clear();
+                printf("Failed to load %s.\n", argv[i]);
+                exists.store(false, std::memory_order_release);
+                return;
+            }
 
             //BOTTLENECK: mid synchronous decode of ~3 full buffers (initial + 2 prefetch) per stream on the main thread during loadFiles; multi-stem songs stall playback start for seconds | FIX: fill initial/prefetch buffers via the AsyncLoader worker and wait on it instead of inline decode
             fillInitialBuffer(i, 0);
@@ -1277,7 +1379,7 @@ private:
         ma_uint64 decodeStart = (startFrame > PADDING_FRAMES) ? startFrame - PADDING_FRAMES : 0;
 
         ma_uint64 framesRead = 0;
-        s.fillBuffer(s.activeBuffer, decodeStart, &framesRead);
+        s.fillBufferTemp(decodeStart, s.activeBuffer, &framesRead);
 
         s.bufferStartPos = decodeStart;
         s.validFrames    = framesRead;
@@ -1300,7 +1402,7 @@ private:
         if (start >= s.decoderLength) return;
 
         ma_uint64 framesRead = 0;
-        s.fillBuffer(s.nextBuffer, start, &framesRead);
+        s.fillBufferTemp(start, s.nextBuffer, &framesRead);
         s.asyncState.nextBufferStartPos    = start;
         s.asyncState.nextBufferValidFrames = framesRead;
         s.asyncState.nextBufferReady.store(true, std::memory_order_release);
@@ -1317,7 +1419,7 @@ private:
         if (start >= s.decoderLength) return;
 
         ma_uint64 framesRead = 0;
-        s.fillBuffer(s.loadingBuffer, start, &framesRead);
+        s.fillBufferTemp(start, s.loadingBuffer, &framesRead);
         s.asyncState.loadingBufferStartPos    = start;
         s.asyncState.loadingBufferValidFrames = framesRead;
         s.asyncState.loadingBufferReady.store(true, std::memory_order_release);
