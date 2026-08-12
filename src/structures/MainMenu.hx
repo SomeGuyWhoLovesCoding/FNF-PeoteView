@@ -291,8 +291,13 @@ class MainMenu {
 			return;
 		for (i in 0...optionBuf.length) {
 			var option = optionBuf.getElement(i);
-			if (x >= option.x && x <= option.x + option.w && y >= (option.y - 15) && y <= option.y + (option.h - 15) && i == nav.value())
-				doIt();
+			if (x >= option.x && x <= option.x + option.w && y >= (option.y - 15) && y <= option.y + (option.h - 15) && i == nav.value()) {
+				// get off the window.onMouseUp dispatch stack before running doIt(),
+				// because doIt() -> removeEvents() -> window.onMouseUp.remove(mouseUp)
+				// mutates lime's listener arrays while dispatch is iterating them
+				haxe.Timer.delay(doIt, 1);
+				break;
+			}
 		}
 	}
 
