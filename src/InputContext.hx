@@ -1,5 +1,3 @@
-package system;
-
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 import lime.ui.MouseButton;
