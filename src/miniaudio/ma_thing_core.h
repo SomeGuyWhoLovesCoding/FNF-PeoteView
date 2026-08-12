@@ -1196,11 +1196,29 @@ public:
 
     double getPlaybackPosition() const {
         ma_uint64 pos = 0;
-        if (!streams.empty() && streams[longestDecoderIndex].active.load(std::memory_order_acquire))
-            pos = streams[longestDecoderIndex].filePosition.load(std::memory_order_acquire);
-        else if (!streams.empty())
-            pos = streams[longestDecoderIndex].decoderLength;
-        return (double)pos / (SAMPLE_RATE * 0.001);
+        if (!streams.empty()) {
+            size_t activeCount = 0;
+            ma_uint64 totalPos = 0;
+            size_t bestIndex = SIZE_MAX;
+            
+            for (size_t i = 0; i < streams.size(); i++) {
+                if (streams[i].active.load(std::memory_order_acquire)) {
+                    activeCount++;
+                    ma_uint64 p = streams[i].filePosition.load(std::memory_order_acquire);
+                    if (bestIndex == SIZE_MAX || p > totalPos) {
+                        totalPos = p;
+                        bestIndex = i;
+                    }
+                }
+            }
+            
+            if (activeCount > 0 && bestIndex != SIZE_MAX) {
+                pos = totalPos;
+            } else if (!streams.empty()) {
+                pos = streams[longestDecoderIndex].decoderLength;
+            }
+        }
+        return (double)(pos * 1000000) / (double)SAMPLE_RATE;
     }
 
     double getDuration() const {
@@ -1353,7 +1371,7 @@ private:
 
             s.localReadPos  += toRead;
             //BOTTLENECK: low atomic RMW (fetch_add) on the audio thread for every read chunk of every stream | FIX: accumulate locally and do a single store to filePosition at the end of readFromBuffer
-            s.filePosition.fetch_add(toRead, std::memory_order_relaxed);
+            s.filePosition.fetch_add(toRead, std::memory_order_acq_rel);
             framesRead      += toRead;
 
             if (s.filePosition.load(std::memory_order_relaxed) >= s.decoderLength) { 
