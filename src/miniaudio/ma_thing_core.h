@@ -978,7 +978,7 @@ public:
     float pitchStretchedOut[MAX_CALLBACK_FRAMES * CHANNEL_COUNT]  = {};
 
     static constexpr int BG_LOAD_CHECK_INTERVAL = 8;
-    ma_uint64 totalFramesProcessed = 0;  // Track total frames for time-based loading
+    std::atomic<ma_uint64> totalFramesProcessed{0};  // Track total frames for time-based loading (thread-safe)
     ma_uint64 lastLoadFrame = 0;         // Last frame when background load was triggered
     int bgLoadCounter = 0;
 
@@ -1122,6 +1122,7 @@ public:
         lastQueriedFrames.store(0, std::memory_order_relaxed);
         lastQuerySystemTime.store(0, std::memory_order_relaxed);
         lastQueryPlaybackRate.store(1.0, std::memory_order_relaxed);
+        totalFramesProcessed.store(0, std::memory_order_relaxed);  // <-- Critical: reset frame counter
         
         memset(&device, 0, sizeof(ma_device));
     }
@@ -1222,6 +1223,7 @@ public:
     // Returns smooth predicted playback position in milliseconds (0.1ms resolution)
     // Automatically interpolates between audio callback updates using system clock
     double getPlaybackPosition() const {
+        if (!exists.load(std::memory_order_acquire)) return 0.0;
         if (streams.empty()) return 0.0;
         
         const DecoderStream& s = streams[longestDecoderIndex];
@@ -1235,7 +1237,7 @@ public:
         
         if (baseFrames == 0 && baseTimeNs == 0) {
             // First call - initialize anchor from callback frame counter
-            ma_uint64 frames = totalFramesProcessed;
+            ma_uint64 frames = totalFramesProcessed.load(std::memory_order_relaxed);
             lastQueriedFrames.store(frames, std::memory_order_relaxed);
             lastQuerySystemTime.store(
                 std::chrono::steady_clock::now().time_since_epoch().count(),
@@ -1431,21 +1433,21 @@ private:
         float* out = (float*)pOutput;
         memset(out, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
 
-        sys->totalFramesProcessed += frameCount;
+        ma_uint64 newTotalFrames = sys->totalFramesProcessed.fetch_add(frameCount, std::memory_order_relaxed) + frameCount;
         
         // Update prediction anchor every callback (~10ms) to prevent drift
-        sys->lastQueriedFrames.store(sys->totalFramesProcessed, std::memory_order_relaxed);
+        sys->lastQueriedFrames.store(newTotalFrames, std::memory_order_relaxed);
         sys->lastQuerySystemTime.store(
             std::chrono::steady_clock::now().time_since_epoch().count(),
             std::memory_order_relaxed
         );
         sys->lastQueryPlaybackRate.store(sys->playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        ma_uint64 framesSinceLastLoad = sys->totalFramesProcessed - sys->lastLoadFrame;
+        ma_uint64 framesSinceLastLoad = newTotalFrames - sys->lastLoadFrame;
         ma_uint64 loadIntervalFrames = (SAMPLE_RATE * BG_LOAD_CHECK_INTERVAL) / 1000;
 
         //BOTTLENECK: low full scan of every stream (multiple acquire atomics each) on the audio thread every ~8ms inside the realtime callback | FIX: move the request loop into the AsyncLoader worker; audio thread only sets one dirty flag
         if (framesSinceLastLoad >= loadIntervalFrames) {
-            sys->lastLoadFrame = sys->totalFramesProcessed;
+            sys->lastLoadFrame = newTotalFrames;
             sys->doBackgroundLoading();
         }
 
@@ -1553,9 +1555,9 @@ private:
         other.exists.store(false, std::memory_order_relaxed);
 
         // Move frame tracking state for background loading
-        totalFramesProcessed = other.totalFramesProcessed;
+        totalFramesProcessed.store(other.totalFramesProcessed.load(std::memory_order_relaxed), std::memory_order_relaxed);
         lastLoadFrame        = other.lastLoadFrame;
-        other.totalFramesProcessed = 0;
+        other.totalFramesProcessed.store(0, std::memory_order_relaxed);
         other.lastLoadFrame        = 0;
 
         // Move prediction state for smooth audio time
