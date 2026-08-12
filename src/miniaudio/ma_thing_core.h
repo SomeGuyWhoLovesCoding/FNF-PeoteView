@@ -982,6 +982,8 @@ public:
     ma_uint64 lastLoadFrame = 0;         // Last frame when background load was triggered
     int bgLoadCounter = 0;
 
+    std::atomic<ma_uint64> preciseSampleCount{0};  // Sample-accurate position for getPlaybackPosition()
+
     AudioSystem()  {
         memset(&device, 0, sizeof(ma_device));
         
@@ -1195,30 +1197,8 @@ public:
     int    getMixerState() const        { return mixerState.load(std::memory_order_acquire); }
 
     double getPlaybackPosition() const {
-        ma_uint64 pos = 0;
-        if (!streams.empty()) {
-            size_t activeCount = 0;
-            ma_uint64 totalPos = 0;
-            size_t bestIndex = SIZE_MAX;
-            
-            for (size_t i = 0; i < streams.size(); i++) {
-                if (streams[i].active.load(std::memory_order_acquire)) {
-                    activeCount++;
-                    ma_uint64 p = streams[i].filePosition.load(std::memory_order_acquire);
-                    if (bestIndex == SIZE_MAX || p > totalPos) {
-                        totalPos = p;
-                        bestIndex = i;
-                    }
-                }
-            }
-            
-            if (activeCount > 0 && bestIndex != SIZE_MAX) {
-                pos = totalPos;
-            } else if (!streams.empty()) {
-                pos = streams[longestDecoderIndex].decoderLength;
-            }
-        }
-        return (double)(pos * 1000000) / (double)SAMPLE_RATE;
+        ma_uint64 samples = preciseSampleCount.load(std::memory_order_acquire);
+        return (double)samples * (1000000.0 / (double)SAMPLE_RATE);
     }
 
     double getDuration() const {
@@ -1405,12 +1385,19 @@ private:
         float rate = sys->playbackRate.load(std::memory_order_acquire);
 
         if (rate == 1.0f) {
+            ma_uint32 totalReadThisCallback = 0;
             for (size_t i = 0; i < sys->streams.size(); i++) {
                 if (!sys->streams[i].active.load(std::memory_order_acquire)) continue;
                 ma_uint32 read = sys->readFromBuffer(i, out, frameCount);
-                if (read > 0) anyActive = true;
+                if (read > 0) {
+                    anyActive = true;
+                    totalReadThisCallback += read;
+                }
                 if (read < frameCount && sys->streams[i].active.load(std::memory_order_acquire))
                     sys->streams[i].asyncState.needsLoad.store(true, std::memory_order_release);
+            }
+            if (totalReadThisCallback > 0) {
+                sys->preciseSampleCount.fetch_add(totalReadThisCallback, std::memory_order_relaxed);
             }
         } else {
             static_assert(MAX_CALLBACK_FRAMES >= 4096,
@@ -1436,12 +1423,19 @@ private:
 
             positionError = exactRead - maxToRead;
 
+            ma_uint32 totalReadThisCallback = 0;
             for (size_t i = 0; i < sys->streams.size(); i++) {
                 if (!sys->streams[i].active.load(std::memory_order_acquire)) continue;
                 ma_uint32 read = sys->readFromBuffer(i, inputMix, maxToRead);
-                if (read > 0) anyActive = true;
+                if (read > 0) {
+                    anyActive = true;
+                    totalReadThisCallback += read;
+                }
                 if (read < maxToRead && sys->streams[i].active.load(std::memory_order_acquire))
                     sys->streams[i].asyncState.needsLoad.store(true, std::memory_order_release);
+            }
+            if (totalReadThisCallback > 0) {
+                sys->preciseSampleCount.fetch_add(totalReadThisCallback, std::memory_order_relaxed);
             }
 
             if (anyActive) {
