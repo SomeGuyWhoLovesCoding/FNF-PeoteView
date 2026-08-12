@@ -58,8 +58,6 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 	var dragVelocity:Float = 0.0;
 	var lastDragTime:Float = 0.0;
 
-	var inputCtx:InputContext;
-
 	private static inline var DRAG_THRESHOLD:Float = 1.0;
 
 	// Cached last pushed info string (avoid per-frame Text relayout).
@@ -103,18 +101,19 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 	}
 
 	function registerInputHandlers() {
-		if (inputCtx == null) {
-			inputCtx = new InputContext();
-			inputCtx.mouseDown = mousePress;
-			inputCtx.mouseUp = mouseRelease;
-			inputCtx.mouseMove = mouseDrag;
-		}
-		Main.current.input.push(inputCtx);
+		var window = lime.app.Application.current.window;
+		Main.current.mouseDown = mousePress;
+		window.onMouseUp.add(mouseRelease);
+		window.onMouseMove.add(mouseDrag);
 	}
 
 	function unregisterInputHandlers() {
-		Main.current.input.pop(inputCtx);
-		inputCtx = null;
+		var window = lime.app.Application.current.window;
+		if (Main.current.mouseDown == mousePress) {
+			Main.current.mouseDown = null;
+		}
+		window.onMouseUp.remove(mouseRelease);
+		window.onMouseMove.remove(mouseDrag);
 	}
 
 	function update(deltaTime:Float) {

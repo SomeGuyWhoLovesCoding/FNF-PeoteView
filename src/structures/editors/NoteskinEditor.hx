@@ -4299,7 +4299,6 @@ private class NoteskinEditorUI {
 @:publicFields
 private class NoteskinEditorInputHandler {
 	var state:NoteskinEditor;
-	var inputCtx:InputContext;
 
 	public function new(state:NoteskinEditor) {
 		this.state = state;
@@ -4312,22 +4311,25 @@ private class NoteskinEditorInputHandler {
 
 	function addEvents() {
 		#if !android
-		if (inputCtx == null) {
-			inputCtx = new InputContext();
-			inputCtx.keyDown = handleKeyDown;
-			inputCtx.keyUp = handleKeyUp;
-			inputCtx.mouseDown = handleMouseDown;
-			inputCtx.mouseUp = handleMouseUp;
-			inputCtx.mouseMove = handleMouseMove;
-			inputCtx.mouseWheel = handleMouseWheel;
-		}
-		Main.current.input.push(inputCtx);
+		var window = Application.current.window;
+		window.onKeyDown.add(handleKeyDown);
+		window.onKeyUp.add(handleKeyUp);
+		window.onMouseDown.add(handleMouseDown);
+		window.onMouseUp.add(handleMouseUp);
+		window.onMouseMove.add(handleMouseMove);
+		window.onMouseWheel.add(handleMouseWheel);
 		#end
 	}
 
 	function removeEvents() {
 		#if !android
-		Main.current.input.pop(inputCtx);
+		var window = Application.current.window;
+		window.onKeyDown.remove(handleKeyDown);
+		window.onKeyUp.remove(handleKeyUp);
+		window.onMouseDown.remove(handleMouseDown);
+		window.onMouseUp.remove(handleMouseUp);
+		window.onMouseMove.remove(handleMouseMove);
+		window.onMouseWheel.remove(handleMouseWheel);
 		#end
 	}
 

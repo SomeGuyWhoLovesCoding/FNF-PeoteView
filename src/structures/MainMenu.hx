@@ -37,7 +37,6 @@ class MainMenu {
 
 	var disposed:Bool = false;
 	var actions:ActionMap;
-	var inputCtx:InputContext;
 
 	function new() {}
 
@@ -293,7 +292,10 @@ class MainMenu {
 		for (i in 0...optionBuf.length) {
 			var option = optionBuf.getElement(i);
 			if (x >= option.x && x <= option.x + option.w && y >= (option.y - 15) && y <= option.y + (option.h - 15) && i == nav.value()) {
-				doIt();
+				// get off the window.onMouseUp dispatch stack before running doIt(),
+				// because doIt() -> removeEvents() -> window.onMouseUp.remove(mouseUp)
+				// mutates lime's listener arrays while dispatch is iterating them
+				haxe.Timer.delay(doIt, 1);
 				break;
 			}
 		}
@@ -307,20 +309,20 @@ class MainMenu {
 	}
 
 	function addEvents() {
-		Main.current.controls.bindTo(actions);
+		var window = lime.app.Application.current.window;
 
-		if (inputCtx == null) {
-			inputCtx = new InputContext();
-			inputCtx.mouseDown = mouseDown;
-			inputCtx.mouseUp = mouseUp;
-			inputCtx.mouseWheel = updateMenuOptions_mouse;
-		}
-		Main.current.input.push(inputCtx);
+		Main.current.controls.bindTo(actions);
+		Main.current.mouseDown = mouseDown;
+		window.onMouseWheel.add(updateMenuOptions_mouse);
+		window.onMouseUp.add(mouseUp);
 	}
 
 	function removeEvents() {
+		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
-		Main.current.input.pop(inputCtx);
+		Main.current.mouseDown = null;
+		window.onMouseWheel.remove(updateMenuOptions_mouse);
+		window.onMouseUp.remove(mouseUp);
 	}
 
 	function dispose() {

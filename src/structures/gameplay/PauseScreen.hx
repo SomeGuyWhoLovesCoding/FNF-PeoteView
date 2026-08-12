@@ -28,7 +28,6 @@ class PauseScreen {
 	var opened(default, null):Bool;
 	var atOptionsMenu(default, null):Bool;
 	var actions:ActionMap;
-	var inputCtx:InputContext;
 
 	static function init(disp:CustomDisplay) {
 		display = disp;
@@ -213,22 +212,20 @@ class PauseScreen {
 		if (eventsActive)
 			return;
 		eventsActive = true;
+		var window = lime.app.Application.current.window;
 		Main.current.controls.bindTo(actions);
-
-		if (inputCtx == null) {
-			inputCtx = new InputContext();
-			inputCtx.mouseDown = mouseDown;
-			inputCtx.mouseWheel = moveOption_mouse;
-		}
-		Main.current.input.push(inputCtx);
+		window.onMouseDown.add(mouseDown);
+		window.onMouseWheel.add(moveOption_mouse);
 	}
 
 	function removeEvents() {
 		if (!eventsActive)
 			return;
 		eventsActive = false;
+		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
-		Main.current.input.pop(inputCtx);
+		window.onMouseDown.remove(mouseDown);
+		window.onMouseWheel.remove(moveOption_mouse);
 	}
 
 	inline function onOptionsMenuClose() {

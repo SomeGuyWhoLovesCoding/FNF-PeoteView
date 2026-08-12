@@ -1,6 +1,7 @@
 package;
 
 import lime.graphics.RenderContext;
+import lime.ui.MouseButton;
 import sys.io.File;
 import sys.io.FileOutput;
 import haxe.CallStack;
@@ -225,12 +226,8 @@ class Main extends Application {
 	// CONTROLS
 	var controls(default, null):Controls;
 
-	// Owns every window input event. Windows events are bound ONCE here at
-	// startup and never removed; screens push/pop an InputContext on open/close.
-	// Previously screens bound/unbound window.onMouseDown/onMouseUp themselves,
-	// which mutated lime's listener array during dispatch (the silent hashlink
-	// crashes when opening/clicking through the menus).
-	var input(default, null):InputRouter;
+	// This is a replacement for Application.current.window.onMouseDown as it's a rogue piece a shit I've noticed was especially targetable on hashlink where the freeplay mouse click bug arose
+	var mouseDown:(Float, Float, MouseButton) -> Void;
 
 	// NOW FOR THE SOUND EFFECTS
 	var sound_scrollIdx:Int;
@@ -254,10 +251,6 @@ class Main extends Application {
 
 		haxe.Timer.delay(function() {
 			controls = new Controls();
-
-			// Owns every window input event. Must exist before any screen
-			// pushes an InputContext (menus schedule addEvents via timers).
-			input = new InputRouter(window);
 
 			#if (!html5)
 			trace("Is es3? " + PeoteGL.Version.isES3);
@@ -310,6 +303,11 @@ class Main extends Application {
 			#if FV_DEBUG
 			DeveloperStuff.init(window, this);
 			#end
+
+			window.onMouseDown.add((x, y, button) -> {
+				if (mouseDown != null)
+					mouseDown(x, y, button);
+			});
 
 			_started = true;
 

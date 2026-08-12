@@ -97,25 +97,6 @@ class OptionsDisplay {
 		}
 	}
 
-	/**
-		The InputContext the currently active sub-display registers (if any).
-		ControlsDisplay registers no mouse handlers, so it returns null and the
-		OptionsMenu keeps base-layer mouse handling on its own context.
-	**/
-	function currentInputContext():InputContext {
-		switch ((parent.categoryNav.value() : OptionsCategorySelection)) {
-			case CONTROLS:
-				return null;
-			case PREFERENCES:
-				return preferencesDisplay.inputCtx;
-			case GAMEPLAY:
-				return graphicsDisplay.inputCtx;
-			case PERFORMANCE:
-				return performanceDisplay.inputCtx;
-		}
-		return null;
-	}
-
 	function update(deltaTime:Float) {
 		// Update any generic OptionsSprites (currently none, but keep for future)
 		for (i in 0...options.length) {

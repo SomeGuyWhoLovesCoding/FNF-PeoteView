@@ -38,7 +38,6 @@ class FreeplayMenu {
 
 	//////////////////////// THE REST ////////////////////////
 	var actions(default, null):ActionMap;
-	var inputCtx:InputContext;
 
 	function new() {
 		freeplayScreen = new FreeplayScreen(this, 'chapter1');
@@ -89,16 +88,13 @@ class FreeplayMenu {
 		opened = active = true;
 
 		haxe.Timer.delay(() -> {
+			var window = lime.app.Application.current.window;
 			Main.current.controls.bindTo(actions);
 
-			if (inputCtx == null) {
-				inputCtx = new InputContext();
-				inputCtx.mouseDown = mousePress;
-				inputCtx.mouseUp = mouseRelease;
-				inputCtx.mouseMove = mouseDrag;
-				inputCtx.mouseWheel = mouseWheel;
-			}
-			Main.current.input.push(inputCtx);
+			Main.current.mouseDown = mousePress;
+			window.onMouseUp.add(mouseRelease);
+			window.onMouseMove.add(mouseDrag);
+			window.onMouseWheel.add(mouseWheel);
 		}, 1);
 
 		if (freeplayScreen.disposed) {
@@ -113,8 +109,12 @@ class FreeplayMenu {
 	}
 
 	function close() {
+		var window = lime.app.Application.current.window;
 		Main.current.controls.unBind();
-		Main.current.input.pop(inputCtx);
+		Main.current.mouseDown = null;
+		window.onMouseUp.remove(mouseRelease);
+		window.onMouseMove.remove(mouseDrag);
+		window.onMouseWheel.remove(mouseWheel);
 
 		opened = false;
 
