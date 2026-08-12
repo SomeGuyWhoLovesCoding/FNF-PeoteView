@@ -1082,6 +1082,11 @@ public:
             return;
         }
 
+        // Initialize stretch on the main thread (single-threaded context)
+        if (stretch) { delete stretch; }
+        stretch = new signalsmith::stretch::SignalsmithStretch();
+        stretch->configure(CHANNEL_COUNT, int(SAMPLE_RATE * 0.1), int(SAMPLE_RATE * 0.05));
+
         exists.store(true, std::memory_order_release);
         mixerState.store(3, std::memory_order_release);
     }
@@ -1090,24 +1095,33 @@ public:
         if (!exists.load(std::memory_order_acquire)) return;
         
         exists.store(false, std::memory_order_release);
+        
+        // Signal audio thread to stop using stretch before stopping device
+        stretchEnabled.store(false, std::memory_order_release);
+        
+        // Stop device first - this synchronizes with audio callback completion
         ma_device_stop(&device);
         
+        // Wait for asyncLoader to finish any work
         if (asyncLoader) {
+            asyncLoader->pauseLoading();
+            asyncLoader->waitUntilIdle();
             delete asyncLoader;
             asyncLoader = nullptr;
         }
         
         ma_device_uninit(&device);
         
-        streams.clear();
-        decoderVolumes.clear();
-        filePaths.clear();
-        streamPtrs.clear();
-        
+        // Now safe to delete stretch (audio callback has stopped)
         if (stretch) {
             delete stretch;
             stretch = nullptr;
         }
+        
+        streams.clear();
+        decoderVolumes.clear();
+        filePaths.clear();
+        streamPtrs.clear();
         
         longestDecoderIndex = 0;
         playbackRate.store(1.0f, std::memory_order_release);
@@ -1147,10 +1161,11 @@ public:
             mixerState.store(2, std::memory_order_release); 
         }
 
+        // Stop device BEFORE pausing asyncLoader to prevent callback races
+        if (wasPlaying) ma_device_stop(&device);
+
         if (asyncLoader) asyncLoader->pauseLoading();
         if (asyncLoader) asyncLoader->waitUntilIdle();
-
-        if (wasPlaying) ma_device_stop(&device);
 
         for (size_t i = 0; i < streams.size(); i++) {
             DecoderStream& s = streams[i];
@@ -1426,13 +1441,9 @@ private:
                     sys->streams[i].asyncState.needsLoad.store(true, std::memory_order_release);
             }
 
-            if (anyActive) {
+if (anyActive) {
                 if (sys->stretchEnabled.load(std::memory_order_acquire)) {
-                    if (!sys->stretch) {
-                        sys->stretch = new signalsmith::stretch::SignalsmithStretch();
-                        sys->stretch->presetCheaper(CHANNEL_COUNT, SAMPLE_RATE);
-                    }
-                    //BOTTLENECK: high FFT time-stretch of the entire mix synchronously in the realtime audio callback on every buffer (SignalsmithStretch) -> dropout source whenever playback rate != 1.0 | FIX: use the fastest preset / larger block, or run stretch on a dedicated thread with double buffering
+                    // stretch is guaranteed initialized in loadFiles()
                     sys->stretch->process(inputMix, maxToRead, stretchedOutput, frameCount);
                     memcpy(out, stretchedOutput, sizeof(float) * frameCount * CHANNEL_COUNT);
                 } else if (maxToRead > 0) {

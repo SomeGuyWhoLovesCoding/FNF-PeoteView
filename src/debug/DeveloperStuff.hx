@@ -17,8 +17,9 @@ class DeveloperStuff {
 	}
 
 	static function testPlayfieldInputStuff(code:KeyCode, mod:KeyModifier) {
-		var playField = Main.current.playField;
-		if (playField == null) return;
+		var playField = Main.current?.playField;
+		//trace(code, playField);
+		if (playField == null || playField.disposed) return;
 		switch (code) {
 			case KeyCode.PERIOD:
 				playField.setTime(playField.songPosition + 1500, 350);
