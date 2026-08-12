@@ -982,12 +982,14 @@ public:
     ma_uint64 lastLoadFrame = 0;         // Last frame when background load was triggered
     int bgLoadCounter = 0;
 
-    // High-resolution timer for sample-precise filePosition
+    // High-resolution timer for sample-precise filePosition (synced to audio callback)
     std::chrono::steady_clock::time_point timerStartTime;
     std::chrono::steady_clock::time_point timerLastTime;
     double timerAccumulatedSeconds = 0.0;
     ma_uint64 timerStartFrame = 0;
     bool timerInitialized = false;
+    std::atomic<bool> timerNeedsInit{false};
+    std::atomic<ma_uint64> callbackFramesProcessed{0};  // Frames processed in audio callback
 
     AudioSystem()  {
         memset(&device, 0, sizeof(ma_device));
@@ -1152,16 +1154,9 @@ public:
         // FIX: Set to playing BEFORE starting the device so the callback immediately knows the state
         mixerState.store(1, std::memory_order_release); 
         
-        // Initialize high-resolution timer for sample-precise filePosition
-        timerStartTime = std::chrono::steady_clock::now();
-        timerLastTime = timerStartTime;
-        timerAccumulatedSeconds = 0.0;
-        if (!streams.empty()) {
-            timerStartFrame = streams[longestDecoderIndex].filePosition.load(std::memory_order_acquire);
-        } else {
-            timerStartFrame = 0;
-        }
-        timerInitialized = true;
+        // Timer will be initialized in the first audio callback to sync with actual audio output
+        timerNeedsInit.store(true, std::memory_order_release);
+        callbackFramesProcessed.store(0, std::memory_order_release);
         
         ma_device_start(&device);
     }
@@ -1174,13 +1169,8 @@ public:
         if (asyncLoader) asyncLoader->pauseLoading();
         ma_device_stop(&device);
         
-        // Accumulate elapsed time for sample-precise timing
-        if (timerInitialized) {
-            auto now = std::chrono::steady_clock::now();
-            double elapsed = std::chrono::duration<double>(now - timerLastTime).count();
-            timerAccumulatedSeconds += elapsed;
-            timerInitialized = false;
-        }
+        // Timer stays initialized; callbackFramesProcessed stops incrementing when callback stops
+        // No wall-clock accumulation needed - we use callback frame count directly
     }
 
     bool stopped() const { return mixerState.load(std::memory_order_acquire) == 3; }
@@ -1463,10 +1453,25 @@ private:
         AudioSystem* sys = static_cast<AudioSystem*>(pDevice->pUserData);
         if (!sys || !sys->exists.load(std::memory_order_acquire)) return;
 
+        // Initialize timer on first callback to sync with actual audio output timeline
+        if (sys->timerNeedsInit.load(std::memory_order_acquire)) {
+            auto now = std::chrono::steady_clock::now();
+            sys->timerStartTime = now;
+            sys->timerLastTime = now;
+            sys->timerAccumulatedSeconds = 0.0;
+            sys->timerStartFrame = sys->callbackFramesProcessed.load(std::memory_order_relaxed);
+            if (!sys->streams.empty()) {
+                sys->timerStartFrame = sys->streams[sys->longestDecoderIndex].filePosition.load(std::memory_order_relaxed);
+            }
+            sys->timerInitialized = true;
+            sys->timerNeedsInit.store(false, std::memory_order_release);
+        }
+
         float* out = (float*)pOutput;
         memset(out, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
 
         sys->totalFramesProcessed += frameCount;
+        sys->callbackFramesProcessed.fetch_add(frameCount, std::memory_order_relaxed);
         ma_uint64 framesSinceLastLoad = sys->totalFramesProcessed - sys->lastLoadFrame;
         ma_uint64 loadIntervalFrames = (SAMPLE_RATE * BG_LOAD_CHECK_INTERVAL) / 1000;
 
