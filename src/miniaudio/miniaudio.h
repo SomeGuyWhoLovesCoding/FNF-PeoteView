@@ -7860,10 +7860,6 @@ struct ma_device
         ma_uint32 intermediaryBufferLen;    /* How many valid frames are sitting in the intermediary buffer. */
     } capture;
 
-    ma_timer timer;                  /* High-resolution timer for sample-precise timing. */
-    double priorRunTime;             /* Accumulated time from previous runs. */
-    ma_bool8 timerInitialized;       /* Whether the timer has been initialized. */
-
     union
     {
 #ifdef MA_SUPPORT_WASAPI
@@ -9552,65 +9548,6 @@ ma_device_set_master_volume()
 ma_device_get_master_volume()
 */
 MA_API ma_result ma_device_get_master_volume_db(ma_device* pDevice, float* pGainDB);
-
-
-/*
-Retrieves the current sample-precise playback time in PCM frames based on a high-resolution system timer.
-
-This provides smoother, sample-accurate timing compared to the standard frame counter which only
-updates in discrete chunks (typically ~10ms periods). This is useful for synchronization and
-precise timing applications.
-
-Parameters
-----------
-pDevice (in)
-    A pointer to the device.
-
-pFrames (out)
-    A pointer to a variable that will receive the current time in PCM frames.
-
-
-Return Value
-------------
-MA_SUCCESS if successful; MA_INVALID_ARGS if pDevice or pFrames is NULL.
-
-
-Thread Safety
--------------
-Safe. Can be called from any thread.
-
-
-Remarks
--------
-The time is calculated using a high-resolution system timer (QueryPerformanceCounter on Windows,
-clock_gettime on POSIX, mach_absolute_time on macOS) which provides sub-microsecond precision.
-This eliminates the "stepping" effect of the standard frame counter which only advances when
-audio callbacks are processed.
-*/
-MA_API ma_result ma_device_get_time_in_pcm_frames(const ma_device* pDevice, ma_uint64* pFrames);
-
-/*
-Retrieves the current sample-precise playback time in milliseconds based on a high-resolution system timer.
-
-Parameters
-----------
-pDevice (in)
-    A pointer to the device.
-
-pMilliseconds (out)
-    A pointer to a variable that will receive the current time in milliseconds.
-
-
-Return Value
-------------
-MA_SUCCESS if successful; MA_INVALID_ARGS if pDevice or pMilliseconds is NULL.
-
-
-Thread Safety
--------------
-Safe. Can be called from any thread.
-*/
-MA_API ma_result ma_device_get_time_in_milliseconds(const ma_device* pDevice, ma_uint64* pMilliseconds);
 
 
 /*
@@ -11418,51 +11355,6 @@ MA_API ma_uint64 ma_engine_get_time_in_pcm_frames(const ma_engine* pEngine);
 MA_API ma_uint64 ma_engine_get_time_in_milliseconds(const ma_engine* pEngine);
 MA_API ma_result ma_engine_set_time_in_pcm_frames(ma_engine* pEngine, ma_uint64 globalTime);
 MA_API ma_result ma_engine_set_time_in_milliseconds(ma_engine* pEngine, ma_uint64 globalTime);
-
-/*
-Retrieves the current sample-precise engine time in PCM frames based on a high-resolution system timer.
-
-This provides smoother, sample-accurate timing compared to the standard frame counter which only
-updates in discrete chunks (typically ~10ms periods). This is useful for synchronization and
-precise timing applications.
-
-Parameters
-----------
-pEngine (in)
-    A pointer to the engine.
-
-
-Return Value
-------------
-The current time in PCM frames. Returns 0 if the engine has no device or the timer is not initialized.
-
-
-Thread Safety
--------------
-Safe. Can be called from any thread.
-*/
-MA_API ma_uint64 ma_engine_get_precise_time_in_pcm_frames(const ma_engine* pEngine);
-
-/*
-Retrieves the current sample-precise engine time in milliseconds based on a high-resolution system timer.
-
-Parameters
-----------
-pEngine (in)
-    A pointer to the engine.
-
-
-Return Value
-------------
-The current time in milliseconds. Returns 0 if the engine has no device or the timer is not initialized.
-
-
-Thread Safety
--------------
-Safe. Can be called from any thread.
-*/
-MA_API ma_uint64 ma_engine_get_precise_time_in_milliseconds(const ma_engine* pEngine);
-
 MA_API ma_uint64 ma_engine_get_time(const ma_engine* pEngine);                  /* Deprecated. Use ma_engine_get_time_in_pcm_frames(). Will be removed in version 0.12. */
 MA_API ma_result ma_engine_set_time(ma_engine* pEngine, ma_uint64 globalTime);  /* Deprecated. Use ma_engine_set_time_in_pcm_frames(). Will be removed in version 0.12. */
 MA_API ma_uint32 ma_engine_get_channels(const ma_engine* pEngine);
@@ -21064,9 +20956,6 @@ static ma_thread_result MA_THREADCALL ma_device_thread__null(void* pData)
         if (operation == MA_DEVICE_OP_START__NULL) {
             /* Reset the timer just in case. */
             ma_timer_init(&pDevice->null_device.timer);
-            ma_timer_init(&pDevice->timer);
-            pDevice->priorRunTime = 0;
-            pDevice->timerInitialized = MA_TRUE;
 
             /* Getting here means a suspend or kill operation has been requested. */
             pDevice->null_device.operationResult = MA_SUCCESS;
@@ -21080,11 +20969,6 @@ static ma_thread_result MA_THREADCALL ma_device_thread__null(void* pData)
             /* We need to add the current run time to the prior run time, then reset the timer. */
             pDevice->null_device.priorRunTime += ma_timer_get_time_in_seconds(&pDevice->null_device.timer);
             ma_timer_init(&pDevice->null_device.timer);
-
-            if (pDevice->timerInitialized) {
-                pDevice->priorRunTime += ma_timer_get_time_in_seconds(&pDevice->timer);
-                pDevice->timerInitialized = MA_FALSE;
-            }
 
             /* We're done. */
             pDevice->null_device.operationResult = MA_SUCCESS;
@@ -21159,11 +21043,6 @@ static ma_uint64 ma_device_get_total_run_time_in_frames__null(ma_device* pDevice
         internalSampleRate = pDevice->capture.internalSampleRate;
     } else {
         internalSampleRate = pDevice->playback.internalSampleRate;
-    }
-
-    /* Use unified timer if initialized, otherwise fall back to null_device timer. */
-    if (pDevice->timerInitialized) {
-        return (ma_uint64)((pDevice->priorRunTime + ma_timer_get_time_in_seconds(&pDevice->timer)) * internalSampleRate);
     }
 
     return (ma_uint64)((pDevice->null_device.priorRunTime + ma_timer_get_time_in_seconds(&pDevice->null_device.timer)) * internalSampleRate);
@@ -42945,11 +42824,6 @@ static ma_thread_result MA_THREADCALL ma_worker_thread(void* pData)
         ma_device__set_state(pDevice, ma_device_state_started); /* <-- Set this before signaling the event so that the state is always guaranteed to be good after ma_device_start() has returned. */
         ma_event_signal(&pDevice->startEvent);
 
-        /* Initialize the high-resolution timer for sample-precise timing. */
-        ma_timer_init(&pDevice->timer);
-        pDevice->priorRunTime = 0;
-        pDevice->timerInitialized = MA_TRUE;
-
         ma_device__on_notification_started(pDevice);
 
         if (pDevice->pContext->callbacks.onDeviceDataLoop != NULL) {
@@ -42964,12 +42838,6 @@ static ma_thread_result MA_THREADCALL ma_worker_thread(void* pData)
             stopResult = pDevice->pContext->callbacks.onDeviceStop(pDevice);
         } else {
             stopResult = MA_SUCCESS;    /* No stop callback with the backend. Just assume successful. */
-        }
-
-        /* Accumulate the elapsed time for sample-precise timing. */
-        if (pDevice->timerInitialized) {
-            pDevice->priorRunTime += ma_timer_get_time_in_seconds(&pDevice->timer);
-            pDevice->timerInitialized = MA_FALSE;
         }
 
         /*
@@ -44615,48 +44483,6 @@ MA_API ma_result ma_device_get_master_volume_db(ma_device* pDevice, float* pGain
     }
 
     *pGainDB = ma_volume_linear_to_db(factor);
-
-    return MA_SUCCESS;
-}
-
-
-MA_API ma_result ma_device_get_time_in_pcm_frames(const ma_device* pDevice, ma_uint64* pFrames)
-{
-    if (pDevice == NULL || pFrames == NULL) {
-        return MA_INVALID_ARGS;
-    }
-
-    if (!pDevice->timerInitialized) {
-        /* Timer not initialized, fall back to sample count estimation. */
-        *pFrames = 0;
-        return MA_SUCCESS;
-    }
-
-    double elapsedSeconds = pDevice->priorRunTime + ma_timer_get_time_in_seconds((ma_timer*)&pDevice->timer);
-    *pFrames = (ma_uint64)(elapsedSeconds * pDevice->sampleRate);
-
-    return MA_SUCCESS;
-}
-
-MA_API ma_result ma_device_get_time_in_milliseconds(const ma_device* pDevice, ma_uint64* pMilliseconds)
-{
-    if (pDevice == NULL || pMilliseconds == NULL) {
-        return MA_INVALID_ARGS;
-    }
-
-    ma_uint64 frames;
-    ma_result result = ma_device_get_time_in_pcm_frames(pDevice, &frames);
-    if (result != MA_SUCCESS) {
-        *pMilliseconds = 0;
-        return result;
-    }
-
-    if (pDevice->sampleRate == 0) {
-        *pMilliseconds = 0;
-        return MA_SUCCESS;
-    }
-
-    *pMilliseconds = frames * 1000 / pDevice->sampleRate;
 
     return MA_SUCCESS;
 }
@@ -78148,56 +77974,6 @@ MA_API ma_uint64 ma_engine_get_time(const ma_engine* pEngine)
 MA_API ma_result ma_engine_set_time(ma_engine* pEngine, ma_uint64 globalTime)
 {
     return ma_engine_set_time_in_pcm_frames(pEngine, globalTime);
-}
-
-MA_API ma_uint64 ma_engine_get_precise_time_in_pcm_frames(const ma_engine* pEngine)
-{
-    if (pEngine == NULL) {
-        return 0;
-    }
-
-    #if !defined(MA_NO_DEVICE_IO)
-    {
-        if (pEngine->pDevice != NULL) {
-            ma_uint64 frames;
-            if (ma_device_get_time_in_pcm_frames(pEngine->pDevice, &frames) == MA_SUCCESS) {
-                return frames;
-            }
-        }
-    }
-    #else
-    {
-        (void)pEngine;
-    }
-    #endif
-
-    /* Fall back to node graph time if no device or timer not initialized. */
-    return ma_node_graph_get_time(&pEngine->nodeGraph);
-}
-
-MA_API ma_uint64 ma_engine_get_precise_time_in_milliseconds(const ma_engine* pEngine)
-{
-    if (pEngine == NULL) {
-        return 0;
-    }
-
-    #if !defined(MA_NO_DEVICE_IO)
-    {
-        if (pEngine->pDevice != NULL) {
-            ma_uint64 milliseconds;
-            if (ma_device_get_time_in_milliseconds(pEngine->pDevice, &milliseconds) == MA_SUCCESS) {
-                return milliseconds;
-            }
-        }
-    }
-    #else
-    {
-        (void)pEngine;
-    }
-    #endif
-
-    /* Fall back to node graph time if no device or timer not initialized. */
-    return ma_engine_get_time_in_milliseconds(pEngine);
 }
 
 MA_API ma_uint32 ma_engine_get_channels(const ma_engine* pEngine)
