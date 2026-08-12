@@ -172,8 +172,8 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		}
 
 		// Append instructions and dynamic binding info
+		combined += INSTRUCTIONS_TEXT + "\n\n";
 		if (bindingMania) {
-			combined += INSTRUCTIONS_TEXT + "\n\n";
 			var str = "KEYBINDS\nUSING " + (maniaSubBindNum == 1 ? "#M2#KEY2#M2#" : "#M1#KEY1#M1#") + "\n";
 			if (alertDupebind) {
 				str += '#M3#${alertDupebindKeyName} is already bound to:\n${alertDupebindConflictName}\nTry a different key.#M3#\n';
