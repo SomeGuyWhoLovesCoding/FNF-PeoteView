@@ -1118,6 +1118,11 @@ public:
         playbackRate.store(1.0f, std::memory_order_release);
         mixerState.store(3, std::memory_order_release);
         
+        // Reset prediction state
+        lastQueriedFrames.store(0, std::memory_order_relaxed);
+        lastQuerySystemTime.store(0, std::memory_order_relaxed);
+        lastQueryPlaybackRate.store(1.0, std::memory_order_relaxed);
+        
         memset(&device, 0, sizeof(ma_device));
     }
 
@@ -1186,15 +1191,14 @@ public:
 
         mixerState.store((pos < (int64_t)streams[longestDecoderIndex].decoderLength) ? 2 : 3, std::memory_order_release);
 
+        // Always reset prediction anchor on seek (regardless of wasPlaying state)
+        lastQueriedFrames.store((ma_uint64)pos, std::memory_order_relaxed);
+        lastQuerySystemTime.store(std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_relaxed);
+        lastQueryPlaybackRate.store(playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
+
         if (wasPlaying && mixerState.load(std::memory_order_acquire) == 2) {
             if (asyncLoader) asyncLoader->resumeLoading();
             mixerState.store(1, std::memory_order_release); // Set state before starting device
-            
-            // Reset prediction anchor to seek position
-            lastQueriedFrames.store((ma_uint64)pos, std::memory_order_relaxed);
-            lastQuerySystemTime.store(std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_relaxed);
-            lastQueryPlaybackRate.store(playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
-            
             ma_device_start(&device);
         }
     }
