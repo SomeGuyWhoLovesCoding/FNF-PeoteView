@@ -136,7 +136,7 @@ class MainMenu {
 			Controls.Action.GAME_DEBUG => {action: goToEditors}
 		];
 
-		haxe.Timer.delay(addEvents, 100);
+		Tools.forSync(addEvents);
 	}
 
 	static var optionYLerps:Array<Float> = [for (i in 0...5) 1];
@@ -295,7 +295,7 @@ class MainMenu {
 				// get off the window.onMouseUp dispatch stack before running doIt(),
 				// because doIt() -> removeEvents() -> window.onMouseUp.remove(mouseUp)
 				// mutates lime's listener arrays while dispatch is iterating them
-				haxe.Timer.delay(doIt, 1);
+				Tools.forSync(doIt);
 				break;
 			}
 		}
