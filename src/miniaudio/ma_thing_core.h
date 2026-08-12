@@ -982,13 +982,9 @@ public:
     ma_uint64 lastLoadFrame = 0;         // Last frame when background load was triggered
     int bgLoadCounter = 0;
 
-    // High-resolution timer for sample-precise filePosition (synced to audio callback)
-    std::chrono::steady_clock::time_point timerStartTime;
-    std::chrono::steady_clock::time_point timerLastTime;
-    double timerAccumulatedSeconds = 0.0;
-    ma_uint64 timerStartFrame = 0;
-    bool timerInitialized = false;
-    std::atomic<bool> timerNeedsInit{false};
+    // High-resolution timer for sample-precise filePosition (uses miniaudio device timer)
+    // No custom timer needed - we use ma_device_get_time_in_pcm_frames() which is
+    // initialized in the worker thread when the device actually starts outputting audio
     std::atomic<ma_uint64> callbackFramesProcessed{0};  // Frames processed in audio callback
 
     AudioSystem()  {
@@ -1109,13 +1105,6 @@ public:
         stretchEnabled.store(false, std::memory_order_release);
         
         // Stop device first - this synchronizes with audio callback completion
-        // Accumulate timer before stopping device for sample-precise timing
-        if (timerInitialized) {
-            auto now = std::chrono::steady_clock::now();
-            double elapsed = std::chrono::duration<double>(now - timerLastTime).count();
-            timerAccumulatedSeconds += elapsed;
-            timerInitialized = false;
-        }
         ma_device_stop(&device);
         
         // Wait for asyncLoader to finish any work
@@ -1154,8 +1143,8 @@ public:
         // FIX: Set to playing BEFORE starting the device so the callback immediately knows the state
         mixerState.store(1, std::memory_order_release); 
         
-        // Timer will be initialized in the first audio callback to sync with actual audio output
-        timerNeedsInit.store(true, std::memory_order_release);
+        // Timer is initialized in miniaudio's worker thread when device actually starts
+        // Use ma_device_get_time_in_pcm_frames() for sample-precise position
         callbackFramesProcessed.store(0, std::memory_order_release);
         
         ma_device_start(&device);
@@ -1168,9 +1157,6 @@ public:
         mixerState.store(2, std::memory_order_release); 
         if (asyncLoader) asyncLoader->pauseLoading();
         ma_device_stop(&device);
-        
-        // Timer stays initialized; callbackFramesProcessed stops incrementing when callback stops
-        // No wall-clock accumulation needed - we use callback frame count directly
     }
 
     bool stopped() const { return mixerState.load(std::memory_order_acquire) == 3; }
@@ -1214,12 +1200,9 @@ public:
             if (asyncLoader) asyncLoader->resumeLoading();
             mixerState.store(1, std::memory_order_release); // Set state before starting device
             
-            // Reset timer for sample-precise timing after seek
-            timerStartTime = std::chrono::steady_clock::now();
-            timerLastTime = timerStartTime;
-            timerAccumulatedSeconds = 0.0;
-            timerStartFrame = (ma_uint64)pos;
-            timerInitialized = true;
+            // After seek, reset callback frame counter to match seek position
+            // The miniaudio device timer will continue from its current position
+            callbackFramesProcessed.store((ma_uint64)pos, std::memory_order_release);
             
             ma_device_start(&device);
         }
@@ -1241,7 +1224,7 @@ public:
     double setGlobalVolume(double v)    { MUSIC_MASTER_VOLUME_099.store(v, std::memory_order_relaxed); return v; }
     int    getMixerState() const        { return mixerState.load(std::memory_order_acquire); }
 
-    // Returns sample-precise playback position in milliseconds using high-resolution timer
+    // Returns sample-precise playback position in milliseconds using miniaudio's device timer
     double getPlaybackPosition() const {
         if (streams.empty()) return 0.0;
         
@@ -1249,17 +1232,14 @@ public:
         if (!s.active.load(std::memory_order_acquire))
             return (double)s.decoderLength / (SAMPLE_RATE * 0.001);
         
-        if (timerInitialized) {
-            // Use high-resolution timer for sample-precise position
-            auto now = std::chrono::steady_clock::now();
-            double elapsed = timerAccumulatedSeconds + std::chrono::duration<double>(now - timerLastTime).count();
-            ma_uint64 preciseFrames = timerStartFrame + (ma_uint64)(elapsed * SAMPLE_RATE);
-            // Clamp to decoder length
-            if (preciseFrames >= s.decoderLength) preciseFrames = s.decoderLength;
-            return (double)preciseFrames / (SAMPLE_RATE * 0.001);
+        // Use miniaudio's high-resolution device timer (initialized in worker thread)
+        ma_uint64 frames = 0;
+        if (ma_device_get_time_in_pcm_frames(&device, &frames) == MA_SUCCESS) {
+            if (frames >= s.decoderLength) frames = s.decoderLength;
+            return (double)frames / (SAMPLE_RATE * 0.001);
         }
         
-        // Fallback to atomic filePosition (may have ~10ms stepping)
+        // Fallback to atomic filePosition
         ma_uint64 pos = s.filePosition.load(std::memory_order_acquire);
         return (double)pos / (SAMPLE_RATE * 0.001);
     }
@@ -1269,7 +1249,7 @@ public:
         return (double)streams[longestDecoderIndex].decoderLength / (SAMPLE_RATE * 0.001);
     }
 
-    // Returns sample-precise playback position in frames using high-resolution timer
+    // Returns sample-precise playback position in frames using miniaudio's device timer
     ma_uint64 getPlaybackPositionFrames() const {
         if (streams.empty()) return 0;
         
@@ -1277,12 +1257,11 @@ public:
         if (!s.active.load(std::memory_order_acquire))
             return s.decoderLength;
         
-        if (timerInitialized) {
-            auto now = std::chrono::steady_clock::now();
-            double elapsed = timerAccumulatedSeconds + std::chrono::duration<double>(now - timerLastTime).count();
-            ma_uint64 preciseFrames = timerStartFrame + (ma_uint64)(elapsed * SAMPLE_RATE);
-            if (preciseFrames >= s.decoderLength) preciseFrames = s.decoderLength;
-            return preciseFrames;
+        // Use miniaudio's high-resolution device timer
+        ma_uint64 frames = 0;
+        if (ma_device_get_time_in_pcm_frames(&device, &frames) == MA_SUCCESS) {
+            if (frames >= s.decoderLength) frames = s.decoderLength;
+            return frames;
         }
         
         return s.filePosition.load(std::memory_order_acquire);
@@ -1453,20 +1432,6 @@ private:
         AudioSystem* sys = static_cast<AudioSystem*>(pDevice->pUserData);
         if (!sys || !sys->exists.load(std::memory_order_acquire)) return;
 
-        // Initialize timer on first callback to sync with actual audio output timeline
-        if (sys->timerNeedsInit.load(std::memory_order_acquire)) {
-            auto now = std::chrono::steady_clock::now();
-            sys->timerStartTime = now;
-            sys->timerLastTime = now;
-            sys->timerAccumulatedSeconds = 0.0;
-            sys->timerStartFrame = sys->callbackFramesProcessed.load(std::memory_order_relaxed);
-            if (!sys->streams.empty()) {
-                sys->timerStartFrame = sys->streams[sys->longestDecoderIndex].filePosition.load(std::memory_order_relaxed);
-            }
-            sys->timerInitialized = true;
-            sys->timerNeedsInit.store(false, std::memory_order_release);
-        }
-
         float* out = (float*)pOutput;
         memset(out, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
 
@@ -1586,13 +1551,8 @@ if (anyActive) {
         other.totalFramesProcessed = 0;
         other.lastLoadFrame        = 0;
 
-        // Move timer state for sample-precise filePosition
-        timerStartTime         = other.timerStartTime;
-        timerLastTime          = other.timerLastTime;
-        timerAccumulatedSeconds = other.timerAccumulatedSeconds;
-        timerStartFrame        = other.timerStartFrame;
-        timerInitialized       = other.timerInitialized;
-        other.timerInitialized = false;
+        callbackFramesProcessed.store(other.callbackFramesProcessed.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        other.callbackFramesProcessed.store(0, std::memory_order_relaxed);
     }
 };
 
