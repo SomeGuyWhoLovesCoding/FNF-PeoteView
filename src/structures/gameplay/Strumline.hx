@@ -197,13 +197,14 @@ class Strumline {
 
 	function press(index:Int) {
 		var rec = receptors[index];
-		var noteToHit = rec.noteToHit;
 		var note = rec.note;
-		var noteIndex = rec.noteToHit_index;
 
-		if (noteToHit != null && !File.getJudgement(noteIndex)) {
+		// No per-frame arming pre-pass; find the hit candidate at press time.
+		var noteIndex = parent.findPlayerHitNote(this, index);
+		var noteToHit = noteIndex >= 0 ? File.getNote(noteIndex) : null;
+
+		if (noteToHit != null) {
 			var pf = parent.parent;
-			var type = noteToHit.type;
 
 			if (!note.confirmed()) {
 				note.confirm();

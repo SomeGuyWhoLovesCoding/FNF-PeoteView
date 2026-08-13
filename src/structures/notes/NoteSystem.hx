@@ -186,6 +186,52 @@ class NoteSystem {
 	}
 
 	/**
+		Press-time hit lookup.
+
+		There is no per-frame arming pre-pass (that used to maintain
+		`receptor.noteToHit` for every note in the spawn window, every frame).
+		Instead the note to hit is found here, once per key press, by scanning the
+		currently spawned notes from the bottom of the window up and returning the
+		closest unjudged note id on `strumline`'s lane `index` that is inside the
+		hit window, or `-1` when there is none.
+	**/
+	function findPlayerHitNote(strumline:Strumline, index:Int):Int64 {
+		var spawner = noteSpawner;
+		if (spawner == null)
+			return -1;
+
+		var lane = strumlines.indexOf(strumline);
+		if (lane < 0)
+			return -1;
+
+		var laneCount = strumlines.length;
+		var offset = Main.conductor.offset;
+		var window = _cachedHitbox - offset;
+		var farEdge = -_cachedHitbox - offset;
+		var posWithLatency = MetaNote.floatToMetaNotePosition(parent.songPosition + offset);
+		var scrollSpeed = parent.scrollSpeed;
+
+		var bestId:Int64 = -1;
+		var bestAbs:Float = Math.POSITIVE_INFINITY;
+		var i = spawner.bottom;
+		while (i < spawner.top) {
+			var n = File.getNote(i);
+			if (n.index == index && (n.type % laneCount) == lane && !File.getJudgement(i)) {
+				var diff = MetaNote.metaNotePositionToSongTime(n.position - posWithLatency) * scrollSpeed;
+				if (diff < window && diff >= farEdge) {
+					var absDiff = Math.abs(diff);
+					if (absDiff < bestAbs) {
+						bestAbs = absDiff;
+						bestId = i;
+					}
+				}
+			}
+			i++;
+		}
+		return bestId;
+	}
+
+	/**
 	 * Recomputes the confirm window for every note into `confirmWindowTable`.
 	 *
 	 * Unlike the old per-frame forward scan, this runs exactly once per chart
@@ -333,22 +379,6 @@ class NoteSystem {
 			if (!isHit) {
 				if (isMissed)
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
-
-				if (!isMissed && diff < _cachedHitbox - offset) {
-					var noteToHit = receptor.noteToHit;
-					var noteToHitExists = noteToHit != null;
-
-					if (!noteToHitExists) {
-						receptor.noteToHit = note;
-						receptor.noteToHit_index = noteSpr.globalIndex;
-					} else {
-						var _pos = MetaNote.metaNotePositionToSongTime(noteToHit.position - pos) * _cachedScrollSpeed; // Match diff's units
-						if (receptor.noteToHit_index != noteSpr.globalIndex && Math.abs(diff) < Math.abs(_pos)) {
-							receptor.noteToHit = note;
-							receptor.noteToHit_index = _id;
-						}
-					}
-				}
 
 				if (diff < -_cachedHitbox - offset && !isMissed) {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
