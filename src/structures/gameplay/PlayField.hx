@@ -50,6 +50,10 @@ class PlayField {
 	static var onRestartingForBackwardTimeSetting(default, null):Bool = false;
 	static var timeForRestartingBackwardTime(default, null):Float = 0;
 
+	// Backward seeks landing at or past this many ms into the song seek
+	// directly instead of restarting the whole song.
+	static var backwardSeekRestartThreshold:Float = 3000;
+
 	// https://github.com/ShadowMario/FNF-PsychEngine/blob/main/source/backend/Rating.hx#L29
 	var ratingJudgementList:Array<Judgement> = [
 		[
@@ -180,20 +184,32 @@ class PlayField {
 			value = Mixer.length - 1000;
 
 		if (value < songPosition) {
-			onRestartingForBackwardTimeSetting = true;
-			timeForRestartingBackwardTime = value;
+			// Restarting the whole song is only needed when the seek target
+			// hugs the very beginning; anywhere else we seek directly so the
+			// song doesn't bounce back to the start.
+			if (value < backwardSeekRestartThreshold) {
+				onRestartingForBackwardTimeSetting = true;
+				timeForRestartingBackwardTime = value;
 
-			if (eventSystem != null)
-				eventSystem.clearEventTimers(); // immediately clear out any event timers to prevent them flooding the rest of the song through
+				if (eventSystem != null)
+					eventSystem.clearEventTimers(); // immediately clear out any event timers to prevent them flooding the rest of the song through
 
-			#if linc_luajit_funkinview
-			funkinviewlua.callFunction('preTimeChange', timeForRestartingBackwardTime, Chart.header);
-			#end
-			pause(false);
-			Tools.forSync(() -> {
-				Main.switchState(GAMEPLAY, true);
-			});
-			return;
+				#if linc_luajit_funkinview
+				funkinviewlua.callFunction('preTimeChange', timeForRestartingBackwardTime, Chart.header);
+				#end
+				pause(false);
+				Tools.forSync(() -> {
+					Main.switchState(GAMEPLAY, true);
+				});
+				return;
+			}
+
+			// Re-arm the event system so events that already fired get to fire
+			// again as the song replays the seeked-back section.
+			if (eventSystem != null) {
+				eventSystem.clearEventTimers();
+				eventSystem.seek(value);
+			}
 		}
 
 		Mixer.setTime(Math.max(value, 0.0), this);
