@@ -201,6 +201,21 @@ class Strumline {
 		var note = rec.note;
 		var noteIndex = rec.noteToHit_index;
 
+		if (noteToHit == null) {
+			// The render pass arms noteToHit only during renderNotes(), so a key
+			// press can see up to a frame of stale arming. Scan the currently
+			// spawned notes so a note that entered the hit window since the last
+			// render still registers on this press instead of a frame later.
+			var posWithLatency = MetaNote.floatToMetaNotePosition(parent.parent.songPosition + Main.conductor.offset);
+			var candidate = parent.findPlayerHitCandidate(this, index, posWithLatency);
+			if (candidate >= 0) {
+				rec.noteToHit = File.getNote(candidate);
+				rec.noteToHit_index = candidate;
+				noteToHit = rec.noteToHit;
+				noteIndex = candidate;
+			}
+		}
+
 		if (noteToHit != null && !File.getJudgement(noteIndex)) {
 			var pf = parent.parent;
 			var type = noteToHit.type;

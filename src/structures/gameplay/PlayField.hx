@@ -181,15 +181,12 @@ class PlayField {
 			onRestartingForBackwardTimeSetting = true;
 			timeForRestartingBackwardTime = value;
 
-			Sys.println("Update backwards " + timeForRestartingBackwardTime + "ms (clearing events and restarting the song)");
-
 			if (eventSystem != null)
 				eventSystem.clearEventTimers(); // immediately clear out any event timers to prevent them flooding the rest of the song through
 
 			#if linc_luajit_funkinview
 			funkinviewlua.callFunction('preTimeChange', timeForRestartingBackwardTime, Chart.header);
 			#end
-			Sys.println("Will pause the song here before restarting it");
 
 			pause(false);
 			Tools.forSync(() -> {
@@ -369,8 +366,6 @@ class PlayField {
 			ready = true;
 			return;
 		}
-
-		Sys.println("Pre update: " + MiniAudio.getPlaybackPosition());
 
 		display.update();
 		view.update();

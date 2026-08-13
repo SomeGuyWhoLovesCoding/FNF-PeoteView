@@ -15,7 +15,7 @@ import system.MenuInput;
 	@since Development
 **/
 @:publicFields
-class OptionsMenu implements MenuInput {
+class OptionsMenu extends MenuInput {
 	static var display(default, null):CustomDisplay;
 	static var optionsBuf(default, null):Buffer<OptionsSprite>;
 	static var optionsProg(default, null):CustomProgram;
@@ -30,13 +30,7 @@ class OptionsMenu implements MenuInput {
 
 	var shiftHeld:Bool = false;
 
-	var active:Bool = false;
-
-	var opened(default, null):Bool;
-
 	static var optionsDisplay(default, null):OptionsDisplay;
-
-	var actions(default, null):ActionMap;
 
 	static function init(disp:CustomDisplay) {
 		display = disp;
@@ -77,7 +71,7 @@ class OptionsMenu implements MenuInput {
 
 	var alphaLerp:Float = 0.0;
 
-	function update(deltaTime:Float) {
+	override function update(deltaTime:Float) {
 		// alphaLerp decays asymptotically and never reaches an exact 0.0, so shutting
 		// down only at `== 0.0` would leave the options overlay rendering for minutes
 		// (and thrashes CPU while playing a song). Tear it down once it's invisible.
@@ -97,7 +91,7 @@ class OptionsMenu implements MenuInput {
 		optionsDisplay.update(deltaTime);
 	}
 
-	function open() {
+	override function open() {
 		optionsDisplay.closed = false;
 		active = opened = true;
 		shiftHeld = false;
@@ -115,7 +109,7 @@ class OptionsMenu implements MenuInput {
 		Main.current.stateMachine.setFocus(this);
 	}
 
-	function close() {
+	override function close() {
 		var mm = Main.current.mainMenu;
 		var pf = Main.current.playField;
 
@@ -217,7 +211,7 @@ class OptionsMenu implements MenuInput {
 
 	// --- Routed input (MenuInput) ---
 
-	public function onKeyDown(keyCode:KeyCode, keyModifier:KeyModifier):Bool {
+	public override function onKeyDown(keyCode:KeyCode, keyModifier:KeyModifier):Bool {
 		if (!active)
 			return false;
 
@@ -241,7 +235,7 @@ class OptionsMenu implements MenuInput {
 		return false;
 	}
 
-	public function onKeyUp(keyCode:KeyCode, keyModifier:KeyModifier):Bool {
+	public override function onKeyUp(keyCode:KeyCode, keyModifier:KeyModifier):Bool {
 		if (!active)
 			return false;
 		if (keyCode == KeyCode.LEFT_SHIFT || keyCode == KeyCode.RIGHT_SHIFT)
@@ -249,7 +243,7 @@ class OptionsMenu implements MenuInput {
 		return false;
 	}
 
-	public function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
+	public override function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
 		if (!active)
 			return false;
 
@@ -270,7 +264,7 @@ class OptionsMenu implements MenuInput {
 		return false;
 	}
 
-	public function onMouseUp(x:Float, y:Float, button:MouseButton):Bool {
+	public override function onMouseUp(x:Float, y:Float, button:MouseButton):Bool {
 		if (!active)
 			return false;
 		var disp = optionsDisplay.activeDisplay;
@@ -280,7 +274,7 @@ class OptionsMenu implements MenuInput {
 		return false;
 	}
 
-	public function onMouseMove(x:Float, y:Float):Bool {
+	public override function onMouseMove(x:Float, y:Float):Bool {
 		if (!active)
 			return false;
 		var disp = optionsDisplay.activeDisplay;
@@ -290,7 +284,7 @@ class OptionsMenu implements MenuInput {
 		return false;
 	}
 
-	public function onMouseWheel(deltaX:Float, deltaY:Float, mode:MouseWheelMode):Bool {
+	public override function onMouseWheel(deltaX:Float, deltaY:Float, mode:MouseWheelMode):Bool {
 		if (!active)
 			return false;
 		if (Math.floor(deltaY) > 0) left(true, 0);
@@ -309,7 +303,7 @@ class OptionsMenu implements MenuInput {
 		Main.current.playScrollSound();
 	}
 
-	function shutDown() {
+	override function shutDown() {
 		if (!optionsProg.isIn(display))
 			return;
 
@@ -322,7 +316,7 @@ class OptionsMenu implements MenuInput {
 		Main.current.removeOptionsMenu();
 	}
 
-	function dispose() {
+	override function dispose() {
 		close();
 		shutDown();
 
@@ -332,5 +326,7 @@ class OptionsMenu implements MenuInput {
 		}
 
 		optionsDisplay.dispose();
+
+		disposed = true;
 	}
 }

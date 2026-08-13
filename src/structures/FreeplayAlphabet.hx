@@ -15,7 +15,7 @@ class FreeplayAlphabet {
 	var songTextAnimStateGroup:Array<Array<SpriteAnimState>> = [];
 	var titleCharCache:Map<String, TitleCharInfo> = new Map();
 
-	var host:IAlphabetScrollHost;
+	var host:AlphabetScrollHost;
 	var display(default, null):CustomDisplay;
 	var _currentDeltaTime:Float = 0.0;
 	var isDisposed:Bool = false;
@@ -46,7 +46,7 @@ class FreeplayAlphabet {
 	private static var charCorrectionMap:FakeStringMap<String> = new FakeStringMap<String>();
 	private static var staticInitDone:Bool = false;
 
-	function new(host:IAlphabetScrollHost, display:CustomDisplay) {
+	function new(host:AlphabetScrollHost, display:CustomDisplay) {
 		// Initialize static resources once
 		if (!staticInitDone) {
 			for (key in _charCorrectionMapOG.keys()) {
@@ -332,7 +332,7 @@ class FreeplayAlphabet {
 		}
 	}
 
-	public function setHost(host:IAlphabetScrollHost) {
+	public function setHost(host:AlphabetScrollHost) {
 		this.host = host;
 	}
 

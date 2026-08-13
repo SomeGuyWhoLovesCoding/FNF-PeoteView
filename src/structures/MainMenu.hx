@@ -14,7 +14,7 @@ import system.MenuInput;
 	@since Development
 **/
 @:publicFields
-class MainMenu implements MenuInput {
+class MainMenu extends MenuInput {
 	inline static var fnfpVer = '0.94';
 
 	static var optionAnims:Array<String> = [
@@ -37,9 +37,6 @@ class MainMenu implements MenuInput {
 	static var watermarkTxt:Text;
 
 	static var nav(default, null):Navigation = new Navigation();
-
-	var disposed:Bool = false;
-	var actions(default, null):ActionMap;
 
 	function new() {}
 
@@ -154,7 +151,7 @@ class MainMenu implements MenuInput {
 		return ((150 - (24 * (optionAnims.length - 1))) + (125 * i)) - (6 * Math.min(o, optionAnims.length - 2));
 	}
 
-	function update(deltaTime:Float) {
+	override function update(deltaTime:Float) {
 		if (optionBuf == null)
 			return; // stupid
 
@@ -267,15 +264,7 @@ class MainMenu implements MenuInput {
 
 	// --- Routed input (MenuInput) ---
 
-	public function onKeyDown(key:KeyCode, modifier:KeyModifier):Bool {
-		return false;
-	}
-
-	public function onKeyUp(key:KeyCode, modifier:KeyModifier):Bool {
-		return false;
-	}
-
-	public function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
+	public override function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
 		if (disposed || optionBuf == null || view == null)
 			return false;
 		var peoteView = Main.current.peoteView;
@@ -293,7 +282,7 @@ class MainMenu implements MenuInput {
 		return false;
 	}
 
-	public function onMouseUp(x:Float, y:Float, button:MouseButton):Bool {
+	public override function onMouseUp(x:Float, y:Float, button:MouseButton):Bool {
 		if (disposed || optionBuf == null || view == null)
 			return false;
 		var peoteView = Main.current.peoteView;
@@ -314,11 +303,7 @@ class MainMenu implements MenuInput {
 		return false;
 	}
 
-	public function onMouseMove(x:Float, y:Float):Bool {
-		return false;
-	}
-
-	public function onMouseWheel(deltaX:Float, deltaY:Float, mode:MouseWheelMode):Bool {
+	public override function onMouseWheel(deltaX:Float, deltaY:Float, mode:MouseWheelMode):Bool {
 		updateMenuOptions_mouse(deltaX, deltaY, mode);
 		return false;
 	}
@@ -329,7 +314,7 @@ class MainMenu implements MenuInput {
 		Main.switchState(EDITOR_MENU);
 	}
 
-	function dispose() {
+	override function dispose() {
 		// Input is unbound by the state machine when this menu loses focus.
 
 		watermarkTxt.removeProgram();

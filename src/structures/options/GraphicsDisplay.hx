@@ -3,7 +3,7 @@ package structures.options;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 import lime.ui.MouseButton;
-import structures.options.OptionsDisplay.OptionsSubDisplay;
+import structures.options.OptionsSubDisplay;
 #if LIME_840
 import lime.app.VSyncMode;
 #end
@@ -15,7 +15,7 @@ import lime.app.VSyncMode;
 	@since Development
 **/
 @:publicFields
-class GraphicsDisplay implements OptionsSubDisplay {
+class GraphicsDisplay extends OptionsSubDisplay {
 	public static var graphicsStr(default, null):Array<String> = ["resolution", "fullscreen", "vsync", "frameRate", "compressTextures"];
 
 	// Descriptions for each graphics option, in the same order.
@@ -43,11 +43,6 @@ class GraphicsDisplay implements OptionsSubDisplay {
 	var options(default, null):Array<OptionsSprite> = [];
 	var alphabet(default, null):FreeplayAlphabet; // shared instance
 	var infoText(default, null):Text; // shared description text (owned by OptionsDisplay)
-
-	var xLerp:Float = 0.0;
-	var curSelectedLerp:Float = 0.0;
-	var curSelectedTarget:Float = 0.0;
-	var alphaLerp:Float = 0.0;
 
 	var closed:Bool;
 
@@ -100,7 +95,7 @@ class GraphicsDisplay implements OptionsSubDisplay {
 		dragVelocity = 0.0;
 	}
 
-	function update(deltaTime:Float) {
+	override function update(deltaTime:Float) {
 		if (alphabet == null || closed)
 			return;
 
@@ -170,7 +165,7 @@ class GraphicsDisplay implements OptionsSubDisplay {
 
 	// -------------------- MOUSE HANDLERS (routed by OptionsMenu) --------------------
 
-	public function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
+	public override function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
 		if (closed || alphabet == null)
 			return false;
 		switch (button) {
@@ -188,7 +183,7 @@ class GraphicsDisplay implements OptionsSubDisplay {
 		return false;
 	}
 
-	public function onMouseUp(x:Float, y:Float, button:MouseButton):Bool {
+	public override function onMouseUp(x:Float, y:Float, button:MouseButton):Bool {
 		if (button != LEFT)
 			return false;
 		if (closed || alphabet == null)
@@ -211,7 +206,7 @@ class GraphicsDisplay implements OptionsSubDisplay {
 		return true;
 	}
 
-	public function onMouseMove(x:Float, y:Float):Bool {
+	public override function onMouseMove(x:Float, y:Float):Bool {
 		if (!isDragging || closed || alphabet == null)
 			return false;
 
@@ -397,12 +392,12 @@ class GraphicsDisplay implements OptionsSubDisplay {
 		// Do not dispose infoText or alphabet – they are shared.
 	}
 
-	// IAlphabetScrollHost implementation
-	public function alphabetListLength():Int {
+	// AlphabetScrollHost implementation
+	public override function alphabetListLength():Int {
 		return graphicsStr.length;
 	}
 
-	public function alphabetItemTitle(index:Int):String {
+	public override function alphabetItemTitle(index:Int):String {
 		if (index < 0 || index >= graphicsStr.length)
 			return "";
 		if (index >= _titleCache.length || _titleCache[index] == null) {
@@ -420,7 +415,7 @@ class GraphicsDisplay implements OptionsSubDisplay {
 	/**
 		VSync is only supported on lime 8.4.0+, so gray it out on older limes.
 	**/
-	public function alphabetItemDisabled(index:Int):Bool {
+	public override function alphabetItemDisabled(index:Int):Bool {
 		#if LIME_840
 		return false;
 		#else

@@ -1,7 +1,7 @@
 package structures.options;
 
 import lime.ui.MouseButton;
-import structures.options.OptionsDisplay.OptionsSubDisplay;
+import structures.options.OptionsSubDisplay;
 
 /**
 	Handles the display and interaction for preferences options in the options menu.
@@ -9,7 +9,7 @@ import structures.options.OptionsDisplay.OptionsSubDisplay;
 	@since Development
 **/
 @:publicFields
-class PreferencesDisplay implements OptionsSubDisplay {
+class PreferencesDisplay extends OptionsSubDisplay {
 	public static var prefsStr(default, null):Array<String> = [
 		"downScroll",
 		"hideHUD",
@@ -35,11 +35,6 @@ class PreferencesDisplay implements OptionsSubDisplay {
 	var options(default, null):Array<OptionsSprite> = [];
 	var alphabet(default, null):FreeplayAlphabet; // shared instance
 	var infoText(default, null):Text; // shared description text (owned by OptionsDisplay)
-
-	var xLerp:Float = 0.0;
-	var curSelectedLerp:Float = 0.0;
-	var curSelectedTarget:Float = 0.0;
-	var alphaLerp:Float = 0.0;
 
 	var closed:Bool;
 
@@ -91,7 +86,7 @@ class PreferencesDisplay implements OptionsSubDisplay {
 		dragVelocity = 0.0;
 	}
 
-	function update(deltaTime:Float) {
+	override function update(deltaTime:Float) {
 		if (alphabet == null || closed)
 			return;
 
@@ -152,7 +147,7 @@ class PreferencesDisplay implements OptionsSubDisplay {
 
 	// -------------------- MOUSE HANDLERS (routed by OptionsMenu) --------------------
 
-	public function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
+	public override function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
 		if (closed || alphabet == null)
 			return false;
 		switch (button) {
@@ -170,7 +165,7 @@ class PreferencesDisplay implements OptionsSubDisplay {
 		return false;
 	}
 
-	public function onMouseUp(x:Float, y:Float, button:MouseButton):Bool {
+	public override function onMouseUp(x:Float, y:Float, button:MouseButton):Bool {
 		if (button != LEFT)
 			return false;
 		if (closed || alphabet == null)
@@ -193,7 +188,7 @@ class PreferencesDisplay implements OptionsSubDisplay {
 		return true;
 	}
 
-	public function onMouseMove(x:Float, y:Float):Bool {
+	public override function onMouseMove(x:Float, y:Float):Bool {
 		if (!isDragging || closed || alphabet == null)
 			return false;
 
@@ -272,12 +267,12 @@ class PreferencesDisplay implements OptionsSubDisplay {
 		// Do not dispose infoText or alphabet – they are shared.
 	}
 
-	// IAlphabetScrollHost implementation
-	public function alphabetListLength():Int {
+	// AlphabetScrollHost implementation
+	public override function alphabetListLength():Int {
 		return prefsStr.length;
 	}
 
-	public function alphabetItemTitle(index:Int):String {
+	public override function alphabetItemTitle(index:Int):String {
 		if (index < 0 || index >= prefsStr.length)
 			return "";
 		if (index >= _titleCache.length || _titleCache[index] == null) {
@@ -295,10 +290,6 @@ class PreferencesDisplay implements OptionsSubDisplay {
 			_titleCache[index] = str;
 		}
 		return _titleCache[index];
-	}
-
-	public function alphabetItemDisabled(index:Int):Bool {
-		return false;
 	}
 
 	function getDisplayName(prefName:String):String {

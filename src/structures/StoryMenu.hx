@@ -8,32 +8,17 @@ import lime.ui.MouseWheelMode;
 import system.MenuInput;
 
 @:publicFields
-class StoryMenu implements MenuInput {
+class StoryMenu extends MenuInput {
 	static var display(default, null):CustomDisplay;
 
 	var chaptersAvailable(default, null):Array<Int> = [];
 
-	var active(default, null):Bool;
-	var opened(default, null):Bool;
-
 	var nav(default, null):Navigation = new Navigation();
-
-	var actions(default, null):ActionMap;
 
 	function new() {}
 
 	static function init(disp:CustomDisplay):Void {
 		display = disp;
-	}
-
-	function update(deltaTime:Float) {}
-
-	function open() {
-		active = opened = true;
-	}
-
-	function close() {
-		opened = false;
 	}
 
 	function back(isDown:Bool, param:Int) {
@@ -59,37 +44,5 @@ class StoryMenu implements MenuInput {
 	function enter(isDown:Bool, param:Int) {
 		if (!isDown)
 			return;
-	}
-
-	function shutDown() {
-		active = false;
-	}
-
-	function dispose() {}
-
-	// --- Routed input (MenuInput) ---
-
-	public function onKeyDown(key:KeyCode, modifier:KeyModifier):Bool {
-		return false;
-	}
-
-	public function onKeyUp(key:KeyCode, modifier:KeyModifier):Bool {
-		return false;
-	}
-
-	public function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
-		return false;
-	}
-
-	public function onMouseUp(x:Float, y:Float, button:MouseButton):Bool {
-		return false;
-	}
-
-	public function onMouseMove(x:Float, y:Float):Bool {
-		return false;
-	}
-
-	public function onMouseWheel(deltaX:Float, deltaY:Float, mode:MouseWheelMode):Bool {
-		return false;
 	}
 }

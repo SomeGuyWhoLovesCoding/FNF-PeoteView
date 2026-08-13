@@ -2,7 +2,7 @@ package structures.options;
 
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
-import structures.options.OptionsDisplay.OptionsSubDisplay;
+import structures.options.OptionsSubDisplay;
 
 /**
 	Handles the display and interaction for the controls options in the options menu.
@@ -11,7 +11,7 @@ import structures.options.OptionsDisplay.OptionsSubDisplay;
 	@since 0.94
 **/
 @:publicFields
-class ControlsDisplay implements OptionsSubDisplay {
+class ControlsDisplay extends OptionsSubDisplay {
 	public static var controlLabels(default, null):Array<String> = [
 		"UI Left",
 		"UI Down",
@@ -91,11 +91,6 @@ class ControlsDisplay implements OptionsSubDisplay {
 
 	var _lastInfoText:String = null; // last string pushed to the shared infoText
 
-	var xLerp:Float = 0.0;
-	var curSelectedLerp:Float = 0.0;
-	var curSelectedTarget:Float = 0.0;
-	var alphaLerp:Float = 0.0;
-
 	var closed:Bool;
 
 	function new(parent:OptionsMenu, alphabet:FreeplayAlphabet, infoText:Text) {
@@ -148,7 +143,7 @@ class ControlsDisplay implements OptionsSubDisplay {
 		Main.current.playScrollSound();
 	}
 
-	function update(deltaTime:Float) {
+	override function update(deltaTime:Float) {
 		if (alphabet == null || closed)
 			return;
 
@@ -550,11 +545,11 @@ class ControlsDisplay implements OptionsSubDisplay {
 		// Do not dispose infoText or alphabet – they are shared.
 	}
 
-	function alphabetListLength():Int {
+	override function alphabetListLength():Int {
 		return controlLabels.length;
 	}
 
-	function alphabetItemTitle(index:Int):String {
+	override function alphabetItemTitle(index:Int):String {
 		if (index < 0 || index >= controlLabels.length)
 			return "";
 		if (index < controlLabels.length) {
@@ -570,25 +565,7 @@ class ControlsDisplay implements OptionsSubDisplay {
 			}
 			return str;
 		}
-		return controlLabels[index];
-	}
-
-	function alphabetItemDisabled(index:Int):Bool {
-		return false;
-	}
-
-	// ControlsDisplay is keyboard-only; these are required by OptionsSubDisplay
-	// but never consume mouse events.
-	public function onMouseDown(x:Float, y:Float, button:lime.ui.MouseButton):Bool {
-		return false;
-	}
-
-	public function onMouseUp(x:Float, y:Float, button:lime.ui.MouseButton):Bool {
-		return false;
-	}
-
-	public function onMouseMove(x:Float, y:Float):Bool {
-		return false;
+return controlLabels[index];
 	}
 
 	function keyNameForIndex(index:Int):String {

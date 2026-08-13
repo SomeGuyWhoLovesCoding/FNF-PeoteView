@@ -15,12 +15,9 @@ import system.MenuInput;
 	@since Development
 **/
 @:publicFields
-class FreeplayMenu implements MenuInput {
+class FreeplayMenu extends MenuInput {
 	//////////////////////// MAIN ////////////////////////
 	static var display(default, null):CustomDisplay;
-
-	var active(default, null):Bool;
-	var opened(default, null):Bool;
 
 	var freeplayScreen(default, null):FreeplayScreen;
 
@@ -39,7 +36,6 @@ class FreeplayMenu implements MenuInput {
 	private static inline var DRAG_THRESHOLD:Float = 1.0; // pixels per nav tick
 
 	//////////////////////// THE REST ////////////////////////
-	var actions(default, null):ActionMap;
 
 	function new() {
 		freeplayScreen = new FreeplayScreen(this, 'chapter1');
@@ -70,7 +66,7 @@ class FreeplayMenu implements MenuInput {
 		display = disp;
 	}
 
-	function render(deltaTime:Float) {
+	override function render(deltaTime:Float) {
 		if (!isDragging && Math.abs(dragVelocity) > 0.01) {
 			freeplayScreen.curSelectedTarget += (dragVelocity * deltaTime) / (156.0 / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT));
 			freeplayScreen.curSelectedTarget = Math.max(0, Math.min(freeplayScreen.songsAvailable.length - 1, freeplayScreen.curSelectedTarget));
@@ -84,7 +80,7 @@ class FreeplayMenu implements MenuInput {
 		freeplayScreen.render(deltaTime);
 	}
 
-	function open() {
+	override function open() {
 		Main.current.popupFreeplayMenu();
 
 		opened = active = true;
@@ -102,7 +98,7 @@ class FreeplayMenu implements MenuInput {
 		freeplayScreen.reload(newChapter);
 	}
 
-	function close() {
+	override function close() {
 		opened = false;
 
 		var mm = Main.current.mainMenu;
@@ -155,15 +151,7 @@ class FreeplayMenu implements MenuInput {
 
 	// --- Routed input (MenuInput) ---
 
-	public function onKeyDown(key:KeyCode, modifier:KeyModifier):Bool {
-		return false;
-	}
-
-	public function onKeyUp(key:KeyCode, modifier:KeyModifier):Bool {
-		return false;
-	}
-
-	public function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
+	public override function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
 		if (!active)
 			return false;
 		switch (button) {
@@ -184,7 +172,7 @@ class FreeplayMenu implements MenuInput {
 		return false;
 	}
 
-	public function onMouseUp(x:Float, y:Float, button:MouseButton):Bool {
+	public override function onMouseUp(x:Float, y:Float, button:MouseButton):Bool {
 		if (!active)
 			return false;
 		if (button != LEFT)
@@ -200,7 +188,7 @@ class FreeplayMenu implements MenuInput {
 		return true;
 	}
 
-	public function onMouseMove(x:Float, y:Float):Bool {
+	public override function onMouseMove(x:Float, y:Float):Bool {
 		if (!active || !isDragging)
 			return false;
 
@@ -222,7 +210,7 @@ class FreeplayMenu implements MenuInput {
 		return true;
 	}
 
-	public function onMouseWheel(deltaX:Float, deltaY:Float, mode:MouseWheelMode):Bool {
+	public override function onMouseWheel(deltaX:Float, deltaY:Float, mode:MouseWheelMode):Bool {
 		if (!active)
 			return false;
 		nav.scroll(-Math.floor(deltaY));
@@ -231,18 +219,19 @@ class FreeplayMenu implements MenuInput {
 		return false;
 	}
 
-	function shutDown() {
+	override function shutDown() {
 		freeplayScreen.shutDown();
 
 		active = false;
 		Main.current.removeFreeplayMenu();
 	}
 
-	function dispose() {
+	override function dispose() {
 		close();
 		freeplayScreen.unload();
 
 		active = false;
+		disposed = true;
 		Main.current.removeFreeplayMenu();
 	}
 }

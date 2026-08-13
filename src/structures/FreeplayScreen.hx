@@ -9,7 +9,7 @@ import utils.Tools;
 	@since Development
 **/
 @:publicFields
-class FreeplayScreen implements IAlphabetScrollHost {
+class FreeplayScreen extends AlphabetScrollHost {
 	private static var display(get, never):CustomDisplay;
 
 	inline private static function get_display() {
@@ -50,15 +50,15 @@ class FreeplayScreen implements IAlphabetScrollHost {
 		chapter = chapterName;
 	}
 
-	function alphabetListLength():Int {
+	override function alphabetListLength():Int {
 		return songsAvailable.length;
 	}
 
-	function alphabetItemTitle(index:Int):String {
+	override function alphabetItemTitle(index:Int):String {
 		return songsAvailable[index].title;
 	}
 
-	function alphabetItemDisabled(index:Int):Bool {
+	override function alphabetItemDisabled(index:Int):Bool {
 		if (index < 0 || index >= songCompleteness.length)
 			return true;
 		return !songCompleteness[index];
@@ -183,12 +183,7 @@ class FreeplayScreen implements IAlphabetScrollHost {
 		disposed = true;
 	}
 
-	var alphaLerp:Float = 0.0;
-	var curSelectedLerp:Float = 0.0;
-	var xLerp:Float = 0.0;
 	var xLerpPrev:Float = 0.0;
-
-	var curSelectedTarget:Float = 0.0;
 
 	// --- Render helpers ---
 

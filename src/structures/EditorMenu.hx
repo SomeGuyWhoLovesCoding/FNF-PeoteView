@@ -15,7 +15,7 @@ import system.MenuInput;
 	@since 0.94
 **/
 @:publicFields
-class EditorMenu implements MenuInput {
+class EditorMenu extends MenuInput {
 	static var optionLabels:Array<String> = ['Noteskin Editor', 'Chart Editor', 'Mod Manager'];
 
 	var display:CustomDisplay;
@@ -35,9 +35,6 @@ class EditorMenu implements MenuInput {
 	// Lerp state for smooth markup movement
 	static var markupYLerp:Float = 0.0;
 	static var alphaLerps:Array<Float> = [];
-
-	var disposed:Bool = false;
-	var actions(default, null):ActionMap;
 
 	function new() {}
 
@@ -142,7 +139,7 @@ class EditorMenu implements MenuInput {
 
 	// ── Update ────────────────────────────────────────────────────────────
 
-	function update(deltaTime:Float) {
+	override function update(deltaTime:Float) {
 		var t = Math.min(deltaTime * 0.0115, 1);
 		if (t == 1)
 			t = (1 / lime.app.Application.current.window.frameRate) * 0.0115;
@@ -196,7 +193,7 @@ class EditorMenu implements MenuInput {
 
 	// ── Routed input (MenuInput) ──────────────────────────────────────────
 
-	public function onKeyDown(key:KeyCode, modifier:KeyModifier):Bool {
+	public override function onKeyDown(key:KeyCode, modifier:KeyModifier):Bool {
 		if (disposed)
 			return false;
 
@@ -208,29 +205,9 @@ class EditorMenu implements MenuInput {
 		return false;
 	}
 
-	public function onKeyUp(key:KeyCode, modifier:KeyModifier):Bool {
-		return false;
-	}
-
-	public function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
-		return false;
-	}
-
-	public function onMouseUp(x:Float, y:Float, button:MouseButton):Bool {
-		return false;
-	}
-
-	public function onMouseMove(x:Float, y:Float):Bool {
-		return false;
-	}
-
-	public function onMouseWheel(deltaX:Float, deltaY:Float, mode:MouseWheelMode):Bool {
-		return false;
-	}
-
 	// ── Dispose ───────────────────────────────────────────────────────────
 
-	function dispose() {
+	override function dispose() {
 		// Input is unbound by the state machine when this menu loses focus.
 
 		for (txt in optionTexts)
