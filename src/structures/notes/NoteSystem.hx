@@ -22,21 +22,19 @@ class NoteSystem {
 	static var SUSTAIN_TAIL = 20;
 	static var SUSTAIN_TAIL_END = 25;
 
-	static var NOTE_HOLD_THRESHOLD = 17;
-	static var NOTE_HOLD_THRESHOLD_SUSTAIN = 18;
-
-	// === Dynamic hold-threshold tuning ===
-	// Absolute floor for the dynamic threshold so the confirm window is never
-	// reduced to zero (which would cause the receptor to never visibly "press").
-	static var NOTE_HOLD_THRESHOLD_MIN = 4;
-	// Safety buffer (ms) reserved between the end of this note's hold and the
-	// arrival of the next same-receptor note, so the receptor has time to
-	// visually reset (return to idle) before being pressed again.
-	static var NOTE_HOLD_RESET_BUFFER = 5;
-	// Multiplier on `baseThreshold` used to define what counts as "far enough
-	// in time" that no shortening is needed. At and beyond this gap the dynamic
-	// threshold equals the base threshold.
-	static var NOTE_HOLD_TIME_FAR_FACTOR = 4.0;
+	// === Confirm-duration tuning (human receptor timing) ===
+	// Base (ms) a tap receptor holds its "confirm" pose for a single isolated
+	// note — roughly how long a human key press reads on screen.
+	static var TAP_CONFIRM_BASE = 90;
+	// Absolute floor for the confirm window so the pose is never reduced to
+	// zero (which would make the receptor appear to never press).
+	static var TAP_CONFIRM_MIN = 6;
+	// Base (ms) the receptor holds the press pose after a sustain ends, before
+	// returning to idle.
+	static var SUSTAIN_TAIL_BASE = 30;
+	// Safety buffer (ms) reserved so the receptor can visibly reset (return to
+	// idle) before the next same-receptor note is pressed.
+	static var CONFIRM_RESET_BUFFER = 5;
 
 	static function init() {
 		if (NoteskinManager.textureCache == null) {
@@ -78,6 +76,12 @@ class NoteSystem {
 	var notePool(default, null):NotePool;
 	var virtualNoteBuffer(default, null):NoteVB;
 
+	// Precomputed confirm window (ms) per note id. Built once per chart via
+	// `buildConfirmWindows`; only depends on static chart layout, so it never
+	// needs to be recomputed during playback. `null` marks "not built yet".
+	var confirmWindowTable:Map<Int64, Float> = null;
+	var confirmWindowTableBuiltFor:Int64 = -1;
+
 	static var typeToHandle:Array<NoteskinHandle> = [];
 
 	var parent(default, null):PlayField;
@@ -118,6 +122,8 @@ class NoteSystem {
 		}
 
 		setScrollSpeed(Chart.header.speed);
+
+		buildConfirmWindows();
 
 		update(MetaNote.floatToMetaNotePosition(parent.songPosition));
 	}
@@ -180,124 +186,100 @@ class NoteSystem {
 	}
 
 	/**
-	 * Computes a dynamic note hold threshold based on:
-	 *   1. How close the next note is in time (time proximity)
-	 *   2. How close the next note's index (lane) is to the current note's index (index proximity)
+	 * Recomputes the confirm window for every note into `confirmWindowTable`.
 	 *
-	 * The base threshold is shortened when BOTH factors are high — i.e. when the
-	 * next note is about to arrive soon AND it lives on a nearby lane. This lets
-	 * the receptor visually reset (return to idle) before being pressed again,
-	 * instead of holding the "confirm" pose across the gap.
+	 * Unlike the old per-frame forward scan, this runs exactly once per chart
+	 * (charts are static during playback), and the confirm timing becomes a
+	 * single O(1) table lookup at hit time.
 	 *
-	 * Rules:
-	 *   - If there is no next note, the base threshold is returned unchanged.
-	 *   - For sustain notes, the receptor is already held for `sustainDuration`
-	 *     ms, so the available time for the post-sustain hold is
-	 *     `timeGap - sustainDuration`. If that is non-positive (overlap/chord),
-	 *     the minimum threshold is returned.
-	 *   - `timeProximity` maps `availableTime` from `[0, baseThreshold * FAR_FACTOR]`
-	 *     onto `[1, 0]`. Beyond that range, time proximity is 0 (no shortening).
-	 *   - `indexProximity = 1 / (1 + |Δindex|)`: 1.0 same lane, 0.5 adjacent, 0.33
-	 *     two-away, etc.
-	 *   - The combined `proximity = timeProximity * indexProximity` interpolates
-	 *     the threshold between `baseThreshold` and `NOTE_HOLD_THRESHOLD_MIN`.
-	 *   - A hard cap is applied based on the next note on the SAME LANE (scanning 
-	 *     forward past any interleaved notes): the threshold can never exceed
-	 *     `availableTime - NOTE_HOLD_RESET_BUFFER`, guaranteeing the receptor
-	 *     has time to reset before the next press.
+	 * The model for taps:
+	 *   - An isolated tap holds the "confirm" pose for `TAP_CONFIRM_BASE` ms,
+	 *     which reads like a human key press.
+	 *   - The ONLY thing that can force it shorter is the next note on the
+	 *     SAME receptor (same strumline + same lane). If that note arrives
+	 *     sooner, the confirm is squeezed to end `CONFIRM_RESET_BUFFER` ms
+	 *     before it, so the receptor visibly returns to idle before the next
+	 *     press. It is never reduced below `TAP_CONFIRM_MIN`.
+	 *   - Notes on other lanes/strumlines are irrelevant to this receptor's
+	 *     reset timing, so they no longer influence the window at all (the old
+	 *     time/index-proximity heuristic is gone).
 	 *
-	 * @param currentNote      The note currently being processed
-	 * @param _id              Global index of `currentNote` in the `File` array
-	 * @param baseThreshold    The default threshold that would be used statically
-	 *                         (`NOTE_HOLD_THRESHOLD` or `NOTE_HOLD_THRESHOLD_SUSTAIN`)
-	 * @param sustainDuration  Duration (ms) of the sustain, if this is a sustain
-	 *                         note; otherwise 0.
-	 * @return                 Dynamic threshold in ms.
+	 * For sustains the confirm lasts the whole `duration`, plus a short
+	 * post-sustain tail (`SUSTAIN_TAIL_BASE`), clamped the same way against
+	 * the next same-receptor note.
 	 */
-	function computeDynamicHoldThreshold(currentNote:MetaNote, _id:Int64, baseThreshold:Float, sustainDuration:Float = 0):Float {
+	function buildConfirmWindows() {
 		var len = File.getLength();
-		var nextId = _id + 1;
+		confirmWindowTableBuiltFor = len;
 
-		// No next note — nothing to scale against, use the full base threshold.
-		if (nextId >= len)
-			return baseThreshold;
+		confirmWindowTable = new Map<Int64, Float>();
+		confirmWindowTable.clear();
 
-		var nextNote = File.getNote(nextId);
+		var laneCount = strumlines.length;
+		var lastIdByReceptor = new Map<Int, Int64>();
+		var lastNoteByReceptor = new Map<Int, MetaNote>();
 
-		// Time gap (ms) between the start of this note and the start of the next.
-		var timeGapMs = MetaNote.metaNotePositionToSongTime(nextNote.position - currentNote.position);
+		var i:Int64 = 0;
+		while (i < len) {
+			var note = File.getNote(i);
+			var lane = note.type % laneCount;
+			var receptorKey = lane * 256 + note.index;
 
-		// For sustain notes, the receptor is held for `sustainDuration` ms first,
-		// so the time available for the *post-hold* threshold is reduced.
-		var availableTime = timeGapMs - sustainDuration;
-
-		// Chords / overlapping notes — no room to hold; collapse to the minimum.
-		if (availableTime <= 0)
-			return NOTE_HOLD_THRESHOLD_MIN;
-
-		// === Factor 1: time proximity ===
-		// 1.0 = next note is right on top of us, 0.0 = next note is far away.
-		var farRef = baseThreshold * NOTE_HOLD_TIME_FAR_FACTOR;
-		var timeProximity:Float = Math.max(0.0, 1.0 - (availableTime / farRef));
-
-		// === Factor 2: index proximity ===
-		// 1.0 = same lane, 0.5 = adjacent lane, 0.33 = two-away, etc.
-		var indexGap = Math.abs(nextNote.index - currentNote.index);
-		var indexProximity:Float = 1.0 / (1.0 + indexGap);
-
-		// Combined proximity — only shorten when both factors are non-trivial.
-		var proximity = indexProximity * timeProximity;
-
-		// Interpolate between the base threshold and the minimum.
-		var dynamicThreshold = baseThreshold - (baseThreshold - NOTE_HOLD_THRESHOLD_MIN) * proximity;
-
-		// === Hard cap for same-lane successors ===
-		// We must scan forward to find the next note on the SAME LANE, because
-		// the immediate next note might be on a different lane (e.g. in a jack
-		// with interleaved notes). If we only check the immediate next note,
-		// the hard cap would be skipped, causing the receptor to hold across
-		// the jack and feel like a single long note.
-		//
-		// We only need to scan notes that arrive within the maximum possible
-		// threshold window. Beyond this, the hard cap cannot possibly reduce
-		// the dynamicThreshold (since it never exceeds baseThreshold).
-		var maxScanGapMs = baseThreshold + sustainDuration + NOTE_HOLD_RESET_BUFFER + 1.0;
-		var nextSameLaneId = nextId;
-		var foundSameLane = false;
-		var sameLaneTimeGap = 0.0;
-
-		while (nextSameLaneId < len) {
-			var n = File.getNote(nextSameLaneId);
-			var gapMs = MetaNote.metaNotePositionToSongTime(n.position - currentNote.position);
-
-			// Stop scanning if we've passed the window where the cap could matter
-			if (gapMs >= maxScanGapMs) {
-				break;
+			var prevId = lastIdByReceptor.get(receptorKey);
+			if (prevId != null) {
+				var prevNote = lastNoteByReceptor.get(receptorKey);
+				var gapMs = MetaNote.metaNotePositionToSongTime(note.position - prevNote.position);
+				confirmWindowTable.set(prevId, prevNote.duration != 0
+					? computeConfirmWindowSustain(prevNote.duration, gapMs)
+					: computeConfirmWindowTap(gapMs));
 			}
 
-			if (n.index == currentNote.index) {
-				foundSameLane = true;
-				sameLaneTimeGap = gapMs;
-				break;
-			}
-			nextSameLaneId++;
+			// Default for this note: no (known) successor yet → base window.
+			// Overwritten above when its own successor is found later.
+			confirmWindowTable.set(i, note.duration != 0
+				? computeConfirmWindowSustain(note.duration, Math.POSITIVE_INFINITY)
+				: TAP_CONFIRM_BASE);
+
+			lastIdByReceptor.set(receptorKey, i);
+			lastNoteByReceptor.set(receptorKey, note);
+			i++;
 		}
+	}
 
-		if (foundSameLane) {
-			var sameLaneAvailableTime = sameLaneTimeGap - sustainDuration;
+	/**
+	 * Tap confirm window given the ms until the next note on the same receptor.
+	 * `gapMs == POSITIVE_INFINITY` means no successor — use the natural base.
+	 */
+	inline function computeConfirmWindowTap(gapMs:Float):Float {
+		if (gapMs >= TAP_CONFIRM_BASE + CONFIRM_RESET_BUFFER)
+			return TAP_CONFIRM_BASE;
+		return Math.max(TAP_CONFIRM_MIN, gapMs - CONFIRM_RESET_BUFFER);
+	}
 
-			if (sameLaneAvailableTime > 0) {
-				var maxThreshold = Math.max(NOTE_HOLD_THRESHOLD_MIN, sameLaneAvailableTime - NOTE_HOLD_RESET_BUFFER);
-				if (dynamicThreshold > maxThreshold) {
-					dynamicThreshold = maxThreshold;
-				}
-			} else {
-				// Overlapping same-lane notes (shouldn't happen, but handle gracefully)
-				dynamicThreshold = NOTE_HOLD_THRESHOLD_MIN;
-			}
+	/**
+	 * Sustain confirm window: full `duration` plus a post-sustain tail, clamped
+	 * so the tail ends `CONFIRM_RESET_BUFFER` ms before the next same-receptor
+	 * note (or uses the natural base tail when there is none).
+	 */
+	inline function computeConfirmWindowSustain(duration:Float, gapMs:Float):Float {
+		var tail:Float;
+		if (gapMs >= duration + SUSTAIN_TAIL_BASE + CONFIRM_RESET_BUFFER) {
+			tail = SUSTAIN_TAIL_BASE;
+		} else {
+			tail = Math.max(TAP_CONFIRM_MIN, (gapMs - duration) - CONFIRM_RESET_BUFFER);
 		}
+		return duration + tail;
+	}
 
-		return dynamicThreshold;
+	/**
+	 * O(1) confirm window for a note id. Rebuilds the table lazily if the chart
+	 * was remapped/edited since it was built.
+	 */
+	inline function getConfirmWindow(_id:Int64):Float {
+		if (confirmWindowTable == null || confirmWindowTableBuiltFor != File.getLength())
+			buildConfirmWindows();
+		var v = confirmWindowTable.get(_id);
+		return v == null ? TAP_CONFIRM_BASE : v;
 	}
 
 	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64):VirtualNote {
@@ -412,14 +394,12 @@ class NoteSystem {
 
 				receptor.confirmTimer.startTime = parent.songPosition - offset; // don't do MetaNote.metaNotePositionToSongTime(position). That doesn't account for latency
 
-				// Dynamic hold threshold: scans forward for the next same-receptor note
-				// and shortens the confirm window the closer that note is in time, so
-				// the receptor can visually reset before the next press instead of
-				// holding across the gap.
-				var baseThreshold = sustainExists ? NOTE_HOLD_THRESHOLD_SUSTAIN : NOTE_HOLD_THRESHOLD;
-				var dynamicThreshold = computeDynamicHoldThreshold(note, _id, baseThreshold, sustainExists ? duration : 0);
-
-				var confirmWindow = sustainExists ? duration + dynamicThreshold : dynamicThreshold;
+				// Precomputed confirm window (compute-once): the tap/sustain model
+				// and the next same-receptor note were resolved when the chart was
+				// loaded. Shortening the closer the next note is in time lets the
+				// receptor visually reset before the next press instead of holding
+				// the confirm pose across the gap.
+				var confirmWindow = getConfirmWindow(_id);
 				if (sustainExists)
 					receptor.confirmTimer.tailTime = receptor.confirmTimer.startTime + duration - (SUSTAIN_TAIL + SUSTAIN_TAIL_END);
 				receptor.confirmTimer.endTime = receptor.confirmTimer.startTime + confirmWindow;

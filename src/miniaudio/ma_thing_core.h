@@ -1338,8 +1338,10 @@ public:
         double rate = lastQueryPlaybackRate.load(std::memory_order_relaxed);
         
         if (baseFrames == 0 && baseTimeNs == 0) {
-            // First call - initialize anchor from callback frame counter
-            ma_uint64 frames = totalFramesProcessed.load(std::memory_order_relaxed);
+            // First call - initialize anchor from the real consumed position.
+            // (totalFramesProcessed is wall-clock only and cumulative since
+            // load, so it is the wrong anchor after rate changes or seeks.)
+            ma_uint64 frames = streams[longestDecoderIndex].filePosition.load(std::memory_order_relaxed);
             lastQueriedFrames.store(frames, std::memory_order_relaxed);
             lastQuerySystemTime.store(
                 std::chrono::steady_clock::now().time_since_epoch().count(),
@@ -1537,8 +1539,19 @@ private:
 
         ma_uint64 newTotalFrames = sys->totalFramesProcessed.fetch_add(frameCount, std::memory_order_relaxed) + frameCount;
         
-        // Update prediction anchor every callback (~10ms) to prevent drift
-        sys->lastQueriedFrames.store(newTotalFrames, std::memory_order_relaxed);
+        // Update prediction anchor every callback (~10ms) to prevent drift.
+        // Anchor to the REAL consumed source position (longest stream's
+        // filePosition) instead of the wall-clock output counter
+        // (totalFramesProcessed). filePosition advances at `playbackRate`
+        // (a 2x rate consumes 2x source frames per callback) and is re-based
+        // to the target on every seek, so the smoothed time stays correct
+        // under BOTH rate changes and seeks. The old code anchored to
+        // totalFramesProcessed, which is always 1x (rate bug) and cumulative
+        // since load (seek bug, up to seconds of drift).
+        ma_uint64 anchorFrames = 0;
+        if (!sys->streams.empty())
+            anchorFrames = sys->streams[sys->longestDecoderIndex].filePosition.load(std::memory_order_relaxed);
+        sys->lastQueriedFrames.store(anchorFrames, std::memory_order_relaxed);
         sys->lastQuerySystemTime.store(
             std::chrono::steady_clock::now().time_since_epoch().count(),
             std::memory_order_relaxed
