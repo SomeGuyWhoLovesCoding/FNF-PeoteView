@@ -226,7 +226,7 @@ class Main extends Application {
 	// CONTROLS
 	var controls(default, null):Controls;
 
-	// This is a replacement for Application.current.window.onMouseDown as it's a rogue piece a shit I've noticed was especially targetable on hashlink where the freeplay mouse click bug arose
+	// This is a replacement for Application.current.window.onMouseDown because holy shit does it prevent any invisible crashes whatsoever
 	var mouseDown:(Float, Float, MouseButton) -> Void;
 
 	// NOW FOR THE SOUND EFFECTS
