@@ -14,9 +14,7 @@ import lime.ui.MouseWheelMode;
 	@since Development
 **/
 @:publicFields
-class PauseScreen {
-	var disposed(default, null):Bool = false;
-
+class PauseScreen extends GameState {
 	private static var display(default, null):CustomDisplay;
 	static var pauseBuf(default, null):Buffer<StoryModeSprite>;
 	static var pauseProg(default, null):CustomProgram;
@@ -27,7 +25,8 @@ class PauseScreen {
 	var pauseNav(default, null):Navigation = new Navigation();
 	var opened(default, null):Bool;
 	var atOptionsMenu(default, null):Bool;
-	var actions:ActionMap;
+
+	var popRequested:Bool = false;
 
 	static function init(disp:CustomDisplay) {
 		display = disp;
@@ -42,6 +41,8 @@ class PauseScreen {
 	}
 
 	function new(difficulty:Difficulty) {
+		persistent = true; // owned by PlayField; the machine pops it without disposing
+
 		var currentY = 200;
 		for (i in 0...4) {
 			var option = new StoryModeSprite();
@@ -70,12 +71,16 @@ class PauseScreen {
 	var alphaLerp:Float = 0.0;
 	var bgAlphaLerp:Float = 0.0;
 
-	function update(deltaTime:Float) {
+	override function update(deltaTime:Float) {
 		if (display == null)
 			return;
 
 		if (!opened && display.color.aF == 0) {
 			shutDown();
+			if (!popRequested) {
+				popRequested = true;
+				Main.current.stateMachine.popSubstate();
+			}
 			return;
 		}
 
@@ -110,26 +115,33 @@ class PauseScreen {
 	}
 
 	function down(isDown:Bool, param:Int) {
+		if (!opened)
+			return;
 		pauseNav.scroll(1);
 		pauseNav.resetIfOver(pauseOptions.length);
 		Main.current.playScrollSound();
 	}
 
 	function up(isDown:Bool, param:Int) {
+		if (!opened)
+			return;
 		pauseNav.scroll(-1);
 		pauseNav.resetIfUnder(pauseOptions.length - 1);
 		Main.current.playScrollSound();
 	}
 
 	function accept(isDown:Bool, param:Int) {
+		if (!opened)
+			return;
 		doIt();
 	}
 
 	function back(isDown:Bool, param:Int) {
-		if (Main.current.playField != null)
-			Main.current.playField.resume();
-		else
-			removeEvents();
+		if (!opened)
+			return;
+		var pf = Main.current.playField;
+		if (pf != null)
+			pf.resume();
 	}
 
 	function doIt() {
@@ -142,14 +154,15 @@ class PauseScreen {
 				Main.current.playScrollSound();
 				Main.current.optionsMenu.open();
 				atOptionsMenu = true;
-				removeEvents();
 			case 3: // EXIT
 				Main.current.playCancelSound();
 				Main.uponSongExit();
 		}
 	}
 
-	function mouseDown(x:Float, y:Float, button:MouseButton) {
+	override function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
+		if (!opened || disposed)
+			return false;
 		var peoteView = Main.current.peoteView;
 		x = display.localX(x, peoteView);
 		y = display.localY(y, peoteView);
@@ -159,24 +172,36 @@ class PauseScreen {
 					var option = pauseOptions[i];
 					if (x >= option.x && x <= option.x + option.w && y >= option.y && y <= option.y + option.h) {
 						pauseNav.setTo(i);
-						haxe.Timer.delay(doIt, 20);
-						return;
+						// doIt() is safe to call directly: every transition it
+						// triggers is queued by the state machine.
+						doIt();
+						return true;
 					}
 				}
 			case RIGHT:
 				back(true, 0);
+				return true;
 			default:
 		}
+		return false;
 	}
 
-	function moveOption_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
+	override function onMouseWheel(x:Float, y:Float, mouseWheelMode:MouseWheelMode):Bool {
+		if (!opened || disposed)
+			return false;
 		var peoteView = Main.current.peoteView;
 		pauseNav.scroll(-Math.floor(y));
 		pauseNav.resetIfBoth(pauseBuf.length - 1, pauseBuf.length - 2);
 		Main.current.playScrollSound();
+		return true;
+	}
+
+	override function onSubstateClosed(sub:GameState) {
+		atOptionsMenu = false;
 	}
 
 	function open() {
+		popRequested = false;
 		opened = true;
 
 		try {
@@ -197,45 +222,15 @@ class PauseScreen {
 			pauseBuf.addElement(diffText);
 		} catch (e) {}
 
-		haxe.Timer.delay(function() {
-			haxe.Timer.delay(addEvents, 1);
-		}, 1);
+		Main.current.stateMachine.pushSubstate(this);
 
 		if (!pauseProg.isIn(display)) {
 			display.addProgram(pauseProg);
 		}
 	}
 
-	var eventsActive(default, null):Bool = false;
-
-	function addEvents() {
-		if (eventsActive)
-			return;
-		eventsActive = true;
-		var window = lime.app.Application.current.window;
-		Main.current.controls.bindTo(actions);
-		window.onMouseDown.add(mouseDown);
-		window.onMouseWheel.add(moveOption_mouse);
-	}
-
-	function removeEvents() {
-		if (!eventsActive)
-			return;
-		eventsActive = false;
-		var window = lime.app.Application.current.window;
-		Main.current.controls.unBind();
-		window.onMouseDown.remove(mouseDown);
-		window.onMouseWheel.remove(moveOption_mouse);
-	}
-
-	inline function onOptionsMenuClose() {
-		atOptionsMenu = false;
-		haxe.Timer.delay(addEvents, 1);
-	}
-
 	function close() {
 		opened = false;
-		removeEvents();
 	}
 
 	function shutDown() {
@@ -257,7 +252,10 @@ class PauseScreen {
 		display.removeProgram(pauseProg);
 	}
 
-	function dispose() {
+	override function dispose() {
+		if (disposed)
+			return;
+
 		close();
 		shutDown();
 
@@ -273,6 +271,6 @@ class PauseScreen {
 			} catch (e) {}
 		}
 
-		disposed = true;
+		super.dispose();
 	}
 }

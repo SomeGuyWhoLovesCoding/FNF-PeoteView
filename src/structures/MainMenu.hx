@@ -11,7 +11,7 @@ import lime.ui.MouseWheelMode;
 	@since Development
 **/
 @:publicFields
-class MainMenu {
+class MainMenu extends GameState {
 	inline static var fnfpVer = '0.94';
 
 	static var optionAnims:Array<String> = [
@@ -35,18 +35,16 @@ class MainMenu {
 
 	static var nav(default, null):Navigation = new Navigation();
 
-	var disposed:Bool = false;
-	var actions:ActionMap;
+	function new(roof:CustomDisplay, display:CustomDisplay, view:CustomDisplay) {
+		this.roof = roof;
+		this.display = display;
+		this.view = view;
+	}
 
-	function new() {}
-
-	function init(roof:CustomDisplay, display:CustomDisplay, view:CustomDisplay) {
+	override function create() {
 		selectedAlpha = 1.0;
 		for (i in 0...alphaLerps.length)
 			alphaLerps[i] = 1.0;
-		this.display = display;
-		this.view = view;
-		this.roof = roof;
 
 		view.scroll.x = 0;
 		view.scroll.y = 0;
@@ -135,8 +133,6 @@ class MainMenu {
 			Controls.Action.UI_ACCEPT => {action: accept},
 			Controls.Action.GAME_DEBUG => {action: goToEditors}
 		];
-
-		Tools.forSync(addEvents);
 	}
 
 	static var optionYLerps:Array<Float> = [for (i in 0...5) 1];
@@ -153,7 +149,7 @@ class MainMenu {
 		return ((150 - (24 * (optionAnims.length - 1))) + (125 * i)) - (6 * Math.min(o, optionAnims.length - 2));
 	}
 
-	function update(deltaTime:Float) {
+	override function update(deltaTime:Float) {
 		if (optionBuf == null)
 			return; // stupid
 
@@ -231,6 +227,58 @@ class MainMenu {
 		Main.current.playScrollSound();
 	}
 
+	override function onMouseWheel(x:Float, y:Float, mouseWheelMode:MouseWheelMode):Bool {
+		if (disposed || optionBuf == null)
+			return false;
+		updateMenuOptions_mouse(x, y, mouseWheelMode);
+		return true;
+	}
+
+	override function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
+		if (disposed || optionBuf == null || view == null)
+			return false;
+		var peoteView = Main.current.peoteView;
+		x = view.localX(x, peoteView);
+		y = view.localY(y, peoteView);
+		if (button != MouseButton.LEFT)
+			return false;
+		for (i in 0...optionBuf.length) {
+			var option = optionBuf.getElement(i);
+			if (x >= option.x && x <= option.x + option.w && y >= (option.y - 15) && y <= option.y + (option.h - 15)) {
+				nav.setTo(i);
+				return true;
+			}
+		}
+		return false;
+	}
+
+	override function onMouseUp(x:Float, y:Float, button:MouseButton):Bool {
+		if (disposed || optionBuf == null || view == null)
+			return false;
+		var peoteView = Main.current.peoteView;
+		x = view.localX(x, peoteView);
+		y = view.localY(y, peoteView);
+		if (button != MouseButton.LEFT)
+			return false;
+		for (i in 0...optionBuf.length) {
+			var option = optionBuf.getElement(i);
+			if (x >= option.x && x <= option.x + option.w && y >= (option.y - 15) && y <= option.y + (option.h - 15) && i == nav.value()) {
+				// State transitions are queued by the machine, so calling
+				// doIt() directly is safe — it never mutates listener lists
+				// while Lime is dispatching.
+				doIt();
+				return true;
+			}
+		}
+		return false;
+	}
+
+	function goToEditors(isDown:Bool, param:Int) {
+		if (!isDown)
+			return;
+		Main.switchState(EDITOR_MENU);
+	}
+
 	function doIt() {
 		var optionString = optionAnims[nav.value()];
 		switch (optionString) {
@@ -240,7 +288,6 @@ class MainMenu {
 			case 'freeplay': // FREEPLAY
 				selectedAlpha = 0.0;
 				Main.current.freeplayMenu.open();
-				removeEvents();
 				Main.current.playScrollSound();
 			case 'awards': // AWARDS
 				// TODO
@@ -251,11 +298,9 @@ class MainMenu {
 			case 'options': // OPTIONS
 				selectedAlpha = 0.0;
 				Main.current.optionsMenu.open();
-				removeEvents();
 				Main.current.playScrollSound();
 			case 'editors': // EDITORS
 				selectedAlpha = 0.0;
-				removeEvents();
 				Main.switchState(EDITOR_MENU);
 				Main.current.playScrollSound();
 			case 'backspace to exit':
@@ -264,70 +309,7 @@ class MainMenu {
 		}
 	}
 
-	function mouseDown(x:Float, y:Float, button:MouseButton) {
-		if (disposed || optionBuf == null || view == null)
-			return;
-		var peoteView = Main.current.peoteView;
-		x = view.localX(x, peoteView);
-		y = view.localY(y, peoteView);
-		if (button != MouseButton.LEFT)
-			return;
-		for (i in 0...optionBuf.length) {
-			var option = optionBuf.getElement(i);
-			if (x >= option.x && x <= option.x + option.w && y >= (option.y - 15) && y <= option.y + (option.h - 15)) {
-				nav.setTo(i);
-				return;
-			}
-		}
-	}
-
-	function mouseUp(x:Float, y:Float, button:MouseButton) {
-		if (disposed || optionBuf == null || view == null)
-			return;
-		var peoteView = Main.current.peoteView;
-		x = view.localX(x, peoteView);
-		y = view.localY(y, peoteView);
-		if (button != MouseButton.LEFT)
-			return;
-		for (i in 0...optionBuf.length) {
-			var option = optionBuf.getElement(i);
-			if (x >= option.x && x <= option.x + option.w && y >= (option.y - 15) && y <= option.y + (option.h - 15) && i == nav.value()) {
-				// get off the window.onMouseUp dispatch stack before running doIt(),
-				// because doIt() -> removeEvents() -> window.onMouseUp.remove(mouseUp)
-				// mutates lime's listener arrays while dispatch is iterating them
-				Tools.forSync(doIt);
-				break;
-			}
-		}
-	}
-
-	function goToEditors(isDown:Bool, param:Int) {
-		if (!isDown)
-			return;
-		removeEvents();
-		Main.switchState(EDITOR_MENU);
-	}
-
-	function addEvents() {
-		var window = lime.app.Application.current.window;
-
-		Main.current.controls.bindTo(actions);
-		Main.current.mouseDown = mouseDown;
-		window.onMouseWheel.add(updateMenuOptions_mouse);
-		window.onMouseUp.add(mouseUp);
-	}
-
-	function removeEvents() {
-		var window = lime.app.Application.current.window;
-		Main.current.controls.unBind();
-		Main.current.mouseDown = null;
-		window.onMouseWheel.remove(updateMenuOptions_mouse);
-		window.onMouseUp.remove(mouseUp);
-	}
-
-	function dispose() {
-		removeEvents();
-
+	override function dispose() {
 		watermarkTxt.removeProgram();
 
 		// dont do this
@@ -342,6 +324,6 @@ class MainMenu {
 		view.removeProgram(backgroundProg);
 		view = null;
 
-		disposed = true;
+		super.dispose();
 	}
 }

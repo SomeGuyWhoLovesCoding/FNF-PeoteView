@@ -1,6 +1,8 @@
 package structures.gameplay;
 
 import lime.ui.KeyCode;
+import lime.ui.KeyModifier;
+import lime.ui.MouseButton;
 import lime.app.Event;
 
 /**
@@ -11,7 +13,7 @@ import lime.app.Event;
 	@since Development
 **/
 @:publicFields
-class PlayField {
+class PlayField extends GameState {
 	var roof(default, null):CustomDisplay;
 	var display(default, null):CustomDisplay;
 	var view(default, null):CustomDisplay;
@@ -30,6 +32,10 @@ class PlayField {
 		Chart.load(chartPath);
 	}
 
+	override function create() {
+		init(Main.current.topDisplay, Main.current.middleDisplay, Main.current.bottomDisplay);
+	}
+
 	function init(roof:CustomDisplay, display:CustomDisplay, view:CustomDisplay) {
 		this.roof = roof;
 		this.display = display;
@@ -39,7 +45,7 @@ class PlayField {
 		funkinviewlua = new FunkinViewLua(this, chartPath, Chart.header);
 		#end
 
-		create(roof, display, Chart.header.mania);
+		createPlayfield(roof, display, Chart.header.mania);
 	}
 
 	function changeBpmAt(time:Float, value:Float, timeNum:Float, timeDen:Float) {
@@ -111,8 +117,8 @@ class PlayField {
 	var practiceMode:Bool;
 	var songStarted(default, null):Bool;
 	var songEnded(default, null):Bool;
-	var disposed(default, null):Bool;
 	var paused(default, null):Bool;
+	var gameOverKeyBlock:Bool;
 	var died(default, null):Bool;
 	var botplay(default, set):Bool;
 
@@ -221,7 +227,7 @@ class PlayField {
 	 * @param display The ui display you want the playfield's countdown display and hud to go to.
 	 * @param initialMania The amount of keys you want for your fnf song. (up to 256 supported) (This is configured by the song's header)
 	 */
-	function create(roof:CustomDisplay, display:CustomDisplay, initialMania:Int = 4) {
+	function createPlayfield(roof:CustomDisplay, display:CustomDisplay, initialMania:Int = 4) {
 		mania = initialMania;
 
 		healthLoss = [for (i in 0...128) 0.02];
@@ -356,8 +362,8 @@ class PlayField {
 	**/
 	var eventTimers:Array<EventTimer> = [];
 
-	function update(deltaTime:Float) {
-		if (disposed || paused)
+	override function update(deltaTime:Float) {
+		if (disposed || paused || RenderingMode.enabled)
 			return;
 
 		#if linc_luajit_funkinview
@@ -463,7 +469,10 @@ class PlayField {
 	/**
 		There is mainly nothing in this render function except a couple extra things.
 	**/
-	function render() {
+	override function render(deltaTime:Float) {
+		if (paused)
+			return;
+
 		#if linc_luajit_funkinview
 		funkinviewlua.callFunction('render', null);
 		#end
@@ -523,8 +532,6 @@ class PlayField {
 			var pos = MetaNote.floatToMetaNotePosition(songPosition);
 			noteSystem.resetStrumlines();
 		}
-		if (inputSystem != null)
-			inputSystem.removeEvents();
 
 		paused = true;
 
@@ -551,8 +558,6 @@ class PlayField {
 		pauseScreen.close();
 		if (!RenderingMode.enabled && songStarted && !songEnded)
 			Mixer.startMusic();
-		if (inputSystem != null)
-			Tools.forSync(inputSystem.addEvents);
 
 		paused = false;
 
@@ -560,6 +565,38 @@ class PlayField {
 		funkinviewlua.callFunction('resumePost', null);
 		funkinviewlua.callFunction('postResume', null); // alternative syntax
 		#end
+	}
+
+	// ---------------------------------------------------------------
+	// Routed input — the state machine forwards window events here.
+	// ---------------------------------------------------------------
+
+	override function onKeyDown(code:KeyCode, mod:KeyModifier):Bool {
+		if (inputSystem != null && !(died && gameOverKeyBlock))
+			inputSystem.press(code, mod);
+		return false;
+	}
+
+	override function onKeyUp(code:KeyCode, mod:KeyModifier):Bool {
+		if (inputSystem != null)
+			inputSystem.release(code, mod);
+		return false;
+	}
+
+	override function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
+		if (disposed)
+			return false;
+
+		if (field != null && field.isInGameOver) {
+			// Clicking ends the game over screen (left = retry, right = exit).
+			if (!field.gameOverConfirmed)
+				field.endGameOver(button == MouseButton.RIGHT);
+			return true;
+		}
+
+		if (button == MouseButton.LEFT)
+			pause();
+		return false;
 	}
 
 	function countdownBeatHit(beat:Float) {
@@ -822,8 +859,8 @@ class PlayField {
 		funkinviewlua.callFunction('gameOver', null);
 		#end
 
-		inputSystem.removeEvents();
-		haxe.Timer.delay(inputSystem.addEvents, 2000); // prevent instant end gameover
+		gameOverKeyBlock = true;
+		haxe.Timer.delay(() -> gameOverKeyBlock = false, 2000); // prevent instant end gameover
 
 		onDeath.remove(gameOver);
 
@@ -883,7 +920,7 @@ class PlayField {
 	/**
 		Disposes the playfield.
 	**/
-	function dispose() {
+	override function dispose() {
 		ready = false;
 		disposed = true;
 
@@ -964,5 +1001,7 @@ class PlayField {
 		funkinviewlua.callFunction('postDispose', null); // alternative syntax
 		funkinviewlua.dispose();
 		#end
+
+		super.dispose();
 	}
 }

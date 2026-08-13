@@ -21,6 +21,11 @@ class Controls {
 	public function reload() {
 		var controls = SaveData.state.controls;
 
+		// Unbind the previous handle first so its KeyboardAction doesn't
+		// linger inside the shared Input2Action after we replace it.
+		if (handle != null)
+			handle.unBind();
+
 		config = [
 			{
 				action: Action.UI_LEFT,
@@ -90,12 +95,20 @@ class Controls {
 
 @:publicFields
 class ControlsHandle {
-	var i2a:Input2Action;
+	/**
+		Shared across all handles. Only one Input2Action may register keyboard
+		events on the window; creating a fresh one per reload used to stack
+		duplicate window listeners (and stale action maps) on every keybind
+		change.
+	**/
+	static var i2a:Input2Action;
 	var kb:KeyboardAction;
 
 	function new(config:ActionConfig) {
-		i2a = new Input2Action();
-		i2a.registerKeyboardEvents(lime.app.Application.current.window);
+		if (i2a == null) {
+			i2a = new Input2Action();
+			i2a.registerKeyboardEvents(lime.app.Application.current.window);
+		}
 	}
 
 	function bindTo(config:ActionConfig, actions:ActionMap) {

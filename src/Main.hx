@@ -138,57 +138,30 @@ class Main extends Application {
 		switchState(MAIN_MENU);
 	}
 
+	/**
+		The only state transition entry point. The actual switching is
+		deferred to the state machine's frame queue, so this is safe to call
+		from inside any input handler or update loop.
+	**/
 	static public function switchState(newState:StateSelection, skipTransition:Bool = false) {
 		var instance = Main.current;
-
-		switch (instance.currentState) {
-			case MAIN_MENU:
-				Sys.println('dispose the main menu');
-				instance.mainMenu.dispose();
-				instance.mainMenu = null;
-			case GAMEPLAY:
-				Sys.println('dispose the gameplay menu');
-				instance.playField.dispose();
-				instance.playField = null;
-			case AWARDS:
-			case NOTE_VIEW:
-				Sys.println('dispose the noteskin editor menu');
-				instance.noteskinEditor.dispose();
-				instance.noteskinEditor = null;
-			case EDITOR_MENU:
-				Sys.println('dispose the editor menu');
-				instance.editorMenu.dispose();
-				instance.editorMenu = null;
-			case NONE:
-		}
-
-		instance.currentState = newState;
+		if (instance == null)
+			return;
 
 		switch (newState) {
 			case MAIN_MENU:
-				Sys.println('create the main menu');
-				instance.mainMenu = new MainMenu();
-				instance.mainMenu.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
+				instance.stateMachine.switchState(new MainMenu(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay));
 			case GAMEPLAY:
-				Sys.println('create the gameplay menu');
-				instance.playField = new PlayField(songChosen);
-				instance.playField.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
-				instance.playField.downScroll = SaveData.state.preferences.downScroll;
+				var pf = new PlayField(songChosen);
+				pf.downScroll = SaveData.state.preferences.downScroll;
+				instance.stateMachine.switchState(pf);
 			case AWARDS:
 			case NOTE_VIEW:
-				Sys.println('create the noteskin editor menu');
-				instance.noteskinEditor = new NoteskinEditor();
-				instance.noteskinEditor.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
+				instance.stateMachine.switchState(new NoteskinEditor());
 			case EDITOR_MENU:
-				Sys.println('create the editor menu');
-				instance.editorMenu = new EditorMenu();
-				instance.editorMenu.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
+				instance.stateMachine.switchState(new EditorMenu(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay));
 			case NONE:
 		}
-
-		var peoteView = Main.current.peoteView;
-
-		TextureSystem.processQueue();
 	}
 
 	// ------------------------------------------------------------
@@ -212,11 +185,7 @@ class Main extends Application {
 	var editorScreen:CustomDisplay;
 
 	// STATES
-	var currentState:StateSelection;
-	var mainMenu:MainMenu;
-	var playField:PlayField;
-	var noteskinEditor:NoteskinEditor;
-	var editorMenu:EditorMenu;
+	var stateMachine(default, null):StateMachine;
 
 	// MENUS
 	var optionsMenu(default, null):OptionsMenu;
@@ -226,8 +195,21 @@ class Main extends Application {
 	// CONTROLS
 	var controls(default, null):Controls;
 
-	// This is a replacement for Application.current.window.onMouseDown because holy shit does it prevent any invisible crashes whatsoever
-	var mouseDown:(Float, Float, MouseButton) -> Void;
+	// Typed accessors for legacy call sites that read `Main.current.playField`
+	// or `Main.current.mainMenu` directly.
+	var playField(get, never):PlayField;
+
+	inline function get_playField():PlayField {
+		var c = stateMachine.current;
+		return (c is PlayField) ? cast c : null;
+	}
+
+	var mainMenu(get, never):MainMenu;
+
+	inline function get_mainMenu():MainMenu {
+		var c = stateMachine.current;
+		return (c is MainMenu) ? cast c : null;
+	}
 
 	// NOW FOR THE SOUND EFFECTS
 	var sound_scrollIdx:Int;
@@ -251,6 +233,8 @@ class Main extends Application {
 
 		haxe.Timer.delay(function() {
 			controls = new Controls();
+			stateMachine = new StateMachine(controls);
+			stateMachine.init(window);
 
 			#if (!html5)
 			trace("Is es3? " + PeoteGL.Version.isES3);
@@ -303,11 +287,6 @@ class Main extends Application {
 			#if FV_DEBUG
 			DeveloperStuff.init(window, this);
 			#end
-
-			window.onMouseDown.add((x, y, button) -> {
-				if (mouseDown != null)
-					mouseDown(x, y, button);
-			});
 
 			_started = true;
 
@@ -420,37 +399,7 @@ class Main extends Application {
 			newDeltaTime = 1000.0 / Application.current.window.frameRate;
 			// if (deltaTime > 50) newDeltaTime = deltaTime;
 
-			if (mainMenu != null && !mainMenu.disposed) {
-				mainMenu.update(newDeltaTime);
-			}
-
-			if (playField != null && !playField.disposed) {
-				if (playField.pauseScreen != null) {
-					var pauseScreen = playField.pauseScreen;
-					if (!pauseScreen.disposed)
-						pauseScreen.update(newDeltaTime);
-				}
-
-				if (!playField.paused && !RenderingMode.enabled) {
-					playField.update(newDeltaTime);
-				}
-			}
-
-			if (noteskinEditor != null && !noteskinEditor.disposed) {
-				noteskinEditor.update(newDeltaTime);
-			}
-
-			if (editorMenu != null && !editorMenu.disposed) {
-				editorMenu.update(newDeltaTime);
-			}
-
-			if (optionsMenu.active) {
-				optionsMenu.update(newDeltaTime);
-			}
-
-			if (storyMenu.active) {
-				storyMenu.update(newDeltaTime);
-			}
+			stateMachine.update(newDeltaTime);
 		}
 
 		var delta = simulatedDeltaTime - startSimulatedDeltaTime;
@@ -467,16 +416,8 @@ class Main extends Application {
 		var renderFrameRate = Application.current.window.frameRate;
 		var renderRate = 1000 / renderFrameRate;
 
-		if (playField != null) {
-			if (!playField.paused) {
-				playField.render();
-			}
-		}
-		if (freeplayMenu != null) {
-            if (freeplayMenu.active && currentState != GAMEPLAY) {
-				freeplayMenu.render(renderRate);
-			}
-		}
+		if (_started)
+			stateMachine.render(renderRate);
 
 		simulatedDeltaTime = haxe.Timer.stamp() - simulatedDeltaTime;
 	}

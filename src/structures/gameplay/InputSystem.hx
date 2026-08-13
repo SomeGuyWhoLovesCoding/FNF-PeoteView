@@ -8,7 +8,10 @@ import lime.ui.MouseButton;
 	The input system for the playfield.
 	This class handles the input for the playfield, including key presses, releases, and mouse clicks.
 	It maps key codes to receptor IDs and manages the strumline for different mania modes.
-	But! It is very important to note that this class is integrated onto the playfield.
+
+	It no longer registers anything on the window: the `PlayField` state (which
+	extends `GameState`) receives routed input from the state machine and
+	forwards it to `press`/`release` here.
 	@since Development
 **/
 @:publicFields
@@ -17,25 +20,6 @@ class InputSystem {
 
 	function new(mania:Int, parent:PlayField) {
 		this.parent = parent;
-		Tools.forSync(addEvents);
-	}
-
-	function addEvents() {
-		var window = lime.app.Application.current.window;
-		#if !android
-		window.onKeyDown.add(press);
-		window.onKeyUp.add(release);
-		#end
-		Main.current.mouseDown = mousePress;
-	}
-
-	function removeEvents() {
-		var window = lime.app.Application.current.window;
-		#if !android
-		window.onKeyDown.remove(press);
-		window.onKeyUp.remove(release);
-		#end
-		Main.current.mouseDown = null;
 	}
 
 	var _index = 0;
@@ -169,13 +153,5 @@ class InputSystem {
 		return false;
 	}
 
-	function mousePress(x:Float, y:Float, mouseButton:MouseButton) {
-		if (mouseButton != MouseButton.LEFT)
-			return;
-		parent.pause();
-	}
-
-	function dispose() {
-		removeEvents();
-	}
+	function dispose() {}
 }

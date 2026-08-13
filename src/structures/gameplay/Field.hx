@@ -247,10 +247,6 @@ class Field {
 	var gameOverConfirmed:Bool;
 
 	function gameOver() {
-		_gameover_end_call = (x:Float, y:Float, button:MouseButton) -> {
-			endGameOver(button == MouseButton.RIGHT);
-		};
-
 		var gameOverMeta = Chart.header.gameOver;
 		var theme = gameOverMeta.theme;
 		var bpm = gameOverMeta.bpm;
@@ -296,8 +292,6 @@ class Field {
 		actorOnGameOver.finishAnim = "";
 		actorOnGameOver.playAnimation("deathConfirm");
 
-		Main.current.controls.unBind();
-		parent.inputSystem.removeEvents();
 		gameOverConfirmed = true;
 
 		haxe.Timer.delay(() -> {
@@ -310,13 +304,8 @@ class Field {
 	}
 
 	function updateGameOver(deltaTime:Float) {
-		Main.current.mouseDown = gameOverConfirmed ? null : _gameover_end_call;
-
 		if (MiniAudio.isBackgroundTrackPlaying(gameOverMusic)) {
 			Main.conductor.time += deltaTime;
 		}
 	}
-
-	// to fix the stupid shit that can't be fixed anywhere else
-	var _gameover_end_call:(Float, Float, MouseButton) -> Void;
 }

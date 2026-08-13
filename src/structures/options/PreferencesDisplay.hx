@@ -8,7 +8,7 @@ import lime.ui.MouseButton;
 	@since Development
 **/
 @:publicFields
-class PreferencesDisplay implements IAlphabetScrollHost {
+class PreferencesDisplay implements IAlphabetScrollHost implements OptionsInputHost {
 	public static var prefsStr(default, null):Array<String> = [
 		"downScroll",
 		"hideHUD",
@@ -73,7 +73,6 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 
 		resetHostState();
 		resetDragState();
-		registerInputHandlers();
 		_lastInfoText = null;
 		_titleCache = [];
 	}
@@ -89,22 +88,6 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		isDragging = false;
 		dragAccum = 0.0;
 		dragVelocity = 0.0;
-	}
-
-	function registerInputHandlers() {
-		var window = lime.app.Application.current.window;
-		Main.current.mouseDown = mousePress;
-		window.onMouseUp.add(mouseRelease);
-		window.onMouseMove.add(mouseDrag);
-	}
-
-	function unregisterInputHandlers() {
-		var window = lime.app.Application.current.window;
-		if (Main.current.mouseDown == mousePress) {
-			Main.current.mouseDown = null;
-		}
-		window.onMouseUp.remove(mouseRelease);
-		window.onMouseMove.remove(mouseDrag);
 	}
 
 	function update(deltaTime:Float) {
@@ -168,7 +151,7 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 
 	// -------------------- MOUSE HANDLERS (full implementation) --------------------
 
-	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
+	function mousePress(x:Float, y:Float, button:MouseButton) {
 		if (closed || alphabet == null)
 			return;
 		switch (button) {
@@ -184,7 +167,7 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		}
 	}
 
-	function mouseRelease(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
+	function mouseRelease(x:Float, y:Float, button:MouseButton) {
 		if (button != LEFT)
 			return;
 		if (closed || alphabet == null)
@@ -267,7 +250,6 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 			return;
 		closed = true;
 
-		unregisterInputHandlers();
 		resetHostState();
 		resetDragState();
 

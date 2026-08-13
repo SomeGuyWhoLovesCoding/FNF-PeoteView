@@ -14,7 +14,7 @@ import lime.app.VSyncMode;
 	@since Development
 **/
 @:publicFields
-class GraphicsDisplay implements IAlphabetScrollHost {
+class GraphicsDisplay implements IAlphabetScrollHost implements OptionsInputHost {
 	public static var graphicsStr(default, null):Array<String> = ["resolution", "fullscreen", "vsync", "frameRate", "compressTextures"];
 
 	// Descriptions for each graphics option, in the same order.
@@ -82,7 +82,6 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 
 		resetHostState();
 		resetDragState();
-		registerInputHandlers();
 		_lastInfoText = null;
 		_titleCache = [];
 	}
@@ -98,22 +97,6 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 		isDragging = false;
 		dragAccum = 0.0;
 		dragVelocity = 0.0;
-	}
-
-	function registerInputHandlers() {
-		var window = lime.app.Application.current.window;
-		Main.current.mouseDown = mousePress;
-		window.onMouseUp.add(mouseRelease);
-		window.onMouseMove.add(mouseDrag);
-	}
-
-	function unregisterInputHandlers() {
-		var window = lime.app.Application.current.window;
-		if (Main.current.mouseDown == mousePress) {
-			Main.current.mouseDown = null;
-		}
-		window.onMouseUp.remove(mouseRelease);
-		window.onMouseMove.remove(mouseDrag);
 	}
 
 	function update(deltaTime:Float) {
@@ -186,7 +169,7 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 
 	// -------------------- MOUSE HANDLERS --------------------
 
-	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
+	function mousePress(x:Float, y:Float, button:MouseButton) {
 		if (closed || alphabet == null)
 			return;
 		switch (button) {
@@ -202,7 +185,7 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 		}
 	}
 
-	function mouseRelease(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
+	function mouseRelease(x:Float, y:Float, button:MouseButton) {
 		if (button != LEFT)
 			return;
 		if (closed || alphabet == null)
@@ -392,7 +375,6 @@ class GraphicsDisplay implements IAlphabetScrollHost {
 			return;
 		closed = true;
 
-		unregisterInputHandlers();
 		resetHostState();
 		resetDragState();
 

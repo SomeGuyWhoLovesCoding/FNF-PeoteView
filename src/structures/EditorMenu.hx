@@ -14,7 +14,7 @@ import lime.ui.MouseWheelMode;
 	@since 0.94
 **/
 @:publicFields
-class EditorMenu {
+class EditorMenu extends GameState {
 	static var optionLabels:Array<String> = ['Noteskin Editor', 'Chart Editor', 'Mod Manager'];
 
 	var display:CustomDisplay;
@@ -35,10 +35,11 @@ class EditorMenu {
 	static var markupYLerp:Float = 0.0;
 	static var alphaLerps:Array<Float> = [];
 
-	var disposed:Bool = false;
-	var actions:ActionMap;
-
-	function new() {}
+	function new(roof:CustomDisplay, display:CustomDisplay, view:CustomDisplay) {
+		this.roof = roof;
+		this.display = display;
+		this.view = view;
+	}
 
 	static function preInit(display:CustomDisplay) {
 		// ── Background (reuse MainMenu texture, cached) ────────────────────
@@ -103,11 +104,7 @@ class EditorMenu {
 		}
 	}
 
-	function init(roof:CustomDisplay, display:CustomDisplay, view:CustomDisplay) {
-		this.display = display;
-		this.view = view;
-		this.roof = roof;
-
+	override function create() {
 		view.scroll.x = 0;
 		view.scroll.y = 0;
 		view.fov = 1.0;
@@ -121,8 +118,6 @@ class EditorMenu {
 		markupTxt.addProgram();
 
 		markupTxt.alpha = 1.0;
-
-		haxe.Timer.delay(addEvents, 100);
 
 		actions = [
 			Controls.Action.UI_DOWN => {action: down},
@@ -141,7 +136,7 @@ class EditorMenu {
 
 	// ── Update ────────────────────────────────────────────────────────────
 
-	function update(deltaTime:Float) {
+	override function update(deltaTime:Float) {
 		var t = Math.min(deltaTime * 0.0115, 1);
 		if (t == 1)
 			t = (1 / lime.app.Application.current.window.frameRate) * 0.0115;
@@ -186,7 +181,6 @@ class EditorMenu {
 		switch (editorIndex) {
 			case 0: // Noteskin Editor
 				Main.switchState(NOTE_VIEW);
-				removeEvents();
 			case 1: // Chart Editor (TODO)
 				Main.current.playConfirmSound();
 			case 2: // Mod Manager (TODO)
@@ -196,37 +190,21 @@ class EditorMenu {
 
 	// ── Key handler for BACKSPACE exit ────────────────────────────────────
 
-	function handleKeyDown(key:KeyCode, modifier:KeyModifier) {
+	override function onKeyDown(key:KeyCode, modifier:KeyModifier):Bool {
 		if (disposed)
-			return;
+			return false;
 
 		if (key == KeyCode.BACKSPACE || key == KeyCode.ESCAPE) {
 			Main.current.playCancelSound();
 			Main.switchState(MAIN_MENU);
+			return true;
 		}
-	}
-
-	// ── Event management ──────────────────────────────────────────────────
-
-	function addEvents() {
-		var window = lime.app.Application.current.window;
-
-		Main.current.controls.bindTo(actions);
-		window.onKeyDown.add(handleKeyDown);
-	}
-
-	function removeEvents() {
-		var window = lime.app.Application.current.window;
-
-		Main.current.controls.unBind();
-		window.onKeyDown.remove(handleKeyDown);
+		return false;
 	}
 
 	// ── Dispose ───────────────────────────────────────────────────────────
 
-	function dispose() {
-		removeEvents();
-
+	override function dispose() {
 		for (txt in optionTexts)
 			txt.removeProgram();
 		markupTxt.removeProgram();
@@ -239,6 +217,6 @@ class EditorMenu {
 		view = null;
 		roof = null;
 
-		disposed = true;
+		super.dispose();
 	}
 }

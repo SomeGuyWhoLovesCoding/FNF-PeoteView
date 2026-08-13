@@ -4309,30 +4309,6 @@ private class NoteskinEditorInputHandler {
 		return mx >= box.x && mx <= box.x + box.w && my >= box.y && my <= box.y + box.h;
 	}
 
-	function addEvents() {
-		#if !android
-		var window = Application.current.window;
-		window.onKeyDown.add(handleKeyDown);
-		window.onKeyUp.add(handleKeyUp);
-		window.onMouseDown.add(handleMouseDown);
-		window.onMouseUp.add(handleMouseUp);
-		window.onMouseMove.add(handleMouseMove);
-		window.onMouseWheel.add(handleMouseWheel);
-		#end
-	}
-
-	function removeEvents() {
-		#if !android
-		var window = Application.current.window;
-		window.onKeyDown.remove(handleKeyDown);
-		window.onKeyUp.remove(handleKeyUp);
-		window.onMouseDown.remove(handleMouseDown);
-		window.onMouseUp.remove(handleMouseUp);
-		window.onMouseMove.remove(handleMouseMove);
-		window.onMouseWheel.remove(handleMouseWheel);
-		#end
-	}
-
 	function setCursor(cursor:MouseCursor) {
 		var window = Application.current.window;
 		if (window != null) {
@@ -5289,9 +5265,7 @@ private class NoteskinEditorInputHandler {
 	@since 0.94
 **/
 @:publicFields
-class NoteskinEditor {
-	var disposed(default, null):Bool;
-
+class NoteskinEditor extends GameState {
 	var roof(default, null):CustomDisplay;
 	var display(default, null):CustomDisplay;
 	var view(default, null):CustomDisplay;
@@ -5470,6 +5444,10 @@ class NoteskinEditor {
 		maniaManager.loadNoteskin("default");
 	}
 
+	override function create() {
+		init(Main.current.topDisplay, Main.current.middleDisplay, Main.current.bottomDisplay);
+	}
+
 	public function init(roof:CustomDisplay, display:CustomDisplay, view:CustomDisplay) {
 		disposed = false;
 
@@ -5484,8 +5462,6 @@ class NoteskinEditor {
 		ui.initInstructionsText();
 
 		show();
-
-		inputHandler.addEvents();
 	}
 
 	/** Set the alpha of the import/save button text labels. */
@@ -5661,9 +5637,7 @@ class NoteskinEditor {
 			NoteskinEditor.instructionsText.removeProgram();
 	}
 
-	public function dispose() {
-		inputHandler.removeEvents();
-
+	public override function dispose() {
 		if (showEditor)
 			toggleEditor();
 
@@ -5786,6 +5760,8 @@ class NoteskinEditor {
 		roof = null;
 
 		disposed = true;
+
+		super.dispose();
 	}
 
 	public function show() {
@@ -5798,7 +5774,53 @@ class NoteskinEditor {
 			toggleEditor();
 	}
 
-	public function update(deltaTime:Float) {
+	// ---------------------------------------------------------------
+	// Routed input — the state machine forwards window events here.
+	// ---------------------------------------------------------------
+
+	public override function onKeyDown(key:KeyCode, modifier:KeyModifier):Bool {
+		if (disposed)
+			return false;
+		inputHandler.handleKeyDown(key, modifier);
+		return true;
+	}
+
+	public override function onKeyUp(key:KeyCode, modifier:KeyModifier):Bool {
+		if (disposed)
+			return false;
+		inputHandler.handleKeyUp(key, modifier);
+		return true;
+	}
+
+	public override function onMouseDown(mouseX:Float, mouseY:Float, button:MouseButton):Bool {
+		if (disposed)
+			return false;
+		inputHandler.handleMouseDown(mouseX, mouseY, button);
+		return true;
+	}
+
+	public override function onMouseUp(mouseX:Float, mouseY:Float, button:MouseButton):Bool {
+		if (disposed)
+			return false;
+		inputHandler.handleMouseUp(mouseX, mouseY, button);
+		return true;
+	}
+
+	public override function onMouseMove(mouseX:Float, mouseY:Float):Bool {
+		if (disposed)
+			return false;
+		inputHandler.handleMouseMove(mouseX, mouseY);
+		return true;
+	}
+
+	public override function onMouseWheel(deltaX:Float, deltaY:Float, mode:MouseWheelMode):Bool {
+		if (disposed)
+			return false;
+		inputHandler.handleMouseWheel(deltaX, deltaY, mode);
+		return true;
+	}
+
+	public override function update(deltaTime:Float) {
 		// Render create-mania popup if active.
 		if (createManiaPopupActive) {
 			ui.renderCreateManiaPopup();
