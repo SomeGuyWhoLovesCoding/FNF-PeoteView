@@ -300,6 +300,14 @@ class PlayField {
 			startSong(Chart.header);
 			setTime(timeForRestartingBackwardTime);
 
+			// Reflect the seek target into songPosition immediately. In this
+			// restart path startedCountdown stays false, so Mixer.update (the
+			// only code that syncs songPosition from the audio) never runs; if
+			// an input fires before the first update() it would compute its
+			// backward offset from the stale pre-song value (-crochet*4.5-offset)
+			// and trigger a bogus second restart that lands at 0.
+			songPosition = timeForRestartingBackwardTime;
+
 			#if linc_luajit_funkinview
 			funkinviewlua.callFunction('postTimeChange', timeForRestartingBackwardTime, Chart.header);
 			#end
