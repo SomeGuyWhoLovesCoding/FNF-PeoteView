@@ -1263,17 +1263,23 @@ public:
     void seekToPCMFrame(int64_t pos) {
         if (!exists.load(std::memory_order_acquire)) return;
 
-        bool wasPlaying = (mixerState.load(std::memory_order_acquire) == 1);
+        // The device's actual running state can diverge from mixerState: the audio
+        // callback sets mixerState to 3 (stopped) on underrun while the device keeps
+        // running, which happens when the main thread is stalled and the worker can't
+        // refill buffers in time. If we gated stop/restart on mixerState==1, a seek in
+        // that state would reset the PCM buffers while the callback is still reading
+        // them (data race). Always gate on the device's real state instead.
+        bool deviceRunning = ma_device_is_started(&device);
         
         // FIX: Pause immediately to lock the state before touching the decoder/device
-        if (wasPlaying) {
+        if (deviceRunning) {
             mixerState.store(2, std::memory_order_release); 
         }
 
         if (asyncLoader) asyncLoader->pauseLoading();
         if (asyncLoader) asyncLoader->waitUntilIdle();
 
-        if (wasPlaying) ma_device_stop(&device);
+        if (deviceRunning) ma_device_stop(&device);
 
         for (size_t i = 0; i < streams.size(); i++) {
             DecoderStream& s = streams[i];
@@ -1294,12 +1300,12 @@ public:
 
         mixerState.store((pos < (int64_t)streams[longestDecoderIndex].decoderLength) ? 2 : 3, std::memory_order_release);
 
-        // Always reset prediction anchor on seek (regardless of wasPlaying state)
+        // Always reset prediction anchor on seek (regardless of device state)
         lastQueriedFrames.store((ma_uint64)pos, std::memory_order_relaxed);
         lastQuerySystemTime.store(std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_relaxed);
         lastQueryPlaybackRate.store(playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
 
-        if (wasPlaying && mixerState.load(std::memory_order_acquire) == 2) {
+        if (deviceRunning && mixerState.load(std::memory_order_acquire) == 2) {
             if (asyncLoader) asyncLoader->resumeLoading();
             mixerState.store(1, std::memory_order_release); // Set state before starting device
             ma_device_start(&device);
