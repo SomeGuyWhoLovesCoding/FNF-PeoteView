@@ -773,19 +773,29 @@ public:
         
         signal();
         
+        // Wait until the worker is BOTH idle AND no stream has an in-flight
+        // buffer fill. A full 46305-frame decode (TOTAL_BUFFER_FRAMES) from a
+        // freshly-opened decoder (as happens right after a song restart, when
+        // start()'s internal seek is immediately followed by the real forward
+        // seek) can legitimately take longer than the old 100ms timeout. If
+        // that timeout fired while the worker was still writing, the seek's
+        // resetState() would clear the worker's loadingInProgress flag and
+        // reset buffers mid-write, corrupting the next buffer and leaving the
+        // stream inactive -> the song silently restarts from 0.
         auto startTime = std::chrono::steady_clock::now();
-        const auto timeout = std::chrono::milliseconds(100);
+        const auto timeout = std::chrono::milliseconds(1000);
         
-        int yieldCount = 0;
-        while (!workerIdle.load(std::memory_order_acquire)) {
-            if (std::chrono::steady_clock::now() - startTime > timeout) {
-                break;
+        for (;;) {
+            bool anyLoading = false;
+            for (DecoderStream* s : streams) {
+                if (s && s->asyncState.loadingInProgress.load(std::memory_order_acquire)) {
+                    anyLoading = true;
+                    break;
+                }
             }
-            if (yieldCount++ < 100) {
-                std::this_thread::yield();
-            } else {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            }
+            if (!anyLoading && workerIdle.load(std::memory_order_acquire)) break;
+            if (std::chrono::steady_clock::now() - startTime > timeout) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
         
         std::this_thread::sleep_for(std::chrono::microseconds(500));
