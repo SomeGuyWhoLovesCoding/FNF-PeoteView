@@ -6,6 +6,7 @@
 	<files id="chart_file">
 		<compilerflag value="-I${PROJECT_DIR}/data/chart" />
 		<compilerflag value="-I${PROJECT_DIR}/data/chart/include" />
+		<compilerflag value="-fpermissive" if="linux" />
 		<file name="${PROJECT_DIR}/data/chart/chart_file.cpp" />
 	</files>
 	

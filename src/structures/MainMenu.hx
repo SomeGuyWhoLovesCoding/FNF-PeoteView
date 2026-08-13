@@ -136,7 +136,7 @@ class MainMenu {
 			Controls.Action.GAME_DEBUG => {action: goToEditors}
 		];
 
-		Tools.forSync(addEvents);
+		addEvents();
 	}
 
 	static var optionYLerps:Array<Float> = [for (i in 0...5) 1];
@@ -267,12 +267,18 @@ class MainMenu {
 	function mouseDown(x:Float, y:Float, button:MouseButton) {
 		if (disposed || optionBuf == null || view == null)
 			return;
+		trace('.');
 		var peoteView = Main.current.peoteView;
+		trace('.');
 		x = view.localX(x, peoteView);
+		trace('.');
 		y = view.localY(y, peoteView);
+		trace('.');
 		if (button != MouseButton.LEFT)
 			return;
+		trace('.');
 		for (i in 0...optionBuf.length) {
+		trace(i);
 			var option = optionBuf.getElement(i);
 			if (x >= option.x && x <= option.x + option.w && y >= (option.y - 15) && y <= option.y + (option.h - 15)) {
 				nav.setTo(i);
@@ -282,14 +288,21 @@ class MainMenu {
 	}
 
 	function mouseUp(x:Float, y:Float, button:MouseButton) {
+		trace('.');
 		if (disposed || optionBuf == null || view == null)
 			return;
+		trace('.');
 		var peoteView = Main.current.peoteView;
+		trace('.');
 		x = view.localX(x, peoteView);
+		trace('.');
 		y = view.localY(y, peoteView);
+		trace('.');
 		if (button != MouseButton.LEFT)
 			return;
+		trace('.');
 		for (i in 0...optionBuf.length) {
+		trace(i);
 			var option = optionBuf.getElement(i);
 			if (x >= option.x && x <= option.x + option.w && y >= (option.y - 15) && y <= option.y + (option.h - 15) && i == nav.value()) {
 				// get off the window.onMouseUp dispatch stack before running doIt(),
@@ -304,30 +317,41 @@ class MainMenu {
 	function goToEditors(isDown:Bool, param:Int) {
 		if (!isDown)
 			return;
+		trace('.');
 		removeEvents();
+		trace('.');
 		Main.switchState(EDITOR_MENU);
 	}
 
 	function addEvents() {
 		var window = lime.app.Application.current.window;
 
+		trace('.');
 		Main.current.controls.bindTo(actions);
+		trace('.');
 		Main.current.mouseDown = mouseDown;
+		trace('.');
 		window.onMouseWheel.add(updateMenuOptions_mouse);
+		trace('.');
 		window.onMouseUp.add(mouseUp);
 	}
 
 	function removeEvents() {
 		var window = lime.app.Application.current.window;
+		trace('.');
 		Main.current.controls.unBind();
+		trace('.');
 		Main.current.mouseDown = null;
+		trace('.');
 		window.onMouseWheel.remove(updateMenuOptions_mouse);
+		trace('.');
 		window.onMouseUp.remove(mouseUp);
 	}
 
 	function dispose() {
 		removeEvents();
 
+		trace('.');
 		watermarkTxt.removeProgram();
 
 		// dont do this
@@ -336,9 +360,11 @@ class MainMenu {
 			optionProg.setColorFormula('c');
 		}*/
 
+		trace('.');
 		display.removeProgram(optionProg);
 		display = null;
 
+		trace('.');
 		view.removeProgram(backgroundProg);
 		view = null;
 
