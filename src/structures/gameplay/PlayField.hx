@@ -290,15 +290,6 @@ class PlayField {
 			startSong(Chart.header);
 			setTime(timeForRestartingBackwardTime);
 
-			// FIX: startedCountdown is false in this path (to skip the countdown),
-			// which also disables the Mixer.update -> updateWithAudioTime sync that
-			// normally keeps songPosition locked to the audio clock (see update()).
-			// The audio was just seeked to the target, so lock songPosition to it
-			// now and re-enable the audio-time sync, otherwise the playfield stays
-			// frozen at the pre-song position (== "back to the start").
-			songPosition = timeForRestartingBackwardTime;
-			startedCountdown = true;
-
 			#if linc_luajit_funkinview
 			funkinviewlua.callFunction('postTimeChange', timeForRestartingBackwardTime, Chart.header);
 			#end
