@@ -4,7 +4,7 @@ import input2action.ActionMap;
 import lime.ui.KeyCode;
 
 @:publicFields
-class StoryMenu extends GameState {
+class StoryMenu {
 	static var display(default, null):CustomDisplay;
 
 	var chaptersAvailable(default, null):Array<Int> = [];
@@ -14,26 +14,20 @@ class StoryMenu extends GameState {
 
 	var nav(default, null):Navigation = new Navigation();
 
-	function new() {
-		persistent = true;
-	}
+	function new() {}
 
 	static function init(disp:CustomDisplay):Void {
 		display = disp;
 	}
 
-	override function update(deltaTime:Float) {}
+	function update(deltaTime:Float) {}
 
 	function open() {
 		active = opened = true;
-		Main.current.stateMachine.pushSubstate(this);
 	}
 
 	function close() {
-		if (!opened)
-			return;
 		opened = false;
-		Main.current.stateMachine.popSubstate();
 	}
 
 	function back(isDown:Bool, param:Int) {
@@ -65,7 +59,5 @@ class StoryMenu extends GameState {
 		active = false;
 	}
 
-	override function dispose() {
-		super.dispose();
-	}
+	function dispose() {}
 }

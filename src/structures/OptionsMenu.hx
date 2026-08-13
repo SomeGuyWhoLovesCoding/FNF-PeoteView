@@ -14,7 +14,7 @@ import lime.ui.MouseWheelMode;
 	@since Development
 **/
 @:publicFields
-class OptionsMenu extends GameState {
+class OptionsMenu {
 	static var display(default, null):CustomDisplay;
 	static var optionsBuf(default, null):Buffer<OptionsSprite>;
 	static var optionsProg(default, null):CustomProgram;
@@ -33,9 +33,9 @@ class OptionsMenu extends GameState {
 
 	var opened(default, null):Bool;
 
-	var popRequested:Bool = false;
-
 	static var optionsDisplay(default, null):OptionsDisplay;
+
+	var actions(default, null):ActionMap;
 
 	static function init(disp:CustomDisplay) {
 		display = disp;
@@ -50,8 +50,6 @@ class OptionsMenu extends GameState {
 	}
 
 	function new() {
-		persistent = true;
-
 		navHint = new Text("optionsNavHint", 0, 0, display, NAV_HINT_TEXT, "vcr");
 		navHint.scale = 0.75;
 		navHint.alignment = CENTER;
@@ -78,16 +76,12 @@ class OptionsMenu extends GameState {
 
 	var alphaLerp:Float = 0.0;
 
-	override function update(deltaTime:Float) {
+	function update(deltaTime:Float) {
 		// alphaLerp decays asymptotically and never reaches an exact 0.0, so shutting
 		// down only at `== 0.0` would leave the options overlay rendering for minutes
 		// (and thrashes CPU while playing a song). Tear it down once it's invisible.
 		if (!opened && alphaLerp <= 0.001) {
 			shutDown();
-			if (!popRequested) {
-				popRequested = true;
-				Main.current.stateMachine.popSubstate();
-			}
 			return;
 		}
 
@@ -102,8 +96,28 @@ class OptionsMenu extends GameState {
 		optionsDisplay.update(deltaTime);
 	}
 
+	function addEvents() {
+		Tools.forSync(() -> {
+			var window = lime.app.Application.current.window;
+			Main.current.controls.bindTo(actions);
+
+			Main.current.mouseDown = mousePress;
+			window.onMouseWheel.add(moveCategory_mouse);
+			window.onKeyDown.add(handleKeyDown);
+			window.onKeyUp.add(handleKeyUp);
+		});
+	}
+
+	function removeEvents() {
+		var window = lime.app.Application.current.window;
+		Main.current.controls.unBind();
+		Main.current.mouseDown = null;
+		window.onMouseWheel.remove(moveCategory_mouse);
+		window.onKeyDown.remove(handleKeyDown);
+		window.onKeyUp.remove(handleKeyUp);
+	}
+
 	function open() {
-		popRequested = false;
 		optionsDisplay.closed = false;
 		active = opened = true;
 		shiftHeld = false;
@@ -114,7 +128,7 @@ class OptionsMenu extends GameState {
 			alphaLerp = 0.0;
 		} catch (e) {}
 
-		Main.current.stateMachine.pushSubstate(this);
+		addEvents();
 
 		if (!optionsProg.isIn(display)) {
 			display.addProgram(optionsProg);
@@ -122,18 +136,24 @@ class OptionsMenu extends GameState {
 	}
 
 	function close() {
-		if (!opened)
-			return;
+		var mm = Main.current.mainMenu;
+		var pf = Main.current.playField;
 
 		// Make sure to cancel any active binding before closing
 		if (optionsDisplay.controlsDisplay.binding) {
 			optionsDisplay.controlsDisplay.cancelBinding();
 		}
 
+		removeEvents();
+
 		optionsDisplay.closed = true;
 
-		if (Main.current.mainMenu != null) {
+		if (mm != null) {
 			MainMenu.selectedAlpha = 1.0;
+			mm.addEvents();
+		} else if (pf != null) {
+			var pauseScreen = pf.pauseScreen;
+			pauseScreen.onOptionsMenuClose();
 		}
 
 		opened = false;
@@ -216,102 +236,42 @@ class OptionsMenu extends GameState {
 		optionsDisplay.enter();
 	}
 
-	override function onKeyDown(keyCode:KeyCode, keyModifier:KeyModifier):Bool {
-		if (!opened)
-			return false;
+	function handleKeyDown(keyCode:KeyCode, keyModifier:KeyModifier) {
 		if (keyCode == KeyCode.LEFT_SHIFT || keyCode == KeyCode.RIGHT_SHIFT)
 			shiftHeld = true;
 
 		if (optionsDisplay.closed)
-			return false;
+			return;
 
 		var disp = optionsDisplay.controlsDisplay;
 		if (disp != null && !disp.closed) {
 			disp.onKeyDown(keyCode, keyModifier);
-			return true;
+			return;
 		}
 
 		var gfx = optionsDisplay.graphicsDisplay;
 		if (gfx != null && !gfx.closed) {
 			gfx.onKeyDown(keyCode, keyModifier);
-			return true;
 		}
-
-		return false;
 	}
 
-	override function onKeyUp(keyCode:KeyCode, keyModifier:KeyModifier):Bool {
+	function handleKeyUp(keyCode:KeyCode, keyModifier:KeyModifier) {
 		if (keyCode == KeyCode.LEFT_SHIFT || keyCode == KeyCode.RIGHT_SHIFT)
 			shiftHeld = false;
-		return false;
 	}
 
-	/** The sub-display that owns mouse interaction for the active category, if any. */
-	function getActiveMouseHost():OptionsInputHost {
-		switch ((categoryNav.value() : OptionsCategorySelection)) {
-			case CONTROLS:
-				return null;
-			case PREFERENCES:
-				return optionsDisplay.preferencesDisplay;
-			case GAMEPLAY:
-				return optionsDisplay.graphicsDisplay;
-			case PERFORMANCE:
-				return optionsDisplay.performanceDisplay;
-		}
-		return null;
-	}
-
-	override function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
-		if (!opened)
-			return false;
-
-		var host = getActiveMouseHost();
-		if (host != null) {
-			host.mousePress(x, y, button);
-			return true;
-		}
-
+	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
 		if (button == LEFT)
 			enter(true, 0);
-		else if (button == RIGHT) {
-			close();
-			Main.current.playScrollSound();
-		}
-		return true;
+		if (button != RIGHT)
+			return;
+		close();
+		Main.current.playScrollSound();
 	}
 
-	override function onMouseUp(x:Float, y:Float, button:MouseButton):Bool {
-		if (!opened)
-			return false;
-
-		var host = getActiveMouseHost();
-		if (host != null) {
-			host.mouseRelease(x, y, button);
-			return true;
-		}
-		return false;
-	}
-
-	override function onMouseMove(x:Float, y:Float):Bool {
-		if (!opened)
-			return false;
-
-		var host = getActiveMouseHost();
-		if (host != null) {
-			host.mouseDrag(x, y);
-			return true;
-		}
-		return false;
-	}
-
-	override function onMouseWheel(x:Float, y:Float, mouseWheelMode:MouseWheelMode):Bool {
-		if (!opened)
-			return false;
-		if (Math.floor(y) > 0)
-			left(true, 0);
-		else
-			right(true, 0);
-		return true;
+	function moveCategory_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
+		if (Math.floor(y) > 0) left(true, 0);
+		else right(true, 0);
 	}
 
 	function shutDown() {
@@ -327,7 +287,7 @@ class OptionsMenu extends GameState {
 		Main.current.removeOptionsMenu();
 	}
 
-	override function dispose() {
+	function dispose() {
 		close();
 		shutDown();
 
@@ -337,7 +297,5 @@ class OptionsMenu extends GameState {
 		}
 
 		optionsDisplay.dispose();
-
-		super.dispose();
 	}
 }

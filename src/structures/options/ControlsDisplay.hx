@@ -141,6 +141,8 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		else
 			binding = true;
 
+		parent.removeEvents();
+		Application.current.window.onKeyDown.add(onKeyDown);
 		Main.current.playScrollSound();
 	}
 
@@ -243,6 +245,8 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			removeEvents = true;
 		}
 		if (parent != null && parent.opened && removeEvents) {
+			parent.addEvents();
+			Application.current.window.onKeyDown.remove(onKeyDown);
 			Main.current.playCancelSound();
 		}
 		SaveData.save();
@@ -397,6 +401,11 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			alphabet.buffer.update();
 		}
 
+		if (parent != null && parent.opened) {
+			parent.addEvents();
+			Application.current.window.onKeyDown.remove(onKeyDown);
+		}
+
 		Main.current.playConfirmSound();
 		processingBinding = false;
 	}
@@ -499,6 +508,11 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		fixMania();
 		SaveData.save();
 		Main.current.controls.reload();
+
+		if (parent != null && parent.opened) {
+			parent.addEvents();
+			Application.current.window.onKeyDown.remove(onKeyDown);
+		}
 	}
 
 	function fixMania() {

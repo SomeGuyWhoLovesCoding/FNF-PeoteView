@@ -11,7 +11,7 @@ import miniaudio.MiniAudio;
 	@since 0.94
 **/
 @:publicFields
-class PerformanceDisplay implements IAlphabetScrollHost implements OptionsInputHost {
+class PerformanceDisplay implements IAlphabetScrollHost {
 	public static var perfStr(default, null):Array<String> = [
 		"timeStretch",
 		"antialiasing"
@@ -64,6 +64,7 @@ class PerformanceDisplay implements IAlphabetScrollHost implements OptionsInputH
 
 		resetHostState();
 		resetDragState();
+		registerInputHandlers();
 		_lastInfoText = null;
 		_titleCache = [];
 	}
@@ -79,6 +80,22 @@ class PerformanceDisplay implements IAlphabetScrollHost implements OptionsInputH
 		isDragging = false;
 		dragAccum = 0.0;
 		dragVelocity = 0.0;
+	}
+
+	function registerInputHandlers() {
+		var window = lime.app.Application.current.window;
+		Main.current.mouseDown = mousePress;
+		window.onMouseUp.add(mouseRelease);
+		window.onMouseMove.add(mouseDrag);
+	}
+
+	function unregisterInputHandlers() {
+		var window = lime.app.Application.current.window;
+		if (Main.current.mouseDown == mousePress) {
+			Main.current.mouseDown = null;
+		}
+		window.onMouseUp.remove(mouseRelease);
+		window.onMouseMove.remove(mouseDrag);
 	}
 
 	function update(deltaTime:Float) {
@@ -141,7 +158,7 @@ class PerformanceDisplay implements IAlphabetScrollHost implements OptionsInputH
 
 	// -------------------- MOUSE HANDLERS --------------------
 
-	function mousePress(x:Float, y:Float, button:MouseButton) {
+	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
 		if (closed || alphabet == null)
 			return;
 		switch (button) {
@@ -157,7 +174,7 @@ class PerformanceDisplay implements IAlphabetScrollHost implements OptionsInputH
 		}
 	}
 
-	function mouseRelease(x:Float, y:Float, button:MouseButton) {
+	function mouseRelease(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
 		if (button != LEFT)
 			return;
 		if (closed || alphabet == null)
@@ -231,6 +248,7 @@ class PerformanceDisplay implements IAlphabetScrollHost implements OptionsInputH
 			return;
 		closed = true;
 
+		unregisterInputHandlers();
 		resetHostState();
 		resetDragState();
 

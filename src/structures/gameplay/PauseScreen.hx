@@ -14,7 +14,9 @@ import lime.ui.MouseWheelMode;
 	@since Development
 **/
 @:publicFields
-class PauseScreen extends GameState {
+class PauseScreen {
+	var disposed(default, null):Bool = false;
+
 	private static var display(default, null):CustomDisplay;
 	static var pauseBuf(default, null):Buffer<StoryModeSprite>;
 	static var pauseProg(default, null):CustomProgram;
@@ -25,8 +27,7 @@ class PauseScreen extends GameState {
 	var pauseNav(default, null):Navigation = new Navigation();
 	var opened(default, null):Bool;
 	var atOptionsMenu(default, null):Bool;
-
-	var popRequested:Bool = false;
+	var actions:ActionMap;
 
 	static function init(disp:CustomDisplay) {
 		display = disp;
@@ -41,8 +42,6 @@ class PauseScreen extends GameState {
 	}
 
 	function new(difficulty:Difficulty) {
-		persistent = true; // owned by PlayField; the machine pops it without disposing
-
 		var currentY = 200;
 		for (i in 0...4) {
 			var option = new StoryModeSprite();
@@ -71,16 +70,12 @@ class PauseScreen extends GameState {
 	var alphaLerp:Float = 0.0;
 	var bgAlphaLerp:Float = 0.0;
 
-	override function update(deltaTime:Float) {
+	function update(deltaTime:Float) {
 		if (display == null)
 			return;
 
 		if (!opened && display.color.aF == 0) {
 			shutDown();
-			if (!popRequested) {
-				popRequested = true;
-				Main.current.stateMachine.popSubstate();
-			}
 			return;
 		}
 
@@ -115,33 +110,26 @@ class PauseScreen extends GameState {
 	}
 
 	function down(isDown:Bool, param:Int) {
-		if (!opened)
-			return;
 		pauseNav.scroll(1);
 		pauseNav.resetIfOver(pauseOptions.length);
 		Main.current.playScrollSound();
 	}
 
 	function up(isDown:Bool, param:Int) {
-		if (!opened)
-			return;
 		pauseNav.scroll(-1);
 		pauseNav.resetIfUnder(pauseOptions.length - 1);
 		Main.current.playScrollSound();
 	}
 
 	function accept(isDown:Bool, param:Int) {
-		if (!opened)
-			return;
 		doIt();
 	}
 
 	function back(isDown:Bool, param:Int) {
-		if (!opened)
-			return;
-		var pf = Main.current.playField;
-		if (pf != null)
-			pf.resume();
+		if (Main.current.playField != null)
+			Main.current.playField.resume();
+		else
+			removeEvents();
 	}
 
 	function doIt() {
@@ -154,15 +142,14 @@ class PauseScreen extends GameState {
 				Main.current.playScrollSound();
 				Main.current.optionsMenu.open();
 				atOptionsMenu = true;
+				removeEvents();
 			case 3: // EXIT
 				Main.current.playCancelSound();
 				Main.uponSongExit();
 		}
 	}
 
-	override function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
-		if (!opened || disposed)
-			return false;
+	function mouseDown(x:Float, y:Float, button:MouseButton) {
 		var peoteView = Main.current.peoteView;
 		x = display.localX(x, peoteView);
 		y = display.localY(y, peoteView);
@@ -172,36 +159,24 @@ class PauseScreen extends GameState {
 					var option = pauseOptions[i];
 					if (x >= option.x && x <= option.x + option.w && y >= option.y && y <= option.y + option.h) {
 						pauseNav.setTo(i);
-						// doIt() is safe to call directly: every transition it
-						// triggers is queued by the state machine.
-						doIt();
-						return true;
+						haxe.Timer.delay(doIt, 20);
+						return;
 					}
 				}
 			case RIGHT:
 				back(true, 0);
-				return true;
 			default:
 		}
-		return false;
 	}
 
-	override function onMouseWheel(x:Float, y:Float, mouseWheelMode:MouseWheelMode):Bool {
-		if (!opened || disposed)
-			return false;
+	function moveOption_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
 		var peoteView = Main.current.peoteView;
 		pauseNav.scroll(-Math.floor(y));
 		pauseNav.resetIfBoth(pauseBuf.length - 1, pauseBuf.length - 2);
 		Main.current.playScrollSound();
-		return true;
-	}
-
-	override function onSubstateClosed(sub:GameState) {
-		atOptionsMenu = false;
 	}
 
 	function open() {
-		popRequested = false;
 		opened = true;
 
 		try {
@@ -222,15 +197,45 @@ class PauseScreen extends GameState {
 			pauseBuf.addElement(diffText);
 		} catch (e) {}
 
-		Main.current.stateMachine.pushSubstate(this);
+		haxe.Timer.delay(function() {
+			haxe.Timer.delay(addEvents, 1);
+		}, 1);
 
 		if (!pauseProg.isIn(display)) {
 			display.addProgram(pauseProg);
 		}
 	}
 
+	var eventsActive(default, null):Bool = false;
+
+	function addEvents() {
+		if (eventsActive)
+			return;
+		eventsActive = true;
+		var window = lime.app.Application.current.window;
+		Main.current.controls.bindTo(actions);
+		window.onMouseDown.add(mouseDown);
+		window.onMouseWheel.add(moveOption_mouse);
+	}
+
+	function removeEvents() {
+		if (!eventsActive)
+			return;
+		eventsActive = false;
+		var window = lime.app.Application.current.window;
+		Main.current.controls.unBind();
+		window.onMouseDown.remove(mouseDown);
+		window.onMouseWheel.remove(moveOption_mouse);
+	}
+
+	inline function onOptionsMenuClose() {
+		atOptionsMenu = false;
+		haxe.Timer.delay(addEvents, 1);
+	}
+
 	function close() {
 		opened = false;
+		removeEvents();
 	}
 
 	function shutDown() {
@@ -252,10 +257,7 @@ class PauseScreen extends GameState {
 		display.removeProgram(pauseProg);
 	}
 
-	override function dispose() {
-		if (disposed)
-			return;
-
+	function dispose() {
 		close();
 		shutDown();
 
@@ -271,6 +273,6 @@ class PauseScreen extends GameState {
 			} catch (e) {}
 		}
 
-		super.dispose();
+		disposed = true;
 	}
 }
