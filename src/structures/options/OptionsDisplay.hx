@@ -2,9 +2,11 @@ package structures.options;
 
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
+import lime.ui.MouseButton;
 import elements.text.TextCharSprite;
 import structures.options.*;
 import structures.FreeplayAlphabet;
+import structures.IAlphabetScrollHost;
 
 /**
 	The options submenu's display.
@@ -33,7 +35,7 @@ class OptionsDisplay {
 	var infoText(default, null):Text; // shared description text
 
 	// Points to the currently active sub‑display
-	var activeDisplay:{function update(deltaTime:Float):Void;};
+	var activeDisplay(default, null):OptionsSubDisplay;
 
 	var closed:Bool = true;
 
@@ -148,4 +150,16 @@ enum abstract OptionsCategorySelection(Int) from Int to Int {
 	var PREFERENCES;
 	var GAMEPLAY;
 	var PERFORMANCE;
+}
+
+/**
+	Common interface for the per-category sub‑displays inside the options menu.
+	Mouse events are routed here by `OptionsMenu` (the single machine focus),
+	replacing the previous per-display direct window listener registration.
+**/
+interface OptionsSubDisplay extends IAlphabetScrollHost {
+	function update(deltaTime:Float):Void;
+	function onMouseDown(x:Float, y:Float, button:MouseButton):Bool;
+	function onMouseUp(x:Float, y:Float, button:MouseButton):Bool;
+	function onMouseMove(x:Float, y:Float):Bool;
 }

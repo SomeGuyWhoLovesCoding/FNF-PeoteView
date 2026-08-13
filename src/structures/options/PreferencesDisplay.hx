@@ -1,6 +1,7 @@
 package structures.options;
 
 import lime.ui.MouseButton;
+import structures.options.OptionsDisplay.OptionsSubDisplay;
 
 /**
 	Handles the display and interaction for preferences options in the options menu.
@@ -8,7 +9,7 @@ import lime.ui.MouseButton;
 	@since Development
 **/
 @:publicFields
-class PreferencesDisplay implements IAlphabetScrollHost {
+class PreferencesDisplay implements OptionsSubDisplay {
 	public static var prefsStr(default, null):Array<String> = [
 		"downScroll",
 		"hideHUD",
@@ -73,7 +74,6 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 
 		resetHostState();
 		resetDragState();
-		registerInputHandlers();
 		_lastInfoText = null;
 		_titleCache = [];
 	}
@@ -89,22 +89,6 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		isDragging = false;
 		dragAccum = 0.0;
 		dragVelocity = 0.0;
-	}
-
-	function registerInputHandlers() {
-		var window = lime.app.Application.current.window;
-		Main.current.mouseDown = mousePress;
-		window.onMouseUp.add(mouseRelease);
-		window.onMouseMove.add(mouseDrag);
-	}
-
-	function unregisterInputHandlers() {
-		var window = lime.app.Application.current.window;
-		if (Main.current.mouseDown == mousePress) {
-			Main.current.mouseDown = null;
-		}
-		window.onMouseUp.remove(mouseRelease);
-		window.onMouseMove.remove(mouseDrag);
 	}
 
 	function update(deltaTime:Float) {
@@ -166,11 +150,11 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		alphabet.buffer.update();
 	}
 
-	// -------------------- MOUSE HANDLERS (full implementation) --------------------
+	// -------------------- MOUSE HANDLERS (routed by OptionsMenu) --------------------
 
-	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
+	public function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
 		if (closed || alphabet == null)
-			return;
+			return false;
 		switch (button) {
 			case LEFT:
 				isDragging = true;
@@ -180,15 +164,17 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 				dragVelocity = 0.0;
 				lastDragTime = haxe.Timer.stamp();
 				curSelectedTarget = curSelectedLerp;
+				return true;
 			default:
 		}
+		return false;
 	}
 
-	function mouseRelease(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
+	public function onMouseUp(x:Float, y:Float, button:MouseButton):Bool {
 		if (button != LEFT)
-			return;
+			return false;
 		if (closed || alphabet == null)
-			return;
+			return false;
 
 		if (isDragging && Math.abs(dragStartY - y) < 4.0) {
 			curSelectedTarget += 0.3;
@@ -204,11 +190,12 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		dragAccum = 0.0;
 		dragStartY = 0.0;
 		lastDragY = 0.0;
+		return true;
 	}
 
-	function mouseDrag(x:Float, y:Float) {
+	public function onMouseMove(x:Float, y:Float):Bool {
 		if (!isDragging || closed || alphabet == null)
-			return;
+			return false;
 
 		var delta = lastDragY - y;
 		lastDragY = y;
@@ -224,6 +211,7 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 		curSelectedTarget += _delta;
 		curSelectedTarget = Math.max(0, Math.min(prefsStr.length - 1, curSelectedTarget));
 		parent.optionsNav.setTo(Math.round(curSelectedTarget));
+		return true;
 	}
 
 	// -------------------- END MOUSE HANDLERS --------------------
@@ -267,7 +255,6 @@ class PreferencesDisplay implements IAlphabetScrollHost {
 			return;
 		closed = true;
 
-		unregisterInputHandlers();
 		resetHostState();
 		resetDragState();
 

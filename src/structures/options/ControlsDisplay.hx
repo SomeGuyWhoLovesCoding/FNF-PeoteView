@@ -2,6 +2,7 @@ package structures.options;
 
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
+import structures.options.OptionsDisplay.OptionsSubDisplay;
 
 /**
 	Handles the display and interaction for the controls options in the options menu.
@@ -10,7 +11,7 @@ import lime.ui.KeyModifier;
 	@since 0.94
 **/
 @:publicFields
-class ControlsDisplay implements IAlphabetScrollHost {
+class ControlsDisplay implements OptionsSubDisplay {
 	public static var controlLabels(default, null):Array<String> = [
 		"UI Left",
 		"UI Down",
@@ -141,8 +142,9 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		else
 			binding = true;
 
-		parent.removeEvents();
-		Application.current.window.onKeyDown.add(onKeyDown);
+		// Routing stays on the OptionsMenu focus; the machine keeps dispatching
+		// key presses to onKeyDown and the menu's UI actions are suppressed by
+		// isInvalidKeyState() while binding.
 		Main.current.playScrollSound();
 	}
 
@@ -245,8 +247,6 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			removeEvents = true;
 		}
 		if (parent != null && parent.opened && removeEvents) {
-			parent.addEvents();
-			Application.current.window.onKeyDown.remove(onKeyDown);
 			Main.current.playCancelSound();
 		}
 		SaveData.save();
@@ -401,9 +401,11 @@ class ControlsDisplay implements IAlphabetScrollHost {
 			alphabet.buffer.update();
 		}
 
+		// controls.reload() replaces the input2action handle the state machine
+		// bound to, so re-request focus to re-bind the menu's actions to the
+		// fresh handle.
 		if (parent != null && parent.opened) {
-			parent.addEvents();
-			Application.current.window.onKeyDown.remove(onKeyDown);
+			Main.current.stateMachine.setFocus(parent);
 		}
 
 		Main.current.playConfirmSound();
@@ -509,9 +511,9 @@ class ControlsDisplay implements IAlphabetScrollHost {
 		SaveData.save();
 		Main.current.controls.reload();
 
+		// Re-bind the menu's actions to the fresh controls handle.
 		if (parent != null && parent.opened) {
-			parent.addEvents();
-			Application.current.window.onKeyDown.remove(onKeyDown);
+			Main.current.stateMachine.setFocus(parent);
 		}
 	}
 
@@ -572,6 +574,20 @@ class ControlsDisplay implements IAlphabetScrollHost {
 	}
 
 	function alphabetItemDisabled(index:Int):Bool {
+		return false;
+	}
+
+	// ControlsDisplay is keyboard-only; these are required by OptionsSubDisplay
+	// but never consume mouse events.
+	public function onMouseDown(x:Float, y:Float, button:lime.ui.MouseButton):Bool {
+		return false;
+	}
+
+	public function onMouseUp(x:Float, y:Float, button:lime.ui.MouseButton):Bool {
+		return false;
+	}
+
+	public function onMouseMove(x:Float, y:Float):Bool {
 		return false;
 	}
 

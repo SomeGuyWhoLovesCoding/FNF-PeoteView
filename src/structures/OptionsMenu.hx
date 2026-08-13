@@ -6,6 +6,7 @@ import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 import lime.ui.MouseButton;
 import lime.ui.MouseWheelMode;
+import system.MenuInput;
 
 /**
 	The options submenu.
@@ -14,7 +15,7 @@ import lime.ui.MouseWheelMode;
 	@since Development
 **/
 @:publicFields
-class OptionsMenu {
+class OptionsMenu implements MenuInput {
 	static var display(default, null):CustomDisplay;
 	static var optionsBuf(default, null):Buffer<OptionsSprite>;
 	static var optionsProg(default, null):CustomProgram;
@@ -96,27 +97,6 @@ class OptionsMenu {
 		optionsDisplay.update(deltaTime);
 	}
 
-	function addEvents() {
-		Tools.forSync(() -> {
-			var window = lime.app.Application.current.window;
-			Main.current.controls.bindTo(actions);
-
-			Main.current.mouseDown = mousePress;
-			window.onMouseWheel.add(moveCategory_mouse);
-			window.onKeyDown.add(handleKeyDown);
-			window.onKeyUp.add(handleKeyUp);
-		});
-	}
-
-	function removeEvents() {
-		var window = lime.app.Application.current.window;
-		Main.current.controls.unBind();
-		Main.current.mouseDown = null;
-		window.onMouseWheel.remove(moveCategory_mouse);
-		window.onKeyDown.remove(handleKeyDown);
-		window.onKeyUp.remove(handleKeyUp);
-	}
-
 	function open() {
 		optionsDisplay.closed = false;
 		active = opened = true;
@@ -128,11 +108,11 @@ class OptionsMenu {
 			alphaLerp = 0.0;
 		} catch (e) {}
 
-		addEvents();
-
 		if (!optionsProg.isIn(display)) {
 			display.addProgram(optionsProg);
 		}
+
+		Main.current.stateMachine.setFocus(this);
 	}
 
 	function close() {
@@ -140,19 +120,18 @@ class OptionsMenu {
 		var pf = Main.current.playField;
 
 		// Make sure to cancel any active binding before closing
-		if (optionsDisplay.controlsDisplay.binding) {
+		if (optionsDisplay.controlsDisplay.binding || optionsDisplay.controlsDisplay.bindingMania) {
 			optionsDisplay.controlsDisplay.cancelBinding();
 		}
-
-		removeEvents();
 
 		optionsDisplay.closed = true;
 
 		if (mm != null) {
 			MainMenu.selectedAlpha = 1.0;
-			mm.addEvents();
+			Main.current.stateMachine.setFocus(mm);
 		} else if (pf != null) {
 			var pauseScreen = pf.pauseScreen;
+			Main.current.stateMachine.setFocus(null);
 			pauseScreen.onOptionsMenuClose();
 		}
 
@@ -185,7 +164,7 @@ class OptionsMenu {
 
 	inline function isInvalidKeyState() {
 		var disp = optionsDisplay.controlsDisplay;
-		return optionsDisplay != null && (disp.binding && !disp.closed && !optionsDisplay.closed);
+		return optionsDisplay != null && ((disp.binding || disp.bindingMania) && !disp.closed && !optionsDisplay.closed);
 	}
 
 	function down(isDown:Bool, param:Int) {
@@ -236,42 +215,98 @@ class OptionsMenu {
 		optionsDisplay.enter();
 	}
 
-	function handleKeyDown(keyCode:KeyCode, keyModifier:KeyModifier) {
+	// --- Routed input (MenuInput) ---
+
+	public function onKeyDown(keyCode:KeyCode, keyModifier:KeyModifier):Bool {
+		if (!active)
+			return false;
+
 		if (keyCode == KeyCode.LEFT_SHIFT || keyCode == KeyCode.RIGHT_SHIFT)
 			shiftHeld = true;
 
 		if (optionsDisplay.closed)
-			return;
+			return false;
 
 		var disp = optionsDisplay.controlsDisplay;
 		if (disp != null && !disp.closed) {
 			disp.onKeyDown(keyCode, keyModifier);
-			return;
+			return true;
 		}
 
 		var gfx = optionsDisplay.graphicsDisplay;
 		if (gfx != null && !gfx.closed) {
 			gfx.onKeyDown(keyCode, keyModifier);
+			return true;
 		}
+		return false;
 	}
 
-	function handleKeyUp(keyCode:KeyCode, keyModifier:KeyModifier) {
+	public function onKeyUp(keyCode:KeyCode, keyModifier:KeyModifier):Bool {
+		if (!active)
+			return false;
 		if (keyCode == KeyCode.LEFT_SHIFT || keyCode == KeyCode.RIGHT_SHIFT)
 			shiftHeld = false;
+		return false;
+	}
+
+	public function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
+		if (!active)
+			return false;
+
+		var disp = optionsDisplay.activeDisplay;
+		if (disp != null) {
+			if (disp.onMouseDown(x, y, button))
+				return true;
+
+			// Only the controls category falls back to the global click behavior
+			// (left = enter, right = close); the scrollable lists consume left
+			// clicks for dragging and don't react to right clicks.
+			switch ((categoryNav.value() : OptionsCategorySelection)) {
+				case CONTROLS:
+					mousePress(x, y, button);
+				default:
+			}
+		}
+		return false;
+	}
+
+	public function onMouseUp(x:Float, y:Float, button:MouseButton):Bool {
+		if (!active)
+			return false;
+		var disp = optionsDisplay.activeDisplay;
+		if (disp != null) {
+			disp.onMouseUp(x, y, button);
+		}
+		return false;
+	}
+
+	public function onMouseMove(x:Float, y:Float):Bool {
+		if (!active)
+			return false;
+		var disp = optionsDisplay.activeDisplay;
+		if (disp != null) {
+			disp.onMouseMove(x, y);
+		}
+		return false;
+	}
+
+	public function onMouseWheel(deltaX:Float, deltaY:Float, mode:MouseWheelMode):Bool {
+		if (!active)
+			return false;
+		if (Math.floor(deltaY) > 0) left(true, 0);
+		else right(true, 0);
+		return false;
 	}
 
 	function mousePress(x:Float = 0.0, y:Float = 0.0, button:MouseButton) {
+		if (isInvalidKeyState())
+			return;
 		if (button == LEFT)
 			enter(true, 0);
 		if (button != RIGHT)
 			return;
 		close();
 		Main.current.playScrollSound();
-	}
-
-	function moveCategory_mouse(x:Float, y:Float, mouseWheelMode:MouseWheelMode) {
-		if (Math.floor(y) > 0) left(true, 0);
-		else right(true, 0);
 	}
 
 	function shutDown() {

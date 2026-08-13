@@ -5,6 +5,7 @@ import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 import lime.ui.MouseButton;
 import lime.ui.MouseWheelMode;
+import system.MenuInput;
 
 /**
 	Editor sub-menu that lets the player pick an editor to open.
@@ -14,7 +15,7 @@ import lime.ui.MouseWheelMode;
 	@since 0.94
 **/
 @:publicFields
-class EditorMenu {
+class EditorMenu implements MenuInput {
 	static var optionLabels:Array<String> = ['Noteskin Editor', 'Chart Editor', 'Mod Manager'];
 
 	var display:CustomDisplay;
@@ -36,7 +37,7 @@ class EditorMenu {
 	static var alphaLerps:Array<Float> = [];
 
 	var disposed:Bool = false;
-	var actions:ActionMap;
+	var actions(default, null):ActionMap;
 
 	function new() {}
 
@@ -122,7 +123,7 @@ class EditorMenu {
 
 		markupTxt.alpha = 1.0;
 
-		haxe.Timer.delay(addEvents, 100);
+		// The state machine focuses this menu right after init() returns.
 
 		actions = [
 			Controls.Action.UI_DOWN => {action: down},
@@ -186,7 +187,6 @@ class EditorMenu {
 		switch (editorIndex) {
 			case 0: // Noteskin Editor
 				Main.switchState(NOTE_VIEW);
-				removeEvents();
 			case 1: // Chart Editor (TODO)
 				Main.current.playConfirmSound();
 			case 2: // Mod Manager (TODO)
@@ -194,38 +194,44 @@ class EditorMenu {
 		}
 	}
 
-	// ── Key handler for BACKSPACE exit ────────────────────────────────────
+	// ── Routed input (MenuInput) ──────────────────────────────────────────
 
-	function handleKeyDown(key:KeyCode, modifier:KeyModifier) {
+	public function onKeyDown(key:KeyCode, modifier:KeyModifier):Bool {
 		if (disposed)
-			return;
+			return false;
 
 		if (key == KeyCode.BACKSPACE || key == KeyCode.ESCAPE) {
 			Main.current.playCancelSound();
 			Main.switchState(MAIN_MENU);
+			return true;
 		}
+		return false;
 	}
 
-	// ── Event management ──────────────────────────────────────────────────
-
-	function addEvents() {
-		var window = lime.app.Application.current.window;
-
-		Main.current.controls.bindTo(actions);
-		window.onKeyDown.add(handleKeyDown);
+	public function onKeyUp(key:KeyCode, modifier:KeyModifier):Bool {
+		return false;
 	}
 
-	function removeEvents() {
-		var window = lime.app.Application.current.window;
+	public function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
+		return false;
+	}
 
-		Main.current.controls.unBind();
-		window.onKeyDown.remove(handleKeyDown);
+	public function onMouseUp(x:Float, y:Float, button:MouseButton):Bool {
+		return false;
+	}
+
+	public function onMouseMove(x:Float, y:Float):Bool {
+		return false;
+	}
+
+	public function onMouseWheel(deltaX:Float, deltaY:Float, mode:MouseWheelMode):Bool {
+		return false;
 	}
 
 	// ── Dispose ───────────────────────────────────────────────────────────
 
 	function dispose() {
-		removeEvents();
+		// Input is unbound by the state machine when this menu loses focus.
 
 		for (txt in optionTexts)
 			txt.removeProgram();

@@ -9,15 +9,7 @@ import lime.app.Application;
 import lime.ui.Window;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
-
-private enum abstract StateSelection(Int) {
-	var NONE;
-	var MAIN_MENU;
-	var GAMEPLAY;
-	var AWARDS;
-	var NOTE_VIEW;
-	var EDITOR_MENU;
-}
+import system.MenuInput;
 
 /**
 	* The entry point for the application
@@ -139,56 +131,9 @@ class Main extends Application {
 	}
 
 	static public function switchState(newState:StateSelection, skipTransition:Bool = false) {
-		var instance = Main.current;
-
-		switch (instance.currentState) {
-			case MAIN_MENU:
-				Sys.println('dispose the main menu');
-				instance.mainMenu.dispose();
-				instance.mainMenu = null;
-			case GAMEPLAY:
-				Sys.println('dispose the gameplay menu');
-				instance.playField.dispose();
-				instance.playField = null;
-			case AWARDS:
-			case NOTE_VIEW:
-				Sys.println('dispose the noteskin editor menu');
-				instance.noteskinEditor.dispose();
-				instance.noteskinEditor = null;
-			case EDITOR_MENU:
-				Sys.println('dispose the editor menu');
-				instance.editorMenu.dispose();
-				instance.editorMenu = null;
-			case NONE:
-		}
-
-		instance.currentState = newState;
-
-		switch (newState) {
-			case MAIN_MENU:
-				Sys.println('create the main menu');
-				instance.mainMenu = new MainMenu();
-				instance.mainMenu.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
-			case GAMEPLAY:
-				Sys.println('create the gameplay menu');
-				instance.playField = new PlayField(songChosen);
-				instance.playField.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
-				instance.playField.downScroll = SaveData.state.preferences.downScroll;
-			case AWARDS:
-			case NOTE_VIEW:
-				Sys.println('create the noteskin editor menu');
-				instance.noteskinEditor = new NoteskinEditor();
-				instance.noteskinEditor.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
-			case EDITOR_MENU:
-				Sys.println('create the editor menu');
-				instance.editorMenu = new EditorMenu();
-				instance.editorMenu.init(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay);
-			case NONE:
-		}
-
-		var peoteView = Main.current.peoteView;
-
-		TextureSystem.processQueue();
+		// Queued and applied at the start of the next application frame so it
+		// never happens in the middle of input event dispatch.
+		current.stateMachine.switchState(newState);
 	}
 
 	// ------------------------------------------------------------
@@ -212,7 +157,13 @@ class Main extends Application {
 	var editorScreen:CustomDisplay;
 
 	// STATES
-	var currentState:StateSelection;
+	var currentState(get, never):StateSelection;
+
+	inline function get_currentState() {
+		return stateMachine != null ? stateMachine.current : NONE;
+	}
+
+	var stateMachine:StateMachine;
 	var mainMenu:MainMenu;
 	var playField:PlayField;
 	var noteskinEditor:NoteskinEditor;
@@ -259,6 +210,13 @@ class Main extends Application {
 
 		haxe.Timer.delay(function() {
 			controls = new Controls();
+
+			// The state machine is created after the input2action control binding
+			// so its window listeners fire after the controls (actions dispatch
+			// before routed extras), matching the original ordering.
+			stateMachine = new StateMachine(window, controls);
+			stateMachine.createState = stateCreate;
+			stateMachine.destroyState = stateDestroy;
 
 			#if (!html5)
 			trace("Is es3? " + PeoteGL.Version.isES3);
@@ -324,6 +282,62 @@ class Main extends Application {
 			Application.current.window.title = title.substring(0, titleLen - 13);
 			// Application.current.window.hidden = false;
 		}, 1000);
+	}
+
+	/** Build the state object for `newState`. Returns the menu to route input to (null = no routed menu). */
+	function stateCreate(newState:StateSelection):MenuInput {
+		switch (newState) {
+			case MAIN_MENU:
+				Sys.println('create the main menu');
+				mainMenu = new MainMenu();
+				mainMenu.init(topDisplay, middleDisplay, bottomDisplay);
+				return mainMenu;
+			case GAMEPLAY:
+				Sys.println('create the gameplay menu');
+				playField = new PlayField(songChosen);
+				playField.init(topDisplay, middleDisplay, bottomDisplay);
+				playField.downScroll = SaveData.state.preferences.downScroll;
+				return null;
+			case AWARDS:
+				return null;
+			case NOTE_VIEW:
+				Sys.println('create the noteskin editor menu');
+				noteskinEditor = new NoteskinEditor();
+				noteskinEditor.init(topDisplay, middleDisplay, bottomDisplay);
+				return null;
+			case EDITOR_MENU:
+				Sys.println('create the editor menu');
+				editorMenu = new EditorMenu();
+				editorMenu.init(topDisplay, middleDisplay, bottomDisplay);
+				return editorMenu;
+			case NONE:
+				return null;
+		}
+		return null;
+	}
+
+	/** Tear down the current state object. */
+	function stateDestroy(oldState:StateSelection) {
+		switch (oldState) {
+			case MAIN_MENU:
+				Sys.println('dispose the main menu');
+				mainMenu.dispose();
+				mainMenu = null;
+			case GAMEPLAY:
+				Sys.println('dispose the gameplay menu');
+				playField.dispose();
+				playField = null;
+			case AWARDS:
+			case NOTE_VIEW:
+				Sys.println('dispose the noteskin editor menu');
+				noteskinEditor.dispose();
+				noteskinEditor = null;
+			case EDITOR_MENU:
+				Sys.println('dispose the editor menu');
+				editorMenu.dispose();
+				editorMenu = null;
+			case NONE:
+		}
 	}
 
 	private function createSounds() {
@@ -421,6 +435,14 @@ class Main extends Application {
 		simulatedDeltaTime = haxe.Timer.stamp();
 
 		var lastTitle = Application.current.window.title;
+
+		// Safe point: apply queued state transitions and input-focus changes
+		// before anything else runs this frame. Textures created during a state
+		// change are uploaded right away (this runs a GC sweep, so only on
+		// actual transitions).
+		if (stateMachine != null && stateMachine.beginFrame()) {
+			TextureSystem.processQueue();
+		}
 
 		if (_started) {
 			// Use the live window frame rate so changing the framerate option at

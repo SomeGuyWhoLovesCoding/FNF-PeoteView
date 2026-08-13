@@ -1,8 +1,11 @@
 package structures;
 
 import input2action.ActionMap;
+import lime.ui.KeyCode;
+import lime.ui.KeyModifier;
 import lime.ui.MouseButton;
 import lime.ui.MouseWheelMode;
+import system.MenuInput;
 
 /**
 	The first state of the game.
@@ -11,7 +14,7 @@ import lime.ui.MouseWheelMode;
 	@since Development
 **/
 @:publicFields
-class MainMenu {
+class MainMenu implements MenuInput {
 	inline static var fnfpVer = '0.94';
 
 	static var optionAnims:Array<String> = [
@@ -36,7 +39,7 @@ class MainMenu {
 	static var nav(default, null):Navigation = new Navigation();
 
 	var disposed:Bool = false;
-	var actions:ActionMap;
+	var actions(default, null):ActionMap;
 
 	function new() {}
 
@@ -135,8 +138,6 @@ class MainMenu {
 			Controls.Action.UI_ACCEPT => {action: accept},
 			Controls.Action.GAME_DEBUG => {action: goToEditors}
 		];
-
-		addEvents();
 	}
 
 	static var optionYLerps:Array<Float> = [for (i in 0...5) 1];
@@ -243,7 +244,6 @@ class MainMenu {
 			case 'freeplay': // FREEPLAY
 				selectedAlpha = 0.0;
 				Main.current.freeplayMenu.open();
-				removeEvents();
 				Main.current.playScrollSound();
 			case 'awards': // AWARDS
 				// TODO
@@ -254,11 +254,9 @@ class MainMenu {
 			case 'options': // OPTIONS
 				selectedAlpha = 0.0;
 				Main.current.optionsMenu.open();
-				removeEvents();
 				Main.current.playScrollSound();
 			case 'editors': // EDITORS
 				selectedAlpha = 0.0;
-				removeEvents();
 				Main.switchState(EDITOR_MENU);
 				Main.current.playScrollSound();
 			case 'backspace to exit':
@@ -267,95 +265,73 @@ class MainMenu {
 		}
 	}
 
-	function mouseDown(x:Float, y:Float, button:MouseButton) {
+	// --- Routed input (MenuInput) ---
+
+	public function onKeyDown(key:KeyCode, modifier:KeyModifier):Bool {
+		return false;
+	}
+
+	public function onKeyUp(key:KeyCode, modifier:KeyModifier):Bool {
+		return false;
+	}
+
+	public function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
 		if (disposed || optionBuf == null || view == null)
-			return;
-		//trace('.');
+			return false;
 		var peoteView = Main.current.peoteView;
-		//trace('.');
 		x = view.localX(x, peoteView);
-		//trace('.');
 		y = view.localY(y, peoteView);
-		//trace('.');
 		if (button != MouseButton.LEFT)
-			return;
-		//trace('.');
+			return false;
 		for (i in 0...optionBuf.length) {
-		//trace(i);
 			var option = optionBuf.getElement(i);
 			if (x >= option.x && x <= option.x + option.w && y >= (option.y - 15) && y <= option.y + (option.h - 15)) {
 				nav.setTo(i);
-				return;
+				return false;
 			}
 		}
+		return false;
 	}
 
-	function mouseUp(x:Float, y:Float, button:MouseButton) {
-		//trace('.');
+	public function onMouseUp(x:Float, y:Float, button:MouseButton):Bool {
 		if (disposed || optionBuf == null || view == null)
-			return;
-		//trace('.');
+			return false;
 		var peoteView = Main.current.peoteView;
-		//trace('.');
 		x = view.localX(x, peoteView);
-		//trace('.');
 		y = view.localY(y, peoteView);
-		//trace('.');
 		if (button != MouseButton.LEFT)
-			return;
-		//trace('.');
+			return false;
 		for (i in 0...optionBuf.length) {
-		//trace(i);
 			var option = optionBuf.getElement(i);
-			if (option == null) return;
+			if (option == null) return false;
 			if (x >= option.x && x <= option.x + option.w && y >= (option.y - 15) && y <= option.y + (option.h - 15) && i == nav.value()) {
-				// get off the window.onMouseUp dispatch stack before running doIt(),
-				// because doIt() -> removeEvents() -> window.onMouseUp.remove(mouseUp)
-				// mutates lime's listener arrays while dispatch is iterating them
-				Tools.forSync(doIt);
+				// Safe to run directly: opening a menu or switching state only
+				// queues focus/state changes instead of mutating listeners here.
+				doIt();
 				break;
 			}
 		}
+		return false;
+	}
+
+	public function onMouseMove(x:Float, y:Float):Bool {
+		return false;
+	}
+
+	public function onMouseWheel(deltaX:Float, deltaY:Float, mode:MouseWheelMode):Bool {
+		updateMenuOptions_mouse(deltaX, deltaY, mode);
+		return false;
 	}
 
 	function goToEditors(isDown:Bool, param:Int) {
 		if (!isDown)
 			return;
-		//trace('.');
-		removeEvents();
-		//trace('.');
 		Main.switchState(EDITOR_MENU);
 	}
 
-	function addEvents() {
-		var window = lime.app.Application.current.window;
-
-		//trace('.');
-		Main.current.controls.bindTo(actions);
-		//trace('.');
-		Main.current.mouseDown = mouseDown;
-		//trace('.');
-		window.onMouseWheel.add(updateMenuOptions_mouse);
-		//trace('.');
-		window.onMouseUp.add(mouseUp);
-	}
-
-	function removeEvents() {
-		var window = lime.app.Application.current.window;
-		//trace('.');
-		Main.current.controls.unBind();
-		//trace('.');
-		Main.current.mouseDown = null;
-		//trace('.');
-		window.onMouseWheel.remove(updateMenuOptions_mouse);
-		//trace('.');
-		window.onMouseUp.remove(mouseUp);
-	}
-
 	function dispose() {
-		removeEvents();
+		// Input is unbound by the state machine when this menu loses focus.
 
-		//trace('.');
 		watermarkTxt.removeProgram();
 
 		// dont do this
@@ -364,11 +340,9 @@ class MainMenu {
 			optionProg.setColorFormula('c');
 		}*/
 
-		//trace('.');
 		display.removeProgram(optionProg);
 		display = null;
 
-		//trace('.');
 		view.removeProgram(backgroundProg);
 		view = null;
 
