@@ -34,8 +34,6 @@ class FreeplayMenu extends GameState {
 	var dragVelocity:Float = 0.0;
 	var lastDragTime:Float = 0.0;
 
-	var popRequested:Bool = false;
-
 	private static inline var DRAG_THRESHOLD:Float = 1.0; // pixels per nav tick
 
 	//////////////////////// THE REST ////////////////////////
@@ -82,21 +80,12 @@ class FreeplayMenu extends GameState {
 		}
 
 		freeplayScreen.render(deltaTime);
-
-		// Fade-out finished (handleShutdown ran inside the screen's render):
-		// leave the stack now. The `popRequested` guard keeps us from popping
-		// twice, and open() resets it so a re-open during the fade cancels it.
-		if (!opened && !popRequested && freeplayScreen.isFadedOut) {
-			popRequested = true;
-			Main.current.stateMachine.popSubstate();
-		}
 	}
 
 	function open() {
 		Main.current.popupFreeplayMenu();
 
 		opened = active = true;
-		popRequested = false;
 
 		Main.current.stateMachine.pushSubstate(this);
 
@@ -115,9 +104,9 @@ class FreeplayMenu extends GameState {
 		if (!opened)
 			return;
 
-		// Stay in the stack: the machine keeps calling our render() so the
-		// screen can fade out, and we pop ourselves once it's invisible.
 		opened = false;
+
+		Main.current.stateMachine.popSubstate();
 
 		var mm = Main.current.mainMenu;
 		if (mm != null) {
@@ -126,14 +115,14 @@ class FreeplayMenu extends GameState {
 	}
 
 	function back(isDown:Bool, param:Int) {
-		if (!isDown || !opened)
+		if (!isDown)
 			return;
 		close();
 		Main.current.playCancelSound();
 	}
 
 	function down(isDown:Bool, param:Int) {
-		if (!isDown || !opened)
+		if (!isDown)
 			return;
 		nav.scroll(1);
 		nav.resetIfOver(freeplayScreen.songsAvailable.length);
@@ -141,7 +130,7 @@ class FreeplayMenu extends GameState {
 	}
 
 	function up(isDown:Bool, param:Int) {
-		if (!isDown || !opened)
+		if (!isDown)
 			return;
 		nav.scroll(-1);
 		nav.resetIfUnder(freeplayScreen.songsAvailable.length - 1);
@@ -149,7 +138,7 @@ class FreeplayMenu extends GameState {
 	}
 
 	function enter(isDown:Bool, param:Int) {
-		if (!isDown || !opened)
+		if (!isDown)
 			return;
 
 		var index = Math.round(nav.value());

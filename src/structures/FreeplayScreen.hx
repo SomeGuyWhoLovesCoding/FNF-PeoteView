@@ -207,17 +207,6 @@ class FreeplayScreen implements IAlphabetScrollHost {
 		xLerpPrev = xLerp;
 	}
 
-	/**
-		True once the fade-out is complete (same threshold as render's shutdown
-		check). After `handleShutdown` resets alphaLerp this stays true, letting
-		the FreeplayMenu pop itself off the substate stack.
-	**/
-	var isFadedOut(get, never):Bool;
-
-	inline function get_isFadedOut():Bool {
-		return alphaLerp < 0.1 / 256;
-	}
-
 	inline function updateLerps(ratio:Float) {
 		var curSelected = parent.nav.value();
 		alphaLerp = Tools.lerp(alphaLerp, parent.opened ? 1.0 : 0.0, ratio);

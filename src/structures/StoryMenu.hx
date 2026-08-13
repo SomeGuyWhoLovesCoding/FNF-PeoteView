@@ -14,8 +14,6 @@ class StoryMenu extends GameState {
 
 	var nav(default, null):Navigation = new Navigation();
 
-	var popRequested:Bool = false;
-
 	function new() {
 		persistent = true;
 	}
@@ -24,18 +22,10 @@ class StoryMenu extends GameState {
 		display = disp;
 	}
 
-	override function update(deltaTime:Float) {
-		// Same contract as the other menus: close() only flips `opened`;
-		// the state pops itself on the first update after closing.
-		if (!opened && !popRequested) {
-			popRequested = true;
-			Main.current.stateMachine.popSubstate();
-		}
-	}
+	override function update(deltaTime:Float) {}
 
 	function open() {
 		active = opened = true;
-		popRequested = false;
 		Main.current.stateMachine.pushSubstate(this);
 	}
 
@@ -43,6 +33,7 @@ class StoryMenu extends GameState {
 		if (!opened)
 			return;
 		opened = false;
+		Main.current.stateMachine.popSubstate();
 	}
 
 	function back(isDown:Bool, param:Int) {
