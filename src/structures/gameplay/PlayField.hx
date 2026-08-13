@@ -22,7 +22,7 @@ class PlayField {
 	#end
 
 	private var chartPath(default,
-		null):String; // made this a variable due to complications with lua scripting. not a bug complication, but just an intentional design quirk.
+		null):String;
 
 	function new(path:String) {
 		chartPath = Paths.asset(path);
@@ -98,7 +98,7 @@ class PlayField {
 			var pos = MetaNote.floatToMetaNotePosition(songPosition);
 			noteSystem.resetStrumlines(false);
 			noteSystem.update(pos);
-			noteSystem.renderNotes(pos); // new, because of the change I did to the note system to allow for an easy greedy merging optimization
+			noteSystem.renderNotes(pos);
 		}
 		if (hud != null) {
 			hud.render();
@@ -139,10 +139,6 @@ class PlayField {
 			mania = 256;
 		if (mania < 1)
 			mania = 1;
-
-		/*#if linc_luajit_funkinview
-			funkinviewlua.callFunction('postManiaChange', value);
-			#end */
 
 		return mania = value;
 	}
@@ -300,12 +296,6 @@ class PlayField {
 			startSong(Chart.header);
 			setTime(timeForRestartingBackwardTime);
 
-			// Reflect the seek target into songPosition immediately. In this
-			// restart path startedCountdown stays false, so Mixer.update (the
-			// only code that syncs songPosition from the audio) never runs; if
-			// an input fires before the first update() it would compute its
-			// backward offset from the stale pre-song value (-crochet*4.5-offset)
-			// and trigger a bogus second restart that lands at 0.
 			songPosition = timeForRestartingBackwardTime;
 
 			#if linc_luajit_funkinview
@@ -350,13 +340,10 @@ class PlayField {
 		var content = sys.io.File.getContent(eventsPath);
 		var rawJsonParent = haxe.Json.parse(content);
 
-		// rawJsonParent.events.sort((a, b) -> a.evTime > b.evTime);
-
 		var rawJson:Array<EventSystem.RawEventObject> = rawJsonParent.events;
 
 		for (event in rawJson) {
 			e.parsedObjects.push(new EventSystem.EventObject(event.evName, event.value1, event.value2 != null ? event.value2 : "", event.evTime));
-			// trace(event.evName,event.value1,event.value2,event.evTime);
 		}
 
 		e.init();
@@ -417,11 +404,7 @@ class PlayField {
 			if (startedCountdown) {
 				Mixer.update(this, deltaTime);
 
-				// If the song hasn't started yet, update the countdown conductor only.
-				// Do NOT apply latency compensation here — countdownDisp.conductor must see a pure musical timeline.
 				if (!songStarted && !songEnded) {
-					// Mixer already advanced playfield.songPosition during pre-start,
-					// so simply push that time to the countdown conductor.
 					if (countdownDisp != null && countdownDisp.conductor != null) {
 						countdownDisp.conductor.time = songPosition;
 					}
@@ -583,8 +566,6 @@ class PlayField {
 		if (beat == 0 && !songStarted) {
 			onStartSong.dispatch(Chart.header);
 
-			// When the game actually begins, remove countdown listener immediately
-			// to avoid duplicate triggers and let Main.conductor take over.
 			if (countdownDisp.conductor != null)
 				countdownDisp.conductor.onBeatUnoffsetted.remove(countdownBeatHit);
 			Main.conductor.onStep.add(stepHit);
@@ -663,12 +644,7 @@ class PlayField {
 
 		var absTiming = Math.abs(timing);
 		var notesInOne_accuracy = notesInOne * 10000;
-		// static var ratingList = [];
 
-		// determine rating list based on 0%..100%
-
-		// Handle edge cases first
-		// If timing is worse than the worst threshold, return worst rating
 		if (absTiming >= ratingJudgementList[ratingJudgementList.length - 1][0]) {
 			var worstJudgement = ratingJudgementList[ratingJudgementList.length - 1];
 			var judgementID = Std.int(worstJudgement[1]);
@@ -682,7 +658,6 @@ class PlayField {
 			return;
 		}
 
-		// Check from best to worst thresholds
 		for (i in 0...ratingJudgementList.length) {
 			if (absTiming < ratingJudgementList[i][0]) {
 				var judgement = ratingJudgementList[i];
