@@ -186,52 +186,6 @@ class NoteSystem {
 	}
 
 	/**
-		Press-time hit candidate scan.
-
-		The render pass only arms `receptor.noteToHit` inside `renderNotes()` (via
-		`drawNote`), which runs once per frame — so a key press can observe up to a
-		frame of stale arming, and a note that entered the hit window since the last
-		render isn't hittable yet. This scans the currently spawned notes directly at
-		press time and returns the closest unjudged note id on `strumline` lane
-		`index` that is inside the hit window, or `-1` when there is none. The caller
-		arms that note and hits it immediately.
-	**/
-	function findPlayerHitCandidate(strumline:Strumline, index:Int, posWithLatency:Int64):Int64 {
-		var spawner = noteSpawner;
-		if (spawner == null)
-			return -1;
-
-		var lane = strumlines.indexOf(strumline);
-		if (lane < 0)
-			return -1;
-
-		var laneCount = strumlines.length;
-		var offset = Main.conductor.offset;
-		var window = _cachedHitbox - offset;
-		var farEdge = -_cachedHitbox - offset;
-		var scrollSpeed = parent.scrollSpeed;
-
-		var bestId:Int64 = -1;
-		var bestAbs:Float = Math.POSITIVE_INFINITY;
-		var i = spawner.bottom;
-		while (i < spawner.top) {
-			var n = File.getNote(i);
-			if (n.index == index && (n.type % laneCount) == lane && !File.getJudgement(i)) {
-				var diff = MetaNote.metaNotePositionToSongTime(n.position - posWithLatency) * scrollSpeed;
-				if (diff < window && diff >= farEdge) {
-					var absDiff = Math.abs(diff);
-					if (absDiff < bestAbs) {
-						bestAbs = absDiff;
-						bestId = i;
-					}
-				}
-			}
-			i++;
-		}
-		return bestId;
-	}
-
-	/**
 	 * Recomputes the confirm window for every note into `confirmWindowTable`.
 	 *
 	 * Unlike the old per-frame forward scan, this runs exactly once per chart
