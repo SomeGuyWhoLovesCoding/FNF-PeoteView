@@ -135,9 +135,12 @@ class StateMachine {
 		}
 
 		current = state;
+		Sys.println('[ StateMachine ] doSwitch: creating $state');
 		safe(() -> current.create());
+		Sys.println('[ StateMachine ] doSwitch: created');
 		rebind();
 		TextureSystem.processQueue();
+		Sys.println('[ StateMachine ] doSwitch: done');
 	}
 
 	function doPush(state:GameState) {

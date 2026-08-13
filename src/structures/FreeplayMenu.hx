@@ -153,6 +153,7 @@ class FreeplayMenu extends GameState {
 			return;
 
 		var index = Math.round(nav.value());
+		Sys.println('[ FreeplayMenu ] enter: index=$index of ${freeplayScreen.songsAvailable.length}');
 		if (index >= 0 && index < freeplayScreen.songsAvailable.length && freeplayScreen.alphabetItemDisabled(index)) {
 			// The selected song's chart is incomplete; do not try to play it.
 			Main.current.playCancelSound();

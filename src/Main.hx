@@ -148,10 +148,13 @@ class Main extends Application {
 		if (instance == null)
 			return;
 
+		Sys.println('[ Main ] switchState -> $newState');
+
 		switch (newState) {
 			case MAIN_MENU:
 				instance.stateMachine.switchState(new MainMenu(instance.topDisplay, instance.middleDisplay, instance.bottomDisplay));
 			case GAMEPLAY:
+				Sys.println('[ Main ] GAMEPLAY: constructing PlayField ($songChosen)');
 				var pf = new PlayField(songChosen);
 				pf.downScroll = SaveData.state.preferences.downScroll;
 				instance.stateMachine.switchState(pf);

@@ -28,11 +28,14 @@ class PlayField extends GameState {
 
 	function new(path:String) {
 		chartPath = Paths.asset(path);
+		Sys.println('[ PlayField ] new: $chartPath');
 
 		Chart.load(chartPath);
+		Sys.println('[ PlayField ] new: chart loaded');
 	}
 
 	override function create() {
+		Sys.println('[ PlayField ] create()');
 		init(Main.current.topDisplay, Main.current.middleDisplay, Main.current.bottomDisplay);
 	}
 
@@ -41,8 +44,11 @@ class PlayField extends GameState {
 		this.display = display;
 		this.view = view;
 
+		Sys.println('[ PlayField ] init');
+
 		#if linc_luajit_funkinview
 		funkinviewlua = new FunkinViewLua(this, chartPath, Chart.header);
+		Sys.println('[ PlayField ] lua created');
 		#end
 
 		createPlayfield(roof, display, Chart.header.mania);
