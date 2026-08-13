@@ -179,9 +179,13 @@ class PlayField {
 		if (value > Mixer.length - 1000)
 			value = Mixer.length - 1000;
 
-		if (value < songPosition) {
+		var isBackwards = value < songPosition;
+
+		if (isBackwards) {
 			onRestartingForBackwardTimeSetting = true;
 			timeForRestartingBackwardTime = value;
+
+			Sys.println("Update backwards " + timeForRestartingBackwardTime + "ms (clearing events and restarting the song)");
 
 			if (eventSystem != null)
 				eventSystem.clearEventTimers(); // immediately clear out any event timers to prevent them flooding the rest of the song through
@@ -189,20 +193,26 @@ class PlayField {
 			#if linc_luajit_funkinview
 			funkinviewlua.callFunction('preTimeChange', timeForRestartingBackwardTime, Chart.header);
 			#end
+			Sys.println("Will pause the song here before restarting it");
+
 			pause(false);
 			Tools.forSync(() -> {
 				Main.switchState(GAMEPLAY, true);
 			});
-			return;
 		}
 
 		Mixer.setTime(Math.max(value, 0.0), this);
+
+		if (isBackwards) return;
+
 		if (hud != null && SaveData.state.preferences.ratingPopup)
 			hud.hideRatingPopup();
+
 		if (noteSystem != null) {
 			var pos = MetaNote.floatToMetaNotePosition(value);
 			noteSystem.onSongPositionJump(pos, pushToOffset);
 		}
+
 		if (field != null)
 			field.resetCharacters();
 	}
@@ -364,6 +374,8 @@ class PlayField {
 			ready = true;
 			return;
 		}
+
+		Sys.println("Pre update: " + MiniAudio.getPlaybackPosition());
 
 		display.update();
 		view.update();
