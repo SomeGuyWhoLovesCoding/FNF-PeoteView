@@ -37,6 +37,7 @@ class MainMenu {
 
 	var disposed:Bool = false;
 	var actions:ActionMap;
+	var pendingDoIt:Bool = false;
 
 	function new() {}
 
@@ -154,6 +155,10 @@ class MainMenu {
 	}
 
 	function update(deltaTime:Float) {
+		if (pendingDoIt) {
+			pendingDoIt = false;
+			doIt();
+		}
 		if (optionBuf == null)
 			return; // stupid
 
@@ -283,6 +288,8 @@ class MainMenu {
 		for (i in 0...optionBuf.length) {
 		//trace(i);
 			var option = optionBuf.getElement(i);
+			trace(option + " " + i);
+			if (option == null) return;
 			if (x >= option.x && x <= option.x + option.w && y >= (option.y - 15) && y <= option.y + (option.h - 15)) {
 				nav.setTo(i);
 				return;
@@ -307,12 +314,14 @@ class MainMenu {
 		for (i in 0...optionBuf.length) {
 		//trace(i);
 			var option = optionBuf.getElement(i);
+			trace(option + " " + i);
 			if (option == null) return;
 			if (x >= option.x && x <= option.x + option.w && y >= (option.y - 15) && y <= option.y + (option.h - 15) && i == nav.value()) {
-				// get off the window.onMouseUp dispatch stack before running doIt(),
-				// because doIt() -> removeEvents() -> window.onMouseUp.remove(mouseUp)
-				// mutates lime's listener arrays while dispatch is iterating them
-				Tools.forSync(doIt);
+				// Can't call doIt() here directly, because doIt() -> removeEvents()
+				// -> window.onMouseUp.remove(mouseUp) mutates lime's listener
+				// arrays while onMouseUp dispatch is still iterating them.
+				// Timer.delay is not reliable for this (fires same-frame on HL release).
+				pendingDoIt = true;
 				break;
 			}
 		}
@@ -333,7 +342,7 @@ class MainMenu {
 		//trace('.');
 		Main.current.controls.bindTo(actions);
 		//trace('.');
-		Main.current.mouseDown = mouseDown;
+		window.onMouseDown.add(mouseDown);
 		//trace('.');
 		window.onMouseWheel.add(updateMenuOptions_mouse);
 		//trace('.');
@@ -345,7 +354,7 @@ class MainMenu {
 		//trace('.');
 		Main.current.controls.unBind();
 		//trace('.');
-		Main.current.mouseDown = null;
+		window.onMouseDown.remove(mouseDown);
 		//trace('.');
 		window.onMouseWheel.remove(updateMenuOptions_mouse);
 		//trace('.');
