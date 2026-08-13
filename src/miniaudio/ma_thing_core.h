@@ -109,7 +109,17 @@ static struct AudioDeviceState {
 
 #define DEVICE_CHECK_COOLDOWN_MS 500
 
+// The device probe is NOT lock-free-safe: startAudioDeviceMonitoring() spawns
+// the monitor thread (which immediately probes) and then probes again on the
+// calling thread, and the monitor thread probes every 500ms forever after.
+// Two threads writing infoBuffers[slot] (std::string deviceName/deviceId)
+// concurrently is heap corruption, so the probe is serialized with a mutex.
+// This is a ~ms COM query, not an audio-callback hot path.
+static std::mutex g_deviceProbeMutex;
+
 static bool refreshDeviceState() {
+    std::lock_guard<std::mutex> probeLock(g_deviceProbeMutex);
+
     HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
     bool comInitialized = (hr == S_OK || hr == S_FALSE);
 
