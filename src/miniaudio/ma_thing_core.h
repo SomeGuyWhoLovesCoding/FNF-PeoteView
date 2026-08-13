@@ -1225,6 +1225,7 @@ public:
         lastQuerySystemTime.store(0, std::memory_order_relaxed);
         lastQueryPlaybackRate.store(1.0, std::memory_order_relaxed);
         totalFramesProcessed.store(0, std::memory_order_relaxed);  // <-- Critical: reset frame counter
+        lastLoadFrame = 0;                                         // <-- must reset: otherwise newTotalFrames - lastLoadFrame underflows after restart
         
         memset(&device, 0, sizeof(ma_device));
     }
@@ -1296,6 +1297,16 @@ public:
                 if (s.asyncState.nextBufferReady.load(std::memory_order_relaxed))
                     loadLoadingBufferSync(i);
             }
+
+            // Reposition the worker-owned decoder to the seek target.  After a
+            // song restart (destroy+init) the worker decoder is freshly opened at
+            // frame 0, so without this the worker's next fill would perform a huge
+            // forward seek (0 -> target+4410) whose stb_vorbis coarse seek can fail,
+            // producing an empty next buffer and stalling/restarting the stream.
+            // The worker is paused and idle here (waitUntilIdle above), so touching
+            // workerDecoder from the main thread is safe.
+            if (s.workerDecoderInitialized)
+                ma_decoder_seek_to_pcm_frame(&s.workerDecoder, target);
         }
 
         mixerState.store((pos < (int64_t)streams[longestDecoderIndex].decoderLength) ? 2 : 3, std::memory_order_release);
