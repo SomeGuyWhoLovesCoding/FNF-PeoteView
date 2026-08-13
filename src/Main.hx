@@ -242,17 +242,17 @@ class Main extends Application {
 
 		SaveData.init(window);
 
-		window.onKeyDown.add((code, modifier) -> trace('onKeyDown $code $modifier ' + Date.now()));
+		/*window.onKeyDown.add((code, modifier) -> trace('onKeyDown $code $modifier ' + Date.now()));
 
 		window.onKeyUp.add((code, modifier) -> trace('onKeyUp $code $modifier ' + Date.now()));
 
-		window.onMouseDown.add((x, y, button) -> trace('onMouseDown $x $y $button ' + Date.now()));
+		window.onMouseDown.add((x, y, button) -> trace('onMouseDown $x $y $button ' + Date.now()));*/
 
 		var frameRate = SaveData.state.graphics.frameRate;
 		var vsync = SaveData.state.graphics.vsync;
 		FunkinMainLoop.run(frameRate, false, vsync);
 
-		trace('');
+		//trace('');
 
 		peoteView = new PeoteView(window);
 		TextureSystem.processQueue();

@@ -161,12 +161,15 @@ class MainMenu {
 		if (cur != lastNavValue) {
 			lastNavValue = cur;
 			for (i in 0...optionBuf.length) {
-				optionBuf.getElement(i).playAnimation(optionAnims[i] + (i == cur ? ' white' : ' basic'), true);
+				var opt = optionBuf.getElement(i);
+				if (opt == null) continue;
+				opt.playAnimation(optionAnims[i] + (i == cur ? ' white' : ' basic'), true);
 			}
 		}
 
 		for (i in 0...optionBuf.length) {
 			var option = optionBuf.getElement(i);
+			if (option == null) continue;
 
 			var t = Math.min(deltaTime * 0.0115, 1);
 			if (t == 1)
@@ -267,18 +270,18 @@ class MainMenu {
 	function mouseDown(x:Float, y:Float, button:MouseButton) {
 		if (disposed || optionBuf == null || view == null)
 			return;
-		trace('.');
+		//trace('.');
 		var peoteView = Main.current.peoteView;
-		trace('.');
+		//trace('.');
 		x = view.localX(x, peoteView);
-		trace('.');
+		//trace('.');
 		y = view.localY(y, peoteView);
-		trace('.');
+		//trace('.');
 		if (button != MouseButton.LEFT)
 			return;
-		trace('.');
+		//trace('.');
 		for (i in 0...optionBuf.length) {
-		trace(i);
+		//trace(i);
 			var option = optionBuf.getElement(i);
 			if (x >= option.x && x <= option.x + option.w && y >= (option.y - 15) && y <= option.y + (option.h - 15)) {
 				nav.setTo(i);
@@ -288,22 +291,23 @@ class MainMenu {
 	}
 
 	function mouseUp(x:Float, y:Float, button:MouseButton) {
-		trace('.');
+		//trace('.');
 		if (disposed || optionBuf == null || view == null)
 			return;
-		trace('.');
+		//trace('.');
 		var peoteView = Main.current.peoteView;
-		trace('.');
+		//trace('.');
 		x = view.localX(x, peoteView);
-		trace('.');
+		//trace('.');
 		y = view.localY(y, peoteView);
-		trace('.');
+		//trace('.');
 		if (button != MouseButton.LEFT)
 			return;
-		trace('.');
+		//trace('.');
 		for (i in 0...optionBuf.length) {
-		trace(i);
+		//trace(i);
 			var option = optionBuf.getElement(i);
+			if (option == null) return;
 			if (x >= option.x && x <= option.x + option.w && y >= (option.y - 15) && y <= option.y + (option.h - 15) && i == nav.value()) {
 				// get off the window.onMouseUp dispatch stack before running doIt(),
 				// because doIt() -> removeEvents() -> window.onMouseUp.remove(mouseUp)
@@ -317,41 +321,41 @@ class MainMenu {
 	function goToEditors(isDown:Bool, param:Int) {
 		if (!isDown)
 			return;
-		trace('.');
+		//trace('.');
 		removeEvents();
-		trace('.');
+		//trace('.');
 		Main.switchState(EDITOR_MENU);
 	}
 
 	function addEvents() {
 		var window = lime.app.Application.current.window;
 
-		trace('.');
+		//trace('.');
 		Main.current.controls.bindTo(actions);
-		trace('.');
+		//trace('.');
 		Main.current.mouseDown = mouseDown;
-		trace('.');
+		//trace('.');
 		window.onMouseWheel.add(updateMenuOptions_mouse);
-		trace('.');
+		//trace('.');
 		window.onMouseUp.add(mouseUp);
 	}
 
 	function removeEvents() {
 		var window = lime.app.Application.current.window;
-		trace('.');
+		//trace('.');
 		Main.current.controls.unBind();
-		trace('.');
+		//trace('.');
 		Main.current.mouseDown = null;
-		trace('.');
+		//trace('.');
 		window.onMouseWheel.remove(updateMenuOptions_mouse);
-		trace('.');
+		//trace('.');
 		window.onMouseUp.remove(mouseUp);
 	}
 
 	function dispose() {
 		removeEvents();
 
-		trace('.');
+		//trace('.');
 		watermarkTxt.removeProgram();
 
 		// dont do this
@@ -360,11 +364,11 @@ class MainMenu {
 			optionProg.setColorFormula('c');
 		}*/
 
-		trace('.');
+		//trace('.');
 		display.removeProgram(optionProg);
 		display = null;
 
-		trace('.');
+		//trace('.');
 		view.removeProgram(backgroundProg);
 		view = null;
 
