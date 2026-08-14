@@ -81,7 +81,15 @@ std::atomic<double> MUSIC_MASTER_VOLUME_099{1.0f};
 
 #define PADDING_MS      150
 #define BUFFER_MS       750
-#define HALF_BUFFER_MS  400
+// BOTTLENECK (fixed): was 400ms. The next buffer starts HALF_BUFFER_MS -
+// PADDING_MS after the current one, so the window slides forward by
+// (HALF_BUFFER_MS - PADDING_MS) per swap while every fill re-decodes the full
+// TOTAL_BUFFER_MS window. A 400ms half-buffer meant each 1050ms fill advanced
+// only 250ms -> ~4.2x realtime decode waste. Raising HALF_BUFFER_MS to 600ms
+// advances 450ms per fill (~2.3x waste) at the cost of drop-resistance slack
+// (TOTAL_BUFFER_MS - PADDING_MS - HALF_BUFFER_MS) dropping 500ms -> 300ms,
+// which is still ample for stb_vorbis (a 1050ms buffer decodes in ~10ms).
+#define HALF_BUFFER_MS  600
 
 #define PADDING_FRAMES      ((SAMPLE_RATE * PADDING_MS)     / 1000)
 #define BUFFER_FRAMES       ((SAMPLE_RATE * BUFFER_MS)      / 1000)
@@ -89,6 +97,10 @@ std::atomic<double> MUSIC_MASTER_VOLUME_099{1.0f};
 #define TOTAL_BUFFER_FRAMES (PADDING_FRAMES + BUFFER_FRAMES + PADDING_FRAMES)
 
 #define MAX_CALLBACK_FRAMES 4096
+// Pitched playback reads `frameCount * rate` source frames per callback; allow
+// up to 4x rate in the staging buffer instead of the old 1x cap (which
+// overflowed pitchInputMix for rate > 1).
+#define MAX_PITCH_FRAMES   (MAX_CALLBACK_FRAMES * 4)
 
 // ---- SIMD mix helpers -------------------------
 
@@ -301,12 +313,16 @@ struct DecoderStream {
         if (decodeStart + TOTAL_BUFFER_FRAMES > decoderLength)
             maxFrames = decoderLength - decodeStart;
 
-        memset(buffer, 0, maxFrames * CHANNEL_COUNT * sizeof(float));
-
+        // BOTTLENECK (fixed): previously zeroed the whole ~370KB buffer before
+        // decoding, which is wasted work when the read fills it. Decode first,
+        // then zero only the tail the decode didn't touch.
         if (maxFrames > 0 && decodeStart < decoderLength) {
             if (ma_decoder_seek_to_pcm_frame(&dec, decodeStart) == MA_SUCCESS)
                 ma_decoder_read_pcm_frames(&dec, buffer, maxFrames, framesRead);
         }
+        if (*framesRead < maxFrames)
+            memset(buffer + (*framesRead) * CHANNEL_COUNT, 0,
+                   (maxFrames - *framesRead) * CHANNEL_COUNT * sizeof(float));
 
         ma_decoder_uninit(&dec);
     }
@@ -323,12 +339,14 @@ struct DecoderStream {
         if (decodeStart + TOTAL_BUFFER_FRAMES > decoderLength)
             maxFrames = decoderLength - decodeStart;
 
-        memset(buffer, 0, maxFrames * CHANNEL_COUNT * sizeof(float));
-
+        // BOTTLENECK (fixed): tail-only memset, see fillBufferTemp.
         if (maxFrames > 0 && decodeStart < decoderLength) {
             if (ma_decoder_seek_to_pcm_frame(&workerDecoder, decodeStart) == MA_SUCCESS)
                 ma_decoder_read_pcm_frames(&workerDecoder, buffer, maxFrames, framesRead);
         }
+        if (*framesRead < maxFrames)
+            memset(buffer + (*framesRead) * CHANNEL_COUNT, 0,
+                   (maxFrames - *framesRead) * CHANNEL_COUNT * sizeof(float));
     }
 
     bool trySwapBuffers() {
@@ -583,20 +601,17 @@ private:
             
             if (pause.load(std::memory_order_acquire) && !stopRequested.load(std::memory_order_acquire)) {
                 workerIdle.store(true, std::memory_order_release);
-                
+
+                // BOTTLENECK (fixed): was a 100-iteration yield spin followed by a
+                // 1ms sleep, polled continuously. The worker is not a hot path, so
+                // just sleep; it stays responsive within ~1ms (well inside the
+                // hundreds of ms of buffered slack) without burning CPU.
                 auto start = std::chrono::steady_clock::now();
-                int yieldCount = 0;
                 while (pause.load(std::memory_order_acquire) &&
                        !stopRequested.load(std::memory_order_acquire) &&
                        running.load(std::memory_order_acquire)) {
-                    
                     if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(10)) break;
-                    
-                    if (yieldCount++ < 100) {
-                        std::this_thread::yield();
-                    } else {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 }
                 workerIdle.store(false, std::memory_order_release);
                 continue;
@@ -604,20 +619,13 @@ private:
 
             if (streams.empty()) {
                 workerIdle.store(true, std::memory_order_release);
-                
+
                 auto start = std::chrono::steady_clock::now();
-                int yieldCount = 0;
-                while (streams.empty() && 
+                while (streams.empty() &&
                        !stopRequested.load(std::memory_order_acquire) &&
                        running.load(std::memory_order_acquire)) {
-                    
                     if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(10)) break;
-                    
-                    if (yieldCount++ < 100) {
-                        std::this_thread::yield();
-                    } else {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 }
                 workerIdle.store(false, std::memory_order_release);
                 continue;
@@ -654,20 +662,13 @@ private:
             // FIX: Removed `&& pause` from this condition to prevent infinite tight loop
             if (processed == 0 && !stopRequested.load(std::memory_order_acquire)) {
                 workerIdle.store(true, std::memory_order_release);
-                
+
                 auto start = std::chrono::steady_clock::now();
-                int yieldCount = 0;
                 while (!workPending.load(std::memory_order_acquire) &&
                        !stopRequested.load(std::memory_order_acquire) &&
                        running.load(std::memory_order_acquire)) {
-                    
                     if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(5)) break;
-                    
-                    if (yieldCount++ < 100) {
-                        std::this_thread::yield();
-                    } else {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
                 }
                 workerIdle.store(false, std::memory_order_release);
             }
@@ -775,6 +776,155 @@ private:
 };
 
 // ==========================================================================
+//  StretchPipeline — moves SignalsmithStretch's FFT work off the realtime
+//  audio thread.
+//
+//  Lock-free SPSC ring buffers: the audio thread pushes mixed input chunks in,
+//  a dedicated worker thread runs stretch->process(), and the audio thread
+//  pulls the stretched output back out. Only the worker touches `stretch`, so
+//  it never blocks the callback. If the worker hasn't produced a chunk yet
+//  (cold start / rate change) the callback simply gets silence for that chunk.
+// ==========================================================================
+
+class StretchPipeline {
+public:
+    static constexpr size_t RING_FRAMES = 1 << 14;      // 16384 stereo frames
+    static constexpr size_t RING_MASK  = RING_FRAMES - 1;
+    static constexpr size_t MAX_CHUNKS = 16;
+
+    struct ChunkDesc {
+        ma_uint32 inFrames;
+        ma_uint32 outFrames;
+    };
+
+    StretchPipeline() {
+        inSamples.assign(RING_FRAMES * CHANNEL_COUNT, 0.0f);
+        outSamples.assign(RING_FRAMES * CHANNEL_COUNT, 0.0f);
+        workIn.assign(MAX_PITCH_FRAMES * CHANNEL_COUNT, 0.0f);
+        workOut.assign(MAX_CALLBACK_FRAMES * CHANNEL_COUNT, 0.0f);
+        stretch.configure(CHANNEL_COUNT, int(SAMPLE_RATE * 0.1), int(SAMPLE_RATE * 0.05));
+    }
+
+    ~StretchPipeline() { stop(); }
+
+    // ---- audio thread -----------------------------------------------
+    bool push(const float* input, ma_uint32 inFrames, ma_uint32 outFrames) {
+        ensureStarted();
+
+        size_t head = inHead.load(std::memory_order_acquire);
+        size_t tail = inTail.load(std::memory_order_acquire);
+        if (RING_FRAMES - (head - tail) < inFrames) return false;   // input ring full
+
+        size_t cHead = chunkHead.load(std::memory_order_relaxed);
+        size_t cTail = chunkTail.load(std::memory_order_acquire);
+        if (MAX_CHUNKS - (cHead - cTail) < 1) return false;         // desc ring full
+
+        writeSamples(inSamples.data(), head, input, inFrames);
+        chunks[cHead & (MAX_CHUNKS - 1)] = { inFrames, outFrames };
+        inHead.store(head + inFrames, std::memory_order_release);
+        chunkHead.store(cHead + 1, std::memory_order_release);
+        return true;
+    }
+
+    bool pull(float* output, ma_uint32 outFrames) {
+        size_t head = outHead.load(std::memory_order_acquire);
+        size_t tail = outTail.load(std::memory_order_acquire);
+        if (head - tail < outFrames) return false;                  // not produced yet
+        readSamples(outSamples.data(), tail, output, outFrames);
+        outTail.store(tail + outFrames, std::memory_order_release);
+        return true;
+    }
+
+    void stop() {
+        if (!running.load(std::memory_order_acquire)) return;
+        stopRequested.store(true, std::memory_order_release);
+        if (thread.joinable()) thread.join();
+        running.store(false, std::memory_order_release);
+    }
+
+    // Discard all in-flight stretched chunks and re-seed the stretch engine.
+    // Only safe to call while the audio device is stopped (e.g. inside seek).
+    void reset() {
+        stop();
+        inHead.store(0, std::memory_order_release); inTail.store(0, std::memory_order_release);
+        outHead.store(0, std::memory_order_release); outTail.store(0, std::memory_order_release);
+        chunkHead.store(0, std::memory_order_release); chunkTail.store(0, std::memory_order_release);
+        stretch.reset();
+    }
+
+private:
+    signalsmith::stretch::SignalsmithStretch stretch;
+    std::vector<float> inSamples, outSamples, workIn, workOut;
+    std::array<ChunkDesc, MAX_CHUNKS> chunks;
+
+    std::atomic<size_t> inHead{0}, inTail{0};
+    std::atomic<size_t> outHead{0}, outTail{0};
+    std::atomic<size_t> chunkHead{0}, chunkTail{0};
+
+    std::thread thread;
+    std::atomic<bool> running{false};
+    std::atomic<bool> stopRequested{false};
+
+    void ensureStarted() {
+        bool expected = false;
+        if (running.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+            stopRequested.store(false, std::memory_order_release);
+            try {
+                thread = std::thread([this]() { workerLoop(); });
+            } catch (...) {
+                running.store(false, std::memory_order_release);
+            }
+        }
+    }
+
+    static void writeSamples(float* dst, size_t at, const float* src, ma_uint32 frames) {
+        size_t offset = (at & RING_MASK) * CHANNEL_COUNT;
+        size_t first  = std::min<size_t>(frames, RING_FRAMES - (at & RING_MASK));
+        size_t total  = (size_t)frames * CHANNEL_COUNT;
+        memcpy(dst + offset, src, first * CHANNEL_COUNT * sizeof(float));
+        if (frames > first)
+            memcpy(dst, src + first * CHANNEL_COUNT, (total - first * CHANNEL_COUNT) * sizeof(float));
+    }
+
+    static void readSamples(const float* src, size_t at, float* dst, ma_uint32 frames) {
+        size_t offset = (at & RING_MASK) * CHANNEL_COUNT;
+        size_t first  = std::min<size_t>(frames, RING_FRAMES - (at & RING_MASK));
+        memcpy(dst, src + offset, first * CHANNEL_COUNT * sizeof(float));
+        if (frames > first)
+            memcpy(dst + first * CHANNEL_COUNT, src, (frames - first) * CHANNEL_COUNT * sizeof(float));
+    }
+
+    void workerLoop() {
+        while (running.load(std::memory_order_acquire) && !stopRequested.load(std::memory_order_acquire)) {
+            size_t cHead = chunkHead.load(std::memory_order_acquire);
+            size_t cTail = chunkTail.load(std::memory_order_acquire);
+            if (cTail >= cHead) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
+            }
+
+            const ChunkDesc& c = chunks[cTail & (MAX_CHUNKS - 1)];
+
+            size_t oHead = outHead.load(std::memory_order_acquire);
+            size_t oTail = outTail.load(std::memory_order_acquire);
+            if ((oHead - oTail) + c.outFrames > RING_FRAMES) {      // output ring full
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                continue;
+            }
+
+            size_t iTail = inTail.load(std::memory_order_acquire);
+            readSamples(inSamples.data(), iTail, workIn.data(), c.inFrames);
+            inTail.store(iTail + c.inFrames, std::memory_order_release);
+
+            stretch.process(workIn.data(), c.inFrames, workOut.data(), c.outFrames);
+            writeSamples(outSamples.data(), oHead, workOut.data(), c.outFrames);
+            outHead.store(oHead + c.outFrames, std::memory_order_release);
+            chunkTail.store(cTail + 1, std::memory_order_release);
+        }
+    }
+};
+
+// ==========================================================================
 //  AudioSystem (LOCK-FREE)
 // ==========================================================================
 
@@ -785,7 +935,7 @@ public:
     std::vector<std::string>   filePaths;
 
     ma_device device;
-    signalsmith::stretch::SignalsmithStretch* stretch = nullptr;
+    StretchPipeline* stretchPipe = nullptr;
 
     int   longestDecoderIndex = 0;
     std::atomic<float> playbackRate{1.0f};
@@ -793,13 +943,8 @@ public:
     std::atomic<bool> exists{false};
     std::atomic<bool> stretchEnabled{true}; //BOTTLENECK: high改善 [opt-in] FFT time-stretch toggle; when false, pitched playback uses linear resample instead of SignalsmithStretch
 
-    float pitchInputMix[MAX_CALLBACK_FRAMES * CHANNEL_COUNT]      = {};
-    float pitchStretchedOut[MAX_CALLBACK_FRAMES * CHANNEL_COUNT]  = {};
-
-    static constexpr int BG_LOAD_CHECK_INTERVAL = 8;
-    std::atomic<ma_uint64> totalFramesProcessed{0};  // Track total frames for time-based loading (thread-safe)
-    ma_uint64 lastLoadFrame = 0;         // Last frame when background load was triggered
-    int bgLoadCounter = 0;
+    // Staging mix for pitched playback. Sized for up to 4x playback rate.
+    float pitchInputMix[MAX_PITCH_FRAMES * CHANNEL_COUNT] = {};
 
     // Prediction state for smooth 0.1ms audio time between callback updates
     mutable std::atomic<ma_uint64> lastQueriedFrames{0};
@@ -811,6 +956,8 @@ public:
         
         // NEW: Initialize SIMD dispatch on startup
         init_simd_dispatch();
+
+        stretchPipe = new StretchPipeline();
     }
     ~AudioSystem() {
         destroy();
@@ -920,6 +1067,10 @@ public:
             return;
         }
 
+        // destroy() tore the stretch pipeline down; recreate it for this song.
+        if (!stretchPipe)
+            stretchPipe = new StretchPipeline();
+
         exists.store(true, std::memory_order_release);
         mixerState.store(3, std::memory_order_release);
     }
@@ -942,9 +1093,9 @@ public:
         filePaths.clear();
         streamPtrs.clear();
         
-        if (stretch) {
-            delete stretch;
-            stretch = nullptr;
+        if (stretchPipe) {
+            delete stretchPipe;      // stops the stretch worker thread
+            stretchPipe = nullptr;
         }
         
         longestDecoderIndex = 0;
@@ -955,9 +1106,7 @@ public:
         lastQueriedFrames.store(0, std::memory_order_relaxed);
         lastQuerySystemTime.store(0, std::memory_order_relaxed);
         lastQueryPlaybackRate.store(1.0, std::memory_order_relaxed);
-        totalFramesProcessed.store(0, std::memory_order_relaxed);  // <-- Critical: reset frame counter
-        lastLoadFrame = 0;                                         // <-- must reset: otherwise newTotalFrames - lastLoadFrame underflows after restart
-        
+
         memset(&device, 0, sizeof(ma_device));
     }
 
@@ -1012,6 +1161,11 @@ public:
         if (asyncLoader) asyncLoader->waitUntilIdle();
 
         if (deviceRunning) ma_device_stop(&device);
+
+        // Discard any stretched chunks still in flight from the pre-seek position
+        // so the pitched path restarts cleanly (device is stopped and the loader
+        // is idle here, so touching the pipeline is safe).
+        if (stretchPipe) stretchPipe->reset();
 
         for (size_t i = 0; i < streams.size(); i++) {
             DecoderStream& s = streams[i];
@@ -1175,34 +1329,6 @@ private:
         s.asyncState.loadingBufferReady.store(true, std::memory_order_release);
     }
 
-    void doBackgroundLoading() {
-        bool anyRequested = false;
-        for (size_t i = 0; i < streams.size(); i++) {
-            DecoderStream& s = streams[i];
-            if (!s.active.load(std::memory_order_acquire)) continue;
-
-            if (!s.asyncState.nextBufferReady.load(std::memory_order_acquire) &&
-                !s.asyncState.loadingInProgress.load(std::memory_order_acquire)) {
-                ma_uint64 available = (s.localReadPos < s.validFrames)
-                                    ? s.validFrames - s.localReadPos : 0;
-                if (available < (HALF_BUFFER_FRAMES * 2)) {
-                    s.requestBufferLoad();
-                    anyRequested = true;
-                }
-            }
-
-            if (s.asyncState.needsLoad.load(std::memory_order_acquire) &&
-                !s.asyncState.nextBufferReady.load(std::memory_order_acquire) &&
-                !s.asyncState.loadingInProgress.load(std::memory_order_acquire)) {
-                s.requestBufferLoad();
-                s.asyncState.needsLoad.store(false, std::memory_order_release);
-                anyRequested = true;
-            }
-        }
-
-        if (anyRequested && asyncLoader) asyncLoader->signal();
-    }
-
     ma_uint32 readFromBuffer(size_t index, float* output, ma_uint32 requestedFrames) {
         DecoderStream& s = streams[index];
         if (!s.active.load(std::memory_order_acquire)) return 0;
@@ -1241,12 +1367,13 @@ private:
                                 ? s.validFrames - s.localReadPos : 0;
 
             if (available == 0) {
-                if (s.filePosition.load(std::memory_order_acquire) < s.decoderLength) {
+                if (s.bufferStartPos + s.localReadPos < s.decoderLength) {
                     if (s.asyncState.nextBufferReady.load(std::memory_order_acquire)) {
                         s.trySwapBuffers();
                         continue;
                     }
                     s.asyncState.needsLoad.store(true, std::memory_order_release);
+                    s.requestBufferLoad();
                     break;
                 }
                 s.active.store(false, std::memory_order_release);
@@ -1264,14 +1391,26 @@ private:
             if (vol != 0.0f) g_mix_func(dst, src, samples, vol);
 
             s.localReadPos  += toRead;
-            //BOTTLENECK: low atomic RMW (fetch_add) on the audio thread for every read chunk of every stream | FIX: accumulate locally and do a single store to filePosition at the end of readFromBuffer
-            s.filePosition.fetch_add(toRead, std::memory_order_relaxed);
             framesRead      += toRead;
+        }
 
-            if (s.filePosition.load(std::memory_order_relaxed) >= s.decoderLength) { 
-                s.active.store(false, std::memory_order_release); 
-                isActive = false;
-                break; 
+        // BOTTLENECK (fixed): one relaxed store per callback/stream instead of
+        // an atomic RMW per read chunk. filePosition is only read by other
+        // threads (prediction anchor, seek), never by the callback mid-buffer,
+        // so the intermediate values were pointless.
+        s.filePosition.store(s.bufferStartPos + s.localReadPos, std::memory_order_relaxed);
+
+        // BOTTLENECK (fixed): low-watermark prefetch now happens here while the
+        // stream's cacheline is already hot, replacing the full-scan of every
+        // stream in doBackgroundLoading() that used to run on the realtime
+        // thread every ~8ms. The AsyncLoader worker picks the request up within
+        // a few ms (well inside the 300ms+ of buffered slack).
+        if (isActive && !s.asyncState.nextBufferReady.load(std::memory_order_relaxed)) {
+            ma_uint64 available = (s.localReadPos < s.validFrames)
+                                ? s.validFrames - s.localReadPos : 0;
+            if (available < (HALF_BUFFER_FRAMES * 2) || framesRead < requestedFrames) {
+                s.requestBufferLoad();
+                s.asyncState.needsLoad.store(true, std::memory_order_release);
             }
         }
         return framesRead;
@@ -1285,8 +1424,6 @@ private:
         float* out = (float*)pOutput;
         memset(out, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
 
-        ma_uint64 newTotalFrames = sys->totalFramesProcessed.fetch_add(frameCount, std::memory_order_relaxed) + frameCount;
-        
         // Update prediction anchor every callback (~10ms) to prevent drift.
         // Anchor to the REAL consumed source position (longest stream's
         // filePosition) instead of the wall-clock output counter
@@ -1305,14 +1442,14 @@ private:
             std::memory_order_relaxed
         );
         sys->lastQueryPlaybackRate.store(sys->playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        ma_uint64 framesSinceLastLoad = newTotalFrames - sys->lastLoadFrame;
-        ma_uint64 loadIntervalFrames = (SAMPLE_RATE * BG_LOAD_CHECK_INTERVAL) / 1000;
 
-        //BOTTLENECK: low full scan of every stream (multiple acquire atomics each) on the audio thread every ~8ms inside the realtime callback | FIX: move the request loop into the AsyncLoader worker; audio thread only sets one dirty flag
-        if (framesSinceLastLoad >= loadIntervalFrames) {
-            sys->lastLoadFrame = newTotalFrames;
-            sys->doBackgroundLoading();
-        }
+        // BOTTLENECK (fixed): the periodic full scan of every stream for
+        // refills used to run here on the realtime thread (doBackgroundLoading
+        // every ~8ms). The low-watermark prefetch now lives inside
+        // readFromBuffer, so the callback only needs to nudge the worker with
+        // a single atomic store when a stream underfeeds. Signal is lock-free
+        // (just an atomic bool store) so it is safe on the audio thread.
+        bool anyRefill = false;
 
         bool anyActive = false;
         float rate = sys->playbackRate.load(std::memory_order_acquire);
@@ -1323,7 +1460,7 @@ private:
                 ma_uint32 read = sys->readFromBuffer(i, out, frameCount);
                 if (read > 0) anyActive = true;
                 if (read < frameCount && sys->streams[i].active.load(std::memory_order_acquire))
-                    sys->streams[i].asyncState.needsLoad.store(true, std::memory_order_release);
+                    anyRefill = true;
             }
         } else {
             static_assert(MAX_CALLBACK_FRAMES >= 4096,
@@ -1337,15 +1474,14 @@ private:
                 return;
             }
 
-            float* inputMix       = sys->pitchInputMix;
-            float* stretchedOutput = sys->pitchStretchedOut;
+            float* inputMix = sys->pitchInputMix;
 
             static double positionError = 0;
             double exactRead = frameCount * rate + positionError;
             ma_uint32 maxToRead = (ma_uint32)exactRead;
+            if (maxToRead > MAX_PITCH_FRAMES) maxToRead = MAX_PITCH_FRAMES;
 
-            memset(inputMix,        0, sizeof(float) * maxToRead * CHANNEL_COUNT);
-            memset(stretchedOutput, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
+            memset(inputMix, 0, sizeof(float) * maxToRead * CHANNEL_COUNT);
 
             positionError = exactRead - maxToRead;
 
@@ -1354,18 +1490,20 @@ private:
                 ma_uint32 read = sys->readFromBuffer(i, inputMix, maxToRead);
                 if (read > 0) anyActive = true;
                 if (read < maxToRead && sys->streams[i].active.load(std::memory_order_acquire))
-                    sys->streams[i].asyncState.needsLoad.store(true, std::memory_order_release);
+                    anyRefill = true;
             }
 
             if (anyActive) {
                 if (sys->stretchEnabled.load(std::memory_order_acquire)) {
-                    if (!sys->stretch) {
-                        sys->stretch = new signalsmith::stretch::SignalsmithStretch();
-                        sys->stretch->configure(CHANNEL_COUNT, int(SAMPLE_RATE * 0.1), int(SAMPLE_RATE * 0.05)); // ratio = 2.0
+                    // BOTTLENECK (fixed): FFT time-stretch no longer runs in the
+                    // realtime callback. The mixed input is pushed into a lock-free
+                    // ring; a dedicated worker thread runs SignalsmithStretch and
+                    // fills an output ring that this callback pulls from. If the
+                    // worker hasn't produced a chunk yet (cold start / rate change)
+                    // the callback emits silence rather than glitching.
+                    if (sys->stretchPipe && sys->stretchPipe->push(inputMix, maxToRead, frameCount)) {
+                        sys->stretchPipe->pull(out, frameCount); // no-op writes over the zeroed buffer if not ready
                     }
-                    //BOTTLENECK: high FFT time-stretch of the entire mix synchronously in the realtime audio callback on every buffer (SignalsmithStretch) -> dropout source whenever playback rate != 1.0 | FIX: use the fastest preset / larger block, or run stretch on a dedicated thread with double buffering
-                    sys->stretch->process(inputMix, maxToRead, stretchedOutput, frameCount);
-                    memcpy(out, stretchedOutput, sizeof(float) * frameCount * CHANNEL_COUNT);
                 } else if (maxToRead > 0) {
                     // Toggle OFF: cheap linear resample (pitch-shift style) instead of FFT stretch.
                     double step = (frameCount > 1) ? (double)(maxToRead - 1) / (frameCount - 1) : 0.0;
@@ -1385,6 +1523,11 @@ private:
             }
         }
 
+        // Wake the loader only when a stream actually underfed (rare) instead of
+        // scanning. Signal is a single atomic store -- lock-free on the audio thread.
+        if (anyRefill && sys->asyncLoader)
+            sys->asyncLoader->signal();
+
         // FIX: Only update mixerState if we are not paused.
         // This prevents the callback from accidentally "un-pausing" the engine while ma_device_stop is finishing.
         int currentState = sys->mixerState.load(std::memory_order_acquire);
@@ -1400,7 +1543,7 @@ private:
         decoderVolumes = std::move(other.decoderVolumes);
         filePaths      = std::move(other.filePaths);
         streamPtrs     = std::move(other.streamPtrs);
-        stretch        = other.stretch;
+        stretchPipe    = other.stretchPipe;
         asyncLoader    = other.asyncLoader;
 
         memcpy(&device, &other.device, sizeof(ma_device));
@@ -1412,16 +1555,10 @@ private:
         exists.store(other.exists.load(std::memory_order_relaxed), std::memory_order_relaxed);
         stretchEnabled.store(other.stretchEnabled.load(std::memory_order_relaxed), std::memory_order_relaxed);
 
-        other.stretch = nullptr;  other.asyncLoader    = nullptr;
+        other.stretchPipe  = nullptr;  other.asyncLoader = nullptr;
         other.longestDecoderIndex = 0;  other.playbackRate.store(1.0f, std::memory_order_relaxed);
         other.mixerState.store(3, std::memory_order_relaxed);
         other.exists.store(false, std::memory_order_relaxed);
-
-        // Move frame tracking state for background loading
-        totalFramesProcessed.store(other.totalFramesProcessed.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        lastLoadFrame        = other.lastLoadFrame;
-        other.totalFramesProcessed.store(0, std::memory_order_relaxed);
-        other.lastLoadFrame        = 0;
 
         // Move prediction state for smooth audio time
         lastQueriedFrames.store(other.lastQueriedFrames.load(std::memory_order_relaxed), std::memory_order_relaxed);
@@ -1557,12 +1694,17 @@ struct SoundEffectInstance {
     ma_uint64 playbackPosition = 0;
     double     volume          = 1.0f;
     std::atomic<bool> playing{false};
+    // Sample-accurate scheduling: absolute output-frame count (in the mixer
+    // device's timeline) at which this instance's first sample must be heard.
+    // Written by the game thread before `playing` is published (release), read
+    // by the audio thread after acquiring `playing`.
+    std::atomic<ma_uint64> startFrame{0};
 
     SoundEffectInstance() = default;
 
     SoundEffectInstance(float* data, ma_uint64 frames, double vol = 1.0f)
         : pcmData(data), frameCount(frames), playbackPosition(0),
-          volume(vol), playing(true) {}
+          volume(vol), playing(true), startFrame(0) {}
 
     // FIX: Explicit move constructor to handle std::atomic<bool>
     SoundEffectInstance(SoundEffectInstance&& other) noexcept
@@ -1570,13 +1712,15 @@ struct SoundEffectInstance {
           frameCount(other.frameCount),
           playbackPosition(other.playbackPosition),
           volume(other.volume),
-          playing(other.playing.load(std::memory_order_relaxed))
+          playing(other.playing.load(std::memory_order_relaxed)),
+          startFrame(other.startFrame.load(std::memory_order_relaxed))
     {
         other.pcmData = nullptr;
         other.frameCount = 0;
         other.playbackPosition = 0;
         other.volume = 1.0f;
         other.playing.store(false, std::memory_order_relaxed);
+        other.startFrame.store(0, std::memory_order_relaxed);
     }
 
     // FIX: Explicit move assignment operator
@@ -1587,12 +1731,14 @@ struct SoundEffectInstance {
             playbackPosition = other.playbackPosition;
             volume = other.volume;
             playing.store(other.playing.load(std::memory_order_relaxed), std::memory_order_relaxed);
+            startFrame.store(other.startFrame.load(std::memory_order_relaxed), std::memory_order_relaxed);
 
             other.pcmData = nullptr;
             other.frameCount = 0;
             other.playbackPosition = 0;
             other.volume = 1.0f;
             other.playing.store(false, std::memory_order_relaxed);
+            other.startFrame.store(0, std::memory_order_relaxed);
         }
         return *this;
     }
@@ -1600,18 +1746,30 @@ struct SoundEffectInstance {
     SoundEffectInstance(const SoundEffectInstance&) = delete;
     SoundEffectInstance& operator=(const SoundEffectInstance&) = delete;
 
-    ma_uint64 readFrames(float* output, ma_uint32 requestedFrames) {
+    // bufStartFrame is the output-frame index of the first sample in `output`
+    // for this callback; masterVol is hoisted once per callback by the caller.
+    ma_uint64 readFrames(float* output, ma_uint32 requestedFrames,
+                         ma_uint64 bufStartFrame, double masterVol) {
         if (!playing.load(std::memory_order_acquire) || !pcmData) return 0;
+
+        // Align this instance's start to the callback window.
+        long long offset = (long long)startFrame.load(std::memory_order_relaxed)
+                         - (long long)bufStartFrame;
+        if (offset >= (long long)requestedFrames) return 0;   // armed, not due yet
+        if (offset < 0) offset = 0;                           // start is in the past
+        playbackPosition += (ma_uint64)offset;
 
         ma_uint64 remaining = frameCount - playbackPosition;
         if (remaining == 0) { playing.store(false, std::memory_order_release); return 0; }
 
-        ma_uint32 toRead = (ma_uint32)std::min<ma_uint64>(remaining, requestedFrames);
+        ma_uint32 toRead = (ma_uint32)std::min<ma_uint64>(remaining,
+                                                          (ma_uint64)(requestedFrames - offset));
         float* src = pcmData + (playbackPosition * CHANNEL_COUNT);
-        float  vol = volume * MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed);
+        float* dst = output  + (offset  * CHANNEL_COUNT);
+        float  vol = (float)(volume * masterVol);
 
         // UPDATED CALL SITE: Uses the runtime dispatcher
-        g_mix_func(output, src, (int)(toRead * CHANNEL_COUNT), vol);
+        g_mix_func(dst, src, (int)(toRead * CHANNEL_COUNT), vol);
 
         playbackPosition += toRead;
         if (playbackPosition >= frameCount) playing.store(false, std::memory_order_release);
@@ -1671,28 +1829,36 @@ public:
         return true;
     }
 
-    void play(double volume = 1.0f) {
+    void play(double volume = 1.0f, ma_uint64 startFrame = 0) {
         if (!pcmData || frameCount == 0) return;
         for (auto& inst : instances) {
             if (!inst.isPlaying()) {
-                inst.playbackPosition = 0; inst.volume = volume; inst.playing.store(true, std::memory_order_release);
+                inst.playbackPosition = 0;
+                inst.volume = volume;
+                // Publish-flag order: set the schedule fields BEFORE releasing
+                // `playing` so the audio thread sees them via acquire/release.
+                inst.startFrame.store(startFrame, std::memory_order_release);
+                inst.playing.store(true, std::memory_order_release);
                 ++playingCount;
                 return;
             }
         }
         if (instances.size() < MAX_INSTANCES) {
-            instances.emplace_back(pcmData, frameCount, volume);
+            SoundEffectInstance inst(pcmData, frameCount, volume);
+            inst.startFrame.store(startFrame, std::memory_order_relaxed);
+            instances.push_back(std::move(inst));
             ++playingCount;
         }
     }
 
-    ma_uint64 readFrames(float* output, ma_uint32 requestedFrames) {
+    ma_uint64 readFrames(float* output, ma_uint32 requestedFrames,
+                         ma_uint64 bufStartFrame, double masterVol) {
         if (playingCount == 0) return 0;
         ma_uint64 maxRead = 0;
         int stillPlaying = 0;
         for (auto& inst : instances) {
             if (inst.isPlaying()) {
-                ma_uint64 r = inst.readFrames(output, requestedFrames);
+                ma_uint64 r = inst.readFrames(output, requestedFrames, bufStartFrame, masterVol);
                 if (r > maxRead) maxRead = r;
                 if (inst.isPlaying()) ++stillPlaying;
             }
@@ -1702,7 +1868,7 @@ public:
     }
 
     bool  isAnyPlaying()  const { return playingCount > 0; }
-    void  stopAll()             { for (auto& i : instances) { i.playing.store(false, std::memory_order_release); i.playbackPosition = 0; } playingCount = 0; }
+    void  stopAll()             { for (auto& i : instances) { i.playing.store(false, std::memory_order_release); i.playbackPosition = 0; i.startFrame.store(0, std::memory_order_release); } playingCount = 0; }
     int   getPlayingCount() const { return playingCount; }
 
 private:
@@ -1753,6 +1919,7 @@ public:
         }
         backgroundTracks.clear(); soundEffectPools.clear();
         backgroundTrackMap.clear(); soundEffectMap.clear();
+        outFramesTotal.store(0, std::memory_order_relaxed);
         for (int b = 0; b < 3; b++) {
             bgSnapshot[b].clear();
             sfxSnapshot[b].clear();
@@ -1806,7 +1973,11 @@ public:
     bool isSoundEffectLoaded(const char* path) { return findSoundEffect(path) >= 0; }
 
     void playSoundEffect(int idx, double volume = 1.0f) {
-        if (inRange(idx, soundEffectPools)) soundEffectPools[idx].play(volume);
+        // Schedule for the next output sample -> no 10ms buffer quantization.
+        playSoundEffectAt(idx, volume, outFramesTotal.load(std::memory_order_relaxed));
+    }
+    void playSoundEffectAt(int idx, double volume, ma_uint64 startFrame) {
+        if (inRange(idx, soundEffectPools)) soundEffectPools[idx].play(volume, startFrame);
     }
     void playSoundEffect(const char* path, double volume = 1.0f) {
         int idx = findSoundEffect(path);
@@ -1836,6 +2007,9 @@ public:
     double setMasterVolume(double v) { MUSIC_MASTER_VOLUME_099.store(v, std::memory_order_relaxed); return v; }
     double getMasterVolume() const  { return MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed); }
 
+    // Current output frame of the mixer device (for exact scheduling).
+    ma_uint64 getOutputFrame() const { return outFramesTotal.load(std::memory_order_relaxed); }
+
 private:
     std::deque<BackgroundTrack>  backgroundTracks;
     std::deque<SoundEffectPool>  soundEffectPools;
@@ -1845,6 +2019,11 @@ private:
 
     ma_device device;
     bool  deviceInitialized = false;
+
+    // Monotonic output-frame counter of the mixer device. Incremented once per
+    // callback (the fetch_add return value is that callback's first output
+    // frame). Lets the game thread schedule SFX at exact sample positions.
+    std::atomic<ma_uint64> outFramesTotal{0};
 
     // Lock-free triple buffer for snapshots
     std::vector<BackgroundTrack*> bgSnapshot[3];
@@ -1893,6 +2072,11 @@ private:
         float* out = (float*)pOutput;
         memset(out, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
 
+        // Sample-accurate timeline: capture this callback's first output frame
+        // and hoist the master volume once (avoids an atomic load per instance).
+        ma_uint64 bufStart = mixer->outFramesTotal.fetch_add(frameCount, std::memory_order_relaxed);
+        double    masterVol = MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed);
+
         // Lock-free snapshot read
         int r = mixer->readerIndex.load(std::memory_order_relaxed);
         int n = mixer->newestIndex.load(std::memory_order_acquire);
@@ -1905,7 +2089,7 @@ private:
             if (track->active.load(std::memory_order_acquire)) track->readFrames(out, frameCount);
 
         for (SoundEffectPool* pool : mixer->sfxSnapshot[r])
-            pool->readFrames(out, frameCount);
+            pool->readFrames(out, frameCount, bufStart, masterVol);
 
         (void)pInput;
     }
