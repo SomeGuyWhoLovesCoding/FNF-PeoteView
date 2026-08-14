@@ -196,9 +196,9 @@ class NoteSystem {
 		latency-compensated playhead position (`posWithLatency`) to anchor on
 		the first note at or after the playhead, then expand a small window
 		outward — backward for notes just in the past, forward for upcoming
-		notes — testing each candidate's real `diff` against the symmetric
-		hitbox (`abs(diff) <= _cachedHitbox`), expanding outward until `diff`
-		leaves the hitbox.
+		notes — until their position leaves the symmetric hit window
+		(`|diff| <= _cachedHitbox`), tested as precomputed tick bounds
+		(`late`..`early`) with no per-note float conversion.
 
 		`scrollSpeed` is a single global value for the field, so `diff` is
 		monotonic in position and the outward expansion cannot skip a note
@@ -222,14 +222,13 @@ class NoteSystem {
 		var offset = Main.conductor.offset;
 		var hitbox = _cachedHitbox;
 		var posWithLatency = MetaNote.floatToMetaNotePosition(parent.songPosition + offset);
-		var scrollSpeed = parent.scrollSpeed;
-
-		// `diff` for the note at `i`: distance from the latency-compensated
-		// playhead, in scroll-scaled pixels. The note is hittable iff
-		// `abs(diff) <= hitbox` (the symmetric hitbox around the strumline).
-		inline function diffAt(i:Int64):Float {
-			return MetaNote.metaNotePositionToSongTime(File.getNote(i).position - posWithLatency) * scrollSpeed;
-		}
+		// Precompute the hit window in tick units once, so the expansion needs
+		// only cheap Int64 compares - no per-note Int64/float conversions.
+		// (diff == (position - playhead) / TICKS_PER_MS * scrollSpeed, so
+		// |diff| <= hitbox <=> late <= position <= early.)
+		var halfTicks = MetaNote.floatToMetaNotePosition(hitbox / parent.scrollSpeed);
+		var late = Int64.sub(posWithLatency, halfTicks);
+		var early = Int64.add(posWithLatency, halfTicks);
 
 		// Binary search the first index whose note position is >= `target`.
 		// Notes are position-sorted, so this is a safe monotonic search.
@@ -258,12 +257,15 @@ class NoteSystem {
 
 		inline function consider(i:Int64) {
 			var n = File.getNote(i);
+			// Window guard: a loop only breaks on its near side, so check the
+			// far side here (at most the anchor note can be far-future).
+			if (n.position < late || n.position > early)
+				return;
 			if (n.index == index && (n.type % laneCount) == lane && !File.getJudgement(i)) {
-				var absDiff = Math.abs(diffAt(i));
-				// Symmetric hitbox. Among hittable notes keep the earliest
-				// (smallest position) so a jack progresses in order; once
-				// `found`, only a smaller index can replace it.
-				if (absDiff <= hitbox && (!found || i < bestId)) {
+				// Among hittable notes keep the earliest (smallest position) so a
+				// jack progresses in order; once `found`, only a smaller index can
+				// replace it.
+				if (!found || i < bestId) {
 					found = true;
 					bestId = i;
 				}
@@ -273,8 +275,7 @@ class NoteSystem {
 		// Backward: notes at or just before the playhead (already somewhat late).
 		var i = bi;
 		while (i >= spawner.bottom) {
-			var d = diffAt(i);
-			if (d < -hitbox)
+			if (File.getNote(i).position < late)
 				break;
 			consider(i);
 			i = Int64.sub(i, 1);
@@ -283,8 +284,7 @@ class NoteSystem {
 		// Forward: upcoming notes within the hit window.
 		i = Int64.add(p, 1);
 		while (i < spawner.top) {
-			var d = diffAt(i);
-			if (d > hitbox)
+			if (File.getNote(i).position > early)
 				break;
 			consider(i);
 			i = Int64.add(i, 1);
