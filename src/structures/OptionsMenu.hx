@@ -183,7 +183,9 @@ class OptionsMenu extends MenuInput {
 	function left(isDown:Bool, param:Int) {
 		if (!isDown || isInvalidKeyState())
 			return;
-		if ((!ctrlHeld || shiftHeld) && (cast categoryNav.value() : OptionsCategorySelection) == GAMEPLAY)
+		if (!ctrlHeld)
+			return;
+		if (shiftHeld && (cast categoryNav.value() : OptionsCategorySelection) == GAMEPLAY)
 			return;
 		optionsNav.setTo(0);
 		categoryNav.scroll(-1);
@@ -195,7 +197,9 @@ class OptionsMenu extends MenuInput {
 	function right(isDown:Bool, param:Int) {
 		if (!isDown || isInvalidKeyState())
 			return;
-		if ((!ctrlHeld || shiftHeld) && (cast categoryNav.value() : OptionsCategorySelection) == GAMEPLAY)
+		if (!ctrlHeld)
+			return;
+		if (shiftHeld && (cast categoryNav.value() : OptionsCategorySelection) == GAMEPLAY)
 			return;
 		optionsNav.setTo(0);
 		categoryNav.scroll(1);
