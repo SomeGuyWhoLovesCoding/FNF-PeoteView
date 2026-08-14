@@ -29,6 +29,7 @@ class OptionsMenu extends MenuInput {
 	var navHint(default, null):Text;
 
 	var shiftHeld:Bool = false;
+	var ctrlHeld:Bool = false;
 
 	static var optionsDisplay(default, null):OptionsDisplay;
 
@@ -182,7 +183,7 @@ class OptionsMenu extends MenuInput {
 	function left(isDown:Bool, param:Int) {
 		if (!isDown || isInvalidKeyState())
 			return;
-		if (shiftHeld && (cast categoryNav.value() : OptionsCategorySelection) == GAMEPLAY)
+		if ((!ctrlHeld || shiftHeld) && (cast categoryNav.value() : OptionsCategorySelection) == GAMEPLAY)
 			return;
 		optionsNav.setTo(0);
 		categoryNav.scroll(-1);
@@ -194,7 +195,7 @@ class OptionsMenu extends MenuInput {
 	function right(isDown:Bool, param:Int) {
 		if (!isDown || isInvalidKeyState())
 			return;
-		if (shiftHeld && (cast categoryNav.value() : OptionsCategorySelection) == GAMEPLAY)
+		if ((!ctrlHeld || shiftHeld) && (cast categoryNav.value() : OptionsCategorySelection) == GAMEPLAY)
 			return;
 		optionsNav.setTo(0);
 		categoryNav.scroll(1);
@@ -218,6 +219,9 @@ class OptionsMenu extends MenuInput {
 		if (keyCode == KeyCode.LEFT_SHIFT || keyCode == KeyCode.RIGHT_SHIFT)
 			shiftHeld = true;
 
+		if (keyCode == KeyCode.LEFT_CTRL || keyCode == KeyCode.RIGHT_CTRL)
+			ctrlHeld = true;
+
 		if (optionsDisplay.closed)
 			return false;
 
@@ -240,6 +244,8 @@ class OptionsMenu extends MenuInput {
 			return false;
 		if (keyCode == KeyCode.LEFT_SHIFT || keyCode == KeyCode.RIGHT_SHIFT)
 			shiftHeld = false;
+		if (keyCode == KeyCode.LEFT_CTRL || keyCode == KeyCode.RIGHT_CTRL)
+			ctrlHeld = false;
 		return false;
 	}
 

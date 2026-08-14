@@ -90,12 +90,17 @@ class Controls {
 
 @:publicFields
 class ControlsHandle {
-	var i2a:Input2Action;
+	// One Input2Action shared across every handle so window key events are
+	// registered exactly once; reload() would otherwise add a new keyDown/keyUp
+	// listener each time and fire every bound action twice.
+	static var i2a:Input2Action;
 	var kb:KeyboardAction;
 
 	function new(config:ActionConfig) {
-		i2a = new Input2Action();
-		i2a.registerKeyboardEvents(lime.app.Application.current.window);
+		if (i2a == null) {
+			i2a = new Input2Action();
+			i2a.registerKeyboardEvents(lime.app.Application.current.window);
+		}
 	}
 
 	function bindTo(config:ActionConfig, actions:ActionMap) {
