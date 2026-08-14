@@ -221,6 +221,26 @@ class Main extends Application {
 
 		window.onMouseDown.add((x, y, button) -> trace('onMouseDown $x $y $button ' + Date.now()));*/
 
+		peoteView = new PeoteView(window);
+		TextureSystem.processQueue();
+
+		controls = new Controls();
+
+		// The state machine is created after the input2action control binding
+		// so its window listeners fire after the controls (actions dispatch
+		// before routed extras), matching the original ordering.
+		stateMachine = new StateMachine(window, controls);
+		stateMachine.createState = stateCreate;
+		stateMachine.destroyState = stateDestroy;
+
+		#if (!html5)
+		trace("Is es3? " + PeoteGL.Version.isES3);
+		if (PeoteGL.Version.isES3)
+			window.context.gl.disable(0x8DB9); // GL_FRAMEBUFFER_SRGB_EXT
+		#end
+
+		peoteView.start();
+
 		window.onRender.add(_ -> brilliantInit(window), true, 9000);
 
 		window.onResize.add(resize);
@@ -252,26 +272,6 @@ class Main extends Application {
 		FunkinMainLoop.run(frameRate, false, vsync);
 
 		//trace('');
-
-		peoteView = new PeoteView(window);
-		TextureSystem.processQueue();
-
-		controls = new Controls();
-
-		// The state machine is created after the input2action control binding
-		// so its window listeners fire after the controls (actions dispatch
-		// before routed extras), matching the original ordering.
-		stateMachine = new StateMachine(window, controls);
-		stateMachine.createState = stateCreate;
-		stateMachine.destroyState = stateDestroy;
-
-		#if (!html5)
-		trace("Is es3? " + PeoteGL.Version.isES3);
-		if (PeoteGL.Version.isES3)
-			window.context.gl.disable(0x8DB9); // GL_FRAMEBUFFER_SRGB_EXT
-		#end
-
-		peoteView.start();
 
 		trace("createSounds");
 		createSounds();
