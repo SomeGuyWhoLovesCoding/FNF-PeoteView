@@ -1,5 +1,7 @@
 package elements;
 
+import haxe.Int64;
+
 /**
 	The sustain note of the note sprite.
 
@@ -41,8 +43,8 @@ class Sustain implements Element {
 	// ========================================================================
 	// Position & Size
 	// ========================================================================
-	@posX @formula("uDisplayRotateX(aPos)") @set("properties") public var x:Int;
-	@posY @formula("uDisplayRotateY(aPos)") @set("properties") public var y:Int;
+	@posX @formula("uDisplayRotateX(uLutPos(aScrollBase, aLane, aLutMode, aPos, vec2(aRecX, aRecY)) + vec2(aPivotX, aPivotY))") @set("properties") public var x:Int;
+	@posY @formula("uDisplayRotateY(uLutPos(aScrollBase, aLane, aLutMode, aPos, vec2(aRecX, aRecY)) + vec2(aPivotX, aPivotY))") @set("properties") public var y:Int;
 
 	@varying @sizeX @formula("w * speed") @set("properties") public var w:Int;
 	@varying @sizeY @formula("h * scale") @set("properties") public var h:Int;
@@ -67,6 +69,20 @@ class Sustain implements Element {
 	@texUnit public var texUnit:Int = 0;
 
 	@texSlot public var texSlot:Int = 0;
+
+	// --- Note-movement LUT binding ---
+	// `aScrollBase` = the parent note's song time (ms), `aLane` = the LUT
+	// row for the parent note's (type,index). `aLutMode` is 0 (CPU), 1
+	// (scrolls with the note) or 2 (anchored at the receptor after a hit).
+	// `aPivotX/Y` mirror the receptor's sustain pivot; `aRecX/Y` is the
+	// receptor's rest position used when anchored.
+	@varying @custom @set("properties") public var aScrollBase:Float = 0.0;
+	@varying @custom @set("properties") public var aLane:Float = 0.0;
+	@varying @custom @set("properties") public var aLutMode:Float = 0.0;
+	@varying @custom @set("properties") public var aPivotX:Float = 0.0;
+	@varying @custom @set("properties") public var aPivotY:Float = 0.0;
+	@varying @custom @set("properties") public var aRecX:Float = 0.0;
+	@varying @custom @set("properties") public var aRecY:Float = 0.0;
 
 	// ========================================================================
 	// Texture Coordinates (body = "hold piece", tail = "hold end")
@@ -113,6 +129,10 @@ class Sustain implements Element {
 	var cachedClipId:Int = -1;
 	var cachedClipMania:Int = -1;
 
+	// Identifies which note this buffer slot held last frame, so the
+	// spawn-time LUT constants are only written once per note.
+	public var lastWrittenGlobalIndex:Int64 = -1;
+
 	static public function init(program:CustomProgram) {}
 
 	inline public function new(x:Int, y:Int, w:Int, h:Int, handle:NoteskinHandle, r:Float, s:Float, sc:Float, tile:Int) {
@@ -145,11 +165,12 @@ class Sustain implements Element {
 
 	/**
 		Set the body/tail coords and rotation from the helper for this lane.
+		Returns true when the clip actually changed (buffer needs an update).
 	**/
-	inline public function changeID(id:Int) {
+	inline public function changeID(id:Int):Bool {
 		//BOTTLENECK: high per-sustain per-frame changeID does 2 clip lookups + ~10 @set("properties") writes, re-uploading every sustain's clip coords each frame | FIX: cache body/tail clip per lane; only set fields when changed
 		if (cachedClipHandle == handle && cachedClipId == id && cachedClipMania == mania_for_clipruntimehelper)
-			return;
+			return false;
 		var bodyClip = NoteskinRuntimeHelper.getHoldBodyClip(handle, id, mania_for_clipruntimehelper);
 		var tailClip = NoteskinRuntimeHelper.getHoldTailClip(handle, id, mania_for_clipruntimehelper);
 
@@ -170,5 +191,6 @@ class Sustain implements Element {
 		cachedClipHandle = handle;
 		cachedClipId = id;
 		cachedClipMania = mania_for_clipruntimehelper;
+		return true;
 	}
 }

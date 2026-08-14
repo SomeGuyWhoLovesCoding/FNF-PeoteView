@@ -113,6 +113,9 @@ class VirtualNote {
 	// the note diff relative to strum time (4 bytes)
 	var diff:Int;
 
+	// the note's absolute song time in ms, used as the LUT scroll base (8 bytes)
+	var scrollBaseMs:Float;
+
 	// the current strum position
 	var Sxy:Int;
 	var Sx(get, set):Int;
@@ -159,7 +162,7 @@ class VirtualNote {
 /**
  * This object is a POD of the sustain element. 72-byte class since there's a reference in it.
  * @since Development
-**/
+ **/
 #if cpp
 @:unreflective
 #end
@@ -183,6 +186,9 @@ class VirtualSustain {
 
 	// the rotation of the sustain (8 bytes)
 	var r:Float;
+
+	// 0 = CPU position, 1 = scrolls with note (GPU LUT), 2 = anchored at receptor (4 bytes)
+	var lutMode:Int;
 
 	// the note diff relative to strum time (4 bytes)
 	var diff:Int;
