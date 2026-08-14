@@ -127,6 +127,7 @@ class EditorMenu extends MenuInput {
 			Controls.Action.UI_UP => {action: up},
 			Controls.Action.UI_ACCEPT => {action: accept}
 		];
+		mode = ControlsMode.EDITOR_MENU;
 	}
 
 	// ── Layout helpers ────────────────────────────────────────────────────

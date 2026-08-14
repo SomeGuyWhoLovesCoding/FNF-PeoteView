@@ -60,6 +60,7 @@ class FreeplayMenu extends MenuInput {
 				}
 			}
 		];
+		mode = ControlsMode.FREEPLAY;
 	}
 
 	static function init(disp:CustomDisplay):Void {

@@ -142,7 +142,7 @@ class StateMachine {
 
 		if (target != null) {
 			if (target.actions != null) {
-				safe(() -> controls.bindTo(target.actions));
+				safe(() -> controls.setMode(target.mode, target.actions));
 			} else {
 				safe(() -> controls.unBind());
 			}

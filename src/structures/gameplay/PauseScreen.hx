@@ -213,7 +213,7 @@ class PauseScreen {
 			return;
 		eventsActive = true;
 		var window = lime.app.Application.current.window;
-		Main.current.controls.bindTo(actions);
+		Main.current.controls.setMode(ControlsMode.PAUSE, actions);
 		window.onMouseDown.add(mouseDown);
 		window.onMouseWheel.add(moveOption_mouse);
 	}

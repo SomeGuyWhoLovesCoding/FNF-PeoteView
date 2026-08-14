@@ -15,6 +15,7 @@ class Controls {
 	var active:Bool = false;
 
 	function new() {
+		handle = new ControlsHandle();
 		reload();
 	}
 
@@ -69,17 +70,20 @@ class Controls {
 			}
 		];
 
-		// Drop the old handle's KeyboardAction from the shared Input2Action
-		// first, otherwise reload() leaves a stale action bound to the focused
-		// menu and every key press fires twice.
-		if (handle != null)
-			handle.unBind();
-		handle = new ControlsHandle(config);
+		// Rebuild every mode layout with the fresh config. The single shared
+		// Input2Action keeps its window listeners; only the cached KeyboardAction
+		// instances are recreated so a keybind change takes effect everywhere.
+		handle.rebuild(config);
 	}
 
-	public function bindTo(actions:ActionMap) {
+	/**
+		Activate the input layout for `mode`. The single shared `Input2Action`
+		swaps to (and caches) that mode's `KeyboardAction`; all other modes are
+		inactive. One mode is active at any time.
+	**/
+	public function setMode(mode:ControlsMode, actions:ActionMap) {
 		active = true;
-		handle.bindTo(config, actions);
+		handle.setMode(mode, actions);
 	}
 
 	public function unBind() {
@@ -95,23 +99,51 @@ class Controls {
 
 @:publicFields
 class ControlsHandle {
-	// One Input2Action shared across every handle so window key events are
-	// registered exactly once; reload() would otherwise add a new keyDown/keyUp
-	// listener each time and fire every bound action twice.
+	// One Input2Action shared by every mode so window key events are registered
+	// exactly once. Switching modes only swaps which KeyboardAction is active.
 	static var i2a:Input2Action;
+	var config:ActionConfig;
+	var modeToActions:Map<ControlsMode, ActionMap>;
+	var modeToKeyboardAction:Map<ControlsMode, KeyboardAction>;
 	var kb:KeyboardAction;
 
-	function new(config:ActionConfig) {
+	function new() {
 		if (i2a == null) {
 			i2a = new Input2Action();
 			i2a.registerKeyboardEvents(lime.app.Application.current.window);
 		}
+		modeToActions = new Map();
+		modeToKeyboardAction = new Map();
 	}
 
-	function bindTo(config:ActionConfig, actions:ActionMap) {
+	/** Rebuild every cached mode layout after a keybind change. */
+	function rebuild(newConfig:ActionConfig) {
+		config = newConfig;
 		unBind();
 
-		kb = new KeyboardAction(config, actions);
+		var fresh = new Map<ControlsMode, KeyboardAction>();
+		for (mode in modeToActions.keys()) {
+			var actions = modeToActions.get(mode);
+			if (actions == null) continue;
+			fresh.set(mode, new KeyboardAction(newConfig, actions));
+		}
+		modeToKeyboardAction = fresh;
+	}
+
+	/**
+		Cache the mode's layout (rebuilding its KeyboardAction lazily if the mode
+		is new), then make it the single active one.
+	**/
+	function setMode(mode:ControlsMode, actions:ActionMap) {
+		modeToActions.set(mode, actions);
+		unBind();
+
+		var next = modeToKeyboardAction.get(mode);
+		if (next == null) {
+			next = new KeyboardAction(config, actions);
+			modeToKeyboardAction.set(mode, next);
+		}
+		kb = next;
 		i2a.addKeyboard(kb);
 	}
 

@@ -135,6 +135,7 @@ class MainMenu extends MenuInput {
 			Controls.Action.UI_ACCEPT => {action: accept},
 			Controls.Action.GAME_DEBUG => {action: goToEditors}
 		];
+		mode = ControlsMode.MAIN_MENU;
 	}
 
 	static var optionYLerps:Array<Float> = [for (i in 0...5) 1];

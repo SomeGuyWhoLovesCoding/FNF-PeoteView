@@ -5,6 +5,7 @@ import lime.ui.MouseWheelMode;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 import input2action.ActionMap;
+import data.gameplay.ControlsMode;
 
 /**
 	Base class for every menu/state object that can receive routed input.
@@ -15,6 +16,7 @@ import input2action.ActionMap;
 @:publicFields
 class MenuInput {
 	var actions(default, null):ActionMap;
+	var mode(default, null):ControlsMode = NONE;
 	var active(default, null):Bool = false;
 	var opened(default, null):Bool = false;
 	var disposed(default, null):Bool = false;

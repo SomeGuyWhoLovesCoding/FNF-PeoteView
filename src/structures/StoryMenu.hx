@@ -15,7 +15,15 @@ class StoryMenu extends MenuInput {
 
 	var nav(default, null):Navigation = new Navigation();
 
-	function new() {}
+	function new() {
+		actions = [
+			Controls.Action.UI_UP => {action: up},
+			Controls.Action.UI_DOWN => {action: down},
+			Controls.Action.UI_BACK => {action: back},
+			Controls.Action.UI_ACCEPT => {action: enter}
+		];
+		mode = ControlsMode.STORY;
+	}
 
 	static function init(disp:CustomDisplay):Void {
 		display = disp;

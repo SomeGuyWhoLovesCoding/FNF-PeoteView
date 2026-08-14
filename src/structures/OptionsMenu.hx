@@ -68,6 +68,7 @@ class OptionsMenu extends MenuInput {
 			Controls.Action.UI_BACK => {action: back},
 			Controls.Action.UI_ACCEPT => {action: enter}
 		];
+		mode = ControlsMode.OPTIONS;
 	}
 
 	var alphaLerp:Float = 0.0;
