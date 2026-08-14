@@ -3,6 +3,19 @@ package structures.notes;
 import structures.notes.NoteVB.VirtualNote;
 import structures.notes.NoteVB.VirtualSustain;
 
+/**
+ * Note movement system — handles custom position overrides (Lua noteFormula).
+ *
+ * With the LUT in place, the base positioning (cos/sin scroll) is handled
+ * by NoteMovementLUT lookups in NoteSystem.drawNote(). This class now
+ * only fires for Lua JIT overrides, which can further modify positions
+ * after the LUT has set them.
+ *
+ * If you want the LUT to fully absorb a noteFormula (no Lua call needed),
+ * use NoteMovementLUT.buildWithInterp() during setup — then the LUT's
+ * hasExtendedLUT flag will be true, and this run() method becomes a
+ * no-op for that strumline.
+ */
 @:publicFields
 class NoteMovementSystem {
 	function new(parent:NoteSystem) {}
@@ -10,7 +23,7 @@ class NoteMovementSystem {
 	function run(parent:NoteSystem, noteSpr:VirtualNote, sustainSpr:VirtualSustain, receptor:Receptor, index:Int, type:Float, isHit:Bool) {
 		/**
 			1 = noteSprX
-			2 = noteSprX
+			2 = noteSprY
 			3 = noteSprScale
 			4 = sustainSprRotation
 		**/

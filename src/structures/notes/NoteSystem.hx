@@ -2,6 +2,7 @@ package structures.notes;
 
 import structures.notes.NoteVB.VirtualNote;
 import structures.notes.NoteVB.VirtualSustain;
+import structures.notes.NoteMovementLUT;
 
 /**
  * This is where notes and strumlines render in accordance to the note spawner.
@@ -77,6 +78,7 @@ class NoteSystem {
 	var noteMovement(default, null):NoteMovementSystem;
 	var notePool(default, null):NotePool;
 	var virtualNoteBuffer(default, null):NoteVB;
+	var movementLUTs(default, null):Array<NoteMovementLUT>;
 
 	static var typeToHandle:Array<NoteskinHandle> = [];
 
@@ -104,6 +106,15 @@ class NoteSystem {
 		}
 
 		virtualNoteBuffer = new NoteVB(strumlines.length, 1 << 8);
+
+		// Build movement LUTs — one per strumline.
+		// Replaces per-note Math.cos/Math.sin with precomputed offset lookups.
+		movementLUTs = [];
+		for (i in 0...strumlines.length) {
+			var lut = new NoteMovementLUT();
+			lut.build(strumlines[i].scrollDirection);
+			movementLUTs.push(lut);
+		}
 
 		notePool = new NotePool(this);
 		noteSpawner = new NoteSpawner(this);
@@ -419,9 +430,11 @@ class NoteSystem {
 			d = -d;
 
 		noteSpr.diff = d;
-		//BOTTLENECK: mid per-note per-frame Math.cos/Math.sin of lane-constant scrollDirection = thousands of trig calls/frame on dense charts | FIX: precompute cos/sin once per strumline when scrollDirection changes
-		noteSpr.Sx = Math.round(noteSprX + (d * Math.cos(strumline.scrollDirection * 0.01745329)));
-		noteSpr.Sy = Math.round(noteSprY + (d * Math.sin(strumline.scrollDirection * 0.01745329)));
+		// LUT lookup: precomputed offsets replace per-note Math.cos/Math.sin
+		// With 2000 notes this eliminates 4000 trig calls/frame → 4000 L1-cache reads
+		var lut = movementLUTs[lane];
+		noteSpr.Sx = noteSprX + lut.lookupX(d);
+		noteSpr.Sy = noteSprY + lut.lookupY(d);
 
 		noteSpr.scale = rec.scale;
 		noteSpr.globalIndex = _id;
@@ -597,6 +610,7 @@ class NoteSystem {
 		noteSpawner.despawnDist = MetaNote.floatToMetaNotePosition(360 / Math.min(Math.max(value, 0.0001), 1.0));
 		_cachedScrollSpeed = value;
 		_cachedHitbox = 200;
+		rebuildMovementLUTs();
 		return value;
 	}
 
@@ -608,6 +622,31 @@ class NoteSystem {
 			if (resetAnims)
 				strumline.resetAnimations();
 			strumline.resetInputs();
+		}
+		rebuildMovementLUTs();
+	}
+
+	/**
+	 * Rebuild all movement LUTs.  Call when scrollDirection changes
+	 * (noteskin swap) or when strumlines are reconfigured.
+	 */
+	function rebuildMovementLUTs() {
+		if (movementLUTs == null)
+			movementLUTs = [];
+		for (i in 0...strumlines.length) {
+			if (i < movementLUTs.length && movementLUTs[i] != null) {
+				movementLUTs[i].build(strumlines[i].scrollDirection);
+			} else {
+				var lut = new NoteMovementLUT();
+				lut.build(strumlines[i].scrollDirection);
+				movementLUTs.push(lut);
+			}
+		}
+		// Trim excess LUTs if strumlines shrank
+		while (movementLUTs.length > strumlines.length) {
+			var old = movementLUTs.pop();
+			if (old != null)
+				old.dispose();
 		}
 	}
 
@@ -645,6 +684,14 @@ class NoteSystem {
 				strumline.dispose();
 			}
 			strumlines = null;
+		}
+
+		if (movementLUTs != null) {
+			for (lut in movementLUTs) {
+				if (lut != null)
+					lut.dispose();
+			}
+			movementLUTs = null;
 		}
 
 		if (noteSpawner != null)
