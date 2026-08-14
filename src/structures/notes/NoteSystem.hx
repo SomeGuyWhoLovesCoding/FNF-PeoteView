@@ -50,7 +50,7 @@ class NoteSystem {
 		handle.loadTexture();
 
 		if (notesBuf == null) {
-			notesBuf = new Buffer<Note>(512, 512);
+			notesBuf = new Buffer<Note>(256, 256);
 		}
 
 		if (notesProg == null) {
@@ -61,7 +61,7 @@ class NoteSystem {
 		}
 
 		if (sustainsBuf == null) {
-			sustainsBuf = new Buffer<Sustain>(128, 128);
+			sustainsBuf = new Buffer<Sustain>(256, 256);
 		}
 
 		if (sustainProg == null) {
