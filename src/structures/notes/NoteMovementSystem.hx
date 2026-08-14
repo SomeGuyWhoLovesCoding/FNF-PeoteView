@@ -12,13 +12,16 @@ import structures.notes.NoteVB.VirtualSustain;
  * the entire formula (position, scale, sustainRot, scrollMultiplier)
  * into the LUT at every quantized diff step.
  *
- * At runtime, noteMovement.run() checks whether the LUT for the
- * current (strumline, lane) has hasExtendedLUT == true:
- *   - YES → apply scale/sustainRot/scrollMul from LUT, skip Lua call
- *   - NO  → fall through to the LuaJIT callNoteFormula() path
+ * Runtime flow (drawNote per-note):
+ *   - LUT has hasExtendedLUT == true:
+ *       drawNote() applies scale/sustainRot/scrollMul inline from LUT,
+ *       then SKIPS this run() call entirely. Zero VM dispatch.
+ *   - LUT has hasExtendedLUT == false:
+ *       drawNote() calls this run(), which falls through to the
+ *       LuaJIT callNoteFormula() path for runtime evaluation.
  *
- * This makes the NoteMovementInterp + LUT the PRIMARY formula path,
- * with LuaJIT as a fallback for edge cases or when no interp is set.
+ * The extended-LUT path is now fully handled inline in drawNote(),
+ * making this run() method a LuaJIT-only fallback.
  */
 @:publicFields
 class NoteMovementSystem {

@@ -414,7 +414,11 @@ class NoteSystem {
 		var sustainSpr = duration != 0 ? notePool.getSustain(index, note, _id) : null;
 		var sustainExists = duration != 0;
 
-		var leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
+		// Deferred: leftover is only needed for sustain notes.
+		// Avoids MetaNote.metaNotePositionToSongTime() per-note for the majority case.
+		var leftover:Int = 0;
+		if (sustainExists)
+			leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
 
 		// Judgement-gated state reads
 		var judged:Bool = File.getJudgement(_id);
@@ -432,11 +436,29 @@ class NoteSystem {
 		noteSpr.diff = d;
 		// LUT lookup: precomputed offsets replace per-note Math.cos/Math.sin
 		// With 2000 notes this eliminates 4000 trig calls/frame → 4000 L1-cache reads
-		// When interp is baked in, scale is also applied from the LUT here.
+		// When interp is baked in (hasExtendedLUT), scale/sustainRot/scrollMul are
+		// applied inline here too — fully replacing the noteMovement.run() call.
 		var lut = movementLUTs[lane][index];
 		noteSpr.Sx = noteSprX + lut.lookupX(d);
 		noteSpr.Sy = noteSprY + lut.lookupY(d);
-		noteSpr.scale = lut.lookupScale(d, rec.scale);
+
+		// Scale: when interp is baked, lookupScale returns a relative multiplier
+		// (matching the Lua path: returnValue.scale * receptor.note.scale).
+		// When no interp, lookupScale falls through to rec.scale directly.
+		var lutExtended = lut.hasExtendedLUT;
+		noteSpr.scale = lutExtended ? lut.lookupScale(d, rec.scale) * rec.scale : rec.scale;
+
+		// Inline extended LUT: sustainRot + scrollMultiplier.
+		// This eliminates the redundant noteMovement.run() call below when
+		// the LUT already encodes the full formula output.
+		if (lutExtended && sustainExists && sustainSpr != null) {
+			sustainSpr.r = lut.lookupSustainRot(d);
+			var scrollMul = lut.lookupScrollMul(d);
+			if (scrollMul != 1.0) {
+				noteSpr.diff = Math.round(d * scrollMul);
+				sustainSpr.w = Math.round(sustainSpr.w * scrollMul);
+			}
+		}
 
 		noteSpr.globalIndex = _id;
 
@@ -592,7 +614,12 @@ class NoteSystem {
 		}
 
 		if (noteSpr != null) {
-			noteMovement.run(this, noteSpr, sustainSpr, receptor, index, note.type, isHit);
+			// When the LUT has extended data (interp baked in), scale/sustainRot/
+			// scrollMul were already applied inline above — skip the redundant
+			// noteMovement.run() call. This saves ~2000 method calls + array
+			// traversals + followNote() calls per frame for 2000 notes.
+			if (!lutExtended)
+				noteMovement.run(this, noteSpr, sustainSpr, receptor, index, note.type, isHit);
 			if (sustainExists)
 				virtualNoteBuffer.addSustain(sustainSpr, noteSpr);
 		}
