@@ -103,6 +103,8 @@ class ControlsHandle {
 	// exactly once. Switching modes only swaps which KeyboardAction is active.
 	static var i2a:Input2Action;
 	var config:ActionConfig;
+	var modeToActions:Map<ControlsMode, ActionMap>;
+	var modeToKeyboardAction:Map<ControlsMode, KeyboardAction>;
 	var kb:KeyboardAction;
 
 	function new() {
@@ -110,23 +112,38 @@ class ControlsHandle {
 			i2a = new Input2Action();
 			i2a.registerKeyboardEvents(lime.app.Application.current.window);
 		}
+		modeToActions = new Map();
+		modeToKeyboardAction = new Map();
 	}
 
-	/** Refresh the layout config after a keybind change. */
+	/** Rebuild every cached mode layout after a keybind change. */
 	function rebuild(newConfig:ActionConfig) {
 		config = newConfig;
 		unBind();
+
+		var fresh = new Map<ControlsMode, KeyboardAction>();
+		for (mode in modeToActions.keys()) {
+			var actions = modeToActions.get(mode);
+			if (actions == null) continue;
+			fresh.set(mode, new KeyboardAction(newConfig, actions));
+		}
+		modeToKeyboardAction = fresh;
 	}
 
 	/**
-		Make `mode` the single active layout. A fresh `KeyboardAction` is created
-		on every activation so no stuck key state survives a mode switch: a key
-		released after its action was yanked mid-press would otherwise read as a
-		repeat next time and swallow the press (the "two presses" bug).
+		Cache the mode's layout (rebuilding its KeyboardAction lazily if the mode
+		is new), then make it the single active one.
 	**/
 	function setMode(mode:ControlsMode, actions:ActionMap) {
+		modeToActions.set(mode, actions);
 		unBind();
-		kb = new KeyboardAction(config, actions);
+
+		var next = modeToKeyboardAction.get(mode);
+		if (next == null) {
+			next = new KeyboardAction(config, actions);
+			modeToKeyboardAction.set(mode, next);
+		}
+		kb = next;
 		i2a.addKeyboard(kb);
 	}
 
