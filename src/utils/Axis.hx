@@ -4,9 +4,6 @@ package utils;
  * The axis.
  * @since Development
 **/
-#if !debug
-@:noDebug
-#end
 @:publicFields
 enum abstract Axis(Int) {
 	/**

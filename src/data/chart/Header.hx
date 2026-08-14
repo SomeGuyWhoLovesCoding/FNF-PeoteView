@@ -4,9 +4,6 @@ package data.chart;
 	The chart header.
 	This is a structure containing metadata about the chart.
 **/
-#if !debug
-@:noDebug
-#end
 @:publicFields
 @:structInit
 class Header {

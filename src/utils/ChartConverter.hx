@@ -13,9 +13,6 @@ using StringTools;
  * This is deprecated, for now.
  * @since Development
 **/
-#if !debug
-@:noDebug
-#end
 @:publicFields
 @:access(data.chart.MetaNote)
 class ChartConverter {
@@ -228,9 +225,6 @@ class ChartConverter {
 }
 
 // VanillaChartNote abstract stays unchanged
-#if !debug
-@:noDebug
-#end
 @:publicFields
 abstract VanillaChartNote(Array<Float>) from Array<Float> {
 	var position(get, never):Float;

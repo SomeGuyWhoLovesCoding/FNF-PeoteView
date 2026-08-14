@@ -71,7 +71,10 @@ class NoteSpawner {
 		while (i < top) {
 			var n = File.getNote(i);
 
-			var lane = n.type % parent.strumlines.length;
+			var strumCount = parent.strumlines.length;
+			if (strumCount == 0)
+				break; // no receptors available; nothing can be drawn
+			var lane = n.type % strumCount;
 			var strumline = parent.strumlines[lane];
 			var receptor = strumline.receptors[n.index];
 			var rec = receptor.note;

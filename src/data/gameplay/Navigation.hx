@@ -6,7 +6,6 @@ package data.gameplay;
 	@since Development
 **/
 @:publicFields
-@:noDebug
 abstract Navigation(Int) {
 	inline function new() this = 0;
 

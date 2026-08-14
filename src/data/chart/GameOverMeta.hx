@@ -4,9 +4,6 @@ package data.chart;
 	The song's game over meta.
 	This is a structure containing info related to the game over screen.
 **/
-#if !debug
-@:noDebug
-#end
 @:publicFields
 @:structInit
 class GameOverMeta {

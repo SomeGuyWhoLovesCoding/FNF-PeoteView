@@ -5,9 +5,6 @@ package structures.gameplay;
 	Inspired from defective engine's countdown class.
 	@since Development
 **/
-#if !debug
-@:noDebug
-#end
 @:publicFields
 class CountdownDisplay {
 	/**

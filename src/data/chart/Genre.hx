@@ -4,9 +4,6 @@ package data.chart;
 	The song's genre.
 	This is an abstract over string.
  */
-#if !debug
-@:noDebug
-#end
 @:publicFields
 enum abstract Genre(String) from String {
 	/**

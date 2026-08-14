@@ -8,9 +8,6 @@ import sys.FileSystem;
 	On top of that, a very special feature is put into place, called "shards", or 1/4 second segments of charts that make it easy to insert/remove notes
 	@since Development
 **/
-#if !debug
-@:noDebug
-#end
 @:publicFields
 class Chart {
 	/**

@@ -12,9 +12,6 @@ using StringTools;
 	The texture system.
 	@since Development
 **/
-#if !debug
-@:noDebug
-#end
 @:final
 @:publicFields
 class TextureSystem {

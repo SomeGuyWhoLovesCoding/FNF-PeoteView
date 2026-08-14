@@ -137,11 +137,18 @@ class ControlsHandle {
 		is new), then make it the single active one.
 	**/
 	function setMode(mode:ControlsMode, actions:ActionMap) {
+		// The KeyboardAction constructor copies the action closures into its own
+		// InputState, so a cached action keeps dispatching to whichever menu
+		// provided `actions` on the FIRST setMode call for this mode. Menus are
+		// disposed and recreated on every state entry with a fresh ActionMap, so
+		// the cached closures would target a dead instance and silently swallow
+		// input. Rebuild whenever the actions map reference changes.
+		var stale = modeToActions.get(mode) != actions;
 		modeToActions.set(mode, actions);
 		unBind();
 
 		var next = modeToKeyboardAction.get(mode);
-		if (next == null) {
+		if (next == null || stale) {
 			next = new KeyboardAction(config, actions);
 			modeToKeyboardAction.set(mode, next);
 		}

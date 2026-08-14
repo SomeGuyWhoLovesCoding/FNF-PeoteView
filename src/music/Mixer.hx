@@ -8,7 +8,6 @@ import lime.ui.Window;
 import data.SaveData;
 
 @:publicFields
-@:noDebug
 class Mixer {
 	static var globalVolume(get, set):Float;
 	inline static function get_globalVolume():Float {

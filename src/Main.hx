@@ -180,6 +180,28 @@ class Main extends Application {
 	// This is a replacement for Application.current.window.onMouseDown because holy shit does it prevent any invisible crashes whatsoever
 	var mouseDown:(Float, Float, MouseButton) -> Void;
 
+	// ------------------------------------------------------------------
+	// Crash visibility: release builds are GUI-subsystem apps, so stdout
+	// (trace) is invisible and a Haxe exception looks like a silent crash.
+	// Log the first occurrence of each exception to crashlog.txt next to
+	// the executable so failures can actually be diagnosed.
+	static var _lastCrashKey:String = "";
+
+	static function logCrash(where:String, e:Dynamic) {
+		var key = '$where|' + Std.string(e);
+		if (key == _lastCrashKey)
+			return; // already logging this recurring failure
+		_lastCrashKey = key;
+		var msg = '[$where] ' + Std.string(e) + '\n' + CallStack.toString(CallStack.exceptionStack());
+		try {
+			var out = sys.io.File.append('crashlog.txt');
+			out.writeString(Date.now().toString() + ' ' + msg + '\n');
+			out.close();
+		} catch (_) {
+			// best effort only
+		}
+	}
+
 	// NOW FOR THE SOUND EFFECTS
 	var sound_scrollIdx:Int;
 	var sound_confIdx:Int;
@@ -271,8 +293,12 @@ class Main extends Application {
 			#end
 
 			window.onMouseDown.add((x, y, button) -> {
-				if (mouseDown != null)
-					mouseDown(x, y, button);
+				try {
+					if (mouseDown != null)
+						mouseDown(x, y, button);
+				} catch (e:Dynamic) {
+					logCrash('onMouseDown', e);
+				}
 			});
 
 			_started = true;
@@ -445,41 +471,45 @@ class Main extends Application {
 		}
 
 		if (_started) {
-			// Use the live window frame rate so changing the framerate option at
-			// runtime keeps the simulated delta in sync (otherwise lerp speeds up).
-			newDeltaTime = 1000.0 / Application.current.window.frameRate;
-			// if (deltaTime > 50) newDeltaTime = deltaTime;
+			try {
+				// Use the live window frame rate so changing the framerate option at
+				// runtime keeps the simulated delta in sync (otherwise lerp speeds up).
+				newDeltaTime = 1000.0 / Application.current.window.frameRate;
+				// if (deltaTime > 50) newDeltaTime = deltaTime;
 
-			if (mainMenu != null && !mainMenu.disposed) {
-				mainMenu.update(newDeltaTime);
-			}
-
-			if (playField != null && !playField.disposed) {
-				if (playField.pauseScreen != null) {
-					var pauseScreen = playField.pauseScreen;
-					if (!pauseScreen.disposed)
-						pauseScreen.update(newDeltaTime);
+				if (mainMenu != null && !mainMenu.disposed) {
+					mainMenu.update(newDeltaTime);
 				}
 
-				if (!playField.paused && !RenderingMode.enabled) {
-					playField.update(newDeltaTime);
+				if (playField != null && !playField.disposed) {
+					if (playField.pauseScreen != null) {
+						var pauseScreen = playField.pauseScreen;
+						if (!pauseScreen.disposed)
+							pauseScreen.update(newDeltaTime);
+					}
+
+					if (!playField.paused && !RenderingMode.enabled) {
+						playField.update(newDeltaTime);
+					}
 				}
-			}
 
-			if (noteskinEditor != null && !noteskinEditor.disposed) {
-				noteskinEditor.update(newDeltaTime);
-			}
+				if (noteskinEditor != null && !noteskinEditor.disposed) {
+					noteskinEditor.update(newDeltaTime);
+				}
 
-			if (editorMenu != null && !editorMenu.disposed) {
-				editorMenu.update(newDeltaTime);
-			}
+				if (editorMenu != null && !editorMenu.disposed) {
+					editorMenu.update(newDeltaTime);
+				}
 
-			if (optionsMenu.active) {
-				optionsMenu.update(newDeltaTime);
-			}
+				if (optionsMenu.active) {
+					optionsMenu.update(newDeltaTime);
+				}
 
-			if (storyMenu.active) {
-				storyMenu.update(newDeltaTime);
+				if (storyMenu.active) {
+					storyMenu.update(newDeltaTime);
+				}
+			} catch (e:Dynamic) {
+				logCrash('update', e);
 			}
 		}
 
@@ -497,15 +527,19 @@ class Main extends Application {
 		var renderFrameRate = Application.current.window.frameRate;
 		var renderRate = 1000 / renderFrameRate;
 
-		if (playField != null) {
-			if (!playField.paused) {
-				playField.render();
+		try {
+			if (playField != null && !playField.disposed) {
+				if (!playField.paused) {
+					playField.render();
+				}
 			}
-		}
-		if (freeplayMenu != null) {
-            if (freeplayMenu.active && currentState != GAMEPLAY) {
-				freeplayMenu.render(renderRate);
+			if (freeplayMenu != null) {
+				if (freeplayMenu.active && currentState != GAMEPLAY) {
+					freeplayMenu.render(renderRate);
+				}
 			}
+		} catch (e:Dynamic) {
+			logCrash('render', e);
 		}
 
 		simulatedDeltaTime = haxe.Timer.stamp() - simulatedDeltaTime;

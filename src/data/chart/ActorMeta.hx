@@ -5,9 +5,6 @@ package data.chart;
 	This is a structure containing info related to the characters of the song.
 	@since Development
 **/
-#if !debug
-@:noDebug
-#end
 @:publicFields
 @:structInit
 class ActorMeta {

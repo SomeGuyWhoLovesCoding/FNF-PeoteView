@@ -5,9 +5,6 @@ package data.chart;
  * It's that small. 10 byte chart format.
  * @since Development
  */
-#if !debug
-@:noDebug
-#end
 @:publicFields
 abstract MetaNote(MetaNoteImpl) from MetaNoteImpl to MetaNoteImpl {
 	// Masks and shifts matching C++ layout

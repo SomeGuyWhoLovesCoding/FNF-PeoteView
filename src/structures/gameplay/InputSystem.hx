@@ -21,6 +21,12 @@ class InputSystem {
 	}
 
 	function addEvents() {
+		// This can be re-invoked by a delayed haxe.Timer after dispose
+		// (PlayField.gameOver schedules addEvents 2 seconds ahead). Re-attaching
+		// stale handlers would route key events to a dead playfield and crash on
+		// the first press, so bail out when the owner is gone.
+		if (parent == null || parent.disposed)
+			return;
 		var window = lime.app.Application.current.window;
 		#if !android
 		window.onKeyDown.add(press);
@@ -73,6 +79,11 @@ class InputSystem {
 	}
 
 	function press(code:KeyCode, mod:KeyModifier) {
+		// A stale handler (see addEvents) can fire after the playfield was
+		// disposed; parent.field is nulled on dispose, so dereferencing it here
+		// would be a null crash. Guard before touching anything.
+		if (parent == null || parent.disposed || parent.field == null)
+			return;
 		var field = parent.field;
 		var isInGameOver = field.isInGameOver;
 		var controls = SaveData.state.controls;
@@ -113,6 +124,8 @@ class InputSystem {
 	}
 
 	function release(code:KeyCode, mod:KeyModifier) {
+		if (parent == null || parent.disposed || parent.field == null)
+			return;
 		if (parent.disposed || parent.botplay || parent.field.isInGameOver || RenderingMode.enabled || parent.paused) {
 			return;
 		}
@@ -145,6 +158,8 @@ class InputSystem {
 
 	function gameCondition(keyCode:KeyCode) {
 		var returnValue = false;
+		if (parent == null || parent.disposed || parent.field == null)
+			return true;
 		var game = SaveData.state.controls.game;
 
 		var field = parent.field;
@@ -171,6 +186,8 @@ class InputSystem {
 
 	function mousePress(x:Float, y:Float, mouseButton:MouseButton) {
 		if (mouseButton != MouseButton.LEFT)
+			return;
+		if (parent == null || parent.disposed)
 			return;
 		parent.pause();
 	}

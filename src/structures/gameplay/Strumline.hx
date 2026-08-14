@@ -180,7 +180,15 @@ class Strumline {
 	function applyNoteskinProperties(handle:NoteskinHandle, mania:Int) {
 		if (handle == null)
 			return;
-		var cfgM = handle.data.configMania[mania];
+		var cfgs = handle.data.configMania;
+		if (cfgs == null || cfgs.length == 0)
+			return;
+		// A skin may not ship a config for every mania. Clamp the config lookup
+		// to the nearest available one so high-mania charts don't null-deref.
+		var cfgIndex = mania;
+		if (cfgIndex < 0 || cfgIndex >= cfgs.length)
+			cfgIndex = cfgs.length - 1;
+		var cfgM = cfgs[cfgIndex];
 		this.offsetX = cfgM.offsetX;
 		this.offsetY = cfgM.offsetY;
 		this.gap = cfgM.gap;
