@@ -197,14 +197,17 @@ class NoteSystem {
 		the first note at or after the playhead, then expand a small window
 		outward — backward for notes just in the past, forward for upcoming
 		notes — testing each candidate's real `diff` against the symmetric
-		hitbox (`abs(diff) <= _cachedHitbox`). This yields exactly the same
-		result the old full-buffer scan would have (so no inputs are dropped)
-		while skipping the notes that are nowhere near the strumline.
+		hitbox (`abs(diff) <= _cachedHitbox`), expanding outward until `diff`
+		leaves the hitbox.
 
 		`scrollSpeed` is a single global value for the field, so `diff` is
 		monotonic in position and the outward expansion cannot skip a note
-		that lies inside the hitbox. The closest unjudged note on `strumline`'s
-		lane `index` inside the hitbox is returned, or `-1` when there is none.
+		that lies inside the hitbox. Rather than the geometrically closest
+		note, the **earliest** (smallest position) unjudged note on
+		`strumline`'s lane `index` inside the hitbox is returned — so a
+		same-lane jack always progresses in time order instead of grabbing a
+		note out of sequence. For a single note this is indistinguishable from
+		closest. Returns `-1` when there is none.
 	**/
 	function findPlayerHitNote(strumline:Strumline, index:Int):Int64 {
 		var spawner = noteSpawner;
@@ -251,15 +254,17 @@ class NoteSystem {
 			bi = Int64.sub(spawner.top, 1);
 
 		var bestId:Int64 = -1;
-		var bestAbs:Float = Math.POSITIVE_INFINITY;
+		var found = false;
 
 		inline function consider(i:Int64) {
 			var n = File.getNote(i);
 			if (n.index == index && (n.type % laneCount) == lane && !File.getJudgement(i)) {
 				var absDiff = Math.abs(diffAt(i));
-				// Symmetric hitbox, matching the original full-buffer scan.
-				if (absDiff <= hitbox && absDiff < bestAbs) {
-					bestAbs = absDiff;
+				// Symmetric hitbox. Among hittable notes keep the earliest
+				// (smallest position) so a jack progresses in order; once
+				// `found`, only a smaller index can replace it.
+				if (absDiff <= hitbox && (!found || i < bestId)) {
+					found = true;
 					bestId = i;
 				}
 			}
