@@ -239,7 +239,7 @@ class Strumline {
 				rec.sustainToHold_index = noteIndex;
 			}
 
-			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.songPosition + Main.conductor.offset);
+			var posWithLatency = MetaNote.floatToMetaNotePosition(pf.startedCountdown ? pf.noteTime : pf.songPosition);
 			var _timing = MetaNote.metaNotePositionToSongTime(noteToHit.position - posWithLatency);
 			var timing = (_timing / parent._cachedHitbox) * 0.9;
 

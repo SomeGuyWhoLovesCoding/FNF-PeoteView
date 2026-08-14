@@ -78,23 +78,47 @@ class NoteSpawner {
 	}
 
 	function processNotes(pos:Int64) {
-		var latency = Main.conductor.offset;
-		var latencyI64 = MetaNote.floatToMetaNotePosition(latency);
-
-		pos += latencyI64;
+		// pos is already latency-corrected noteTime as Int64 from PlayField
+		// No conductor.offset adjustment needed
 
 		var i = (minBottom != -1 && bottom < minBottom) ? minBottom : bottom;
 		var scrollSpeed = parent.parent.scrollSpeed;
-		var noteSpr:VirtualNote = null;
-		var j:Int = 0;
 
 		// Precompute overlap scale inverse once for the entire loop
 		var overlapInv = getOverlapScaleInv();
 
+		// Per-(lane, index) overlap carry so notes on different lanes
+		// never merge into each other.  Keyed as a flat array:
+		//   carryKey = lane * MAX_KEYS_PER_STRUMLINE + index
+		// MAX_KEYS_PER_STRUMLINE is a hard upper bound on receptor count.
+		// We reuse a static array to avoid per-frame allocation.
+		static var carrySprites:Array<VirtualNote> = null;
+		static var carryLaneIndices:Array<Int> = null;
+		if (carrySprites == null) {
+			carrySprites = new Array<VirtualNote>();
+			carryLaneIndices = new Array<Int>();
+		}
+		// Compute needed size: strumlines.length * max receptors per strumline
+		var strumCount = parent.strumlines.length;
+		var maxReceptors = 0;
+		for (s in 0...strumCount) {
+			var sl = parent.strumlines[s];
+			if (sl.receptors.length > maxReceptors)
+				maxReceptors = sl.receptors.length;
+		}
+		var carrySize = strumCount * maxReceptors;
+		// Resize if needed (only grows, never shrinks — negligible waste)
+		while (carrySprites.length < carrySize)
+			carrySprites.push(null);
+		while (carryLaneIndices.length < carrySize)
+			carryLaneIndices.push(0);
+		// Clear only the portion we'll use
+		for (c in 0...carrySize)
+			carrySprites[c] = null;
+
 		while (i < top) {
 			var n = File.getNote(i);
 
-			var strumCount = parent.strumlines.length;
 			if (strumCount == 0)
 				break; // no receptors available; nothing can be drawn
 			var lane = n.type % strumCount;
@@ -111,22 +135,23 @@ class NoteSpawner {
 
 			receptor.ambientOccludeYCur = newY;
 
+			var carryIdx = lane * maxReceptors + n.index;
+			var noteSpr = carrySprites[carryIdx];
+
 			var shouldOverlap = noteSpr != null
 				&& shouldNotesOverlap(prevNote, n, noteSpr, rec, receptor.ambientOccludeYPrev, receptor.ambientOccludeYCur, overlapInv);
 
 			if (shouldOverlap) {
 				mergeNoteIntoSprite(noteSpr, i);
 			} else {
-				++j;
 				noteSpr = parent.drawNote(pos, n, diff, i);
+				carrySprites[carryIdx] = noteSpr;
 			}
 
 			strumline.setPrevNote(n.index, n);
 			receptor.ambientOccludeYPrev = receptor.ambientOccludeYCur;
 			++i;
 		}
-
-		pos -= latencyI64;
 	}
 
 	function cullTop(pos:Int64) {

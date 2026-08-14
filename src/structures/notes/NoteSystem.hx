@@ -155,7 +155,7 @@ class NoteSystem {
 		}
 	}
 
-	private function refreshRendering(songPosition:Float) {
+	private function refreshRendering(noteTime:Float) {
 		// Receptors are persistent in the buffer — just update animations.
 		// Pooled spawned notes are managed by notePool.beginFrame/endFrame.
 
@@ -168,14 +168,15 @@ class NoteSystem {
 				if (parent.botplay)
 					canMess = true;
 				if (canMess) {
-					receptor.updateAnimation(songPosition);
+					receptor.updateAnimation(noteTime);
 				}
 			}
 		}
 	}
 
 	function renderNotes(pos:Int64) {
-		refreshRendering(parent.songPosition);
+		var t = parent.startedCountdown ? parent.noteTime : parent.songPosition;
+		refreshRendering(t);
 		notePool.beginFrame();
 		noteSpawner.renderNotes(pos);
 		notePool.endFrame();
@@ -321,9 +322,9 @@ class NoteSystem {
 			return -1;
 
 		var laneCount = strumlines.length;
-		var offset = Main.conductor.offset;
 		var hitbox = _cachedHitbox;
-		var posWithLatency = MetaNote.floatToMetaNotePosition(parent.songPosition + offset);
+		// pos is already latency-corrected noteTime as Int64 from PlayField.update()
+		var posWithLatency = MetaNote.floatToMetaNotePosition(parent.songPosition);
 		// Precompute the hit window in tick units once, so the expansion needs
 		// only cheap Int64 compares - no per-note Int64/float conversions.
 		// (diff == (position - playhead) / TICKS_PER_MS, so
@@ -464,15 +465,13 @@ class NoteSystem {
 
 		var playable = strumline.playable && !(parent.botplay || RenderingMode.enabled);
 
-		var offset = Main.conductor.offset;
-
 		// --- Player side ---
 		if (playable) {
 			if (!isHit) {
 				if (isMissed)
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
 
-				if (!isMissed && diff < _cachedHitbox - offset) {
+				if (!isMissed && diff < _cachedHitbox) {
 					var noteToHit = receptor.noteToHit;
 					var noteToHitExists = noteToHit != null;
 
@@ -488,7 +487,7 @@ class NoteSystem {
 					}
 				}
 
-				if (diff < -_cachedHitbox - offset && !isMissed) {
+				if (diff < -_cachedHitbox && !isMissed) {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
 					File.setHitFlag(_id, true); // chosen to miss
 					isMissed = true;
@@ -530,7 +529,7 @@ class NoteSystem {
 				if (!rec.confirmed())
 					rec.confirm();
 
-				receptor.confirmTimer.startTime = parent.songPosition - offset; // don't do MetaNote.metaNotePositionToSongTime(position). That doesn't account for latency
+				receptor.confirmTimer.startTime = parent.startedCountdown ? parent.noteTime : parent.songPosition; // Use noteTime directly — already latency-corrected by PlayField
 
 				// Dynamic hold threshold: scans forward for the next same-receptor note
 				// and shortens the confirm window the closer that note is in time, so

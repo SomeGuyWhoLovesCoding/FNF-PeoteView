@@ -21,8 +21,7 @@ class PlayField {
 	var funkinviewlua(default, null):FunkinViewLua;
 	#end
 
-	private var chartPath(default,
-		null):String;
+	private var chartPath(default, null):String;
 
 	function new(path:String) {
 		chartPath = Paths.asset(path);
@@ -75,6 +74,16 @@ class PlayField {
 
 	var latencyCompensation:Int;
 
+	// songPosition is ALWAYS raw audio time — never mutated for latency.
+	// noteTime = songPosition - noteLatency is the latency-corrected time
+	// used for all note processing, conductor, and receptor timing.
+	var noteTime:Float = 0;
+	var noteLatency(default, null):Float = 0;
+
+	function updateNoteLatency() {
+		noteLatency = latencyCompensation + Mixer.latency();
+	}
+
 	var dispShake:Vec2 = {x: 0, y: 0};
 	var viewShake:Vec2 = {x: 0, y: 0};
 
@@ -95,7 +104,8 @@ class PlayField {
 	function set_downScroll(value:Bool) {
 		downScroll = value;
 		if (noteSystem != null) {
-			var pos = MetaNote.floatToMetaNotePosition(songPosition);
+			var t = startedCountdown ? noteTime : songPosition;
+			var pos = MetaNote.floatToMetaNotePosition(t);
 			noteSystem.resetStrumlines(false);
 			noteSystem.update(pos);
 			noteSystem.renderNotes(pos);
@@ -118,7 +128,8 @@ class PlayField {
 
 	function set_botplay(value:Bool) {
 		if (noteSystem != null) {
-			var pos = MetaNote.floatToMetaNotePosition(songPosition);
+			var t = startedCountdown ? noteTime : songPosition;
+			var pos = MetaNote.floatToMetaNotePosition(t);
 			noteSystem.resetPlayerStrumlines();
 			noteSystem.update(pos);
 		}
@@ -196,7 +207,8 @@ class PlayField {
 
 		Mixer.setTime(Math.max(value, 0.0), this);
 
-		if (isBackwards) return;
+		if (isBackwards)
+			return;
 
 		if (hud != null && SaveData.state.preferences.ratingPopup)
 			hud.hideRatingPopup();
@@ -245,8 +257,8 @@ class PlayField {
 		onDeath.add(gameOver);
 
 		var conductor = Main.conductor;
-		conductor.offset = latencyCompensation - Mixer.latency();
-		songPosition = (-conductor.crochet * 4.5) - conductor.offset;
+		conductor.offset = 0; // latency is now handled via noteTime, not conductor.offset
+		songPosition = -conductor.crochet * 4.5;
 
 		field = new Field(this);
 
@@ -399,31 +411,29 @@ class PlayField {
 			if (startedCountdown) {
 				Mixer.update(this, deltaTime);
 
+				// songPosition stays raw — compute noteTime once
+				updateNoteLatency();
+				noteTime = songPosition - noteLatency;
+
 				if (!songStarted && !songEnded) {
 					if (countdownDisp != null && countdownDisp.conductor != null) {
 						countdownDisp.conductor.time = songPosition;
 					}
 				}
-
-				songPosition -= latencyCompensation;
-				songPosition -= Mixer.latency();
 			}
 
 			var renderingModeEnabled = RenderingMode.enabled;
 			if (hud != null)
 				hud.update(renderingModeEnabled ? (1000 / RenderingMode.frameRate) : deltaTime);
 
-			Main.conductor.time = songPosition;
+			var t = startedCountdown ? noteTime : songPosition;
 
-			var pos = MetaNote.floatToMetaNotePosition(songPosition);
+			Main.conductor.time = t;
+
+			var pos = MetaNote.floatToMetaNotePosition(t);
 
 			if (noteSystem != null) {
 				noteSystem.update(pos);
-			}
-
-			if (startedCountdown) {
-				songPosition += latencyCompensation;
-				songPosition += Mixer.latency();
 			}
 
 			#if linc_luajit_funkinview
@@ -468,7 +478,8 @@ class PlayField {
 			update(1000 / RenderingMode.frameRate);
 		var noteSystem = noteSystem;
 		if (noteSystem != null) {
-			var pos = MetaNote.floatToMetaNotePosition(songPosition);
+			var t = startedCountdown ? noteTime : songPosition;
+			var pos = MetaNote.floatToMetaNotePosition(t);
 			noteSystem.renderNotes(pos);
 		}
 
