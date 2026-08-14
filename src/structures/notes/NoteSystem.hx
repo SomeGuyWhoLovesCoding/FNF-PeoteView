@@ -190,10 +190,14 @@ class NoteSystem {
 
 		There is no per-frame arming pre-pass (that used to maintain
 		`receptor.noteToHit` for every note in the spawn window, every frame).
-		Instead the note to hit is found here, once per key press, by scanning the
-		currently spawned notes from the bottom of the window up and returning the
-		closest unjudged note id on `strumline`'s lane `index` that is inside the
-		hit window, or `-1` when there is none.
+		Instead the note to hit is found here, once per key press.
+
+		The spawned notes are kept sorted by position, so `diff` (the note's
+		distance from the latency-compensated playhead) is monotonic in index.
+		The hit window is therefore a contiguous index range, which we locate
+		with two binary searches over `diff` — no full spawn-buffer scan per
+		press. The closest unjudged note on `strumline`'s lane `index` inside
+		that range is returned, or `-1` when there is none.
 	**/
 	function findPlayerHitNote(strumline:Strumline, index:Int):Int64 {
 		var spawner = noteSpawner;
@@ -211,19 +215,41 @@ class NoteSystem {
 		var posWithLatency = MetaNote.floatToMetaNotePosition(parent.songPosition + offset);
 		var scrollSpeed = parent.scrollSpeed;
 
+		// `diff` for the note at `i`. Monotonic in `i` because notes are
+		// position-sorted, so it can drive a binary search.
+		inline function diffAt(i:Int64):Float {
+			return MetaNote.metaNotePositionToSongTime(File.getNote(i).position - posWithLatency) * scrollSpeed;
+		}
+
+		// Binary search the first index whose `diff` is >= a threshold.
+		inline function lowerBound(lo:Int64, hi:Int64, threshold:Float):Int64 {
+			var l = lo;
+			var h = hi;
+			while (l < h) {
+				var mid:Int64 = Int64.add(l, Int64.div(Int64.sub(h, l), 2));
+				if (diffAt(mid) < threshold)
+					l = Int64.add(mid, 1);
+				else
+					h = mid;
+			}
+			return l;
+		}
+
+		// First index whose `diff` is in [farEdge, window) marks the candidate
+		// range; the second bounds it on the high side (exclusive).
+		var start = lowerBound(spawner.bottom, spawner.top, farEdge);
+		var end = lowerBound(start, spawner.top, window);
+
 		var bestId:Int64 = -1;
 		var bestAbs:Float = Math.POSITIVE_INFINITY;
-		var i = spawner.bottom;
-		while (i < spawner.top) {
+		var i = start;
+		while (i < end) {
 			var n = File.getNote(i);
 			if (n.index == index && (n.type % laneCount) == lane && !File.getJudgement(i)) {
-				var diff = MetaNote.metaNotePositionToSongTime(n.position - posWithLatency) * scrollSpeed;
-				if (diff < window && diff >= farEdge) {
-					var absDiff = Math.abs(diff);
-					if (absDiff < bestAbs) {
-						bestAbs = absDiff;
-						bestId = i;
-					}
+				var absDiff = Math.abs(diffAt(i));
+				if (absDiff < bestAbs) {
+					bestAbs = absDiff;
+					bestId = i;
 				}
 			}
 			i++;
