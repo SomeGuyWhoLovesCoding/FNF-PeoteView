@@ -197,9 +197,7 @@ class PauseScreen {
 			pauseBuf.addElement(diffText);
 		} catch (e) {}
 
-		haxe.Timer.delay(function() {
-			haxe.Timer.delay(addEvents, 1);
-		}, 1);
+		Tools.forSync(addEvents);
 
 		if (!pauseProg.isIn(display)) {
 			display.addProgram(pauseProg);
@@ -230,7 +228,7 @@ class PauseScreen {
 
 	inline function onOptionsMenuClose() {
 		atOptionsMenu = false;
-		haxe.Timer.delay(addEvents, 1);
+		Tools.forSync(addEvents);
 	}
 
 	function close() {
