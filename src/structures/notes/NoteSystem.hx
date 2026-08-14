@@ -22,8 +22,21 @@ class NoteSystem {
 	static var SUSTAIN_TAIL = 20;
 	static var SUSTAIN_TAIL_END = 25;
 
-	// How long (ms) a tap receptor holds its "confirm" pose for a single note.
-	static var TAP_CONFIRM_BASE = 90;
+	static var NOTE_HOLD_THRESHOLD = 17;
+	static var NOTE_HOLD_THRESHOLD_SUSTAIN = 18;
+
+	// === Dynamic hold-threshold tuning ===
+	// Absolute floor for the dynamic threshold so the confirm window is never
+	// reduced to zero (which would cause the receptor to never visibly "press").
+	static var NOTE_HOLD_THRESHOLD_MIN = 4;
+	// Safety buffer (ms) reserved between the end of this note's hold and the
+	// arrival of the next same-receptor note, so the receptor has time to
+	// visually reset (return to idle) before being pressed again.
+	static var NOTE_HOLD_RESET_BUFFER = 5;
+	// Multiplier on `baseThreshold` used to define what counts as "far enough
+	// in time" that no shortening is needed. At and beyond this gap the dynamic
+	// threshold equals the base threshold.
+	static var NOTE_HOLD_TIME_FAR_FACTOR = 4.0;
 
 	static function init() {
 		if (NoteskinManager.textureCache == null) {
@@ -167,111 +180,124 @@ class NoteSystem {
 	}
 
 	/**
-		Press-time hit lookup.
+	 * Computes a dynamic note hold threshold based on:
+	 *   1. How close the next note is in time (time proximity)
+	 *   2. How close the next note's index (lane) is to the current note's index (index proximity)
+	 *
+	 * The base threshold is shortened when BOTH factors are high — i.e. when the
+	 * next note is about to arrive soon AND it lives on a nearby lane. This lets
+	 * the receptor visually reset (return to idle) before being pressed again,
+	 * instead of holding the "confirm" pose across the gap.
+	 *
+	 * Rules:
+	 *   - If there is no next note, the base threshold is returned unchanged.
+	 *   - For sustain notes, the receptor is already held for `sustainDuration`
+	 *     ms, so the available time for the post-sustain hold is
+	 *     `timeGap - sustainDuration`. If that is non-positive (overlap/chord),
+	 *     the minimum threshold is returned.
+	 *   - `timeProximity` maps `availableTime` from `[0, baseThreshold * FAR_FACTOR]`
+	 *     onto `[1, 0]`. Beyond that range, time proximity is 0 (no shortening).
+	 *   - `indexProximity = 1 / (1 + |Δindex|)`: 1.0 same lane, 0.5 adjacent, 0.33
+	 *     two-away, etc.
+	 *   - The combined `proximity = timeProximity * indexProximity` interpolates
+	 *     the threshold between `baseThreshold` and `NOTE_HOLD_THRESHOLD_MIN`.
+	 *   - A hard cap is applied based on the next note on the SAME LANE (scanning 
+	 *     forward past any interleaved notes): the threshold can never exceed
+	 *     `availableTime - NOTE_HOLD_RESET_BUFFER`, guaranteeing the receptor
+	 *     has time to reset before the next press.
+	 *
+	 * @param currentNote      The note currently being processed
+	 * @param _id              Global index of `currentNote` in the `File` array
+	 * @param baseThreshold    The default threshold that would be used statically
+	 *                         (`NOTE_HOLD_THRESHOLD` or `NOTE_HOLD_THRESHOLD_SUSTAIN`)
+	 * @param sustainDuration  Duration (ms) of the sustain, if this is a sustain
+	 *                         note; otherwise 0.
+	 * @return                 Dynamic threshold in ms.
+	 */
+	function computeDynamicHoldThreshold(currentNote:MetaNote, _id:Int64, baseThreshold:Float, sustainDuration:Float = 0):Float {
+		var len = File.getLength();
+		var nextId = _id + 1;
 
-		There is no per-frame arming pre-pass (that used to maintain
-		`receptor.noteToHit` for every note in the spawn window, every frame).
-		Instead the note to hit is found here, once per key press.
+		// No next note — nothing to scale against, use the full base threshold.
+		if (nextId >= len)
+			return baseThreshold;
 
-		The spawned notes are kept sorted by position. We binary-search the
-		latency-compensated playhead position (`posWithLatency`) to anchor on
-		the first note at or after the playhead, then expand a small window
-		outward — backward for notes just in the past, forward for upcoming
-		notes — until their position leaves the symmetric hit window
-		(`|diff| <= _cachedHitbox`), tested as precomputed tick bounds
-		(`late`..`early`) with no per-note float conversion.
+		var nextNote = File.getNote(nextId);
 
-		`scrollSpeed` is a single global value for the field, so `diff` is
-		monotonic in position and the outward expansion cannot skip a note
-		that lies inside the hitbox. Rather than the geometrically closest
-		note, the **earliest** (smallest position) unjudged note on
-		`strumline`'s lane `index` inside the hitbox is returned — so a
-		same-lane jack always progresses in time order instead of grabbing a
-		note out of sequence. For a single note this is indistinguishable from
-		closest. Returns `-1` when there is none.
-	**/
-	function findPlayerHitNote(strumline:Strumline, index:Int):Int64 {
-		var spawner = noteSpawner;
-		if (spawner == null)
-			return -1;
+		// Time gap (ms) between the start of this note and the start of the next.
+		var timeGapMs = MetaNote.metaNotePositionToSongTime(nextNote.position - currentNote.position);
 
-		var lane = strumlines.indexOf(strumline);
-		if (lane < 0)
-			return -1;
+		// For sustain notes, the receptor is held for `sustainDuration` ms first,
+		// so the time available for the *post-hold* threshold is reduced.
+		var availableTime = timeGapMs - sustainDuration;
 
-		var laneCount = strumlines.length;
-		var offset = Main.conductor.offset;
-		var hitbox = _cachedHitbox;
-		var posWithLatency = MetaNote.floatToMetaNotePosition(parent.songPosition + offset);
-		// Precompute the hit window in tick units once, so the expansion needs
-		// only cheap Int64 compares - no per-note Int64/float conversions.
-		// (diff == (position - playhead) / TICKS_PER_MS * scrollSpeed, so
-		// |diff| <= hitbox <=> late <= position <= early.)
-		var halfTicks = MetaNote.floatToMetaNotePosition(hitbox / parent.scrollSpeed);
-		var late = Int64.sub(posWithLatency, halfTicks);
-		var early = Int64.add(posWithLatency, halfTicks);
+		// Chords / overlapping notes — no room to hold; collapse to the minimum.
+		if (availableTime <= 0)
+			return NOTE_HOLD_THRESHOLD_MIN;
 
-		// Binary search the first index whose note position is >= `target`.
-		// Notes are position-sorted, so this is a safe monotonic search.
-		inline function lowerBoundPos(lo:Int64, hi:Int64, target:Int64):Int64 {
-			var l = lo;
-			var h = hi;
-			while (l < h) {
-				var mid:Int64 = Int64.add(l, Int64.div(Int64.sub(h, l), 2));
-				if (File.getNote(mid).position < target)
-					l = Int64.add(mid, 1);
-				else
-					h = mid;
+		// === Factor 1: time proximity ===
+		// 1.0 = next note is right on top of us, 0.0 = next note is far away.
+		var farRef = baseThreshold * NOTE_HOLD_TIME_FAR_FACTOR;
+		var timeProximity:Float = Math.max(0.0, 1.0 - (availableTime / farRef));
+
+		// === Factor 2: index proximity ===
+		// 1.0 = same lane, 0.5 = adjacent lane, 0.33 = two-away, etc.
+		var indexGap = Math.abs(nextNote.index - currentNote.index);
+		var indexProximity:Float = 1.0 / (1.0 + indexGap);
+
+		// Combined proximity — only shorten when both factors are non-trivial.
+		var proximity = indexProximity * timeProximity;
+
+		// Interpolate between the base threshold and the minimum.
+		var dynamicThreshold = baseThreshold - (baseThreshold - NOTE_HOLD_THRESHOLD_MIN) * proximity;
+
+		// === Hard cap for same-lane successors ===
+		// We must scan forward to find the next note on the SAME LANE, because
+		// the immediate next note might be on a different lane (e.g. in a jack
+		// with interleaved notes). If we only check the immediate next note,
+		// the hard cap would be skipped, causing the receptor to hold across
+		// the jack and feel like a single long note.
+		//
+		// We only need to scan notes that arrive within the maximum possible
+		// threshold window. Beyond this, the hard cap cannot possibly reduce
+		// the dynamicThreshold (since it never exceeds baseThreshold).
+		var maxScanGapMs = baseThreshold + sustainDuration + NOTE_HOLD_RESET_BUFFER + 1.0;
+		var nextSameLaneId = nextId;
+		var foundSameLane = false;
+		var sameLaneTimeGap = 0.0;
+
+		while (nextSameLaneId < len) {
+			var n = File.getNote(nextSameLaneId);
+			var gapMs = MetaNote.metaNotePositionToSongTime(n.position - currentNote.position);
+
+			// Stop scanning if we've passed the window where the cap could matter
+			if (gapMs >= maxScanGapMs) {
+				break;
 			}
-			return l;
+
+			if (n.index == currentNote.index) {
+				foundSameLane = true;
+				sameLaneTimeGap = gapMs;
+				break;
+			}
+			nextSameLaneId++;
 		}
 
-		// Anchor on the first note at or after the playhead.
-		var p = lowerBoundPos(spawner.bottom, spawner.top, posWithLatency);
-		// If every note is in the past, anchor the backward scan on the last one.
-		var bi = p;
-		if (bi >= spawner.top)
-			bi = Int64.sub(spawner.top, 1);
+		if (foundSameLane) {
+			var sameLaneAvailableTime = sameLaneTimeGap - sustainDuration;
 
-		var bestId:Int64 = -1;
-		var found = false;
-
-		inline function consider(i:Int64) {
-			var n = File.getNote(i);
-			// Window guard: a loop only breaks on its near side, so check the
-			// far side here (at most the anchor note can be far-future).
-			if (n.position < late || n.position > early)
-				return;
-			if (n.index == index && (n.type % laneCount) == lane && !File.getJudgement(i)) {
-				// Among hittable notes keep the earliest (smallest position) so a
-				// jack progresses in order; once `found`, only a smaller index can
-				// replace it.
-				if (!found || i < bestId) {
-					found = true;
-					bestId = i;
+			if (sameLaneAvailableTime > 0) {
+				var maxThreshold = Math.max(NOTE_HOLD_THRESHOLD_MIN, sameLaneAvailableTime - NOTE_HOLD_RESET_BUFFER);
+				if (dynamicThreshold > maxThreshold) {
+					dynamicThreshold = maxThreshold;
 				}
+			} else {
+				// Overlapping same-lane notes (shouldn't happen, but handle gracefully)
+				dynamicThreshold = NOTE_HOLD_THRESHOLD_MIN;
 			}
 		}
 
-		// Backward: notes at or just before the playhead (already somewhat late).
-		var i = bi;
-		while (i >= spawner.bottom) {
-			if (File.getNote(i).position < late)
-				break;
-			consider(i);
-			i = Int64.sub(i, 1);
-		}
-
-		// Forward: upcoming notes within the hit window.
-		i = Int64.add(p, 1);
-		while (i < spawner.top) {
-			if (File.getNote(i).position > early)
-				break;
-			consider(i);
-			i = Int64.add(i, 1);
-		}
-
-		return bestId;
+		return dynamicThreshold;
 	}
 
 	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64):VirtualNote {
@@ -326,6 +352,22 @@ class NoteSystem {
 				if (isMissed)
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
 
+				if (!isMissed && diff < _cachedHitbox - offset) {
+					var noteToHit = receptor.noteToHit;
+					var noteToHitExists = noteToHit != null;
+
+					if (!noteToHitExists) {
+						receptor.noteToHit = note;
+						receptor.noteToHit_index = noteSpr.globalIndex;
+					} else {
+						var _pos = MetaNote.metaNotePositionToSongTime(noteToHit.position - pos) * _cachedScrollSpeed; // Match diff's units
+						if (receptor.noteToHit_index != noteSpr.globalIndex && Math.abs(diff) < Math.abs(_pos)) {
+							receptor.noteToHit = note;
+							receptor.noteToHit_index = _id;
+						}
+					}
+				}
+
 				if (diff < -_cachedHitbox - offset && !isMissed) {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
 					File.setHitFlag(_id, true); // chosen to miss
@@ -370,7 +412,14 @@ class NoteSystem {
 
 				receptor.confirmTimer.startTime = parent.songPosition - offset; // don't do MetaNote.metaNotePositionToSongTime(position). That doesn't account for latency
 
-				var confirmWindow = TAP_CONFIRM_BASE;
+				// Dynamic hold threshold: scans forward for the next same-receptor note
+				// and shortens the confirm window the closer that note is in time, so
+				// the receptor can visually reset before the next press instead of
+				// holding across the gap.
+				var baseThreshold = sustainExists ? NOTE_HOLD_THRESHOLD_SUSTAIN : NOTE_HOLD_THRESHOLD;
+				var dynamicThreshold = computeDynamicHoldThreshold(note, _id, baseThreshold, sustainExists ? duration : 0);
+
+				var confirmWindow = sustainExists ? duration + dynamicThreshold : dynamicThreshold;
 				if (sustainExists)
 					receptor.confirmTimer.tailTime = receptor.confirmTimer.startTime + duration - (SUSTAIN_TAIL + SUSTAIN_TAIL_END);
 				receptor.confirmTimer.endTime = receptor.confirmTimer.startTime + confirmWindow;
