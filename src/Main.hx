@@ -221,31 +221,7 @@ class Main extends Application {
 
 		window.onMouseDown.add((x, y, button) -> trace('onMouseDown $x $y $button ' + Date.now()));*/
 
-		window.onRender.add(_ -> brilliantInit(window), true, 9000);
-
-		window.onResize.add(resize);
-		window.onKeyDown.add(controlVolume);
-		window.onClose.add(Chart.destroy);
-
-		#if FV_DEBUG
-		DeveloperStuff.init(window, this);
-		#end
-
-		window.onMouseDown.add((x, y, button) -> {
-			try {
-				if (mouseDown != null)
-					mouseDown(x, y, button);
-			} catch (e:Dynamic) {
-				logCrash('onMouseDown', e);
-			}
-		});
-
-		_started = true;
-
-		var title = Application.current.window.title;
-		var titleLen = title.length;
-		Application.current.window.title = title.substring(0, titleLen - 13);
-		// Application.current.window.hidden = false;
+		brilliantInit(window);
 	}
 
 	function brilliantInit(window:Window) {
@@ -310,6 +286,35 @@ class Main extends Application {
 
 		trace("6");
 		resize(peoteView.width, peoteView.height);
+
+		window.onResize.add(resize);
+		window.onKeyDown.add(controlVolume);
+		window.onClose.add(Chart.destroy);
+
+		#if FV_DEBUG
+		DeveloperStuff.init(window, this);
+		#end
+
+		window.onMouseDown.add((x, y, button) -> {
+			try {
+				if (mouseDown != null)
+					mouseDown(x, y, button);
+			} catch (e:Dynamic) {
+				logCrash('onMouseDown', e);
+			}
+		});
+
+		var title = Application.current.window.title;
+		var titleLen = title.length;
+		Application.current.window.title = title.substring(0, titleLen - 13);
+		// Application.current.window.hidden = false;
+
+		// Only start the frame update loop once every menu/display object this
+		// update() branch dereferences actually exists. update() runs before the
+		// first onRender dispatch that calls this function, so setting _started
+		// here (instead of in startSample) guarantees optionsMenu/storyMenu etc.
+		// are non-null on the very first frame.
+		_started = true;
 	}
 
 	/** Build the state object for `newState`. Returns the menu to route input to (null = no routed menu). */
@@ -503,11 +508,11 @@ class Main extends Application {
 					editorMenu.update(newDeltaTime);
 				}
 
-				if (optionsMenu.active) {
+				if (optionsMenu != null && optionsMenu.active) {
 					optionsMenu.update(newDeltaTime);
 				}
 
-				if (storyMenu.active) {
+				if (storyMenu != null && storyMenu.active) {
 					storyMenu.update(newDeltaTime);
 				}
 			} catch (e:Dynamic) {
