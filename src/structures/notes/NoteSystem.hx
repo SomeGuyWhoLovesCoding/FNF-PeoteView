@@ -50,7 +50,7 @@ class NoteSystem {
 		handle.loadTexture();
 
 		if (notesBuf == null) {
-			notesBuf = new Buffer<Note>(16, 16, true);
+			notesBuf = new Buffer<Note>(512, 512);
 		}
 
 		if (notesProg == null) {
@@ -61,7 +61,7 @@ class NoteSystem {
 		}
 
 		if (sustainsBuf == null) {
-			sustainsBuf = new Buffer<Sustain>(16, 16, true);
+			sustainsBuf = new Buffer<Sustain>(128, 128);
 		}
 
 		if (sustainProg == null) {
@@ -315,9 +315,9 @@ class NoteSystem {
 		var posWithLatency = MetaNote.floatToMetaNotePosition(parent.songPosition + offset);
 		// Precompute the hit window in tick units once, so the expansion needs
 		// only cheap Int64 compares - no per-note Int64/float conversions.
-		// (diff == (position - playhead) / TICKS_PER_MS * scrollSpeed, so
+		// (diff == (position - playhead) / TICKS_PER_MS, so
 		// |diff| <= hitbox <=> late <= position <= early.)
-		var halfTicks = MetaNote.floatToMetaNotePosition(hitbox / parent.scrollSpeed);
+		var halfTicks = MetaNote.floatToMetaNotePosition(hitbox);
 		var late = Int64.sub(posWithLatency, halfTicks);
 		var early = Int64.add(posWithLatency, halfTicks);
 

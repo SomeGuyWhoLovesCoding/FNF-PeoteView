@@ -221,7 +221,29 @@ class Main extends Application {
 
 		window.onMouseDown.add((x, y, button) -> trace('onMouseDown $x $y $button ' + Date.now()));*/
 
-		brilliantInit(window);
+		window.onRender.add(_ -> brilliantInit(window), true, 9000);
+
+		window.onResize.add(resize);
+		window.onKeyDown.add(controlVolume);
+		window.onClose.add(Chart.destroy);
+
+		#if FV_DEBUG
+		DeveloperStuff.init(window, this);
+		#end
+
+		window.onMouseDown.add((x, y, button) -> {
+			try {
+				if (mouseDown != null)
+					mouseDown(x, y, button);
+			} catch (e:Dynamic) {
+				logCrash('onMouseDown', e);
+			}
+		});
+
+		var title = Application.current.window.title;
+		var titleLen = title.length;
+		Application.current.window.title = title.substring(0, titleLen - 13);
+		// Application.current.window.hidden = false;
 	}
 
 	function brilliantInit(window:Window) {
@@ -286,28 +308,6 @@ class Main extends Application {
 
 		trace("6");
 		resize(peoteView.width, peoteView.height);
-
-		window.onResize.add(resize);
-		window.onKeyDown.add(controlVolume);
-		window.onClose.add(Chart.destroy);
-
-		#if FV_DEBUG
-		DeveloperStuff.init(window, this);
-		#end
-
-		window.onMouseDown.add((x, y, button) -> {
-			try {
-				if (mouseDown != null)
-					mouseDown(x, y, button);
-			} catch (e:Dynamic) {
-				logCrash('onMouseDown', e);
-			}
-		});
-
-		var title = Application.current.window.title;
-		var titleLen = title.length;
-		Application.current.window.title = title.substring(0, titleLen - 13);
-		// Application.current.window.hidden = false;
 
 		// Only start the frame update loop once every menu/display object this
 		// update() branch dereferences actually exists. update() runs before the
@@ -508,11 +508,11 @@ class Main extends Application {
 					editorMenu.update(newDeltaTime);
 				}
 
-				if (optionsMenu != null && optionsMenu.active) {
+				if (optionsMenu.active) {
 					optionsMenu.update(newDeltaTime);
 				}
 
-				if (storyMenu != null && storyMenu.active) {
+				if (storyMenu.active) {
 					storyMenu.update(newDeltaTime);
 				}
 			} catch (e:Dynamic) {
