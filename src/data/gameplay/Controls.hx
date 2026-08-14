@@ -98,6 +98,8 @@ class Controls {
 }
 
 @:publicFields
+@:access(input2action.KeyboardAction)
+@:access(input2action.InputState)
 class ControlsHandle {
 	// One Input2Action shared by every mode so window key events are registered
 	// exactly once. Switching modes only swaps which KeyboardAction is active.
@@ -149,6 +151,15 @@ class ControlsHandle {
 
 	function unBind() {
 		if (kb != null) {
+			// Synthesize key releases for any held keys. A mode switch can yank
+			// the active KeyboardAction out of i2a mid-press (e.g. opening the
+			// options menu from the pause screen), which loses the keyUp event
+			// and leaves isDown stuck. Reusing that cached action would then read
+			// the next press as a key repeat and swallow it ("two presses" bug).
+			for (k in 0...KeyboardAction.MAX_USABLE_KEYCODES) {
+				if (kb.inputState.isDown(k))
+					kb.inputState.callUpActions(k, 0, true);
+			}
 			i2a.removeKeyboard(kb);
 			kb = null;
 		}
