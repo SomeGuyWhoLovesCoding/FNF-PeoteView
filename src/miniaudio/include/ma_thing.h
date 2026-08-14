@@ -33,8 +33,6 @@ bool isBackgroundTrackPlaying(int index);
 // Sound effect functions
 int loadSoundEffect(const char* path);
 void playSoundEffect(int index, double volume);
-void playSoundEffectAt(int index, double volume, int64_t startFrame);
-int64_t getOutputFrame(void);
 void stopSoundEffect(int index);
 bool isSoundEffectPlaying(int index);
 

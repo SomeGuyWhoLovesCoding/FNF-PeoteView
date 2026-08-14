@@ -230,84 +230,82 @@ class Main extends Application {
 		peoteView = new PeoteView(window);
 		TextureSystem.processQueue();
 
-		haxe.Timer.delay(function() {
-			controls = new Controls();
+		controls = new Controls();
 
-			// The state machine is created after the input2action control binding
-			// so its window listeners fire after the controls (actions dispatch
-			// before routed extras), matching the original ordering.
-			stateMachine = new StateMachine(window, controls);
-			stateMachine.createState = stateCreate;
-			stateMachine.destroyState = stateDestroy;
+		// The state machine is created after the input2action control binding
+		// so its window listeners fire after the controls (actions dispatch
+		// before routed extras), matching the original ordering.
+		stateMachine = new StateMachine(window, controls);
+		stateMachine.createState = stateCreate;
+		stateMachine.destroyState = stateDestroy;
 
-			#if (!html5)
-			trace("Is es3? " + PeoteGL.Version.isES3);
-			if (PeoteGL.Version.isES3)
-				window.context.gl.disable(0x8DB9); // GL_FRAMEBUFFER_SRGB_EXT
-			#end
+		#if (!html5)
+		trace("Is es3? " + PeoteGL.Version.isES3);
+		if (PeoteGL.Version.isES3)
+			window.context.gl.disable(0x8DB9); // GL_FRAMEBUFFER_SRGB_EXT
+		#end
 
-			peoteView.start();
+		peoteView.start();
 
-			trace("createSounds");
-			createSounds();
-			trace("createTextures");
-			createTextures();
-			trace("createDisplays");
-			createDisplays(); // found that it doesn't consum its own RAM. Now that's amazing
+		trace("createSounds");
+		createSounds();
+		trace("createTextures");
+		createTextures();
+		trace("createDisplays");
+		createDisplays(); // found that it doesn't consum its own RAM. Now that's amazing
 
-			addDisplays();
+		addDisplays();
 
-			trace("1");
-			conductor = new Conductor();
+		trace("1");
+		conductor = new Conductor();
 
-			trace("2");
-			OptionsMenu.init(optionsScreen);
-			optionsMenu = new OptionsMenu();
+		trace("2");
+		OptionsMenu.init(optionsScreen);
+		optionsMenu = new OptionsMenu();
 
-			trace("3");
-			FreeplayMenu.init(freeplayScreen);
-			freeplayMenu = new FreeplayMenu();
+		trace("3");
+		FreeplayMenu.init(freeplayScreen);
+		freeplayMenu = new FreeplayMenu();
 
-			trace("4");
-			StoryMenu.init(storyScreen);
-			storyMenu = new StoryMenu();
+		trace("4");
+		StoryMenu.init(storyScreen);
+		storyMenu = new StoryMenu();
 
-			trace("4.a");
-			EditorMenu.preInit(middleDisplay);
+		trace("4.a");
+		EditorMenu.preInit(middleDisplay);
 
-			trace("4.b");
-			NoteskinEditor.preInit(middleDisplay, bottomDisplay);
+		trace("4.b");
+		NoteskinEditor.preInit(middleDisplay, bottomDisplay);
 
-			trace("5");
-			switchState(MAIN_MENU);
+		trace("5");
+		switchState(MAIN_MENU);
 
-			trace("6");
-			resize(peoteView.width, peoteView.height);
+		trace("6");
+		resize(peoteView.width, peoteView.height);
 
-			window.onResize.add(resize);
-			window.onKeyDown.add(controlVolume);
-			window.onClose.add(Chart.destroy);
+		window.onResize.add(resize);
+		window.onKeyDown.add(controlVolume);
+		window.onClose.add(Chart.destroy);
 
-			#if FV_DEBUG
-			DeveloperStuff.init(window, this);
-			#end
+		#if FV_DEBUG
+		DeveloperStuff.init(window, this);
+		#end
 
-			window.onMouseDown.add((x, y, button) -> {
-				try {
-					if (mouseDown != null)
-						mouseDown(x, y, button);
-				} catch (e:Dynamic) {
-					logCrash('onMouseDown', e);
-				}
-			});
+		window.onMouseDown.add((x, y, button) -> {
+			try {
+				if (mouseDown != null)
+					mouseDown(x, y, button);
+			} catch (e:Dynamic) {
+				logCrash('onMouseDown', e);
+			}
+		});
 
-			_started = true;
+		_started = true;
 
-			var title = Application.current.window.title;
-			var titleLen = title.length;
-			Application.current.window.title = title.substring(0, titleLen - 13);
-			// Application.current.window.hidden = false;
-		}, 1000);
+		var title = Application.current.window.title;
+		var titleLen = title.length;
+		Application.current.window.title = title.substring(0, titleLen - 13);
+		// Application.current.window.hidden = false;
 	}
 
 	/** Build the state object for `newState`. Returns the menu to route input to (null = no routed menu). */

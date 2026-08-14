@@ -1,6 +1,6 @@
 /*
  * ma_thing_standalone.cpp
- * Plain C++ global interface — links against ma_thing_core.h.
+ * Plain C++ global interface — links against ma_thing_core.h. 
  * No HashLink dependency.
  */
 
@@ -53,8 +53,6 @@ bool isBackgroundTrackPlaying(int index)                      { return g_mixer.i
 
 int  loadSoundEffect(const char* path)                        { return g_mixer.loadSoundEffect(path); }
 void playSoundEffect(int index, double volume)                 { g_mixer.playSoundEffect(index, volume); }
-void playSoundEffectAt(int index, double volume, int64_t startFrame) { g_mixer.playSoundEffectAt(index, volume, (ma_uint64)startFrame); }
-int64_t getOutputFrame(void)                                   { return (int64_t)g_mixer.getOutputFrame(); }
 void stopSoundEffect(int index)                               { g_mixer.stopSoundEffect(index); }
 bool isSoundEffectPlaying(int index)                          { return g_mixer.isSoundEffectPlaying(index); }
 

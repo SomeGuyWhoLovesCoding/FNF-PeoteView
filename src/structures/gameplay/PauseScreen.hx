@@ -159,7 +159,7 @@ class PauseScreen {
 					var option = pauseOptions[i];
 					if (x >= option.x && x <= option.x + option.w && y >= option.y && y <= option.y + option.h) {
 						pauseNav.setTo(i);
-						haxe.Timer.delay(doIt, 20);
+						doIt();
 						return;
 					}
 				}

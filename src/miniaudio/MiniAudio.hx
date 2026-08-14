@@ -56,8 +56,6 @@ extern class MiniAudio {
 		return _loadSoundEffect(ConstCharStar.fromString(path));
 	}
 	@:native("playSoundEffect") static function playSoundEffect(index:Int, volume:Float):Void;
-	@:native("playSoundEffectAt") static function playSoundEffectAt(index:Int, volume:Float, startFrame:Int64):Void;
-	@:native("getOutputFrame") static function getOutputFrame():Int64;
 	@:native("stopSoundEffect") static function stopSoundEffect(index:Int):Void;
 
 	@:native("getMixerMasterVolume") static function getMixerMasterVolume():Float;
@@ -144,12 +142,6 @@ class MiniAudio {
 
 	@:hlNative("ma_thing", "playSoundEffect") public static function playSoundEffect(index:Int, volume:Float):Void {}
 
-	@:hlNative("ma_thing", "playSoundEffectAt") public static function playSoundEffectAt(index:Int, volume:Float, startFrame:hl.I64):Void {}
-
-	@:hlNative("ma_thing", "getOutputFrame") public static function getOutputFrame():hl.I64 {
-		return 0;
-	}
-
 	@:hlNative("ma_thing", "stopSoundEffect") public static function stopSoundEffect(index:Int):Void {}
 
 	@:hlNative("ma_thing", "getMixerMasterVolume") public static function getMixerMasterVolume():Float {
@@ -232,12 +224,6 @@ class MiniAudio {
 	}
 
 	public static function playSoundEffect(index:Int, volume:Float):Void {}
-
-	public static function playSoundEffectAt(index:Int, volume:Float, startFrame:hl.I64):Void {}
-
-	public static function getOutputFrame():hl.I64 {
-		return 0;
-	}
 
 	public static function stopSoundEffect(index:Int):Void {}
 

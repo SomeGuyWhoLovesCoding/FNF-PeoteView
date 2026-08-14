@@ -67,8 +67,6 @@ HL_PRIM bool HL_NAME(isBackgroundTrackPlaying)(int index)                  { ret
 
 HL_PRIM int  HL_NAME(loadSoundEffect)(vstring* path)                       { return g_mixer.loadSoundEffect(hl_to_utf8(path->bytes)); }
 HL_PRIM void HL_NAME(playSoundEffect)(int index, double volume)             { g_mixer.playSoundEffect(index, volume); }
-HL_PRIM void HL_NAME(playSoundEffectAt)(int index, double volume, int64_t startFrame) { g_mixer.playSoundEffectAt(index, volume, (ma_uint64)startFrame); }
-HL_PRIM int64_t HL_NAME(getOutputFrame)(_NO_ARG)                            { return (int64_t)g_mixer.getOutputFrame(); }
 HL_PRIM void HL_NAME(stopSoundEffect)(int index)                           { g_mixer.stopSoundEffect(index); }
 HL_PRIM bool HL_NAME(isSoundEffectPlaying)(int index)                      { return g_mixer.isSoundEffectPlaying(index); }
 
@@ -103,8 +101,6 @@ DEFINE_PRIM(_VOID, setBackgroundTrackLooping, _I32 _BOOL)
 DEFINE_PRIM(_BOOL, isBackgroundTrackPlaying,  _I32)
 DEFINE_PRIM(_I32,  loadSoundEffect,           _STRING)
 DEFINE_PRIM(_VOID, playSoundEffect,           _I32 _F64)
-DEFINE_PRIM(_VOID, playSoundEffectAt,         _I32 _F64 _I64)
-DEFINE_PRIM(_I64,  getOutputFrame,            _NO_ARG)
 DEFINE_PRIM(_VOID, stopSoundEffect,           _I32)
 DEFINE_PRIM(_BOOL, isSoundEffectPlaying,      _I32)
 DEFINE_PRIM(_F64, setMixerMasterVolume,      _F64)

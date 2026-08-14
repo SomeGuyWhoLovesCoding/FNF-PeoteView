@@ -1920,6 +1920,8 @@ public:
         backgroundTracks.clear(); soundEffectPools.clear();
         backgroundTrackMap.clear(); soundEffectMap.clear();
         outFramesTotal.store(0, std::memory_order_relaxed);
+        lastAnchorFrame.store(0, std::memory_order_relaxed);
+        lastAnchorTime.store(0, std::memory_order_relaxed);
         for (int b = 0; b < 3; b++) {
             bgSnapshot[b].clear();
             sfxSnapshot[b].clear();
@@ -1973,11 +1975,25 @@ public:
     bool isSoundEffectLoaded(const char* path) { return findSoundEffect(path) >= 0; }
 
     void playSoundEffect(int idx, double volume = 1.0f) {
-        // Schedule for the next output sample -> no 10ms buffer quantization.
-        playSoundEffectAt(idx, volume, outFramesTotal.load(std::memory_order_relaxed));
-    }
-    void playSoundEffectAt(int idx, double volume, ma_uint64 startFrame) {
-        if (inRange(idx, soundEffectPools)) soundEffectPools[idx].play(volume, startFrame);
+        if (!inRange(idx, soundEffectPools)) return;
+        // Extrapolate the output frame the mixer is producing right now from
+        // the last (frame, steady_clock) anchor the audio thread published, so
+        // the start lands on the exact sample matching "now" instead of the
+        // next 10ms callback boundary.
+        ma_uint64 startFrame = 0;
+        long long anchorTime = lastAnchorTime.load(std::memory_order_relaxed);
+        if (anchorTime != 0) {
+            long long nowNs = std::chrono::steady_clock::now().time_since_epoch().count();
+            long long dtNs = nowNs - anchorTime;
+            ma_uint64 anchorFrame = lastAnchorFrame.load(std::memory_order_relaxed);
+            if (dtNs > 0)
+                startFrame = anchorFrame + (ma_uint64)((double)dtNs * (SAMPLE_RATE / 1000000000.0));
+            else
+                startFrame = anchorFrame;
+        } else {
+            startFrame = outFramesTotal.load(std::memory_order_relaxed);
+        }
+        soundEffectPools[idx].play(volume, startFrame);
     }
     void playSoundEffect(const char* path, double volume = 1.0f) {
         int idx = findSoundEffect(path);
@@ -2007,9 +2023,6 @@ public:
     double setMasterVolume(double v) { MUSIC_MASTER_VOLUME_099.store(v, std::memory_order_relaxed); return v; }
     double getMasterVolume() const  { return MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed); }
 
-    // Current output frame of the mixer device (for exact scheduling).
-    ma_uint64 getOutputFrame() const { return outFramesTotal.load(std::memory_order_relaxed); }
-
 private:
     std::deque<BackgroundTrack>  backgroundTracks;
     std::deque<SoundEffectPool>  soundEffectPools;
@@ -2022,8 +2035,15 @@ private:
 
     // Monotonic output-frame counter of the mixer device. Incremented once per
     // callback (the fetch_add return value is that callback's first output
-    // frame). Lets the game thread schedule SFX at exact sample positions.
+    // frame). Lets SFX be scheduled at exact sample positions.
     std::atomic<ma_uint64> outFramesTotal{0};
+
+    // System-clock anchor for sample-accurate scheduling: the audio thread
+    // records (bufStart frame, steady_clock time) at the top of every callback
+    // so the game thread can extrapolate which output frame corresponds to the
+    // current wall-clock moment.
+    std::atomic<ma_uint64> lastAnchorFrame{0};
+    std::atomic<long long> lastAnchorTime{0};
 
     // Lock-free triple buffer for snapshots
     std::vector<BackgroundTrack*> bgSnapshot[3];
@@ -2073,9 +2093,15 @@ private:
         memset(out, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
 
         // Sample-accurate timeline: capture this callback's first output frame
-        // and hoist the master volume once (avoids an atomic load per instance).
+        // and publish the (frame, system-clock) anchor the game thread uses to
+        // extrapolate the frame for the current wall-clock instant.
         ma_uint64 bufStart = mixer->outFramesTotal.fetch_add(frameCount, std::memory_order_relaxed);
-        double    masterVol = MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed);
+        mixer->lastAnchorFrame.store(bufStart, std::memory_order_relaxed);
+        mixer->lastAnchorTime.store(
+            std::chrono::steady_clock::now().time_since_epoch().count(),
+            std::memory_order_relaxed);
+        // Hoist master volume once (avoids an atomic load per instance).
+        double masterVol = MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed);
 
         // Lock-free snapshot read
         int r = mixer->readerIndex.load(std::memory_order_relaxed);
