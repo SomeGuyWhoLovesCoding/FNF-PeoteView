@@ -52,19 +52,16 @@ class Receptor {
 		sustainResolved = false;
 	}
 
-	/** Returns true when a clip actually changed (buffer needs an update). */
-	inline function updateAnimation(songPosition:Float):Bool {
-		var changed = false;
+	inline function updateAnimation(songPosition:Float) {
 		if (songPosition > confirmTimer.tailTime) {
-			changed = note.press() || changed;
+			note.press();
 			confirmTimer.tailTime = Math.POSITIVE_INFINITY;
 		}
 
 		if (songPosition > confirmTimer.endTime) {
-			changed = note.reset() || changed;
+			note.reset();
 			confirmTimer.startTime = Math.POSITIVE_INFINITY;
 			confirmTimer.endTime = Math.POSITIVE_INFINITY;
 		}
-		return changed;
 	}
 }

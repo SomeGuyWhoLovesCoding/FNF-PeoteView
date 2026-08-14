@@ -108,37 +108,18 @@ class FunkinViewLua {
 	private var noteMovementSource:String = null;
 	private var noteMovementLoaded:Bool = false;
 
-	/**
-		Bumped every time the movement formula source changes, so the note
-		renderer can detect that its baked LUT is stale and rebuild it.
-	**/
-	public var noteMovementVersion(default, null):Int = 0;
-
 	public function setNoteFormulaSource(source:String) {
 		if (noteMovementSource == source)
 			return;
 		noteMovementSource = source;
 		noteMovementInterp = new NoteMovementInterp(noteMovementSource);
 		noteMovementLoaded = false;
-		noteMovementVersion++;
 	}
 
 	public function resetNoteFormulaSource() {
 		noteMovementInterp = null;
 		noteMovementSource = null;
 		noteMovementLoaded = false;
-		noteMovementVersion++;
-	}
-
-	/**
-		Returns the compiled movement interpreter (compiling lazily if
-		needed), or `null` when no formula is loaded. Used to bake the
-		note movement LUT.
-	**/
-	public function getNoteMovementInterp():NoteMovementInterp {
-		if (!ensureNoteMovementInterp())
-			return null;
-		return noteMovementInterp;
 	}
 
 	function ensureNoteMovementInterp():Bool {

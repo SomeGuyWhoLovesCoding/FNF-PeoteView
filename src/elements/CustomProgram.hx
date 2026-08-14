@@ -1,25 +1,11 @@
 package elements;
 
-import haxe.ds.StringMap;
-
 import peote.view.PeoteGL.GLUniformLocation;
 import peote.view.Program;
-import peote.view.Uniform;
-
-import structures.notes.NoteMovementLUT;
 
 @:publicFields
 class CustomProgram extends Program {
 	private var hasVertexInserted(default, null):Bool;
-
-	/** When true, the note-movement LUT sampler/functions are injected
-		into this program's vertex shader. Only enabled for the note and
-		sustain programs (they reference `uLutPos` in their formulas). **/
-	private var injectNoteMovementLUT:Bool = false;
-
-	public function enableNoteMovementLUT():Void {
-		injectNoteMovementLUT = true;
-	}
 
 	private static inline var DISPLAY_ROTATION_VERTEX_CODE = '
         float uDisplayRotateX(vec2 p) {
@@ -56,15 +42,7 @@ class CustomProgram extends Program {
 			if (rd == null)
 				throw "CustomProgram must be added to a RotatableDisplay";
 
-			var uniforms:StringMap<Uniform> = ["uDisplayAngle" => rd.uAngle, "uSin" => rd.uSin, "uDisplayC" => rd.uCenter];
-			var code = DISPLAY_ROTATION_VERTEX_CODE;
-			if (injectNoteMovementLUT) {
-				code += NoteMovementLUT.vertexShaderCode();
-				uniforms.set("uScroll", NoteMovementLUT.uScroll);
-				uniforms.set("uSpeed", NoteMovementLUT.uSpeed);
-			}
-
-			injectIntoVertexShader(code, false, uniforms, false);
+			injectIntoVertexShader(DISPLAY_ROTATION_VERTEX_CODE, false, ["uDisplayAngle" => rd.uAngle, "uSin" => rd.uSin, "uDisplayC" => rd.uCenter], false);
 
 			// setFormula("rotation", "uDisplayRotation(aRot.z)", false);
 

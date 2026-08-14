@@ -56,7 +56,6 @@ class NoteSystem {
 		if (notesProg == null) {
 			notesProg = new CustomProgram(notesBuf);
 			Note.init(notesProg);
-			notesProg.enableNoteMovementLUT();
 			handle.setProgramsTexture(notesProg);
 			handle.setProgramsNoteShader(notesProg);
 		}
@@ -68,7 +67,6 @@ class NoteSystem {
 		if (sustainProg == null) {
 			sustainProg = new CustomProgram(sustainsBuf);
 			Sustain.init(sustainProg);
-			sustainProg.enableNoteMovementLUT();
 			handle.setProgramsTexture(sustainProg);
 			handle.setProgramsSustainShader(sustainProg);
 		}
@@ -80,14 +78,6 @@ class NoteSystem {
 	var notePool(default, null):NotePool;
 	var virtualNoteBuffer(default, null):NoteVB;
 
-	// Note-movement LUT (baked formula output, sampled on the GPU).
-	var noteMovementLut(default, null):NoteMovementLUT;
-
-	// Set when any pooled Note/Sustain field changed this frame, gating
-	// `notesBuf.update()` / `sustainsBuf.update()`.
-	var notesDirty:Bool = false;
-	var sustainsDirty:Bool = false;
-
 	static var typeToHandle:Array<NoteskinHandle> = [];
 
 	var parent(default, null):PlayField;
@@ -96,6 +86,9 @@ class NoteSystem {
 		this.parent = parent;
 
 		var display = parent.display;
+
+		display.addProgram(sustainProg);
+		display.addProgram(notesProg);
 
 		strumlines = [];
 
@@ -115,15 +108,6 @@ class NoteSystem {
 		notePool = new NotePool(this);
 		noteSpawner = new NoteSpawner(this);
 		noteMovement = new NoteMovementSystem(this);
-
-		// The LUT texture must be attached to the programs BEFORE they are
-		// added to the display, so the first shader compile includes it as
-		// the `lutLayer` (uTexture0).
-		noteMovementLut = new NoteMovementLUT(strumlines.length);
-		noteMovementLut.attach(notesProg, sustainProg);
-
-		display.addProgram(sustainProg);
-		display.addProgram(notesProg);
 
 		// Add receptor notes to the buffer once — they are persistent
 		// and never cleared during normal rendering.
@@ -147,33 +131,8 @@ class NoteSystem {
 
 		virtualNoteBuffer.clear();
 
-		updateNoteMovementLut();
-
 		if (noteSpawner != null)
 			noteSpawner.update(pos);
-	}
-
-	/** Re-bakes the movement LUT when its inputs change; uploads uScroll/uSpeed. */
-	function updateNoteMovementLut() {
-		var lut = noteMovementLut;
-		if (lut == null)
-			return;
-
-		var pf = parent;
-		var speed = pf.scrollSpeed;
-		var downScroll = pf.downScroll;
-		var lua = pf.funkinviewlua;
-		var formulaVersion = (lua != null) ? lua.noteMovementVersion : 0;
-		var interp = (lua != null) ? lua.getNoteMovementInterp() : null;
-
-		var rowsChanged = lut.ensureRows();
-		if (rowsChanged || lut.needsRebake(interp != null, formulaVersion, speed, downScroll, strumlines)) {
-			lut.rebake(interp, speed, downScroll, strumlines);
-			lut.commitBake(interp != null, formulaVersion, speed, downScroll, strumlines);
-		}
-
-		NoteMovementLUT.uScroll.value = pf.songPosition + Main.conductor.offset;
-		NoteMovementLUT.uSpeed.value = speed;
 	}
 
 	function onSongPositionJump(pos:Int64, pushToOffset:Float = 0) {
@@ -198,8 +157,7 @@ class NoteSystem {
 				if (parent.botplay)
 					canMess = true;
 				if (canMess) {
-					if (receptor.updateAnimation(songPosition))
-						notesDirty = true;
+					receptor.updateAnimation(songPosition);
 				}
 			}
 		}
@@ -212,19 +170,13 @@ class NoteSystem {
 		notePool.endFrame();
 		// Pooled elements had their @set("properties") fields modified in-place.
 		// Flush all pending CPU→GPU changes so the new positions/alphas/etc.
-		// actually take effect this frame — but only when something changed.
-		if (notesDirty) {
-			try
-				notesBuf.update()
-			catch (e) {}
-			notesDirty = false;
-		}
-		if (sustainsDirty) {
-			try
-				sustainsBuf.update()
-			catch (e) {}
-			sustainsDirty = false;
-		}
+		// actually take effect this frame.
+		try
+			notesBuf.update()
+		catch (e) {}
+		try
+			sustainsBuf.update()
+		catch (e) {}
 	}
 
 	/**
