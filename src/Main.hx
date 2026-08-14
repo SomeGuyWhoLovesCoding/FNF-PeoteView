@@ -221,6 +221,34 @@ class Main extends Application {
 
 		window.onMouseDown.add((x, y, button) -> trace('onMouseDown $x $y $button ' + Date.now()));*/
 
+		window.onRender.add(_ -> brilliantInit(window), true, 9000);
+
+		window.onResize.add(resize);
+		window.onKeyDown.add(controlVolume);
+		window.onClose.add(Chart.destroy);
+
+		#if FV_DEBUG
+		DeveloperStuff.init(window, this);
+		#end
+
+		window.onMouseDown.add((x, y, button) -> {
+			try {
+				if (mouseDown != null)
+					mouseDown(x, y, button);
+			} catch (e:Dynamic) {
+				logCrash('onMouseDown', e);
+			}
+		});
+
+		_started = true;
+
+		var title = Application.current.window.title;
+		var titleLen = title.length;
+		Application.current.window.title = title.substring(0, titleLen - 13);
+		// Application.current.window.hidden = false;
+	}
+
+	function brilliantInit(window:Window) {
 		var frameRate = SaveData.state.graphics.frameRate;
 		var vsync = SaveData.state.graphics.vsync;
 		FunkinMainLoop.run(frameRate, false, vsync);
@@ -282,30 +310,6 @@ class Main extends Application {
 
 		trace("6");
 		resize(peoteView.width, peoteView.height);
-
-		window.onResize.add(resize);
-		window.onKeyDown.add(controlVolume);
-		window.onClose.add(Chart.destroy);
-
-		#if FV_DEBUG
-		DeveloperStuff.init(window, this);
-		#end
-
-		window.onMouseDown.add((x, y, button) -> {
-			try {
-				if (mouseDown != null)
-					mouseDown(x, y, button);
-			} catch (e:Dynamic) {
-				logCrash('onMouseDown', e);
-			}
-		});
-
-		_started = true;
-
-		var title = Application.current.window.title;
-		var titleLen = title.length;
-		Application.current.window.title = title.substring(0, titleLen - 13);
-		// Application.current.window.hidden = false;
 	}
 
 	/** Build the state object for `newState`. Returns the menu to route input to (null = no routed menu). */
