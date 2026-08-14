@@ -241,6 +241,17 @@ class Main extends Application {
 
 		peoteView.start();
 
+		//trace('');
+
+		trace("createSounds");
+		createSounds();
+		trace("createTextures");
+		createTextures();
+		trace("createDisplays");
+		createDisplays(); // found that it doesn't consum its own RAM. Now that's amazing
+
+		addDisplays();
+
 		window.onRender.add(_ -> brilliantInit(window), true, 9000);
 
 		window.onResize.add(resize);
@@ -270,17 +281,6 @@ class Main extends Application {
 		var frameRate = SaveData.state.graphics.frameRate;
 		var vsync = SaveData.state.graphics.vsync;
 		FunkinMainLoop.run(frameRate, false, vsync);
-
-		//trace('');
-
-		trace("createSounds");
-		createSounds();
-		trace("createTextures");
-		createTextures();
-		trace("createDisplays");
-		createDisplays(); // found that it doesn't consum its own RAM. Now that's amazing
-
-		addDisplays();
 
 		trace("1");
 		conductor = new Conductor();
