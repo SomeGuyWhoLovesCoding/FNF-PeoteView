@@ -56,7 +56,7 @@ class Tools {
 			var header = parseHeader(path);
 			if (header.instDir == null || header.instDir == "" || !FileSystem.exists(Paths.asset(header.instDir)))
 				return false;
-			if (header.voicesDirs != null)
+			if (header.voicesDirs != null || header.voiceDirs.trim() == "")
 				for (voicesDir in header.voicesDirs)
 					if (voicesDir != null && voicesDir != "" && !FileSystem.exists(Paths.asset(voicesDir)))
 						return false;
