@@ -78,7 +78,9 @@ class NoteSystem {
 	var noteMovement(default, null):NoteMovementSystem;
 	var notePool(default, null):NotePool;
 	var virtualNoteBuffer(default, null):NoteVB;
-	var movementLUTs(default, null):Array<NoteMovementLUT>;
+
+	/** Per-lane movement LUTs: movementLUTs[strumline][receptor_index] */
+	var movementLUTs(default, null):Array<Array<NoteMovementLUT>>;
 
 	static var typeToHandle:Array<NoteskinHandle> = [];
 
@@ -107,14 +109,12 @@ class NoteSystem {
 
 		virtualNoteBuffer = new NoteVB(strumlines.length, 1 << 8);
 
-		// Build movement LUTs — one per strumline.
+		// Build movement LUTs — one per (strumline, receptor lane).
 		// Replaces per-note Math.cos/Math.sin with precomputed offset lookups.
+		// If a NoteMovementInterp formula is active, the full formula output
+		// (position, scale, sustainRot, scrollMultiplier) is baked in.
 		movementLUTs = [];
-		for (i in 0...strumlines.length) {
-			var lut = new NoteMovementLUT();
-			lut.build(strumlines[i].scrollDirection);
-			movementLUTs.push(lut);
-		}
+		rebuildMovementLUTs();
 
 		notePool = new NotePool(this);
 		noteSpawner = new NoteSpawner(this);
@@ -432,11 +432,12 @@ class NoteSystem {
 		noteSpr.diff = d;
 		// LUT lookup: precomputed offsets replace per-note Math.cos/Math.sin
 		// With 2000 notes this eliminates 4000 trig calls/frame → 4000 L1-cache reads
-		var lut = movementLUTs[lane];
+		// When interp is baked in, scale is also applied from the LUT here.
+		var lut = movementLUTs[lane][index];
 		noteSpr.Sx = noteSprX + lut.lookupX(d);
 		noteSpr.Sy = noteSprY + lut.lookupY(d);
+		noteSpr.scale = lut.lookupScale(d, rec.scale);
 
-		noteSpr.scale = rec.scale;
 		noteSpr.globalIndex = _id;
 
 		var playable = strumline.playable && !(parent.botplay || RenderingMode.enabled);
@@ -627,26 +628,83 @@ class NoteSystem {
 	}
 
 	/**
-	 * Rebuild all movement LUTs.  Call when scrollDirection changes
-	 * (noteskin swap) or when strumlines are reconfigured.
+	 * Rebuild all movement LUTs.  Call when:
+	 *   - scrollDirection changes (noteskin swap)
+	 *   - strumlines are reconfigured (resize, reposition)
+	 *   - scrollSpeed changes (if interp is active, results depend on it)
+	 *   - A custom noteFormula is set or cleared
+	 *
+	 * When noteMovement.hasInterp is true, builds per-lane LUTs using
+	 * buildWithInterp(), baking the full formula output (position, scale,
+	 * sustainRot, scrollMultiplier) into the LUT at every quantized diff.
+	 * This eliminates both the per-note trig calls AND the VM dispatch.
+	 *
+	 * When no interp is active, builds per-lane LUTs using build() for
+	 * standard linear scroll, eliminating only the trig calls.
 	 */
 	function rebuildMovementLUTs() {
 		if (movementLUTs == null)
 			movementLUTs = [];
-		for (i in 0...strumlines.length) {
-			if (i < movementLUTs.length && movementLUTs[i] != null) {
-				movementLUTs[i].build(strumlines[i].scrollDirection);
-			} else {
-				var lut = new NoteMovementLUT();
-				lut.build(strumlines[i].scrollDirection);
-				movementLUTs.push(lut);
+
+		var hasInterp = noteMovement != null && noteMovement.hasInterp;
+		var interp = hasInterp ? noteMovement.interp : null;
+		var scrollSpeed = parent.scrollSpeed;
+
+		for (sl in 0...strumlines.length) {
+			var strumline = strumlines[sl];
+			var mania = strumline.length; // number of receptors/lanes
+
+			// Ensure the inner array exists and is the right size
+			if (sl >= movementLUTs.length)
+				movementLUTs.push([]);
+			var laneArr = movementLUTs[sl];
+			if (laneArr == null) {
+				laneArr = [];
+				movementLUTs[sl] = laneArr;
+			}
+
+			for (ri in 0...mania) {
+				var receptor = strumline.receptors[ri];
+				var rec = receptor.note;
+
+				if (hasInterp && interp != null) {
+					// Bake the full noteFormula into the LUT
+					if (ri < laneArr.length && laneArr[ri] != null) {
+						laneArr[ri].buildWithInterp(interp, strumline.scrollDirection, scrollSpeed, rec.x, rec.y, rec.scale, ri, sl);
+					} else {
+						var lut = new NoteMovementLUT();
+						lut.buildWithInterp(interp, strumline.scrollDirection, scrollSpeed, rec.x, rec.y, rec.scale, ri, sl);
+						laneArr.push(lut);
+					}
+				} else {
+					// Linear scroll LUT (no formula)
+					if (ri < laneArr.length && laneArr[ri] != null) {
+						laneArr[ri].build(strumline.scrollDirection);
+					} else {
+						var lut = new NoteMovementLUT();
+						lut.build(strumline.scrollDirection);
+						laneArr.push(lut);
+					}
+				}
+			}
+
+			// Trim excess per-lane LUTs if mania shrank
+			while (laneArr.length > mania) {
+				var old = laneArr.pop();
+				if (old != null)
+					old.dispose();
 			}
 		}
-		// Trim excess LUTs if strumlines shrank
+
+		// Trim excess strumline arrays
 		while (movementLUTs.length > strumlines.length) {
-			var old = movementLUTs.pop();
-			if (old != null)
-				old.dispose();
+			var oldArr = movementLUTs.pop();
+			if (oldArr != null) {
+				for (old in oldArr) {
+					if (old != null)
+						old.dispose();
+				}
+			}
 		}
 	}
 
@@ -687,9 +745,13 @@ class NoteSystem {
 		}
 
 		if (movementLUTs != null) {
-			for (lut in movementLUTs) {
-				if (lut != null)
-					lut.dispose();
+			for (laneArr in movementLUTs) {
+				if (laneArr != null) {
+					for (lut in laneArr) {
+						if (lut != null)
+							lut.dispose();
+					}
+				}
 			}
 			movementLUTs = null;
 		}

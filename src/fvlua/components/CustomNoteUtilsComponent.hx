@@ -21,12 +21,21 @@ class CustomNoteUtilsComponent extends LuaComponentObject {
 				FunkinViewLua.error("Script cannot be nil. Use `resetCustomNoteMoveFormula` instead.");
 				return FunkinViewLua.Function_Stop;
 			}
+			// Compile the formula into NoteMovementInterp and bake into LUTs.
+			// This replaces per-note VM dispatch + Lua calls with L1-cache reads.
+			// Also keep the LuaJIT source for fallback compatibility.
 			parent.setNoteFormulaSource(script);
+			var ns = playField.noteSystem;
+			if (ns != null && ns.noteMovement != null)
+				ns.noteMovement.setFormula(ns, script);
 			return FunkinViewLua.Function_Continue;
 		});
 
 		vm.addCallback('resetCustomNoteMoveFormula', function() {
 			parent.resetNoteFormulaSource();
+			var ns = playField.noteSystem;
+			if (ns != null && ns.noteMovement != null)
+				ns.noteMovement.clearFormula(ns);
 			return FunkinViewLua.Function_Continue;
 		});
 
