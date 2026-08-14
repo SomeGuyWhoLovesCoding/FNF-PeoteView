@@ -36,6 +36,26 @@ class NoteSpawner {
 	var timeSpentOnIt:Float = 0;
 	var timeSpentOnItIncrement:Float = 0;
 
+	// ------------------------------------------------------------------
+	// Overlap scale: precomputed inverse of (INITIAL_HEIGHT / VARIABLE_HEIGHT)
+	// so the per-note overlap check uses multiplication instead of division.
+	// Updated lazily when the window scale changes.
+	// ------------------------------------------------------------------
+	static var _overlapScaleInv:Float = 0;
+	static var _overlapScaleCachedInitH:Float = -1;
+	static var _overlapScaleCachedVarH:Float = -1;
+
+	inline static function getOverlapScaleInv():Float {
+		var initH = Main.INITIAL_HEIGHT;
+		var varH = Main.VARIABLE_HEIGHT;
+		if (initH != _overlapScaleCachedInitH || varH != _overlapScaleCachedVarH) {
+			_overlapScaleInv = varH / initH;
+			_overlapScaleCachedInitH = initH;
+			_overlapScaleCachedVarH = varH;
+		}
+		return _overlapScaleInv;
+	}
+
 	function update(pos:Int64) {
 		_lastbottom = bottom;
 		_lasttop = top;
@@ -68,6 +88,9 @@ class NoteSpawner {
 		var noteSpr:VirtualNote = null;
 		var j:Int = 0;
 
+		// Precompute overlap scale inverse once for the entire loop
+		var overlapInv = getOverlapScaleInv();
+
 		while (i < top) {
 			var n = File.getNote(i);
 
@@ -89,7 +112,7 @@ class NoteSpawner {
 			receptor.ambientOccludeYCur = newY;
 
 			var shouldOverlap = noteSpr != null
-				&& shouldNotesOverlap(prevNote, n, noteSpr, rec, receptor.ambientOccludeYPrev, receptor.ambientOccludeYCur);
+				&& shouldNotesOverlap(prevNote, n, noteSpr, rec, receptor.ambientOccludeYPrev, receptor.ambientOccludeYCur, overlapInv);
 
 			if (shouldOverlap) {
 				mergeNoteIntoSprite(noteSpr, i);
@@ -230,8 +253,14 @@ class NoteSpawner {
 					continue;
 				var receptor = strumline.receptors[j];
 				var strumReceptor = receptor.note;
+
+				// Lane-constant values hoisted from inner loop
+				var mania = strumline.length;
+				var baseScrollDir = strumReceptor.scrollDirection;
+				if (downScroll)
+					baseScrollDir += 180;
+
 				var k = 0;
-				//BOTTLENECK: high per-frame per-note render pass re-derives clip state (changeID+toNote) and rewrites every pooled note's properties, dirty-flagging them all for notesBuf.update() even when unchanged | FIX: only mutate fields that changed; cache per-lane clip state
 				while (k < length) {
 					var virtualNote:VirtualNote = index[k];
 					k++;
@@ -249,11 +278,9 @@ class NoteSpawner {
 					note.initialAlpha = virtualNote.initialAlpha;
 					note.addedAlpha = virtualNote.addedAlpha;
 
-					note.mania_for_clipruntimehelper = strumline.length;
+					note.mania_for_clipruntimehelper = mania;
 					note.diff = -virtualNote.diff;
-					note.scrollDirection = strumReceptor.scrollDirection;
-					if (downScroll)
-						note.scrollDirection += 180;
+					note.scrollDirection = baseScrollDir;
 
 					note.changeID(j);
 					note.toNote();
@@ -277,6 +304,16 @@ class NoteSpawner {
 				var length = notes.sustainLength[i][j];
 				var receptor = strumline.receptors[j];
 				var strumReceptor = receptor.note;
+
+				// Lane-constant values hoisted from inner loop
+				var mania = strumline.length;
+				var baseScrollDir = strumReceptor.scrollDirection;
+				var baseRot = baseScrollDir;
+				if (downScroll) {
+					baseRot += 180;
+					baseScrollDir += 180;
+				}
+
 				for (k in 0...length) {
 					var virtualSustain:VirtualSustain = index[k];
 					if (virtualSustain == null)
@@ -293,31 +330,34 @@ class NoteSpawner {
 					sustain.speed = virtualSustain.speed;
 					sustain.scale = virtualSustain.scale;
 
-					sustain.mania_for_clipruntimehelper = strumline.length;
+					sustain.mania_for_clipruntimehelper = mania;
 					sustain.length = virtualSustain.length;
 					sustain.c.aF = virtualSustain.alpha;
 					sustain.c.luminanceF = virtualSustain.alpha;
 					sustain.diff = -virtualSustain.diff;
-					sustain.scrollDirection = strumReceptor.scrollDirection;
-					sustain.r = sustain.scrollDirection;
-					if (downScroll) {
-						sustain.r += 180;
-						sustain.scrollDirection += 180;
-					}
+					sustain.scrollDirection = baseScrollDir;
+					sustain.r = baseRot;
 					sustain.changeID(j);
 				}
 			}
 		}
 	}
 
-	inline function shouldNotesOverlap(prev:MetaNote, current:MetaNote, noteSpr:VirtualNote, receptor:Note, newY:Int, prevY:Int):Bool {
+	/**
+	 * Overlap check — uses precomputed inverse scale (multiplication)
+	 * instead of division per-note.
+	 *
+	 * @param overlapInv  Precomputed VARIABLE_HEIGHT / INITIAL_HEIGHT
+	 */
+	inline function shouldNotesOverlap(prev:MetaNote, current:MetaNote, noteSpr:VirtualNote, receptor:Note, newY:Int, prevY:Int, overlapInv:Float):Bool {
 		if (noteSpr == null || prev == null)
 			return false;
 
 		var OVERLAP_PIXEL_THRESHOLD = 0;
 
-		var pixelDiff = Math.abs(Math.floor(newY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT))
-			- Math.floor(prevY / (Main.INITIAL_HEIGHT / Main.VARIABLE_HEIGHT)));
+		// Multiplication (overlapInv) replaces division by (INITIAL_HEIGHT / VARIABLE_HEIGHT).
+		// Mathematically: floor(y / (IH/VH)) == floor(y * (VH/IH))
+		var pixelDiff = Math.abs(Math.floor(newY * overlapInv) - Math.floor(prevY * overlapInv));
 
 		return pixelDiff <= OVERLAP_PIXEL_THRESHOLD
 			&& prev.type == current.type

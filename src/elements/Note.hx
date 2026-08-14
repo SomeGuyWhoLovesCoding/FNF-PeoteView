@@ -63,6 +63,21 @@ class Note implements Element {
 
 	var handle:NoteskinHandle;
 
+	// ------------------------------------------------------------------
+	// Clip cache: skip NoteskinRuntimeHelper lookup when (handle, id, mania)
+	// are unchanged from the last call to a state method.
+	//
+	// Same pattern as Sustain.changeID() — after the first frame, pooled
+	// Note objects reused for the same lane hit the cache every frame,
+	// eliminating ~2000 getColorClip() + applyClipIfChanged() calls.
+	// ------------------------------------------------------------------
+	var cachedClipHandle:NoteskinHandle;
+	var cachedClipId:Int = -1;
+	var cachedClipMania:Int = -1;
+	// Which NoteState the cache was populated for (COLOR / PRESS / CONFIRM / IDLE).
+	// If toNote() is called but cache was populated by press(), we must re-lookup.
+	var cachedClipState:NoteState = -1;
+
 	inline public function new(x:Int, y:Int, w:Int, h:Int, handle:NoteskinHandle, scale:Float = 1.0, initialAlpha:Float = 1.0, addedAlpha:Float = 0.0) {
 		setProperties(x, y, w, h, scale, initialAlpha, addedAlpha);
 		setHandle(handle);
@@ -81,6 +96,8 @@ class Note implements Element {
 		this.handle = handle;
 		texUnit = handle.texUnit;
 		texSlot = handle.texSlot;
+		// Invalidate clip cache — handle changed
+		cachedClipHandle = null;
 	}
 
 	// --- State methods ---
@@ -89,33 +106,72 @@ class Note implements Element {
 		state = IDLE;
 		if (handle == null)
 			return;
+		// Cache check: skip lookup if (handle, id, mania, state) unchanged
+		if (cachedClipHandle == handle
+			&& cachedClipId == id
+			&& cachedClipMania == mania_for_clipruntimehelper
+			&& cachedClipState == IDLE)
+			return;
 		var clip = NoteskinRuntimeHelper.getIdleClip(handle, id, mania_for_clipruntimehelper);
 		applyClipIfChanged(clip);
+		cachedClipHandle = handle;
+		cachedClipId = id;
+		cachedClipMania = mania_for_clipruntimehelper;
+		cachedClipState = IDLE;
 	}
 
 	inline public function toNote() {
 		state = COLOR;
 		if (handle == null)
 			return;
-		//BOTTLENECK: high per-note per-frame getColorClip lookup + applyClip (10 @set("properties") writes) dirty-flags every note for GPU re-upload; clip is lane-constant | FIX: cache clip per (handle, lane); skip re-derivation when state+id unchanged
+		// Cache check: skip getColorClip + applyClipIfChanged when
+		// (handle, id, mania) are unchanged AND we were already in COLOR state.
+		// This is the hot path — called ~2000 times/frame in renderVirtualNotes.
+		if (cachedClipHandle == handle
+			&& cachedClipId == id
+			&& cachedClipMania == mania_for_clipruntimehelper
+			&& cachedClipState == COLOR)
+			return;
 		var clip = NoteskinRuntimeHelper.getColorClip(handle, id, mania_for_clipruntimehelper);
 		applyClipIfChanged(clip);
+		cachedClipHandle = handle;
+		cachedClipId = id;
+		cachedClipMania = mania_for_clipruntimehelper;
+		cachedClipState = COLOR;
 	}
 
 	inline public function press() {
 		state = PRESS;
 		if (handle == null)
 			return;
+		if (cachedClipHandle == handle
+			&& cachedClipId == id
+			&& cachedClipMania == mania_for_clipruntimehelper
+			&& cachedClipState == PRESS)
+			return;
 		var clip = NoteskinRuntimeHelper.getPressClip(handle, id, mania_for_clipruntimehelper);
 		applyClipIfChanged(clip);
+		cachedClipHandle = handle;
+		cachedClipId = id;
+		cachedClipMania = mania_for_clipruntimehelper;
+		cachedClipState = PRESS;
 	}
 
 	inline public function confirm() {
 		state = CONFIRM;
 		if (handle == null)
 			return;
+		if (cachedClipHandle == handle
+			&& cachedClipId == id
+			&& cachedClipMania == mania_for_clipruntimehelper
+			&& cachedClipState == CONFIRM)
+			return;
 		var clip = NoteskinRuntimeHelper.getConfirmClip(handle, id, mania_for_clipruntimehelper);
 		applyClipIfChanged(clip);
+		cachedClipHandle = handle;
+		cachedClipId = id;
+		cachedClipMania = mania_for_clipruntimehelper;
+		cachedClipState = CONFIRM;
 	}
 
 	// --- Checking methods ---
@@ -153,11 +209,8 @@ class Note implements Element {
 	}
 
 	private inline function applyClipIfChanged(clip:BasicNoteskinClip) {
-		if (clipX == clip.clipX && clipY == clip.clipY
-			&& w == clip.clipW && h == clip.clipH
-			&& clipWidth == clip.clipW && clipHeight == clip.clipH
-			&& clipSizeX == clip.clipW && clipSizeY == clip.clipH
-			&& ox == clip.offsX && oy == clip.offsY)
+		if (clipX == clip.clipX && clipY == clip.clipY && w == clip.clipW && h == clip.clipH && clipWidth == clip.clipW && clipHeight == clip.clipH
+			&& clipSizeX == clip.clipW && clipSizeY == clip.clipH && ox == clip.offsX && oy == clip.offsY)
 			return;
 		applyClip(clip);
 	}
