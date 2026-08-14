@@ -409,7 +409,7 @@ class Main extends Application {
 	private function createDisplays() {
 		var stamp = haxe.Timer.stamp();
 		Sys.println("Creating displays...");
-		bottomDisplay = new CustomDisplay(0, 0, window.width, window.height, 0xFFFFFF33);
+		bottomDisplay = new CustomDisplay(0, 0, window.width, window.height, 0x11111100);
 		middleDisplay = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
 		topDisplay = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);
 		optionsScreen = new CustomDisplay(0, 0, window.width, window.height, 0x00000000);

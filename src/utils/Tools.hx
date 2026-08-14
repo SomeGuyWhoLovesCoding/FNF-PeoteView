@@ -56,9 +56,9 @@ class Tools {
 			var header = parseHeader(path);
 			if (header.instDir == null || header.instDir == "" || !FileSystem.exists(Paths.asset(header.instDir)))
 				return false;
-			if (header.voicesDirs != null || header.voiceDirs.trim() == "")
+			if (header.voicesDirs != null || header.voicesDirs.length != 0)
 				for (voicesDir in header.voicesDirs)
-					if (voicesDir != null && voicesDir != "" && !FileSystem.exists(Paths.asset(voicesDir)))
+					if (voicesDir != null && voicesDir.trim() != "" && !FileSystem.exists(Paths.asset(voicesDir)))
 						return false;
 		} catch (e) {
 			return false;
