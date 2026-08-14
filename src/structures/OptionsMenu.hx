@@ -114,11 +114,6 @@ class OptionsMenu extends MenuInput {
 		var mm = Main.current.mainMenu;
 		var pf = Main.current.playField;
 
-		// Make sure to cancel any active binding before closing
-		if (optionsDisplay.controlsDisplay.binding || optionsDisplay.controlsDisplay.bindingMania) {
-			optionsDisplay.controlsDisplay.cancelBinding();
-		}
-
 		optionsDisplay.closed = true;
 
 		if (mm != null) {
@@ -136,6 +131,15 @@ class OptionsMenu extends MenuInput {
 	function back(isDown:Bool, param:Int) {
 		if (!isDown)
 			return;
+
+		var controlsDisplay = optionsDisplay.controlsDisplay;
+
+		// Make sure to cancel any active binding before closing
+		if (controlsDisplay.binding || controlsDisplay.bindingMania) {
+			controlsDisplay.cancelBinding();
+			return;
+		}
+
 		close();
 		Main.current.playCancelSound();
 	}
