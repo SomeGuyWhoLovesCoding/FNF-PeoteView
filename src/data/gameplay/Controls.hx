@@ -69,6 +69,11 @@ class Controls {
 			}
 		];
 
+		// Drop the old handle's KeyboardAction from the shared Input2Action
+		// first, otherwise reload() leaves a stale action bound to the focused
+		// menu and every key press fires twice.
+		if (handle != null)
+			handle.unBind();
 		handle = new ControlsHandle(config);
 	}
 
