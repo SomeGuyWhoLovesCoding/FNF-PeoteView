@@ -300,6 +300,90 @@ class NoteSystem {
 		return dynamicThreshold;
 	}
 
+	function findPlayerHitNote(strumline:Strumline, index:Int):Int64 {
+		var spawner = noteSpawner;
+		if (spawner == null)
+			return -1;
+
+		var lane = strumlines.indexOf(strumline);
+		if (lane < 0)
+			return -1;
+
+		var laneCount = strumlines.length;
+		var offset = Main.conductor.offset;
+		var hitbox = _cachedHitbox;
+		var posWithLatency = MetaNote.floatToMetaNotePosition(parent.songPosition + offset);
+		// Precompute the hit window in tick units once, so the expansion needs
+		// only cheap Int64 compares - no per-note Int64/float conversions.
+		// (diff == (position - playhead) / TICKS_PER_MS * scrollSpeed, so
+		// |diff| <= hitbox <=> late <= position <= early.)
+		var halfTicks = MetaNote.floatToMetaNotePosition(hitbox / parent.scrollSpeed);
+		var late = Int64.sub(posWithLatency, halfTicks);
+		var early = Int64.add(posWithLatency, halfTicks);
+
+		// Binary search the first index whose note position is >= `target`.
+		// Notes are position-sorted, so this is a safe monotonic search.
+		inline function lowerBoundPos(lo:Int64, hi:Int64, target:Int64):Int64 {
+			var l = lo;
+			var h = hi;
+			while (l < h) {
+				var mid:Int64 = Int64.add(l, Int64.div(Int64.sub(h, l), 2));
+				if (File.getNote(mid).position < target)
+					l = Int64.add(mid, 1);
+				else
+					h = mid;
+			}
+			return l;
+		}
+
+		// Anchor on the first note at or after the playhead.
+		var p = lowerBoundPos(spawner.bottom, spawner.top, posWithLatency);
+		// If every note is in the past, anchor the backward scan on the last one.
+		var bi = p;
+		if (bi >= spawner.top)
+			bi = Int64.sub(spawner.top, 1);
+
+		var bestId:Int64 = -1;
+		var found = false;
+
+		inline function consider(i:Int64) {
+			var n = File.getNote(i);
+			// Window guard: a loop only breaks on its near side, so check the
+			// far side here (at most the anchor note can be far-future).
+			if (n.position < late || n.position > early)
+				return;
+			if (n.index == index && (n.type % laneCount) == lane && !File.getJudgement(i)) {
+				// Among hittable notes keep the earliest (smallest position) so a
+				// jack progresses in order; once `found`, only a smaller index can
+				// replace it.
+				if (!found || i < bestId) {
+					found = true;
+					bestId = i;
+				}
+			}
+		}
+
+		// Backward: notes at or just before the playhead (already somewhat late).
+		var i = bi;
+		while (i >= spawner.bottom) {
+			if (File.getNote(i).position < late)
+				break;
+			consider(i);
+			i = Int64.sub(i, 1);
+		}
+
+		// Forward: upcoming notes within the hit window.
+		i = Int64.add(p, 1);
+		while (i < spawner.top) {
+			if (File.getNote(i).position > early)
+				break;
+			consider(i);
+			i = Int64.add(i, 1);
+		}
+
+		return bestId;
+	}
+
 	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64):VirtualNote {
 		var index = note.index;
 		var lane = 0;
