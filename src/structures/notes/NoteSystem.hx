@@ -192,12 +192,19 @@ class NoteSystem {
 		`receptor.noteToHit` for every note in the spawn window, every frame).
 		Instead the note to hit is found here, once per key press.
 
-		The spawned notes are kept sorted by position, so `diff` (the note's
-		distance from the latency-compensated playhead) is monotonic in index.
-		The hit window is therefore a contiguous index range, which we locate
-		with two binary searches over `diff` — no full spawn-buffer scan per
-		press. The closest unjudged note on `strumline`'s lane `index` inside
-		that range is returned, or `-1` when there is none.
+		The spawned notes are kept sorted by position. We binary-search the
+		latency-compensated playhead position (`posWithLatency`) to anchor on
+		the first note at or after the playhead, then expand a small window
+		outward — backward for notes just in the past, forward for upcoming
+		notes — testing each candidate's real `diff` against the symmetric
+		hitbox (`abs(diff) <= _cachedHitbox`). This yields exactly the same
+		result the old full-buffer scan would have (so no inputs are dropped)
+		while skipping the notes that are nowhere near the strumline.
+
+		`scrollSpeed` is a single global value for the field, so `diff` is
+		monotonic in position and the outward expansion cannot skip a note
+		that lies inside the hitbox. The closest unjudged note on `strumline`'s
+		lane `index` inside the hitbox is returned, or `-1` when there is none.
 	**/
 	function findPlayerHitNote(strumline:Strumline, index:Int):Int64 {
 		var spawner = noteSpawner;
@@ -210,24 +217,25 @@ class NoteSystem {
 
 		var laneCount = strumlines.length;
 		var offset = Main.conductor.offset;
-		var window = _cachedHitbox - offset;
-		var farEdge = -_cachedHitbox - offset;
+		var hitbox = _cachedHitbox;
 		var posWithLatency = MetaNote.floatToMetaNotePosition(parent.songPosition + offset);
 		var scrollSpeed = parent.scrollSpeed;
 
-		// `diff` for the note at `i`. Monotonic in `i` because notes are
-		// position-sorted, so it can drive a binary search.
+		// `diff` for the note at `i`: distance from the latency-compensated
+		// playhead, in scroll-scaled pixels. The note is hittable iff
+		// `abs(diff) <= hitbox` (the symmetric hitbox around the strumline).
 		inline function diffAt(i:Int64):Float {
 			return MetaNote.metaNotePositionToSongTime(File.getNote(i).position - posWithLatency) * scrollSpeed;
 		}
 
-		// Binary search the first index whose `diff` is >= a threshold.
-		inline function lowerBound(lo:Int64, hi:Int64, threshold:Float):Int64 {
+		// Binary search the first index whose note position is >= `target`.
+		// Notes are position-sorted, so this is a safe monotonic search.
+		inline function lowerBoundPos(lo:Int64, hi:Int64, target:Int64):Int64 {
 			var l = lo;
 			var h = hi;
 			while (l < h) {
 				var mid:Int64 = Int64.add(l, Int64.div(Int64.sub(h, l), 2));
-				if (diffAt(mid) < threshold)
+				if (File.getNote(mid).position < target)
 					l = Int64.add(mid, 1);
 				else
 					h = mid;
@@ -235,25 +243,48 @@ class NoteSystem {
 			return l;
 		}
 
-		// First index whose `diff` is in [farEdge, window) marks the candidate
-		// range; the second bounds it on the high side (exclusive).
-		var start = lowerBound(spawner.bottom, spawner.top, farEdge);
-		var end = lowerBound(start, spawner.top, window);
+		// Anchor on the first note at or after the playhead.
+		var p = lowerBoundPos(spawner.bottom, spawner.top, posWithLatency);
+		// If every note is in the past, anchor the backward scan on the last one.
+		var bi = p;
+		if (bi >= spawner.top)
+			bi = Int64.sub(spawner.top, 1);
 
 		var bestId:Int64 = -1;
 		var bestAbs:Float = Math.POSITIVE_INFINITY;
-		var i = start;
-		while (i < end) {
+
+		inline function consider(i:Int64) {
 			var n = File.getNote(i);
 			if (n.index == index && (n.type % laneCount) == lane && !File.getJudgement(i)) {
 				var absDiff = Math.abs(diffAt(i));
-				if (absDiff < bestAbs) {
+				// Symmetric hitbox, matching the original full-buffer scan.
+				if (absDiff <= hitbox && absDiff < bestAbs) {
 					bestAbs = absDiff;
 					bestId = i;
 				}
 			}
-			i++;
 		}
+
+		// Backward: notes at or just before the playhead (already somewhat late).
+		var i = bi;
+		while (i >= spawner.bottom) {
+			var d = diffAt(i);
+			if (d < -hitbox)
+				break;
+			consider(i);
+			i = Int64.sub(i, 1);
+		}
+
+		// Forward: upcoming notes within the hit window.
+		i = Int64.add(p, 1);
+		while (i < spawner.top) {
+			var d = diffAt(i);
+			if (d > hitbox)
+				break;
+			consider(i);
+			i = Int64.add(i, 1);
+		}
+
 		return bestId;
 	}
 
