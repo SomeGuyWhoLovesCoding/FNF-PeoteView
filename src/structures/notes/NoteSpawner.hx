@@ -83,39 +83,16 @@ class NoteSpawner {
 
 		var i = (minBottom != -1 && bottom < minBottom) ? minBottom : bottom;
 		var scrollSpeed = parent.parent.scrollSpeed;
+		var noteSpr:VirtualNote = null;
+		var j:Int = 0;
 
 		// Precompute overlap scale inverse once for the entire loop
 		var overlapInv = getOverlapScaleInv();
 
-		// Per-(lane, index) overlap carry so notes on different lanes
-		// never merge into each other.  Keyed as a flat array:
-		//   carryKey = lane * maxReceptors + index
-		// We reuse a static array to avoid per-frame allocation.
-		static var carrySprites:Array<VirtualNote> = null;
-		if (carrySprites == null)
-			carrySprites = new Array<VirtualNote>();
-		// Compute needed size: strumlines.length * max receptors per strumline
-		var strumCount = parent.strumlines.length;
-		var maxReceptors = 0;
-		for (s in 0...strumCount) {
-			var sl = parent.strumlines[s];
-			if (sl.receptors.length > maxReceptors)
-				maxReceptors = sl.receptors.length;
-		}
-		var carrySize = strumCount * maxReceptors;
-		// Resize if needed (only grows, never shrinks - negligible waste)
-		while (carrySprites.length < carrySize)
-			carrySprites.push(null);
-		// Clear only the portion we'll use
-		for (c in 0...carrySize)
-			carrySprites[c] = null;
-
-		// Local alias for the PlayField so per-note dispatch can reach it.
-		var pf = parent.parent;
-
 		while (i < top) {
 			var n = File.getNote(i);
 
+			var strumCount = parent.strumlines.length;
 			if (strumCount == 0)
 				break; // no receptors available; nothing can be drawn
 			var lane = n.type % strumCount;
@@ -132,35 +109,21 @@ class NoteSpawner {
 
 			receptor.ambientOccludeYCur = newY;
 
-			var carryIdx = lane * maxReceptors + n.index;
-			var noteSpr = carrySprites[carryIdx];
-
 			var shouldOverlap = noteSpr != null
 				&& shouldNotesOverlap(prevNote, n, noteSpr, rec, receptor.ambientOccludeYPrev, receptor.ambientOccludeYCur, overlapInv);
 
 			if (shouldOverlap) {
-				// Merged opponent notes that haven't been judged yet need
-				// individual hit dispatch so cross-frame chain continuation
-				// cannot silently drop notes from the score.
-				if (!strumline.playable && diff < 0 && !File.getJudgement(i)) {
-					File.setHitFlag(i, false);
-					File.setJudgement(i, true);
-					if (@:privateAccess pf.onNoteHit.__listeners.length != 0)
-						pf.onNoteHit.dispatch(n, 0, 1);
-					if (pf.field != null)
-						pf.field.hitNote(n, 0, 1);
-					pf.hitNote(n, 0, 1, i);
-				}
 				mergeNoteIntoSprite(noteSpr, i);
 			} else {
+				++j;
 				noteSpr = parent.drawNote(pos, n, diff, i);
-				carrySprites[carryIdx] = noteSpr;
 			}
 
 			strumline.setPrevNote(n.index, n);
 			receptor.ambientOccludeYPrev = receptor.ambientOccludeYCur;
 			++i;
 		}
+
 	}
 
 	function cullTop(pos:Int64) {

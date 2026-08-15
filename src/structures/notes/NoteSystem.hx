@@ -554,14 +554,12 @@ class NoteSystem {
 					if (sustainSpr.w < 0)
 						sustainSpr.w = 0;
 				}
-				// Per-note dispatch: each opponent note scores independently.
-				// notesInOne is visual-only (alpha stacking) — never used for scoring
-				// so cross-frame overlap chain continuation cannot lose notes.
+
 				if (@:privateAccess parent.onNoteHit.__listeners.length != 0)
-					parent.onNoteHit.dispatch(note, 0, 1);
+					parent.onNoteHit.dispatch(note, 0, noteSpr.notesInOne);
 				if (parent.field != null)
-					parent.field.hitNote(note, 0, 1);
-				parent.hitNote(note, 0, 1, _id);
+					parent.field.hitNote(note, 0, noteSpr.notesInOne);
+				parent.hitNote(note, 0, noteSpr.notesInOne, _id);
 			}
 		}
 
