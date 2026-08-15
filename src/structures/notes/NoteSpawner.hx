@@ -110,21 +110,8 @@ class NoteSpawner {
 		for (c in 0...carrySize)
 			carrySprites[c] = null;
 
-		// Local alias for the PlayField so the inline flush can reach it.
+		// Local alias for the PlayField so per-note dispatch can reach it.
 		var pf = parent.parent;
-
-		inline function flushPendingHit(spr:VirtualNote) {
-			if (spr == null || !spr.pendingOpponentHit)
-				return;
-			spr.pendingOpponentHit = false;
-			var note = spr.ref;
-			var count = spr.notesInOne;
-			if (@:privateAccess pf.onNoteHit.__listeners.length != 0)
-				pf.onNoteHit.dispatch(note, 0, count);
-			if (pf.field != null)
-				pf.field.hitNote(note, 0, count);
-			pf.hitNote(note, 0, count, spr.globalIndex);
-		}
 
 		while (i < top) {
 			var n = File.getNote(i);
@@ -152,11 +139,20 @@ class NoteSpawner {
 				&& shouldNotesOverlap(prevNote, n, noteSpr, rec, receptor.ambientOccludeYPrev, receptor.ambientOccludeYCur, overlapInv);
 
 			if (shouldOverlap) {
+				// Merged opponent notes that haven't been judged yet need
+				// individual hit dispatch so cross-frame chain continuation
+				// cannot silently drop notes from the score.
+				if (!strumline.playable && diff < 0 && !File.getJudgement(i)) {
+					File.setHitFlag(i, false);
+					File.setJudgement(i, true);
+					if (@:privateAccess pf.onNoteHit.__listeners.length != 0)
+						pf.onNoteHit.dispatch(n, 0, 1);
+					if (pf.field != null)
+						pf.field.hitNote(n, 0, 1);
+					pf.hitNote(n, 0, 1, i);
+				}
 				mergeNoteIntoSprite(noteSpr, i);
 			} else {
-				// A new overlap chain starts - flush the previous chain's
-				// deferred opponent hit now that notesInOne is final.
-				flushPendingHit(noteSpr);
 				noteSpr = parent.drawNote(pos, n, diff, i);
 				carrySprites[carryIdx] = noteSpr;
 			}
@@ -165,10 +161,6 @@ class NoteSpawner {
 			receptor.ambientOccludeYPrev = receptor.ambientOccludeYCur;
 			++i;
 		}
-
-		// Flush remaining pending hits (the last overlap chain per slot)
-		for (c in 0...carrySize)
-			flushPendingHit(carrySprites[c]);
 	}
 
 	function cullTop(pos:Int64) {
