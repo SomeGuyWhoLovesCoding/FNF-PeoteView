@@ -554,12 +554,7 @@ class NoteSystem {
 					if (sustainSpr.w < 0)
 						sustainSpr.w = 0;
 				}
-
-				if (@:privateAccess parent.onNoteHit.__listeners.length != 0)
-					parent.onNoteHit.dispatch(note, 0, noteSpr.notesInOne);
-				if (parent.field != null)
-					parent.field.hitNote(note, 0, noteSpr.notesInOne);
-				parent.hitNote(note, 0, noteSpr.notesInOne, _id);
+				noteSpr.pendingOpponentHit = true;
 			}
 		}
 

@@ -68,6 +68,7 @@ class NotePool {
 		obj.initialAlpha = Note.defaultAlpha;
 		obj.addedAlpha = 0;
 		obj.notesInOne = 1;
+		obj.pendingOpponentHit = false;
 		obj.ref = n;
 		return obj;
 	}

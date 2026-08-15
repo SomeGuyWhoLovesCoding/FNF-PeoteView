@@ -112,6 +112,11 @@ class VirtualNote {
 
 	// the note diff relative to strum time (4 bytes)
 	var diff:Int;
+	// Set by drawNote when an opponent auto-hit occurs. The actual
+	// combo dispatch (hitNote / onNoteHit) is deferred to after the
+	// merge pass so that notesInOne reflects the full overlap group.
+	var pendingOpponentHit:Bool;
+
 
 	// the current strum position
 	var Sxy:Int;

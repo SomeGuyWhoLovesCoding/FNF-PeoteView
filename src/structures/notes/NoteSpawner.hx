@@ -89,15 +89,11 @@ class NoteSpawner {
 
 		// Per-(lane, index) overlap carry so notes on different lanes
 		// never merge into each other.  Keyed as a flat array:
-		//   carryKey = lane * MAX_KEYS_PER_STRUMLINE + index
-		// MAX_KEYS_PER_STRUMLINE is a hard upper bound on receptor count.
+		//   carryKey = lane * maxReceptors + index
 		// We reuse a static array to avoid per-frame allocation.
 		static var carrySprites:Array<VirtualNote> = null;
-		static var carryLaneIndices:Array<Int> = null;
-		if (carrySprites == null) {
+		if (carrySprites == null)
 			carrySprites = new Array<VirtualNote>();
-			carryLaneIndices = new Array<Int>();
-		}
 		// Compute needed size: strumlines.length * max receptors per strumline
 		var strumCount = parent.strumlines.length;
 		var maxReceptors = 0;
@@ -107,14 +103,28 @@ class NoteSpawner {
 				maxReceptors = sl.receptors.length;
 		}
 		var carrySize = strumCount * maxReceptors;
-		// Resize if needed (only grows, never shrinks — negligible waste)
+		// Resize if needed (only grows, never shrinks - negligible waste)
 		while (carrySprites.length < carrySize)
 			carrySprites.push(null);
-		while (carryLaneIndices.length < carrySize)
-			carryLaneIndices.push(0);
 		// Clear only the portion we'll use
 		for (c in 0...carrySize)
 			carrySprites[c] = null;
+
+		// Local alias for the PlayField so the inline flush can reach it.
+		var pf = parent.parent;
+
+		inline function flushPendingHit(spr:VirtualNote) {
+			if (spr == null || !spr.pendingOpponentHit)
+				return;
+			spr.pendingOpponentHit = false;
+			var note = spr.ref;
+			var count = spr.notesInOne;
+			if (@:privateAccess pf.onNoteHit.__listeners.length != 0)
+				pf.onNoteHit.dispatch(note, 0, count);
+			if (pf.field != null)
+				pf.field.hitNote(note, 0, count);
+			pf.hitNote(note, 0, count, spr.globalIndex);
+		}
 
 		while (i < top) {
 			var n = File.getNote(i);
@@ -144,6 +154,9 @@ class NoteSpawner {
 			if (shouldOverlap) {
 				mergeNoteIntoSprite(noteSpr, i);
 			} else {
+				// A new overlap chain starts - flush the previous chain's
+				// deferred opponent hit now that notesInOne is final.
+				flushPendingHit(noteSpr);
 				noteSpr = parent.drawNote(pos, n, diff, i);
 				carrySprites[carryIdx] = noteSpr;
 			}
@@ -152,6 +165,10 @@ class NoteSpawner {
 			receptor.ambientOccludeYPrev = receptor.ambientOccludeYCur;
 			++i;
 		}
+
+		// Flush remaining pending hits (the last overlap chain per slot)
+		for (c in 0...carrySize)
+			flushPendingHit(carrySprites[c]);
 	}
 
 	function cullTop(pos:Int64) {
