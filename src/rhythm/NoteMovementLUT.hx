@@ -21,6 +21,7 @@ import haxe.ds.Vector;
  *
  * The LUT is rebuilt only on configuration changes (noteskin swap, scrollDirection
  * change, window resize) — never per-frame.
+ * @since 0.94
  */
 @:publicFields
 class NoteMovementLUT {

@@ -19,6 +19,7 @@ import haxe.ds.Vector;
  *
  * Used only during LUT building (config changes). Per-frame rendering and the
  * LuaJIT fallback still use NoteMovementInterp.run() untouched.
+ * @since 0.94
  */
 @:publicFields
 class NoteFastSweep {

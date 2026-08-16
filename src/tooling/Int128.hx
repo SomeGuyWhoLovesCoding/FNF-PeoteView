@@ -20,10 +20,10 @@
  * DEALINGS IN THE SOFTWARE.
  */
 
-package custom.haxe;
+package tooling;
 
 import haxe.Int64;
-using custom.haxe.Int128;
+using tooling.Int128;
 
 /**
 	A cross-platform signed 128-bit integer.

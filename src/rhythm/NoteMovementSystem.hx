@@ -22,6 +22,7 @@ import rhythm.NoteVB.VirtualSustain;
  *
  * The extended-LUT path is now fully handled inline in drawNote(),
  * making this run() method a LuaJIT-only fallback.
+ * @since 0.94
  */
 @:publicFields
 class NoteMovementSystem {

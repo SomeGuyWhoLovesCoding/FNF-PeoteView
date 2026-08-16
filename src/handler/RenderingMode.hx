@@ -1,4 +1,4 @@
-package ffmpeg;
+package handler;
 
 import sys.io.Process;
 import sys.FileSystem;

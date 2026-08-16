@@ -49,14 +49,13 @@ import tooling.fvlua.components.*;
 // HELPERS
 import haxe.Int64;
 import haxe.ds.Vector;
-import custom.haxe.*;
 
-// EXTERN SHIT
+// EXTERNS
 #if customtitlebar
 import titlebar.*;
 #end
 
-// LUA SHIT
+// LUA
 #if linc_luajit_funkinview
 import llua.Lua;
 import llua.LuaCallback;
@@ -68,5 +67,5 @@ import llua.Convert;
 import llua.Lua.Lua_helper;
 #end
 
-// LIME SHIT
+// LIME
 import lime.app.Application;

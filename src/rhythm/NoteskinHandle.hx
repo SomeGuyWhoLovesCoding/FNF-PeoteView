@@ -54,6 +54,7 @@ import tooling.TextureSystem;
 	If `data.json` is missing or fails to parse, the constructor falls
 	back to the in-memory `DEFAULT_DATA` template (a deep copy, so it is
 	safe to mutate the resulting `data` field).
+ * @since 0.94
 **/
 @:publicFields
 class NoteskinHandle {
