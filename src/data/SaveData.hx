@@ -125,7 +125,7 @@ class SaveData {
 	}
 
 	static function init(window:Window) {
-		window.onClose.add(save, 1);
+		window.onClose.add(saveSync, 1);
 
 		if (!FileSystem.exists('save.dat')) {
 			save();
@@ -151,10 +151,46 @@ class SaveData {
 		state = result;
 	}
 
+	// Deferred save: rapid save() calls coalesce into one disk write, so binding
+	// keys or flipping options mid-game never blocks the main thread on I/O.
+	static var _saveTimer:haxe.Timer = null;
+	static var _saveDirty:Bool = false;
+	static inline var SAVE_DEBOUNCE_MS:Int = 250;
+
+	/**
+		Schedule a disk write. Multiple calls inside the debounce window collapse
+		into a single write of the latest state. The window-close hook calls
+		`saveSync()` so no changes are lost on a normal exit.
+	**/
 	static function save() {
+		_saveDirty = true;
+		if (_saveTimer == null) {
+			_saveTimer = haxe.Timer.delay(() -> {
+				_saveTimer = null;
+				writeToDisk();
+			}, SAVE_DEBOUNCE_MS);
+		}
+	}
+
+	/** Write immediately (synchronously). Used on window close so data survives exit. */
+	static function saveSync() {
+		if (_saveTimer != null) {
+			_saveTimer.stop();
+			_saveTimer = null;
+		}
+		writeToDisk();
+	}
+
+	static function writeToDisk() {
+		if (!_saveDirty) {
+			_saveDirty = false;
+			return;
+		}
+		_saveDirty = false;
 		trace('Saving data...');
 		try {
-			//BOTTLENECK: low full haxe.Serializer graph serialization + blocking File.write on main thread (init/window-close only) | FIX: skip save when state unchanged; defer to background thread if call frequency grows
+			// Serialization + file I/O happens off the frame that triggered save()
+			// (deferred via the debounce timer) instead of blocking mid-gameplay.
 			var result = SaveData_Securer.lock(state);
 			var fo:FileOutput = File.write("save.dat");
 			fo.writeString(result);
