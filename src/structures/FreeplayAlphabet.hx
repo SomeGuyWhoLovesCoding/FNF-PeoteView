@@ -13,7 +13,7 @@ class FreeplayAlphabet {
 	var songTextsProg:CustomProgram;
 	var songTextCharGroup:Array<Array<Actor>> = [];
 	var songTextAnimStateGroup:Array<Array<SpriteAnimState>> = [];
-	var titleCharCache:Map<String, TitleCharInfo> = new Map();
+	var titleCharCache:FakeStringMap<TitleCharInfo> = new FakeStringMap<TitleCharInfo>();
 
 	var host:AlphabetScrollHost;
 	var display(default, null):CustomDisplay;
@@ -25,8 +25,6 @@ class FreeplayAlphabet {
 	// Static shared resources (read-only, no state)
 	private static var _charCorrectionMapOG:Map<String, String> = [
 		"?" => "question",
-		"&" => "ampersand",
-		"<" => "less",
 		'"' => "quote",
 		"'" => "apostrophe",
 		"•" => "bullet",
@@ -120,8 +118,6 @@ class FreeplayAlphabet {
 		if (isDisposed)
 			return;
 
-		isDisposed = true;
-
 		// First remove from display
 		shutDown();
 
@@ -143,6 +139,8 @@ class FreeplayAlphabet {
 		songTextsProg = null;
 		host = null;
 		display = null;
+
+		isDisposed = true;
 	}
 
 	// Also add a destructor-like method to ensure cleanup
