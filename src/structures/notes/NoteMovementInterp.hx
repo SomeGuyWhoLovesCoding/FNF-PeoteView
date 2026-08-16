@@ -70,7 +70,7 @@ class NoteMovementInterp {
 		code = ~/--[^\n]*/g.replace(code, "");
 
 		// 1. Extract custom functions and inline them
-		var customFuncs = new Map<String, {args:Array<String>, body:String}>();
+		var customFuncs = new FakeStringMap<{args:Array<String>, body:String}>();
 		var funcRegex = ~/function\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*\(([^)]*)\)\s*(.*?)\s*end/gi;
 		while (funcRegex.match(code)) {
 			var name = funcRegex.matched(1);
@@ -92,7 +92,7 @@ class NoteMovementInterp {
 		while (i < code.length) {
 			var matchedFunc = null;
 			var matchedName = "";
-			for (name in customFuncs.keys()) {
+			for (name in customFuncs.keys) {
 				if (code.substr(i, name.length).toLowerCase() == name) {
 					var prevChar = i > 0 ? code.charAt(i - 1) : " ";
 					var nextChar = code.charAt(i + name.length);

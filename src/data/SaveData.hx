@@ -151,11 +151,17 @@ class SaveData {
 		state = result;
 	}
 
-	// Deferred save: rapid save() calls coalesce into one disk write, so binding
-	// keys or flipping options mid-game never blocks the main thread on I/O.
+	// Deferred save: rapid save() calls coalesce into one disk write, and the disk
+	// I/O runs on a background thread so a slow or spun-down drive can't hitch the game.
 	static var _saveTimer:haxe.Timer = null;
 	static var _saveDirty:Bool = false;
 	static inline var SAVE_DEBOUNCE_MS:Int = 250;
+
+	// Background-write coordination (only used on threaded targets).
+	#if (cpp || hl || neko)
+	static var _writeInFlight:Bool = false;
+	static var _writeLock:sys.thread.Lock = null;
+	#end
 
 	/**
 		Schedule a disk write. Multiple calls inside the debounce window collapse
@@ -165,11 +171,15 @@ class SaveData {
 	static function save() {
 		_saveDirty = true;
 		if (_saveTimer == null) {
-			_saveTimer = haxe.Timer.delay(() -> {
-				_saveTimer = null;
-				writeToDisk();
-			}, SAVE_DEBOUNCE_MS);
+			armTimer();
 		}
+	}
+
+	static function armTimer() {
+		_saveTimer = haxe.Timer.delay(() -> {
+			_saveTimer = null;
+			flush();
+		}, SAVE_DEBOUNCE_MS);
 	}
 
 	/** Write immediately (synchronously). Used on window close so data survives exit. */
@@ -178,22 +188,60 @@ class SaveData {
 			_saveTimer.stop();
 			_saveTimer = null;
 		}
-		writeToDisk();
+		#if (cpp || hl || neko)
+		// Let any in-flight background write finish before we flush the final state.
+		if (_writeInFlight && _writeLock != null)
+			_writeLock.wait();
+		#end
+		if (_saveDirty) {
+			_saveDirty = false;
+			writeSync(SaveData_Securer.lock(state));
+		}
 	}
 
-	static function writeToDisk() {
+	static function flush() {
 		if (!_saveDirty) {
 			_saveDirty = false;
 			return;
 		}
+		#if (cpp || hl || neko)
+		if (_writeInFlight) {
+			// A write is already running; retry once it completes so state isn't lost.
+			armTimer();
+			return;
+		}
+		#end
+
+		// Serialize on the main thread (cheap) so the worker never reads `state`
+		// while the UI is mutating it.
 		_saveDirty = false;
+		var bytes = SaveData_Securer.lock(state);
+
+		#if (cpp || hl || neko)
+		try {
+			_writeInFlight = true;
+			_writeLock = new sys.thread.Lock();
+			var lock = _writeLock;
+			sys.thread.Thread.create(() -> {
+				writeSync(bytes);
+				_writeInFlight = false;
+				lock.release();
+			});
+		} catch (e) {
+			_writeInFlight = false;
+			writeSync(bytes);
+		}
+		#else
+		writeSync(bytes);
+		#end
+	}
+
+	static function writeSync(bytes:String) {
 		trace('Saving data...');
 		try {
-			// Serialization + file I/O happens off the frame that triggered save()
-			// (deferred via the debounce timer) instead of blocking mid-gameplay.
-			var result = SaveData_Securer.lock(state);
+			// Runs on a background thread (or synchronously on window close).
 			var fo:FileOutput = File.write("save.dat");
-			fo.writeString(result);
+			fo.writeString(bytes);
 			fo.close();
 		} catch (e) {} // for rare cases like actually editing the save file itself
 	}
