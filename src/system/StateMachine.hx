@@ -197,6 +197,7 @@ class StateMachine {
 			fn();
 		} catch (e) {
 			trace("StateMachine error: " + e);
+			Main.logCrash('StateMachine.safe', e);
 		}
 	}
 
@@ -205,6 +206,7 @@ class StateMachine {
 			return fn();
 		} catch (e) {
 			trace("StateMachine error: " + e);
+			Main.logCrash('StateMachine.safeBool', e);
 			return false;
 		}
 	}

@@ -166,7 +166,6 @@ class AnimateActor extends Actor {
 			leafPool[i].w = 0;
 			leafPool[i].h = 0;
 		}
-		//BOTTLENECK: mid redundant full-buffer GPU re-upload on every animation frame - changeFrame() calls buffer.update() again right after applyResolvedFrame() | FIX: drop one of the two buffer.update() calls (this one or the one in changeFrame)
 		activeLeafCount = count;
 	}
 
@@ -189,19 +188,15 @@ class AnimateActor extends Actor {
 			return;
 		applyResolvedFrame(currentResolvedFrames[frameIndex]);
 		leafDirty = true;
-		if (buffer != null)
-			buffer.update();
 	}
 
 	override private function renderImpl() {
-		//BOTTLENECK: high re-uploads every leaf element to the GPU every render frame even though leaf transforms only change on animation-frame switches | FIX: track a dirty flag per leaf (or per actor) and only updateElement on changeFrame
 		if (!leafDirty)
 			return;
 		leafDirty = false;
-		for (i in 0...activeLeafCount) {
-			if (buffer != null)
-				buffer.updateElement(leafPool[i]);
-		}
+
+		if (buffer != null)
+			buffer.update();
 	}
 
 	// ── Composite frame application ───────────────────────────────────────────
@@ -371,9 +366,10 @@ class AnimateActor extends Actor {
 		for (el in leafPool) {
 			el.w = 0;
 			el.h = 0;
-			if (buffer != null)
-				buffer.updateElement(el);
 		}
+		if (buffer != null)
+			buffer.update();
+			
 		leafPool = [];
 		activeLeafCount = 0;
 		super.dispose();
