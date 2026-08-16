@@ -210,9 +210,6 @@ class PlayField {
 		if (isBackwards)
 			return;
 
-		if (eventSystem != null)
-			eventSystem.seek(value);
-
 		if (hud != null && SaveData.state.preferences.ratingPopup)
 			hud.hideRatingPopup();
 
