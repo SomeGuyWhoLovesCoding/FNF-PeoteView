@@ -161,10 +161,14 @@ class NoteMovementLUT {
 		for (i in 0...entries) {
 			var diff:Float = base + i;
 
-			// Seed the baseResult with receptor defaults
+			// Seed the baseResult with receptor defaults.
+			// scale is seeded as the identity multiplier (1.0), not receptorScale,
+			// because drawNote() multiplies the LUT scale by rec.scale at runtime
+			// (matching the LuaJIT path). Seeding the absolute receptorScale here
+			// caused the scale to be applied twice on abort / unset-scale rows.
 			baseResult.x = receptorX;
 			baseResult.y = receptorY;
-			baseResult.scale = receptorScale;
+			baseResult.scale = 1.0;
 			baseResult.sustainRot = 0.0;
 			baseResult.scrollMultiplier = 1.0;
 
@@ -176,10 +180,12 @@ class NoteMovementLUT {
 				sustainRotLUT[i] = result.sustainRot;
 				scrollMulLUT[i] = result.scrollMultiplier;
 			} else {
-				// Formula aborted for this diff — linear fallback
+				// Formula aborted for this diff — linear fallback.
+				// scale falls back to the identity multiplier (1.0), since
+				// drawNote() multiplies by rec.scale at runtime.
 				offsetX[i] = Math.round(diff * c);
 				offsetY[i] = Math.round(diff * s);
-				scaleLUT[i] = receptorScale;
+				scaleLUT[i] = 1.0;
 				sustainRotLUT[i] = 0.0;
 				scrollMulLUT[i] = 1.0;
 			}
@@ -224,7 +230,10 @@ class NoteMovementLUT {
 		var idx = d - minDiff;
 		if (idx >= 0 && idx < entries)
 			return scaleLUT[idx];
-		return defaultScale;
+		// Out-of-range with an extended LUT: the LUT stores a relative
+		// multiplier, so fall back to identity (1.0), not defaultScale —
+		// the caller multiplies by the absolute scale at runtime.
+		return 1.0;
 	}
 
 	/**
