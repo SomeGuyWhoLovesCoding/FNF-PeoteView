@@ -79,12 +79,24 @@ class NoteMovementInterp {
 			var body = funcRegex.matched(3);
 			var args = argsStr.split(",").map(function(s) return StringTools.trim(s)).filter(function(s) return s != "");
 
+			// noteFormula is the main entry point, not a helper to inline —
+			// strip only its header so the body survives preprocessing.
+			if (name.toLowerCase() == "noteformula") {
+				var header = ~/function\s+noteFormula\s*\([^)]*\)/i;
+				if (header.match(code)) {
+					var hp = header.matchedPos();
+					code = code.substring(0, hp.pos) + code.substring(hp.pos + hp.len);
+				}
+				continue;
+			}
+
 			var retMatch = ~/return\s+(.*?);/i;
 			if (retMatch.match(body)) {
 				var expr = retMatch.matched(1);
 				customFuncs.set(name.toLowerCase(), {args: args, body: expr});
 			}
-			code = funcRegex.replace(code, "");
+			var mp = funcRegex.matchedPos();
+			code = code.substring(0, mp.pos) + code.substring(mp.pos + mp.len);
 		}
 
 		// Inline custom function calls
