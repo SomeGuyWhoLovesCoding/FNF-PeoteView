@@ -9,7 +9,7 @@ import lime.app.Application;
 import lime.ui.Window;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
-import system.MenuInput;
+import handler.MenuInput;
 
 /**
 	* The entry point for the application

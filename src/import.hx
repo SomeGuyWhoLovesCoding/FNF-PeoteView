@@ -8,50 +8,43 @@ import peote.view.intern.*;
 import peote.view.math.Vec2;
 
 // GAME
-import atlas.*;
+import data.atlas.*;
 import data.chart.*;
 import data.gameplay.*;
-import data.options.*;
 import data.SaveData;
 
-// element classes
-import elements.*;
-import elements.actor.*;
-import elements.actor.sparrow.*;
-import elements.actor.animate.*;
-import elements.display.*;
-import elements.sprites.*;
-import elements.text.*;
+// RENDERING
+import render.*;
+import render.actor.*;
+import render.display.*;
+import render.text.*;
+import sprites.*;
 
-// render mode (ugly)
+// RENDER MODE
 import ffmpeg.*;
 
-#if FV_DEBUG import debug.*; #end
+#if FV_DEBUG import tooling.*; #end
 
-// now the music
+// AUDIO
 import miniaudio.*;
-import music.*;
+import rhythm.*;
 
-// main structures
-import structures.*;
+// MENUS
+import menus.*;
 
-// editor structures
-import structures.editors.*;
+// GAMEPLAY
+import gameplay.*;
 
-// gameplay structures
-import structures.gameplay.*;
+// OVERLAYS
+import overlay.*;
 
-// notes structure
-// (cuz 11 classes start with `Note` funnily enough)
-import structures.notes.*;
+// INPUT & HANDLER
+import handler.*;
 
-// and now the option structures
-import structures.options.*;
-
-// and then the rest of the imports
-import system.*;
-import tests.*;
-import utils.*;
+// TOOLING & INFRASTRUCTURE
+import tooling.*;
+import tooling.fvlua.*;
+import tooling.fvlua.components.*;
 
 // HELPERS
 import haxe.Int64;
@@ -73,8 +66,6 @@ import llua.State;
 import llua.Convert;
 //import llua.Buffer as LuaBuffer; // not to be confused with peote.view.Buffer
 import llua.Lua.Lua_helper;
-import fvlua.*;
-import fvlua.components.*;
 #end
 
 // LIME SHIT
