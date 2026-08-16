@@ -237,7 +237,6 @@ class SaveData {
 	}
 
 	static function writeSync(bytes:String) {
-		trace('Saving data...');
 		try {
 			// Runs on a background thread (or synchronously on window close).
 			var fo:FileOutput = File.write("save.dat");

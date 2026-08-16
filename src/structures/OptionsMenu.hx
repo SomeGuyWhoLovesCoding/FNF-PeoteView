@@ -21,7 +21,7 @@ class OptionsMenu extends MenuInput {
 	static var optionsProg(default, null):CustomProgram;
 
 	static inline var CATEGORY_COUNT = 4;
-	static inline var NAV_HINT_TEXT = #if !android "Mousewheel or " + #end "CTRL+LEFT/RIGHT Navigate | UP/DOWN Navigate option | ACCEPT Toggle option (shows live preview at gameplay state)";
+	static inline var NAV_HINT_TEXT = "CTRL+LEFT/RIGHT Navigate | UP/DOWN Navigate option | ACCEPT Toggle option (shows live preview at gameplay state)";
 
 	var categoryNav(default, null):Navigation = new Navigation();
 	var optionsNav(default, null):Navigation = new Navigation();

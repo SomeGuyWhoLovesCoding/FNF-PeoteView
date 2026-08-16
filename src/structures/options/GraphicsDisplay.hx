@@ -31,7 +31,7 @@ class GraphicsDisplay extends OptionsSubDisplay {
 		"Enable/disable compressed texture support.\n\nFunkin' View has two main methods: ASTC and BC7\nBC7 is mainstream for PC and ASTC is mainstream on mobile devices, like android.\n\nThis requires a session restart for changes to be made."
 	];
 
-	static var FRAMERATES:Array<Float> = [30, 50, 60, 75, 120, 144, 165, 240];
+	static var FRAMERATES:Array<Float> = [30, 50, 60, 75, 90, 120, 144, 165, 180, 240, 360, 480];
 	static var RESOLUTIONS:Array<Array<Int>> = [
 		[1280, 720],
 		[1600, 900],
@@ -136,6 +136,12 @@ class GraphicsDisplay extends OptionsSubDisplay {
 			var value = getValueString(index);
 			var help = graphicsStr[index] == "frameRate" ? "\nSHIFT+LEFT/RIGHT changes framerate." : "\nPress ENTER to change.";
 			var combined = '$name: $desc\nCurrent: $value$help';
+
+			if (graphicsStr[index] == "frameRate" && Std.parseInt(value) >= 240) {
+				combined += "\n\nNOTE: Anything over 240 will tank performance\ndue to excess GPU usage. ";
+				combined += "If you really want, I'd recommend\nbalancing between framerate and performance and\nactually have a display with a Hz that high.";
+			}
+
 			if (combined != _lastInfoText) {
 				_lastInfoText = combined;
 				infoText.text = combined;
@@ -238,7 +244,7 @@ class GraphicsDisplay extends OptionsSubDisplay {
 		if (index < 0 || index >= graphicsStr.length)
 			return;
 
-		if (!keyModifier.shiftKey && graphicsStr[index] != "frameRate")
+		if (graphicsStr[index] != "frameRate")
 			return;
 		switch (keyCode) {
 			case KeyCode.LEFT:
