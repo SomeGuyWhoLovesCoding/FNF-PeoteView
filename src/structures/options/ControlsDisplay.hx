@@ -118,6 +118,8 @@ class ControlsDisplay extends OptionsSubDisplay {
 		binding = false;
 		bindingIndex = -1;
 		processingBinding = false;
+		bindingMania = false;
+		maniaBindNum = 0;
 	}
 
 	function resetHostState() {
@@ -179,7 +181,7 @@ class ControlsDisplay extends OptionsSubDisplay {
 			} else {
 				str += "#M3#Currently binding...#M3#\n";
 			}
-			var keybindArr = SaveData.state.controls.game.keybindArray[curManiaNum];
+			var keybindArr = maniaKeybindArray(curManiaNum);
 			for (k in 0...keybindArr.length) {
 				var maniaBinds = keybindArr[k];
 				str += (maniaBindNum == k && maniaSubBindNum == 0) ? "#M1#[ #M1#" : "[ ";
@@ -278,7 +280,7 @@ class ControlsDisplay extends OptionsSubDisplay {
 				return;
 			}
 			if ((keyModifier == KeyModifier.LEFT_ALT || keyModifier == KeyModifier.RIGHT_ALT)) {
-				var keybindsArr = SaveData.state.controls.game.keybindArray[curManiaNum];
+				var keybindsArr = maniaKeybindArray(curManiaNum);
 				switch (keyCode) {
 					case KeyCode.UP:
 						maniaBindNum = Std.int(Math.max(0, maniaBindNum - 1));
@@ -305,8 +307,19 @@ class ControlsDisplay extends OptionsSubDisplay {
 		}
 	}
 
+	/**
+		Returns the mania keybind slot list for `maniaId`, or an empty list when the
+		loaded save file predates / omits that mania so callers never dereference null.
+	**/
+	function maniaKeybindArray(maniaId:Int):Array<Array<KeyCode>> {
+		var all = SaveData.state.controls.game.keybindArray;
+		if (all == null || maniaId < 0 || maniaId >= all.length || all[maniaId] == null)
+			return [];
+		return all[maniaId];
+	}
+
 	function findManiaConflict(keyCode:KeyCode, maniaId:Int, currentSlot:Int, currentSub:Int):String {
-		var keybindsArr = SaveData.state.controls.game.keybindArray[maniaId];
+		var keybindsArr = maniaKeybindArray(maniaId);
 		for (s in 0...keybindsArr.length) {
 			var slot = keybindsArr[s];
 			for (sub in 0...slot.length) {
@@ -434,8 +447,13 @@ class ControlsDisplay extends OptionsSubDisplay {
 		}
 
 		var id = curManiaNum;
-		var keybindsArr = controls.game.keybindArray[id];
+		var keybindsArr = maniaKeybindArray(id);
 		var keybindArr = keybindsArr[maniaBindNum];
+		if (keybindArr == null) {
+			// No slot list for this mania in the loaded save file; nothing to bind.
+			Main.current.playCancelSound();
+			return;
+		}
 
 		if (keyCode == controls.ui.back) {
 			var defaults = SaveData.getDefaultState();
@@ -514,7 +532,7 @@ class ControlsDisplay extends OptionsSubDisplay {
 
 	function fixMania() {
 		var id = curManiaNum;
-		var keybindsArr = SaveData.state.controls.game.keybindArray[id];
+		var keybindsArr = maniaKeybindArray(id);
 		for (i in 0...keybindsArr.length) {
 			for (j in 0...keybindsArr[i].length) {
 				if (keybindsArr[i][j] == KeyCode.UNKNOWN)

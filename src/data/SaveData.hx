@@ -139,9 +139,14 @@ class SaveData {
 		try {
 			result = SaveData_Securer.unlock(File.getContent("save.dat"));
 		} catch (e) {
-			open();
+			// Corrupt / unreadable save file: fall back to defaults instead of
+			// recursing forever (old code re-called open(), overflowing the stack).
+			trace('Save file could not be loaded; using defaults.');
+			state = getDefaultState();
 			return;
 		}
+		if (result == null)
+			result = getDefaultState();
 		trace('Savedata file loaded...');
 		state = result;
 	}

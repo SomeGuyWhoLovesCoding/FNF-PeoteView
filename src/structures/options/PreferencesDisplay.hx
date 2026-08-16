@@ -218,6 +218,7 @@ class PreferencesDisplay extends OptionsSubDisplay {
 		var field = prefsStr[Math.floor(curSelectedTarget)];
 		var optionChecked = Reflect.getProperty(SaveData.state.preferences, field);
 		Reflect.setProperty(SaveData.state.preferences, field, !optionChecked);
+		SaveData.save();
 		_titleCache = [];
 
 		var pf = Main.current.playField;

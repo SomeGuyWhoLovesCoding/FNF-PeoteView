@@ -208,6 +208,7 @@ class PerformanceDisplay extends OptionsSubDisplay {
 		var field = perfStr[Math.floor(curSelectedTarget)];
 		var optionChecked = Reflect.getProperty(SaveData.state.preferences, field);
 		Reflect.setProperty(SaveData.state.preferences, field, !optionChecked);
+		SaveData.save();
 		_titleCache = [];
 
 		// Apply side effects per-toggle.
