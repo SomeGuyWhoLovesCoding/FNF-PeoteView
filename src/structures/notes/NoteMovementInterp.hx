@@ -35,14 +35,15 @@ enum abstract OnValue(Int64) from Int64 to Int64 {
 @:final
 class NoteMovementInterp {
 	var codeBlocks:Array<Int64> = [];
-	var args:Array<Int> = [];
-	var constants:Array<Float> = [];
+	public var args:Array<Int> = [];
+	public var ops:Array<Int> = [];
+	public var constants:Array<Float> = [];
 
 	var varMap:FakeStringMap<Int>;
 	var varCount:Int;
 
-	var locals:Vector<Float>;
-	var stack:Vector<Float>;
+	public var locals:Vector<Float>;
+	public var stack:Vector<Float>;
 	var stackPtr:Int;
 	var argPtr:Int;
 
@@ -305,6 +306,7 @@ class NoteMovementInterp {
 			codeBlocks.push(Int64.make(high, low));
 		}
 		args = argsBuffer;
+		ops = opcodeBuffer;
 	}
 
 	var currentPos:Int = 0;

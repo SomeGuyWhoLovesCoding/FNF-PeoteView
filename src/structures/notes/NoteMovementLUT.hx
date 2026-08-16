@@ -158,6 +158,11 @@ class NoteMovementLUT {
 		var s = sinDir;
 		var base = this.minDiff;
 
+		// Fast sweep: classifies each SIN/COS site over the first 3 rows and
+		// evaluates them via constant-folding / recurrence instead of calling
+		// Math.sin/Math.cos at every one of the `entries` rows.
+		var sweep = new NoteFastSweep(interp, base);
+
 		for (i in 0...entries) {
 			var diff:Float = base + i;
 
@@ -172,7 +177,7 @@ class NoteMovementLUT {
 			baseResult.sustainRot = 0.0;
 			baseResult.scrollMultiplier = 1.0;
 
-			var result = interp.run(diff, scrollSpeed, receptorX, receptorY, index, type, baseResult);
+			var result = sweep.run(i, diff, scrollSpeed, receptorX, receptorY, index, type, baseResult);
 			if (result != null) {
 				offsetX[i] = Math.round(result.x - receptorX);
 				offsetY[i] = Math.round(result.y - receptorY);
