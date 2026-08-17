@@ -40,8 +40,6 @@
 			<!-- Allow working memory greater than 1 gigabyte -->
 			<haxedef name="HXCPP_GC_BIG_BLOCKS" />
 
-			<!-- Latency-sensitive settings for funkin' view -->
-			<haxedef name="HXCPP_GC_DYNAMIC_SIZE" if="release" />
 			<!-- Compile-time feature functionality dedicated to Funkin' View -->
 			<haxedef name="HXCPP_TRACY" if="FV_PROFILE" />
 			<haxedef name="HXCPP_TELEMETRY" if="FV_PROFILE" />
