@@ -4,7 +4,7 @@ Funkin' View is a remake of [Friday Night Funkin'](https://www.github.com/Funkin
 
 Refer to [the wiki](https://github.com/SomeGuyWhoLovesCoding/FNF-PeoteView/wiki/The-Basics) for more info.
 
-**NOTE:** As of right now, FV may be less stable on AMD GPUs. Please be sure to test the latest stable action build with the green checkmark on it to see if you get any issues.
+**NOTE:** As of right now, Funkin' View is already not so stable (even less on AMD GPUs). Please pull in issue requests if you somehow manage to crack whatever causes it. Be sure to test the latest stable action build with the green checkmark on it to see if you get any issues.
 
 ## Links
 - [Discord Server](https://discord.gg/XrV2UmRbNM)

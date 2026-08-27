@@ -83,15 +83,21 @@ class FreeplayMenu extends MenuInput {
 
 	override function open() {
 		Main.current.popupFreeplayMenu();
+		trace('Main.current.popupFreeplayMenu');
 
 		opened = active = true;
+		trace('opened = active = true;');
 
 		Main.current.stateMachine.setFocus(this);
+		trace('Main.current.stateMachine.setFocus(this)');
 
 		if (freeplayScreen.disposed) {
 			freeplayScreen.reload(freeplayScreen.chapter);
+			trace('freeplayScreen.reload(freeplayScreen.chapter)');
 		}
+
 		freeplayScreen.addPrograms();
+		trace('freeplayScreen.addPrograms()');
 	}
 
 	function reload(newChapter:String) {
