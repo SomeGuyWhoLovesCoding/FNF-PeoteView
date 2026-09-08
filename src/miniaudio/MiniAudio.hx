@@ -5,7 +5,7 @@ package miniaudio;
  * C++ and HL.
  * @since Development
 **/
-#if cpp
+#if (cpp && !FV_NO_MINIAUDIO)
 import cpp.ConstCharStar;
 
 @:buildXml('<include name="../../../miniaudioBuild.xml" />')
@@ -61,7 +61,7 @@ extern class MiniAudio {
 	@:native("getMixerMasterVolume") static function getMixerMasterVolume():Float;
 	@:native("setMixerMasterVolume") static function setMixerMasterVolume(volume:Float):Float;
 }
-#elseif hl
+#elseif (hl && !FV_NO_MINIAUDIO)
 class MiniAudio {
 	// THE MAIN STUFF
 	@:hlNative("ma_thing", "destroy") public static function destroy():Void {}
@@ -183,7 +183,7 @@ class MiniAudio {
 
 	public static function setStretchEnabled(enabled:Bool):Void {}
 
-	public static function seekToPCMFrame(pos:hl.I64):Void {}
+	public static function seekToPCMFrame(pos:Int64):Void {}
 
 	public static function deactivate_decoder(index:Int):Void {}
 

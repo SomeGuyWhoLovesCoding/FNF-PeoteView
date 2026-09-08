@@ -6,6 +6,8 @@ Refer to [the wiki](https://github.com/SomeGuyWhoLovesCoding/FNF-PeoteView/wiki/
 
 **NOTE:** As of right now, Funkin' View is already not so stable (even less on AMD GPUs). Please pull in issue requests if you somehow manage to crack whatever causes it. Be sure to test the latest stable action build with the green checkmark on it to see if you get any issues.
 
+Test with the `FV_NO_MINIAUDIO` flag to isolate quick debug.
+
 ## Links
 - [Discord Server](https://discord.gg/XrV2UmRbNM)
 - [Prerelease Builds](https://github.com/SomeGuyWhoLovesCoding/FNF-PeoteView/actions/workflows/main.yml) (GitHub Actions) - Requires you to be logged into GitHub to download the latest builds.
