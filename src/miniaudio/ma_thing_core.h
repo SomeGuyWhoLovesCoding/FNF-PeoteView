@@ -102,6 +102,48 @@ std::atomic<double> MUSIC_MASTER_VOLUME_099{1.0f};
 // overflowed pitchInputMix for rate > 1).
 #define MAX_PITCH_FRAMES   (MAX_CALLBACK_FRAMES * 4)
 
+// ---- surround sound system (AudioSampleUnified) ---------------------------
+//
+// The song mixer can run in two output layouts, toggled at runtime:
+//
+//   Stereo   (2 channels)  — FL / FR.  Every decoder stream is mixed straight
+//                          into the front pair, exactly like the classic
+//                          engine behavior.  Music and sound stay stereo.
+//
+//   Surround (3.1, 4 channels) — FL / FR / C / LFE.  Each decoder stream
+//                          (inst, voices, ...) is routed into one of the
+//                          channel buses identified by MaThingAudioChannel:
+//
+//     CENTER     — the center speaker.  Voices play here as a mono feed,
+//                  pulling them out of the stereo image.
+//     BACKGROUND — the front left/right pair.  The instrumental stays here,
+//                  full-range and wide.
+//     SUB        — the subwoofer (LFE).  Streams routed here play only
+//                  their low-passed content; streams on the other buses are
+//                  additionally bass-managed into the LFE so the ".1" always
+//                  gets the low end of the song.
+//
+// The decoders themselves stay stereo (CHANNEL_COUNT); only the playback
+// device widens to 4 channels.  The AudioMixerManager (background music and
+// sound effects) always remains stereo.
+#define SURROUND_CHANNEL_COUNT 4
+
+// One-pole low-pass coefficient for the LFE feed: fc ≈ 120 Hz @ 44100 Hz.
+//   coef = 1 - exp(-2π * fc / sampleRate)
+#define SURROUND_LPF_COEF   0.016951f
+// Bass-managed streams (CENTER/BACKGROUND) feed the LFE slightly quieter than
+// streams routed to SUB itself, which get their full (low-passed) content.
+#define SURROUND_LFE_BASS_GAIN 0.75f
+#define SURROUND_LFE_FULL_GAIN 1.0f
+
+// Song channel bus identifiers.  Values must stay in sync with the Haxe
+// `AudioChannelIdentifier` enum abstract in rhythm.AudioSampleUnified.
+enum MaThingAudioChannel {
+    MA_CH_CENTER     = 0,   // center speaker — vocals bus
+    MA_CH_BACKGROUND = 1,   // front L/R pair — instrumental bus
+    MA_CH_SUB        = 2    // subwoofer (LFE) — bass bus
+};
+
 // ---- SIMD mix helpers -------------------------
 
 #ifdef __SSE__
@@ -798,14 +840,25 @@ public:
     };
 
     StretchPipeline() {
-        inSamples.assign(RING_FRAMES * CHANNEL_COUNT, 0.0f);
-        outSamples.assign(RING_FRAMES * CHANNEL_COUNT, 0.0f);
-        workIn.assign(MAX_PITCH_FRAMES * CHANNEL_COUNT, 0.0f);
-        workOut.assign(MAX_CALLBACK_FRAMES * CHANNEL_COUNT, 0.0f);
-        stretch.configure(CHANNEL_COUNT, int(SAMPLE_RATE * 0.1), int(SAMPLE_RATE * 0.05));
+        configureChannels(CHANNEL_COUNT);
     }
 
     ~StretchPipeline() { stop(); }
+
+    // The stretch engine processes the song in the device's output layout so
+    // pitched playback can carry the 3.1 surround buses natively.  Only call
+    // while the worker is stopped (device stopped / pipeline reset), i.e. on
+    // load or on a stereo <-> surround output toggle.
+    void configureChannels(int ch) {
+        if (channels == ch && !inSamples.empty()) return;
+        stop();
+        channels = ch;
+        inSamples.assign(RING_FRAMES * channels, 0.0f);
+        outSamples.assign(RING_FRAMES * channels, 0.0f);
+        workIn.assign(MAX_PITCH_FRAMES * channels, 0.0f);
+        workOut.assign(MAX_CALLBACK_FRAMES * channels, 0.0f);
+        stretch.configure(channels, int(SAMPLE_RATE * 0.1), int(SAMPLE_RATE * 0.05));
+    }
 
     // ---- audio thread -----------------------------------------------
     bool push(const float* input, ma_uint32 inFrames, ma_uint32 outFrames) {
@@ -854,6 +907,7 @@ public:
 
 private:
     signalsmith::stretch::SignalsmithStretch stretch;
+    int channels = CHANNEL_COUNT;   // output layout this pipeline stretches
     std::vector<float> inSamples, outSamples, workIn, workOut;
     std::array<ChunkDesc, MAX_CHUNKS> chunks;
 
@@ -877,21 +931,21 @@ private:
         }
     }
 
-    static void writeSamples(float* dst, size_t at, const float* src, ma_uint32 frames) {
-        size_t offset = (at & RING_MASK) * CHANNEL_COUNT;
+    void writeSamples(float* dst, size_t at, const float* src, ma_uint32 frames) {
+        size_t offset = (at & RING_MASK) * channels;
         size_t first  = std::min<size_t>(frames, RING_FRAMES - (at & RING_MASK));
-        size_t total  = (size_t)frames * CHANNEL_COUNT;
-        memcpy(dst + offset, src, first * CHANNEL_COUNT * sizeof(float));
+        size_t total  = (size_t)frames * channels;
+        memcpy(dst + offset, src, first * channels * sizeof(float));
         if (frames > first)
-            memcpy(dst, src + first * CHANNEL_COUNT, (total - first * CHANNEL_COUNT) * sizeof(float));
+            memcpy(dst, src + first * channels, (total - first * channels) * sizeof(float));
     }
 
-    static void readSamples(const float* src, size_t at, float* dst, ma_uint32 frames) {
-        size_t offset = (at & RING_MASK) * CHANNEL_COUNT;
+    void readSamples(const float* src, size_t at, float* dst, ma_uint32 frames) {
+        size_t offset = (at & RING_MASK) * channels;
         size_t first  = std::min<size_t>(frames, RING_FRAMES - (at & RING_MASK));
-        memcpy(dst, src + offset, first * CHANNEL_COUNT * sizeof(float));
+        memcpy(dst, src + offset, first * channels * sizeof(float));
         if (frames > first)
-            memcpy(dst + first * CHANNEL_COUNT, src, (frames - first) * CHANNEL_COUNT * sizeof(float));
+            memcpy(dst + first * channels, src, (frames - first) * channels * sizeof(float));
     }
 
     void workerLoop() {
@@ -943,8 +997,28 @@ public:
     std::atomic<bool> exists{false};
     std::atomic<bool> stretchEnabled{true}; //BOTTLENECK: high改善 [opt-in] FFT time-stretch toggle; when false, pitched playback uses linear resample instead of SignalsmithStretch
 
-    // Staging mix for pitched playback. Sized for up to 4x playback rate.
-    float pitchInputMix[MAX_PITCH_FRAMES * CHANNEL_COUNT] = {};
+    // ---- surround sound system (AudioSampleUnified) ----
+    // Output layout of the song device: CHANNEL_COUNT (stereo) or
+    // SURROUND_CHANNEL_COUNT (3.1).  Only mutated while the device is stopped,
+    // but read every callback, hence atomic.
+    std::atomic<bool> surroundEnabled{false};
+    std::atomic<int>  playbackChannels{CHANNEL_COUNT};
+    // Per-stream routing: which surround bus each decoder feeds.  Indexed by
+    // decoder (track) order, values are MaThingAudioChannel.  Written from the
+    // game thread while the device may be running; the callback reads it per
+    // stream per callback, so atomic elements keep the read wait-free.  A    // deque because std::atomic is neither movable nor copyable, which makes    // vector's reallocation ill-formed; deque never relocates its elements.
+    std::deque<std::atomic<int>> streamChannels;
+    // Per-stream one-pole low-pass state for the LFE feed (audio thread only).
+    std::vector<float> streamLpfState;
+
+    // Staging mix for pitched playback. Sized for up to 4x playback rate in
+    // the widest layout (3.1).
+    float pitchInputMix[MAX_PITCH_FRAMES * SURROUND_CHANNEL_COUNT] = {};
+
+    // Per-stream stereo staging used by the surround routing pass so each
+    // decoder can be read from its triple-buffered PCM and then distributed
+    // into the 3.1 output independently. Scratch only — never moved/copied.
+    float streamStage[MAX_CALLBACK_FRAMES * CHANNEL_COUNT] = {};
 
     // Prediction state for smooth 0.1ms audio time between callback updates
     mutable std::atomic<ma_uint64> lastQueriedFrames{0};
@@ -1054,22 +1128,48 @@ public:
         if (asyncLoader) delete asyncLoader;
         asyncLoader = new AsyncLoader(streamPtrs);
 
+        // ---- surround routing defaults (AudioSampleUnified) ----
+        // Track 0 is the inst -> BACKGROUND front pair; every following track
+        // is a voices stem -> CENTER speaker.  The Haxe unified system can
+        // re-route any track afterwards via setStreamChannel().
+        streamChannels.clear();
+        streamLpfState.assign(streams.size(), 0.0f);
+        for (size_t i = 0; i < streams.size(); i++) {
+            streamChannels.emplace_back((i == 0) ? MA_CH_BACKGROUND : MA_CH_CENTER);
+        }
+
+        // Open the device in the saved output layout (stereo or 3.1).  If a
+        // 4-channel device cannot be opened, fall back to stereo rather than
+        // losing song audio entirely.
+        int wantedChannels = surroundEnabled.load(std::memory_order_acquire)
+                           ? SURROUND_CHANNEL_COUNT : CHANNEL_COUNT;
+        playbackChannels.store(wantedChannels, std::memory_order_release);
+
         ma_device_config deviceConfig = ma_device_config_init(ma_device_type_playback);
         deviceConfig.playback.format   = SAMPLE_FORMAT;
-        deviceConfig.playback.channels = CHANNEL_COUNT;
+        deviceConfig.playback.channels = wantedChannels;
         deviceConfig.sampleRate        = SAMPLE_RATE;
         deviceConfig.dataCallback      = data_callback;
         deviceConfig.pUserData         = this;
 
-        if (ma_device_init(nullptr, &deviceConfig, &device) != MA_SUCCESS) {
-            streams.clear(); decoderVolumes.clear(); filePaths.clear();
-            printf("Failed to open playback device.\n");
-            return;
+        if (ma_device_init(nullptr, &deviceConfig, &device) != MA_SUCCESS && wantedChannels != CHANNEL_COUNT) {
+            playbackChannels.store(CHANNEL_COUNT, std::memory_order_release);
+            surroundEnabled.store(false, std::memory_order_release);
+            deviceConfig.playback.channels = CHANNEL_COUNT;
+            if (ma_device_init(nullptr, &deviceConfig, &device) != MA_SUCCESS) {
+                streams.clear(); decoderVolumes.clear(); filePaths.clear();
+                streamChannels.clear(); streamLpfState.clear();
+                printf("Failed to open playback device.\n");
+                return;
+            }
+            printf("Surround Sound 3.1 unavailable on this device; falling back to stereo.\n");
         }
 
-        // destroy() tore the stretch pipeline down; recreate it for this song.
+        // The stretch pipeline must process the same layout the device plays.
         if (!stretchPipe)
             stretchPipe = new StretchPipeline();
+        stretchPipe->reset();
+        stretchPipe->configureChannels(playbackChannels.load(std::memory_order_acquire));
 
         exists.store(true, std::memory_order_release);
         mixerState.store(3, std::memory_order_release);
@@ -1092,6 +1192,8 @@ public:
         decoderVolumes.clear();
         filePaths.clear();
         streamPtrs.clear();
+        streamChannels.clear();
+        streamLpfState.clear();
         
         if (stretchPipe) {
             delete stretchPipe;      // stops the stretch worker thread
@@ -1224,6 +1326,84 @@ public:
     double setGlobalVolume(double v)    { MUSIC_MASTER_VOLUME_099.store(v, std::memory_order_relaxed); return v; }
     int    getMixerState() const        { return mixerState.load(std::memory_order_acquire); }
 
+    // ---- surround sound system (AudioSampleUnified) ----
+
+    bool isSurroundEnabled() const { return surroundEnabled.load(std::memory_order_acquire); }
+
+    // Toggles the song device between stereo (2 channels) and Surround Sound
+    // 3.1 (4 channels: FL/FR/C/LFE).  The device is re-opened in the new
+    // layout; playback state (playing/paused/position) is preserved.  Safe to
+    // call while a song is loaded and even while it is playing.
+    void setSurroundEnabled(bool enable) {
+        bool prev = surroundEnabled.exchange(enable, std::memory_order_acq_rel);
+        if (prev == enable) return;
+
+        int wanted = enable ? SURROUND_CHANNEL_COUNT : CHANNEL_COUNT;
+
+        if (!exists.load(std::memory_order_acquire)) {
+            // No song loaded yet: just record the layout for the next loadFiles.
+            playbackChannels.store(wanted, std::memory_order_release);
+            if (stretchPipe) { stretchPipe->reset(); stretchPipe->configureChannels(wanted); }
+            return;
+        }
+
+        int  prevState  = mixerState.load(std::memory_order_acquire);
+        bool wasPlaying = (prevState == 1);
+
+        // Stop and tear down the device so the callback can never observe a
+        // half-reconfigured state, then re-open it with the new channel count.
+        ma_device_stop(&device);
+        if (stretchPipe) stretchPipe->reset();   // drop chunks stretched in the old layout
+        ma_device_uninit(&device);
+        memset(&device, 0, sizeof(ma_device));
+
+        ma_device_config cfg = ma_device_config_init(ma_device_type_playback);
+        cfg.playback.format   = SAMPLE_FORMAT;
+        cfg.playback.channels = wanted;
+        cfg.sampleRate        = SAMPLE_RATE;
+        cfg.dataCallback      = data_callback;
+        cfg.pUserData         = this;
+
+        if (ma_device_init(nullptr, &cfg, &device) != MA_SUCCESS && wanted != CHANNEL_COUNT) {
+            // 3.1 not supported by the endpoint: fall back to stereo instead
+            // of losing song audio entirely.
+            playbackChannels.store(CHANNEL_COUNT, std::memory_order_release);
+            surroundEnabled.store(false, std::memory_order_release);
+            cfg.playback.channels = CHANNEL_COUNT;
+            if (ma_device_init(nullptr, &cfg, &device) != MA_SUCCESS) {
+                mixerState.store(3, std::memory_order_release);
+                return;
+            }
+            printf("Surround Sound 3.1 unavailable on this device; falling back to stereo.\n");
+        } else {
+            playbackChannels.store(wanted, std::memory_order_release);
+        }
+
+        // The stretch engine must process the same layout the device plays.
+        if (stretchPipe) { stretchPipe->reset(); stretchPipe->configureChannels(playbackChannels.load(std::memory_order_acquire)); }
+
+        if (wasPlaying) {
+            mixerState.store(1, std::memory_order_release);
+            ma_device_start(&device);
+        } else {
+            mixerState.store(prevState, std::memory_order_release);
+        }
+    }
+
+    // Routes one decoded song track (inst / voices / ...) into a surround
+    // channel bus.  `channel` is a MaThingAudioChannel identifier.
+    void setStreamChannel(int index, int channel) {
+        if (index >= 0 && index < (int)streamChannels.size() &&
+            channel >= MA_CH_CENTER && channel <= MA_CH_SUB)
+            streamChannels[index].store(channel, std::memory_order_release);
+    }
+
+    int getStreamChannel(int index) const {
+        if (index >= 0 && index < (int)streamChannels.size())
+            return streamChannels[index].load(std::memory_order_acquire);
+        return (index == 0) ? MA_CH_BACKGROUND : MA_CH_CENTER;
+    }
+
     // Returns smooth predicted playback position in milliseconds (0.1ms resolution)
     // Automatically interpolates between audio callback updates using system clock
     double getPlaybackPosition() const {
@@ -1280,6 +1460,8 @@ private:
 
     void fillInitialBuffer(size_t index, ma_uint64 startFrame) {
         DecoderStream& s = streams[index];
+        // Seeking restarts the source: the LFE low-pass state must restart too.
+        if (index < streamLpfState.size()) streamLpfState[index] = 0.0f;
         ma_uint64 decodeStart = (startFrame > PADDING_FRAMES) ? startFrame - PADDING_FRAMES : 0;
 
         ma_uint64 framesRead = 0;
@@ -1327,6 +1509,59 @@ private:
         s.asyncState.loadingBufferStartPos    = start;
         s.asyncState.loadingBufferValidFrames = framesRead;
         s.asyncState.loadingBufferReady.store(true, std::memory_order_release);
+    }
+
+    // -----------------------------------------------------------------------
+    // Surround routing (AudioSampleUnified)
+    //
+    // Distributes one decoder stream's interleaved stereo staging mix into
+    // the interleaved output according to the stream's channel bus
+    // (MaThingAudioChannel).  `stage` holds `outFrames` stereo frames;
+    // `out` holds `outCh` interleaved channels per frame (3.1 = FL/FR/C/LFE).
+    // Also advances the stream's one-pole low-pass state that feeds the
+    // subwoofer (bass management), exactly one filter step per frame so the
+    // state stays consistent no matter which bus the stream lives on.
+    void routeStreamToOutput(size_t index, const float* stage, float* out,
+                             ma_uint32 outFrames, int outCh) {
+        const int route = streamChannels[index].load(std::memory_order_acquire);
+        float lpf = streamLpfState[index];
+
+        if (outCh == SURROUND_CHANNEL_COUNT) {
+            switch (route) {
+                case MA_CH_CENTER:     // mono vocals straight into the center speaker
+                    for (ma_uint32 f = 0; f < outFrames; f++) {
+                        float sl = stage[f * 2], sr = stage[f * 2 + 1];
+                        float mono = (sl + sr) * 0.5f;
+                        lpf += SURROUND_LPF_COEF * (mono - lpf);
+                        float* d = out + f * outCh;
+                        d[2] += mono;
+                        d[3] += lpf * SURROUND_LFE_BASS_GAIN;
+                    }
+                    break;
+                case MA_CH_SUB:        // only the low end reaches the subwoofer
+                    for (ma_uint32 f = 0; f < outFrames; f++) {
+                        float sl = stage[f * 2], sr = stage[f * 2 + 1];
+                        float mono = (sl + sr) * 0.5f;
+                        lpf += SURROUND_LPF_COEF * (mono - lpf);
+                        out[f * outCh + 3] += lpf * SURROUND_LFE_FULL_GAIN;
+                    }
+                    break;
+                case MA_CH_BACKGROUND: // full-range wide front pair + bass management
+                default:
+                    for (ma_uint32 f = 0; f < outFrames; f++) {
+                        float sl = stage[f * 2], sr = stage[f * 2 + 1];
+                        float mono = (sl + sr) * 0.5f;
+                        lpf += SURROUND_LPF_COEF * (mono - lpf);
+                        float* d = out + f * outCh;
+                        d[0] += sl;
+                        d[1] += sr;
+                        d[3] += lpf * SURROUND_LFE_BASS_GAIN;
+                    }
+                    break;
+            }
+        }
+
+        streamLpfState[index] = lpf;
     }
 
     ma_uint32 readFromBuffer(size_t index, float* output, ma_uint32 requestedFrames) {
@@ -1422,7 +1657,8 @@ private:
         if (!sys || !sys->exists.load(std::memory_order_acquire)) return;
 
         float* out = (float*)pOutput;
-        memset(out, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
+        int outCh = sys->playbackChannels.load(std::memory_order_relaxed);
+        memset(out, 0, sizeof(float) * frameCount * outCh);
 
         // Update prediction anchor every callback (~10ms) to prevent drift.
         // Anchor to the REAL consumed source position (longest stream's
@@ -1457,7 +1693,19 @@ private:
         if (rate == 1.0f) {
             for (size_t i = 0; i < sys->streams.size(); i++) {
                 if (!sys->streams[i].active.load(std::memory_order_acquire)) continue;
-                ma_uint32 read = sys->readFromBuffer(i, out, frameCount);
+
+                ma_uint32 read;
+                if (outCh == SURROUND_CHANNEL_COUNT) {
+                    // Surround Sound 3.1: read the stream into a stereo stage,
+                    // then distribute it into FL/FR/C/LFE via its channel bus.
+                    memset(sys->streamStage, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
+                    read = sys->readFromBuffer(i, sys->streamStage, frameCount);
+                    if (read > 0) sys->routeStreamToOutput(i, sys->streamStage, out, frameCount, outCh);
+                } else {
+                    // Stereo: mix straight into the front pair (classic path).
+                    read = sys->readFromBuffer(i, out, frameCount);
+                }
+
                 if (read > 0) anyActive = true;
                 if (read < frameCount && sys->streams[i].active.load(std::memory_order_acquire))
                     anyRefill = true;
@@ -1481,13 +1729,25 @@ private:
             ma_uint32 maxToRead = (ma_uint32)exactRead;
             if (maxToRead > MAX_PITCH_FRAMES) maxToRead = MAX_PITCH_FRAMES;
 
-            memset(inputMix, 0, sizeof(float) * maxToRead * CHANNEL_COUNT);
+            memset(inputMix, 0, sizeof(float) * maxToRead * outCh);
 
             positionError = exactRead - maxToRead;
 
             for (size_t i = 0; i < sys->streams.size(); i++) {
                 if (!sys->streams[i].active.load(std::memory_order_acquire)) continue;
-                ma_uint32 read = sys->readFromBuffer(i, inputMix, maxToRead);
+
+                ma_uint32 read;
+                if (outCh == SURROUND_CHANNEL_COUNT) {
+                    // Surround Sound 3.1: route each stream into its bus of
+                    // the pitched staging mix so the stretch engine carries
+                    // the full 3.1 layout.
+                    memset(sys->streamStage, 0, sizeof(float) * maxToRead * CHANNEL_COUNT);
+                    read = sys->readFromBuffer(i, sys->streamStage, maxToRead);
+                    if (read > 0) sys->routeStreamToOutput(i, sys->streamStage, inputMix, maxToRead, outCh);
+                } else {
+                    read = sys->readFromBuffer(i, inputMix, maxToRead);
+                }
+
                 if (read > 0) anyActive = true;
                 if (read < maxToRead && sys->streams[i].active.load(std::memory_order_acquire))
                     anyRefill = true;
@@ -1513,10 +1773,10 @@ private:
                         if (i0 >= maxToRead) i0 = maxToRead - 1;
                         ma_uint32 i1 = (i0 + 1 < maxToRead) ? i0 + 1 : i0;
                         double frac = srcPos - (double)i0;
-                        for (int c = 0; c < CHANNEL_COUNT; c++) {
-                            float s0 = inputMix[i0 * CHANNEL_COUNT + c];
-                            float s1 = inputMix[i1 * CHANNEL_COUNT + c];
-                            out[o * CHANNEL_COUNT + c] = (float)(s0 + frac * (s1 - s0));
+                        for (int c = 0; c < outCh; c++) {
+                            float s0 = inputMix[i0 * outCh + c];
+                            float s1 = inputMix[i1 * outCh + c];
+                            out[o * outCh + c] = (float)(s0 + frac * (s1 - s0));
                         }
                     }
                 }
@@ -1545,6 +1805,13 @@ private:
         streamPtrs     = std::move(other.streamPtrs);
         stretchPipe    = other.stretchPipe;
         asyncLoader    = other.asyncLoader;
+
+        // Surround routing state (vector move steals the buffer; the atomic
+        // elements themselves are never moved).
+        streamChannels = std::move(other.streamChannels);
+        streamLpfState = std::move(other.streamLpfState);
+        playbackChannels.store(other.playbackChannels.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        surroundEnabled.store(other.surroundEnabled.load(std::memory_order_relaxed), std::memory_order_relaxed);
 
         memcpy(&device, &other.device, sizeof(ma_device));
         memset(&other.device, 0, sizeof(ma_device));
@@ -2119,4 +2386,4 @@ private:
 
         (void)pInput;
     }
-};
+};

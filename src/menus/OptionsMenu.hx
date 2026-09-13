@@ -20,7 +20,7 @@ class OptionsMenu extends MenuInput {
 	static var optionsBuf(default, null):Buffer<OptionsSprite>;
 	static var optionsProg(default, null):CustomProgram;
 
-	static inline var CATEGORY_COUNT = 4;
+	static inline var CATEGORY_COUNT = 5;
 	static inline var NAV_HINT_TEXT = "CTRL+LEFT/RIGHT Navigate | UP/DOWN Navigate option | ACCEPT Toggle option (shows live preview at gameplay state)";
 
 	var categoryNav(default, null):Navigation = new Navigation();
@@ -157,6 +157,8 @@ class OptionsMenu extends MenuInput {
 				result = GraphicsDisplay.graphicsStr.length;
 			case PERFORMANCE:
 				result = PerformanceDisplay.perfStr.length;
+			case AUDIO:
+				result = AudioDisplay.audioStr.length;
 		}
 
 		return result;
@@ -194,7 +196,7 @@ class OptionsMenu extends MenuInput {
 			return;
 		optionsNav.setTo(0);
 		categoryNav.scroll(-1);
-		categoryNav.resetIfUnder(3);
+		categoryNav.resetIfUnder(4);
 		optionsDisplay.reload(cast categoryNav.value());
 		Main.current.playScrollSound();
 	}

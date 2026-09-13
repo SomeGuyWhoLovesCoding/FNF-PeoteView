@@ -37,6 +37,13 @@ void setStretchEnabled(bool value)            { g_audioSystem.setStretchEnabled(
 double getGlobalVolume()                       { return g_audioSystem.getGlobalVolume(); }
 double setGlobalVolume(double value)           { return g_audioSystem.setGlobalVolume(value); }
 
+// ---- Surround sound system (AudioSampleUnified) --------------------------
+
+void setSurroundEnabled(bool enabled)          { g_audioSystem.setSurroundEnabled(enabled); }
+bool isSurroundEnabled(void)                   { return g_audioSystem.isSurroundEnabled(); }
+void setStreamChannel(int index, int channel)  { g_audioSystem.setStreamChannel(index, channel); }
+int  getStreamChannel(int index)               { return g_audioSystem.getStreamChannel(index); }
+
 int detectLatency() {
     int osMs = 50;
     return osMs;
@@ -58,4 +65,4 @@ bool isSoundEffectPlaying(int index)                          { return g_mixer.i
 
 double setMixerMasterVolume(double volume)  { return g_mixer.setMasterVolume(volume); }
 double getMixerMasterVolume()              { return g_mixer.getMasterVolume(); }
-void  destroyMixer()                      { g_mixer.destroy(); }
+void  destroyMixer()                      { g_mixer.destroy(); }

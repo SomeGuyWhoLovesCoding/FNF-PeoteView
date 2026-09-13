@@ -13,6 +13,15 @@ void deactivate_decoder(int index);
 void amplify_decoder(int index, double volume);
 void setPlaybackRate(float value);
 void setStretchEnabled(bool enabled);
+
+// Surround sound system (AudioSampleUnified).  Toggles the song mixer
+// between stereo (2 channels) and Surround Sound 3.1 (4 channels:
+// FL/FR/C/LFE) and routes decoder streams (inst, voices, ...) into the
+// channel buses identified by MaThingAudioChannel in ma_thing_core.h.
+void setSurroundEnabled(bool enabled);
+bool isSurroundEnabled(void);
+void setStreamChannel(int index, int channel);
+int  getStreamChannel(int index);
 void destroy(void);
 void start(void);
 void stop(void);

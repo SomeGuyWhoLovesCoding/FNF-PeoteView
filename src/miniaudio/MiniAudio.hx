@@ -31,6 +31,16 @@ extern class MiniAudio {
 
 	@:native("setPlaybackRate") static function setPlaybackRate(playbackRate:Float):Void;
 	@:native("setStretchEnabled") static function setStretchEnabled(enabled:Bool):Void;
+
+	// SURROUND SOUND SYSTEM (AudioSampleUnified)
+	// Toggles the song mixer between stereo (2 channels) and Surround
+	// Sound 3.1 (4 channels) and routes decoder streams (inst, voices)
+	// into the channel buses identified in rhythm.AudioSampleUnified.
+	@:native("setSurroundEnabled") static function setSurroundEnabled(enabled:Bool):Void;
+	@:native("isSurroundEnabled") static function isSurroundEnabled():Bool;
+	@:native("setStreamChannel") static function setStreamChannel(stream:Int, channel:Int):Void;
+	@:native("getStreamChannel") static function getStreamChannel(stream:Int):Int;
+
 	@:native("seekToPCMFrame") static function seekToPCMFrame(pos:Int64):Void;
 	@:native("deactivate_decoder") static function deactivate_decoder(index:Int):Void;
 	@:native("amplify_decoder") static function amplify_decoder(index:Int, volume:Float):Void;
@@ -99,6 +109,19 @@ class MiniAudio {
 	@:hlNative("ma_thing", "setPlaybackRate") public static function setPlaybackRate(playbackRate:Float):Void {}
 
 	@:hlNative("ma_thing", "setStretchEnabled") public static function setStretchEnabled(enabled:Bool):Void {}
+
+	// SURROUND SOUND SYSTEM (AudioSampleUnified)
+	@:hlNative("ma_thing", "setSurroundEnabled") public static function setSurroundEnabled(enabled:Bool):Void {}
+
+	@:hlNative("ma_thing", "isSurroundEnabled") public static function isSurroundEnabled():Bool {
+		return false;
+	}
+
+	@:hlNative("ma_thing", "setStreamChannel") public static function setStreamChannel(stream:Int, channel:Int):Void {}
+
+	@:hlNative("ma_thing", "getStreamChannel") public static function getStreamChannel(stream:Int):Int {
+		return 0;
+	}
 
 	@:hlNative("ma_thing", "seek_to_pcm_frame") public static function seekToPCMFrame(pos:hl.I64):Void {}
 
@@ -182,6 +205,19 @@ class MiniAudio {
 	public static function setPlaybackRate(playbackRate:Float):Void {}
 
 	public static function setStretchEnabled(enabled:Bool):Void {}
+
+	// SURROUND SOUND SYSTEM (AudioSampleUnified)
+	public static function setSurroundEnabled(enabled:Bool):Void {}
+
+	public static function isSurroundEnabled():Bool {
+		return false;
+	}
+
+	public static function setStreamChannel(stream:Int, channel:Int):Void {}
+
+	public static function getStreamChannel(stream:Int):Int {
+		return 0;
+	}
 
 	public static function seekToPCMFrame(pos:Int64):Void {}
 

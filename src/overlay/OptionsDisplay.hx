@@ -29,6 +29,7 @@ class OptionsDisplay {
 	var graphicsDisplay(default, null):GraphicsDisplay;
 	var controlsDisplay(default, null):ControlsDisplay;
 	var performanceDisplay(default, null):PerformanceDisplay;
+	var audioDisplay(default, null):AudioDisplay;
 
 	var sharedAlphabet(default, null):FreeplayAlphabet;
 	var infoText(default, null):Text; // shared description text
@@ -61,6 +62,7 @@ class OptionsDisplay {
 		graphicsDisplay = new GraphicsDisplay(parent, sharedAlphabet, infoText);
 		controlsDisplay = new ControlsDisplay(parent, sharedAlphabet, infoText);
 		performanceDisplay = new PerformanceDisplay(parent, sharedAlphabet, infoText);
+		audioDisplay = new AudioDisplay(parent, sharedAlphabet, infoText);
 	}
 
 	function reload(selection:OptionsCategorySelection) {
@@ -80,6 +82,9 @@ class OptionsDisplay {
 			case PERFORMANCE:
 				performanceDisplay.reload();
 				activeDisplay = performanceDisplay;
+			case AUDIO:
+				audioDisplay.reload();
+				activeDisplay = audioDisplay;
 		}
 	}
 
@@ -93,6 +98,8 @@ class OptionsDisplay {
 				graphicsDisplay.enter();
 			case PERFORMANCE:
 				performanceDisplay.enter();
+			case AUDIO:
+				audioDisplay.enter();
 			default:
 				// ControlsDisplay does not handle enter for toggling; it uses TAB.
 		}
@@ -126,6 +133,7 @@ class OptionsDisplay {
 		preferencesDisplay.destroyOptions();
 		graphicsDisplay.destroyOptions();
 		performanceDisplay.destroyOptions();
+		audioDisplay.destroyOptions();
 	}
 
 	function dispose() {
@@ -134,6 +142,7 @@ class OptionsDisplay {
 		preferencesDisplay.dispose();
 		graphicsDisplay.dispose();
 		performanceDisplay.dispose();
+		audioDisplay.dispose();
 
 		// Remove shared infoText
 		if (infoText != null) {
@@ -149,4 +158,5 @@ enum abstract OptionsCategorySelection(Int) from Int to Int {
 	var PREFERENCES;
 	var GAMEPLAY;
 	var PERFORMANCE;
+	var AUDIO;
 }

@@ -120,7 +120,19 @@ class SaveData {
 				customTitleBarColor: 0x3d3f4177, // RGB then opacity at the end. Except opacity doesn't work.
 				customWindowOutlineColor: 0x27292b77,
 				customTitleTextFont: "Inconsolata"
-			}
+			},
+			audio: getDefaultAudio()
+		};
+	}
+
+	/**
+		The audio category defaults: classic stereo output with the
+		hitsound enabled so it can be heard (and toggled off) right away.
+	**/
+	static function getDefaultAudio():SaveData_Audio {
+		return {
+			output: AudioOutput.STEREO,
+			hitsound: true
 		};
 	}
 
@@ -147,6 +159,13 @@ class SaveData {
 		}
 		if (result == null)
 			result = getDefaultState();
+
+		// Migration: saves created before the Audio category existed
+		// carry no audio object.  Fill it in with the defaults instead
+		// of crashing on null access later.
+		if (result.audio == null)
+			result.audio = getDefaultAudio();
+
 		trace('Savedata file loaded...');
 		state = result;
 	}
@@ -248,6 +267,7 @@ class SaveData {
 	var controls:SaveData_Controls;
 	var preferences:SaveData_Preferences;
 	var graphics:SaveData_Graphics;
+	var audio:SaveData_Audio;
 }
 
 /**
@@ -326,4 +346,17 @@ class SaveData_Graphics {
 	var customTitleBarColor:Int;
 	var customWindowOutlineColor:Int;
 	var customTitleTextFont:String;
+}
+
+/**
+	The save data audio category, managed by rhythm.AudioSampleUnified
+	(song output mode) and the gameplay hitsound toggle.
+	@since Development
+**/
+@:structInit
+@:struct
+@:publicFields
+class SaveData_Audio {
+	var output:AudioOutput;
+	var hitsound:Bool;
 }

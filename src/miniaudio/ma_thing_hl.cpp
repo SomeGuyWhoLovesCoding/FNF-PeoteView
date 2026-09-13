@@ -50,6 +50,13 @@ HL_PRIM void   HL_NAME(setStretchEnabled)(bool value)             { g_audioSyste
 HL_PRIM double HL_NAME(getGlobalVolume)(_NO_ARG)                 { return g_audioSystem.getGlobalVolume(); }
 HL_PRIM double HL_NAME(setGlobalVolume)(double value)            { return g_audioSystem.setGlobalVolume(value); }
 
+// ---- Surround sound system (AudioSampleUnified) --------------------------
+
+HL_PRIM void HL_NAME(setSurroundEnabled)(bool enabled)             { g_audioSystem.setSurroundEnabled(enabled); }
+HL_PRIM bool HL_NAME(isSurroundEnabled)(_NO_ARG)                   { return g_audioSystem.isSurroundEnabled(); }
+HL_PRIM void HL_NAME(setStreamChannel)(int index, int channel)     { g_audioSystem.setStreamChannel(index, channel); }
+HL_PRIM int  HL_NAME(getStreamChannel)(int index)                  { return g_audioSystem.getStreamChannel(index); }
+
 // Calls the underlying C++ functions directly — not the HL primitives above.
 HL_PRIM int HL_NAME(detectLatency)(_NO_ARG) {
     int osMs = 50;
@@ -92,6 +99,11 @@ DEFINE_PRIM(_VOID, setStretchEnabled,      _BOOL)
 DEFINE_PRIM(_F64,  getGlobalVolume,        _NO_ARG)
 DEFINE_PRIM(_F64,  setGlobalVolume,        _F64)
 DEFINE_PRIM(_I32,  detectLatency,          _NO_ARG)
+
+DEFINE_PRIM(_VOID, setSurroundEnabled,     _BOOL)
+DEFINE_PRIM(_BOOL, isSurroundEnabled,      _NO_ARG)
+DEFINE_PRIM(_VOID, setStreamChannel,       _I32 _I32)
+DEFINE_PRIM(_I32,  getStreamChannel,       _I32)
 
 DEFINE_PRIM(_I32,  loadBackgroundTrack,       _STRING)
 DEFINE_PRIM(_VOID, playBackgroundTrack,       _I32)

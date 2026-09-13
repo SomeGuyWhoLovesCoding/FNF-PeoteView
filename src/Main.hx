@@ -206,6 +206,7 @@ class Main extends Application {
 	var sound_scrollIdx:Int;
 	var sound_confIdx:Int;
 	var sound_cancelIdx:Int;
+	var sound_hitsIdx:Int;
 
 	// UPSCALE CONDITION - WHENEVER YOU WANT YOUR GAME TO RUN LIKE COCK OR RUN LIKE WHEELS
 	var upscale:Bool = false;
@@ -377,6 +378,10 @@ class Main extends Application {
 		sound_scrollIdx = MiniAudio.loadSoundEffect(Paths.asset("assets/sounds/scrollMenu.ogg"));
 		sound_confIdx = MiniAudio.loadSoundEffect(Paths.asset("assets/sounds/confirmMenu.ogg"));
 		sound_cancelIdx = MiniAudio.loadSoundEffect(Paths.asset("assets/sounds/cancelMenu.ogg"));
+		// Cached here at boot (just like the scrollMenu sound) so the
+		// gameplay hitsound is decoded/loaded once and playing it on
+		// every Sick or Good never causes lagspikes.
+		sound_hitsIdx = MiniAudio.loadSoundEffect(Paths.asset("assets/sounds/hitsound.wav"));
 	}
 
 	public function playScrollSound() {
@@ -389,6 +394,10 @@ class Main extends Application {
 
 	public function playCancelSound() {
 		MiniAudio.playSoundEffect(sound_cancelIdx, 0.7);
+	}
+
+	public function playHitsound() {
+		MiniAudio.playSoundEffect(sound_hitsIdx, 0.7);
 	}
 
 	private function createTextures() {

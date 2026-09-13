@@ -63,6 +63,12 @@ class Mixer {
 		MiniAudio.loadFiles(files);
 		trackCount = files.length;
 		length = MiniAudio.getDuration();
+
+		// Unified channel system: route the inst and voices into the
+		// surround buses (BACKGROUND / CENTER, SUB available) and
+		// re-assert the saved stereo / Surround Sound 3.1 output mode
+		// for the freshly opened device.
+		AudioSampleUnified.onSongLoaded(trackCount);
 		
 		// Initialize window system state
 		accumulatedTime = 0;
