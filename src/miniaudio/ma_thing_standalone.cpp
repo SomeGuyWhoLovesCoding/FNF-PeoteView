@@ -1,6 +1,6 @@
 /*
  * ma_thing_standalone.cpp
- * Plain C++ global interface — links against ma_thing_core.h. 
+ * Plain C++ global interface — links against ma_thing_core.h.
  * No HashLink dependency.
  */
 
@@ -65,4 +65,4 @@ bool isSoundEffectPlaying(int index)                          { return g_mixer.i
 
 double setMixerMasterVolume(double volume)  { return g_mixer.setMasterVolume(volume); }
 double getMixerMasterVolume()              { return g_mixer.getMasterVolume(); }
-void  destroyMixer()                      { g_mixer.destroy(); }
+void  destroyMixer()                      { g_mixer.destroy(); }

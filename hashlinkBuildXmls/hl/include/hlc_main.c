@@ -29,15 +29,6 @@
 # ifndef CONST
 #	define CONST
 # endif
-# ifndef IN
-#	define IN
-# endif
-# ifndef OUT
-#	define OUT
-# endif
-# ifndef OPTIONAL
-#	define OPTIONAL
-# endif
 #	pragma warning(disable:4091)
 #if !defined(HL_MINGW)
 #	include <DbgHelp.h>
@@ -46,9 +37,6 @@
 #endif
 #	pragma comment(lib, "Dbghelp.lib")
 #	undef CONST
-#	undef IN
-#	undef OUT
-#	undef OPTIONAL
 #endif
 
 #ifdef HL_CONSOLE
@@ -140,6 +128,12 @@ static int throw_handler( int code ) {
 }
 #endif
 
+#if defined(HL_WIN_DESKTOP) && !defined(_CONSOLE)
+int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+	return wmain(__argc, __argv);
+}
+#endif
+
 #ifdef HL_WIN_DESKTOP
 int wmain(int argc, uchar *argv[]) {
 #else
@@ -173,13 +167,3 @@ int main(int argc, char *argv[]) {
 	sys_global_exit();
 	return (int)isExc;
 }
-
-#if defined(HL_WIN_DESKTOP) && !defined(_CONSOLE)
-int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-	return wmain(__argc, __wargv);
-}
-#elif defined(HL_XBS)
-int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-	return main(__argc, __argv);
-}
-#endif

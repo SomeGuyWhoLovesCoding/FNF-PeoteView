@@ -1,5 +1,6 @@
 <xml>
 	<pragma once="true" />
+	<set name="HXCPP_M64" value="1" />
 
 	<cppflag value="HASHLINK" />
 

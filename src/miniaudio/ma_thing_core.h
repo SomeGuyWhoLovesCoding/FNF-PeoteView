@@ -8,7 +8,7 @@
  *
  * Triple-buffered sliding window implementation with proper continuity.
  * RAII implementation - Resources manage their own lifetimes.
- * 
+ *
  * LOCK-FREE ARCHITECTURE:
  * - All OS-level mutexes and condition variables have been removed from hot paths.
  * - Cross-thread state is communicated via atomic variables and lock-free triple buffers.
@@ -41,9 +41,10 @@
 #endif
 
 #ifdef __cplusplus
-extern "C" {
+extern "C"
+{
 #endif
-#include "extras/stb_vorbis.c"   // included as C, must come before miniaudio
+#include "extras/stb_vorbis.c" // included as C, must come before miniaudio
 #ifdef __cplusplus
 }
 #endif
@@ -75,12 +76,12 @@ std::atomic<double> MUSIC_MASTER_VOLUME_099{1.0f};
 
 // ---- audio constants ------------------------------------------------------
 
-#define SAMPLE_FORMAT  ma_format_f32
-#define CHANNEL_COUNT  2
-#define SAMPLE_RATE    44100
+#define SAMPLE_FORMAT ma_format_f32
+#define CHANNEL_COUNT 2
+#define SAMPLE_RATE 44100
 
-#define PADDING_MS      150
-#define BUFFER_MS       750
+#define PADDING_MS 150
+#define BUFFER_MS 750
 // BOTTLENECK (fixed): was 400ms. The next buffer starts HALF_BUFFER_MS -
 // PADDING_MS after the current one, so the window slides forward by
 // (HALF_BUFFER_MS - PADDING_MS) per swap while every fill re-decodes the full
@@ -89,18 +90,18 @@ std::atomic<double> MUSIC_MASTER_VOLUME_099{1.0f};
 // advances 450ms per fill (~2.3x waste) at the cost of drop-resistance slack
 // (TOTAL_BUFFER_MS - PADDING_MS - HALF_BUFFER_MS) dropping 500ms -> 300ms,
 // which is still ample for stb_vorbis (a 1050ms buffer decodes in ~10ms).
-#define HALF_BUFFER_MS  600
+#define HALF_BUFFER_MS 600
 
-#define PADDING_FRAMES      ((SAMPLE_RATE * PADDING_MS)     / 1000)
-#define BUFFER_FRAMES       ((SAMPLE_RATE * BUFFER_MS)      / 1000)
-#define HALF_BUFFER_FRAMES  ((SAMPLE_RATE * HALF_BUFFER_MS) / 1000)
+#define PADDING_FRAMES ((SAMPLE_RATE * PADDING_MS) / 1000)
+#define BUFFER_FRAMES ((SAMPLE_RATE * BUFFER_MS) / 1000)
+#define HALF_BUFFER_FRAMES ((SAMPLE_RATE * HALF_BUFFER_MS) / 1000)
 #define TOTAL_BUFFER_FRAMES (PADDING_FRAMES + BUFFER_FRAMES + PADDING_FRAMES)
 
 #define MAX_CALLBACK_FRAMES 4096
 // Pitched playback reads `frameCount * rate` source frames per callback; allow
 // up to 4x rate in the staging buffer instead of the old 1x cap (which
 // overflowed pitchInputMix for rate > 1).
-#define MAX_PITCH_FRAMES   (MAX_CALLBACK_FRAMES * 4)
+#define MAX_PITCH_FRAMES (MAX_CALLBACK_FRAMES * 4)
 
 // ---- surround sound system (AudioSampleUnified) ---------------------------
 //
@@ -130,62 +131,136 @@ std::atomic<double> MUSIC_MASTER_VOLUME_099{1.0f};
 
 // One-pole low-pass coefficient for the LFE feed: fc ≈ 120 Hz @ 44100 Hz.
 //   coef = 1 - exp(-2π * fc / sampleRate)
-#define SURROUND_LPF_COEF   0.016951f
+#define SURROUND_LPF_COEF 0.016951f
 // Bass-managed streams (CENTER/BACKGROUND) feed the LFE slightly quieter than
 // streams routed to SUB itself, which get their full (low-passed) content.
 #define SURROUND_LFE_BASS_GAIN 0.75f
 #define SURROUND_LFE_FULL_GAIN 1.0f
 
+// Explicit 3.1 channel map for the song device: FL / FR / FC / LFE.  miniaudio's
+// default map for 4 channels is FL/FR/FC/BACK_CENTER, which would send the
+// SUB (LFE) bus to a back speaker on native surround endpoints, so the layout
+// is declared explicitly whenever the device is opened in surround mode.
+// Static storage: ma_device_config only keeps a pointer to it during device
+// init, but keeping it at file scope costs nothing and stays valid forever.
+static ma_channel SURROUND_CHANNEL_MAP_31[SURROUND_CHANNEL_COUNT] = {
+	MA_CHANNEL_FRONT_LEFT, MA_CHANNEL_FRONT_RIGHT,
+	MA_CHANNEL_FRONT_CENTER, MA_CHANNEL_LFE};
+
+// Short names for the channel positions that can appear in the song
+// device layout; anything exotic prints as "?".
+static const char *maThingChannelShortName(ma_channel c)
+{
+	switch (c)
+	{
+	case MA_CHANNEL_MONO:
+		return "MONO";
+	case MA_CHANNEL_FRONT_LEFT:
+		return "FL";
+	case MA_CHANNEL_FRONT_RIGHT:
+		return "FR";
+	case MA_CHANNEL_FRONT_CENTER:
+		return "FC";
+	case MA_CHANNEL_LFE:
+		return "LFE";
+	case MA_CHANNEL_BACK_LEFT:
+		return "BL";
+	case MA_CHANNEL_BACK_RIGHT:
+		return "BR";
+	case MA_CHANNEL_BACK_CENTER:
+		return "BC";
+	case MA_CHANNEL_SIDE_LEFT:
+		return "SL";
+	case MA_CHANNEL_SIDE_RIGHT:
+		return "SR";
+	default:
+		return "?";
+	}
+}
+
+// Prints the layout the song device actually negotiated whenever it is
+// (re)opened: the stream the data callback fills (3.1 when surround is on)
+// next to the native endpoint format exposed by the OS backend.  If the
+// endpoint side lists LFE the SUB bus reaches a real subwoofer; if it lists
+// a stereo pair the OS/engine is downmixing (a stereo endpoint can never
+// emit true ".1" -- that is a hardware/OS ceiling, not an engine one).
+static void maThingLogPlaybackLayout(const ma_device *dev)
+{
+	printf("[ma_thing] song stream %u ch (", (unsigned)dev->playback.channels);
+	for (ma_uint32 i = 0; i < dev->playback.channels; ++i)
+		printf("%s%s", i == 0 ? "" : " ", maThingChannelShortName(dev->playback.channelMap[i]));
+	printf(") | endpoint %u ch (", (unsigned)dev->playback.internalChannels);
+	for (ma_uint32 i = 0; i < dev->playback.internalChannels; ++i)
+		printf("%s%s", i == 0 ? "" : " ", maThingChannelShortName(dev->playback.internalChannelMap[i]));
+	printf(") via %s\n", ma_get_backend_name(dev->pContext->backend));
+}
+
 // Song channel bus identifiers.  Values must stay in sync with the Haxe
 // `AudioChannelIdentifier` enum abstract in rhythm.AudioSampleUnified.
-enum MaThingAudioChannel {
-    MA_CH_CENTER     = 0,   // center speaker — vocals bus
-    MA_CH_BACKGROUND = 1,   // front L/R pair — instrumental bus
-    MA_CH_SUB        = 2    // subwoofer (LFE) — bass bus
+enum MaThingAudioChannel
+{
+	MA_CH_CENTER = 0,     // center speaker — vocals bus
+	MA_CH_BACKGROUND = 1, // front L/R pair — instrumental bus
+	MA_CH_SUB = 2         // subwoofer (LFE) — bass bus
 };
 
 // ---- SIMD mix helpers -------------------------
 
 #ifdef __SSE__
-static inline void mix_simd(float* dst, const float* src, int samples, float volume) {
-    int i = 0;
-    if (volume == 1.0f) {
-        for (; i < samples - 7; i += 8) {
-            _mm_storeu_ps(dst + i,     _mm_add_ps(_mm_loadu_ps(dst + i),     _mm_loadu_ps(src + i)));
-            _mm_storeu_ps(dst + i + 4, _mm_add_ps(_mm_loadu_ps(dst + i + 4), _mm_loadu_ps(src + i + 4)));
-        }
-        if (i < samples - 3) {
-            _mm_storeu_ps(dst + i, _mm_add_ps(_mm_loadu_ps(dst + i), _mm_loadu_ps(src + i)));
-            i += 4;
-        }
-    } else {
-        __m128 vvol = _mm_set1_ps(volume);
-        for (; i < samples - 7; i += 8) {
-            _mm_storeu_ps(dst + i,     _mm_add_ps(_mm_loadu_ps(dst + i),     _mm_mul_ps(_mm_loadu_ps(src + i),     vvol)));
-            _mm_storeu_ps(dst + i + 4, _mm_add_ps(_mm_loadu_ps(dst + i + 4), _mm_mul_ps(_mm_loadu_ps(src + i + 4), vvol)));
-        }
-        for (; i < samples - 3; i += 4)
-            _mm_storeu_ps(dst + i, _mm_add_ps(_mm_loadu_ps(dst + i), _mm_mul_ps(_mm_loadu_ps(src + i), vvol)));
-    }
+static inline void mix_simd(float *dst, const float *src, int samples, float volume)
+{
+	int i = 0;
+	if (volume == 1.0f)
+	{
+		for (; i < samples - 7; i += 8)
+		{
+			_mm_storeu_ps(dst + i, _mm_add_ps(_mm_loadu_ps(dst + i), _mm_loadu_ps(src + i)));
+			_mm_storeu_ps(dst + i + 4, _mm_add_ps(_mm_loadu_ps(dst + i + 4), _mm_loadu_ps(src + i + 4)));
+		}
+		if (i < samples - 3)
+		{
+			_mm_storeu_ps(dst + i, _mm_add_ps(_mm_loadu_ps(dst + i), _mm_loadu_ps(src + i)));
+			i += 4;
+		}
+	}
+	else
+	{
+		__m128 vvol = _mm_set1_ps(volume);
+		for (; i < samples - 7; i += 8)
+		{
+			_mm_storeu_ps(dst + i, _mm_add_ps(_mm_loadu_ps(dst + i), _mm_mul_ps(_mm_loadu_ps(src + i), vvol)));
+			_mm_storeu_ps(dst + i + 4, _mm_add_ps(_mm_loadu_ps(dst + i + 4), _mm_mul_ps(_mm_loadu_ps(src + i + 4), vvol)));
+		}
+		for (; i < samples - 3; i += 4)
+			_mm_storeu_ps(dst + i, _mm_add_ps(_mm_loadu_ps(dst + i), _mm_mul_ps(_mm_loadu_ps(src + i), vvol)));
+	}
 
-    // Tail loop: std::fma works perfectly here on SSE2
-    for (; i < samples; i++) {
-        dst[i] = std::fma(src[i], volume, dst[i]);
-    }
+	// Tail loop: std::fma works perfectly here on SSE2
+	for (; i < samples; i++)
+	{
+		dst[i] = std::fma(src[i], volume, dst[i]);
+	}
 }
-static inline void mix_simd_stereo(float* dst, const float* src, int frames, float volume) {
-    mix_simd(dst, src, frames * 2, volume);
+static inline void mix_simd_stereo(float *dst, const float *src, int frames, float volume)
+{
+	mix_simd(dst, src, frames * 2, volume);
 }
 #else
-static inline void mix_scalar(float* dst, const float* src, int samples, float volume) {
-    if (volume == 1.0f) {
-        for (int i = 0; i < samples; i++) dst[i] += src[i];
-    } else {
-        for (int i = 0; i < samples; i++) {
-            // std::fma ensures (src[i] * volume) + dst[i] is rounded only once
-            dst[i] = std::fma(src[i], volume, dst[i]); 
-        }
-    }
+static inline void mix_scalar(float *dst, const float *src, int samples, float volume)
+{
+	if (volume == 1.0f)
+	{
+		for (int i = 0; i < samples; i++)
+			dst[i] += src[i];
+	}
+	else
+	{
+		for (int i = 0; i < samples; i++)
+		{
+			// std::fma ensures (src[i] * volume) + dst[i] is rounded only once
+			dst[i] = std::fma(src[i], volume, dst[i]);
+		}
+	}
 }
 #endif
 
@@ -193,628 +268,746 @@ static inline void mix_scalar(float* dst, const float* src, int samples, float v
 //  Runtime AVX2 Detection & Dispatch (Injected on top of existing code)
 // ==========================================================================
 #if defined(_MSC_VER)
-    #include <intrin.h>
+#include <intrin.h>
 #elif defined(__GNUC__) || defined(__clang__)
-    #include <cpuid.h>
+#include <cpuid.h>
 #endif
 
 // AVX2 requires the OS to have actually enabled XMM/YMM state saving
 // (CR4.OSXSAVE + XCR0 bits 1|2), otherwise executing _mm256_* instructions
 // traps.  CPUID leaf 7 alone is not enough.
-static inline bool os_has_avx_support() {
+static inline bool os_has_avx_support()
+{
 #if defined(_MSC_VER)
-    int regs[4];
-    __cpuid(regs, 1);
-    if (!(regs[2] & (1 << 27))) return false;              // no OSXSAVE
-    unsigned long long xcr0 = _xgetbv(0);
-    return (xcr0 & 0x6) == 0x6;                            // XMM + YMM state
+	int regs[4];
+	__cpuid(regs, 1);
+	if (!(regs[2] & (1 << 27)))
+		return false; // no OSXSAVE
+	unsigned long long xcr0 = _xgetbv(0);
+	return (xcr0 & 0x6) == 0x6; // XMM + YMM state
 #elif defined(__GNUC__) || defined(__clang__)
-    unsigned int eax, ebx, ecx, edx;
-    if (!__get_cpuid(1, &eax, &ebx, &ecx, &edx)) return false;
-    if (!(ecx & (1 << 27))) return false;
-    unsigned int xcr0lo = 0, xcr0hi = 0;
-    __asm__ __volatile__("xgetbv" : "=a"(xcr0lo), "=d"(xcr0hi) : "c"(0));
-    unsigned long long xcr0 = ((unsigned long long)xcr0hi << 32) | xcr0lo;
-    return (xcr0 & 0x6) == 0x6;
+	unsigned int eax, ebx, ecx, edx;
+	if (!__get_cpuid(1, &eax, &ebx, &ecx, &edx))
+		return false;
+	if (!(ecx & (1 << 27)))
+		return false;
+	unsigned int xcr0lo = 0, xcr0hi = 0;
+	__asm__ __volatile__("xgetbv" : "=a"(xcr0lo), "=d"(xcr0hi) : "c"(0));
+	unsigned long long xcr0 = ((unsigned long long)xcr0hi << 32) | xcr0lo;
+	return (xcr0 & 0x6) == 0x6;
 #else
-    return false;
+	return false;
 #endif
 }
 
-static inline bool has_avx2_runtime() {
+static inline bool has_avx2_runtime()
+{
 #if defined(_MSC_VER)
-    int regs[4];
-    __cpuidex(regs, 7, 0);
-    return ((regs[1] & (1 << 5)) != 0) && os_has_avx_support(); // EBX bit 5 = AVX2
+	int regs[4];
+	__cpuidex(regs, 7, 0);
+	return ((regs[1] & (1 << 5)) != 0) && os_has_avx_support(); // EBX bit 5 = AVX2
 #elif defined(__GNUC__) || defined(__clang__)
-    unsigned int eax, ebx, ecx, edx;
-    return __get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx) &&
-           ((ebx >> 5) & 1) && os_has_avx_support();
+	unsigned int eax, ebx, ecx, edx;
+	return __get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx) &&
+		   ((ebx >> 5) & 1) && os_has_avx_support();
 #else
-    return false;
+	return false;
 #endif
 }
 
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((target("avx2,fma")))
 #endif
-static inline void mix_avx2(float* dst, const float* src, int samples, float volume) {
-    int i = 0;
-    if (volume == 1.0f) {
-        // No multiplication here, so FMA doesn't apply
-        for (; i + 8 <= samples; i += 8)
-            _mm256_storeu_ps(dst + i, _mm256_add_ps(_mm256_loadu_ps(dst + i), _mm256_loadu_ps(src + i)));
-    } else {
-        __m256 vvol = _mm256_set1_ps(volume);
-        for (; i + 8 <= samples; i += 8) {
-            __m256 vdst = _mm256_loadu_ps(dst + i);
-            __m256 vsrc = _mm256_loadu_ps(src + i);
-            
-            // REPLACED: _mm256_add_ps + _mm256_mul_ps
-            // WITH: _mm256_fmadd_ps (computes a * b + c)
-            _mm256_storeu_ps(dst + i, _mm256_fmadd_ps(vsrc, vvol, vdst));
-        }
-    }
-    
-    // Tail loop: Use std::fma for precision and potential auto-vectorization
-    for (; i < samples; i++) dst[i] = std::fma(src[i], volume, dst[i]);
+static inline void mix_avx2(float *dst, const float *src, int samples, float volume)
+{
+	int i = 0;
+	if (volume == 1.0f)
+	{
+		// No multiplication here, so FMA doesn't apply
+		for (; i + 8 <= samples; i += 8)
+			_mm256_storeu_ps(dst + i, _mm256_add_ps(_mm256_loadu_ps(dst + i), _mm256_loadu_ps(src + i)));
+	}
+	else
+	{
+		__m256 vvol = _mm256_set1_ps(volume);
+		for (; i + 8 <= samples; i += 8)
+		{
+			__m256 vdst = _mm256_loadu_ps(dst + i);
+			__m256 vsrc = _mm256_loadu_ps(src + i);
+
+			// REPLACED: _mm256_add_ps + _mm256_mul_ps
+			// WITH: _mm256_fmadd_ps (computes a * b + c)
+			_mm256_storeu_ps(dst + i, _mm256_fmadd_ps(vsrc, vvol, vdst));
+		}
+	}
+
+	// Tail loop: Use std::fma for precision and potential auto-vectorization
+	for (; i < samples; i++)
+		dst[i] = std::fma(src[i], volume, dst[i]);
 }
 
 // Function pointer defaults to existing SSE if available, otherwise scalar
-static void (*g_mix_func)(float*, const float*, int, float) =
+static void (*g_mix_func)(float *, const float *, int, float) =
 #ifdef __SSE__
-    mix_simd;
+	mix_simd;
 #else
-    mix_scalar;
+	mix_scalar;
 #endif
 
-static void init_simd_dispatch() {
-    if (has_avx2_runtime()) {
-        g_mix_func = mix_avx2;
-    }
+static void init_simd_dispatch()
+{
+	if (has_avx2_runtime())
+	{
+		g_mix_func = mix_avx2;
+	}
 }
 
 // ==========================================================================
 //  DecoderStream (LOCK-FREE)
 // ==========================================================================
 
-struct DecoderStream {
-    float* pcmBufferA = nullptr;
-    float* pcmBufferB = nullptr;
-    float* pcmBufferC = nullptr;
+struct DecoderStream
+{
+	float *pcmBufferA = nullptr;
+	float *pcmBufferB = nullptr;
+	float *pcmBufferC = nullptr;
 
-    float* activeBuffer  = nullptr;
-    float* nextBuffer    = nullptr;
-    float* loadingBuffer = nullptr;
+	float *activeBuffer = nullptr;
+	float *nextBuffer = nullptr;
+	float *loadingBuffer = nullptr;
 
-    std::atomic<ma_uint64> filePosition{0};
-    ma_uint64 bufferStartPos = 0;
-    ma_uint64 localReadPos   = 0;
-    ma_uint64 validFrames    = 0;
+	std::atomic<ma_uint64> filePosition{0};
+	ma_uint64 bufferStartPos = 0;
+	ma_uint64 localReadPos = 0;
+	ma_uint64 validFrames = 0;
 
-    struct AsyncState {
-        ma_uint64 nextBufferStartPos        = 0;
-        ma_uint64 nextBufferValidFrames     = 0;
-        ma_uint64 loadingBufferStartPos     = 0;
-        ma_uint64 loadingBufferValidFrames  = 0;
+	struct AsyncState
+	{
+		ma_uint64 nextBufferStartPos = 0;
+		ma_uint64 nextBufferValidFrames = 0;
+		ma_uint64 loadingBufferStartPos = 0;
+		ma_uint64 loadingBufferValidFrames = 0;
 
-        std::atomic<bool> nextBufferReady{false};
-        std::atomic<bool> loadingBufferReady{false};
-        std::atomic<bool> loadingInProgress{false};
-        std::atomic<bool> needsLoad{false};
-        std::atomic<bool> requestNextBuffer{false};
-        std::atomic<bool> requestLoadingBuffer{false};
+		std::atomic<bool> nextBufferReady{false};
+		std::atomic<bool> loadingBufferReady{false};
+		std::atomic<bool> loadingInProgress{false};
+		std::atomic<bool> needsLoad{false};
+		std::atomic<bool> requestNextBuffer{false};
+		std::atomic<bool> requestLoadingBuffer{false};
 
-        float* asyncNextBuffer    = nullptr;
-        float* asyncLoadingBuffer = nullptr;
-    } asyncState;
+		float *asyncNextBuffer = nullptr;
+		float *asyncLoadingBuffer = nullptr;
+	} asyncState;
 
-    std::atomic<bool> active{false};
-    ma_uint64 decoderLength = 0;
-    std::string decoderPath;
+	std::atomic<bool> active{false};
+	ma_uint64 decoderLength = 0;
+	std::string decoderPath;
 
-    // The seekable ma_decoder used for async prefetch.  It is R/W owned by the
-    // AsyncLoader worker thread ONLY.  Neither the audio callback nor the
-    // game/main thread may touch it, so its internal read/seek position can
-    // never be corrupted by a second thread.  Any synchronous decode performed
-    // during loadFiles()/seekToPCMFrame() uses a short-lived temporary decoder
-    // instead (see fillBufferTemp) so the two never share a handle.
-    ma_decoder workerDecoder;
-    bool workerDecoderInitialized = false;
+	// The seekable ma_decoder used for async prefetch.  It is R/W owned by the
+	// AsyncLoader worker thread ONLY.  Neither the audio callback nor the
+	// game/main thread may touch it, so its internal read/seek position can
+	// never be corrupted by a second thread.  Any synchronous decode performed
+	// during loadFiles()/seekToPCMFrame() uses a short-lived temporary decoder
+	// instead (see fillBufferTemp) so the two never share a handle.
+	ma_decoder workerDecoder;
+	bool workerDecoderInitialized = false;
 
-    DecoderStream()  { memset(&workerDecoder, 0, sizeof(ma_decoder)); }
-    ~DecoderStream() { cleanup(); }
+	DecoderStream() { memset(&workerDecoder, 0, sizeof(ma_decoder)); }
+	~DecoderStream() { cleanup(); }
 
-    DecoderStream(DecoderStream&& other) noexcept { moveFrom(std::move(other)); }
-    DecoderStream& operator=(DecoderStream&& other) noexcept {
-        if (this != &other) { cleanup(); moveFrom(std::move(other)); }
-        return *this;
-    }
-    DecoderStream(const DecoderStream&)            = delete;
-    DecoderStream& operator=(const DecoderStream&) = delete;
+	DecoderStream(DecoderStream &&other) noexcept { moveFrom(std::move(other)); }
+	DecoderStream &operator=(DecoderStream &&other) noexcept
+	{
+		if (this != &other)
+		{
+			cleanup();
+			moveFrom(std::move(other));
+		}
+		return *this;
+	}
+	DecoderStream(const DecoderStream &) = delete;
+	DecoderStream &operator=(const DecoderStream &) = delete;
 
-    // Open a throw-away decoder for MAIN-thread synchronous decode.  Creates a
-    // fresh handle every time, so it never shares state with workerDecoder.
-    bool openTempDecoder(ma_decoder* out) const {
-        if (decoderPath.empty()) return false;
-        ma_decoder_config cfg = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
-        if (ma_decoder_init_file(decoderPath.c_str(), &cfg, out) != MA_SUCCESS) return false;
-        ma_data_source_set_looping(out, MA_FALSE);
-        return true;
-    }
+	// Open a throw-away decoder for MAIN-thread synchronous decode.  Creates a
+	// fresh handle every time, so it never shares state with workerDecoder.
+	bool openTempDecoder(ma_decoder *out) const
+	{
+		if (decoderPath.empty())
+			return false;
+		ma_decoder_config cfg = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
+		if (ma_decoder_init_file(decoderPath.c_str(), &cfg, out) != MA_SUCCESS)
+			return false;
+		ma_data_source_set_looping(out, MA_FALSE);
+		return true;
+	}
 
-    void fillBufferTemp(ma_uint64 decodeStart, float* buffer, ma_uint64* framesRead) {
-        *framesRead = 0;
-        ma_decoder dec;
-        if (!openTempDecoder(&dec)) {
-            memset(buffer, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
-            return;
-        }
+	void fillBufferTemp(ma_uint64 decodeStart, float *buffer, ma_uint64 *framesRead)
+	{
+		*framesRead = 0;
+		ma_decoder dec;
+		if (!openTempDecoder(&dec))
+		{
+			memset(buffer, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
+			return;
+		}
 
-        ma_uint64 maxFrames = TOTAL_BUFFER_FRAMES;
-        if (decodeStart + TOTAL_BUFFER_FRAMES > decoderLength)
-            maxFrames = decoderLength - decodeStart;
+		ma_uint64 maxFrames = TOTAL_BUFFER_FRAMES;
+		if (decodeStart + TOTAL_BUFFER_FRAMES > decoderLength)
+			maxFrames = decoderLength - decodeStart;
 
-        // BOTTLENECK (fixed): previously zeroed the whole ~370KB buffer before
-        // decoding, which is wasted work when the read fills it. Decode first,
-        // then zero only the tail the decode didn't touch.
-        if (maxFrames > 0 && decodeStart < decoderLength) {
-            if (ma_decoder_seek_to_pcm_frame(&dec, decodeStart) == MA_SUCCESS)
-                ma_decoder_read_pcm_frames(&dec, buffer, maxFrames, framesRead);
-        }
-        if (*framesRead < maxFrames)
-            memset(buffer + (*framesRead) * CHANNEL_COUNT, 0,
-                   (maxFrames - *framesRead) * CHANNEL_COUNT * sizeof(float));
+		// BOTTLENECK (fixed): previously zeroed the whole ~370KB buffer before
+		// decoding, which is wasted work when the read fills it. Decode first,
+		// then zero only the tail the decode didn't touch.
+		if (maxFrames > 0 && decodeStart < decoderLength)
+		{
+			if (ma_decoder_seek_to_pcm_frame(&dec, decodeStart) == MA_SUCCESS)
+				ma_decoder_read_pcm_frames(&dec, buffer, maxFrames, framesRead);
+		}
+		if (*framesRead < maxFrames)
+			memset(buffer + (*framesRead) * CHANNEL_COUNT, 0,
+				   (maxFrames - *framesRead) * CHANNEL_COUNT * sizeof(float));
 
-        ma_decoder_uninit(&dec);
-    }
+		ma_decoder_uninit(&dec);
+	}
 
-    // R/W worker-owned decoder.  Called from the AsyncLoader worker thread only.
-    void fillBufferWorker(ma_uint64 decodeStart, float* buffer, ma_uint64* framesRead) {
-        *framesRead = 0;
-        if (!workerDecoderInitialized) {
-            memset(buffer, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
-            return;
-        }
+	// R/W worker-owned decoder.  Called from the AsyncLoader worker thread only.
+	void fillBufferWorker(ma_uint64 decodeStart, float *buffer, ma_uint64 *framesRead)
+	{
+		*framesRead = 0;
+		if (!workerDecoderInitialized)
+		{
+			memset(buffer, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
+			return;
+		}
 
-        ma_uint64 maxFrames = TOTAL_BUFFER_FRAMES;
-        if (decodeStart + TOTAL_BUFFER_FRAMES > decoderLength)
-            maxFrames = decoderLength - decodeStart;
+		ma_uint64 maxFrames = TOTAL_BUFFER_FRAMES;
+		if (decodeStart + TOTAL_BUFFER_FRAMES > decoderLength)
+			maxFrames = decoderLength - decodeStart;
 
-        // BOTTLENECK (fixed): tail-only memset, see fillBufferTemp.
-        if (maxFrames > 0 && decodeStart < decoderLength) {
-            if (ma_decoder_seek_to_pcm_frame(&workerDecoder, decodeStart) == MA_SUCCESS)
-                ma_decoder_read_pcm_frames(&workerDecoder, buffer, maxFrames, framesRead);
-        }
-        if (*framesRead < maxFrames)
-            memset(buffer + (*framesRead) * CHANNEL_COUNT, 0,
-                   (maxFrames - *framesRead) * CHANNEL_COUNT * sizeof(float));
-    }
+		// BOTTLENECK (fixed): tail-only memset, see fillBufferTemp.
+		if (maxFrames > 0 && decodeStart < decoderLength)
+		{
+			if (ma_decoder_seek_to_pcm_frame(&workerDecoder, decodeStart) == MA_SUCCESS)
+				ma_decoder_read_pcm_frames(&workerDecoder, buffer, maxFrames, framesRead);
+		}
+		if (*framesRead < maxFrames)
+			memset(buffer + (*framesRead) * CHANNEL_COUNT, 0,
+				   (maxFrames - *framesRead) * CHANNEL_COUNT * sizeof(float));
+	}
 
-    bool trySwapBuffers() {
-        if (!asyncState.nextBufferReady.load(std::memory_order_acquire))
-            return false;
+	bool trySwapBuffers()
+	{
+		if (!asyncState.nextBufferReady.load(std::memory_order_acquire))
+			return false;
 
-        ma_uint64 currentGlobalPos = bufferStartPos + localReadPos;
+		ma_uint64 currentGlobalPos = bufferStartPos + localReadPos;
 
-        float* oldActive  = activeBuffer;
-        float* oldNext    = nextBuffer;
-        float* oldLoading = loadingBuffer;
+		float *oldActive = activeBuffer;
+		float *oldNext = nextBuffer;
+		float *oldLoading = loadingBuffer;
 
-        activeBuffer  = oldNext;
-        nextBuffer    = oldLoading;
-        loadingBuffer = oldActive;
+		activeBuffer = oldNext;
+		nextBuffer = oldLoading;
+		loadingBuffer = oldActive;
 
-        bufferStartPos = asyncState.nextBufferStartPos;
-        validFrames    = asyncState.nextBufferValidFrames;
+		bufferStartPos = asyncState.nextBufferStartPos;
+		validFrames = asyncState.nextBufferValidFrames;
 
-        asyncState.nextBufferStartPos       = asyncState.loadingBufferStartPos;
-        asyncState.nextBufferValidFrames    = asyncState.loadingBufferValidFrames;
-        asyncState.loadingBufferStartPos    = 0;
-        asyncState.loadingBufferValidFrames = 0;
+		asyncState.nextBufferStartPos = asyncState.loadingBufferStartPos;
+		asyncState.nextBufferValidFrames = asyncState.loadingBufferValidFrames;
+		asyncState.loadingBufferStartPos = 0;
+		asyncState.loadingBufferValidFrames = 0;
 
-        asyncState.nextBufferReady.store(
-            asyncState.loadingBufferReady.load(std::memory_order_relaxed),
-            std::memory_order_release);
-        asyncState.loadingBufferReady.store(false, std::memory_order_release);
+		asyncState.nextBufferReady.store(
+			asyncState.loadingBufferReady.load(std::memory_order_relaxed),
+			std::memory_order_release);
+		asyncState.loadingBufferReady.store(false, std::memory_order_release);
 
-        asyncState.asyncNextBuffer    = oldLoading;
-        asyncState.asyncLoadingBuffer = oldActive;
+		asyncState.asyncNextBuffer = oldLoading;
+		asyncState.asyncLoadingBuffer = oldActive;
 
-        if (currentGlobalPos >= bufferStartPos &&
-            currentGlobalPos <  bufferStartPos + validFrames)
-            localReadPos = currentGlobalPos - bufferStartPos;
-        else if (currentGlobalPos < bufferStartPos)
-            localReadPos = 0;
-        else
-            localReadPos = std::min<ma_uint64>(validFrames, (ma_uint64)TOTAL_BUFFER_FRAMES);
+		if (currentGlobalPos >= bufferStartPos &&
+			currentGlobalPos < bufferStartPos + validFrames)
+			localReadPos = currentGlobalPos - bufferStartPos;
+		else if (currentGlobalPos < bufferStartPos)
+			localReadPos = 0;
+		else
+			localReadPos = std::min<ma_uint64>(validFrames, (ma_uint64)TOTAL_BUFFER_FRAMES);
 
-        if (localReadPos >= TOTAL_BUFFER_FRAMES)
-            localReadPos = TOTAL_BUFFER_FRAMES - 1;
+		if (localReadPos >= TOTAL_BUFFER_FRAMES)
+			localReadPos = TOTAL_BUFFER_FRAMES - 1;
 
-        asyncState.requestLoadingBuffer.store(true, std::memory_order_release);
-        return true;
-    }
+		asyncState.requestLoadingBuffer.store(true, std::memory_order_release);
+		return true;
+	}
 
-    void resetState() {
-        asyncState.nextBufferReady.store(false,       std::memory_order_release);
-        asyncState.loadingBufferReady.store(false,    std::memory_order_release);
-        asyncState.loadingInProgress.store(false,     std::memory_order_release);
-        asyncState.needsLoad.store(false,             std::memory_order_release);
-        asyncState.requestNextBuffer.store(false,     std::memory_order_release);
-        asyncState.requestLoadingBuffer.store(false,  std::memory_order_release);
+	void resetState()
+	{
+		asyncState.nextBufferReady.store(false, std::memory_order_release);
+		asyncState.loadingBufferReady.store(false, std::memory_order_release);
+		asyncState.loadingInProgress.store(false, std::memory_order_release);
+		asyncState.needsLoad.store(false, std::memory_order_release);
+		asyncState.requestNextBuffer.store(false, std::memory_order_release);
+		asyncState.requestLoadingBuffer.store(false, std::memory_order_release);
 
-        asyncState.nextBufferValidFrames    = 0;
-        asyncState.loadingBufferValidFrames = 0;
-        asyncState.nextBufferStartPos       = 0;
-        asyncState.loadingBufferStartPos    = 0;
+		asyncState.nextBufferValidFrames = 0;
+		asyncState.loadingBufferValidFrames = 0;
+		asyncState.nextBufferStartPos = 0;
+		asyncState.loadingBufferStartPos = 0;
 
-        filePosition.store(0, std::memory_order_release);
-        bufferStartPos = localReadPos = validFrames = 0;
+		filePosition.store(0, std::memory_order_release);
+		bufferStartPos = localReadPos = validFrames = 0;
 
-        if (pcmBufferA) memset(pcmBufferA, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
-        if (pcmBufferB) memset(pcmBufferB, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
-        if (pcmBufferC) memset(pcmBufferC, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
-    }
+		if (pcmBufferA)
+			memset(pcmBufferA, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
+		if (pcmBufferB)
+			memset(pcmBufferB, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
+		if (pcmBufferC)
+			memset(pcmBufferC, 0, TOTAL_BUFFER_FRAMES * CHANNEL_COUNT * sizeof(float));
+	}
 
-    bool shouldSwapBuffers() const {
-        if (localReadPos >= validFrames) return true;
-        if (localReadPos >= (PADDING_FRAMES + HALF_BUFFER_FRAMES))
-            return true;
-        return false;
-    }
+	bool shouldSwapBuffers() const
+	{
+		if (localReadPos >= validFrames)
+			return true;
+		if (localReadPos >= (PADDING_FRAMES + HALF_BUFFER_FRAMES))
+			return true;
+		return false;
+	}
 
-    bool isBufferLow() const {
-        ma_uint64 available = (localReadPos < validFrames) ? (validFrames - localReadPos) : 0;
-        return available < (HALF_BUFFER_FRAMES / 2);
-    }
+	bool isBufferLow() const
+	{
+		ma_uint64 available = (localReadPos < validFrames) ? (validFrames - localReadPos) : 0;
+		return available < (HALF_BUFFER_FRAMES / 2);
+	}
 
-    void requestBufferLoad() {
-        if (!asyncState.nextBufferReady.load(std::memory_order_relaxed) &&
-            !asyncState.loadingInProgress.load(std::memory_order_relaxed))
-            asyncState.requestNextBuffer.store(true, std::memory_order_release);
-    }
+	void requestBufferLoad()
+	{
+		if (!asyncState.nextBufferReady.load(std::memory_order_relaxed) &&
+			!asyncState.loadingInProgress.load(std::memory_order_relaxed))
+			asyncState.requestNextBuffer.store(true, std::memory_order_release);
+	}
 
 private:
-    void cleanup() {
-        if (workerDecoderInitialized) {
-            ma_decoder_uninit(&workerDecoder);
-            workerDecoderInitialized = false;
-        }
-        memset(&workerDecoder, 0, sizeof(ma_decoder));
-        decoderPath.clear();
+	void cleanup()
+	{
+		if (workerDecoderInitialized)
+		{
+			ma_decoder_uninit(&workerDecoder);
+			workerDecoderInitialized = false;
+		}
+		memset(&workerDecoder, 0, sizeof(ma_decoder));
+		decoderPath.clear();
 
-        if (pcmBufferA) { free(pcmBufferA); pcmBufferA = nullptr; }
-        if (pcmBufferB) { free(pcmBufferB); pcmBufferB = nullptr; }
-        if (pcmBufferC) { free(pcmBufferC); pcmBufferC = nullptr; }
+		if (pcmBufferA)
+		{
+			free(pcmBufferA);
+			pcmBufferA = nullptr;
+		}
+		if (pcmBufferB)
+		{
+			free(pcmBufferB);
+			pcmBufferB = nullptr;
+		}
+		if (pcmBufferC)
+		{
+			free(pcmBufferC);
+			pcmBufferC = nullptr;
+		}
 
-        activeBuffer = nextBuffer = loadingBuffer = nullptr;
-        asyncState.asyncNextBuffer = asyncState.asyncLoadingBuffer = nullptr;
-    }
+		activeBuffer = nextBuffer = loadingBuffer = nullptr;
+		asyncState.asyncNextBuffer = asyncState.asyncLoadingBuffer = nullptr;
+	}
 
-    void moveFrom(DecoderStream&& other) noexcept {
-        pcmBufferA    = other.pcmBufferA;
-        pcmBufferB    = other.pcmBufferB;
-        pcmBufferC    = other.pcmBufferC;
-        activeBuffer  = other.activeBuffer;
-        nextBuffer    = other.nextBuffer;
-        loadingBuffer = other.loadingBuffer;
+	void moveFrom(DecoderStream &&other) noexcept
+	{
+		pcmBufferA = other.pcmBufferA;
+		pcmBufferB = other.pcmBufferB;
+		pcmBufferC = other.pcmBufferC;
+		activeBuffer = other.activeBuffer;
+		nextBuffer = other.nextBuffer;
+		loadingBuffer = other.loadingBuffer;
 
-        memcpy(&workerDecoder, &other.workerDecoder, sizeof(ma_decoder));
-        workerDecoderInitialized = other.workerDecoderInitialized;
-        decoderPath = std::move(other.decoderPath);
+		memcpy(&workerDecoder, &other.workerDecoder, sizeof(ma_decoder));
+		workerDecoderInitialized = other.workerDecoderInitialized;
+		decoderPath = std::move(other.decoderPath);
 
-        filePosition.store(other.filePosition.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        bufferStartPos = other.bufferStartPos;
-        localReadPos   = other.localReadPos;
-        validFrames    = other.validFrames;
-        active.store(other.active.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        decoderLength  = other.decoderLength;
+		filePosition.store(other.filePosition.load(std::memory_order_relaxed), std::memory_order_relaxed);
+		bufferStartPos = other.bufferStartPos;
+		localReadPos = other.localReadPos;
+		validFrames = other.validFrames;
+		active.store(other.active.load(std::memory_order_relaxed), std::memory_order_relaxed);
+		decoderLength = other.decoderLength;
 
-        asyncState.nextBufferStartPos       = other.asyncState.nextBufferStartPos;
-        asyncState.nextBufferValidFrames    = other.asyncState.nextBufferValidFrames;
-        asyncState.loadingBufferStartPos    = other.asyncState.loadingBufferStartPos;
-        asyncState.loadingBufferValidFrames = other.asyncState.loadingBufferValidFrames;
-        asyncState.asyncNextBuffer          = other.asyncState.asyncNextBuffer;
-        asyncState.asyncLoadingBuffer       = other.asyncState.asyncLoadingBuffer;
+		asyncState.nextBufferStartPos = other.asyncState.nextBufferStartPos;
+		asyncState.nextBufferValidFrames = other.asyncState.nextBufferValidFrames;
+		asyncState.loadingBufferStartPos = other.asyncState.loadingBufferStartPos;
+		asyncState.loadingBufferValidFrames = other.asyncState.loadingBufferValidFrames;
+		asyncState.asyncNextBuffer = other.asyncState.asyncNextBuffer;
+		asyncState.asyncLoadingBuffer = other.asyncState.asyncLoadingBuffer;
 
-        other.pcmBufferA = other.pcmBufferB = other.pcmBufferC = nullptr;
-        other.activeBuffer = other.nextBuffer = other.loadingBuffer = nullptr;
-        other.asyncState.asyncNextBuffer = other.asyncState.asyncLoadingBuffer = nullptr;
-        other.workerDecoderInitialized = false;
-        memset(&other.workerDecoder, 0, sizeof(ma_decoder));
-        other.decoderPath.clear();
-    }
+		other.pcmBufferA = other.pcmBufferB = other.pcmBufferC = nullptr;
+		other.activeBuffer = other.nextBuffer = other.loadingBuffer = nullptr;
+		other.asyncState.asyncNextBuffer = other.asyncState.asyncLoadingBuffer = nullptr;
+		other.workerDecoderInitialized = false;
+		memset(&other.workerDecoder, 0, sizeof(ma_decoder));
+		other.decoderPath.clear();
+	}
 };
 
 // ==========================================================================
 //  AsyncLoader (LOCK-FREE)
 // ==========================================================================
 
-class AsyncLoader {
+class AsyncLoader
+{
 public:
-    explicit AsyncLoader(std::vector<DecoderStream*>& streamRefs)
-        : streams(streamRefs) { 
-        start(); 
-    }
+	explicit AsyncLoader(std::vector<DecoderStream *> &streamRefs)
+		: streams(streamRefs)
+	{
+		start();
+	}
 
-    ~AsyncLoader() { 
-        stop(); 
-    }
+	~AsyncLoader()
+	{
+		stop();
+	}
 
-    void pauseLoading() { 
-        pause.store(true, std::memory_order_release);
-        signal();  
-    }
+	void pauseLoading()
+	{
+		pause.store(true, std::memory_order_release);
+		signal();
+	}
 
-    void resumeLoading() {
-        pause.store(false, std::memory_order_release);
-        signal();
-    }
+	void resumeLoading()
+	{
+		pause.store(false, std::memory_order_release);
+		signal();
+	}
 
-    void signal() {
-        workPending.store(true, std::memory_order_release);
-    }
+	void signal()
+	{
+		workPending.store(true, std::memory_order_release);
+	}
 
-    void waitUntilIdle() {
-        if (!running.load(std::memory_order_acquire)) return;
-        
-        signal();
-        
-        // Wait until the worker is BOTH idle AND no stream has an in-flight
-        // buffer fill. A full 46305-frame decode (TOTAL_BUFFER_FRAMES) from a
-        // freshly-opened decoder (as happens right after a song restart, when
-        // start()'s internal seek is immediately followed by the real forward
-        // seek) can legitimately take longer than the old 100ms timeout. If
-        // that timeout fired while the worker was still writing, the seek's
-        // resetState() would clear the worker's loadingInProgress flag and
-        // reset buffers mid-write, corrupting the next buffer and leaving the
-        // stream inactive -> the song silently restarts from 0.
-        auto startTime = std::chrono::steady_clock::now();
-        const auto timeout = std::chrono::milliseconds(1000);
-        
-        for (;;) {
-            bool anyLoading = false;
-            for (DecoderStream* s : streams) {
-                if (s && s->asyncState.loadingInProgress.load(std::memory_order_acquire)) {
-                    anyLoading = true;
-                    break;
-                }
-            }
-            if (!anyLoading && workerIdle.load(std::memory_order_acquire)) break;
-            if (std::chrono::steady_clock::now() - startTime > timeout) break;
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
-        }
-        
-        std::this_thread::sleep_for(std::chrono::microseconds(500));
-    }
-    
-    bool isRunning() const {
-        return running.load(std::memory_order_acquire);
-    }
+	void waitUntilIdle()
+	{
+		if (!running.load(std::memory_order_acquire))
+			return;
+
+		signal();
+
+		// Wait until the worker is BOTH idle AND no stream has an in-flight
+		// buffer fill. A full 46305-frame decode (TOTAL_BUFFER_FRAMES) from a
+		// freshly-opened decoder (as happens right after a song restart, when
+		// start()'s internal seek is immediately followed by the real forward
+		// seek) can legitimately take longer than the old 100ms timeout. If
+		// that timeout fired while the worker was still writing, the seek's
+		// resetState() would clear the worker's loadingInProgress flag and
+		// reset buffers mid-write, corrupting the next buffer and leaving the
+		// stream inactive -> the song silently restarts from 0.
+		auto startTime = std::chrono::steady_clock::now();
+		const auto timeout = std::chrono::milliseconds(1000);
+
+		for (;;)
+		{
+			bool anyLoading = false;
+			for (DecoderStream *s : streams)
+			{
+				if (s && s->asyncState.loadingInProgress.load(std::memory_order_acquire))
+				{
+					anyLoading = true;
+					break;
+				}
+			}
+			if (!anyLoading && workerIdle.load(std::memory_order_acquire))
+				break;
+			if (std::chrono::steady_clock::now() - startTime > timeout)
+				break;
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
+
+		std::this_thread::sleep_for(std::chrono::microseconds(500));
+	}
+
+	bool isRunning() const
+	{
+		return running.load(std::memory_order_acquire);
+	}
 
 private:
-    std::vector<DecoderStream*>& streams;
-    std::thread       workerThread;
-    std::atomic<bool> running{false};
-    std::atomic<bool> pause{false};
-    std::atomic<bool> workerIdle{false};
-    std::atomic<bool> stopRequested{false};  
-    std::atomic<bool> workPending{false};
+	std::vector<DecoderStream *> &streams;
+	std::thread workerThread;
+	std::atomic<bool> running{false};
+	std::atomic<bool> pause{false};
+	std::atomic<bool> workerIdle{false};
+	std::atomic<bool> stopRequested{false};
+	std::atomic<bool> workPending{false};
 
-    void start() {
-        if (running.load(std::memory_order_acquire)) return;
-        
-        running.store(true, std::memory_order_release);
-        stopRequested.store(false, std::memory_order_release);
-        
-        try {
-            workerThread = std::thread([this]() { worker(); });
-        } catch (const std::exception& e) {
-            running.store(false, std::memory_order_release);
-        }
-    }
+	void start()
+	{
+		if (running.load(std::memory_order_acquire))
+			return;
 
-    void stop() {
-        if (!running.load(std::memory_order_acquire)) return;
-        
-        stopRequested.store(true, std::memory_order_release);
-        running.store(false, std::memory_order_release);
-        
-        signal();
-        std::this_thread::sleep_for(std::chrono::microseconds(100));
-        signal();
-        
-        if (workerThread.joinable()) {
-            workerThread.join();
-        }
-        
-        workPending.store(false, std::memory_order_release);
-    }
+		running.store(true, std::memory_order_release);
+		stopRequested.store(false, std::memory_order_release);
 
-    void worker() {
-        constexpr int MAX_PER_CYCLE = 2;
-        int currentStream = 0;
+		try
+		{
+			workerThread = std::thread([this]()
+									   { worker(); });
+		}
+		catch (const std::exception &e)
+		{
+			running.store(false, std::memory_order_release);
+		}
+	}
 
-        while (running.load(std::memory_order_acquire)) {
-            if (stopRequested.load(std::memory_order_acquire)) {
-                break;
-            }
-            
-            if (pause.load(std::memory_order_acquire) && !stopRequested.load(std::memory_order_acquire)) {
-                workerIdle.store(true, std::memory_order_release);
+	void stop()
+	{
+		if (!running.load(std::memory_order_acquire))
+			return;
 
-                // BOTTLENECK (fixed): was a 100-iteration yield spin followed by a
-                // 1ms sleep, polled continuously. The worker is not a hot path, so
-                // just sleep; it stays responsive within ~1ms (well inside the
-                // hundreds of ms of buffered slack) without burning CPU.
-                auto start = std::chrono::steady_clock::now();
-                while (pause.load(std::memory_order_acquire) &&
-                       !stopRequested.load(std::memory_order_acquire) &&
-                       running.load(std::memory_order_acquire)) {
-                    if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(10)) break;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                }
-                workerIdle.store(false, std::memory_order_release);
-                continue;
-            }
+		stopRequested.store(true, std::memory_order_release);
+		running.store(false, std::memory_order_release);
 
-            if (streams.empty()) {
-                workerIdle.store(true, std::memory_order_release);
+		signal();
+		std::this_thread::sleep_for(std::chrono::microseconds(100));
+		signal();
 
-                auto start = std::chrono::steady_clock::now();
-                while (streams.empty() &&
-                       !stopRequested.load(std::memory_order_acquire) &&
-                       running.load(std::memory_order_acquire)) {
-                    if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(10)) break;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                }
-                workerIdle.store(false, std::memory_order_release);
-                continue;
-            }
+		if (workerThread.joinable())
+		{
+			workerThread.join();
+		}
 
-            workPending.store(false, std::memory_order_release);
+		workPending.store(false, std::memory_order_release);
+	}
 
-            int processed = 0;
-            size_t streamCount = streams.size();
-            
-            for (int i = 0; i < (int)streamCount && processed < MAX_PER_CYCLE; i++) {
-                if (stopRequested.load(std::memory_order_acquire) || !running.load(std::memory_order_acquire)) {
-                    break;
-                }
-                
-                int idx = (currentStream + i) % (int)streamCount;
-                DecoderStream* s = nullptr;
-                
-                if (idx >= 0 && idx < (int)streams.size()) {
-                    s = streams[idx];
-                }
-                
-                if (s && s->active.load(std::memory_order_acquire)) {
-                    if (processStreamLoad(s)) {
-                        processed++;
-                    }
-                }
-            }
+	void worker()
+	{
+		constexpr int MAX_PER_CYCLE = 2;
+		int currentStream = 0;
 
-            if (processed > 0) {
-                currentStream = (currentStream + 1) % (int)streamCount;
-            }
+		while (running.load(std::memory_order_acquire))
+		{
+			if (stopRequested.load(std::memory_order_acquire))
+			{
+				break;
+			}
 
-            // FIX: Removed `&& pause` from this condition to prevent infinite tight loop
-            if (processed == 0 && !stopRequested.load(std::memory_order_acquire)) {
-                workerIdle.store(true, std::memory_order_release);
+			if (pause.load(std::memory_order_acquire) && !stopRequested.load(std::memory_order_acquire))
+			{
+				workerIdle.store(true, std::memory_order_release);
 
-                auto start = std::chrono::steady_clock::now();
-                while (!workPending.load(std::memory_order_acquire) &&
-                       !stopRequested.load(std::memory_order_acquire) &&
-                       running.load(std::memory_order_acquire)) {
-                    if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(5)) break;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                }
-                workerIdle.store(false, std::memory_order_release);
-            }
-        }
-    }
+				// BOTTLENECK (fixed): was a 100-iteration yield spin followed by a
+				// 1ms sleep, polled continuously. The worker is not a hot path, so
+				// just sleep; it stays responsive within ~1ms (well inside the
+				// hundreds of ms of buffered slack) without burning CPU.
+				auto start = std::chrono::steady_clock::now();
+				while (pause.load(std::memory_order_acquire) &&
+					   !stopRequested.load(std::memory_order_acquire) &&
+					   running.load(std::memory_order_acquire))
+				{
+					if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(10))
+						break;
+					std::this_thread::sleep_for(std::chrono::milliseconds(1));
+				}
+				workerIdle.store(false, std::memory_order_release);
+				continue;
+			}
 
-    bool processStreamLoad(DecoderStream* s) {
-        if (!s) return false;
-        
-        bool didWork = false;
+			if (streams.empty())
+			{
+				workerIdle.store(true, std::memory_order_release);
 
-        if (s->asyncState.requestNextBuffer.load(std::memory_order_acquire)) {
-            if (!s->asyncState.loadingInProgress.load(std::memory_order_relaxed)) {
-                if (tryLoadNextBuffer(s)) {
-                    didWork = true;
-                }
-            }
-            s->asyncState.requestNextBuffer.store(false, std::memory_order_release);
-        }
+				auto start = std::chrono::steady_clock::now();
+				while (streams.empty() &&
+					   !stopRequested.load(std::memory_order_acquire) &&
+					   running.load(std::memory_order_acquire))
+				{
+					if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(10))
+						break;
+					std::this_thread::sleep_for(std::chrono::milliseconds(1));
+				}
+				workerIdle.store(false, std::memory_order_release);
+				continue;
+			}
 
-        if (s->asyncState.requestLoadingBuffer.load(std::memory_order_acquire)) {
-            if (!s->asyncState.loadingInProgress.load(std::memory_order_relaxed) &&
-                s->asyncState.nextBufferReady.load(std::memory_order_relaxed)) {
-                if (tryLoadLoadingBuffer(s)) {
-                    didWork = true;
-                }
-            }
-            s->asyncState.requestLoadingBuffer.store(false, std::memory_order_release);
-        }
+			workPending.store(false, std::memory_order_release);
 
-        return didWork;
-    }
+			int processed = 0;
+			size_t streamCount = streams.size();
 
-    bool tryLoadNextBuffer(DecoderStream* s) {
-        if (!s) return false;
-        if (stopRequested.load(std::memory_order_acquire)) return false;
-        
-        bool expected = false;
-        if (!s->asyncState.loadingInProgress.compare_exchange_strong(
-                expected, true, std::memory_order_acq_rel)) {
-            return false;
-        }
+			for (int i = 0; i < (int)streamCount && processed < MAX_PER_CYCLE; i++)
+			{
+				if (stopRequested.load(std::memory_order_acquire) || !running.load(std::memory_order_acquire))
+				{
+					break;
+				}
 
-        if (stopRequested.load(std::memory_order_acquire)) {
-            s->asyncState.loadingInProgress.store(false, std::memory_order_release);
-            return false;
-        }
+				int idx = (currentStream + i) % (int)streamCount;
+				DecoderStream *s = nullptr;
 
-        ma_uint64 start = s->bufferStartPos + HALF_BUFFER_FRAMES;
-        if (start > PADDING_FRAMES) start -= PADDING_FRAMES;
+				if (idx >= 0 && idx < (int)streams.size())
+				{
+					s = streams[idx];
+				}
 
-        if (start >= s->decoderLength || !s->asyncState.asyncNextBuffer) {
-            s->asyncState.loadingInProgress.store(false, std::memory_order_release);
-            return false;
-        }
+				if (s && s->active.load(std::memory_order_acquire))
+				{
+					if (processStreamLoad(s))
+					{
+						processed++;
+					}
+				}
+			}
 
-        ma_uint64 framesRead = 0;
-        s->fillBufferWorker(start, s->asyncState.asyncNextBuffer, &framesRead);
+			if (processed > 0)
+			{
+				currentStream = (currentStream + 1) % (int)streamCount;
+			}
 
-        if (!stopRequested.load(std::memory_order_acquire) && running.load(std::memory_order_acquire)) {
-            s->asyncState.nextBufferStartPos    = start;
-            s->asyncState.nextBufferValidFrames = framesRead;
-            s->asyncState.nextBufferReady.store(true, std::memory_order_release);
-        }
-        
-        s->asyncState.loadingInProgress.store(false, std::memory_order_release);
-        return true;
-    }
+			// FIX: Removed `&& pause` from this condition to prevent infinite tight loop
+			if (processed == 0 && !stopRequested.load(std::memory_order_acquire))
+			{
+				workerIdle.store(true, std::memory_order_release);
 
-    bool tryLoadLoadingBuffer(DecoderStream* s) {
-        if (!s) return false;
-        if (stopRequested.load(std::memory_order_acquire)) return false;
-        
-        bool expected = false;
-        if (!s->asyncState.loadingInProgress.compare_exchange_strong(
-                expected, true, std::memory_order_acq_rel)) {
-            return false;
-        }
+				auto start = std::chrono::steady_clock::now();
+				while (!workPending.load(std::memory_order_acquire) &&
+					   !stopRequested.load(std::memory_order_acquire) &&
+					   running.load(std::memory_order_acquire))
+				{
+					if (std::chrono::steady_clock::now() - start > std::chrono::milliseconds(5))
+						break;
+					std::this_thread::sleep_for(std::chrono::milliseconds(1));
+				}
+				workerIdle.store(false, std::memory_order_release);
+			}
+		}
+	}
 
-        if (stopRequested.load(std::memory_order_acquire)) {
-            s->asyncState.loadingInProgress.store(false, std::memory_order_release);
-            return false;
-        }
+	bool processStreamLoad(DecoderStream *s)
+	{
+		if (!s)
+			return false;
 
-        ma_uint64 start = s->asyncState.nextBufferStartPos + HALF_BUFFER_FRAMES;
-        if (start > PADDING_FRAMES) start -= PADDING_FRAMES;
+		bool didWork = false;
 
-        if (start >= s->decoderLength || !s->asyncState.asyncLoadingBuffer) {
-            s->asyncState.loadingInProgress.store(false, std::memory_order_release);
-            return false;
-        }
+		if (s->asyncState.requestNextBuffer.load(std::memory_order_acquire))
+		{
+			if (!s->asyncState.loadingInProgress.load(std::memory_order_relaxed))
+			{
+				if (tryLoadNextBuffer(s))
+				{
+					didWork = true;
+				}
+			}
+			s->asyncState.requestNextBuffer.store(false, std::memory_order_release);
+		}
 
-        ma_uint64 framesRead = 0;
-        s->fillBufferWorker(start, s->asyncState.asyncLoadingBuffer, &framesRead);
+		if (s->asyncState.requestLoadingBuffer.load(std::memory_order_acquire))
+		{
+			if (!s->asyncState.loadingInProgress.load(std::memory_order_relaxed) &&
+				s->asyncState.nextBufferReady.load(std::memory_order_relaxed))
+			{
+				if (tryLoadLoadingBuffer(s))
+				{
+					didWork = true;
+				}
+			}
+			s->asyncState.requestLoadingBuffer.store(false, std::memory_order_release);
+		}
 
-        if (!stopRequested.load(std::memory_order_acquire) && running.load(std::memory_order_acquire)) {
-            s->asyncState.loadingBufferStartPos    = start;
-            s->asyncState.loadingBufferValidFrames = framesRead;
-            s->asyncState.loadingBufferReady.store(true, std::memory_order_release);
-        }
-        
-        s->asyncState.loadingInProgress.store(false, std::memory_order_release);
-        return true;
-    }
+		return didWork;
+	}
+
+	bool tryLoadNextBuffer(DecoderStream *s)
+	{
+		if (!s)
+			return false;
+		if (stopRequested.load(std::memory_order_acquire))
+			return false;
+
+		bool expected = false;
+		if (!s->asyncState.loadingInProgress.compare_exchange_strong(
+				expected, true, std::memory_order_acq_rel))
+		{
+			return false;
+		}
+
+		if (stopRequested.load(std::memory_order_acquire))
+		{
+			s->asyncState.loadingInProgress.store(false, std::memory_order_release);
+			return false;
+		}
+
+		ma_uint64 start = s->bufferStartPos + HALF_BUFFER_FRAMES;
+		if (start > PADDING_FRAMES)
+			start -= PADDING_FRAMES;
+
+		if (start >= s->decoderLength || !s->asyncState.asyncNextBuffer)
+		{
+			s->asyncState.loadingInProgress.store(false, std::memory_order_release);
+			return false;
+		}
+
+		ma_uint64 framesRead = 0;
+		s->fillBufferWorker(start, s->asyncState.asyncNextBuffer, &framesRead);
+
+		if (!stopRequested.load(std::memory_order_acquire) && running.load(std::memory_order_acquire))
+		{
+			s->asyncState.nextBufferStartPos = start;
+			s->asyncState.nextBufferValidFrames = framesRead;
+			s->asyncState.nextBufferReady.store(true, std::memory_order_release);
+		}
+
+		s->asyncState.loadingInProgress.store(false, std::memory_order_release);
+		return true;
+	}
+
+	bool tryLoadLoadingBuffer(DecoderStream *s)
+	{
+		if (!s)
+			return false;
+		if (stopRequested.load(std::memory_order_acquire))
+			return false;
+
+		bool expected = false;
+		if (!s->asyncState.loadingInProgress.compare_exchange_strong(
+				expected, true, std::memory_order_acq_rel))
+		{
+			return false;
+		}
+
+		if (stopRequested.load(std::memory_order_acquire))
+		{
+			s->asyncState.loadingInProgress.store(false, std::memory_order_release);
+			return false;
+		}
+
+		ma_uint64 start = s->asyncState.nextBufferStartPos + HALF_BUFFER_FRAMES;
+		if (start > PADDING_FRAMES)
+			start -= PADDING_FRAMES;
+
+		if (start >= s->decoderLength || !s->asyncState.asyncLoadingBuffer)
+		{
+			s->asyncState.loadingInProgress.store(false, std::memory_order_release);
+			return false;
+		}
+
+		ma_uint64 framesRead = 0;
+		s->fillBufferWorker(start, s->asyncState.asyncLoadingBuffer, &framesRead);
+
+		if (!stopRequested.load(std::memory_order_acquire) && running.load(std::memory_order_acquire))
+		{
+			s->asyncState.loadingBufferStartPos = start;
+			s->asyncState.loadingBufferValidFrames = framesRead;
+			s->asyncState.loadingBufferReady.store(true, std::memory_order_release);
+		}
+
+		s->asyncState.loadingInProgress.store(false, std::memory_order_release);
+		return true;
+	}
 };
 
 // ==========================================================================
@@ -828,1562 +1021,1942 @@ private:
 //  (cold start / rate change) the callback simply gets silence for that chunk.
 // ==========================================================================
 
-class StretchPipeline {
+class StretchPipeline
+{
 public:
-    static constexpr size_t RING_FRAMES = 1 << 14;      // 16384 stereo frames
-    static constexpr size_t RING_MASK  = RING_FRAMES - 1;
-    static constexpr size_t MAX_CHUNKS = 16;
+	static constexpr size_t RING_FRAMES = 1 << 14; // 16384 stereo frames
+	static constexpr size_t RING_MASK = RING_FRAMES - 1;
+	static constexpr size_t MAX_CHUNKS = 16;
 
-    struct ChunkDesc {
-        ma_uint32 inFrames;
-        ma_uint32 outFrames;
-    };
+	struct ChunkDesc
+	{
+		ma_uint32 inFrames;
+		ma_uint32 outFrames;
+	};
 
-    StretchPipeline() {
-        configureChannels(CHANNEL_COUNT);
-    }
+	StretchPipeline()
+	{
+		configureChannels(CHANNEL_COUNT);
+	}
 
-    ~StretchPipeline() { stop(); }
+	~StretchPipeline() { stop(); }
 
-    // The stretch engine processes the song in the device's output layout so
-    // pitched playback can carry the 3.1 surround buses natively.  Only call
-    // while the worker is stopped (device stopped / pipeline reset), i.e. on
-    // load or on a stereo <-> surround output toggle.
-    void configureChannels(int ch) {
-        if (channels == ch && !inSamples.empty()) return;
-        stop();
-        channels = ch;
-        inSamples.assign(RING_FRAMES * channels, 0.0f);
-        outSamples.assign(RING_FRAMES * channels, 0.0f);
-        workIn.assign(MAX_PITCH_FRAMES * channels, 0.0f);
-        workOut.assign(MAX_CALLBACK_FRAMES * channels, 0.0f);
-        stretch.configure(channels, int(SAMPLE_RATE * 0.1), int(SAMPLE_RATE * 0.05));
-    }
+	// The stretch engine processes the song in the device's output layout so
+	// pitched playback can carry the 3.1 surround buses natively.  Only call
+	// while the worker is stopped (device stopped / pipeline reset), i.e. on
+	// load or on a stereo <-> surround output toggle.
+	void configureChannels(int ch)
+	{
+		if (channels == ch && !inSamples.empty())
+			return;
+		stop();
+		channels = ch;
+		inSamples.assign(RING_FRAMES * channels, 0.0f);
+		outSamples.assign(RING_FRAMES * channels, 0.0f);
+		workIn.assign(MAX_PITCH_FRAMES * channels, 0.0f);
+		workOut.assign(MAX_CALLBACK_FRAMES * channels, 0.0f);
+		stretch.configure(channels, int(SAMPLE_RATE * 0.1), int(SAMPLE_RATE * 0.05));
+	}
 
-    // ---- audio thread -----------------------------------------------
-    bool push(const float* input, ma_uint32 inFrames, ma_uint32 outFrames) {
-        ensureStarted();
+	// ---- audio thread -----------------------------------------------
+	bool push(const float *input, ma_uint32 inFrames, ma_uint32 outFrames)
+	{
+		ensureStarted();
 
-        size_t head = inHead.load(std::memory_order_acquire);
-        size_t tail = inTail.load(std::memory_order_acquire);
-        if (RING_FRAMES - (head - tail) < inFrames) return false;   // input ring full
+		size_t head = inHead.load(std::memory_order_acquire);
+		size_t tail = inTail.load(std::memory_order_acquire);
+		if (RING_FRAMES - (head - tail) < inFrames)
+			return false; // input ring full
 
-        size_t cHead = chunkHead.load(std::memory_order_relaxed);
-        size_t cTail = chunkTail.load(std::memory_order_acquire);
-        if (MAX_CHUNKS - (cHead - cTail) < 1) return false;         // desc ring full
+		size_t cHead = chunkHead.load(std::memory_order_relaxed);
+		size_t cTail = chunkTail.load(std::memory_order_acquire);
+		if (MAX_CHUNKS - (cHead - cTail) < 1)
+			return false; // desc ring full
 
-        writeSamples(inSamples.data(), head, input, inFrames);
-        chunks[cHead & (MAX_CHUNKS - 1)] = { inFrames, outFrames };
-        inHead.store(head + inFrames, std::memory_order_release);
-        chunkHead.store(cHead + 1, std::memory_order_release);
-        return true;
-    }
+		writeSamples(inSamples.data(), head, input, inFrames);
+		chunks[cHead & (MAX_CHUNKS - 1)] = {inFrames, outFrames};
+		inHead.store(head + inFrames, std::memory_order_release);
+		chunkHead.store(cHead + 1, std::memory_order_release);
+		return true;
+	}
 
-    bool pull(float* output, ma_uint32 outFrames) {
-        size_t head = outHead.load(std::memory_order_acquire);
-        size_t tail = outTail.load(std::memory_order_acquire);
-        if (head - tail < outFrames) return false;                  // not produced yet
-        readSamples(outSamples.data(), tail, output, outFrames);
-        outTail.store(tail + outFrames, std::memory_order_release);
-        return true;
-    }
+	bool pull(float *output, ma_uint32 outFrames)
+	{
+		size_t head = outHead.load(std::memory_order_acquire);
+		size_t tail = outTail.load(std::memory_order_acquire);
+		if (head - tail < outFrames)
+			return false; // not produced yet
+		readSamples(outSamples.data(), tail, output, outFrames);
+		outTail.store(tail + outFrames, std::memory_order_release);
+		return true;
+	}
 
-    void stop() {
-        if (!running.load(std::memory_order_acquire)) return;
-        stopRequested.store(true, std::memory_order_release);
-        if (thread.joinable()) thread.join();
-        running.store(false, std::memory_order_release);
-    }
+	void stop()
+	{
+		if (!running.load(std::memory_order_acquire))
+			return;
+		stopRequested.store(true, std::memory_order_release);
+		if (thread.joinable())
+			thread.join();
+		running.store(false, std::memory_order_release);
+	}
 
-    // Discard all in-flight stretched chunks and re-seed the stretch engine.
-    // Only safe to call while the audio device is stopped (e.g. inside seek).
-    void reset() {
-        stop();
-        inHead.store(0, std::memory_order_release); inTail.store(0, std::memory_order_release);
-        outHead.store(0, std::memory_order_release); outTail.store(0, std::memory_order_release);
-        chunkHead.store(0, std::memory_order_release); chunkTail.store(0, std::memory_order_release);
-        stretch.reset();
-    }
+	// Discard all in-flight stretched chunks and re-seed the stretch engine.
+	// Only safe to call while the audio device is stopped (e.g. inside seek).
+	void reset()
+	{
+		stop();
+		inHead.store(0, std::memory_order_release);
+		inTail.store(0, std::memory_order_release);
+		outHead.store(0, std::memory_order_release);
+		outTail.store(0, std::memory_order_release);
+		chunkHead.store(0, std::memory_order_release);
+		chunkTail.store(0, std::memory_order_release);
+		stretch.reset();
+	}
 
 private:
-    signalsmith::stretch::SignalsmithStretch stretch;
-    int channels = CHANNEL_COUNT;   // output layout this pipeline stretches
-    std::vector<float> inSamples, outSamples, workIn, workOut;
-    std::array<ChunkDesc, MAX_CHUNKS> chunks;
+	signalsmith::stretch::SignalsmithStretch stretch;
+	int channels = CHANNEL_COUNT; // output layout this pipeline stretches
+	std::vector<float> inSamples, outSamples, workIn, workOut;
+	std::array<ChunkDesc, MAX_CHUNKS> chunks;
 
-    std::atomic<size_t> inHead{0}, inTail{0};
-    std::atomic<size_t> outHead{0}, outTail{0};
-    std::atomic<size_t> chunkHead{0}, chunkTail{0};
+	std::atomic<size_t> inHead{0}, inTail{0};
+	std::atomic<size_t> outHead{0}, outTail{0};
+	std::atomic<size_t> chunkHead{0}, chunkTail{0};
 
-    std::thread thread;
-    std::atomic<bool> running{false};
-    std::atomic<bool> stopRequested{false};
+	std::thread thread;
+	std::atomic<bool> running{false};
+	std::atomic<bool> stopRequested{false};
 
-    void ensureStarted() {
-        bool expected = false;
-        if (running.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
-            stopRequested.store(false, std::memory_order_release);
-            try {
-                thread = std::thread([this]() { workerLoop(); });
-            } catch (...) {
-                running.store(false, std::memory_order_release);
-            }
-        }
-    }
+	void ensureStarted()
+	{
+		bool expected = false;
+		if (running.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
+		{
+			stopRequested.store(false, std::memory_order_release);
+			try
+			{
+				thread = std::thread([this]()
+									 { workerLoop(); });
+			}
+			catch (...)
+			{
+				running.store(false, std::memory_order_release);
+			}
+		}
+	}
 
-    void writeSamples(float* dst, size_t at, const float* src, ma_uint32 frames) {
-        size_t offset = (at & RING_MASK) * channels;
-        size_t first  = std::min<size_t>(frames, RING_FRAMES - (at & RING_MASK));
-        size_t total  = (size_t)frames * channels;
-        memcpy(dst + offset, src, first * channels * sizeof(float));
-        if (frames > first)
-            memcpy(dst, src + first * channels, (total - first * channels) * sizeof(float));
-    }
+	void writeSamples(float *dst, size_t at, const float *src, ma_uint32 frames)
+	{
+		size_t offset = (at & RING_MASK) * channels;
+		size_t first = std::min<size_t>(frames, RING_FRAMES - (at & RING_MASK));
+		size_t total = (size_t)frames * channels;
+		memcpy(dst + offset, src, first * channels * sizeof(float));
+		if (frames > first)
+			memcpy(dst, src + first * channels, (total - first * channels) * sizeof(float));
+	}
 
-    void readSamples(const float* src, size_t at, float* dst, ma_uint32 frames) {
-        size_t offset = (at & RING_MASK) * channels;
-        size_t first  = std::min<size_t>(frames, RING_FRAMES - (at & RING_MASK));
-        memcpy(dst, src + offset, first * channels * sizeof(float));
-        if (frames > first)
-            memcpy(dst + first * channels, src, (frames - first) * channels * sizeof(float));
-    }
+	void readSamples(const float *src, size_t at, float *dst, ma_uint32 frames)
+	{
+		size_t offset = (at & RING_MASK) * channels;
+		size_t first = std::min<size_t>(frames, RING_FRAMES - (at & RING_MASK));
+		memcpy(dst, src + offset, first * channels * sizeof(float));
+		if (frames > first)
+			memcpy(dst + first * channels, src, (frames - first) * channels * sizeof(float));
+	}
 
-    void workerLoop() {
-        while (running.load(std::memory_order_acquire) && !stopRequested.load(std::memory_order_acquire)) {
-            size_t cHead = chunkHead.load(std::memory_order_acquire);
-            size_t cTail = chunkTail.load(std::memory_order_acquire);
-            if (cTail >= cHead) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                continue;
-            }
+	void workerLoop()
+	{
+		while (running.load(std::memory_order_acquire) && !stopRequested.load(std::memory_order_acquire))
+		{
+			size_t cHead = chunkHead.load(std::memory_order_acquire);
+			size_t cTail = chunkTail.load(std::memory_order_acquire);
+			if (cTail >= cHead)
+			{
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+				continue;
+			}
 
-            const ChunkDesc& c = chunks[cTail & (MAX_CHUNKS - 1)];
+			const ChunkDesc &c = chunks[cTail & (MAX_CHUNKS - 1)];
 
-            size_t oHead = outHead.load(std::memory_order_acquire);
-            size_t oTail = outTail.load(std::memory_order_acquire);
-            if ((oHead - oTail) + c.outFrames > RING_FRAMES) {      // output ring full
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                continue;
-            }
+			size_t oHead = outHead.load(std::memory_order_acquire);
+			size_t oTail = outTail.load(std::memory_order_acquire);
+			if ((oHead - oTail) + c.outFrames > RING_FRAMES)
+			{ // output ring full
+				std::this_thread::sleep_for(std::chrono::milliseconds(1));
+				continue;
+			}
 
-            size_t iTail = inTail.load(std::memory_order_acquire);
-            readSamples(inSamples.data(), iTail, workIn.data(), c.inFrames);
-            inTail.store(iTail + c.inFrames, std::memory_order_release);
+			size_t iTail = inTail.load(std::memory_order_acquire);
+			readSamples(inSamples.data(), iTail, workIn.data(), c.inFrames);
+			inTail.store(iTail + c.inFrames, std::memory_order_release);
 
-            stretch.process(workIn.data(), c.inFrames, workOut.data(), c.outFrames);
-            writeSamples(outSamples.data(), oHead, workOut.data(), c.outFrames);
-            outHead.store(oHead + c.outFrames, std::memory_order_release);
-            chunkTail.store(cTail + 1, std::memory_order_release);
-        }
-    }
+			stretch.process(workIn.data(), c.inFrames, workOut.data(), c.outFrames);
+			writeSamples(outSamples.data(), oHead, workOut.data(), c.outFrames);
+			outHead.store(oHead + c.outFrames, std::memory_order_release);
+			chunkTail.store(cTail + 1, std::memory_order_release);
+		}
+	}
 };
 
 // ==========================================================================
 //  AudioSystem (LOCK-FREE)
 // ==========================================================================
 
-class AudioSystem {
+class AudioSystem
+{
 public:
-    std::vector<DecoderStream> streams;
-    std::vector<float>         decoderVolumes;
-    std::vector<std::string>   filePaths;
-
-    ma_device device;
-    StretchPipeline* stretchPipe = nullptr;
-
-    int   longestDecoderIndex = 0;
-    std::atomic<float> playbackRate{1.0f};
-    std::atomic<int> mixerState{3};
-    std::atomic<bool> exists{false};
-    std::atomic<bool> stretchEnabled{true}; //BOTTLENECK: high改善 [opt-in] FFT time-stretch toggle; when false, pitched playback uses linear resample instead of SignalsmithStretch
-
-    // ---- surround sound system (AudioSampleUnified) ----
-    // Output layout of the song device: CHANNEL_COUNT (stereo) or
-    // SURROUND_CHANNEL_COUNT (3.1).  Only mutated while the device is stopped,
-    // but read every callback, hence atomic.
-    std::atomic<bool> surroundEnabled{false};
-    std::atomic<int>  playbackChannels{CHANNEL_COUNT};
-    // Per-stream routing: which surround bus each decoder feeds.  Indexed by
-    // decoder (track) order, values are MaThingAudioChannel.  Written from the
-    // game thread while the device may be running; the callback reads it per
-    // stream per callback, so atomic elements keep the read wait-free.  A    // deque because std::atomic is neither movable nor copyable, which makes    // vector's reallocation ill-formed; deque never relocates its elements.
-    std::deque<std::atomic<int>> streamChannels;
-    // Per-stream one-pole low-pass state for the LFE feed (audio thread only).
-    std::vector<float> streamLpfState;
-
-    // Staging mix for pitched playback. Sized for up to 4x playback rate in
-    // the widest layout (3.1).
-    float pitchInputMix[MAX_PITCH_FRAMES * SURROUND_CHANNEL_COUNT] = {};
-
-    // Per-stream stereo staging used by the surround routing pass so each
-    // decoder can be read from its triple-buffered PCM and then distributed
-    // into the 3.1 output independently. Scratch only — never moved/copied.
-    float streamStage[MAX_CALLBACK_FRAMES * CHANNEL_COUNT] = {};
-
-    // Prediction state for smooth 0.1ms audio time between callback updates
-    mutable std::atomic<ma_uint64> lastQueriedFrames{0};
-    mutable std::atomic<long long> lastQuerySystemTime{0};  // steady_clock ns
-    mutable std::atomic<double> lastQueryPlaybackRate{1.0};
-
-    AudioSystem()  {
-        memset(&device, 0, sizeof(ma_device));
-        
-        // NEW: Initialize SIMD dispatch on startup
-        init_simd_dispatch();
-
-        stretchPipe = new StretchPipeline();
-    }
-    ~AudioSystem() {
-        destroy();
-    }
-
-    AudioSystem(AudioSystem&& other) noexcept { moveFrom(std::move(other)); }
-    AudioSystem& operator=(AudioSystem&& other) noexcept {
-        if (this != &other) { destroy(); moveFrom(std::move(other)); }
-        return *this;
-    }
-    AudioSystem(const AudioSystem&)            = delete;
-    AudioSystem& operator=(const AudioSystem&) = delete;
-
-    void loadFiles(std::vector<const char*> argv) {
-        if (argv.empty()) { printf("No input files.\n"); return; }
-
-        destroy();
-
-        filePaths.clear();
-        for (auto p : argv) filePaths.push_back(p);
-
-        streams.resize(argv.size());
-        decoderVolumes.resize(argv.size(), 1.0f);
-
-        ma_uint64 longestLength = 0;
-
-        for (size_t i = 0; i < argv.size(); i++) {
-            DecoderStream& s = streams[i];
-            s.decoderPath = argv[i];
-
-            // Probe with a throw-away decoder to validate the file and learn its
-            // length.  The stream's own worker decode handle isn't opened yet, so
-            // a failure here never leaves a half-initialized decoder behind and
-            // the streams.clear() below can uninit cleanly (no double-uninit).
-            ma_decoder probe;
-            if (!s.openTempDecoder(&probe)) {
-                streams.clear(); decoderVolumes.clear(); filePaths.clear();
-                printf("Failed to load %s.\n", argv[i]);
-                exists.store(false, std::memory_order_release);
-                return;
-            }
-            ma_decoder_get_length_in_pcm_frames(&probe, &s.decoderLength);
-            ma_decoder_uninit(&probe);
-
-            s.pcmBufferA = (float*)malloc(sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
-            s.pcmBufferB = (float*)malloc(sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
-            s.pcmBufferC = (float*)malloc(sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
-            memset(s.pcmBufferA, 0, sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
-            memset(s.pcmBufferB, 0, sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
-            memset(s.pcmBufferC, 0, sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
-
-            s.activeBuffer  = s.pcmBufferA;
-            s.nextBuffer    = s.pcmBufferB;
-            s.loadingBuffer = s.pcmBufferC;
-            s.asyncState.asyncNextBuffer    = s.pcmBufferB;
-            s.asyncState.asyncLoadingBuffer = s.pcmBufferC;
-
-            // Open the persistent decode handle that only the AsyncLoader worker
-            // thread will ever touch.  No other thread accesses it afterwards.
-            bool workerOpened = false;
-            {
-                ma_decoder_config workerConfig =
-                    ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
-                if (ma_decoder_init_file(argv[i], &workerConfig, &s.workerDecoder) == MA_SUCCESS) {
-                    ma_data_source_set_looping(&s.workerDecoder, MA_FALSE);
-                    s.workerDecoderInitialized = true;
-                    workerOpened = true;
-                }
-            }
-            if (!workerOpened) {
-                streams.clear(); decoderVolumes.clear(); filePaths.clear();
-                printf("Failed to load %s.\n", argv[i]);
-                exists.store(false, std::memory_order_release);
-                return;
-            }
-
-            //BOTTLENECK: mid synchronous decode of ~3 full buffers (initial + 2 prefetch) per stream on the main thread during loadFiles; multi-stem songs stall playback start for seconds | FIX: fill initial/prefetch buffers via the AsyncLoader worker and wait on it instead of inline decode
-            fillInitialBuffer(i, 0);
-
-            if (s.active.load(std::memory_order_acquire)) {
-                loadNextBufferSync(i);
-                if (s.asyncState.nextBufferReady.load(std::memory_order_relaxed))
-                    loadLoadingBufferSync(i);
-            }
-
-            if (s.decoderLength > longestLength) {
-                longestLength = s.decoderLength;
-                longestDecoderIndex = (int)i;
-            }
-        }
-
-        streamPtrs.clear();
-        for (auto& s : streams) streamPtrs.push_back(&s);
-        if (asyncLoader) delete asyncLoader;
-        asyncLoader = new AsyncLoader(streamPtrs);
-
-        // ---- surround routing defaults (AudioSampleUnified) ----
-        // Track 0 is the inst -> BACKGROUND front pair; every following track
-        // is a voices stem -> CENTER speaker.  The Haxe unified system can
-        // re-route any track afterwards via setStreamChannel().
-        streamChannels.clear();
-        streamLpfState.assign(streams.size(), 0.0f);
-        for (size_t i = 0; i < streams.size(); i++) {
-            streamChannels.emplace_back((i == 0) ? MA_CH_BACKGROUND : MA_CH_CENTER);
-        }
-
-        // Open the device in the saved output layout (stereo or 3.1).  If a
-        // 4-channel device cannot be opened, fall back to stereo rather than
-        // losing song audio entirely.
-        int wantedChannels = surroundEnabled.load(std::memory_order_acquire)
-                           ? SURROUND_CHANNEL_COUNT : CHANNEL_COUNT;
-        playbackChannels.store(wantedChannels, std::memory_order_release);
-
-        ma_device_config deviceConfig = ma_device_config_init(ma_device_type_playback);
-        deviceConfig.playback.format   = SAMPLE_FORMAT;
-        deviceConfig.playback.channels = wantedChannels;
-        deviceConfig.sampleRate        = SAMPLE_RATE;
-        deviceConfig.dataCallback      = data_callback;
-        deviceConfig.pUserData         = this;
-
-        if (ma_device_init(nullptr, &deviceConfig, &device) != MA_SUCCESS && wantedChannels != CHANNEL_COUNT) {
-            playbackChannels.store(CHANNEL_COUNT, std::memory_order_release);
-            surroundEnabled.store(false, std::memory_order_release);
-            deviceConfig.playback.channels = CHANNEL_COUNT;
-            if (ma_device_init(nullptr, &deviceConfig, &device) != MA_SUCCESS) {
-                streams.clear(); decoderVolumes.clear(); filePaths.clear();
-                streamChannels.clear(); streamLpfState.clear();
-                printf("Failed to open playback device.\n");
-                return;
-            }
-            printf("Surround Sound 3.1 unavailable on this device; falling back to stereo.\n");
-        }
-
-        // The stretch pipeline must process the same layout the device plays.
-        if (!stretchPipe)
-            stretchPipe = new StretchPipeline();
-        stretchPipe->reset();
-        stretchPipe->configureChannels(playbackChannels.load(std::memory_order_acquire));
-
-        exists.store(true, std::memory_order_release);
-        mixerState.store(3, std::memory_order_release);
-    }
-
-    void destroy() {
-        if (!exists.load(std::memory_order_acquire)) return;
-        
-        exists.store(false, std::memory_order_release);
-        ma_device_stop(&device);
-        
-        if (asyncLoader) {
-            delete asyncLoader;
-            asyncLoader = nullptr;
-        }
-        
-        ma_device_uninit(&device);
-        
-        streams.clear();
-        decoderVolumes.clear();
-        filePaths.clear();
-        streamPtrs.clear();
-        streamChannels.clear();
-        streamLpfState.clear();
-        
-        if (stretchPipe) {
-            delete stretchPipe;      // stops the stretch worker thread
-            stretchPipe = nullptr;
-        }
-        
-        longestDecoderIndex = 0;
-        playbackRate.store(1.0f, std::memory_order_release);
-        mixerState.store(3, std::memory_order_release);
-        
-        // Reset prediction state
-        lastQueriedFrames.store(0, std::memory_order_relaxed);
-        lastQuerySystemTime.store(0, std::memory_order_relaxed);
-        lastQueryPlaybackRate.store(1.0, std::memory_order_relaxed);
-
-        memset(&device, 0, sizeof(ma_device));
-    }
-
-        void start() {
-        if (!exists.load(std::memory_order_acquire)) return;
-        if (mixerState.load(std::memory_order_acquire) == 3) seekToPCMFrame(0);
-        if (asyncLoader) asyncLoader->resumeLoading();
-        
-        // FIX: Set to playing BEFORE starting the device so the callback immediately knows the state
-        mixerState.store(1, std::memory_order_release); 
-        
-        // Initialize prediction anchor at current position (frame 0 or seek position)
-        ma_uint64 startFrame = 0;
-        if (!streams.empty()) {
-            startFrame = streams[longestDecoderIndex].filePosition.load(std::memory_order_relaxed);
-        }
-        lastQueriedFrames.store(startFrame, std::memory_order_relaxed);
-        lastQuerySystemTime.store(std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_relaxed);
-        lastQueryPlaybackRate.store(playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        
-        ma_device_start(&device);
-    }
-
-    void stop() {
-        if (!exists.load(std::memory_order_acquire)) return;
-        
-        // FIX: Set to paused BEFORE stopping the device to prevent the callback from overwriting it
-        mixerState.store(2, std::memory_order_release); 
-        if (asyncLoader) asyncLoader->pauseLoading();
-        ma_device_stop(&device);
-    }
-
-    bool stopped() const { return mixerState.load(std::memory_order_acquire) == 3; }
-
-    void seekToPCMFrame(int64_t pos) {
-        if (!exists.load(std::memory_order_acquire)) return;
-
-        // The device's actual running state can diverge from mixerState: the audio
-        // callback sets mixerState to 3 (stopped) on underrun while the device keeps
-        // running, which happens when the main thread is stalled and the worker can't
-        // refill buffers in time. If we gated stop/restart on mixerState==1, a seek in
-        // that state would reset the PCM buffers while the callback is still reading
-        // them (data race). Always gate on the device's real state instead.
-        bool deviceRunning = ma_device_is_started(&device);
-        
-        // FIX: Pause immediately to lock the state before touching the decoder/device
-        if (deviceRunning) {
-            mixerState.store(2, std::memory_order_release); 
-        }
-
-        if (asyncLoader) asyncLoader->pauseLoading();
-        if (asyncLoader) asyncLoader->waitUntilIdle();
-
-        if (deviceRunning) ma_device_stop(&device);
-
-        // Discard any stretched chunks still in flight from the pre-seek position
-        // so the pitched path restarts cleanly (device is stopped and the loader
-        // is idle here, so touching the pipeline is safe).
-        if (stretchPipe) stretchPipe->reset();
-
-        for (size_t i = 0; i < streams.size(); i++) {
-            DecoderStream& s = streams[i];
-            ma_uint64 target = std::min<ma_uint64>(
-                (ma_uint64)std::max<int64_t>(pos, 0), s.decoderLength);
-
-            s.resetState();
-            fillInitialBuffer(i, target);
-            if (s.active.load(std::memory_order_acquire) && target < s.decoderLength) 
-                s.filePosition.store(target, std::memory_order_release);
-
-            if (s.active.load(std::memory_order_acquire)) {
-                loadNextBufferSync(i);
-                if (s.asyncState.nextBufferReady.load(std::memory_order_relaxed))
-                    loadLoadingBufferSync(i);
-            }
-
-            // Reposition the worker-owned decoder to the seek target.  After a
-            // song restart (destroy+init) the worker decoder is freshly opened at
-            // frame 0, so without this the worker's next fill would perform a huge
-            // forward seek (0 -> target+4410) whose stb_vorbis coarse seek can fail,
-            // producing an empty next buffer and stalling/restarting the stream.
-            // The worker is paused and idle here (waitUntilIdle above), so touching
-            // workerDecoder from the main thread is safe.
-            if (s.workerDecoderInitialized)
-                ma_decoder_seek_to_pcm_frame(&s.workerDecoder, target);
-        }
-
-        mixerState.store((pos < (int64_t)streams[longestDecoderIndex].decoderLength) ? 2 : 3, std::memory_order_release);
-
-        // Always reset prediction anchor on seek (regardless of device state)
-        lastQueriedFrames.store((ma_uint64)pos, std::memory_order_relaxed);
-        lastQuerySystemTime.store(std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_relaxed);
-        lastQueryPlaybackRate.store(playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
-
-        if (deviceRunning && mixerState.load(std::memory_order_acquire) == 2) {
-            if (asyncLoader) asyncLoader->resumeLoading();
-            mixerState.store(1, std::memory_order_release); // Set state before starting device
-            ma_device_start(&device);
-        }
-    }
-
-    void deactivate_decoder(int index) {
-        if (index >= 0 && index < (int)streams.size())
-            streams[index].active.store(false, std::memory_order_release);
-    }
-
-    void amplify_decoder(int index, double volume) {
-        if (index >= 0 && index < (int)decoderVolumes.size())
-            decoderVolumes[index] = (float)volume;
-    }
-
-    void   setPlaybackRate(float value) { playbackRate.store(value, std::memory_order_release); }
-    void   setStretchEnabled(bool value) { stretchEnabled.store(value, std::memory_order_release); }
-    double getGlobalVolume() const      { return MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed); }
-    double setGlobalVolume(double v)    { MUSIC_MASTER_VOLUME_099.store(v, std::memory_order_relaxed); return v; }
-    int    getMixerState() const        { return mixerState.load(std::memory_order_acquire); }
-
-    // ---- surround sound system (AudioSampleUnified) ----
-
-    bool isSurroundEnabled() const { return surroundEnabled.load(std::memory_order_acquire); }
-
-    // Toggles the song device between stereo (2 channels) and Surround Sound
-    // 3.1 (4 channels: FL/FR/C/LFE).  The device is re-opened in the new
-    // layout; playback state (playing/paused/position) is preserved.  Safe to
-    // call while a song is loaded and even while it is playing.
-    void setSurroundEnabled(bool enable) {
-        bool prev = surroundEnabled.exchange(enable, std::memory_order_acq_rel);
-        if (prev == enable) return;
-
-        int wanted = enable ? SURROUND_CHANNEL_COUNT : CHANNEL_COUNT;
-
-        if (!exists.load(std::memory_order_acquire)) {
-            // No song loaded yet: just record the layout for the next loadFiles.
-            playbackChannels.store(wanted, std::memory_order_release);
-            if (stretchPipe) { stretchPipe->reset(); stretchPipe->configureChannels(wanted); }
-            return;
-        }
-
-        int  prevState  = mixerState.load(std::memory_order_acquire);
-        bool wasPlaying = (prevState == 1);
-
-        // Stop and tear down the device so the callback can never observe a
-        // half-reconfigured state, then re-open it with the new channel count.
-        ma_device_stop(&device);
-        if (stretchPipe) stretchPipe->reset();   // drop chunks stretched in the old layout
-        ma_device_uninit(&device);
-        memset(&device, 0, sizeof(ma_device));
-
-        ma_device_config cfg = ma_device_config_init(ma_device_type_playback);
-        cfg.playback.format   = SAMPLE_FORMAT;
-        cfg.playback.channels = wanted;
-        cfg.sampleRate        = SAMPLE_RATE;
-        cfg.dataCallback      = data_callback;
-        cfg.pUserData         = this;
-
-        if (ma_device_init(nullptr, &cfg, &device) != MA_SUCCESS && wanted != CHANNEL_COUNT) {
-            // 3.1 not supported by the endpoint: fall back to stereo instead
-            // of losing song audio entirely.
-            playbackChannels.store(CHANNEL_COUNT, std::memory_order_release);
-            surroundEnabled.store(false, std::memory_order_release);
-            cfg.playback.channels = CHANNEL_COUNT;
-            if (ma_device_init(nullptr, &cfg, &device) != MA_SUCCESS) {
-                mixerState.store(3, std::memory_order_release);
-                return;
-            }
-            printf("Surround Sound 3.1 unavailable on this device; falling back to stereo.\n");
-        } else {
-            playbackChannels.store(wanted, std::memory_order_release);
-        }
-
-        // The stretch engine must process the same layout the device plays.
-        if (stretchPipe) { stretchPipe->reset(); stretchPipe->configureChannels(playbackChannels.load(std::memory_order_acquire)); }
-
-        if (wasPlaying) {
-            mixerState.store(1, std::memory_order_release);
-            ma_device_start(&device);
-        } else {
-            mixerState.store(prevState, std::memory_order_release);
-        }
-    }
-
-    // Routes one decoded song track (inst / voices / ...) into a surround
-    // channel bus.  `channel` is a MaThingAudioChannel identifier.
-    void setStreamChannel(int index, int channel) {
-        if (index >= 0 && index < (int)streamChannels.size() &&
-            channel >= MA_CH_CENTER && channel <= MA_CH_SUB)
-            streamChannels[index].store(channel, std::memory_order_release);
-    }
-
-    int getStreamChannel(int index) const {
-        if (index >= 0 && index < (int)streamChannels.size())
-            return streamChannels[index].load(std::memory_order_acquire);
-        return (index == 0) ? MA_CH_BACKGROUND : MA_CH_CENTER;
-    }
-
-    // Returns smooth predicted playback position in milliseconds (0.1ms resolution)
-    // Automatically interpolates between audio callback updates using system clock
-    double getPlaybackPosition() const {
-        if (!exists.load(std::memory_order_acquire)) return 0.0;
-        if (streams.empty()) return 0.0;
-        
-        const DecoderStream& s = streams[longestDecoderIndex];
-        if (!s.active.load(std::memory_order_acquire))
-            return (double)s.decoderLength / (SAMPLE_RATE * 0.001);
-        
-        // Use callback frame counter (updated every ~10ms) as anchor + system clock interpolation
-        ma_uint64 baseFrames = lastQueriedFrames.load(std::memory_order_relaxed);
-        long long baseTimeNs = lastQuerySystemTime.load(std::memory_order_relaxed);
-        double rate = lastQueryPlaybackRate.load(std::memory_order_relaxed);
-        
-        if (baseFrames == 0 && baseTimeNs == 0) {
-            // First call - initialize anchor from the real consumed position.
-            // (totalFramesProcessed is wall-clock only and cumulative since
-            // load, so it is the wrong anchor after rate changes or seeks.)
-            ma_uint64 frames = streams[longestDecoderIndex].filePosition.load(std::memory_order_relaxed);
-            lastQueriedFrames.store(frames, std::memory_order_relaxed);
-            lastQuerySystemTime.store(
-                std::chrono::steady_clock::now().time_since_epoch().count(),
-                std::memory_order_relaxed
-            );
-            lastQueryPlaybackRate.store(playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
-            baseFrames = frames;
-            baseTimeNs = lastQuerySystemTime.load(std::memory_order_relaxed);
-            rate = lastQueryPlaybackRate.load(std::memory_order_relaxed);
-        }
-        
-        // Interpolate: baseFrames + elapsedTime * sampleRate * rate
-        long long nowNs = std::chrono::steady_clock::now().time_since_epoch().count();
-        double elapsedSeconds = (nowNs - baseTimeNs) * 1e-9;
-        double predictedFramesD = baseFrames + elapsedSeconds * SAMPLE_RATE * rate;
-        ma_uint64 predictedFrames = (ma_uint64)predictedFramesD;
-        
-        if (predictedFrames >= s.decoderLength) predictedFrames = s.decoderLength;
-        
-        // Round to 0.1ms (5 frames @ 48kHz) for consistent smooth stepping
-        predictedFrames = (predictedFrames / 5) * 5;
-        
-        return (double)predictedFrames / (SAMPLE_RATE * 0.001);
-    }
-
-    double getDuration() const {
-        if (streams.empty()) return 0.0;
-        return (double)streams[longestDecoderIndex].decoderLength / (SAMPLE_RATE * 0.001);
-    }
+	std::vector<DecoderStream> streams;
+	std::vector<float> decoderVolumes;
+	std::vector<std::string> filePaths;
+
+	ma_device device;
+	StretchPipeline *stretchPipe = nullptr;
+
+	int longestDecoderIndex = 0;
+	std::atomic<float> playbackRate{1.0f};
+	std::atomic<int> mixerState{3};
+	std::atomic<bool> exists{false};
+	std::atomic<bool> stretchEnabled{true}; // BOTTLENECK: high改善 [opt-in] FFT time-stretch toggle; when false, pitched playback uses linear resample instead of SignalsmithStretch
+
+	// ---- surround sound system (AudioSampleUnified) ----
+	// Output layout of the song device: CHANNEL_COUNT (stereo) or
+	// SURROUND_CHANNEL_COUNT (3.1).  Only mutated while the device is stopped,
+	// but read every callback, hence atomic.
+	std::atomic<bool> surroundEnabled{false};
+	std::atomic<int> playbackChannels{CHANNEL_COUNT};
+	// Per-stream routing: which surround bus each decoder feeds.  Indexed by
+	// decoder (track) order, values are MaThingAudioChannel.  Written from the
+	// game thread while the device may be running; the callback reads it per
+	// stream per callback, so atomic elements keep the read wait-free.  A
+	// deque because std::atomic is neither movable nor copyable, which makes
+	// vector's reallocation ill-formed; deque never relocates its elements.
+	std::deque<std::atomic<int>> streamChannels;
+	// Per-stream one-pole low-pass state for the LFE feed (audio thread only).
+	std::vector<float> streamLpfState;
+
+	// Staging mix for pitched playback. Sized for up to 4x playback rate in
+	// the widest layout (3.1).
+	float pitchInputMix[MAX_PITCH_FRAMES * SURROUND_CHANNEL_COUNT] = {};
+
+	// Per-stream stereo staging used by the surround routing pass so each
+	// decoder can be read from its triple-buffered PCM and then distributed
+	// into the 3.1 output independently. Scratch only — never moved/copied.
+	float streamStage[MAX_CALLBACK_FRAMES * CHANNEL_COUNT] = {};
+
+	// Prediction state for smooth 0.1ms audio time between callback updates
+	mutable std::atomic<ma_uint64> lastQueriedFrames{0};
+	mutable std::atomic<long long> lastQuerySystemTime{0}; // steady_clock ns
+	mutable std::atomic<double> lastQueryPlaybackRate{1.0};
+
+	AudioSystem()
+	{
+		memset(&device, 0, sizeof(ma_device));
+
+		// NEW: Initialize SIMD dispatch on startup
+		init_simd_dispatch();
+
+		stretchPipe = new StretchPipeline();
+	}
+	~AudioSystem()
+	{
+		destroy();
+	}
+
+	AudioSystem(AudioSystem &&other) noexcept { moveFrom(std::move(other)); }
+	AudioSystem &operator=(AudioSystem &&other) noexcept
+	{
+		if (this != &other)
+		{
+			destroy();
+			moveFrom(std::move(other));
+		}
+		return *this;
+	}
+	AudioSystem(const AudioSystem &) = delete;
+	AudioSystem &operator=(const AudioSystem &) = delete;
+
+	void loadFiles(std::vector<const char *> argv)
+	{
+		if (argv.empty())
+		{
+			printf("No input files.\n");
+			return;
+		}
+
+		destroy();
+
+		filePaths.clear();
+		for (auto p : argv)
+			filePaths.push_back(p);
+
+		streams.resize(argv.size());
+		decoderVolumes.resize(argv.size(), 1.0f);
+
+		ma_uint64 longestLength = 0;
+
+		for (size_t i = 0; i < argv.size(); i++)
+		{
+			DecoderStream &s = streams[i];
+			s.decoderPath = argv[i];
+
+			// Probe with a throw-away decoder to validate the file and learn its
+			// length.  The stream's own worker decode handle isn't opened yet, so
+			// a failure here never leaves a half-initialized decoder behind and
+			// the streams.clear() below can uninit cleanly (no double-uninit).
+			ma_decoder probe;
+			if (!s.openTempDecoder(&probe))
+			{
+				streams.clear();
+				decoderVolumes.clear();
+				filePaths.clear();
+				printf("Failed to load %s.\n", argv[i]);
+				exists.store(false, std::memory_order_release);
+				return;
+			}
+			ma_decoder_get_length_in_pcm_frames(&probe, &s.decoderLength);
+			ma_decoder_uninit(&probe);
+
+			s.pcmBufferA = (float *)malloc(sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
+			s.pcmBufferB = (float *)malloc(sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
+			s.pcmBufferC = (float *)malloc(sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
+			memset(s.pcmBufferA, 0, sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
+			memset(s.pcmBufferB, 0, sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
+			memset(s.pcmBufferC, 0, sizeof(float) * TOTAL_BUFFER_FRAMES * CHANNEL_COUNT);
+
+			s.activeBuffer = s.pcmBufferA;
+			s.nextBuffer = s.pcmBufferB;
+			s.loadingBuffer = s.pcmBufferC;
+			s.asyncState.asyncNextBuffer = s.pcmBufferB;
+			s.asyncState.asyncLoadingBuffer = s.pcmBufferC;
+
+			// Open the persistent decode handle that only the AsyncLoader worker
+			// thread will ever touch.  No other thread accesses it afterwards.
+			bool workerOpened = false;
+			{
+				ma_decoder_config workerConfig =
+					ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
+				if (ma_decoder_init_file(argv[i], &workerConfig, &s.workerDecoder) == MA_SUCCESS)
+				{
+					ma_data_source_set_looping(&s.workerDecoder, MA_FALSE);
+					s.workerDecoderInitialized = true;
+					workerOpened = true;
+				}
+			}
+			if (!workerOpened)
+			{
+				streams.clear();
+				decoderVolumes.clear();
+				filePaths.clear();
+				printf("Failed to load %s.\n", argv[i]);
+				exists.store(false, std::memory_order_release);
+				return;
+			}
+
+			// BOTTLENECK: mid synchronous decode of ~3 full buffers (initial + 2 prefetch) per stream on the main thread during loadFiles; multi-stem songs stall playback start for seconds | FIX: fill initial/prefetch buffers via the AsyncLoader worker and wait on it instead of inline decode
+			fillInitialBuffer(i, 0);
+
+			if (s.active.load(std::memory_order_acquire))
+			{
+				loadNextBufferSync(i);
+				if (s.asyncState.nextBufferReady.load(std::memory_order_relaxed))
+					loadLoadingBufferSync(i);
+			}
+
+			if (s.decoderLength > longestLength)
+			{
+				longestLength = s.decoderLength;
+				longestDecoderIndex = (int)i;
+			}
+		}
+
+		streamPtrs.clear();
+		for (auto &s : streams)
+			streamPtrs.push_back(&s);
+		if (asyncLoader)
+			delete asyncLoader;
+		asyncLoader = new AsyncLoader(streamPtrs);
+
+		// ---- surround routing defaults (AudioSampleUnified) ----
+		// Track 0 is the inst -> BACKGROUND front pair; every following track
+		// is a voices stem -> CENTER speaker.  The Haxe unified system can
+		// re-route any track afterwards via setStreamChannel().
+		streamChannels.clear();
+		streamLpfState.assign(streams.size(), 0.0f);
+		for (size_t i = 0; i < streams.size(); i++)
+		{
+			streamChannels.emplace_back((i == 0) ? MA_CH_BACKGROUND : MA_CH_CENTER);
+		}
+
+		// Open the device in the saved output layout (stereo or 3.1).  If a
+		// 4-channel device cannot be opened, fall back to stereo rather than
+		// losing song audio entirely.
+		int wantedChannels = surroundEnabled.load(std::memory_order_acquire)
+								 ? SURROUND_CHANNEL_COUNT
+								 : CHANNEL_COUNT;
+		playbackChannels.store(wantedChannels, std::memory_order_release);
+
+		ma_device_config deviceConfig = ma_device_config_init(ma_device_type_playback);
+		deviceConfig.playback.format = SAMPLE_FORMAT;
+		deviceConfig.playback.channels = wantedChannels;
+		deviceConfig.sampleRate = SAMPLE_RATE;
+		deviceConfig.dataCallback = data_callback;
+		deviceConfig.pUserData = this;
+		if (wantedChannels == SURROUND_CHANNEL_COUNT)
+		{
+			// Declare the stream as 3.1 (FL/FR/FC/LFE); without this miniaudio
+			// assumes its default 4-channel map (FL/FR/FC/BACK_CENTER) and the
+			// SUB bus would reach a back speaker instead of the subwoofer.
+			deviceConfig.playback.pChannelMap = SURROUND_CHANNEL_MAP_31;
+		}
+
+		if (ma_device_init(nullptr, &deviceConfig, &device) != MA_SUCCESS && wantedChannels != CHANNEL_COUNT)
+		{
+			playbackChannels.store(CHANNEL_COUNT, std::memory_order_release);
+			surroundEnabled.store(false, std::memory_order_release);
+			deviceConfig.playback.channels = CHANNEL_COUNT;
+			deviceConfig.playback.pChannelMap = nullptr; // stereo retry: default map
+			if (ma_device_init(nullptr, &deviceConfig, &device) != MA_SUCCESS)
+			{
+				streams.clear();
+				decoderVolumes.clear();
+				filePaths.clear();
+				streamChannels.clear();
+				streamLpfState.clear();
+				printf("Failed to open playback device.\n");
+				return;
+			}
+			printf("Surround Sound 3.1 unavailable on this device; falling back to stereo.\n");
+		}
+
+		// The stretch pipeline must process the same layout the device plays.
+		if (!stretchPipe)
+			stretchPipe = new StretchPipeline();
+		stretchPipe->reset();
+		stretchPipe->configureChannels(playbackChannels.load(std::memory_order_acquire));
+		maThingLogPlaybackLayout(&device); // show what the endpoint really negotiated
+
+		exists.store(true, std::memory_order_release);
+		mixerState.store(3, std::memory_order_release);
+	}
+
+	void destroy()
+	{
+		if (!exists.load(std::memory_order_acquire))
+			return;
+
+		exists.store(false, std::memory_order_release);
+		ma_device_stop(&device);
+
+		if (asyncLoader)
+		{
+			delete asyncLoader;
+			asyncLoader = nullptr;
+		}
+
+		ma_device_uninit(&device);
+
+		streams.clear();
+		decoderVolumes.clear();
+		filePaths.clear();
+		streamPtrs.clear();
+		streamChannels.clear();
+		streamLpfState.clear();
+
+		if (stretchPipe)
+		{
+			delete stretchPipe; // stops the stretch worker thread
+			stretchPipe = nullptr;
+		}
+
+		longestDecoderIndex = 0;
+		playbackRate.store(1.0f, std::memory_order_release);
+		mixerState.store(3, std::memory_order_release);
+
+		// Reset prediction state
+		lastQueriedFrames.store(0, std::memory_order_relaxed);
+		lastQuerySystemTime.store(0, std::memory_order_relaxed);
+		lastQueryPlaybackRate.store(1.0, std::memory_order_relaxed);
+
+		memset(&device, 0, sizeof(ma_device));
+	}
+
+	void start()
+	{
+		if (!exists.load(std::memory_order_acquire))
+			return;
+		if (mixerState.load(std::memory_order_acquire) == 3)
+			seekToPCMFrame(0);
+		if (asyncLoader)
+			asyncLoader->resumeLoading();
+
+		// FIX: Set to playing BEFORE starting the device so the callback immediately knows the state
+		mixerState.store(1, std::memory_order_release);
+
+		// Initialize prediction anchor at current position (frame 0 or seek position)
+		ma_uint64 startFrame = 0;
+		if (!streams.empty())
+		{
+			startFrame = streams[longestDecoderIndex].filePosition.load(std::memory_order_relaxed);
+		}
+		lastQueriedFrames.store(startFrame, std::memory_order_relaxed);
+		lastQuerySystemTime.store(std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_relaxed);
+		lastQueryPlaybackRate.store(playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
+
+		ma_device_start(&device);
+	}
+
+	void stop()
+	{
+		if (!exists.load(std::memory_order_acquire))
+			return;
+
+		// FIX: Set to paused BEFORE stopping the device to prevent the callback from overwriting it
+		mixerState.store(2, std::memory_order_release);
+		if (asyncLoader)
+			asyncLoader->pauseLoading();
+		ma_device_stop(&device);
+	}
+
+	bool stopped() const { return mixerState.load(std::memory_order_acquire) == 3; }
+
+	void seekToPCMFrame(int64_t pos)
+	{
+		if (!exists.load(std::memory_order_acquire))
+			return;
+
+		// The device's actual running state can diverge from mixerState: the audio
+		// callback sets mixerState to 3 (stopped) on underrun while the device keeps
+		// running, which happens when the main thread is stalled and the worker can't
+		// refill buffers in time. If we gated stop/restart on mixerState==1, a seek in
+		// that state would reset the PCM buffers while the callback is still reading
+		// them (data race). Always gate on the device's real state instead.
+		bool deviceRunning = ma_device_is_started(&device);
+
+		// FIX: Pause immediately to lock the state before touching the decoder/device
+		if (deviceRunning)
+		{
+			mixerState.store(2, std::memory_order_release);
+		}
+
+		if (asyncLoader)
+			asyncLoader->pauseLoading();
+		if (asyncLoader)
+			asyncLoader->waitUntilIdle();
+
+		if (deviceRunning)
+			ma_device_stop(&device);
+
+		// Discard any stretched chunks still in flight from the pre-seek position
+		// so the pitched path restarts cleanly (device is stopped and the loader
+		// is idle here, so touching the pipeline is safe).
+		if (stretchPipe)
+			stretchPipe->reset();
+
+		for (size_t i = 0; i < streams.size(); i++)
+		{
+			DecoderStream &s = streams[i];
+			ma_uint64 target = std::min<ma_uint64>(
+				(ma_uint64)std::max<int64_t>(pos, 0), s.decoderLength);
+
+			s.resetState();
+			fillInitialBuffer(i, target);
+			if (s.active.load(std::memory_order_acquire) && target < s.decoderLength)
+				s.filePosition.store(target, std::memory_order_release);
+
+			if (s.active.load(std::memory_order_acquire))
+			{
+				loadNextBufferSync(i);
+				if (s.asyncState.nextBufferReady.load(std::memory_order_relaxed))
+					loadLoadingBufferSync(i);
+			}
+
+			// Reposition the worker-owned decoder to the seek target.  After a
+			// song restart (destroy+init) the worker decoder is freshly opened at
+			// frame 0, so without this the worker's next fill would perform a huge
+			// forward seek (0 -> target+4410) whose stb_vorbis coarse seek can fail,
+			// producing an empty next buffer and stalling/restarting the stream.
+			// The worker is paused and idle here (waitUntilIdle above), so touching
+			// workerDecoder from the main thread is safe.
+			if (s.workerDecoderInitialized)
+				ma_decoder_seek_to_pcm_frame(&s.workerDecoder, target);
+		}
+
+		mixerState.store((pos < (int64_t)streams[longestDecoderIndex].decoderLength) ? 2 : 3, std::memory_order_release);
+
+		// Always reset prediction anchor on seek (regardless of device state)
+		lastQueriedFrames.store((ma_uint64)pos, std::memory_order_relaxed);
+		lastQuerySystemTime.store(std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_relaxed);
+		lastQueryPlaybackRate.store(playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
+
+		if (deviceRunning && mixerState.load(std::memory_order_acquire) == 2)
+		{
+			if (asyncLoader)
+				asyncLoader->resumeLoading();
+			mixerState.store(1, std::memory_order_release); // Set state before starting device
+			ma_device_start(&device);
+		}
+	}
+
+	void deactivate_decoder(int index)
+	{
+		if (index >= 0 && index < (int)streams.size())
+			streams[index].active.store(false, std::memory_order_release);
+	}
+
+	void amplify_decoder(int index, double volume)
+	{
+		if (index >= 0 && index < (int)decoderVolumes.size())
+			decoderVolumes[index] = (float)volume;
+	}
+
+	void setPlaybackRate(float value) { playbackRate.store(value, std::memory_order_release); }
+	void setStretchEnabled(bool value) { stretchEnabled.store(value, std::memory_order_release); }
+	double getGlobalVolume() const { return MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed); }
+	double setGlobalVolume(double v)
+	{
+		MUSIC_MASTER_VOLUME_099.store(v, std::memory_order_relaxed);
+		return v;
+	}
+	int getMixerState() const { return mixerState.load(std::memory_order_acquire); }
+
+	// ---- surround sound system (AudioSampleUnified) ----
+
+	bool isSurroundEnabled() const { return surroundEnabled.load(std::memory_order_acquire); }
+
+	// Toggles the song device between stereo (2 channels) and Surround Sound
+	// 3.1 (4 channels: FL/FR/C/LFE).  The device is re-opened in the new
+	// layout; playback state (playing/paused/position) is preserved.  Safe to
+	// call while a song is loaded and even while it is playing.
+	void setSurroundEnabled(bool enable)
+	{
+		bool prev = surroundEnabled.exchange(enable, std::memory_order_acq_rel);
+		if (prev == enable)
+			return;
+
+		int wanted = enable ? SURROUND_CHANNEL_COUNT : CHANNEL_COUNT;
+
+		if (!exists.load(std::memory_order_acquire))
+		{
+			// No song loaded yet: just record the layout for the next loadFiles.
+			playbackChannels.store(wanted, std::memory_order_release);
+			if (stretchPipe)
+			{
+				stretchPipe->reset();
+				stretchPipe->configureChannels(wanted);
+			}
+			return;
+		}
+
+		int prevState = mixerState.load(std::memory_order_acquire);
+		bool wasPlaying = (prevState == 1);
+
+		// Stop and tear down the device so the callback can never observe a
+		// half-reconfigured state, then re-open it with the new channel count.
+		ma_device_stop(&device);
+		if (stretchPipe)
+			stretchPipe->reset(); // drop chunks stretched in the old layout
+		ma_device_uninit(&device);
+		memset(&device, 0, sizeof(ma_device));
+
+		ma_device_config cfg = ma_device_config_init(ma_device_type_playback);
+		cfg.playback.format = SAMPLE_FORMAT;
+		cfg.playback.channels = wanted;
+		cfg.sampleRate = SAMPLE_RATE;
+		cfg.dataCallback = data_callback;
+		cfg.pUserData = this;
+		if (wanted == SURROUND_CHANNEL_COUNT)
+		{
+			cfg.playback.pChannelMap = SURROUND_CHANNEL_MAP_31; // declare FL/FR/FC/LFE
+		}
+
+		if (ma_device_init(nullptr, &cfg, &device) != MA_SUCCESS && wanted != CHANNEL_COUNT)
+		{
+			// 3.1 not supported by the endpoint: fall back to stereo instead
+			// of losing song audio entirely.
+			playbackChannels.store(CHANNEL_COUNT, std::memory_order_release);
+			surroundEnabled.store(false, std::memory_order_release);
+			cfg.playback.channels = CHANNEL_COUNT;
+			cfg.playback.pChannelMap = nullptr; // stereo retry: default map
+			if (ma_device_init(nullptr, &cfg, &device) != MA_SUCCESS)
+			{
+				mixerState.store(3, std::memory_order_release);
+				return;
+			}
+			printf("Surround Sound 3.1 unavailable on this device; falling back to stereo.\n");
+		}
+		else
+		{
+			playbackChannels.store(wanted, std::memory_order_release);
+		}
+
+		maThingLogPlaybackLayout(&device); // show what the endpoint really negotiated
+
+		// The stretch engine must process the same layout the device plays.
+		if (stretchPipe)
+		{
+			stretchPipe->reset();
+			stretchPipe->configureChannels(playbackChannels.load(std::memory_order_acquire));
+		}
+
+		if (wasPlaying)
+		{
+			mixerState.store(1, std::memory_order_release);
+			ma_device_start(&device);
+		}
+		else
+		{
+			mixerState.store(prevState, std::memory_order_release);
+		}
+	}
+
+	// Routes one decoded song track (inst / voices / ...) into a surround
+	// channel bus.  `channel` is a MaThingAudioChannel identifier.
+	void setStreamChannel(int index, int channel)
+	{
+		if (index >= 0 && index < (int)streamChannels.size() &&
+			channel >= MA_CH_CENTER && channel <= MA_CH_SUB)
+			streamChannels[index].store(channel, std::memory_order_release);
+	}
+
+	int getStreamChannel(int index) const
+	{
+		if (index >= 0 && index < (int)streamChannels.size())
+			return streamChannels[index].load(std::memory_order_acquire);
+		return (index == 0) ? MA_CH_BACKGROUND : MA_CH_CENTER;
+	}
+
+	// Returns smooth predicted playback position in milliseconds (0.1ms resolution)
+	// Automatically interpolates between audio callback updates using system clock
+	double getPlaybackPosition() const
+	{
+		if (!exists.load(std::memory_order_acquire))
+			return 0.0;
+		if (streams.empty())
+			return 0.0;
+
+		const DecoderStream &s = streams[longestDecoderIndex];
+		if (!s.active.load(std::memory_order_acquire))
+			return (double)s.decoderLength / (SAMPLE_RATE * 0.001);
+
+		// Use callback frame counter (updated every ~10ms) as anchor + system clock interpolation
+		ma_uint64 baseFrames = lastQueriedFrames.load(std::memory_order_relaxed);
+		long long baseTimeNs = lastQuerySystemTime.load(std::memory_order_relaxed);
+		double rate = lastQueryPlaybackRate.load(std::memory_order_relaxed);
+
+		if (baseFrames == 0 && baseTimeNs == 0)
+		{
+			// First call - initialize anchor from the real consumed position.
+			// (totalFramesProcessed is wall-clock only and cumulative since
+			// load, so it is the wrong anchor after rate changes or seeks.)
+			ma_uint64 frames = streams[longestDecoderIndex].filePosition.load(std::memory_order_relaxed);
+			lastQueriedFrames.store(frames, std::memory_order_relaxed);
+			lastQuerySystemTime.store(
+				std::chrono::steady_clock::now().time_since_epoch().count(),
+				std::memory_order_relaxed);
+			lastQueryPlaybackRate.store(playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
+			baseFrames = frames;
+			baseTimeNs = lastQuerySystemTime.load(std::memory_order_relaxed);
+			rate = lastQueryPlaybackRate.load(std::memory_order_relaxed);
+		}
+
+		// Interpolate: baseFrames + elapsedTime * sampleRate * rate
+		long long nowNs = std::chrono::steady_clock::now().time_since_epoch().count();
+		double elapsedSeconds = (nowNs - baseTimeNs) * 1e-9;
+		double predictedFramesD = baseFrames + elapsedSeconds * SAMPLE_RATE * rate;
+		ma_uint64 predictedFrames = (ma_uint64)predictedFramesD;
+
+		if (predictedFrames >= s.decoderLength)
+			predictedFrames = s.decoderLength;
+
+		// Round to 0.1ms (5 frames @ 48kHz) for consistent smooth stepping
+		predictedFrames = (predictedFrames / 5) * 5;
+
+		return (double)predictedFrames / (SAMPLE_RATE * 0.001);
+	}
+
+	double getDuration() const
+	{
+		if (streams.empty())
+			return 0.0;
+		return (double)streams[longestDecoderIndex].decoderLength / (SAMPLE_RATE * 0.001);
+	}
 
 private:
-    AsyncLoader* asyncLoader = nullptr;
-    std::vector<DecoderStream*> streamPtrs;
+	AsyncLoader *asyncLoader = nullptr;
+	std::vector<DecoderStream *> streamPtrs;
 
-    void fillInitialBuffer(size_t index, ma_uint64 startFrame) {
-        DecoderStream& s = streams[index];
-        // Seeking restarts the source: the LFE low-pass state must restart too.
-        if (index < streamLpfState.size()) streamLpfState[index] = 0.0f;
-        ma_uint64 decodeStart = (startFrame > PADDING_FRAMES) ? startFrame - PADDING_FRAMES : 0;
+	void fillInitialBuffer(size_t index, ma_uint64 startFrame)
+	{
+		DecoderStream &s = streams[index];
+		// Seeking restarts the source: the LFE low-pass state must restart too.
+		if (index < streamLpfState.size())
+			streamLpfState[index] = 0.0f;
+		ma_uint64 decodeStart = (startFrame > PADDING_FRAMES) ? startFrame - PADDING_FRAMES : 0;
 
-        ma_uint64 framesRead = 0;
-        s.fillBufferTemp(decodeStart, s.activeBuffer, &framesRead);
+		ma_uint64 framesRead = 0;
+		s.fillBufferTemp(decodeStart, s.activeBuffer, &framesRead);
 
-        s.bufferStartPos = decodeStart;
-        s.validFrames    = framesRead;
-        s.localReadPos   = (startFrame >= decodeStart) ? startFrame - decodeStart : 0;
+		s.bufferStartPos = decodeStart;
+		s.validFrames = framesRead;
+		s.localReadPos = (startFrame >= decodeStart) ? startFrame - decodeStart : 0;
 
-        if (s.localReadPos >= TOTAL_BUFFER_FRAMES)
-            s.localReadPos = TOTAL_BUFFER_FRAMES - 1;
+		if (s.localReadPos >= TOTAL_BUFFER_FRAMES)
+			s.localReadPos = TOTAL_BUFFER_FRAMES - 1;
 
-        s.filePosition.store(startFrame, std::memory_order_release);
-        s.active.store((startFrame < s.decoderLength && framesRead > 0), std::memory_order_release);
-        s.asyncState.needsLoad.store(false, std::memory_order_release);
-    }
+		s.filePosition.store(startFrame, std::memory_order_release);
+		s.active.store((startFrame < s.decoderLength && framesRead > 0), std::memory_order_release);
+		s.asyncState.needsLoad.store(false, std::memory_order_release);
+	}
 
-    void loadNextBufferSync(size_t index) {
-        DecoderStream& s = streams[index];
-        if (!s.active.load(std::memory_order_acquire) || s.asyncState.nextBufferReady.load(std::memory_order_relaxed)) return;
+	void loadNextBufferSync(size_t index)
+	{
+		DecoderStream &s = streams[index];
+		if (!s.active.load(std::memory_order_acquire) || s.asyncState.nextBufferReady.load(std::memory_order_relaxed))
+			return;
 
-        ma_uint64 start = s.bufferStartPos + HALF_BUFFER_FRAMES;
-        if (start > PADDING_FRAMES) start -= PADDING_FRAMES;
-        if (start >= s.decoderLength) return;
+		ma_uint64 start = s.bufferStartPos + HALF_BUFFER_FRAMES;
+		if (start > PADDING_FRAMES)
+			start -= PADDING_FRAMES;
+		if (start >= s.decoderLength)
+			return;
 
-        ma_uint64 framesRead = 0;
-        s.fillBufferTemp(start, s.nextBuffer, &framesRead);
-        s.asyncState.nextBufferStartPos    = start;
-        s.asyncState.nextBufferValidFrames = framesRead;
-        s.asyncState.nextBufferReady.store(true, std::memory_order_release);
-    }
+		ma_uint64 framesRead = 0;
+		s.fillBufferTemp(start, s.nextBuffer, &framesRead);
+		s.asyncState.nextBufferStartPos = start;
+		s.asyncState.nextBufferValidFrames = framesRead;
+		s.asyncState.nextBufferReady.store(true, std::memory_order_release);
+	}
 
-    void loadLoadingBufferSync(size_t index) {
-        DecoderStream& s = streams[index];
-        if (!s.active.load(std::memory_order_acquire) ||
-             s.asyncState.loadingBufferReady.load(std::memory_order_relaxed) ||
-            !s.asyncState.nextBufferReady.load(std::memory_order_relaxed)) return;
+	void loadLoadingBufferSync(size_t index)
+	{
+		DecoderStream &s = streams[index];
+		if (!s.active.load(std::memory_order_acquire) ||
+			s.asyncState.loadingBufferReady.load(std::memory_order_relaxed) ||
+			!s.asyncState.nextBufferReady.load(std::memory_order_relaxed))
+			return;
 
-        ma_uint64 start = s.asyncState.nextBufferStartPos + HALF_BUFFER_FRAMES;
-        if (start > PADDING_FRAMES) start -= PADDING_FRAMES;
-        if (start >= s.decoderLength) return;
+		ma_uint64 start = s.asyncState.nextBufferStartPos + HALF_BUFFER_FRAMES;
+		if (start > PADDING_FRAMES)
+			start -= PADDING_FRAMES;
+		if (start >= s.decoderLength)
+			return;
 
-        ma_uint64 framesRead = 0;
-        s.fillBufferTemp(start, s.loadingBuffer, &framesRead);
-        s.asyncState.loadingBufferStartPos    = start;
-        s.asyncState.loadingBufferValidFrames = framesRead;
-        s.asyncState.loadingBufferReady.store(true, std::memory_order_release);
-    }
+		ma_uint64 framesRead = 0;
+		s.fillBufferTemp(start, s.loadingBuffer, &framesRead);
+		s.asyncState.loadingBufferStartPos = start;
+		s.asyncState.loadingBufferValidFrames = framesRead;
+		s.asyncState.loadingBufferReady.store(true, std::memory_order_release);
+	}
 
-    // -----------------------------------------------------------------------
-    // Surround routing (AudioSampleUnified)
-    //
-    // Distributes one decoder stream's interleaved stereo staging mix into
-    // the interleaved output according to the stream's channel bus
-    // (MaThingAudioChannel).  `stage` holds `outFrames` stereo frames;
-    // `out` holds `outCh` interleaved channels per frame (3.1 = FL/FR/C/LFE).
-    // Also advances the stream's one-pole low-pass state that feeds the
-    // subwoofer (bass management), exactly one filter step per frame so the
-    // state stays consistent no matter which bus the stream lives on.
-    void routeStreamToOutput(size_t index, const float* stage, float* out,
-                             ma_uint32 outFrames, int outCh) {
-        const int route = streamChannels[index].load(std::memory_order_acquire);
-        float lpf = streamLpfState[index];
+	// -----------------------------------------------------------------------
+	// Surround routing (AudioSampleUnified)
+	//
+	// Distributes one decoder stream's interleaved stereo staging mix into
+	// the interleaved output according to the stream's channel bus
+	// (MaThingAudioChannel).  `stage` holds `outFrames` stereo frames;
+	// `out` holds `outCh` interleaved channels per frame (3.1 = FL/FR/C/LFE).
+	// Also advances the stream's one-pole low-pass state that feeds the
+	// subwoofer (bass management), exactly one filter step per frame so the
+	// state stays consistent no matter which bus the stream lives on.
+	void routeStreamToOutput(size_t index, const float *stage, float *out,
+							 ma_uint32 outFrames, int outCh)
+	{
+		const int route = streamChannels[index].load(std::memory_order_acquire);
+		float lpf = streamLpfState[index];
 
-        if (outCh == SURROUND_CHANNEL_COUNT) {
-            switch (route) {
-                case MA_CH_CENTER:     // mono vocals straight into the center speaker
-                    for (ma_uint32 f = 0; f < outFrames; f++) {
-                        float sl = stage[f * 2], sr = stage[f * 2 + 1];
-                        float mono = (sl + sr) * 0.5f;
-                        lpf += SURROUND_LPF_COEF * (mono - lpf);
-                        float* d = out + f * outCh;
-                        d[2] += mono;
-                        d[3] += lpf * SURROUND_LFE_BASS_GAIN;
-                    }
-                    break;
-                case MA_CH_SUB:        // only the low end reaches the subwoofer
-                    for (ma_uint32 f = 0; f < outFrames; f++) {
-                        float sl = stage[f * 2], sr = stage[f * 2 + 1];
-                        float mono = (sl + sr) * 0.5f;
-                        lpf += SURROUND_LPF_COEF * (mono - lpf);
-                        out[f * outCh + 3] += lpf * SURROUND_LFE_FULL_GAIN;
-                    }
-                    break;
-                case MA_CH_BACKGROUND: // full-range wide front pair + bass management
-                default:
-                    for (ma_uint32 f = 0; f < outFrames; f++) {
-                        float sl = stage[f * 2], sr = stage[f * 2 + 1];
-                        float mono = (sl + sr) * 0.5f;
-                        lpf += SURROUND_LPF_COEF * (mono - lpf);
-                        float* d = out + f * outCh;
-                        d[0] += sl;
-                        d[1] += sr;
-                        d[3] += lpf * SURROUND_LFE_BASS_GAIN;
-                    }
-                    break;
-            }
-        }
+		if (outCh == SURROUND_CHANNEL_COUNT)
+		{
+			switch (route)
+			{
+			case MA_CH_CENTER: // mono vocals straight into the center speaker
+				for (ma_uint32 f = 0; f < outFrames; f++)
+				{
+					float sl = stage[f * 2], sr = stage[f * 2 + 1];
+					float mono = (sl + sr) * 0.5f;
+					lpf += SURROUND_LPF_COEF * (mono - lpf);
+					float *d = out + f * outCh;
+					d[2] += mono;
+					d[3] += lpf * SURROUND_LFE_BASS_GAIN;
+				}
+				break;
+			case MA_CH_SUB: // only the low end reaches the subwoofer
+				for (ma_uint32 f = 0; f < outFrames; f++)
+				{
+					float sl = stage[f * 2], sr = stage[f * 2 + 1];
+					float mono = (sl + sr) * 0.5f;
+					lpf += SURROUND_LPF_COEF * (mono - lpf);
+					out[f * outCh + 3] += lpf * SURROUND_LFE_FULL_GAIN;
+				}
+				break;
+			case MA_CH_BACKGROUND: // full-range wide front pair + bass management
+			default:
+				for (ma_uint32 f = 0; f < outFrames; f++)
+				{
+					float sl = stage[f * 2], sr = stage[f * 2 + 1];
+					float mono = (sl + sr) * 0.5f;
+					lpf += SURROUND_LPF_COEF * (mono - lpf);
+					float *d = out + f * outCh;
+					d[0] += sl;
+					d[1] += sr;
+					d[3] += lpf * SURROUND_LFE_BASS_GAIN;
+				}
+				break;
+			}
+		}
 
-        streamLpfState[index] = lpf;
-    }
+		streamLpfState[index] = lpf;
+	}
 
-    ma_uint32 readFromBuffer(size_t index, float* output, ma_uint32 requestedFrames) {
-        DecoderStream& s = streams[index];
-        if (!s.active.load(std::memory_order_acquire)) return 0;
+	ma_uint32 readFromBuffer(size_t index, float *output, ma_uint32 requestedFrames)
+	{
+		DecoderStream &s = streams[index];
+		if (!s.active.load(std::memory_order_acquire))
+			return 0;
 
-        // Cache volume calculation to avoid repeated atomic loads and multiplications
-        static thread_local double cachedMasterVolume = -1.0;
-        static thread_local std::vector<float> precomputedVolumes;
+		// Cache volume calculation to avoid repeated atomic loads and multiplications
+		static thread_local double cachedMasterVolume = -1.0;
+		static thread_local std::vector<float> precomputedVolumes;
 
-        if (precomputedVolumes.size() != decoderVolumes.size()) {
-            precomputedVolumes.resize(decoderVolumes.size(), 0.0f);
-            cachedMasterVolume = -1.0;  // Force recalculation on size change
-        }
+		if (precomputedVolumes.size() != decoderVolumes.size())
+		{
+			precomputedVolumes.resize(decoderVolumes.size(), 0.0f);
+			cachedMasterVolume = -1.0; // Force recalculation on size change
+		}
 
-        double currentMasterVolume = MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed);
-        bool volumesChanged = (currentMasterVolume != cachedMasterVolume);
+		double currentMasterVolume = MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed);
+		bool volumesChanged = (currentMasterVolume != cachedMasterVolume);
 
-        if (volumesChanged) {
-            cachedMasterVolume = currentMasterVolume;
-            for (size_t i = 0; i < decoderVolumes.size(); i++) {
-                precomputedVolumes[i] = decoderVolumes[i] * (float)cachedMasterVolume;
-            }
-        }
+		if (volumesChanged)
+		{
+			cachedMasterVolume = currentMasterVolume;
+			for (size_t i = 0; i < decoderVolumes.size(); i++)
+			{
+				precomputedVolumes[i] = decoderVolumes[i] * (float)cachedMasterVolume;
+			}
+		}
 
-        float vol = precomputedVolumes[index];
+		float vol = precomputedVolumes[index];
 
-        // Cache async state flags to reduce atomic loads in the hot loop
-        bool nextBufferReady = s.asyncState.nextBufferReady.load(std::memory_order_acquire);
-        bool isActive = s.active.load(std::memory_order_acquire);
+		// Cache async state flags to reduce atomic loads in the hot loop
+		bool nextBufferReady = s.asyncState.nextBufferReady.load(std::memory_order_acquire);
+		bool isActive = s.active.load(std::memory_order_acquire);
 
-        if (nextBufferReady && s.shouldSwapBuffers() || s.isBufferLow()) s.trySwapBuffers();
+		if (nextBufferReady && s.shouldSwapBuffers() || s.isBufferLow())
+			s.trySwapBuffers();
 
-        ma_uint32 framesRead = 0;
+		ma_uint32 framesRead = 0;
 
-        while (framesRead < requestedFrames && isActive) {
-            ma_uint64 available = (s.localReadPos < s.validFrames)
-                                ? s.validFrames - s.localReadPos : 0;
+		while (framesRead < requestedFrames && isActive)
+		{
+			ma_uint64 available = (s.localReadPos < s.validFrames)
+									  ? s.validFrames - s.localReadPos
+									  : 0;
 
-            if (available == 0) {
-                if (s.bufferStartPos + s.localReadPos < s.decoderLength) {
-                    if (s.asyncState.nextBufferReady.load(std::memory_order_acquire)) {
-                        s.trySwapBuffers();
-                        continue;
-                    }
-                    s.asyncState.needsLoad.store(true, std::memory_order_release);
-                    s.requestBufferLoad();
-                    break;
-                }
-                s.active.store(false, std::memory_order_release);
-                isActive = false;
-                break;
-            }
+			if (available == 0)
+			{
+				if (s.bufferStartPos + s.localReadPos < s.decoderLength)
+				{
+					if (s.asyncState.nextBufferReady.load(std::memory_order_acquire))
+					{
+						s.trySwapBuffers();
+						continue;
+					}
+					s.asyncState.needsLoad.store(true, std::memory_order_release);
+					s.requestBufferLoad();
+					break;
+				}
+				s.active.store(false, std::memory_order_release);
+				isActive = false;
+				break;
+			}
 
-            ma_uint32 toRead = std::min<ma_uint32>((ma_uint32)available,
-                                                    requestedFrames - framesRead);
-            float* src     = s.activeBuffer + (s.localReadPos * CHANNEL_COUNT);
-            float* dst     = output + (framesRead * CHANNEL_COUNT);
-            int    samples = (int)(toRead * CHANNEL_COUNT);
+			ma_uint32 toRead = std::min<ma_uint32>((ma_uint32)available,
+												   requestedFrames - framesRead);
+			float *src = s.activeBuffer + (s.localReadPos * CHANNEL_COUNT);
+			float *dst = output + (framesRead * CHANNEL_COUNT);
+			int samples = (int)(toRead * CHANNEL_COUNT);
 
-            // UPDATED CALL SITE: Uses the runtime dispatcher instead of hardcoded #ifdefs
-            if (vol != 0.0f) g_mix_func(dst, src, samples, vol);
+			// UPDATED CALL SITE: Uses the runtime dispatcher instead of hardcoded #ifdefs
+			if (vol != 0.0f)
+				g_mix_func(dst, src, samples, vol);
 
-            s.localReadPos  += toRead;
-            framesRead      += toRead;
-        }
+			s.localReadPos += toRead;
+			framesRead += toRead;
+		}
 
-        // BOTTLENECK (fixed): one relaxed store per callback/stream instead of
-        // an atomic RMW per read chunk. filePosition is only read by other
-        // threads (prediction anchor, seek), never by the callback mid-buffer,
-        // so the intermediate values were pointless.
-        s.filePosition.store(s.bufferStartPos + s.localReadPos, std::memory_order_relaxed);
+		// BOTTLENECK (fixed): one relaxed store per callback/stream instead of
+		// an atomic RMW per read chunk. filePosition is only read by other
+		// threads (prediction anchor, seek), never by the callback mid-buffer,
+		// so the intermediate values were pointless.
+		s.filePosition.store(s.bufferStartPos + s.localReadPos, std::memory_order_relaxed);
 
-        // BOTTLENECK (fixed): low-watermark prefetch now happens here while the
-        // stream's cacheline is already hot, replacing the full-scan of every
-        // stream in doBackgroundLoading() that used to run on the realtime
-        // thread every ~8ms. The AsyncLoader worker picks the request up within
-        // a few ms (well inside the 300ms+ of buffered slack).
-        if (isActive && !s.asyncState.nextBufferReady.load(std::memory_order_relaxed)) {
-            ma_uint64 available = (s.localReadPos < s.validFrames)
-                                ? s.validFrames - s.localReadPos : 0;
-            if (available < (HALF_BUFFER_FRAMES * 2) || framesRead < requestedFrames) {
-                s.requestBufferLoad();
-                s.asyncState.needsLoad.store(true, std::memory_order_release);
-            }
-        }
-        return framesRead;
-    }
+		// BOTTLENECK (fixed): low-watermark prefetch now happens here while the
+		// stream's cacheline is already hot, replacing the full-scan of every
+		// stream in doBackgroundLoading() that used to run on the realtime
+		// thread every ~8ms. The AsyncLoader worker picks the request up within
+		// a few ms (well inside the 300ms+ of buffered slack).
+		if (isActive && !s.asyncState.nextBufferReady.load(std::memory_order_relaxed))
+		{
+			ma_uint64 available = (s.localReadPos < s.validFrames)
+									  ? s.validFrames - s.localReadPos
+									  : 0;
+			if (available < (HALF_BUFFER_FRAMES * 2) || framesRead < requestedFrames)
+			{
+				s.requestBufferLoad();
+				s.asyncState.needsLoad.store(true, std::memory_order_release);
+			}
+		}
+		return framesRead;
+	}
 
-    static void data_callback(ma_device* pDevice, void* pOutput,
-                              const void* pInput, ma_uint32 frameCount) {
-        AudioSystem* sys = static_cast<AudioSystem*>(pDevice->pUserData);
-        if (!sys || !sys->exists.load(std::memory_order_acquire)) return;
+	static void data_callback(ma_device *pDevice, void *pOutput,
+							  const void *pInput, ma_uint32 frameCount)
+	{
+		AudioSystem *sys = static_cast<AudioSystem *>(pDevice->pUserData);
+		if (!sys || !sys->exists.load(std::memory_order_acquire))
+			return;
 
-        float* out = (float*)pOutput;
-        int outCh = sys->playbackChannels.load(std::memory_order_relaxed);
-        memset(out, 0, sizeof(float) * frameCount * outCh);
+		float *out = (float *)pOutput;
+		int outCh = sys->playbackChannels.load(std::memory_order_relaxed);
+		memset(out, 0, sizeof(float) * frameCount * outCh);
 
-        // Update prediction anchor every callback (~10ms) to prevent drift.
-        // Anchor to the REAL consumed source position (longest stream's
-        // filePosition) instead of the wall-clock output counter
-        // (totalFramesProcessed). filePosition advances at `playbackRate`
-        // (a 2x rate consumes 2x source frames per callback) and is re-based
-        // to the target on every seek, so the smoothed time stays correct
-        // under BOTH rate changes and seeks. The old code anchored to
-        // totalFramesProcessed, which is always 1x (rate bug) and cumulative
-        // since load (seek bug, up to seconds of drift).
-        ma_uint64 anchorFrames = 0;
-        if (!sys->streams.empty())
-            anchorFrames = sys->streams[sys->longestDecoderIndex].filePosition.load(std::memory_order_relaxed);
-        sys->lastQueriedFrames.store(anchorFrames, std::memory_order_relaxed);
-        sys->lastQuerySystemTime.store(
-            std::chrono::steady_clock::now().time_since_epoch().count(),
-            std::memory_order_relaxed
-        );
-        sys->lastQueryPlaybackRate.store(sys->playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
+		// Update prediction anchor every callback (~10ms) to prevent drift.
+		// Anchor to the REAL consumed source position (longest stream's
+		// filePosition) instead of the wall-clock output counter
+		// (totalFramesProcessed). filePosition advances at `playbackRate`
+		// (a 2x rate consumes 2x source frames per callback) and is re-based
+		// to the target on every seek, so the smoothed time stays correct
+		// under BOTH rate changes and seeks. The old code anchored to
+		// totalFramesProcessed, which is always 1x (rate bug) and cumulative
+		// since load (seek bug, up to seconds of drift).
+		ma_uint64 anchorFrames = 0;
+		if (!sys->streams.empty())
+			anchorFrames = sys->streams[sys->longestDecoderIndex].filePosition.load(std::memory_order_relaxed);
+		sys->lastQueriedFrames.store(anchorFrames, std::memory_order_relaxed);
+		sys->lastQuerySystemTime.store(
+			std::chrono::steady_clock::now().time_since_epoch().count(),
+			std::memory_order_relaxed);
+		sys->lastQueryPlaybackRate.store(sys->playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
 
-        // BOTTLENECK (fixed): the periodic full scan of every stream for
-        // refills used to run here on the realtime thread (doBackgroundLoading
-        // every ~8ms). The low-watermark prefetch now lives inside
-        // readFromBuffer, so the callback only needs to nudge the worker with
-        // a single atomic store when a stream underfeeds. Signal is lock-free
-        // (just an atomic bool store) so it is safe on the audio thread.
-        bool anyRefill = false;
+		// BOTTLENECK (fixed): the periodic full scan of every stream for
+		// refills used to run here on the realtime thread (doBackgroundLoading
+		// every ~8ms). The low-watermark prefetch now lives inside
+		// readFromBuffer, so the callback only needs to nudge the worker with
+		// a single atomic store when a stream underfeeds. Signal is lock-free
+		// (just an atomic bool store) so it is safe on the audio thread.
+		bool anyRefill = false;
 
-        bool anyActive = false;
-        float rate = sys->playbackRate.load(std::memory_order_acquire);
+		bool anyActive = false;
+		float rate = sys->playbackRate.load(std::memory_order_acquire);
 
-        if (rate == 1.0f) {
-            for (size_t i = 0; i < sys->streams.size(); i++) {
-                if (!sys->streams[i].active.load(std::memory_order_acquire)) continue;
+		if (rate == 1.0f)
+		{
+			for (size_t i = 0; i < sys->streams.size(); i++)
+			{
+				if (!sys->streams[i].active.load(std::memory_order_acquire))
+					continue;
 
-                ma_uint32 read;
-                if (outCh == SURROUND_CHANNEL_COUNT) {
-                    // Surround Sound 3.1: read the stream into a stereo stage,
-                    // then distribute it into FL/FR/C/LFE via its channel bus.
-                    memset(sys->streamStage, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
-                    read = sys->readFromBuffer(i, sys->streamStage, frameCount);
-                    if (read > 0) sys->routeStreamToOutput(i, sys->streamStage, out, frameCount, outCh);
-                } else {
-                    // Stereo: mix straight into the front pair (classic path).
-                    read = sys->readFromBuffer(i, out, frameCount);
-                }
+				ma_uint32 read;
+				if (outCh == SURROUND_CHANNEL_COUNT)
+				{
+					// Surround Sound 3.1: read the stream into a stereo stage,
+					// then distribute it into FL/FR/C/LFE via its channel bus.
+					memset(sys->streamStage, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
+					read = sys->readFromBuffer(i, sys->streamStage, frameCount);
+					if (read > 0)
+						sys->routeStreamToOutput(i, sys->streamStage, out, frameCount, outCh);
+				}
+				else
+				{
+					// Stereo: mix straight into the front pair (classic path).
+					read = sys->readFromBuffer(i, out, frameCount);
+				}
 
-                if (read > 0) anyActive = true;
-                if (read < frameCount && sys->streams[i].active.load(std::memory_order_acquire))
-                    anyRefill = true;
-            }
-        } else {
-            static_assert(MAX_CALLBACK_FRAMES >= 4096,
-                          "MAX_CALLBACK_FRAMES too small for pitched playback buffers");
+				if (read > 0)
+					anyActive = true;
+				if (read < frameCount && sys->streams[i].active.load(std::memory_order_acquire))
+					anyRefill = true;
+			}
+		}
+		else
+		{
+			static_assert(MAX_CALLBACK_FRAMES >= 4096,
+						  "MAX_CALLBACK_FRAMES too small for pitched playback buffers");
 
-            if (frameCount > MAX_CALLBACK_FRAMES) {
-                // FIX: Check state before overwriting
-                int currentState = sys->mixerState.load(std::memory_order_acquire);
-                if (currentState != 2) sys->mixerState.store(anyActive ? 1 : 3, std::memory_order_release);
-                (void)pInput;
-                return;
-            }
+			if (frameCount > MAX_CALLBACK_FRAMES)
+			{
+				// FIX: Check state before overwriting
+				int currentState = sys->mixerState.load(std::memory_order_acquire);
+				if (currentState != 2)
+					sys->mixerState.store(anyActive ? 1 : 3, std::memory_order_release);
+				(void)pInput;
+				return;
+			}
 
-            float* inputMix = sys->pitchInputMix;
+			float *inputMix = sys->pitchInputMix;
 
-            static double positionError = 0;
-            double exactRead = frameCount * rate + positionError;
-            ma_uint32 maxToRead = (ma_uint32)exactRead;
-            if (maxToRead > MAX_PITCH_FRAMES) maxToRead = MAX_PITCH_FRAMES;
+			static double positionError = 0;
+			double exactRead = frameCount * rate + positionError;
+			ma_uint32 maxToRead = (ma_uint32)exactRead;
+			if (maxToRead > MAX_PITCH_FRAMES)
+				maxToRead = MAX_PITCH_FRAMES;
 
-            memset(inputMix, 0, sizeof(float) * maxToRead * outCh);
+			memset(inputMix, 0, sizeof(float) * maxToRead * outCh);
 
-            positionError = exactRead - maxToRead;
+			positionError = exactRead - maxToRead;
 
-            for (size_t i = 0; i < sys->streams.size(); i++) {
-                if (!sys->streams[i].active.load(std::memory_order_acquire)) continue;
+			for (size_t i = 0; i < sys->streams.size(); i++)
+			{
+				if (!sys->streams[i].active.load(std::memory_order_acquire))
+					continue;
 
-                ma_uint32 read;
-                if (outCh == SURROUND_CHANNEL_COUNT) {
-                    // Surround Sound 3.1: route each stream into its bus of
-                    // the pitched staging mix so the stretch engine carries
-                    // the full 3.1 layout.
-                    memset(sys->streamStage, 0, sizeof(float) * maxToRead * CHANNEL_COUNT);
-                    read = sys->readFromBuffer(i, sys->streamStage, maxToRead);
-                    if (read > 0) sys->routeStreamToOutput(i, sys->streamStage, inputMix, maxToRead, outCh);
-                } else {
-                    read = sys->readFromBuffer(i, inputMix, maxToRead);
-                }
+				ma_uint32 read;
+				if (outCh == SURROUND_CHANNEL_COUNT)
+				{
+					// Surround Sound 3.1: route each stream into its bus of
+					// the pitched staging mix so the stretch engine carries
+					// the full 3.1 layout.
+					memset(sys->streamStage, 0, sizeof(float) * maxToRead * CHANNEL_COUNT);
+					read = sys->readFromBuffer(i, sys->streamStage, maxToRead);
+					if (read > 0)
+						sys->routeStreamToOutput(i, sys->streamStage, inputMix, maxToRead, outCh);
+				}
+				else
+				{
+					read = sys->readFromBuffer(i, inputMix, maxToRead);
+				}
 
-                if (read > 0) anyActive = true;
-                if (read < maxToRead && sys->streams[i].active.load(std::memory_order_acquire))
-                    anyRefill = true;
-            }
+				if (read > 0)
+					anyActive = true;
+				if (read < maxToRead && sys->streams[i].active.load(std::memory_order_acquire))
+					anyRefill = true;
+			}
 
-            if (anyActive) {
-                if (sys->stretchEnabled.load(std::memory_order_acquire)) {
-                    // BOTTLENECK (fixed): FFT time-stretch no longer runs in the
-                    // realtime callback. The mixed input is pushed into a lock-free
-                    // ring; a dedicated worker thread runs SignalsmithStretch and
-                    // fills an output ring that this callback pulls from. If the
-                    // worker hasn't produced a chunk yet (cold start / rate change)
-                    // the callback emits silence rather than glitching.
-                    if (sys->stretchPipe && sys->stretchPipe->push(inputMix, maxToRead, frameCount)) {
-                        sys->stretchPipe->pull(out, frameCount); // no-op writes over the zeroed buffer if not ready
-                    }
-                } else if (maxToRead > 0) {
-                    // Toggle OFF: cheap linear resample (pitch-shift style) instead of FFT stretch.
-                    double step = (frameCount > 1) ? (double)(maxToRead - 1) / (frameCount - 1) : 0.0;
-                    for (ma_uint32 o = 0; o < frameCount; o++) {
-                        double srcPos = o * step;
-                        ma_uint32 i0 = (ma_uint32)srcPos;
-                        if (i0 >= maxToRead) i0 = maxToRead - 1;
-                        ma_uint32 i1 = (i0 + 1 < maxToRead) ? i0 + 1 : i0;
-                        double frac = srcPos - (double)i0;
-                        for (int c = 0; c < outCh; c++) {
-                            float s0 = inputMix[i0 * outCh + c];
-                            float s1 = inputMix[i1 * outCh + c];
-                            out[o * outCh + c] = (float)(s0 + frac * (s1 - s0));
-                        }
-                    }
-                }
-            }
-        }
+			if (anyActive)
+			{
+				if (sys->stretchEnabled.load(std::memory_order_acquire))
+				{
+					// BOTTLENECK (fixed): FFT time-stretch no longer runs in the
+					// realtime callback. The mixed input is pushed into a lock-free
+					// ring; a dedicated worker thread runs SignalsmithStretch and
+					// fills an output ring that this callback pulls from. If the
+					// worker hasn't produced a chunk yet (cold start / rate change)
+					// the callback emits silence rather than glitching.
+					if (sys->stretchPipe && sys->stretchPipe->push(inputMix, maxToRead, frameCount))
+					{
+						sys->stretchPipe->pull(out, frameCount); // no-op writes over the zeroed buffer if not ready
+					}
+				}
+				else if (maxToRead > 0)
+				{
+					// Toggle OFF: cheap linear resample (pitch-shift style) instead of FFT stretch.
+					double step = (frameCount > 1) ? (double)(maxToRead - 1) / (frameCount - 1) : 0.0;
+					for (ma_uint32 o = 0; o < frameCount; o++)
+					{
+						double srcPos = o * step;
+						ma_uint32 i0 = (ma_uint32)srcPos;
+						if (i0 >= maxToRead)
+							i0 = maxToRead - 1;
+						ma_uint32 i1 = (i0 + 1 < maxToRead) ? i0 + 1 : i0;
+						double frac = srcPos - (double)i0;
+						for (int c = 0; c < outCh; c++)
+						{
+							float s0 = inputMix[i0 * outCh + c];
+							float s1 = inputMix[i1 * outCh + c];
+							out[o * outCh + c] = (float)(s0 + frac * (s1 - s0));
+						}
+					}
+				}
+			}
+		}
 
-        // Wake the loader only when a stream actually underfed (rare) instead of
-        // scanning. Signal is a single atomic store -- lock-free on the audio thread.
-        if (anyRefill && sys->asyncLoader)
-            sys->asyncLoader->signal();
+		// Wake the loader only when a stream actually underfed (rare) instead of
+		// scanning. Signal is a single atomic store -- lock-free on the audio thread.
+		if (anyRefill && sys->asyncLoader)
+			sys->asyncLoader->signal();
 
-        // FIX: Only update mixerState if we are not paused.
-        // This prevents the callback from accidentally "un-pausing" the engine while ma_device_stop is finishing.
-        int currentState = sys->mixerState.load(std::memory_order_acquire);
-        if (currentState != 2) {
-            sys->mixerState.store(anyActive ? 1 : 3, std::memory_order_release);
-        }
-        
-        (void)pInput;
-    }
+		// FIX: Only update mixerState if we are not paused.
+		// This prevents the callback from accidentally "un-pausing" the engine while ma_device_stop is finishing.
+		int currentState = sys->mixerState.load(std::memory_order_acquire);
+		if (currentState != 2)
+		{
+			sys->mixerState.store(anyActive ? 1 : 3, std::memory_order_release);
+		}
 
-    void moveFrom(AudioSystem&& other) noexcept {
-        streams        = std::move(other.streams);
-        decoderVolumes = std::move(other.decoderVolumes);
-        filePaths      = std::move(other.filePaths);
-        streamPtrs     = std::move(other.streamPtrs);
-        stretchPipe    = other.stretchPipe;
-        asyncLoader    = other.asyncLoader;
+		(void)pInput;
+	}
 
-        // Surround routing state (vector move steals the buffer; the atomic
-        // elements themselves are never moved).
-        streamChannels = std::move(other.streamChannels);
-        streamLpfState = std::move(other.streamLpfState);
-        playbackChannels.store(other.playbackChannels.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        surroundEnabled.store(other.surroundEnabled.load(std::memory_order_relaxed), std::memory_order_relaxed);
+	void moveFrom(AudioSystem &&other) noexcept
+	{
+		streams = std::move(other.streams);
+		decoderVolumes = std::move(other.decoderVolumes);
+		filePaths = std::move(other.filePaths);
+		streamPtrs = std::move(other.streamPtrs);
+		stretchPipe = other.stretchPipe;
+		asyncLoader = other.asyncLoader;
 
-        memcpy(&device, &other.device, sizeof(ma_device));
-        memset(&other.device, 0, sizeof(ma_device));
+		// Surround routing state (vector move steals the buffer; the atomic
+		// elements themselves are never moved).
+		streamChannels = std::move(other.streamChannels);
+		streamLpfState = std::move(other.streamLpfState);
+		playbackChannels.store(other.playbackChannels.load(std::memory_order_relaxed), std::memory_order_relaxed);
+		surroundEnabled.store(other.surroundEnabled.load(std::memory_order_relaxed), std::memory_order_relaxed);
 
-        longestDecoderIndex = other.longestDecoderIndex;
-        playbackRate.store(other.playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        mixerState.store(other.mixerState.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        exists.store(other.exists.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        stretchEnabled.store(other.stretchEnabled.load(std::memory_order_relaxed), std::memory_order_relaxed);
+		memcpy(&device, &other.device, sizeof(ma_device));
+		memset(&other.device, 0, sizeof(ma_device));
 
-        other.stretchPipe  = nullptr;  other.asyncLoader = nullptr;
-        other.longestDecoderIndex = 0;  other.playbackRate.store(1.0f, std::memory_order_relaxed);
-        other.mixerState.store(3, std::memory_order_relaxed);
-        other.exists.store(false, std::memory_order_relaxed);
+		longestDecoderIndex = other.longestDecoderIndex;
+		playbackRate.store(other.playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
+		mixerState.store(other.mixerState.load(std::memory_order_relaxed), std::memory_order_relaxed);
+		exists.store(other.exists.load(std::memory_order_relaxed), std::memory_order_relaxed);
+		stretchEnabled.store(other.stretchEnabled.load(std::memory_order_relaxed), std::memory_order_relaxed);
 
-        // Move prediction state for smooth audio time
-        lastQueriedFrames.store(other.lastQueriedFrames.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        lastQuerySystemTime.store(other.lastQuerySystemTime.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        lastQueryPlaybackRate.store(other.lastQueryPlaybackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        other.lastQueriedFrames.store(0, std::memory_order_relaxed);
-        other.lastQuerySystemTime.store(0, std::memory_order_relaxed);
-        other.lastQueryPlaybackRate.store(1.0, std::memory_order_relaxed);
-    }
+		other.stretchPipe = nullptr;
+		other.asyncLoader = nullptr;
+		other.longestDecoderIndex = 0;
+		other.playbackRate.store(1.0f, std::memory_order_relaxed);
+		other.mixerState.store(3, std::memory_order_relaxed);
+		other.exists.store(false, std::memory_order_relaxed);
+
+		// Move prediction state for smooth audio time
+		lastQueriedFrames.store(other.lastQueriedFrames.load(std::memory_order_relaxed), std::memory_order_relaxed);
+		lastQuerySystemTime.store(other.lastQuerySystemTime.load(std::memory_order_relaxed), std::memory_order_relaxed);
+		lastQueryPlaybackRate.store(other.lastQueryPlaybackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
+		other.lastQueriedFrames.store(0, std::memory_order_relaxed);
+		other.lastQuerySystemTime.store(0, std::memory_order_relaxed);
+		other.lastQueryPlaybackRate.store(1.0, std::memory_order_relaxed);
+	}
 };
 
 // ==========================================================================
 //  BackgroundTrack
 // ==========================================================================
 
-struct BackgroundTrack {
-    float*     pcmData    = nullptr;
-    ma_uint64  frameCount = 0;
-    ma_uint64  readPos    = 0;
-    float      volume     = 1.0f;
-    std::atomic<bool> active{false};
-    bool       looping    = true;
-    std::string filePath;
+struct BackgroundTrack
+{
+	float *pcmData = nullptr;
+	ma_uint64 frameCount = 0;
+	ma_uint64 readPos = 0;
+	float volume = 1.0f;
+	std::atomic<bool> active{false};
+	bool looping = true;
+	std::string filePath;
 
-    BackgroundTrack()  = default;
-    ~BackgroundTrack() { cleanup(); }
+	BackgroundTrack() = default;
+	~BackgroundTrack() { cleanup(); }
 
-    BackgroundTrack(BackgroundTrack&& other) noexcept { moveFrom(std::move(other)); }
-    BackgroundTrack& operator=(BackgroundTrack&& other) noexcept {
-        if (this != &other) { cleanup(); moveFrom(std::move(other)); }
-        return *this;
-    }
-    BackgroundTrack(const BackgroundTrack&)            = delete;
-    BackgroundTrack& operator=(const BackgroundTrack&) = delete;
+	BackgroundTrack(BackgroundTrack &&other) noexcept { moveFrom(std::move(other)); }
+	BackgroundTrack &operator=(BackgroundTrack &&other) noexcept
+	{
+		if (this != &other)
+		{
+			cleanup();
+			moveFrom(std::move(other));
+		}
+		return *this;
+	}
+	BackgroundTrack(const BackgroundTrack &) = delete;
+	BackgroundTrack &operator=(const BackgroundTrack &) = delete;
 
-    void cleanup() {
-        if (pcmData) { free(pcmData); pcmData = nullptr; }
-        frameCount = 0; readPos = 0; volume = 1.0f;
-        active.store(false, std::memory_order_release);
-        looping = true; filePath.clear();
-    }
+	void cleanup()
+	{
+		if (pcmData)
+		{
+			free(pcmData);
+			pcmData = nullptr;
+		}
+		frameCount = 0;
+		readPos = 0;
+		volume = 1.0f;
+		active.store(false, std::memory_order_release);
+		looping = true;
+		filePath.clear();
+	}
 
-    bool load(const char* path) {
-        cleanup();
-        ma_decoder decoder;
-        ma_decoder_config cfg = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
-        if (ma_decoder_init_file(path, &cfg, &decoder) != MA_SUCCESS) {
-            printf("Failed to load background track: %s\n", path);
-            return false;
-        }
-        ma_uint64 length = 0;
-        ma_decoder_get_length_in_pcm_frames(&decoder, &length);
-        if (length == 0) {
-            ma_decoder_uninit(&decoder);
-            printf("Background track has zero length: %s\n", path);
-            return false;
-        }
-        //BOTTLENECK: mid blocking full-track decode + multi-MB PCM allocation on the calling (main) thread at load time | FIX: decode on a worker thread and swap the buffer in when ready
-        pcmData = (float*)malloc(sizeof(float) * length * CHANNEL_COUNT);
-        if (!pcmData) {
-            ma_decoder_uninit(&decoder);
-            printf("Failed to allocate memory for background track: %s\n", path);
-            return false;
-        }
-        ma_uint64 framesRead = 0;
-        ma_decoder_read_pcm_frames(&decoder, pcmData, length, &framesRead);
-        ma_decoder_uninit(&decoder);
-        if (framesRead == 0) {
-            cleanup();
-            printf("Failed to read background track: %s\n", path);
-            return false;
-        }
-        frameCount = framesRead;
-        filePath   = path;
-        active.store(false, std::memory_order_release);
-        looping    = true;
-        readPos    = 0;
-        return true;
-    }
+	bool load(const char *path)
+	{
+		cleanup();
+		ma_decoder decoder;
+		ma_decoder_config cfg = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
+		if (ma_decoder_init_file(path, &cfg, &decoder) != MA_SUCCESS)
+		{
+			printf("Failed to load background track: %s\n", path);
+			return false;
+		}
+		ma_uint64 length = 0;
+		ma_decoder_get_length_in_pcm_frames(&decoder, &length);
+		if (length == 0)
+		{
+			ma_decoder_uninit(&decoder);
+			printf("Background track has zero length: %s\n", path);
+			return false;
+		}
+		// BOTTLENECK: mid blocking full-track decode + multi-MB PCM allocation on the calling (main) thread at load time | FIX: decode on a worker thread and swap the buffer in when ready
+		pcmData = (float *)malloc(sizeof(float) * length * CHANNEL_COUNT);
+		if (!pcmData)
+		{
+			ma_decoder_uninit(&decoder);
+			printf("Failed to allocate memory for background track: %s\n", path);
+			return false;
+		}
+		ma_uint64 framesRead = 0;
+		ma_decoder_read_pcm_frames(&decoder, pcmData, length, &framesRead);
+		ma_decoder_uninit(&decoder);
+		if (framesRead == 0)
+		{
+			cleanup();
+			printf("Failed to read background track: %s\n", path);
+			return false;
+		}
+		frameCount = framesRead;
+		filePath = path;
+		active.store(false, std::memory_order_release);
+		looping = true;
+		readPos = 0;
+		return true;
+	}
 
-    void play()  { if (pcmData) { readPos = 0; active.store(true, std::memory_order_release); } }
-    void stop()  { active.store(false, std::memory_order_release); readPos = 0; }
-    void setVolume(float v)  { volume = v; }
-    void setLooping(bool lp) { looping = lp; }
+	void play()
+	{
+		if (pcmData)
+		{
+			readPos = 0;
+			active.store(true, std::memory_order_release);
+		}
+	}
+	void stop()
+	{
+		active.store(false, std::memory_order_release);
+		readPos = 0;
+	}
+	void setVolume(float v) { volume = v; }
+	void setLooping(bool lp) { looping = lp; }
 
-    ma_uint64 readFrames(float* output, ma_uint32 requestedFrames) {
-        if (!active.load(std::memory_order_acquire) || !pcmData || frameCount == 0) return 0;
+	ma_uint64 readFrames(float *output, ma_uint32 requestedFrames)
+	{
+		if (!active.load(std::memory_order_acquire) || !pcmData || frameCount == 0)
+			return 0;
 
-        float vol = volume * MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed);
-        ma_uint32 filled = 0;
+		float vol = volume * MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed);
+		ma_uint32 filled = 0;
 
-        while (filled < requestedFrames) {
-            ma_uint64 remaining = frameCount - readPos;
-            if (remaining == 0) {
-                if (looping) { readPos = 0; remaining = frameCount; }
-                else         { active.store(false, std::memory_order_release); break; }
-            }
+		while (filled < requestedFrames)
+		{
+			ma_uint64 remaining = frameCount - readPos;
+			if (remaining == 0)
+			{
+				if (looping)
+				{
+					readPos = 0;
+					remaining = frameCount;
+				}
+				else
+				{
+					active.store(false, std::memory_order_release);
+					break;
+				}
+			}
 
-            ma_uint32 toRead = (ma_uint32)std::min<ma_uint64>(remaining,
-                                                               requestedFrames - filled);
-            float* src = pcmData + (readPos * CHANNEL_COUNT);
-            float* dst = output  + (filled  * CHANNEL_COUNT);
-            int samples = (int)(toRead * CHANNEL_COUNT);
+			ma_uint32 toRead = (ma_uint32)std::min<ma_uint64>(remaining,
+															  requestedFrames - filled);
+			float *src = pcmData + (readPos * CHANNEL_COUNT);
+			float *dst = output + (filled * CHANNEL_COUNT);
+			int samples = (int)(toRead * CHANNEL_COUNT);
 
-            // UPDATED CALL SITE: Uses the runtime dispatcher
-            g_mix_func(dst, src, samples, vol);
+			// UPDATED CALL SITE: Uses the runtime dispatcher
+			g_mix_func(dst, src, samples, vol);
 
-            readPos += toRead;
-            filled  += toRead;
-        }
-        return filled;
-    }
+			readPos += toRead;
+			filled += toRead;
+		}
+		return filled;
+	}
 
 private:
-    void moveFrom(BackgroundTrack&& other) noexcept {
-        pcmData    = other.pcmData;    frameCount = other.frameCount;
-        readPos    = other.readPos;    volume     = other.volume;
-        active.store(other.active.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        looping    = other.looping;
-        filePath   = std::move(other.filePath);
-        other.pcmData = nullptr; other.frameCount = 0; other.readPos = 0;
-        other.active.store(false, std::memory_order_relaxed);
-    }
+	void moveFrom(BackgroundTrack &&other) noexcept
+	{
+		pcmData = other.pcmData;
+		frameCount = other.frameCount;
+		readPos = other.readPos;
+		volume = other.volume;
+		active.store(other.active.load(std::memory_order_relaxed), std::memory_order_relaxed);
+		looping = other.looping;
+		filePath = std::move(other.filePath);
+		other.pcmData = nullptr;
+		other.frameCount = 0;
+		other.readPos = 0;
+		other.active.store(false, std::memory_order_relaxed);
+	}
 };
 
 // ==========================================================================
 //  SoundEffectInstance / SoundEffectPool
 // ==========================================================================
 
-struct SoundEffectInstance {
-    float*    pcmData         = nullptr;
-    ma_uint64 frameCount      = 0;
-    ma_uint64 playbackPosition = 0;
-    double     volume          = 1.0f;
-    std::atomic<bool> playing{false};
-    // Sample-accurate scheduling: absolute output-frame count (in the mixer
-    // device's timeline) at which this instance's first sample must be heard.
-    // Written by the game thread before `playing` is published (release), read
-    // by the audio thread after acquiring `playing`.
-    std::atomic<ma_uint64> startFrame{0};
+struct SoundEffectInstance
+{
+	float *pcmData = nullptr;
+	ma_uint64 frameCount = 0;
+	ma_uint64 playbackPosition = 0;
+	double volume = 1.0f;
+	std::atomic<bool> playing{false};
+	// Sample-accurate scheduling: absolute output-frame count (in the mixer
+	// device's timeline) at which this instance's first sample must be heard.
+	// Written by the game thread before `playing` is published (release), read
+	// by the audio thread after acquiring `playing`.
+	std::atomic<ma_uint64> startFrame{0};
 
-    SoundEffectInstance() = default;
+	SoundEffectInstance() = default;
 
-    SoundEffectInstance(float* data, ma_uint64 frames, double vol = 1.0f)
-        : pcmData(data), frameCount(frames), playbackPosition(0),
-          volume(vol), playing(true), startFrame(0) {}
+	SoundEffectInstance(float *data, ma_uint64 frames, double vol = 1.0f)
+		: pcmData(data), frameCount(frames), playbackPosition(0),
+		  volume(vol), playing(true), startFrame(0) {}
 
-    // FIX: Explicit move constructor to handle std::atomic<bool>
-    SoundEffectInstance(SoundEffectInstance&& other) noexcept
-        : pcmData(other.pcmData),
-          frameCount(other.frameCount),
-          playbackPosition(other.playbackPosition),
-          volume(other.volume),
-          playing(other.playing.load(std::memory_order_relaxed)),
-          startFrame(other.startFrame.load(std::memory_order_relaxed))
-    {
-        other.pcmData = nullptr;
-        other.frameCount = 0;
-        other.playbackPosition = 0;
-        other.volume = 1.0f;
-        other.playing.store(false, std::memory_order_relaxed);
-        other.startFrame.store(0, std::memory_order_relaxed);
-    }
+	// FIX: Explicit move constructor to handle std::atomic<bool>
+	SoundEffectInstance(SoundEffectInstance &&other) noexcept
+		: pcmData(other.pcmData),
+		  frameCount(other.frameCount),
+		  playbackPosition(other.playbackPosition),
+		  volume(other.volume),
+		  playing(other.playing.load(std::memory_order_relaxed)),
+		  startFrame(other.startFrame.load(std::memory_order_relaxed))
+	{
+		other.pcmData = nullptr;
+		other.frameCount = 0;
+		other.playbackPosition = 0;
+		other.volume = 1.0f;
+		other.playing.store(false, std::memory_order_relaxed);
+		other.startFrame.store(0, std::memory_order_relaxed);
+	}
 
-    // FIX: Explicit move assignment operator
-    SoundEffectInstance& operator=(SoundEffectInstance&& other) noexcept {
-        if (this != &other) {
-            pcmData = other.pcmData;
-            frameCount = other.frameCount;
-            playbackPosition = other.playbackPosition;
-            volume = other.volume;
-            playing.store(other.playing.load(std::memory_order_relaxed), std::memory_order_relaxed);
-            startFrame.store(other.startFrame.load(std::memory_order_relaxed), std::memory_order_relaxed);
+	// FIX: Explicit move assignment operator
+	SoundEffectInstance &operator=(SoundEffectInstance &&other) noexcept
+	{
+		if (this != &other)
+		{
+			pcmData = other.pcmData;
+			frameCount = other.frameCount;
+			playbackPosition = other.playbackPosition;
+			volume = other.volume;
+			playing.store(other.playing.load(std::memory_order_relaxed), std::memory_order_relaxed);
+			startFrame.store(other.startFrame.load(std::memory_order_relaxed), std::memory_order_relaxed);
 
-            other.pcmData = nullptr;
-            other.frameCount = 0;
-            other.playbackPosition = 0;
-            other.volume = 1.0f;
-            other.playing.store(false, std::memory_order_relaxed);
-            other.startFrame.store(0, std::memory_order_relaxed);
-        }
-        return *this;
-    }
+			other.pcmData = nullptr;
+			other.frameCount = 0;
+			other.playbackPosition = 0;
+			other.volume = 1.0f;
+			other.playing.store(false, std::memory_order_relaxed);
+			other.startFrame.store(0, std::memory_order_relaxed);
+		}
+		return *this;
+	}
 
-    SoundEffectInstance(const SoundEffectInstance&) = delete;
-    SoundEffectInstance& operator=(const SoundEffectInstance&) = delete;
+	SoundEffectInstance(const SoundEffectInstance &) = delete;
+	SoundEffectInstance &operator=(const SoundEffectInstance &) = delete;
 
-    // bufStartFrame is the output-frame index of the first sample in `output`
-    // for this callback; masterVol is hoisted once per callback by the caller.
-    ma_uint64 readFrames(float* output, ma_uint32 requestedFrames,
-                         ma_uint64 bufStartFrame, double masterVol) {
-        if (!playing.load(std::memory_order_acquire) || !pcmData) return 0;
+	// bufStartFrame is the output-frame index of the first sample in `output`
+	// for this callback; masterVol is hoisted once per callback by the caller.
+	ma_uint64 readFrames(float *output, ma_uint32 requestedFrames,
+						 ma_uint64 bufStartFrame, double masterVol)
+	{
+		if (!playing.load(std::memory_order_acquire) || !pcmData)
+			return 0;
 
-        // Align this instance's start to the callback window.
-        long long offset = (long long)startFrame.load(std::memory_order_relaxed)
-                         - (long long)bufStartFrame;
-        if (offset >= (long long)requestedFrames) return 0;   // armed, not due yet
-        if (offset < 0) offset = 0;                           // start is in the past
-        playbackPosition += (ma_uint64)offset;
+		// Align this instance's start to the callback window.
+		long long offset = (long long)startFrame.load(std::memory_order_relaxed) - (long long)bufStartFrame;
+		if (offset >= (long long)requestedFrames)
+			return 0; // armed, not due yet
+		if (offset < 0)
+			offset = 0; // start is in the past
+		playbackPosition += (ma_uint64)offset;
 
-        ma_uint64 remaining = frameCount - playbackPosition;
-        if (remaining == 0) { playing.store(false, std::memory_order_release); return 0; }
+		ma_uint64 remaining = frameCount - playbackPosition;
+		if (remaining == 0)
+		{
+			playing.store(false, std::memory_order_release);
+			return 0;
+		}
 
-        ma_uint32 toRead = (ma_uint32)std::min<ma_uint64>(remaining,
-                                                          (ma_uint64)(requestedFrames - offset));
-        float* src = pcmData + (playbackPosition * CHANNEL_COUNT);
-        float* dst = output  + (offset  * CHANNEL_COUNT);
-        float  vol = (float)(volume * masterVol);
+		ma_uint32 toRead = (ma_uint32)std::min<ma_uint64>(remaining,
+														  (ma_uint64)(requestedFrames - offset));
+		float *src = pcmData + (playbackPosition * CHANNEL_COUNT);
+		float *dst = output + (offset * CHANNEL_COUNT);
+		float vol = (float)(volume * masterVol);
 
-        // UPDATED CALL SITE: Uses the runtime dispatcher
-        g_mix_func(dst, src, (int)(toRead * CHANNEL_COUNT), vol);
+		// UPDATED CALL SITE: Uses the runtime dispatcher
+		g_mix_func(dst, src, (int)(toRead * CHANNEL_COUNT), vol);
 
-        playbackPosition += toRead;
-        if (playbackPosition >= frameCount) playing.store(false, std::memory_order_release);
-        return toRead;
-    }
+		playbackPosition += toRead;
+		if (playbackPosition >= frameCount)
+			playing.store(false, std::memory_order_release);
+		return toRead;
+	}
 
-    bool isPlaying() const { return playing.load(std::memory_order_acquire); }
+	bool isPlaying() const { return playing.load(std::memory_order_acquire); }
 };
 
-class SoundEffectPool {
+class SoundEffectPool
+{
 public:
-    SoundEffectPool() = default;
-    ~SoundEffectPool() { cleanup(); }
+	SoundEffectPool() = default;
+	~SoundEffectPool() { cleanup(); }
 
-    SoundEffectPool(const SoundEffectPool&)            = delete;
-    SoundEffectPool& operator=(const SoundEffectPool&) = delete;
+	SoundEffectPool(const SoundEffectPool &) = delete;
+	SoundEffectPool &operator=(const SoundEffectPool &) = delete;
 
-    SoundEffectPool(SoundEffectPool&& other) noexcept { moveFrom(std::move(other)); }
-    SoundEffectPool& operator=(SoundEffectPool&& other) noexcept {
-        if (this != &other) { cleanup(); moveFrom(std::move(other)); }
-        return *this;
-    }
+	SoundEffectPool(SoundEffectPool &&other) noexcept { moveFrom(std::move(other)); }
+	SoundEffectPool &operator=(SoundEffectPool &&other) noexcept
+	{
+		if (this != &other)
+		{
+			cleanup();
+			moveFrom(std::move(other));
+		}
+		return *this;
+	}
 
-    void cleanup() {
-        if (pcmData) { free(pcmData); pcmData = nullptr; }
-        frameCount = 0; name.clear(); instances.clear();
-    }
+	void cleanup()
+	{
+		if (pcmData)
+		{
+			free(pcmData);
+			pcmData = nullptr;
+		}
+		frameCount = 0;
+		name.clear();
+		instances.clear();
+	}
 
-    bool load(const char* path) {
-        cleanup();
-        ma_decoder decoder;
-        ma_decoder_config cfg = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
-        if (ma_decoder_init_file(path, &cfg, &decoder) != MA_SUCCESS) {
-            printf("Failed to load sound effect: %s\n", path); return false;
-        }
-        ma_uint64 length = 0;
-        ma_decoder_get_length_in_pcm_frames(&decoder, &length);
-        if (length == 0) {
-            ma_decoder_uninit(&decoder);
-            printf("Sound effect has zero length: %s\n", path); return false;
-        }
-        pcmData = (float*)malloc(sizeof(float) * length * CHANNEL_COUNT);
-        if (!pcmData) {
-            ma_decoder_uninit(&decoder);
-            printf("Failed to allocate memory for sound effect: %s\n", path); return false;
-        }
-        ma_uint64 framesRead = 0;
-        ma_decoder_read_pcm_frames(&decoder, pcmData, length, &framesRead);
-        ma_decoder_uninit(&decoder);
-        if (framesRead == 0) {
-            cleanup();
-            printf("Failed to read sound effect: %s\n", path); return false;
-        }
-        frameCount = framesRead;
-        name = path;
-        instances.reserve(MAX_INSTANCES);
-        return true;
-    }
+	bool load(const char *path)
+	{
+		cleanup();
+		ma_decoder decoder;
+		ma_decoder_config cfg = ma_decoder_config_init(SAMPLE_FORMAT, CHANNEL_COUNT, SAMPLE_RATE);
+		if (ma_decoder_init_file(path, &cfg, &decoder) != MA_SUCCESS)
+		{
+			printf("Failed to load sound effect: %s\n", path);
+			return false;
+		}
+		ma_uint64 length = 0;
+		ma_decoder_get_length_in_pcm_frames(&decoder, &length);
+		if (length == 0)
+		{
+			ma_decoder_uninit(&decoder);
+			printf("Sound effect has zero length: %s\n", path);
+			return false;
+		}
+		pcmData = (float *)malloc(sizeof(float) * length * CHANNEL_COUNT);
+		if (!pcmData)
+		{
+			ma_decoder_uninit(&decoder);
+			printf("Failed to allocate memory for sound effect: %s\n", path);
+			return false;
+		}
+		ma_uint64 framesRead = 0;
+		ma_decoder_read_pcm_frames(&decoder, pcmData, length, &framesRead);
+		ma_decoder_uninit(&decoder);
+		if (framesRead == 0)
+		{
+			cleanup();
+			printf("Failed to read sound effect: %s\n", path);
+			return false;
+		}
+		frameCount = framesRead;
+		name = path;
+		instances.reserve(MAX_INSTANCES);
+		return true;
+	}
 
-    void play(double volume = 1.0f, ma_uint64 startFrame = 0) {
-        if (!pcmData || frameCount == 0) return;
-        for (auto& inst : instances) {
-            if (!inst.isPlaying()) {
-                inst.playbackPosition = 0;
-                inst.volume = volume;
-                // Publish-flag order: set the schedule fields BEFORE releasing
-                // `playing` so the audio thread sees them via acquire/release.
-                inst.startFrame.store(startFrame, std::memory_order_release);
-                inst.playing.store(true, std::memory_order_release);
-                ++playingCount;
-                return;
-            }
-        }
-        if (instances.size() < MAX_INSTANCES) {
-            SoundEffectInstance inst(pcmData, frameCount, volume);
-            inst.startFrame.store(startFrame, std::memory_order_relaxed);
-            instances.push_back(std::move(inst));
-            ++playingCount;
-        }
-    }
+	void play(double volume = 1.0f, ma_uint64 startFrame = 0)
+	{
+		if (!pcmData || frameCount == 0)
+			return;
+		for (auto &inst : instances)
+		{
+			if (!inst.isPlaying())
+			{
+				inst.playbackPosition = 0;
+				inst.volume = volume;
+				// Publish-flag order: set the schedule fields BEFORE releasing
+				// `playing` so the audio thread sees them via acquire/release.
+				inst.startFrame.store(startFrame, std::memory_order_release);
+				inst.playing.store(true, std::memory_order_release);
+				++playingCount;
+				return;
+			}
+		}
+		if (instances.size() < MAX_INSTANCES)
+		{
+			SoundEffectInstance inst(pcmData, frameCount, volume);
+			inst.startFrame.store(startFrame, std::memory_order_relaxed);
+			instances.push_back(std::move(inst));
+			++playingCount;
+		}
+	}
 
-    ma_uint64 readFrames(float* output, ma_uint32 requestedFrames,
-                         ma_uint64 bufStartFrame, double masterVol) {
-        if (playingCount == 0) return 0;
-        ma_uint64 maxRead = 0;
-        int stillPlaying = 0;
-        for (auto& inst : instances) {
-            if (inst.isPlaying()) {
-                ma_uint64 r = inst.readFrames(output, requestedFrames, bufStartFrame, masterVol);
-                if (r > maxRead) maxRead = r;
-                if (inst.isPlaying()) ++stillPlaying;
-            }
-        }
-        playingCount = stillPlaying;
-        return maxRead;
-    }
+	ma_uint64 readFrames(float *output, ma_uint32 requestedFrames,
+						 ma_uint64 bufStartFrame, double masterVol)
+	{
+		if (playingCount == 0)
+			return 0;
+		ma_uint64 maxRead = 0;
+		int stillPlaying = 0;
+		for (auto &inst : instances)
+		{
+			if (inst.isPlaying())
+			{
+				ma_uint64 r = inst.readFrames(output, requestedFrames, bufStartFrame, masterVol);
+				if (r > maxRead)
+					maxRead = r;
+				if (inst.isPlaying())
+					++stillPlaying;
+			}
+		}
+		playingCount = stillPlaying;
+		return maxRead;
+	}
 
-    bool  isAnyPlaying()  const { return playingCount > 0; }
-    void  stopAll()             { for (auto& i : instances) { i.playing.store(false, std::memory_order_release); i.playbackPosition = 0; i.startFrame.store(0, std::memory_order_release); } playingCount = 0; }
-    int   getPlayingCount() const { return playingCount; }
+	bool isAnyPlaying() const { return playingCount > 0; }
+	void stopAll()
+	{
+		for (auto &i : instances)
+		{
+			i.playing.store(false, std::memory_order_release);
+			i.playbackPosition = 0;
+			i.startFrame.store(0, std::memory_order_release);
+		}
+		playingCount = 0;
+	}
+	int getPlayingCount() const { return playingCount; }
 
 private:
-    static const int MAX_INSTANCES = 32;
-    float*     pcmData      = nullptr;
-    ma_uint64  frameCount   = 0;
-    int        playingCount = 0;
-    std::string name;
-    std::vector<SoundEffectInstance> instances;
+	static const int MAX_INSTANCES = 32;
+	float *pcmData = nullptr;
+	ma_uint64 frameCount = 0;
+	int playingCount = 0;
+	std::string name;
+	std::vector<SoundEffectInstance> instances;
 
-    void moveFrom(SoundEffectPool&& other) noexcept {
-        pcmData = other.pcmData; frameCount = other.frameCount;
-        playingCount = other.playingCount;
-        name = std::move(other.name); instances = std::move(other.instances);
-        other.pcmData = nullptr; other.frameCount = 0; other.playingCount = 0;
-    }
+	void moveFrom(SoundEffectPool &&other) noexcept
+	{
+		pcmData = other.pcmData;
+		frameCount = other.frameCount;
+		playingCount = other.playingCount;
+		name = std::move(other.name);
+		instances = std::move(other.instances);
+		other.pcmData = nullptr;
+		other.frameCount = 0;
+		other.playingCount = 0;
+	}
 };
 
 // ==========================================================================
 //  AudioMixerManager (LOCK-FREE)
 // ==========================================================================
 
-class AudioMixerManager {
+class AudioMixerManager
+{
 public:
-    AudioMixerManager() { memset(&device, 0, sizeof(ma_device)); }
-    ~AudioMixerManager() { destroy(); }
+	AudioMixerManager() { memset(&device, 0, sizeof(ma_device)); }
+	~AudioMixerManager() { destroy(); }
 
-    bool initialize() {
-        if (deviceInitialized) return true;
-        ma_device_config cfg = ma_device_config_init(ma_device_type_playback);
-        cfg.playback.format   = SAMPLE_FORMAT;
-        cfg.playback.channels = CHANNEL_COUNT;
-        cfg.sampleRate        = SAMPLE_RATE;
-        cfg.dataCallback      = audioCallback;
-        cfg.pUserData         = this;
-        if (ma_device_init(nullptr, &cfg, &device) != MA_SUCCESS) {
-            printf("Failed to initialize audio mixer device\n"); return false;
-        }
-        deviceInitialized = true;
-        ma_device_start(&device);
-        return true;
-    }
+	bool initialize()
+	{
+		if (deviceInitialized)
+			return true;
+		ma_device_config cfg = ma_device_config_init(ma_device_type_playback);
+		cfg.playback.format = SAMPLE_FORMAT;
+		cfg.playback.channels = CHANNEL_COUNT;
+		cfg.sampleRate = SAMPLE_RATE;
+		cfg.dataCallback = audioCallback;
+		cfg.pUserData = this;
+		if (ma_device_init(nullptr, &cfg, &device) != MA_SUCCESS)
+		{
+			printf("Failed to initialize audio mixer device\n");
+			return false;
+		}
+		deviceInitialized = true;
+		ma_device_start(&device);
+		return true;
+	}
 
-    void destroy() {
-        if (deviceInitialized) { 
-            ma_device_uninit(&device); 
-            deviceInitialized = false; 
-        }
-        backgroundTracks.clear(); soundEffectPools.clear();
-        backgroundTrackMap.clear(); soundEffectMap.clear();
-        outFramesTotal.store(0, std::memory_order_relaxed);
-        lastAnchorFrame.store(0, std::memory_order_relaxed);
-        lastAnchorTime.store(0, std::memory_order_relaxed);
-        for (int b = 0; b < 3; b++) {
-            bgSnapshot[b].clear();
-            sfxSnapshot[b].clear();
-        }
-    }
+	void destroy()
+	{
+		if (deviceInitialized)
+		{
+			ma_device_uninit(&device);
+			deviceInitialized = false;
+		}
+		backgroundTracks.clear();
+		soundEffectPools.clear();
+		backgroundTrackMap.clear();
+		soundEffectMap.clear();
+		outFramesTotal.store(0, std::memory_order_relaxed);
+		lastAnchorFrame.store(0, std::memory_order_relaxed);
+		lastAnchorTime.store(0, std::memory_order_relaxed);
+		for (int b = 0; b < 3; b++)
+		{
+			bgSnapshot[b].clear();
+			sfxSnapshot[b].clear();
+		}
+	}
 
-    int loadBackgroundTrack(const char* path) {
-        if (!deviceInitialized && !initialize()) return -1;
-        std::string key = path;
-        auto it = backgroundTrackMap.find(key);
-        if (it != backgroundTrackMap.end()) return it->second;
-        BackgroundTrack track;
-        if (!track.load(path)) return -1;
-        int idx = (int)backgroundTracks.size();
-        backgroundTracks.push_back(std::move(track));
-        backgroundTrackMap[key] = idx;
-        publishSnapshot();
-        return idx;
-    }
+	int loadBackgroundTrack(const char *path)
+	{
+		if (!deviceInitialized && !initialize())
+			return -1;
+		std::string key = path;
+		auto it = backgroundTrackMap.find(key);
+		if (it != backgroundTrackMap.end())
+			return it->second;
+		BackgroundTrack track;
+		if (!track.load(path))
+			return -1;
+		int idx = (int)backgroundTracks.size();
+		backgroundTracks.push_back(std::move(track));
+		backgroundTrackMap[key] = idx;
+		publishSnapshot();
+		return idx;
+	}
 
-    int  findBackgroundTrack(const char* path) {
-        auto it = backgroundTrackMap.find(std::string(path));
-        return (it != backgroundTrackMap.end()) ? it->second : -1;
-    }
-    bool isBackgroundTrackLoaded(const char* path) { return findBackgroundTrack(path) >= 0; }
+	int findBackgroundTrack(const char *path)
+	{
+		auto it = backgroundTrackMap.find(std::string(path));
+		return (it != backgroundTrackMap.end()) ? it->second : -1;
+	}
+	bool isBackgroundTrackLoaded(const char *path) { return findBackgroundTrack(path) >= 0; }
 
-    void playBackgroundTrack(int idx)  { if (inRange(idx, backgroundTracks)) backgroundTracks[idx].play(); }
-    void stopBackgroundTrack(int idx)  { if (inRange(idx, backgroundTracks)) backgroundTracks[idx].stop(); }
-    void setBackgroundTrackVolume(int idx, float v)  { if (inRange(idx, backgroundTracks)) backgroundTracks[idx].setVolume(v); }
-    void setBackgroundTrackLooping(int idx, bool lp) { if (inRange(idx, backgroundTracks)) backgroundTracks[idx].setLooping(lp); }
-    bool isBackgroundTrackPlaying(int idx) { return inRange(idx, backgroundTracks) && backgroundTracks[idx].active.load(std::memory_order_acquire); }
+	void playBackgroundTrack(int idx)
+	{
+		if (inRange(idx, backgroundTracks))
+			backgroundTracks[idx].play();
+	}
+	void stopBackgroundTrack(int idx)
+	{
+		if (inRange(idx, backgroundTracks))
+			backgroundTracks[idx].stop();
+	}
+	void setBackgroundTrackVolume(int idx, float v)
+	{
+		if (inRange(idx, backgroundTracks))
+			backgroundTracks[idx].setVolume(v);
+	}
+	void setBackgroundTrackLooping(int idx, bool lp)
+	{
+		if (inRange(idx, backgroundTracks))
+			backgroundTracks[idx].setLooping(lp);
+	}
+	bool isBackgroundTrackPlaying(int idx) { return inRange(idx, backgroundTracks) && backgroundTracks[idx].active.load(std::memory_order_acquire); }
 
-    int loadSoundEffect(const char* path) {
-        if (!deviceInitialized && !initialize()) return -1;
-        std::string key = path;
-        auto it = soundEffectMap.find(key);
-        if (it != soundEffectMap.end()) return it->second;
-        SoundEffectPool pool;
-        if (!pool.load(path)) return -1;
-        int idx = (int)soundEffectPools.size();
-        soundEffectPools.push_back(std::move(pool));
-        soundEffectMap[key] = idx;
-        publishSnapshot();
-        return idx;
-    }
+	int loadSoundEffect(const char *path)
+	{
+		if (!deviceInitialized && !initialize())
+			return -1;
+		std::string key = path;
+		auto it = soundEffectMap.find(key);
+		if (it != soundEffectMap.end())
+			return it->second;
+		SoundEffectPool pool;
+		if (!pool.load(path))
+			return -1;
+		int idx = (int)soundEffectPools.size();
+		soundEffectPools.push_back(std::move(pool));
+		soundEffectMap[key] = idx;
+		publishSnapshot();
+		return idx;
+	}
 
-    int  findSoundEffect(const char* path) {
-        auto it = soundEffectMap.find(std::string(path));
-        return (it != soundEffectMap.end()) ? it->second : -1;
-    }
-    bool isSoundEffectLoaded(const char* path) { return findSoundEffect(path) >= 0; }
+	int findSoundEffect(const char *path)
+	{
+		auto it = soundEffectMap.find(std::string(path));
+		return (it != soundEffectMap.end()) ? it->second : -1;
+	}
+	bool isSoundEffectLoaded(const char *path) { return findSoundEffect(path) >= 0; }
 
-    void playSoundEffect(int idx, double volume = 1.0f) {
-        if (!inRange(idx, soundEffectPools)) return;
-        // Extrapolate the output frame the mixer is producing right now from
-        // the last (frame, steady_clock) anchor the audio thread published, so
-        // the start lands on the exact sample matching "now" instead of the
-        // next 10ms callback boundary.
-        ma_uint64 startFrame = 0;
-        long long anchorTime = lastAnchorTime.load(std::memory_order_relaxed);
-        if (anchorTime != 0) {
-            long long nowNs = std::chrono::steady_clock::now().time_since_epoch().count();
-            long long dtNs = nowNs - anchorTime;
-            ma_uint64 anchorFrame = lastAnchorFrame.load(std::memory_order_relaxed);
-            if (dtNs > 0)
-                startFrame = anchorFrame + (ma_uint64)((double)dtNs * (SAMPLE_RATE / 1000000000.0));
-            else
-                startFrame = anchorFrame;
-        } else {
-            startFrame = outFramesTotal.load(std::memory_order_relaxed);
-        }
-        soundEffectPools[idx].play(volume, startFrame);
-    }
-    void playSoundEffect(const char* path, double volume = 1.0f) {
-        int idx = findSoundEffect(path);
-        if (idx < 0) idx = loadSoundEffect(path);
-        if (idx >= 0) playSoundEffect(idx, volume);
-    }
-    void stopSoundEffect(int idx)           { if (inRange(idx, soundEffectPools)) soundEffectPools[idx].stopAll(); }
-    bool isSoundEffectPlaying(int idx)      { return inRange(idx, soundEffectPools) && soundEffectPools[idx].isAnyPlaying(); }
-    int  getSoundEffectPlayingCount(int idx){ return inRange(idx, soundEffectPools) ? soundEffectPools[idx].getPlayingCount() : 0; }
+	void playSoundEffect(int idx, double volume = 1.0f)
+	{
+		if (!inRange(idx, soundEffectPools))
+			return;
+		// Extrapolate the output frame the mixer is producing right now from
+		// the last (frame, steady_clock) anchor the audio thread published, so
+		// the start lands on the exact sample matching "now" instead of the
+		// next 10ms callback boundary.
+		ma_uint64 startFrame = 0;
+		long long anchorTime = lastAnchorTime.load(std::memory_order_relaxed);
+		if (anchorTime != 0)
+		{
+			long long nowNs = std::chrono::steady_clock::now().time_since_epoch().count();
+			long long dtNs = nowNs - anchorTime;
+			ma_uint64 anchorFrame = lastAnchorFrame.load(std::memory_order_relaxed);
+			if (dtNs > 0)
+				startFrame = anchorFrame + (ma_uint64)((double)dtNs * (SAMPLE_RATE / 1000000000.0));
+			else
+				startFrame = anchorFrame;
+		}
+		else
+		{
+			startFrame = outFramesTotal.load(std::memory_order_relaxed);
+		}
+		soundEffectPools[idx].play(volume, startFrame);
+	}
+	void playSoundEffect(const char *path, double volume = 1.0f)
+	{
+		int idx = findSoundEffect(path);
+		if (idx < 0)
+			idx = loadSoundEffect(path);
+		if (idx >= 0)
+			playSoundEffect(idx, volume);
+	}
+	void stopSoundEffect(int idx)
+	{
+		if (inRange(idx, soundEffectPools))
+			soundEffectPools[idx].stopAll();
+	}
+	bool isSoundEffectPlaying(int idx) { return inRange(idx, soundEffectPools) && soundEffectPools[idx].isAnyPlaying(); }
+	int getSoundEffectPlayingCount(int idx) { return inRange(idx, soundEffectPools) ? soundEffectPools[idx].getPlayingCount() : 0; }
 
-    void unloadBackgroundTrack(int idx) {
-        if (!inRange(idx, backgroundTracks)) return;
+	void unloadBackgroundTrack(int idx)
+	{
+		if (!inRange(idx, backgroundTracks))
+			return;
 
-        eraseAndFixup(backgroundTrackMap, idx);
-        backgroundTracks.erase(backgroundTracks.begin() + idx);
-        publishSnapshot();
-    }
+		eraseAndFixup(backgroundTrackMap, idx);
+		backgroundTracks.erase(backgroundTracks.begin() + idx);
+		publishSnapshot();
+	}
 
-    void unloadSoundEffect(int idx) {
-        if (!inRange(idx, soundEffectPools)) return;
+	void unloadSoundEffect(int idx)
+	{
+		if (!inRange(idx, soundEffectPools))
+			return;
 
-        eraseAndFixup(soundEffectMap, idx);
-        soundEffectPools.erase(soundEffectPools.begin() + idx);
-        publishSnapshot();
-    }
+		eraseAndFixup(soundEffectMap, idx);
+		soundEffectPools.erase(soundEffectPools.begin() + idx);
+		publishSnapshot();
+	}
 
-    double setMasterVolume(double v) { MUSIC_MASTER_VOLUME_099.store(v, std::memory_order_relaxed); return v; }
-    double getMasterVolume() const  { return MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed); }
+	double setMasterVolume(double v)
+	{
+		MUSIC_MASTER_VOLUME_099.store(v, std::memory_order_relaxed);
+		return v;
+	}
+	double getMasterVolume() const { return MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed); }
 
 private:
-    std::deque<BackgroundTrack>  backgroundTracks;
-    std::deque<SoundEffectPool>  soundEffectPools;
+	std::deque<BackgroundTrack> backgroundTracks;
+	std::deque<SoundEffectPool> soundEffectPools;
 
-    std::unordered_map<std::string, int> backgroundTrackMap;
-    std::unordered_map<std::string, int> soundEffectMap;
+	std::unordered_map<std::string, int> backgroundTrackMap;
+	std::unordered_map<std::string, int> soundEffectMap;
 
-    ma_device device;
-    bool  deviceInitialized = false;
+	ma_device device;
+	bool deviceInitialized = false;
 
-    // Monotonic output-frame counter of the mixer device. Incremented once per
-    // callback (the fetch_add return value is that callback's first output
-    // frame). Lets SFX be scheduled at exact sample positions.
-    std::atomic<ma_uint64> outFramesTotal{0};
+	// Monotonic output-frame counter of the mixer device. Incremented once per
+	// callback (the fetch_add return value is that callback's first output
+	// frame). Lets SFX be scheduled at exact sample positions.
+	std::atomic<ma_uint64> outFramesTotal{0};
 
-    // System-clock anchor for sample-accurate scheduling: the audio thread
-    // records (bufStart frame, steady_clock time) at the top of every callback
-    // so the game thread can extrapolate which output frame corresponds to the
-    // current wall-clock moment.
-    std::atomic<ma_uint64> lastAnchorFrame{0};
-    std::atomic<long long> lastAnchorTime{0};
+	// System-clock anchor for sample-accurate scheduling: the audio thread
+	// records (bufStart frame, steady_clock time) at the top of every callback
+	// so the game thread can extrapolate which output frame corresponds to the
+	// current wall-clock moment.
+	std::atomic<ma_uint64> lastAnchorFrame{0};
+	std::atomic<long long> lastAnchorTime{0};
 
-    // Lock-free triple buffer for snapshots
-    std::vector<BackgroundTrack*> bgSnapshot[3];
-    std::vector<SoundEffectPool*> sfxSnapshot[3];
-    
-    std::atomic<int> readerIndex{0};
-    std::atomic<int> newestIndex{1};
+	// Lock-free triple buffer for snapshots
+	std::vector<BackgroundTrack *> bgSnapshot[3];
+	std::vector<SoundEffectPool *> sfxSnapshot[3];
 
-    void publishSnapshot() {
-        int r = readerIndex.load(std::memory_order_acquire);
-        int n = newestIndex.load(std::memory_order_acquire);
-        
-        // FIX: Robust triple buffer index calculation
-        int next;
-        if (r == n) {
-            next = (r + 1) % 3;
-        } else {
-            next = 3 - r - n;
-        }
-        
-        bgSnapshot[next].clear();
-        for (auto& t : backgroundTracks) bgSnapshot[next].push_back(&t);
-        sfxSnapshot[next].clear();
-        for (auto& p : soundEffectPools)  sfxSnapshot[next].push_back(&p);
-        
-        newestIndex.store(next, std::memory_order_release);
-    }
+	std::atomic<int> readerIndex{0};
+	std::atomic<int> newestIndex{1};
 
-    template<typename Vec>
-    static bool inRange(int idx, const Vec& v) {
-        return idx >= 0 && idx < (int)v.size();
-    }
+	void publishSnapshot()
+	{
+		int r = readerIndex.load(std::memory_order_acquire);
+		int n = newestIndex.load(std::memory_order_acquire);
 
-    static void eraseAndFixup(std::unordered_map<std::string, int>& map, int removed) {
-        for (auto it = map.begin(); it != map.end(); ) {
-            if (it->second == removed)        it = map.erase(it);
-            else { if (it->second > removed) --it->second; ++it; }
-        }
-    }
+		// FIX: Robust triple buffer index calculation
+		int next;
+		if (r == n)
+		{
+			next = (r + 1) % 3;
+		}
+		else
+		{
+			next = 3 - r - n;
+		}
 
-    static void audioCallback(ma_device* pDevice, void* pOutput,
-                               const void* pInput, ma_uint32 frameCount) {
-        AudioMixerManager* mixer = static_cast<AudioMixerManager*>(pDevice->pUserData);
-        if (!mixer) return;
+		bgSnapshot[next].clear();
+		for (auto &t : backgroundTracks)
+			bgSnapshot[next].push_back(&t);
+		sfxSnapshot[next].clear();
+		for (auto &p : soundEffectPools)
+			sfxSnapshot[next].push_back(&p);
 
-        float* out = (float*)pOutput;
-        memset(out, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
+		newestIndex.store(next, std::memory_order_release);
+	}
 
-        // Sample-accurate timeline: capture this callback's first output frame
-        // and publish the (frame, system-clock) anchor the game thread uses to
-        // extrapolate the frame for the current wall-clock instant.
-        ma_uint64 bufStart = mixer->outFramesTotal.fetch_add(frameCount, std::memory_order_relaxed);
-        mixer->lastAnchorFrame.store(bufStart, std::memory_order_relaxed);
-        mixer->lastAnchorTime.store(
-            std::chrono::steady_clock::now().time_since_epoch().count(),
-            std::memory_order_relaxed);
-        // Hoist master volume once (avoids an atomic load per instance).
-        double masterVol = MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed);
+	template <typename Vec>
+	static bool inRange(int idx, const Vec &v)
+	{
+		return idx >= 0 && idx < (int)v.size();
+	}
 
-        // Lock-free snapshot read
-        int r = mixer->readerIndex.load(std::memory_order_relaxed);
-        int n = mixer->newestIndex.load(std::memory_order_acquire);
-        if (r != n) {
-            mixer->readerIndex.store(n, std::memory_order_release);
-            r = n;
-        }
+	static void eraseAndFixup(std::unordered_map<std::string, int> &map, int removed)
+	{
+		for (auto it = map.begin(); it != map.end();)
+		{
+			if (it->second == removed)
+				it = map.erase(it);
+			else
+			{
+				if (it->second > removed)
+					--it->second;
+				++it;
+			}
+		}
+	}
 
-        for (BackgroundTrack* track : mixer->bgSnapshot[r])
-            if (track->active.load(std::memory_order_acquire)) track->readFrames(out, frameCount);
+	static void audioCallback(ma_device *pDevice, void *pOutput,
+							  const void *pInput, ma_uint32 frameCount)
+	{
+		AudioMixerManager *mixer = static_cast<AudioMixerManager *>(pDevice->pUserData);
+		if (!mixer)
+			return;
 
-        for (SoundEffectPool* pool : mixer->sfxSnapshot[r])
-            pool->readFrames(out, frameCount, bufStart, masterVol);
+		float *out = (float *)pOutput;
+		memset(out, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
 
-        (void)pInput;
-    }
-};
+		// Sample-accurate timeline: capture this callback's first output frame
+		// and publish the (frame, system-clock) anchor the game thread uses to
+		// extrapolate the frame for the current wall-clock instant.
+		ma_uint64 bufStart = mixer->outFramesTotal.fetch_add(frameCount, std::memory_order_relaxed);
+		mixer->lastAnchorFrame.store(bufStart, std::memory_order_relaxed);
+		mixer->lastAnchorTime.store(
+			std::chrono::steady_clock::now().time_since_epoch().count(),
+			std::memory_order_relaxed);
+		// Hoist master volume once (avoids an atomic load per instance).
+		double masterVol = MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed);
+
+		// Lock-free snapshot read
+		int r = mixer->readerIndex.load(std::memory_order_relaxed);
+		int n = mixer->newestIndex.load(std::memory_order_acquire);
+		if (r != n)
+		{
+			mixer->readerIndex.store(n, std::memory_order_release);
+			r = n;
+		}
+
+		for (BackgroundTrack *track : mixer->bgSnapshot[r])
+			if (track->active.load(std::memory_order_acquire))
+				track->readFrames(out, frameCount);
+
+		for (SoundEffectPool *pool : mixer->sfxSnapshot[r])
+			pool->readFrames(out, frameCount, bufStart, masterVol);
+
+		(void)pInput;
+	}
+};
