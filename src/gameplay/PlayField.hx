@@ -658,6 +658,7 @@ class PlayField {
 			var judgementScore = Std.int(worstJudgement[3]);
 			if (hud != null && preferences.ratingPopup)
 				hud.respondWithRatingID(judgementID);
+			playJudgementHitsound(judgementID);
 			accuracy.increment(judgementAcc, false, notesInOne * 10000);
 			score += judgementScore * notesInOne;
 			postHitNote(#if linc_luajit_funkinview notePos, #end note, timing, notesInOne);
@@ -672,12 +673,23 @@ class PlayField {
 				var judgementScore = Std.int(judgement[3]);
 				if (hud != null && preferences.ratingPopup)
 					hud.respondWithRatingID(judgementID);
+				playJudgementHitsound(judgementID);
 				accuracy.increment(judgementAcc, false, notesInOne * 10000);
 				score += judgementScore * notesInOne;
 				postHitNote(#if linc_luajit_funkinview notePos, #end note, timing, notesInOne);
 				return;
 			}
 		}
+	}
+
+	/**
+		Plays the cached hitsound on every Sick (0) or Good (1) hit when
+		the Audio > Toggle Hitsound option is enabled.  The sound itself
+		is preloaded inside Main alongside the menu sounds.
+	**/
+	inline function playJudgementHitsound(judgementID:Int) {
+		if (SaveData.state.audio.hitsound && judgementID <= 1)
+			Main.current.playHitsound();
 	}
 
 	function postHitNote(#if linc_luajit_funkinview notePos:Float, #end note:MetaNote, timing:Float, notesInOne:Int64) {

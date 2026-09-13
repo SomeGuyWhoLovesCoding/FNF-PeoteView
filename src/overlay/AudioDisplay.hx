@@ -3,24 +3,27 @@ package overlay;
 import data.AudioOutput;
 import data.SaveData;
 import lime.ui.MouseButton;
+import miniaudio.MiniAudio;
 import overlay.OptionsSubDisplay;
 import rhythm.AudioSampleUnified;
 
 /**
         Handles the display and interaction for the audio options in the
         options menu: the song mixer's Output mode (Stereo / Surround Sound
-        3.1) and the gameplay hitsound toggle.
+        3.1), the pitch-preserving time stretch toggle and the gameplay
+        hitsound toggle.
         The list is rendered through the shared FreeplayAlphabet, so the audio
         options behave exactly like the preferences/graphics lists.
         @since Development
 **/
 @:publicFields
 class AudioDisplay extends OptionsSubDisplay {
-        public static var audioStr(default, null):Array<String> = ["output", "hitsound"];
+        public static var audioStr(default, null):Array<String> = ["output", "timeStretch", "hitsound"];
 
         // Descriptions for each audio option, in the same order.
         static var audioDescriptions:Array<String> = [
                 "Chooses how the unified song mixer routes the inst and voices.\n\nStereo keeps the classic 2 channel mix, where every song track\nis folded into the front left/right pair.\n\nSurround Sound 3.1 widens the song into a 3.1 layout: the voices\nplay through the CENTER speaker, the instrumental stays wide on\nthe BACKGROUND front pair and the SUB channel carries the low end\nfor a deeper sounding mix.\n\nMusic and sound effects always remain stereo.",
+                "Keep pitch when song speed != 1x (uses FFT time-stretch).\nOFF uses a cheaper linear resample (pitch shifts).\nTurn OFF if you get audio dropouts on slower/faster sections.",
                 "Plays a cached hitsound.wav on every Sick or Good hit.\n\nThe sound is preloaded inside Main alongside the menu sounds,\nso triggering it never causes lagspikes."
         ];
 
@@ -219,6 +222,13 @@ class AudioDisplay extends OptionsSubDisplay {
                                 var next:AudioOutput = SaveData.state.audio.output == AudioOutput.SURROUND31 ? AudioOutput.STEREO : AudioOutput.SURROUND31;
                                 AudioSampleUnified.applyOutput(next);
                                 Main.current.playScrollSound();
+                        case "timeStretch":
+                                SaveData.state.preferences.timeStretch = !SaveData.state.preferences.timeStretch;
+                                SaveData.save();
+                                #if (cpp || hl)
+                                MiniAudio.setStretchEnabled(SaveData.state.preferences.timeStretch);
+                                #end
+                                Main.current.playCancelSound();
                         case "hitsound":
                                 SaveData.state.audio.hitsound = !SaveData.state.audio.hitsound;
                                 SaveData.save();
@@ -238,6 +248,8 @@ class AudioDisplay extends OptionsSubDisplay {
                 switch (audioStr[index]) {
                         case "output":
                                 return SaveData.state.audio.output == AudioOutput.SURROUND31 ? "Surround Sound 3.1" : "Stereo";
+                        case "timeStretch":
+                                return SaveData.state.preferences.timeStretch ? "ON" : "OFF";
                         case "hitsound":
                                 return SaveData.state.audio.hitsound ? "ON" : "OFF";
                 }
@@ -290,6 +302,8 @@ class AudioDisplay extends OptionsSubDisplay {
                 switch (audioStr[index]) {
                         case "output":
                                 return "Output";
+                        case "timeStretch":
+                                return "Time Stretch";
                         case "hitsound":
                                 return "Toggle Hitsound";
                 }
