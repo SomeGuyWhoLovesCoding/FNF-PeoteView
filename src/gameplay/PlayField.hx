@@ -39,6 +39,10 @@ class PlayField {
 		#end
 
 		create(roof, display, Chart.header.mania);
+
+		#if cpp
+		cpp.vm.Gc.enable(false);
+		#end
 	}
 
 	function changeBpmAt(time:Float, value:Float, timeNum:Float, timeDen:Float) {
@@ -541,6 +545,10 @@ class PlayField {
 		funkinviewlua.callFunction('pausePost', null);
 		funkinviewlua.callFunction('postPause', null); // alternative syntax
 		#end
+
+		#if cpp
+		cpp.vm.Gc.enable(true);
+		#end
 	}
 
 	/**
@@ -565,6 +573,10 @@ class PlayField {
 		#if linc_luajit_funkinview
 		funkinviewlua.callFunction('resumePost', null);
 		funkinviewlua.callFunction('postResume', null); // alternative syntax
+		#end
+
+		#if cpp
+		cpp.vm.Gc.enable(false);
 		#end
 	}
 
@@ -981,6 +993,10 @@ class PlayField {
 		funkinviewlua.callFunction('disposePost', null);
 		funkinviewlua.callFunction('postDispose', null); // alternative syntax
 		funkinviewlua.dispose();
+		#end
+
+		#if cpp
+		cpp.vm.Gc.enable(true);
 		#end
 	}
 }
