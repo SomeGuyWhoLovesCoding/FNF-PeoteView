@@ -21,6 +21,14 @@ class NotePool {
 	var inactiveVirtualNotes(default, null):Stack<VirtualNote>;
 	var inactiveVirtualSusses(default, null):Stack<VirtualSustain>;
 
+	// Sparse slots indexed by global note index — the VirtualNote /
+	// VirtualSustain currently bound to each chart note (null = inactive).
+	// While a note stays visible, drawNote() rebinds the SAME object every
+	// frame (zero steady-state allocation); on despawn putNote/putSustain
+	// push the object back onto the free stacks for other notes to reuse.
+	var virtualNoteSlots:Array<VirtualNote>;
+	var virtualSustainSlots:Array<VirtualSustain>;
+
 	// Peote element pools — these persist in the GPU buffer and are
 	// updated in-place each frame instead of being destroyed/recreated.
 	var pooledNotes(default, null):Stack<Note>;
@@ -47,6 +55,8 @@ class NotePool {
 		this.parent = parent;
 		inactiveVirtualNotes = new Stack<VirtualNote>();
 		inactiveVirtualSusses = new Stack<VirtualSustain>();
+		virtualNoteSlots = [];
+		virtualSustainSlots = [];
 		pooledNotes = new Stack<Note>();
 		pooledSustains = new Stack<Sustain>();
 		activeNotes = [];
@@ -62,9 +72,23 @@ class NotePool {
 	 * @return The allocated VirtualNote at the given index.
 	 */
 	inline function getNote(id:Int, n:MetaNote, index:Int64):VirtualNote {
-		var obj = inactiveVirtualNotes.pop();
-		if (obj == null)
-			obj = new VirtualNote(0, 0, 0);
+		var slot = Int64.toInt(index);
+
+		// Fast path: this global index was drawn last frame and is still
+		// visible — reuse the same object in place. Zero allocation.
+		var obj:VirtualNote = null;
+		if (slot < virtualNoteSlots.length)
+			obj = virtualNoteSlots[slot];
+
+		if (obj == null) {
+			obj = inactiveVirtualNotes.pop();
+			if (obj == null)
+				obj = new VirtualNote(0, 0, 0);
+			if (slot >= virtualNoteSlots.length)
+				virtualNoteSlots.resize(slot + 1);
+			virtualNoteSlots[slot] = obj;
+		}
+
 		obj.initialAlpha = Note.defaultAlpha;
 		obj.addedAlpha = 0;
 		obj.notesInOne = 1;
@@ -81,10 +105,21 @@ class NotePool {
 	 * @return The allocated VirtualSustain at the given index.
 	 */
 	inline function getSustain(id:Int, n:MetaNote, index:Int64):VirtualSustain {
-		var obj = inactiveVirtualSusses.pop();
+		var slot = Int64.toInt(index);
+
+		var obj:VirtualSustain = null;
+		if (slot < virtualSustainSlots.length)
+			obj = virtualSustainSlots[slot];
+
 		if (obj == null) {
-			obj = new VirtualSustain(-9999, -9999, 0, 0);
+			obj = inactiveVirtualSusses.pop();
+			if (obj == null)
+				obj = new VirtualSustain(-9999, -9999, 0, 0);
+			if (slot >= virtualSustainSlots.length)
+				virtualSustainSlots.resize(slot + 1);
+			virtualSustainSlots[slot] = obj;
 		}
+
 		obj.alpha = Sustain.defaultAlpha;
 		return obj;
 	}
@@ -95,7 +130,17 @@ class NotePool {
 	 * @param n The underlying meta note to deactivate.
 	 * @param index The global note index.
 	 */
-	inline function putNote(n:MetaNote, index:Int64) {}
+	inline function putNote(n:MetaNote, index:Int64) {
+		var slot = Int64.toInt(index);
+		if (slot < virtualNoteSlots.length) {
+			var obj = virtualNoteSlots[slot];
+			if (obj != null) {
+				obj.ref = null; // drop the MetaNote ref early
+				inactiveVirtualNotes.push(obj);
+				virtualNoteSlots[slot] = null;
+			}
+		}
+	}
 
 	/**
 	 * Deactivates a sustain and returns it to the inactive pool.
@@ -103,7 +148,17 @@ class NotePool {
 	 * @param n The underlying meta note to deactivate.
 	 * @param index The global note index.
 	 */
-	inline function putSustain(n:MetaNote, index:Int64) {}
+	inline function putSustain(n:MetaNote, index:Int64) {
+		var slot = Int64.toInt(index);
+		if (slot < virtualSustainSlots.length) {
+			var obj = virtualSustainSlots[slot];
+			if (obj != null) {
+				obj.ref = null; // drop the VirtualNote ref early
+				inactiveVirtualSusses.push(obj);
+				virtualSustainSlots[slot] = null;
+			}
+		}
+	}
 
 	// =================================================================
 	//  Peote Note / Sustain element pool  (GPU-buffer-persistent)
@@ -199,6 +254,8 @@ class NotePool {
 		pooledSustains = null;
 		inactiveVirtualNotes = null;
 		inactiveVirtualSusses = null;
+		virtualNoteSlots = null;
+		virtualSustainSlots = null;
 	}
 
 	/**
@@ -232,9 +289,18 @@ class NotePool {
 		prevNoteCount = 0;
 		prevSustainCount = 0;
 
-		inactiveVirtualNotes = null;
-		inactiveVirtualSusses = null;
+		// Rebuild the free stacks from the slot arrays so recycled
+		// virtual objects survive the jump instead of being orphaned.
 		inactiveVirtualNotes = new Stack<VirtualNote>();
+		for (obj in virtualNoteSlots)
+			if (obj != null)
+				inactiveVirtualNotes.push(obj);
+		virtualNoteSlots.resize(0);
+
 		inactiveVirtualSusses = new Stack<VirtualSustain>();
+		for (obj in virtualSustainSlots)
+			if (obj != null)
+				inactiveVirtualSusses.push(obj);
+		virtualSustainSlots.resize(0);
 	}
 }

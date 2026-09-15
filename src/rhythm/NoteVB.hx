@@ -19,6 +19,22 @@ class NoteVB {
 	**/
 	var sustainLength(default, null):Array<Array<Int>>;
 
+	// High-water marks per (lane,index): the largest slot count ever written
+	// since the last clear(). clear() nulls object refs up to the cap, so no
+	// stale VirtualNote/VirtualSustain refs stay rooted in the inner arrays.
+	var noteCap(default, null):Array<Array<Int>>;
+	var sustainCap(default, null):Array<Array<Int>>;
+
+	// Touched-slot registry: which (lane,index) pairs were written this
+	// frame. Lets clear() reset only what was actually used instead of
+	// scanning all lane×index length arrays every frame.
+	var touchedNoteLane:Array<Int>;
+	var touchedNoteIdx:Array<Int>;
+	var touchedNoteCount:Int;
+	var touchedSusLane:Array<Int>;
+	var touchedSusIdx:Array<Int>;
+	var touchedSusCount:Int;
+
 	/**
 	 * This array and the one below are not meant to be touched. They are just a small virtual buffer meant to grow continuously if the rendered note count ever reaches above `length`.
 	 * And yes, they are 3 dimensional so they're easy to make note jack optimizations out of.
@@ -47,6 +63,24 @@ class NoteVB {
 				sustainLength[lane][idx] = 0;
 			}
 		}
+
+		noteCap = [];
+		sustainCap = [];
+		for (lane in 0...lanes) {
+			noteCap[lane] = [];
+			sustainCap[lane] = [];
+			for (idx in 0...indexes) {
+				noteCap[lane][idx] = 0;
+				sustainCap[lane][idx] = 0;
+			}
+		}
+
+		touchedNoteLane = [];
+		touchedNoteIdx = [];
+		touchedNoteCount = 0;
+		touchedSusLane = [];
+		touchedSusIdx = [];
+		touchedSusCount = 0;
 	}
 
 	/**
@@ -55,8 +89,16 @@ class NoteVB {
 	inline function addNote(note:VirtualNote) {
 		var ref = note.ref;
 		var lane = ref.type;
-		notes[lane][ref.index][noteLength[note.ref.type][ref.index]] = note;
-		noteLength[note.ref.type][ref.index]++;
+		var idx = ref.index;
+		var arr = notes[lane][idx];
+		var len = noteLength[lane][idx];
+		if (len == 0)
+			registerTouchedNote(lane, idx);
+		arr[len] = note;
+		len++;
+		noteLength[lane][idx] = len;
+		if (len > noteCap[lane][idx])
+			noteCap[lane][idx] = len;
 	}
 
 	/**
@@ -65,19 +107,68 @@ class NoteVB {
 	inline function addSustain(sustain:VirtualSustain, note:VirtualNote) {
 		var ref = note.ref;
 		var lane = ref.type;
-		sustains[note.ref.type][ref.index][sustainLength[note.ref.type][ref.index]] = sustain;
-		sustainLength[note.ref.type][ref.index]++;
+		var idx = ref.index;
+		var arr = sustains[lane][idx];
+		var len = sustainLength[lane][idx];
+		if (len == 0)
+			registerTouchedSustain(lane, idx);
+		arr[len] = sustain;
+		len++;
+		sustainLength[lane][idx] = len;
+		if (len > sustainCap[lane][idx])
+			sustainCap[lane][idx] = len;
 	}
 
-	// BOTTLENECK: low per-frame full re-scan+zero of all lane×index length arrays (2×256×2 writes) even when few notes are active | FIX: track touched (lane,index) slots and only clear those
-	function clear() {
-		for (i in 0...noteLength.length)
-			for (j in 0...noteLength[i].length)
-				noteLength[i][j] = 0;
+	inline function registerTouchedNote(lane:Int, idx:Int) {
+		if (touchedNoteCount < touchedNoteLane.length) {
+			touchedNoteLane[touchedNoteCount] = lane;
+			touchedNoteIdx[touchedNoteCount] = idx;
+		} else {
+			touchedNoteLane.push(lane);
+			touchedNoteIdx.push(idx);
+		}
+		touchedNoteCount++;
+	}
 
-		for (i in 0...sustainLength.length)
-			for (j in 0...sustainLength[i].length)
-				sustainLength[i][j] = 0;
+	inline function registerTouchedSustain(lane:Int, idx:Int) {
+		if (touchedSusCount < touchedSusLane.length) {
+			touchedSusLane[touchedSusCount] = lane;
+			touchedSusIdx[touchedSusCount] = idx;
+		} else {
+			touchedSusLane.push(lane);
+			touchedSusIdx.push(idx);
+		}
+		touchedSusCount++;
+	}
+
+	// Nulls every object ref written since the last clear (0...cap) for the
+	// (lane,index) pairs touched this frame, then resets lengths. Untouched
+	// pairs are already clean — their lengths were zeroed by a previous
+	// clear and only addNote/addSustain can raise them again.
+	function clear() {
+		for (t in 0...touchedNoteCount) {
+			var i = touchedNoteLane[t];
+			var j = touchedNoteIdx[t];
+			var arr = notes[i][j];
+			var cap = noteCap[i][j];
+			for (k in 0...cap)
+				arr[k] = null;
+			noteCap[i][j] = 0;
+			noteLength[i][j] = 0;
+		}
+		touchedNoteCount = 0;
+
+		for (t in 0...touchedSusCount) {
+			var i = touchedSusLane[t];
+			var j = touchedSusIdx[t];
+			var arr = sustains[i][j];
+			var cap = sustainCap[i][j];
+			for (k in 0...cap)
+				arr[k] = null;
+			sustainCap[i][j] = 0;
+			sustainLength[i][j] = 0;
+		}
+		touchedSusCount = 0;
 	}
 }
 
