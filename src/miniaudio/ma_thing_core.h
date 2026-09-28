@@ -1571,104 +1571,6 @@ public:
 	AudioSystem(const AudioSystem &) = delete;
 	AudioSystem &operator=(const AudioSystem &) = delete;
 
-	// ---- device change notification ----------------------------------
-	// miniaudio fires this when the device is stopped for any reason,
-	// including when the default endpoint disappears.  We try to reopen on
-	// the new default and re-run channel detection so surround / converter
-	// state matches the new endpoint.
-	static void notificationCallback(const ma_device_notification *pNotification)
-	{
-		AudioSystem *sys = static_cast<AudioSystem *>(pNotification->pDevice->pUserData);
-		if (!sys)
-			return;
-
-		if (pNotification->type == ma_device_notification_type_stopped)
-		{
-			sys->handleDeviceChange();
-		}
-	}
-
-	void handleDeviceChange()
-	{
-		if (!exists.load(std::memory_order_acquire))
-			return;
-
-		bool wasPlaying = (mixerState.load(std::memory_order_acquire) == 1);
-
-		// Tear down the dead device.
-		ma_device_stop(&device);
-		if (stretchPipe)
-			stretchPipe->reset();
-		ma_device_uninit(&device);
-		memset(&device, 0, sizeof(ma_device));
-
-		// Reopen on the (possibly new) default endpoint.
-		ma_device_config cfg = ma_device_config_init(ma_device_type_playback);
-		cfg.playback.format = SAMPLE_FORMAT;
-		cfg.playback.channels = CHANNEL_COUNT;
-		cfg.sampleRate = SAMPLE_RATE;
-		cfg.dataCallback = data_callback;
-		cfg.notificationCallback = notificationCallback;
-		cfg.pUserData = this;
-
-		if (ma_device_init(nullptr, &cfg, &device) != MA_SUCCESS)
-		{
-			printf("[ma_thing] Failed to reopen device after change.\n");
-			return;
-		}
-
-		// Re-detect native channel count.
-		int nativeCh = detectNativeChannelCount();
-		nativeDeviceChannels.store(nativeCh, std::memory_order_release);
-
-		// Re-evaluate surround support: require at least 4 native channels.
-		bool canSurround = (nativeCh >= SURROUND_CHANNEL_COUNT) &&
-						   surroundEnabled.load(std::memory_order_acquire);
-		surroundEnabled.store(canSurround, std::memory_order_release);
-
-		int wanted = canSurround ? SURROUND_CHANNEL_COUNT : CHANNEL_COUNT;
-		playbackChannels.store(wanted, std::memory_order_release);
-
-		// Reopen at the correct channel count if we need 4ch.
-		if (wanted != CHANNEL_COUNT)
-		{
-			ma_device_stop(&device);
-			ma_device_uninit(&device);
-			memset(&device, 0, sizeof(ma_device));
-			cfg.playback.channels = wanted;
-			cfg.playback.pChannelMap = SURROUND_CHANNEL_MAP_31;
-			if (ma_device_init(nullptr, &cfg, &device) != MA_SUCCESS)
-			{
-				// Fall back to stereo on failure.
-				playbackChannels.store(CHANNEL_COUNT, std::memory_order_release);
-				surroundEnabled.store(false, std::memory_order_release);
-				cfg.playback.channels = CHANNEL_COUNT;
-				cfg.playback.pChannelMap = nullptr;
-				if (ma_device_init(nullptr, &cfg, &device) != MA_SUCCESS)
-				{
-					mixerState.store(3, std::memory_order_release);
-					return;
-				}
-			}
-		}
-
-		// Reconfigure the converter and stretch pipeline for the new layout.
-		reinitializeChannelConverter(playbackChannels.load(std::memory_order_acquire));
-		if (stretchPipe)
-		{
-			stretchPipe->reset();
-			stretchPipe->configureChannels(playbackChannels.load(std::memory_order_acquire));
-		}
-
-		maThingLogPlaybackLayout(&device);
-
-		if (wasPlaying)
-		{
-			mixerState.store(1, std::memory_order_release);
-			ma_device_start(&device);
-		}
-	}
-
 	// Query the just-opened device's native playback format to find out how
 	// many channels the endpoint really has.  miniaudio stores this in
 	// device.playback.internalChannels after init.
@@ -1832,7 +1734,6 @@ public:
 		deviceConfig.playback.channels = CHANNEL_COUNT;
 		deviceConfig.sampleRate = SAMPLE_RATE;
 		deviceConfig.dataCallback = data_callback;
-		deviceConfig.notificationCallback = notificationCallback;
 		deviceConfig.pUserData = this;
 
 		if (ma_device_init(nullptr, &deviceConfig, &device) != MA_SUCCESS)
@@ -2146,7 +2047,6 @@ public:
 		cfg.playback.channels = wanted;
 		cfg.sampleRate = SAMPLE_RATE;
 		cfg.dataCallback = data_callback;
-		cfg.notificationCallback = notificationCallback;
 		cfg.pUserData = this;
 		if (wanted == SURROUND_CHANNEL_COUNT)
 		{
