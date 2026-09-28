@@ -25,8 +25,8 @@
  * - Channel converter downmixes 3.1 -> stereo when the endpoint lacks 4ch.
  * - Device-change notification handler re-detects native channels and
  *   reconfigures the converter / surround state automatically.
- * - SubBusDSP on the LFE bus: Goertzel tone detection (2ms window) + kick
- *   transient detection via IIR envelope follower.
+ * - SubBusDSP on the LFE bus: 100ms Goertzel tone detection with a biquad
+ *   notch at the detected frequency, plus a kick transient boost for punch.
  */
 
 // ---- platform / library includes -----------------------------------------
@@ -147,20 +147,27 @@ std::atomic<double> MUSIC_MASTER_VOLUME_099{1.0f};
 #define SURROUND_LFE_FULL_GAIN 1.0f
 
 // ---- SubBusDSP constants --------------------------------------------------
-// Tone detection window: 2ms sliding window, Goertzel scanned every window.
-// Kick detection: IIR envelope follower on the already LPF'd LFE signal;
-// fast attack, slow release catches the 20-100Hz "thump" transient.
-#define SUB_DETECT_WINDOW_MS 2
+// Tone detection: 100ms sliding window, Goertzel scanned across 20..100Hz in
+// 5Hz steps.  100ms gives ~10Hz bin resolution, which is what makes a 5Hz
+// notch meaningful (a 2ms window smeared the whole band).
+// Kick detection: IIR envelope follower on the LFE; fast attack / slow
+// release catches the 20-100Hz thump.  On detection, a one-shot boost
+// envelope adds punch to the leading edge of the kick.
+#define SUB_DETECT_WINDOW_MS 100
 #define SUB_DETECT_SAMPLES ((SAMPLE_RATE * SUB_DETECT_WINDOW_MS) / 1000)
 #define SUB_TONE_SCAN_START_HZ 20.0f
 #define SUB_TONE_SCAN_END_HZ 100.0f
 #define SUB_TONE_SCAN_STEP_HZ 5.0f
 #define SUB_TONE_NOTCH_WIDTH_HZ 5.0f
+#define SUB_TONE_NOTCH_DEPTH 0.75f   // notch gain at center = 1 - 0.75 = 0.25x
+#define SUB_TONE_THRESHOLD 0.12f
+#define SUB_NOTCH_SMOOTH_COEF 0.005f // ~10ms fade in/out for the notch
+
 #define SUB_KICK_ATTACK_COEF 0.35f
 #define SUB_KICK_RELEASE_COEF 0.0008f
 #define SUB_KICK_THRESHOLD 0.06f
-#define SUB_TONE_THRESHOLD 0.12f
-#define SUB_TONE_NOTCH_ATTEN 0.30f // -10dB comb when a tone is locked
+#define SUB_KICK_BOOST_GAIN 0.8f     // peak boost = 1 + 0.8 = 1.8x
+#define SUB_KICK_BOOST_DECAY 0.002f  // ~50ms decay at 44.1kHz
 
 // Explicit 3.1 channel map for the song device: FL / FR / FC / LFE.  miniaudio's
 // default map for 4 channels is FL/FR/FC/BACK_CENTER, which would send the
@@ -388,21 +395,32 @@ static void init_simd_dispatch()
 }
 
 // ==========================================================================
-//  SubBusDSP — LFE-bus tone + kick detection
+//  SubBusDSP — LFE-bus tone + kick detection and shaping
 //
-//  Runs entirely on the audio thread, on the LFE channel only (a few hundred
-//  samples per callback).  No allocations, no locks, no FFT.
+//  Runs entirely on the audio thread, on the LFE channel only.  No
+//  allocations, no locks, no FFT.
 //
-//  Tone detection: sliding 2ms window fed into a single-bin Goertzel scan
-//  across 20..100Hz in 5Hz steps.  When the strongest bin exceeds the
-//  threshold the DSP "locks" onto it (current_tone_freq) and the caller can
-//  apply a narrow notch to comb that constant tone out of the LFE.
+//  Tone detection: 100ms sliding window (4410 samples @ 44.1kHz) fed into a
+//  single-bin Goertzel scan across 20..100Hz in 5Hz steps.  100ms gives
+//  ~10Hz bin resolution, which is what makes a 5Hz notch meaningful; a 2ms
+//  window smeared the entire band.  When the strongest bin exceeds the
+//  threshold, the DSP "locks" onto it and engages a biquad notch at that
+//  frequency, with Q derived from SUB_TONE_NOTCH_WIDTH_HZ so the -3dB
+//  width is ~5Hz.  The notch depth is smoothed (0..1) so it fades in and
+//  out over ~10ms instead of clicking when the lock toggles.
 //
 //  Kick detection: IIR envelope follower on the abs value of the LFE.  Fast
-//  attack / slow release means a 20-100Hz kick transient spikes the envelope
-//  above SUB_KICK_THRESHOLD for a few ms, which process() reports via its
-//  return value.  A second rising edge can't re-fire until the envelope falls
-//  back below half the threshold (hysteresis).
+//  attack / slow release means a 20-100Hz kick transient spikes the
+//  envelope above SUB_KICK_THRESHOLD for a few ms.  On each rising edge a
+//  one-shot boost envelope (kick_boost, 1 -> 0 over ~50ms) is armed, which
+//  multiplies the LFE by up to (1 + SUB_KICK_BOOST_GAIN) so the leading
+//  edge of the kick gets more punch.  Hysteresis (envelope must fall below
+//  half the threshold) prevents re-triggering during the decay.
+//
+//  The tone window and the notch both operate on the post-boost signal, so
+//  a very loud kick can bias the Goertzel magnitude momentarily, but since
+//  the kick is broadband and the tone is narrowband the tone usually still
+//  wins whenever it is actually present.
 // ==========================================================================
 class SubBusDSP
 {
@@ -414,67 +432,140 @@ public:
 		tone_window_idx = 0;
 		for (int i = 0; i < SUB_DETECT_SAMPLES; i++)
 			tone_window[i] = 0.0f;
-		goertzel_s1 = goertzel_s2 = 0.0f;
+
 		current_tone_freq = 0.0f;
 		tone_lock = false;
+
+		notch_x1 = notch_x2 = notch_y1 = notch_y2 = 0.0f;
+		notch_b0 = 1.0f;
+		notch_b1 = 0.0f;
+		notch_b2 = 0.0f;
+		notch_a1 = 0.0f;
+		notch_a2 = 0.0f;
+		notch_depth = 0.0f;
+		notch_armed = false;
+
 		kick_env = 0.0f;
 		kick_detected = false;
+		kick_boost = 0.0f;
 	}
 
-	// Process a block of mono LFE samples.  Returns true if a kick was
-	// detected during this block.
-	bool process(const float *lfe, ma_uint32 frames)
+	// Process the LFE channel in place inside an interleaved 3.1 buffer.
+	// `frames` frames, LFE at index 3 of each frame.
+	//
+	// Order per sample:
+	//   1. Update the kick envelope follower from the raw sample.
+	//   2. On a kick rising edge, arm kick_boost to 1.0.
+	//   3. Apply the decaying kick boost to the sample.
+	//   4. Push the (post-boost) sample into the tone detection window.
+	//   5. On a completed window, run the Goertzel scan; if locked, ensure
+	//      the notch coefficients match the current frequency.
+	//   6. Smooth the notch depth toward 0 or 1.
+	//   7. If depth > epsilon, run the biquad notch and blend dry/wet by
+	//      depth so the notch fades in/out smoothly.
+	//   8. Write the sample back into the interleaved buffer.
+	void process(float *interleaved, ma_uint32 frames)
 	{
-		bool kick_hit = false;
 		for (ma_uint32 i = 0; i < frames; i++)
 		{
-			float sample = lfe[i];
+			float *lfe = &interleaved[i * SURROUND_CHANNEL_COUNT + 3];
+			float sample = *lfe;
 
-			// --- Kick detection: IIR envelope follower -------------------
+			// --- Step 1: kick envelope follower -------------------------
 			float abs_sample = fabsf(sample);
 			if (abs_sample > kick_env)
 				kick_env += SUB_KICK_ATTACK_COEF * (abs_sample - kick_env);
 			else
 				kick_env += SUB_KICK_RELEASE_COEF * (abs_sample - kick_env);
 
+			// --- Step 2: kick rising edge -> arm the punch ---------------
 			if (kick_env > SUB_KICK_THRESHOLD && !kick_detected)
 			{
 				kick_detected = true;
-				kick_hit = true;
+				kick_boost = 1.0f;
 			}
 			else if (kick_env < SUB_KICK_THRESHOLD * 0.5f)
 			{
 				kick_detected = false;
 			}
 
-			// --- Tone detection: sliding window + Goertzel ---------------
+			// --- Step 3: apply decaying kick boost ----------------------
+			if (kick_boost > 0.0f)
+			{
+				sample *= (1.0f + SUB_KICK_BOOST_GAIN * kick_boost);
+				kick_boost -= SUB_KICK_BOOST_DECAY;
+				if (kick_boost < 0.0f)
+					kick_boost = 0.0f;
+			}
+
+			// --- Step 4: feed the tone detection window -----------------
 			tone_window[tone_window_idx] = sample;
 			tone_window_idx = (tone_window_idx + 1) % SUB_DETECT_SAMPLES;
 			if (tone_window_idx == 0)
 				detect_tones();
+
+			// --- Step 5: smooth the notch depth -------------------------
+			float target_depth = tone_lock ? 1.0f : 0.0f;
+			notch_depth += SUB_NOTCH_SMOOTH_COEF * (target_depth - notch_depth);
+			if (notch_depth < 0.0f)
+				notch_depth = 0.0f;
+			else if (notch_depth > 1.0f)
+				notch_depth = 1.0f;
+
+			// --- Step 6: apply biquad notch, blended by depth -----------
+			if (notch_depth > 0.0001f && notch_armed)
+			{
+				float y = notch_b0 * sample
+						+ notch_b1 * notch_x1
+						+ notch_b2 * notch_x2
+						- notch_a1 * notch_y1
+						- notch_a2 * notch_y2;
+
+				notch_x2 = notch_x1;
+				notch_x1 = sample;
+				notch_y2 = notch_y1;
+				notch_y1 = y;
+
+				sample = sample * (1.0f - notch_depth) + y * notch_depth;
+			}
+
+			// --- Step 7: write back -------------------------------------
+			*lfe = sample;
 		}
-		return kick_hit;
 	}
 
 	float get_current_tone_freq() const { return current_tone_freq; }
 	bool is_tone_locked() const { return tone_lock; }
+	bool kick_active() const { return kick_boost > 0.0f; }
 
 private:
+	// Sliding window for Goertzel (100ms @ 44.1kHz = 4410 samples).
 	float tone_window[SUB_DETECT_SAMPLES];
 	int tone_window_idx;
 
-	float goertzel_s1, goertzel_s2;
+	// Tone detection state.
 	float current_tone_freq;
 	bool tone_lock;
 
+	// Biquad notch state.  Coefficients are recomputed only when the locked
+	// frequency changes, so the biquad doesn't thrash every window.
+	float notch_x1, notch_x2, notch_y1, notch_y2;
+	float notch_b0, notch_b1, notch_b2, notch_a1, notch_a2;
+	float notch_depth;   // smoothed 0..1 blend between dry and notched
+	bool notch_armed;    // true once valid coefficients have been computed
+
+	// Kick detection + punch state.
 	float kick_env;
 	bool kick_detected;
+	float kick_boost;    // 1 -> 0 over the boost window
 
 	void detect_tones()
 	{
 		float max_mag = 0.0f;
 		float best_freq = 0.0f;
-		for (float freq = SUB_TONE_SCAN_START_HZ; freq <= SUB_TONE_SCAN_END_HZ; freq += SUB_TONE_SCAN_STEP_HZ)
+		for (float freq = SUB_TONE_SCAN_START_HZ;
+			 freq <= SUB_TONE_SCAN_END_HZ;
+			 freq += SUB_TONE_SCAN_STEP_HZ)
 		{
 			float mag = goertzel_magnitude(freq);
 			if (mag > max_mag)
@@ -483,10 +574,17 @@ private:
 				best_freq = freq;
 			}
 		}
+
 		float normalized_mag = max_mag / (SUB_DETECT_SAMPLES * 0.5f);
 		if (normalized_mag > SUB_TONE_THRESHOLD)
 		{
-			current_tone_freq = best_freq;
+			// Recompute the notch coefficients only when the frequency
+			// actually changes, so we don't rebuild the biquad every window.
+			if (!tone_lock || fabsf(best_freq - current_tone_freq) > 1.0f)
+			{
+				current_tone_freq = best_freq;
+				update_notch_coeffs(best_freq);
+			}
 			tone_lock = true;
 		}
 		else
@@ -495,21 +593,57 @@ private:
 		}
 	}
 
+	// Standard RBJ notch.  Q derived from the requested -3dB bandwidth:
+	//   Q = f0 / BW
+	// With BW = 5Hz, Q ranges from 4 (at 20Hz) to 20 (at 100Hz).
+	void update_notch_coeffs(float f0)
+	{
+		if (f0 <= 0.0f || f0 >= SAMPLE_RATE * 0.5f)
+		{
+			notch_armed = false;
+			return;
+		}
+
+		float w0 = 2.0f * 3.14159265358979323846f * f0 / (float)SAMPLE_RATE;
+		float cosw0 = cosf(w0);
+		float sinw0 = sinf(w0);
+
+		float Q = f0 / SUB_TONE_NOTCH_WIDTH_HZ;
+		if (Q < 0.1f)
+			Q = 0.1f;
+
+		float alpha = sinw0 / (2.0f * Q);
+		float a0 = 1.0f + alpha;
+
+		notch_b0 = 1.0f / a0;
+		notch_b1 = -2.0f * cosw0 / a0;
+		notch_b2 = 1.0f / a0;
+		notch_a1 = -2.0f * cosw0 / a0;
+		notch_a2 = (1.0f - alpha) / a0;
+
+		notch_armed = true;
+	}
+
 	// Single-bin Goertzel over the current tone_window for a target frequency.
+	// Returns the magnitude of that bin.  O(N) per call; the caller loops
+	// over the 17 scan frequencies so a full scan is O(17 * N).
 	float goertzel_magnitude(float target_freq)
 	{
 		float omega = 2.0f * 3.14159265358979323846f * target_freq / (float)SAMPLE_RATE;
 		float coeff = 2.0f * cosf(omega);
-		goertzel_s1 = 0.0f;
-		goertzel_s2 = 0.0f;
+
+		float s1 = 0.0f;
+		float s2 = 0.0f;
+
 		for (int i = 0; i < SUB_DETECT_SAMPLES; i++)
 		{
-			float s0 = tone_window[i] + coeff * goertzel_s1 - goertzel_s2;
-			goertzel_s2 = goertzel_s1;
-			goertzel_s1 = s0;
+			float s0 = tone_window[i] + coeff * s1 - s2;
+			s2 = s1;
+			s1 = s0;
 		}
-		float real = goertzel_s1 - goertzel_s2 * cosf(omega);
-		float imag = goertzel_s2 * sinf(omega);
+
+		float real = s1 - s2 * cosf(omega);
+		float imag = s2 * sinf(omega);
 		return sqrtf(real * real + imag * imag);
 	}
 };
@@ -1374,7 +1508,7 @@ public:
 	bool converterInitialized = false;
 	float downmixBuffer[MAX_CALLBACK_FRAMES * SURROUND_CHANNEL_COUNT] = {};
 
-	// LFE-bus DSP (tone + kick detection).  Audio thread only.
+	// LFE-bus DSP (tone notch + kick punch).  Audio thread only.
 	SubBusDSP subDSP;
 
 	int longestDecoderIndex = 0;
@@ -1400,7 +1534,8 @@ public:
 	// Per-stream stereo staging used by the surround routing pass.
 	float streamStage[MAX_CALLBACK_FRAMES * CHANNEL_COUNT] = {};
 
-	// Mono LFE extraction buffer for SubBusDSP.
+	// Mono LFE extraction buffer (kept for compatibility / debugging; the
+	// SubBusDSP now operates in place on the interleaved staging buffer).
 	float lfeBuffer[MAX_CALLBACK_FRAMES] = {};
 
 	// Prediction state for smooth 0.1ms audio time between callback updates
@@ -2259,14 +2394,6 @@ private:
 		streamLpfState[index] = lpf;
 	}
 
-	// Pull the LFE channel (index 3 in the 3.1 interleaved layout) into a
-	// mono buffer for SubBusDSP.
-	void extractLFE(const float *interleaved, float *lfe, ma_uint32 frames)
-	{
-		for (ma_uint32 i = 0; i < frames; i++)
-			lfe[i] = interleaved[i * SURROUND_CHANNEL_COUNT + 3];
-	}
-
 	// Fold a 3.1 staging mix down to the endpoint's channel count.  Uses the
 	// miniaudio channel converter when it initialized successfully; otherwise
 	// a manual FL/FR + 0.707*C mix (LFE dropped, since a stereo endpoint has
@@ -2535,27 +2662,14 @@ private:
 		}
 
 		// =====================================================================
-		// SUB-BUS DSP: tone + kick detection on the LFE channel.
-		// Runs on the 4ch staging buffer before downmix, so it works in both
-		// surround and stereo-fallback modes.
+		// SUB-BUS DSP: tone notch + kick punch on the LFE channel.
+		// Runs on the 4ch staging buffer before downmix.  Gated to surround
+		// mode because the LFE is discarded by downmixToStereo() in stereo
+		// fallback -- running the DSP there would be wasted work.
 		// =====================================================================
-		if (anyActive)
+		if (anyActive && !needsDownmix)
 		{
-			sys->extractLFE(stagingOut, sys->lfeBuffer, frameCount);
-			bool kick = sys->subDSP.process(sys->lfeBuffer, frameCount);
-
-			if (sys->subDSP.is_tone_locked())
-			{
-				// Comb the constant tone out of the LFE with a flat attenuation.
-				// A proper biquad notch would be narrower but the Goertzel lock
-				// already localizes the tone to +/-5Hz, and the flat attenuation
-				// is cheap and allocation-free.
-				float att = SUB_TONE_NOTCH_ATTEN;
-				for (ma_uint32 i = 0; i < frameCount; i++)
-					stagingOut[i * SURROUND_CHANNEL_COUNT + 3] *= att;
-			}
-
-			(void)kick; // placeholder for future effects gated on kick transients
+			sys->subDSP.process(stagingOut, frameCount);
 		}
 
 		// Fold the 3.1 staging mix down to the endpoint's actual channel count.
