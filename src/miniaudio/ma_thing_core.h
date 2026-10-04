@@ -90,6 +90,7 @@ std::atomic<double> MUSIC_MASTER_VOLUME_099{1.0f};
 #define SAMPLE_FORMAT  ma_format_f32
 #define CHANNEL_COUNT  2
 #define SAMPLE_RATE    44100
+#define PERIOD_SIZE    192
 
 #define PADDING_MS      150
 #define BUFFER_MS       750
@@ -1190,10 +1191,16 @@ public:
     // Per-stream stereo staging used by the surround routing pass.
     float streamStage[MAX_CALLBACK_FRAMES * CHANNEL_COUNT] = {};
 
-    // Prediction state for smooth 0.1ms audio time between callback updates
-    mutable std::atomic<ma_uint64> lastQueriedFrames{0};
-    mutable std::atomic<long long> lastQuerySystemTime{0};
-    mutable std::atomic<double> lastQueryPlaybackRate{1.0};
+    // Prediction state — PI-controlled software PLL.
+    // Written only from the audio callback, read from anywhere (UI thread, etc.).
+    // The PLL free-runs on steady_clock between callbacks and gently converges
+    // toward the true DAC rate, eliminating the per-callback snap that used to
+    // make the position jagged at small period sizes (e.g. 192 frames).
+    mutable std::atomic<long long> predictBaseTimeNs{0};   // wall-clock anchor (ns since epoch)
+    mutable std::atomic<double>    predictBaseFrames{0.0}; // predicted frame at that wall-clock
+    mutable std::atomic<double>    predictRate{1.0};       // effective frames/sec per real-sec (rate * drift)
+    mutable std::atomic<bool>      predictInit{false};
+    mutable std::atomic<float>     predictPrevRate{1.0f}; // rate from last callback (detects user rate changes)
 
     AudioSystem()  {
         memset(&device, 0, sizeof(ma_device));
@@ -1302,6 +1309,7 @@ public:
         deviceConfig.playback.format   = SAMPLE_FORMAT;
         deviceConfig.playback.channels = wantedChannels;
         deviceConfig.sampleRate        = SAMPLE_RATE;
+        deviceConfig.periodSizeInFrames= PERIOD_SIZE;
         deviceConfig.dataCallback      = data_callback;
         deviceConfig.pUserData         = this;
 
@@ -1356,9 +1364,11 @@ public:
         playbackRate.store(1.0f, std::memory_order_release);
         mixerState.store(3, std::memory_order_release);
 
-        lastQueriedFrames.store(0, std::memory_order_relaxed);
-        lastQuerySystemTime.store(0, std::memory_order_relaxed);
-        lastQueryPlaybackRate.store(1.0, std::memory_order_relaxed);
+        predictInit.store(false, std::memory_order_relaxed);
+        predictBaseTimeNs.store(0, std::memory_order_relaxed);
+        predictBaseFrames.store(0.0, std::memory_order_relaxed);
+        predictRate.store(1.0, std::memory_order_relaxed);
+        predictPrevRate.store(1.0f, std::memory_order_relaxed);
 
         subDSP.reset();
 
@@ -1376,9 +1386,10 @@ public:
         if (!streams.empty()) {
             startFrame = streams[longestDecoderIndex].filePosition.load(std::memory_order_relaxed);
         }
-        lastQueriedFrames.store(startFrame, std::memory_order_relaxed);
-        lastQuerySystemTime.store(std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_relaxed);
-        lastQueryPlaybackRate.store(playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        // Let the next data_callback plant the PLL anchor cleanly so its
+        // baseTime exactly matches the wall-clock at which audio starts
+        // flowing. Planting here would race the first callback.
+        predictInit.store(false, std::memory_order_relaxed);
 
         ma_device_start(&device);
     }
@@ -1431,9 +1442,9 @@ public:
 
         mixerState.store((pos < (int64_t)streams[longestDecoderIndex].decoderLength) ? 2 : 3, std::memory_order_release);
 
-        lastQueriedFrames.store((ma_uint64)pos, std::memory_order_relaxed);
-        lastQuerySystemTime.store(std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_relaxed);
-        lastQueryPlaybackRate.store(playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        // PLL will be re-planted by the next callback after the device
+        // restarts, so baseTime lines up with actual audio flow.
+        predictInit.store(false, std::memory_order_relaxed);
 
         if (deviceRunning && mixerState.load(std::memory_order_acquire) == 2) {
             if (asyncLoader) asyncLoader->resumeLoading();
@@ -1486,6 +1497,7 @@ public:
         cfg.playback.format   = SAMPLE_FORMAT;
         cfg.playback.channels = wanted;
         cfg.sampleRate        = SAMPLE_RATE;
+        cfg.periodSizeInFrames= PERIOD_SIZE;
         cfg.dataCallback      = data_callback;
         cfg.pUserData         = this;
 
@@ -1532,33 +1544,31 @@ public:
         if (!s.active.load(std::memory_order_acquire))
             return (double)s.decoderLength / (SAMPLE_RATE * 0.001);
 
-        ma_uint64 baseFrames = lastQueriedFrames.load(std::memory_order_relaxed);
-        long long baseTimeNs = lastQuerySystemTime.load(std::memory_order_relaxed);
-        double rate = lastQueryPlaybackRate.load(std::memory_order_relaxed);
-
-        if (baseFrames == 0 && baseTimeNs == 0) {
-            ma_uint64 frames = streams[longestDecoderIndex].filePosition.load(std::memory_order_relaxed);
-            lastQueriedFrames.store(frames, std::memory_order_relaxed);
-            lastQuerySystemTime.store(
-                std::chrono::steady_clock::now().time_since_epoch().count(),
-                std::memory_order_relaxed
-            );
-            lastQueryPlaybackRate.store(playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
-            baseFrames = frames;
-            baseTimeNs = lastQuerySystemTime.load(std::memory_order_relaxed);
-            rate = lastQueryPlaybackRate.load(std::memory_order_relaxed);
+        // If the PLL hasn't been planted yet (before first callback after
+        // start/seek), fall back to raw filePosition so callers see a
+        // sensible value instead of 0.
+        if (!predictInit.load(std::memory_order_relaxed)) {
+            return (double)s.filePosition.load(std::memory_order_relaxed)
+                   / (SAMPLE_RATE * 0.001);
         }
 
+        // Torn reads on 32-bit are sub-frame glitches that vanish at 60 Hz
+        // poll rates; no seqlock needed. On 64-bit, atomic<double> is lock-free.
+        double baseT = predictBaseTimeNs.load(std::memory_order_relaxed);
+        double baseF = predictBaseFrames.load(std::memory_order_relaxed);
+        double baseR = predictRate.load(std::memory_order_relaxed);
+
         long long nowNs = std::chrono::steady_clock::now().time_since_epoch().count();
-        double elapsedSeconds = (nowNs - baseTimeNs) * 1e-9;
-        double predictedFramesD = baseFrames + elapsedSeconds * SAMPLE_RATE * rate;
-        ma_uint64 predictedFrames = (ma_uint64)predictedFramesD;
+        double dt = (nowNs - baseT) * 1e-9;
+        double predicted = baseF + dt * SAMPLE_RATE * baseR;
 
-        if (predictedFrames >= s.decoderLength) predictedFrames = s.decoderLength;
+        if (predicted < 0.0) predicted = 0.0;
+        if (predicted > (double)s.decoderLength)
+            predicted = (double)s.decoderLength;
 
-        predictedFrames = (predictedFrames / 5) * 5;
-
-        return (double)predictedFrames / (SAMPLE_RATE * 0.001);
+        // No quantization — the PLL output is already smooth. If a caller
+        // wants integer frames, quantize at the call site, not here.
+        return predicted / (SAMPLE_RATE * 0.001);
     }
 
     double getDuration() const {
@@ -1749,15 +1759,75 @@ private:
         int outCh = sys->playbackChannels.load(std::memory_order_relaxed);
         memset(out, 0, sizeof(float) * frameCount * outCh);
 
-        ma_uint64 anchorFrames = 0;
-        if (!sys->streams.empty())
-            anchorFrames = sys->streams[sys->longestDecoderIndex].filePosition.load(std::memory_order_relaxed);
-        sys->lastQueriedFrames.store(anchorFrames, std::memory_order_relaxed);
-        sys->lastQuerySystemTime.store(
-            std::chrono::steady_clock::now().time_since_epoch().count(),
-            std::memory_order_relaxed
-        );
-        sys->lastQueryPlaybackRate.store(sys->playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        // ---- PI-controlled prediction update (software PLL) ---------------
+        // Free-runs on steady_clock between callbacks; each callback gently
+        // converges (offset, rate) toward the true DAC progression. Absorbs
+        // per-callback wall-clock jitter instead of forwarding it as a snap.
+        {
+            double fp = sys->streams.empty()
+                ? 0.0
+                : (double)sys->streams[sys->longestDecoderIndex]
+                      .filePosition.load(std::memory_order_relaxed);
+            long long nowNs = std::chrono::steady_clock::now()
+                                  .time_since_epoch().count();
+            double rate = sys->playbackRate.load(std::memory_order_relaxed);
+
+            if (!sys->predictInit.load(std::memory_order_relaxed)) {
+                // First callback after start/seek: plant the anchor cleanly.
+                sys->predictBaseTimeNs.store(nowNs, std::memory_order_relaxed);
+                sys->predictBaseFrames.store(fp, std::memory_order_relaxed);
+                sys->predictRate.store((double)rate, std::memory_order_relaxed);
+                sys->predictPrevRate.store((float)rate, std::memory_order_relaxed);
+                sys->predictInit.store(true, std::memory_order_relaxed);
+            } else {
+                double prevRate = sys->predictPrevRate.load(std::memory_order_relaxed);
+                bool rateChanged = std::fabs(rate - prevRate) > 1e-6;
+
+                if (rateChanged) {
+                    // User changed playbackRate since last callback. Re-plant
+                    // the anchor at the current filePosition with the new rate
+                    // so prediction responds instantly instead of lagging ~1s
+                    // while beta slowly converges. Drift re-converges over a
+                    // few seconds (fine — DAC drift is ~50ppm, invisible).
+                    sys->predictBaseTimeNs.store(nowNs, std::memory_order_relaxed);
+                    sys->predictBaseFrames.store(fp, std::memory_order_relaxed);
+                    sys->predictRate.store((double)rate, std::memory_order_relaxed);
+                    sys->predictPrevRate.store((float)rate, std::memory_order_relaxed);
+                } else {
+                    double baseT = sys->predictBaseTimeNs.load(std::memory_order_relaxed);
+                    double baseF = sys->predictBaseFrames.load(std::memory_order_relaxed);
+                    double baseR = sys->predictRate.load(std::memory_order_relaxed);
+
+                    double dt = (nowNs - baseT) * 1e-9;
+                    if (dt < 1e-6) dt = 1e-6;            // guard against QPC weirdness
+                    double predicted = baseF + dt * SAMPLE_RATE * baseR;
+                    double error     = fp - predicted;   // frames (positive = we're behind)
+
+                    // PI gains, tuned for ~229 Hz callback rate at period=192.
+                    // alpha = fast offset correction (settle in ~1/(alpha*CbPerSec) sec).
+                    // beta  = slow rate correction  (tracks DAC drift over seconds).
+                    const double alpha = 0.15;
+                    const double beta  = 0.005;
+
+                    double newBaseF = predicted + alpha * error;
+
+                    // Implied effective rate, then re-base against user rate to
+                    // extract a drift factor (clamped to ±1000 ppm).
+                    double impliedRate = baseR + error / (dt * SAMPLE_RATE);
+                    double drift = impliedRate / std::max<double>(rate, 1e-6);
+                    if (drift < 0.999) drift = 0.999;
+                    else if (drift > 1.001) drift = 1.001;
+                    double newRate = rate * drift;
+
+                    // Blend toward the new drift estimate (the "I" term).
+                    newRate = baseR * (1.0 - beta) + newRate * beta;
+
+                    sys->predictBaseTimeNs.store(nowNs,   std::memory_order_relaxed);
+                    sys->predictBaseFrames.store(newBaseF, std::memory_order_relaxed);
+                    sys->predictRate.store(newRate,        std::memory_order_relaxed);
+                }
+            }
+        }
 
         bool anyRefill = false;
 
@@ -1890,12 +1960,16 @@ private:
         other.mixerState.store(3, std::memory_order_relaxed);
         other.exists.store(false, std::memory_order_relaxed);
 
-        lastQueriedFrames.store(other.lastQueriedFrames.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        lastQuerySystemTime.store(other.lastQuerySystemTime.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        lastQueryPlaybackRate.store(other.lastQueryPlaybackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        other.lastQueriedFrames.store(0, std::memory_order_relaxed);
-        other.lastQuerySystemTime.store(0, std::memory_order_relaxed);
-        other.lastQueryPlaybackRate.store(1.0, std::memory_order_relaxed);
+        predictBaseTimeNs.store(other.predictBaseTimeNs.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        predictBaseFrames.store(other.predictBaseFrames.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        predictRate.store(other.predictRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        predictInit.store(other.predictInit.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        predictPrevRate.store(other.predictPrevRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
+        other.predictBaseTimeNs.store(0, std::memory_order_relaxed);
+        other.predictBaseFrames.store(0.0, std::memory_order_relaxed);
+        other.predictRate.store(1.0, std::memory_order_relaxed);
+        other.predictInit.store(false, std::memory_order_relaxed);
+        other.predictPrevRate.store(1.0f, std::memory_order_relaxed);
 
         // SubBusDSP is POD; a straight memcpy carries its state cleanly.
         memcpy(&subDSP, &other.subDSP, sizeof(SubBusDSP));
@@ -2220,6 +2294,7 @@ public:
         cfg.playback.format   = SAMPLE_FORMAT;
         cfg.playback.channels = CHANNEL_COUNT;
         cfg.sampleRate        = SAMPLE_RATE;
+        cfg.periodSizeInFrames= PERIOD_SIZE;
         cfg.dataCallback      = audioCallback;
         cfg.pUserData         = this;
         if (ma_device_init(nullptr, &cfg, &device) != MA_SUCCESS) {
