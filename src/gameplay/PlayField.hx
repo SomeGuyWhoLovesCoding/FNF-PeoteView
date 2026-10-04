@@ -574,9 +574,6 @@ class PlayField {
 
 			if (countdownDisp.conductor != null)
 				countdownDisp.conductor.onBeatUnoffsetted.remove(countdownBeatHit);
-			Main.conductor.onStep.add(stepHit);
-			Main.conductor.onBeat.add(beatHit);
-			Main.conductor.onMeasure.add(measureHit);
 		}
 
 		if (beat < 0) {
@@ -797,6 +794,11 @@ class PlayField {
 
 		songStarted = true;
 		songEnded = false;
+
+		var conductor = Main.conductor;
+		conductor.onStep.add(stepHit);
+		conductor.onBeat.add(beatHit);
+		conductor.onMeasure.add(measureHit);
 
 		if (countdownDisp != null) {
 			if (countdownDisp.conductor != null)
