@@ -203,7 +203,7 @@ class FVLZXEncoder {
 
 		var img_str = Sys.getCwd() + img;
 		var img_ddsRaw_str = Sys.getCwd() + img_ddsRaw;
-		var args = [img_str, img_ddsRaw_str, '-pmalpha'];
+		var args = [img_str, img_ddsRaw_str, '-pmalpha', '-nometrics', '-esc-thresh', '1024']; // NOTE from sgwl : -esc-thresh looks virtually identical
 
 		var proc = new Process(processName, args);
 		var exitCode = proc.exitCode(true);
