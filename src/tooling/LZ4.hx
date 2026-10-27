@@ -5,6 +5,9 @@ import haxe.io.Input;
 import haxe.io.Output;
 import haxe.ds.Vector;
 
+// written with glm-5-turbo? and also optimized with opencode
+// further implementation written in c as part of an upcoming lossless video codec
+// that aims to be even smaller this time but the way it'll be done is with an entirely different way.
 class LZ4 {
 	private static inline var MINMATCH = 4;
 	private static inline var HASH_LOG = 17;
@@ -27,7 +30,6 @@ class LZ4 {
 			compressBuffer = Bytes.alloc(maxOutLen);
 		}
 		var len = compressTo(src, compressBuffer, 0, srcLen, 0);
-		//BOTTLENECK: mid Bytes.sub allocates a second full-size buffer + memcpy after every compress; doubles peak memory and GC churn | FIX: size dst exactly and return it, or reuse a persistent scratch buffer
 		return compressBuffer.sub(0, len);
 	}
 
@@ -42,7 +44,7 @@ class LZ4 {
 			hashTableGen = new Vector<Int>(HASH_SIZE);
 		}
 		currentGen++;
-		if (currentGen == 0) { // Prevent overflow after millions of compressions
+		if (currentGen == 0) {
 			var i = 0;
 			while (i < HASH_SIZE) {
 				hashTableGen[i] = 0;
@@ -59,7 +61,6 @@ class LZ4 {
 			var seq = read32(src, srcIdx);
 			var hash = (seq * -1640531535) >>> (32 - HASH_LOG);
 
-			// OPTIMIZATION: Check generation instead of clearing the whole table
 			var matchIdx = (hashTableGen[hash] == currentGen) ? hashTable[hash] : -1;
 			hashTable[hash] = srcIdx;
 			hashTableGen[hash] = currentGen;
@@ -171,7 +172,6 @@ class LZ4 {
 			hashTableGen = new Vector<Int>(HASH_SIZE);
 		}
 
-		// OPTIMIZATION: Increment generation instead of clearing 131,072 elements!
 		currentGen++;
 		if (currentGen == 0) {
 			var i = 0;
@@ -239,7 +239,6 @@ class LZ4 {
 				var seq = read32(buf, bufIdx);
 				var hash = (seq * -1640531535) >>> (32 - HASH_LOG);
 
-				// OPTIMIZATION: Check generation to avoid stale matches
 				var matchGlobal = (hashTableGen[hash] == currentGen) ? hashTable[hash] : -1;
 				hashTable[hash] = globalPos;
 				hashTableGen[hash] = currentGen;
@@ -264,7 +263,6 @@ class LZ4 {
 
 						var ml = matchLen - MINMATCH;
 						var token = (litLen >= 15 ? 0xF0 : litLen << 4) | (ml >= 15 ? 0x0F : ml);
-						//BOTTLENECK: high per-byte virtual Output.writeByte for every token/offset/literal byte over the whole stream; billions of calls on multi-GB charts | FIX: accumulate tokens in a Bytes block and flush with writeBytes
 						streamPut(out, token);
 						writtenBytes++;
 
@@ -363,7 +361,6 @@ class LZ4 {
 		var srcLen = src.length;
 		if (srcLen == 0)
 			return Bytes.alloc(0);
-		//BOTTLENECK: mid output allocated twice (oversized guess + Bytes.sub copy), doubling peak memory for large decompressions | FIX: allocate exact size once and return without the sub copy
 		var out = outSize > 0 ? Bytes.alloc(outSize) : Bytes.alloc(srcLen * 4 < 1024 ? 1024 : srcLen * 4);
 		var outIdx = decompressTo(src, out, 0, srcLen, 0);
 		if (outIdx == out.length)
@@ -502,7 +499,6 @@ class LZ4 {
 		return outIdx;
 	}
 
-	//BOTTLENECK: mid 4 bounds-checked Bytes.get calls per 32-bit load inside the hot compress/match loops (byte-level) | FIX: unaligned native int load via cpp.Pointer / hl BytesInt32
 	private static inline function read32(b:Bytes, i:Int):Int {
 		return b.get(i) | (b.get(i + 1) << 8) | (b.get(i + 2) << 16) | (b.get(i + 3) << 24);
 	}
