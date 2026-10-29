@@ -1,6 +1,6 @@
 /*
  * ma_thing_hl.cpp
- * HashLink binding layer — wraps ma_thing_core.h for use from Haxe/HL.
+ * HashLink binding layer — wraps ma_thing_core.h for use from Haxe/HL. 
  */
 
 // These implementation macros must be defined in exactly one translation unit.
