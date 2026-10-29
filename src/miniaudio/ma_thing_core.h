@@ -67,8 +67,8 @@ std::atomic<double> MUSIC_MASTER_VOLUME_099{1.0};
 // ---- audio constants ------------------------------------------------------
 #define SAMPLE_FORMAT  ma_format_f32
 #define CHANNEL_COUNT  2
-#define SAMPLE_RATE    44100
-#define PERIOD_SIZE    192
+#define SAMPLE_RATE    48000
+#define PERIOD_SIZE    512
 #define PADDING_MS      150
 #define BUFFER_MS       750
 #define HALF_BUFFER_MS  600
