@@ -20,6 +20,10 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 		vm.set('Function_Continue', FunkinViewLua.Function_Continue);
 		vm.set('Function_Stop', FunkinViewLua.Function_Stop);
 
+		// turns out they weren't added in yet cuz I forgot lol
+		vm.set('screenWidth', Main.VARIABLE_WIDTH);
+		vm.set('screenHeight', Main.VARIABLE_HEIGHT);
+
 		vm.set('version', MainMenu.fnfpVer);
 		vm.set('modFolder', Paths.customAssetPath);
 

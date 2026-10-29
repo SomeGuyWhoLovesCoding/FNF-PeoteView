@@ -1,5 +1,9 @@
 package tooling.fvlua.components;
 
+#if linc_luajit_funkinview
+import llua.Lua;
+#end
+
 using StringTools;
 
 /**
@@ -13,10 +17,25 @@ using StringTools;
 	- note type routing (assignNoteTypeToStrumline)
 
 	Everything lives in this one file - no engine classes are modified.
-	The few bits the engine itself has to adopt (an optional note type routing
-	lookup plus a spawner guard for reduced-mania sections) are documented as
+	The few bits the engine itself has to adopt are documented as
 	ready-to-paste snippets in INTEGRATION.md, centred around
 	`CustomStrumlineComponent.laneForType()` below.
+
+	Position / gap / offset numbers are FLOATS at the Lua boundary. The
+	stock engine stores strumline x/y/gap and Note x/y as Int, so on an
+	unpatched engine fractional values simply truncate to whole pixels.
+	INTEGRATION.md Patch 7 widens those engine fields to Float, which
+	makes every position sub-pixel precise — the component compiles and
+	runs correctly against BOTH (see the dual-mode helpers getF/setF).
+
+	Pause survival: PlayField.pause() runs NoteSystem.resetStrumlines(),
+	which re-slots every strumline by the vanilla formula — anything past
+	strumline 1 gets flung off-screen, and PlayField.update() (whose
+	updateVariablesList would put it back) early-returns while paused.
+	This component installs a 'pausePost' hook into any script that
+	doesn't define one of its own, re-asserting Lua-added strumline
+	positions right after the engine reset. INTEGRATION.md Patch 6 does
+	the same job engine-side if you prefer that.
 
 	Why the mania/strumline callbacks poke at `NoteSystem.notesBuf` at all:
 	receptor arrow sprites are persistent GPU elements - the engine adds each
@@ -64,11 +83,12 @@ class CustomStrumlineComponent extends LuaComponentObject {
 	#if linc_luajit_funkinview
 
 	// Intended x/y of Lua-added strumlines. Engine resets (seeks, downscroll
-	// toggles) reposition strumlines by the vanilla slot formula, which flings
-	// anything past strumline 1 off-screen - updateVariablesList puts Lua-added
-	// strumlines back where the script asked for them.
-	var customStrumlineX:Map<Int, Int> = new Map<Int, Int>();
-	var customStrumlineY:Map<Int, Int> = new Map<Int, Int>();
+	// toggles, pauses) reposition strumlines by the vanilla slot formula,
+	// which flings anything past strumline 1 off-screen -
+	// reassertCustomPositions puts Lua-added strumlines back where the
+	// script asked for them.
+	var customStrumlineX:Array<Float> = new Array<Float>();
+	var customStrumlineY:Array<Float> = new Array<Float>();
 
 	public function new(_parent:FunkinViewLua) {
 		super(_parent);
@@ -76,6 +96,31 @@ class CustomStrumlineComponent extends LuaComponentObject {
 		// Statics survive between songs - start each song with a clean table.
 		for (i in 0...1 << 8)
 			typeToStrumline[i] = -1;
+
+		for (i in 0...1 << 8) {
+			customStrumlineX[i] = -9999;
+			customStrumlineY[i] = -9999;
+		}
+	}
+
+	// ------------------------------------------------------------------
+	// Dual-mode engine access (INTEGRATION.md Patch 7).
+	// Stock engine: Strumline.x/y/gap and Note.x/y are Int; with Patch 7
+	// they are Float and every position becomes sub-pixel precise. This
+	// component must compile against BOTH, so position writes/reads go
+	// through Reflect: on a stock engine the property setter truncates to
+	// whole pixels (identical to passing Ints), on a patched engine the
+	// full float lands on the GPU. Reflect honours the custom setters
+	// (Strumline.set_x relayouts its receptors; Note's @set("properties")
+	// flags the element for the next buffer update), so nothing bypasses
+	// the engine's own machinery.
+	// ------------------------------------------------------------------
+	static inline function getF(obj:Dynamic, field:String):Float {
+		return Reflect.getProperty(obj, field);
+	}
+
+	static inline function setF(obj:Dynamic, field:String, value:Float):Void {
+		Reflect.setProperty(obj, field, value);
 	}
 
 	override public function addCallbacksList(vm:FunkinViewLuaScript):Void {
@@ -112,8 +157,8 @@ class CustomStrumlineComponent extends LuaComponentObject {
 					var note = strumline.receptors[i].note;
 					note.scale = strumline.scale;
 					note.mania_for_clipruntimehelper = mania;
-					note.x = arrowLayoutX(strumline, i);
-					note.y = arrowLayoutY(strumline);
+					setF(note, "x", arrowLayoutX(strumline, i));
+					setF(note, "y", arrowLayoutY(strumline));
 					note.reset();
 					NoteSystem.notesBuf.addElement(note);
 				}
@@ -146,21 +191,22 @@ class CustomStrumlineComponent extends LuaComponentObject {
 		});
 
 		// =============================================================
-		// Position
+		// Position (floats: sub-pixel precise with INTEGRATION.md Patch 7,
+		// truncated to whole pixels on a stock engine)
 		// =============================================================
-		vm.addCallback('setStrumlinePos', function(id:Int, x:Int, y:Int) {
+		vm.addCallback('setStrumlinePos', function(id:Int, x:Float, y:Float) {
 			var strumline = resolveStrumline(id);
 			if (strumline == null)
 				return FunkinViewLua.Function_Stop;
 
-			strumline.x = x;
-			strumline.y = y;
+			setF(strumline, "x", x);
+			setF(strumline, "y", y);
 
 			// Lua-added strumlines: remember the position so engine resets
-			// (seeks / downscroll toggles) can't fling it off-screen.
-			if (customStrumlineX.exists(id)) {
-				customStrumlineX.set(id, x);
-				customStrumlineY.set(id, y);
+			// (seeks / pauses / downscroll toggles) can't fling it off-screen.
+			if (customStrumlineX[id] == -9999 || customStrumlineY[id] == -999) {
+				customStrumlineX[id] = x;
+				customStrumlineY[id] = y;
 			}
 
 			playField.noteSystem.rebuildMovementLUTs();
@@ -170,15 +216,15 @@ class CustomStrumlineComponent extends LuaComponentObject {
 		vm.addCallback('getStrumlinePosX', function(id:Int) {
 			var strumline = resolveStrumline(id);
 			if (strumline == null)
-				return 0;
-			return strumline.x;
+				return 0.0;
+			return getF(strumline, "x");
 		});
 
 		vm.addCallback('getStrumlinePosY', function(id:Int) {
 			var strumline = resolveStrumline(id);
 			if (strumline == null)
-				return 0;
-			return strumline.y;
+				return 0.0;
+			return getF(strumline, "y");
 		});
 
 		// =============================================================
@@ -187,16 +233,16 @@ class CustomStrumlineComponent extends LuaComponentObject {
 		vm.addCallback('getStrumlineGap', function(id:Int) {
 			var strumline = resolveStrumline(id);
 			if (strumline == null)
-				return 0;
-			return strumline.gap;
+				return 0.0;
+			return getF(strumline, "gap");
 		});
 
-		vm.addCallback('setStrumlineGap', function(id:Int, value:Int) {
+		vm.addCallback('setStrumlineGap', function(id:Int, value:Float) {
 			var strumline = resolveStrumline(id);
 			if (strumline == null)
 				return FunkinViewLua.Function_Stop;
 
-			strumline.gap = value;
+			setF(strumline, "gap", value);
 			playField.noteSystem.rebuildMovementLUTs();
 			return FunkinViewLua.Function_Continue;
 		});
@@ -221,7 +267,7 @@ class CustomStrumlineComponent extends LuaComponentObject {
 		// Per-arrow offsets (relative to the arrow's layout slot)
 		//
 		// The layout position of arrow `index` is
-		//     x: strumline.x + floor(gap * index) + offsetX
+		//     x: strumline.x + gap * index + offsetX
 		//     y: strumline.y + offsetY
 		// Offsets are transient deltas on top of that: anything that
 		// re-layouts the strumline (moving/rescaling it, gap changes, noteskin
@@ -231,24 +277,24 @@ class CustomStrumlineComponent extends LuaComponentObject {
 		vm.addCallback('getStrumlineArrowOffsetX', function(id:Int, index:Int) {
 			var strumline = resolveStrumline(id);
 			if (strumline == null)
-				return 0;
+				return 0.0;
 			var note = resolveArrowNote(strumline, index);
 			if (note == null)
-				return 0;
-			return note.x - arrowLayoutX(strumline, index);
+				return 0.0;
+			return getF(note, "x") - arrowLayoutX(strumline, index);
 		});
 
 		vm.addCallback('getStrumlineArrowOffsetY', function(id:Int, index:Int) {
 			var strumline = resolveStrumline(id);
 			if (strumline == null)
-				return 0;
+				return 0.0;
 			var note = resolveArrowNote(strumline, index);
 			if (note == null)
-				return 0;
-			return note.y - arrowLayoutY(strumline);
+				return 0.0;
+			return getF(note, "y") - arrowLayoutY(strumline);
 		});
 
-		vm.addCallback('setStrumlineArrowOffset', function(id:Int, index:Int, x:Int, y:Int) {
+		vm.addCallback('setStrumlineArrowOffset', function(id:Int, index:Int, x:Float, y:Float) {
 			var strumline = resolveStrumline(id);
 			if (strumline == null)
 				return FunkinViewLua.Function_Stop;
@@ -256,12 +302,12 @@ class CustomStrumlineComponent extends LuaComponentObject {
 			if (note == null)
 				return FunkinViewLua.Function_Stop;
 
-			note.x = arrowLayoutX(strumline, index) + x;
-			note.y = arrowLayoutY(strumline) + y;
+			setF(note, "x", arrowLayoutX(strumline, index) + x);
+			setF(note, "y", arrowLayoutY(strumline) + y);
 			return FunkinViewLua.Function_Continue;
 		});
 
-		vm.addCallback('setStrumlineArrowOffsetX', function(id:Int, index:Int, x:Int) {
+		vm.addCallback('setStrumlineArrowOffsetX', function(id:Int, index:Int, x:Float) {
 			var strumline = resolveStrumline(id);
 			if (strumline == null)
 				return FunkinViewLua.Function_Stop;
@@ -269,11 +315,11 @@ class CustomStrumlineComponent extends LuaComponentObject {
 			if (note == null)
 				return FunkinViewLua.Function_Stop;
 
-			note.x = arrowLayoutX(strumline, index) + x;
+			setF(note, "x", arrowLayoutX(strumline, index) + x);
 			return FunkinViewLua.Function_Continue;
 		});
 
-		vm.addCallback('setStrumlineArrowOffsetY', function(id:Int, index:Int, y:Int) {
+		vm.addCallback('setStrumlineArrowOffsetY', function(id:Int, index:Int, y:Float) {
 			var strumline = resolveStrumline(id);
 			if (strumline == null)
 				return FunkinViewLua.Function_Stop;
@@ -281,7 +327,7 @@ class CustomStrumlineComponent extends LuaComponentObject {
 			if (note == null)
 				return FunkinViewLua.Function_Stop;
 
-			note.y = arrowLayoutY(strumline) + y;
+			setF(note, "y", arrowLayoutY(strumline) + y);
 			return FunkinViewLua.Function_Continue;
 		});
 
@@ -294,8 +340,8 @@ class CustomStrumlineComponent extends LuaComponentObject {
 				var note = resolveArrowNote(strumline, i);
 				if (note == null)
 					continue;
-				note.x = arrowLayoutX(strumline, i);
-				note.y = arrowLayoutY(strumline);
+				setF(note, "x", arrowLayoutX(strumline, i));
+				setF(note, "y", arrowLayoutY(strumline));
 			}
 			return FunkinViewLua.Function_Continue;
 		});
@@ -321,82 +367,6 @@ class CustomStrumlineComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 
 			note.r = value;
-			return FunkinViewLua.Function_Continue;
-		});
-
-		// =============================================================
-		// Extra strumlines + note type routing
-		// =============================================================
-		vm.addCallback('addStrumline', function(id:Int, x:Int, y:Int, noteskinName:String = null) {
-			var ns = playField.noteSystem;
-			if (ns == null) {
-				FunkinViewLua.error("Can't do that - the note system isn't ready yet. Call this from createPost, not create.");
-				return FunkinViewLua.Function_Stop;
-			}
-			if (id != ns.strumlines.length) {
-				FunkinViewLua.error('Can\'t do that - strumlines are append-only, the next free id is ${ns.strumlines.length}, got $id.');
-				return FunkinViewLua.Function_Stop;
-			}
-			if (id >= 256) {
-				FunkinViewLua.error("Can't do that - 256 strumlines is where the ride ends.");
-				return FunkinViewLua.Function_Stop;
-			}
-
-			var handle:NoteskinHandle = null;
-			if (noteskinName != null) {
-				handle = NoteskinManager.get(noteskinName);
-				if (handle == null) {
-					FunkinViewLua.error('Can\'t do that - Noteskin Handle "$noteskinName" either not found or has invalid data.');
-					return FunkinViewLua.Function_Stop;
-				}
-				// Keep note sprites of this type in the same skin as the arrows.
-				NoteSystem.typeToHandle[id] = handle;
-			}
-			if (handle == null)
-				handle = NoteSystem.typeToHandle[id];
-			if (handle == null)
-				handle = NoteskinManager.get("default");
-
-			var absoluteMania = Chart.header.mania;
-
-			// Same recipe the engine itself uses in NoteSystem.new(), except
-			// playable stays false - extra strumlines auto-hit their notes
-			// exactly like the opponent's lane does.
-			var strumline = new Strumline(x, y, handle, 0, 0, absoluteMania, ns);
-			strumline.playable = false;
-			strumline.applyNoteskinProperties(handle, absoluteMania - 1);
-
-			ns.strumlines.push(strumline);
-
-			for (receptor in strumline.receptors)
-				NoteSystem.notesBuf.addElement(receptor.note);
-
-			// The virtual note buffer is sized by strumline count - regrow it
-			// so notes routed to the new lane have a place to live.
-			@:privateAccess
-			ns.virtualNoteBuffer = new NoteVB(ns.strumlines.length, 1 << 8);
-
-			ns.rebuildMovementLUTs();
-
-			// Field camera defaults are indexed by lane - grow them so hits on
-			// this lane don't read out of bounds (scripts can retune the values
-			// later via setDefaultCameraPosition).
-			var field = playField.field;
-			if (field != null) {
-				while (field.defaultCameraXpos.length <= id)
-					field.defaultCameraXpos.push(0);
-				while (field.defaultCameraYpos.length <= id)
-					field.defaultCameraYpos.push(0);
-			}
-
-			// Remember the position so engine resets can't fling it off-screen.
-			customStrumlineX.set(id, x);
-			customStrumlineY.set(id, y);
-
-			try
-				NoteSystem.notesBuf.update()
-			catch (e:Dynamic) {}
-
 			return FunkinViewLua.Function_Continue;
 		});
 
@@ -431,6 +401,35 @@ class CustomStrumlineComponent extends LuaComponentObject {
 			typeToStrumline[type] = id;
 			return FunkinViewLua.Function_Continue;
 		});
+
+		// =============================================================
+		// Pause survival, zero-engine-patch edition.
+		//
+		// PlayField.pause() calls NoteSystem.resetStrumlines(), which
+		// re-slots every strumline by the vanilla formula
+		// (x = 50 + INITIAL_WIDTH * id * 0.5) - strumline 2 lands ~1330px
+		// out, off-screen. PlayField.update() would put it back via
+		// updateVariablesList, but it early-returns while paused, so the
+		// strumline stays gone for the whole pause (render() still runs,
+		// which is why it's "invisible" rather than "frozen").
+		//
+		// The engine dispatches 'pausePost' to the script VMs right after
+		// resetStrumlines - so if THIS script doesn't define its own
+		// pausePost, register one that re-asserts the scripted positions.
+		// Scripts that DO define pausePost keep full control (they can
+		// re-assert themselves - see third_strumline_demo.lua).
+		// INTEGRATION.md Patch 6 is the engine-side equivalent for every
+		// script, patched or not.
+		// =============================================================
+		Lua.getglobal(vm.vm, 'pausePost');
+		var scriptOwnsPausePost = (Lua.type(vm.vm, -1) == Lua.LUA_TFUNCTION);
+		Lua.pop(vm.vm, 1);
+		if (!scriptOwnsPausePost) {
+			vm.addCallback('pausePost', function() {
+				reassertCustomPositions(true);
+				return FunkinViewLua.Function_Continue;
+			});
+		}
 	}
 
 	// ------------------------------------------------------------------
@@ -467,14 +466,52 @@ class CustomStrumlineComponent extends LuaComponentObject {
 		return receptor.note;
 	}
 
-	// Where the strumline layout would put arrow `index` (mirrors Strumline.set_x).
-	inline function arrowLayoutX(strumline:Strumline, index:Int):Int {
-		return strumline.x + Math.floor(strumline.gap * index) + strumline.offsetX;
+	// Where the strumline layout would put arrow `index` (mirrors Strumline.set_x
+	// for both engine flavours: exact once Patch 7 drops its Math.floor,
+	// identical for integer values on a stock engine).
+	inline function arrowLayoutX(strumline:Strumline, index:Int):Float {
+		return getF(strumline, "x") + getF(strumline, "gap") * index + strumline.offsetX;
 	}
 
 	// Mirrors Strumline.set_y.
-	inline function arrowLayoutY(strumline:Strumline):Int {
-		return strumline.y + strumline.offsetY;
+	inline function arrowLayoutY(strumline:Strumline):Float {
+		return getF(strumline, "y") + strumline.offsetY;
+	}
+
+	// ------------------------------------------------------------------
+	// Position re-assertion (engine resets: seeks, pauses, downscroll)
+	// ------------------------------------------------------------------
+	function reassertCustomPositions(rebuildLUTs:Bool):Void {
+		if (customStrumlineX == null || customStrumlineY == null)
+			return;
+		var ns = playField.noteSystem;
+		if (ns == null || ns.strumlines == null)
+			return;
+
+		var moved = false;
+		for (id in 0...customStrumlineX.length) {
+			if (id < 0 || id >= ns.strumlines.length)
+				continue;
+			var strumline = ns.strumlines[id];
+			if (strumline == null)
+				continue;
+			var wantX = customStrumlineX[id];
+			var wantY = customStrumlineY[id];
+			if (wantX != -9999 && getF(strumline, "x") != wantX) {
+				setF(strumline, "x", wantX);
+				moved = true;
+			}
+			if (wantY != -9999 && getF(strumline, "y") != wantY) {
+				setF(strumline, "y", wantY);
+				moved = true;
+			}
+		}
+
+		// Receptor positions get baked into movement LUTs when a custom
+		// note formula is active - refresh them so mid-air notes aim at
+		// the re-asserted position instead of where the reset flung it.
+		if (moved && rebuildLUTs)
+			ns.rebuildMovementLUTs();
 	}
 
 	// ------------------------------------------------------------------
@@ -483,38 +520,27 @@ class CustomStrumlineComponent extends LuaComponentObject {
 	override public function updateVariablesList(vm:FunkinViewLuaScript):Void {
 		// Engine resets (seeks, downscroll toggles) reposition every strumline
 		// by the vanilla slot formula, which shoves anything past strumline 1
-		// off-screen. Re-assert the positions scripts asked for.
-		if (customStrumlineX == null || customStrumlineY == null)
-			return;
-		var ns = playField.noteSystem;
-		if (ns == null || ns.strumlines == null)
-			return;
-		for (id in customStrumlineX.keys()) {
-			if (id < 0 || id >= ns.strumlines.length)
-				continue;
-			var strumline = ns.strumlines[id];
-			if (strumline == null)
-				continue;
-			var wantX = customStrumlineX.get(id);
-			var wantY = customStrumlineY.get(id);
-			if (wantX != null && strumline.x != wantX)
-				strumline.x = wantX;
-			if (wantY != null && strumline.y != wantY)
-				strumline.y = wantY;
-		}
+		// off-screen. Re-assert the positions scripts asked for. (During a
+		// pause this never runs - PlayField.update() early-returns - which is
+		// exactly why the pausePost guard above / Patch 6 exist.)
+		reassertCustomPositions(true);
 	}
 
 	override public function dispose():Void {
 		if (customStrumlineX != null) {
-			customStrumlineX.clear();
+			while (customStrumlineX.length != 0) customStrumlineX.pop();
 			customStrumlineX = null;
 		}
 		if (customStrumlineY != null) {
-			customStrumlineY.clear();
+			while (customStrumlineY.length != 0) customStrumlineY.pop();
 			customStrumlineY = null;
 		}
 		for (i in 0...1 << 8)
 			typeToStrumline[i] = -1;
+		for (i in 0...1 << 8) {
+			customStrumlineX[i] = -9999;
+			customStrumlineY[i] = -9999;
+		}
 		super.dispose();
 	}
 	#end
