@@ -23,7 +23,7 @@ class FunkinMainLoop {
 		#if LIME_840
 		FRAMEOPTS = {
 			timePrecision: TimePrecision.HighResolution,
-			busyWait: BusyWaitMode.On,
+			busyWait: BusyWaitMode.Auto,
 			uncapMode: uncapped ? UncapMode.Soft : UncapMode.Off
 		};
 		#end
