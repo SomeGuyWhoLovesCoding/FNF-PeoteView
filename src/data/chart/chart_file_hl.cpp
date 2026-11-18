@@ -22,8 +22,8 @@ HL_PRIM int64_t HL_NAME(getNote_last2)(int64_t atIndex) {
     return (int64_t)core_getNote_last2(atIndex);
 }
 
-HL_PRIM int64_t HL_NAME(addNote)(int64_t note, int last2) {
-    return core_addNote(note, last2);
+HL_PRIM int64_t HL_NAME(addNote)(int64_t position, int duration, int index, int type) {
+    return core_addNote(position, duration, index, type);
 }
 
 HL_PRIM void HL_NAME(insertNote)(int64_t globalPosition, int duration, int index, int type) {
@@ -72,7 +72,7 @@ HL_PRIM void HL_NAME(setEditorMode)(bool value) {
 DEFINE_PRIM(_VOID, loadChart, _STRING)
 DEFINE_PRIM(_I64,  getNote_first8, _I64)
 DEFINE_PRIM(_I32,  getNote_last2, _I64)
-DEFINE_PRIM(_I64,  addNote, _I64 _I32)
+DEFINE_PRIM(_I64,  addNote, _I64 _I32 _I32 _I32)
 DEFINE_PRIM(_VOID,  insertNote, _I64 _I32 _I32 _I32)
 DEFINE_PRIM(_VOID, removeNote, _I64)
 DEFINE_PRIM(_BOOL, saveChart, _NO_ARG)

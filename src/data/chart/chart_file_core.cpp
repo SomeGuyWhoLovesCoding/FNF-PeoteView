@@ -1053,28 +1053,32 @@ public:
     }
 
     // ========================================================================
-    // ADD — `note` is the packed 64-bit half of a ChartNote:
-    //   [0..47]  position (100ns ticks) — extracted internally, never passed
-    //            separately, to locate the shard + sorted slot.
-    //   [48..63] duration (1ms ticks).
-    // `last2` carries [0..7] column index and [8..15] type.
-    // Returns the global chart index the note landed at; feed that same
-    // value to removeNote() to take it back out.
+    // ADD — flexible 4-argument form: addNote(position, duration, index, type).
+    //   position: 100ns ticks (the unit MetaNote.position uses)
+    //   duration: 1ms ticks
+    //   index:    column index within the strumline (0..mania-1)
+    //   type:     note type; gameplay maps type % strumlineCount to the
+    //             owning strumline (0 = opponent, 1 = player)
+    // The position locates the note's 1/4-second shard and its sorted slot
+    // inside it; later shards' baseIds shift by one. Returns the new note's
+    // global chart index — feed that same value to removeNote() to take it
+    // back out.
     // ========================================================================
-    int64_t addNote(uint64_t note, uint16_t last2) {
+    int64_t addNote(uint64_t position, uint16_t duration, uint8_t index, uint8_t type) {
+        const uint64_t first8 =
+            (position & ShardedNoteStore::POS_MASK) | ((uint64_t)(duration & 0xFFFF) << 48);
+        const uint16_t last2 =
+            (uint16_t)(index & 0xFF) | ((uint16_t)(type & 0xFF) << 8);
         std::lock_guard<std::mutex> lk(dataMutex);
-        const int64_t id = store.add(note, last2);
+        const int64_t id = store.add(first8, last2);
         dirty = true;
         return id;
     }
 
-    // Legacy packing helper: insertNote(pos, dur, index, type) == addNote(pack).
+    // Legacy alias kept so the existing chart_test build compiles; identical
+    // to addNote(position, duration, index, type).
     void insertNote(uint64_t pos, uint16_t dur, uint8_t idx, uint8_t type) {
-        const uint64_t first8 =
-            (pos & ShardedNoteStore::POS_MASK) | ((uint64_t)(dur & 0xFFFF) << 48);
-        const uint16_t last2 =
-            (uint16_t)(idx & 0xFF) | ((uint16_t)(type & 0xFF) << 8);
-        addNote(first8, last2);
+        addNote(pos, dur, idx, type);
     }
 
     // ========================================================================
@@ -1177,17 +1181,21 @@ void core_setApplyingNotes(bool enabled) { if (gReader) gReader->setApplyingNote
 int64_t core_getNote_first8(int64_t index) { if (!gReader) return 0; return (int64_t)gReader->getNote_first8(index); }
 int core_getNote_last2(int64_t index) { if (!gReader) return 0; return gReader->getNote_last2(index); }
 
-// Preferred API: one packed 64-bit `note` (position+duration) + packed
-// 16-bit (index+type). Returns the global chart index for removeNote().
-int64_t core_addNote(int64_t note, int last2) {
+// Primary API: addNote(position, duration, index, type). Position is in
+// 100ns ticks, duration in 1ms ticks. Returns the new note's global chart
+// index, which removeNote() accepts.
+int64_t core_addNote(int64_t position, int duration, int index, int type) {
     if (!gReader) return -1;
-    return gReader->addNote((uint64_t)note, (uint16_t)last2);
+    return gReader->addNote(static_cast<uint64_t>(position), static_cast<uint16_t>(duration),
+                            static_cast<uint8_t>(index), static_cast<uint8_t>(type));
 }
 
-// Legacy 4-argument packing kept for the existing callers (Main.hx chart_test).
+// Legacy alias kept for the existing callers (Main.hx chart_test); identical
+// to core_addNote(position, duration, index, type).
 void core_insertNote(int64_t globalPosition, int duration, int index, int type) {
     if (!gReader) return;
-    gReader->insertNote(static_cast<uint64_t>(globalPosition), static_cast<uint16_t>(duration), static_cast<uint8_t>(index), static_cast<uint8_t>(type));
+    gReader->insertNote(static_cast<uint64_t>(globalPosition), static_cast<uint16_t>(duration),
+                        static_cast<uint8_t>(index), static_cast<uint8_t>(type));
 }
 
 void core_removeNote(int64_t globalIndex) { if (!gReader) return; gReader->removeNote(globalIndex); }

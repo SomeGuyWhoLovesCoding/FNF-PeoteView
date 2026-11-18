@@ -24,14 +24,17 @@ extern class File {
 	}
 	@:native("insertNote") static function insertNote(atGlobalPosition:Int64, duration:Int, index:Int, type:Int):Void;
 	/**
-	 * Adds a note from its packed 64-bit `note` value (the `first8` half of a
-	 * ChartNote: [0..47] position in 100ns ticks, [48..63] duration in 1ms ticks)
-	 * plus a packed 16-bit `last2` ([0..7] column index, [8..15] type).
-	 * The position is extracted on the C++ side to locate the note's 1/4-second
-	 * shard and its sorted slot inside it.
-	 * Returns the new note's global chart index — pass it to removeNote() later.
+	 * Adds a note from its raw fields — the flexible editor-facing API.
+	 *   position: 100ns ticks (the unit MetaNote.position uses)
+	 *   duration: 1ms ticks (0 = tap note)
+	 *   index:    column index within the strumline (0..mania-1)
+	 *   type:     note type; gameplay maps type % strumlineCount to the
+	 *             owning strumline (0 = opponent, 1 = player)
+	 * The C++ side locates the note's 1/4-second shard and its sorted slot
+	 * from the position. Returns the new note's global chart index — pass
+	 * it to removeNote() later.
 	 */
-	@:native("addNote") static function addNote(note:Int64, last2:Int):Int64;
+	@:native("addNote") static function addNote(position:Int64, duration:Int, index:Int, type:Int):Int64;
 	/** Removes the note with the given global chart index. */
 	@:native("removeNote") static function removeNote(atIndex:Int64):Void;
 	@:native("getLength") static function getLength():Int64;
@@ -72,12 +75,12 @@ class File {
 	public static function insertNote(atGlobalPosition:hl.I64, duration:Int, index:Int, type:Int):Void {}
 
 	/**
-	 * Adds a note from its packed 64-bit `note` value (position+duration) plus
-	 * packed 16-bit `last2` (index+type); returns the new global chart index.
-	 * See the cpp target's addNote docs for the bit layout.
+	 * Adds a note from its raw fields — the flexible editor-facing API.
+	 * See the cpp target's addNote docs for the field units.
+	 * Returns the new note's global chart index.
 	 */
 	@:hlNative("chart_file", "addNote")
-	public static function addNote(note:hl.I64, last2:Int):hl.I64 {
+	public static function addNote(position:hl.I64, duration:Int, index:Int, type:Int):hl.I64 {
 		return 0;
 	}
 

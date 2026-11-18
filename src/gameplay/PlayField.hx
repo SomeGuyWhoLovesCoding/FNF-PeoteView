@@ -12,6 +12,50 @@ import lime.app.Event;
 **/
 @:publicFields
 class PlayField {
+	/**
+	 * Set by the debug key (DeveloperStuff) before the state switch; consumed
+	 * by create() to build the playfield in playfieldEditorMode. Toggling
+	 * routes through Main.switchState(GAMEPLAY), whose dispose + recreate IS
+	 * the song restart.
+	 */
+	static var editorModeNext:Bool = false;
+
+	/**
+	 * True when this playfield is the playfield editor: only the note system,
+	 * HUD, song system (Mixer/conductor) and pause menu are created and
+	 * updated. The Field, lua (FunkinViewLua), EventSystem, InputSystem and
+	 * CountdownDisplay never exist here — no note hit registration, no
+	 * keybind input, no events, no stage.
+	 */
+	var playfieldEditorMode(default, null):Bool = false;
+
+	// ------------------------------------------------------------------
+	// Playfield editor state
+	// ------------------------------------------------------------------
+	/** Grid + wheel snap resolution in ms (1 step at 120 BPM 4/4 = 125 ms). */
+	var editorSnapMs(default, set):Float = 125.0;
+
+	function set_editorSnapMs(value:Float):Float {
+		if (value < 10)
+			value = 10;
+		return editorSnapMs = value;
+	}
+
+	/** The dedicated stepped-strumline mouse input system (editor only). */
+	var strumlineInput(default, null):StrumlineNoteInteraction;
+
+	/** True when the chart has unsaved edits. */
+	var dirtyChart:Bool = false;
+
+	// --- Editor instructions menu (NoteskinEditor-style popup) ---
+	var editorInstructionsText:Text;
+	var editorInstructionsBackground:RepeatSprite;
+	var editorInstructionsBuf(default, null):Buffer<RepeatSprite>;
+	var editorInstructionsProg(default, null):CustomProgram;
+	var showEditorInstructions:Bool = false;
+
+	var editorKeysActive:Bool = false;
+
 	var roof(default, null):CustomDisplay;
 	var display(default, null):CustomDisplay;
 	var view(default, null):CustomDisplay;
@@ -34,8 +78,12 @@ class PlayField {
 		this.display = display;
 		this.view = view;
 
+		playfieldEditorMode = editorModeNext;
+
 		#if linc_luajit_funkinview
-		funkinviewlua = new FunkinViewLua(this, chartPath, Chart.header);
+		// In playfieldEditorMode lua never runs (as intended).
+		if (!playfieldEditorMode)
+			funkinviewlua = new FunkinViewLua(this, chartPath, Chart.header);
 		#end
 
 		create(roof, display, Chart.header.mania);
@@ -196,7 +244,9 @@ class PlayField {
 				eventSystem.clearEventTimers(); // immediately clear out any event timers to prevent them flooding the rest of the song through
 
 			#if linc_luajit_funkinview
-			funkinviewlua.callFunction('preTimeChange', timeForRestartingBackwardTime, Chart.header);
+			if (!playfieldEditorMode) {
+				funkinviewlua.callFunction('preTimeChange', timeForRestartingBackwardTime, Chart.header);
+			}
 			#end
 
 			pause(false);
@@ -258,6 +308,46 @@ class PlayField {
 
 		var conductor = Main.conductor;
 		conductor.offset = 0; // latency is now handled via noteTime, not conductor.offset
+
+		if (playfieldEditorMode) {
+			// ============================================================
+			// PLAYFIELD EDITOR MODE — create ONLY the note system, HUD,
+			// song system and pause menu. No Field (stage/characters/
+			// camera), no FunkinViewLua, no EventSystem, no InputSystem,
+			// no CountdownDisplay. The song starts immediately at 0.
+			// ============================================================
+			songPosition = 0; // no countdown — the audio clock starts at 0 too
+
+			HUD.init();
+			if (!SaveData.state.preferences.hideHUD)
+				hud = new HUD(display, this);
+
+			NoteSystem.init();
+			noteSystem = new NoteSystem(this);
+			// Both strumlines non-playable: no keybind input path exists,
+			// receptors auto-confirm through the spawner's bot path.
+			for (strumline in noteSystem.strumlines)
+				strumline.playable = false;
+			botplay = true;
+
+			Mixer.init(Chart.header); // the song system
+
+			PauseScreen.init(roof);
+			pauseScreen = new PauseScreen(Chart.header.difficulty);
+
+			scrollSpeed = Chart.header.speed;
+
+			// Stepped Strumline note input — its square renders directly on
+			// top of the note system render.
+			strumlineInput = new StrumlineNoteInteraction(this);
+			strumlineInput.attach();
+			attachEditorKeys();
+
+			startedCountdown = false;
+			startSong(Chart.header);
+			return;
+		}
+
 		songPosition = -conductor.crochet * 4.5;
 
 		field = new Field(this);
@@ -294,10 +384,12 @@ class PlayField {
 		startedCountdown = !onRestartingForBackwardTimeSetting;
 
 		#if linc_luajit_funkinview
-		startedCountdown = startedCountdown
+		if (!playfieldEditorMode) {
+			startedCountdown = startedCountdown
 			|| funkinviewlua.callFunction('startCountdown', formatCustomSongName(Chart.header.title),
 				Chart.header.difficulty)[0] != FunkinViewLua.Function_Stop;
-		funkinviewlua.callFunction('createPost', null);
+			funkinviewlua.callFunction('createPost', null);
+		}
 		#end
 
 		if (onRestartingForBackwardTimeSetting) {
@@ -308,7 +400,9 @@ class PlayField {
 			songPosition = timeForRestartingBackwardTime;
 
 			#if linc_luajit_funkinview
-			funkinviewlua.callFunction('postTimeChange', timeForRestartingBackwardTime, Chart.header);
+			if (!playfieldEditorMode) {
+				funkinviewlua.callFunction('postTimeChange', timeForRestartingBackwardTime, Chart.header);
+			}
 			#end
 
 			timeForRestartingBackwardTime = 0;
@@ -370,12 +464,41 @@ class PlayField {
 			return;
 
 		#if linc_luajit_funkinview
-		funkinviewlua.updateVariablesList();
-		funkinviewlua.callFunction('update', deltaTime);
+		if (!playfieldEditorMode) {
+			funkinviewlua.updateVariablesList();
+			funkinviewlua.callFunction('update', deltaTime);
+		}
 		#end
 
 		if (!ready) {
 			ready = true;
+			return;
+		}
+
+		if (playfieldEditorMode) {
+			// ============================================================
+			// PLAYFIELD EDITOR MODE — update ONLY the song system, HUD,
+			// note system and stepped strumline input. lua is skipped
+			// above; no Field/EventSystem/CountdownDisplay exist here.
+			// ============================================================
+			display.update();
+			view.update();
+
+			Mixer.update(this, deltaTime);
+			updateNoteLatency();
+			noteTime = songPosition - noteLatency;
+			Main.conductor.time = noteTime;
+
+			if (hud != null)
+				hud.update(deltaTime);
+
+			var t = startedCountdown ? noteTime : songPosition;
+			var pos = MetaNote.floatToMetaNotePosition(t);
+			if (noteSystem != null)
+				noteSystem.update(pos);
+
+			if (strumlineInput != null)
+				strumlineInput.update();
 			return;
 		}
 
@@ -437,8 +560,10 @@ class PlayField {
 			}
 
 			#if linc_luajit_funkinview
-			funkinviewlua.callFunction('updatePost', deltaTime);
-			funkinviewlua.callFunction('postUpdate', deltaTime); // alternative syntax
+			if (!playfieldEditorMode) {
+				funkinviewlua.callFunction('updatePost', deltaTime);
+				funkinviewlua.callFunction('postUpdate', deltaTime); // alternative syntax
+			}
 			#end
 
 			return;
@@ -470,12 +595,35 @@ class PlayField {
 	**/
 	function render() {
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('render', null);
+		if (!playfieldEditorMode)
+			funkinviewlua.callFunction('render', null);
 		#end
 
 		var renderingModeEnabled = RenderingMode.enabled;
 		if (renderingModeEnabled)
 			update(1000 / RenderingMode.frameRate);
+
+		if (playfieldEditorMode) {
+			// ============================================================
+			// PLAYFIELD EDITOR MODE — render the note system + HUD only.
+			// The StrumlineNoteInteraction square lives in its own program
+			// added AFTER notesProg, so it draws on top of the note system
+			// render (and everything else) automatically.
+			// ============================================================
+			var noteSystem = noteSystem;
+			if (noteSystem != null) {
+				var t = startedCountdown ? noteTime : songPosition;
+				var pos = MetaNote.floatToMetaNotePosition(t);
+				noteSystem.renderNotes(pos);
+			}
+
+			if (hud != null) {
+				hud.render();
+				hud.updateBuffers();
+			}
+			return;
+		}
+
 		var noteSystem = noteSystem;
 		if (noteSystem != null) {
 			var t = startedCountdown ? noteTime : songPosition;
@@ -504,8 +652,10 @@ class PlayField {
 			RenderingMode.pipeFrame();
 
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('renderPost', null);
-		funkinviewlua.callFunction('postRender', null); // alternative syntax
+		if (!playfieldEditorMode) {
+			funkinviewlua.callFunction('renderPost', null);
+			funkinviewlua.callFunction('postRender', null); // alternative syntax
+		}
 		#end
 	}
 
@@ -517,7 +667,7 @@ class PlayField {
 			return;
 
 		#if linc_luajit_funkinview
-		if (funkinviewlua.callFunction('pause', null)[0] == FunkinViewLua.Function_Stop)
+		if (!playfieldEditorMode && funkinviewlua.callFunction('pause', null)[0] == FunkinViewLua.Function_Stop)
 			return;
 		#end
 
@@ -529,7 +679,11 @@ class PlayField {
 			var pos = MetaNote.floatToMetaNotePosition(songPosition);
 			noteSystem.resetStrumlines();
 		}
-		if (inputSystem != null)
+		if (playfieldEditorMode) {
+			if (strumlineInput != null)
+				strumlineInput.removeEvents();
+			detachEditorKeys();
+		} else if (inputSystem != null)
 			inputSystem.removeEvents();
 
 		paused = true;
@@ -538,8 +692,10 @@ class PlayField {
 			Main.current.playScrollSound();
 
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('pausePost', null);
-		funkinviewlua.callFunction('postPause', null); // alternative syntax
+		if (!playfieldEditorMode) {
+			funkinviewlua.callFunction('pausePost', null);
+			funkinviewlua.callFunction('postPause', null); // alternative syntax
+		}
 		#end
 	}
 
@@ -551,20 +707,28 @@ class PlayField {
 			return;
 
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('resume', null);
+		if (!playfieldEditorMode)
+			funkinviewlua.callFunction('resume', null);
 		#end
 
 		pauseScreen.close();
 		if (!RenderingMode.enabled && songStarted && !songEnded)
 			Mixer.startMusic();
-		if (inputSystem != null)
+		if (playfieldEditorMode) {
+			if (strumlineInput != null)
+				Tools.forSync(strumlineInput.addEvents);
+			Tools.forSync(attachEditorKeys);
+		} else if (inputSystem != null) {
 			Tools.forSync(inputSystem.addEvents);
+		}
 
 		paused = false;
 
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('resumePost', null);
-		funkinviewlua.callFunction('postResume', null); // alternative syntax
+		if (!playfieldEditorMode) {
+			funkinviewlua.callFunction('resumePost', null);
+			funkinviewlua.callFunction('postResume', null); // alternative syntax
+		}
 		#end
 	}
 
@@ -584,22 +748,28 @@ class PlayField {
 
 	function stepHit(step:Float) {
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('stepHit', step);
+		if (!playfieldEditorMode) {
+			funkinviewlua.callFunction('stepHit', step);
+		}
 		#end
 	}
 
 	function beatHit(beat:Float) {
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('beatHit', beat);
+		if (!playfieldEditorMode) {
+			funkinviewlua.callFunction('beatHit', beat);
+		}
 		#end
 	}
 
 	function measureHit(measure:Float) {
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('measureHit', measure);
+		if (!playfieldEditorMode) {
+			funkinviewlua.callFunction('measureHit', measure);
+		}
 		#end
 
-		if (measure >= 0 && SaveData.state.preferences.cameraZooming && songStarted) {
+		if (measure >= 0 && !playfieldEditorMode && SaveData.state.preferences.cameraZooming && songStarted) {
 			display.fov += 0.025;
 			view.fov += 0.011;
 		}
@@ -607,10 +777,11 @@ class PlayField {
 
 	function hitNote(note:MetaNote, timing:Float, notesInOne:Int64, _i:Int64) {
 		#if linc_luajit_funkinview
-		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
-		if (funkinviewlua.callFunction('hitNote', notePos, note.index, note.duration, note.type, timing, notesInOne)[0] == FunkinViewLua.Function_Stop) {
+		var notePos:Float = playfieldEditorMode ? 0 : MetaNote.metaNotePositionToSongTime(note.position);
+		if (!playfieldEditorMode
+			&& funkinviewlua.callFunction('hitNote', notePos, note.index, note.duration, note.type, timing, notesInOne)[0] == FunkinViewLua.Function_Stop) {
 			return;
-		};
+		}
 		#end
 
 		var lane = note.type;
@@ -691,17 +862,20 @@ class PlayField {
 
 	function postHitNote(#if linc_luajit_funkinview notePos:Float, #end note:MetaNote, timing:Float, notesInOne:Int64) {
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('hitNotePost', notePos, note.index, note.duration, note.type, timing, notesInOne);
-		funkinviewlua.callFunction('postHitNote', notePos, note.index, note.duration, note.type, timing, notesInOne); // alternative syntax
+		if (!playfieldEditorMode) {
+			funkinviewlua.callFunction('hitNotePost', notePos, note.index, note.duration, note.type, timing, notesInOne);
+			funkinviewlua.callFunction('postHitNote', notePos, note.index, note.duration, note.type, timing, notesInOne); // alternative syntax
+		}
 		#end
 	}
 
 	function missNote(note:MetaNote, notesInOne:Int64, _i:Int64) {
 		#if linc_luajit_funkinview
-		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
-		if (funkinviewlua.callFunction('missNote', notePos, note.index, note.duration, note.type, notesInOne)[0] == FunkinViewLua.Function_Stop) {
+		var notePos:Float = playfieldEditorMode ? 0 : MetaNote.metaNotePositionToSongTime(note.position);
+		if (!playfieldEditorMode
+			&& funkinviewlua.callFunction('missNote', notePos, note.index, note.duration, note.type, notesInOne)[0] == FunkinViewLua.Function_Stop) {
 			return;
-		};
+		}
 		#end
 
 		if (practiceMode && health < 0.05) {
@@ -727,15 +901,18 @@ class PlayField {
 			onDeath.dispatch(Chart.header, lane);
 
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('missNotePost', notePos, note.index, note.duration, note.type, notesInOne);
-		funkinviewlua.callFunction('postMissNote', notePos, note.index, note.duration, note.type, notesInOne); // alternative syntax
+		if (!playfieldEditorMode) {
+			funkinviewlua.callFunction('missNotePost', notePos, note.index, note.duration, note.type, notesInOne);
+			funkinviewlua.callFunction('postMissNote', notePos, note.index, note.duration, note.type, notesInOne); // alternative syntax
+		}
 		#end
 	}
 
 	function completeSustain(note:MetaNote, _i:Int64) {
 		#if linc_luajit_funkinview
-		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
-		funkinviewlua.callFunction('completeSustain', notePos, note.index, note.duration, note.type);
+		var notePos:Float = playfieldEditorMode ? 0 : MetaNote.metaNotePositionToSongTime(note.position);
+		if (!playfieldEditorMode)
+			funkinviewlua.callFunction('completeSustain', notePos, note.index, note.duration, note.type);
 		#end
 
 		var lane = note.type;
@@ -760,22 +937,27 @@ class PlayField {
 		}
 
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('completeSustainPost', notePos, note.index, note.duration, note.type);
-		funkinviewlua.callFunction('postCompleteSustain', notePos, note.index, note.duration, note.type); // alternative syntax
+		if (!playfieldEditorMode) {
+			funkinviewlua.callFunction('completeSustainPost', notePos, note.index, note.duration, note.type);
+			funkinviewlua.callFunction('postCompleteSustain', notePos, note.index, note.duration, note.type); // alternative syntax
+		}
 		#end
 	}
 
 	inline function releaseSustain(note:MetaNote, _i:Int64) {
 		#if linc_luajit_funkinview
-		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
-		funkinviewlua.callFunction('releaseSustain', notePos, note.index, note.duration, note.type);
+		var notePos:Float = playfieldEditorMode ? 0 : MetaNote.metaNotePositionToSongTime(note.position);
+		if (!playfieldEditorMode)
+			funkinviewlua.callFunction('releaseSustain', notePos, note.index, note.duration, note.type);
 		#end
 
 		combo = 0;
 
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('releaseSustainPost', notePos, note.index, note.duration, note.type);
-		funkinviewlua.callFunction('postReleaseSustain', notePos, note.index, note.duration, note.type); // alternative syntax
+		if (!playfieldEditorMode) {
+			funkinviewlua.callFunction('releaseSustainPost', notePos, note.index, note.duration, note.type);
+			funkinviewlua.callFunction('postReleaseSustain', notePos, note.index, note.duration, note.type); // alternative syntax
+		}
 		#end
 	}
 
@@ -783,7 +965,8 @@ class PlayField {
 
 	function startSong(header:Header) {
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('startSong', formatCustomSongName(header.title), header.difficulty);
+		if (!playfieldEditorMode)
+			funkinviewlua.callFunction('startSong', formatCustomSongName(header.title), header.difficulty);
 		#end
 
 		Sys.println('Song activity is on');
@@ -806,14 +989,17 @@ class PlayField {
 		}
 
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('startSongPost', formatCustomSongName(header.title), header.difficulty);
-		funkinviewlua.callFunction('postStartSong', formatCustomSongName(header.title), header.difficulty); // alternative syntax
+		if (!playfieldEditorMode) {
+			funkinviewlua.callFunction('startSongPost', formatCustomSongName(header.title), header.difficulty);
+			funkinviewlua.callFunction('postStartSong', formatCustomSongName(header.title), header.difficulty); // alternative syntax
+		}
 		#end
 	}
 
 	function stopSong(header:Header) {
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('stopSong', formatCustomSongName(header.title), header.difficulty);
+		if (!playfieldEditorMode)
+			funkinviewlua.callFunction('stopSong', formatCustomSongName(header.title), header.difficulty);
 		#end
 
 		Sys.println('Song activity is off');
@@ -830,20 +1016,29 @@ class PlayField {
 		Mixer.setTime(0, null);
 
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('stopSongPost', formatCustomSongName(header.title), header.difficulty);
-		funkinviewlua.callFunction('postStopSong', formatCustomSongName(header.title), header.difficulty); // alternative syntax
+		if (!playfieldEditorMode) {
+			funkinviewlua.callFunction('stopSongPost', formatCustomSongName(header.title), header.difficulty);
+			funkinviewlua.callFunction('postStopSong', formatCustomSongName(header.title), header.difficulty); // alternative syntax
+		}
 		#end
 
+		// Editor mode returns to the main menu like gameplay does.
 		Main.switchState(MAIN_MENU);
 	}
 
 	function gameOver(header:Header, lane:Int) {
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('gameOver', null);
+		if (!playfieldEditorMode) {
+			funkinviewlua.callFunction('gameOver', null);
+		}
 		#end
 
-		inputSystem.removeEvents();
-		haxe.Timer.delay(inputSystem.addEvents, 2000); // prevent instant end gameover
+		// Editor mode never dies (no playable strumlines → no misses), but
+		// inputSystem is null there, so guard the teardown anyway.
+		if (inputSystem != null) {
+			inputSystem.removeEvents();
+			haxe.Timer.delay(inputSystem.addEvents, 2000); // prevent instant end gameover
+		}
 
 		onDeath.remove(gameOver);
 
@@ -866,15 +1061,20 @@ class PlayField {
 
 		Mixer.setTime(0, null);
 
-		var char = field.actors[lane + field.numSpectators];
-		if (char == null)
-			char = field.actors[1 + field.numSpectators];
+		// field (stage/actors) never exists in editor mode.
+		if (field != null) {
+			var char = field.actors[lane + field.numSpectators];
+			if (char == null)
+				char = field.actors[1 + field.numSpectators];
 
-		field.actorOnGameOver = char;
+			field.actorOnGameOver = char;
+		}
 
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('gameOverPost', null);
-		funkinviewlua.callFunction('postGameOverPost', null); // alternative syntax
+		if (!playfieldEditorMode) {
+			funkinviewlua.callFunction('gameOverPost', null);
+			funkinviewlua.callFunction('postGameOverPost', null); // alternative syntax
+		}
 		#end
 
 		deathCounter++;
@@ -896,7 +1096,9 @@ class PlayField {
 
 	inline function setCustomStage(stage:String) {
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('onChangeStage', stage);
+		if (!playfieldEditorMode) {
+			funkinviewlua.callFunction('onChangeStage', stage);
+		}
 		#end
 	}
 
@@ -907,8 +1109,32 @@ class PlayField {
 		ready = false;
 		disposed = true;
 
+		// Editor-only systems first (they own window events + programs).
+		if (playfieldEditorMode) {
+			detachEditorKeys();
+			if (strumlineInput != null) {
+				strumlineInput.dispose();
+				strumlineInput = null;
+			}
+			hideEditorInstructions();
+			if (editorInstructionsText != null) {
+				editorInstructionsText.dispose();
+				editorInstructionsText = null;
+			}
+			if (editorInstructionsBuf != null) {
+				try
+					editorInstructionsBuf.clear()
+				catch (e) {}
+				editorInstructionsBuf = null;
+				editorInstructionsProg = null;
+				editorInstructionsBackground = null;
+			}
+		}
+
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('dispose', null);
+		if (!playfieldEditorMode) {
+			funkinviewlua.callFunction('dispose', null);
+		}
 		#end
 
 		var conductor = Main.conductor;
@@ -980,9 +1206,201 @@ class PlayField {
 		}
 
 		#if linc_luajit_funkinview
-		funkinviewlua.callFunction('disposePost', null);
-		funkinviewlua.callFunction('postDispose', null); // alternative syntax
-		funkinviewlua.dispose();
+		if (!playfieldEditorMode) {
+			funkinviewlua.callFunction('disposePost', null);
+			funkinviewlua.callFunction('postDispose', null); // alternative syntax
+			funkinviewlua.dispose();
+		}
 		#end
+	}
+
+	// ===================================================================
+	// PLAYFIELD EDITOR MODE — input, seek, instructions menu, save
+	// (Everything below only runs when playfieldEditorMode is true.)
+	// ===================================================================
+
+	function attachEditorKeys() {
+		if (disposed || editorKeysActive || !playfieldEditorMode)
+			return;
+		editorKeysActive = true;
+		#if !android
+		Application.current.window.onKeyDown.add(editorKeyDown);
+		#end
+	}
+
+	function detachEditorKeys() {
+		if (!editorKeysActive)
+			return;
+		editorKeysActive = false;
+		#if !android
+		Application.current.window.onKeyDown.remove(editorKeyDown);
+		#end
+	}
+
+	function editorKeyDown(code:lime.ui.KeyCode, mod:lime.ui.KeyModifier) {
+		if (disposed)
+			return;
+
+		// Pause first — ESC/back also closes the instructions popup.
+		if (code == SaveData.state.controls.ui.back || code == lime.ui.KeyCode.ESCAPE) {
+			if (showEditorInstructions) {
+				hideEditorInstructions();
+				return;
+			}
+			if (!paused)
+				pause();
+			return;
+		}
+
+		if (paused)
+			return;
+
+		switch (code) {
+			case lime.ui.KeyCode.F1 | lime.ui.KeyCode.H:
+				if (showEditorInstructions)
+					hideEditorInstructions();
+				else
+					showEditorInstructionsMenu();
+			case lime.ui.KeyCode.LEFT:
+				setTimeEditor(songPosition - ((mod & lime.ui.KeyModifier.CTRL) != 0 ? 4000 : 1000));
+			case lime.ui.KeyCode.RIGHT:
+				setTimeEditor(songPosition + ((mod & lime.ui.KeyModifier.CTRL) != 0 ? 4000 : 1000));
+			case lime.ui.KeyCode.MINUS:
+				editorSnapMs = editorSnapMs / 2 < 10 ? editorSnapMs : editorSnapMs / 2;
+				updateEditorInstructionsText();
+			case lime.ui.KeyCode.EQUALS:
+				editorSnapMs *= 2;
+				updateEditorInstructionsText();
+			case lime.ui.KeyCode.S:
+				if ((mod & lime.ui.KeyModifier.CTRL) != 0)
+					saveEditorChart();
+			default:
+		}
+	}
+
+	/**
+	 * Editor seek — works while the song runs, bypassing the base setTime's
+	 * countdown/latency gates (no restart dance; Mixer stop/start preserve
+	 * position, seekToPCMFrame lands exactly).
+	 */
+	function setTimeEditor(value:Float) {
+		if (disposed || paused)
+			return;
+		if (value < 0)
+			value = 0;
+		if (value > Mixer.length - 1000)
+			value = Mixer.length - 1000;
+
+		Mixer.setTime(Math.max(value, 0.0), this);
+		songPosition = value;
+
+		var pos = MetaNote.floatToMetaNotePosition(value);
+		if (noteSystem != null)
+			noteSystem.onSongPositionJump(pos);
+	}
+
+	/** Called by StrumlineNoteInteraction after every successful add/remove. */
+	function onChartEdited() {
+		dirtyChart = true;
+		updateEditorInstructionsText();
+	}
+
+	function saveEditorChart() {
+		if (File.saveChart()) {
+			dirtyChart = false;
+			updateEditorInstructionsText();
+			Main.current.playHitsound();
+		}
+	}
+
+	// -------------------------------------------------------------------
+	// Editor instructions menu (NoteskinEditor-style popup)
+	// -------------------------------------------------------------------
+
+	function showEditorInstructionsMenu() {
+		showEditorInstructions = true;
+		ensureEditorInstructionsAssets();
+		if (editorInstructionsProg != null && !editorInstructionsProg.isIn(display))
+			display.addProgram(editorInstructionsProg);
+		if (editorInstructionsBuf != null && editorInstructionsBackground != null) {
+			editorInstructionsBackground.c = 0x000000FF;
+			editorInstructionsBackground.c.aF = 0.6;
+			editorInstructionsBuf.addElement(editorInstructionsBackground);
+		}
+		if (editorInstructionsText != null) {
+			editorInstructionsText.addProgram();
+			editorInstructionsText.alpha = 1;
+		}
+		updateEditorInstructionsText();
+	}
+
+	function hideEditorInstructions() {
+		if (!showEditorInstructions)
+			return;
+		showEditorInstructions = false;
+		if (editorInstructionsBuf != null && editorInstructionsBackground != null) {
+			try
+				editorInstructionsBuf.removeElement(editorInstructionsBackground)
+			catch (e) {}
+		}
+		if (editorInstructionsText != null) {
+			editorInstructionsText.alpha = 0;
+			editorInstructionsText.removeProgram();
+		}
+	}
+
+	function ensureEditorInstructionsAssets() {
+		if (editorInstructionsText == null) {
+			editorInstructionsText = new Text("PLAYFIELD_EDITOR_INSTRUCTIONS", 0, 0, display, "", "vcr");
+			editorInstructionsText.scale = 0.7;
+			editorInstructionsText.alpha = 0;
+			editorInstructionsText.multiline = true;
+			editorInstructionsText.alignment = LEFT;
+			editorInstructionsText.spacerPercent = -0.1;
+			editorInstructionsText.outlineColor = Color.BLACK;
+			editorInstructionsText.outlineSize = 1;
+		}
+		if (editorInstructionsBuf == null) {
+			editorInstructionsBuf = new Buffer<RepeatSprite>(2, 2, true);
+			editorInstructionsProg = new CustomProgram(editorInstructionsBuf);
+			editorInstructionsBackground = new RepeatSprite(0, 0, 0, 0);
+		}
+	}
+
+	function updateEditorInstructionsText() {
+		if (editorInstructionsText == null)
+			return;
+
+		var saved = dirtyChart ? "UNSAVED" : "saved";
+		editorInstructionsText.text = "=== PLAYFIELD EDITOR ===\n"
+			+ "MOUSE        move the square over a lane (snaps to " + Std.int(editorSnapMs) + "ms steps)\n"
+			+ "LMB          add note on release (empty slot only)\n"
+			+ "RMB          remove note under the square\n"
+			+ "WHEEL        seek song  (CTRL = 4x speed)\n"
+			+ "LEFT/RIGHT   seek 1s    (CTRL = 4s)\n"
+			+ "- / =        halve / double the snap step\n"
+			+ "CTRL+S       save chart (.fvc)\n"
+			+ "F1 or H      toggle this help\n"
+			+ "ESC          pause menu\n"
+			+ "DEBUG KEY    exit editor mode (song restarts)\n"
+			+ "Chart: " + saved;
+
+		if (showEditorInstructions && editorInstructionsBackground != null && editorInstructionsBuf != null) {
+			var padding = 24;
+			var bgW = Std.int(editorInstructionsText.width + padding * 2);
+			var bgH = Std.int(editorInstructionsText.height + padding * 2);
+			var bgX = Std.int((Main.INITIAL_WIDTH - bgW) * 0.5);
+			var bgY = Std.int((Main.INITIAL_HEIGHT - bgH) * 0.5);
+			editorInstructionsBackground.x = bgX;
+			editorInstructionsBackground.y = bgY;
+			editorInstructionsBackground.w = bgW;
+			editorInstructionsBackground.h = bgH;
+			editorInstructionsText.x = bgX + padding;
+			editorInstructionsText.y = bgY + padding;
+			try {
+				editorInstructionsBuf.updateElement(editorInstructionsBackground);
+				editorInstructionsBuf.update();
+			} catch (e) {}
+		}
 	}
 }

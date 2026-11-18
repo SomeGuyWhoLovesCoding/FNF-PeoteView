@@ -316,7 +316,8 @@ struct GenericStringRef {
 
     GenericStringRef(const GenericStringRef& rhs) : s(rhs.s), length(rhs.length) {}
 
-    GenericStringRef& operator=(const GenericStringRef& rhs) { s = rhs.s; length = rhs.length; }
+    // Upstream rapidjson fix: assigning through const members is ill-formed;
+    // the copy constructor above already covers value semantics.
 
     //! implicit conversion to plain CharType pointer
     operator const Ch *() const { return s; }
