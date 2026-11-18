@@ -14,12 +14,16 @@ HL_PRIM void HL_NAME(loadChart)(vstring* inFile) {
     core_loadChart(path);
 }
 
-HL_PRIM int64_t HL_NAME(getNote_first8)(int64_t atIndex) { 
+HL_PRIM int64_t HL_NAME(getNote_first8)(int64_t atIndex) {
     return core_getNote_first8(atIndex);
 }
 
-HL_PRIM int64_t HL_NAME(getNote_last2)(int64_t atIndex) { 
-    return core_getNote_last2(atIndex);
+HL_PRIM int64_t HL_NAME(getNote_last2)(int64_t atIndex) {
+    return (int64_t)core_getNote_last2(atIndex);
+}
+
+HL_PRIM int64_t HL_NAME(addNote)(int64_t note, int last2) {
+    return core_addNote(note, last2);
 }
 
 HL_PRIM void HL_NAME(insertNote)(int64_t globalPosition, int duration, int index, int type) {
@@ -30,11 +34,15 @@ HL_PRIM void HL_NAME(removeNote)(int64_t globalIndex) {
     core_removeNote(globalIndex);
 }
 
-HL_PRIM int64_t HL_NAME(getLength)(_NO_ARG) { 
-    return core_getLength(); 
+HL_PRIM bool HL_NAME(saveChart)(_NO_ARG) {
+    return core_saveChart();
 }
 
-HL_PRIM void HL_NAME(destroyChart)(_NO_ARG) { 
+HL_PRIM int64_t HL_NAME(getLength)(_NO_ARG) {
+    return core_getLength();
+}
+
+HL_PRIM void HL_NAME(destroyChart)(_NO_ARG) {
     core_destroyChart();
 }
 
@@ -64,8 +72,10 @@ HL_PRIM void HL_NAME(setEditorMode)(bool value) {
 DEFINE_PRIM(_VOID, loadChart, _STRING)
 DEFINE_PRIM(_I64,  getNote_first8, _I64)
 DEFINE_PRIM(_I32,  getNote_last2, _I64)
+DEFINE_PRIM(_I64,  addNote, _I64 _I32)
 DEFINE_PRIM(_VOID,  insertNote, _I64 _I32 _I32 _I32)
 DEFINE_PRIM(_VOID, removeNote, _I64)
+DEFINE_PRIM(_BOOL, saveChart, _NO_ARG)
 DEFINE_PRIM(_I64,  getLength, _NO_ARG)
 DEFINE_PRIM(_VOID, destroyChart, _NO_ARG)
 DEFINE_PRIM(_BOOL, getJudgement, _I64)

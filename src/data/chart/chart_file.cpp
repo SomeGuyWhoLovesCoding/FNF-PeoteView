@@ -1,4 +1,4 @@
-// Include the core implementation. 
+// Include the core implementation.
 #include "chart_file_core.cpp"
 
 // ============================================================================
@@ -18,7 +18,11 @@ int64_t getNote_first8(int64_t index) {
 }
 
 int64_t getNote_last2(int64_t index) {
-    return core_getNote_last2(index);
+    return (int64_t)core_getNote_last2(index);
+}
+
+int64_t addNote(int64_t note, int last2) {
+    return core_addNote(note, last2);
 }
 
 void insertNote(int64_t globalPosition, int duration, int index, int type) {
@@ -27,6 +31,10 @@ void insertNote(int64_t globalPosition, int duration, int index, int type) {
 
 void removeNote(int64_t globalIndex) {
     core_removeNote(globalIndex);
+}
+
+bool saveChart() {
+    return core_saveChart();
 }
 
 int64_t getLength() {
