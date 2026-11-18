@@ -47,6 +47,18 @@ class PlayField {
 	/** True when the chart has unsaved edits. */
 	var dirtyChart:Bool = false;
 
+	// ------------------------------------------------------------------
+	// Editor audio state — the editor enters with the mixer SILENT
+	// (volume 0, position still advancing) so you can place notes in
+	// peace; the pause keybind toggles audible playback on/off.
+	// ------------------------------------------------------------------
+	/** Mixer master volume before the editor muted it (-1 = not stored). */
+	var editorSavedVolume:Float = -1;
+	/** True while the editor's audio is muted by volume-0. */
+	var editorAudioMuted:Bool = false;
+	/** True while the song is audibly playing in the editor. */
+	var editorPlaying:Bool = false;
+
 	// --- Editor instructions menu (NoteskinEditor-style popup) ---
 	var editorInstructionsText:Text;
 	var editorInstructionsBackground:RepeatSprite;
@@ -360,6 +372,15 @@ class PlayField {
 			attachEditorKeys();
 
 			startedCountdown = false;
+			// Enter the editor SILENT: park the mixer's master volume in
+			// editorSavedVolume, mute it, then let startSong spin the
+			// transport. Position keeps advancing so the editor stays fully
+			// functional — only the sound is held back until the pause
+			// keybind is pressed (see editorKeyDown → toggleEditorAudio).
+			editorSavedVolume = Mixer.globalVolume;
+			Mixer.globalVolume = 0;
+			editorAudioMuted = true;
+			editorPlaying = false;
 			startSong(Chart.header);
 			return;
 		}
@@ -433,6 +454,9 @@ class PlayField {
 	 * screen forever. Drop everything that was partially built here.
 	 */
 	function cleanupFailedCreate() {
+		// Editor audio may already be parked/muted when the failure happened.
+		restoreEditorVolume();
+
 		if (noteSystem != null) {
 			noteSystem.dispose();
 			noteSystem = null;
@@ -1177,6 +1201,10 @@ class PlayField {
 				strumlineInput.dispose();
 				strumlineInput = null;
 			}
+			// Give the parked mixer volume back before anything downstream
+			// reuses the mixer — exiting the editor must not leave the
+			// game silent.
+			restoreEditorVolume();
 			hideEditorInstructions();
 			if (editorInstructionsText != null) {
 				editorInstructionsText.dispose();
@@ -1313,6 +1341,14 @@ class PlayField {
 			return;
 		}
 
+		// The game's pause keybind (default: ENTER) toggles audible
+		// playback in the editor: first press restores the parked volume
+		// and starts the mixer, second press silences it again.
+		if (code == SaveData.state.controls.game.pause) {
+			toggleEditorAudio();
+			return;
+		}
+
 		if (paused)
 			return;
 
@@ -1328,14 +1364,57 @@ class PlayField {
 				setTimeEditor(songPosition + ((mod & lime.ui.KeyModifier.CTRL) != 0 ? 4000 : 1000));
 			case lime.ui.KeyCode.MINUS:
 				editorSnapMs = editorSnapMs / 2 < 10 ? editorSnapMs : editorSnapMs / 2;
+				// Main.controlVolume also listens to MINUS/EQUALS globally —
+				// re-assert the mute so snap changes can't un-mute the editor.
+				if (editorAudioMuted)
+					Mixer.globalVolume = 0;
 				updateEditorInstructionsText();
 			case lime.ui.KeyCode.EQUALS:
 				editorSnapMs *= 2;
+				if (editorAudioMuted)
+					Mixer.globalVolume = 0;
 				updateEditorInstructionsText();
 			case lime.ui.KeyCode.S:
 				if ((mod & lime.ui.KeyModifier.CTRL) != 0)
 					saveEditorChart();
 			default:
+		}
+	}
+
+	/**
+	 * Editor playback toggle (pause keybind, default ENTER). The editor
+	 * enters muted — volume parked in editorSavedVolume, transport
+	 * running. First press restores the volume so the song is audible;
+	 * pressing again silences it. The mixer's playback position is never
+	 * touched, so seek/notes stay in sync either way.
+	 */
+	function toggleEditorAudio() {
+		if (disposed || paused)
+			return;
+
+		if (editorPlaying) {
+			// Audible → silent. Park nothing this time; editorSavedVolume
+			// already holds the pre-editor value.
+			Mixer.globalVolume = 0;
+			editorAudioMuted = true;
+			editorPlaying = false;
+		} else {
+			if (editorAudioMuted) {
+				Mixer.globalVolume = editorSavedVolume >= 0 ? editorSavedVolume : 1;
+				editorAudioMuted = false;
+			}
+			if (songStarted && !songEnded)
+				Mixer.startMusic(); // no-op when already running, but safe after a pause-cycle
+			editorPlaying = true;
+		}
+		updateEditorInstructionsText();
+	}
+
+	/** Restore the parked mixer volume (leaving the editor / disposal). */
+	function restoreEditorVolume() {
+		if (editorAudioMuted) {
+			Mixer.globalVolume = editorSavedVolume >= 0 ? editorSavedVolume : 1;
+			editorAudioMuted = false;
 		}
 	}
 
@@ -1441,6 +1520,7 @@ class PlayField {
 			+ "LEFT/RIGHT   seek 1s    (CTRL = 4s)\n"
 			+ "- / =        halve / double the snap step\n"
 			+ "CTRL+S       save chart (.fvc)\n"
+			+ "ENTER        " + (editorPlaying ? "MUTE audio (currently PLAYING)" : "un-mute audio (currently MUTED)") + "\n"
 			+ "F1 or H      toggle this help\n"
 			+ "ESC          pause menu\n"
 			+ "DEBUG KEY    exit editor mode (song restarts)\n"
