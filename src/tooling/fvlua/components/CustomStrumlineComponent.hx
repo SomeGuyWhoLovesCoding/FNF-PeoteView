@@ -527,6 +527,14 @@ class CustomStrumlineComponent extends LuaComponentObject {
 	}
 
 	override public function dispose():Void {
+		// Reset the static routing table first — statics survive between
+		// songs, the next component instance re-fills the rest.
+		// (The old code wrote -9999 into customStrumlineX/Y AFTER nulling
+		// them: Null Object Reference, thrown out of FunkinViewLua.dispose
+		// and swallowed by StateMachine.safe — which also skipped closing
+		// every Lua VM below it.)
+		for (i in 0...1 << 8)
+			typeToStrumline[i] = -1;
 		if (customStrumlineX != null) {
 			while (customStrumlineX.length != 0) customStrumlineX.pop();
 			customStrumlineX = null;
@@ -534,12 +542,6 @@ class CustomStrumlineComponent extends LuaComponentObject {
 		if (customStrumlineY != null) {
 			while (customStrumlineY.length != 0) customStrumlineY.pop();
 			customStrumlineY = null;
-		}
-		for (i in 0...1 << 8)
-			typeToStrumline[i] = -1;
-		for (i in 0...1 << 8) {
-			customStrumlineX[i] = -9999;
-			customStrumlineY[i] = -9999;
 		}
 		super.dispose();
 	}

@@ -30,7 +30,16 @@ class DeveloperStuff {
 			PlayField.editorModeNext = entering;
 			File.setEditorMode(entering);
 			Sys.println('  [ Developer ] playfieldEditorMode ${entering ? "ON" : "OFF"} — restarting song.');
-			Main.switchState(GAMEPLAY);
+			// Same teardown the backwards-seek restart does: stop the music
+			// and unhook input BEFORE the dispose + recreate cycle, so the
+			// playfield is never disposed while its audio clock is still
+			// running (which leaves the mixer state machine mid-flight for
+			// the next Mixer.init/startMusic).
+			if (!playField.paused)
+				playField.pause(false);
+			Tools.forSync(() -> {
+				Main.switchState(GAMEPLAY, true);
+			});
 			return;
 		}
 		switch (code) {

@@ -117,7 +117,11 @@ class NoteMovementSystem {
 		// --- LuaJIT fallback (no interp / no extended LUT) ---
 		#if linc_luajit_funkinview
 		var playField = parent.parent;
-		if (playField != null) {
+		// No formula VM → nothing to evaluate. This runs per note during the
+		// editor-mode NoteSystem constructor (songPosition starts at 0, so the
+		// spawn window admits the chart's intro notes right inside create()),
+		// where funkinviewlua is null by design. Guard instead of NPE-ing.
+		if (playField != null && playField.funkinviewlua != null) {
 			var lua = playField.funkinviewlua;
 			var returnValue = lua.callNoteFormula(noteSpr.diff, parent.parent.scrollSpeed, receptor.note.x, receptor.note.y, index, type);
 			if (returnValue != null) {

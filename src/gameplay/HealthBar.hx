@@ -76,7 +76,9 @@ class HealthBar {
 		bg.x = 275;
 		bg.y = parent.downScroll ? 90 : Main.INITIAL_HEIGHT - 90;
 
-		var actors = parent.field.actors;
+		// Null in playfield editor mode (no Field/actors there) — fall back
+		// to the default palette and the default health icon grid IDs.
+		var actors = parent.field != null ? parent.field.actors : null;
 
 		// HEALTH BAR PART SETUP
 		for (i in 0...2) {
@@ -84,7 +86,7 @@ class HealthBar {
 			part.h = bg.h - healthBarHS;
 			part.y = bg.y + healthBarYA;
 			part.gradientMode = 1.0;
-			if (!customHealthBarColorEnabled)
+			if (!customHealthBarColorEnabled && actors != null)
 				part.setAllColors(actors[i].data.colors);
 
 			hbBuf.addElement(part);
@@ -99,8 +101,10 @@ class HealthBar {
 		var x = bg.x + (bg.w * 0.5);
 
 		for (i in 0...2) {
-			var healthIconIndexes = Tools.fromIconGridXMLCharacter(actors[i + 1].data.healthIcon);
-			healthIconIDs[i] = healthIconIndexes;
+			if (actors != null) {
+				var healthIconIndexes = Tools.fromIconGridXMLCharacter(actors[i + 1].data.healthIcon);
+				healthIconIDs[i] = healthIconIndexes;
+			}
 		}
 
 		var iconP2 = healthIcons[0] = new HealthBarSprite();
@@ -151,14 +155,16 @@ class HealthBar {
 
 		bg.y = parent.downScroll ? 90 : Main.INITIAL_HEIGHT - 90;
 
-		var actors = parent.field.actors;
+		// Null in playfield editor mode (no Field/actors there).
+		var actors = parent.field != null ? parent.field.actors : null;
 
 		var part1 = parts[0];
 
 		if (part1 == null)
 			return;
 
-		var healthIconColor = actors[(parent.flipHealthBar ? 1 : 0) + 1].data.colors;
+		// Editor-mode fallback palette (white/red) when there are no actors.
+		var healthIconColor = actors != null ? actors[(parent.flipHealthBar ? 1 : 0) + 1].data.colors : healthIconColors[0];
 
 		if (customHealthBarColorEnabled)
 			healthIconColor = healthIconColors[(parent.flipHealthBar ? 1 : 0)];
@@ -177,7 +183,7 @@ class HealthBar {
 		if (part2 == null)
 			return;
 
-		var healthIconColor = actors[(parent.flipHealthBar ? 0 : 1) + 1].data.colors;
+		var healthIconColor = actors != null ? actors[(parent.flipHealthBar ? 0 : 1) + 1].data.colors : healthIconColors[1];
 
 		if (customHealthBarColorEnabled)
 			healthIconColor = healthIconColors[(parent.flipHealthBar ? 0 : 1)];

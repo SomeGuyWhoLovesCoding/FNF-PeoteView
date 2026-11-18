@@ -61,6 +61,10 @@ class PlayField {
 	var view(default, null):CustomDisplay;
 
 	// lua
+	// (This was previously `if (!playfieldEditorMode) { var funkinviewlua... }`
+	// at class level — a syntax error whenever the lua lib is compiled in,
+	// i.e. in every non-FV_NO_LUA build. The mode check lives at runtime now:
+	// every access goes through the #if blocks' !playfieldEditorMode guards.)
 	#if linc_luajit_funkinview
 	var funkinviewlua(default, null):FunkinViewLua;
 	#end
@@ -318,22 +322,34 @@ class PlayField {
 			// ============================================================
 			songPosition = 0; // no countdown — the audio clock starts at 0 too
 
-			HUD.init();
-			if (!SaveData.state.preferences.hideHUD)
-				hud = new HUD(display, this);
+			// Receptors enter the STATIC NoteSystem.notesBuf mid-constructor;
+			// if anything below throws, `noteSystem` never gets assigned and
+			// dispose() would skip it — leaving those receptors as permanent
+			// strumline ghosts on screen. Wrap the build so a failure cleans
+			// up whatever got created before rethrowing.
+			try {
+				HUD.init();
+				if (!SaveData.state.preferences.hideHUD)
+					hud = new HUD(display, this);
 
-			NoteSystem.init();
-			noteSystem = new NoteSystem(this);
+				NoteSystem.init();
+				noteSystem = new NoteSystem(this);
+
+				Mixer.init(Chart.header); // the song system
+
+				PauseScreen.init(roof);
+				pauseScreen = new PauseScreen(Chart.header.difficulty);
+			} catch (e:Dynamic) {
+				Sys.println('[ PlayField ] editor-mode create failed: $e — cleaning up partial build');
+				cleanupFailedCreate();
+				throw e;
+			}
+
 			// Both strumlines non-playable: no keybind input path exists,
 			// receptors auto-confirm through the spawner's bot path.
 			for (strumline in noteSystem.strumlines)
 				strumline.playable = false;
 			botplay = true;
-
-			Mixer.init(Chart.header); // the song system
-
-			PauseScreen.init(roof);
-			pauseScreen = new PauseScreen(Chart.header.difficulty);
 
 			scrollSpeed = Chart.header.speed;
 
@@ -407,6 +423,45 @@ class PlayField {
 
 			timeForRestartingBackwardTime = 0;
 		}
+	}
+
+	/**
+	 * Editor-mode create() failure recovery. A NoteSystem constructor that
+	 * throws mid-way has already added its receptors to the STATIC
+	 * NoteSystem.notesBuf/sustainsBuf — but `noteSystem` never got assigned,
+	 * so a later dispose() would skip it and those receptors would stay on
+	 * screen forever. Drop everything that was partially built here.
+	 */
+	function cleanupFailedCreate() {
+		if (noteSystem != null) {
+			noteSystem.dispose();
+			noteSystem = null;
+		} else {
+			// The ctor threw before assignment: nothing references the
+			// half-built instance, but its receptors sit in the static
+			// buffers. Clear them — the buffers are re-filled element-by-
+			// element by the next NoteSystem construction.
+			NoteSystem.notesBuf.clear();
+			NoteSystem.sustainsBuf.clear();
+		}
+
+		if (hud != null) {
+			hud.dispose();
+			hud = null;
+		}
+
+		if (pauseScreen != null) {
+			pauseScreen.dispose();
+			pauseScreen = null;
+		}
+
+		if (strumlineInput != null) {
+			strumlineInput.dispose();
+			strumlineInput = null;
+		}
+
+		detachEditorKeys();
+		hideEditorInstructions();
 	}
 
 	/**
@@ -792,7 +847,11 @@ class PlayField {
 		if (index > 0 && index <= Mixer.trackCount)
 			Mixer.changeTrackVolume(index, 1);
 
-		var playable = noteSystem.strumlines[lane].playable;
+		// During create() the NoteSystem constructor itself draws the spawn
+		// window (editor mode starts at songPosition 0) and calls back into
+		// here before `noteSystem` has been assigned. No note system →
+		// nothing is playable → opponent-style health-only handling.
+		var playable = noteSystem != null && noteSystem.strumlines[lane].playable;
 
 		if (!playable) {
 			health -= healthLoss[lane];
@@ -917,10 +976,12 @@ class PlayField {
 
 		var lane = note.type;
 
+		// Same create()-time guard as hitNote: the NoteSystem ctor can call
+		// back into here before `noteSystem` is assigned.
 		if (noteSystem != null && noteSystem.strumlines[lane].confirmed(note.index))
 			return;
 
-		var playable = noteSystem.strumlines[lane].playable;
+		var playable = noteSystem != null && noteSystem.strumlines[lane].playable;
 
 		if (!playable) {
 			health -= healthLoss[lane];
