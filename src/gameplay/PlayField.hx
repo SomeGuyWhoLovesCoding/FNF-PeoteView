@@ -384,8 +384,15 @@ class PlayField {
 		if (!playfieldEditorMode)
 			eventSystem = new EventSystem(this);
 
-		PauseScreen.init(roof);
-		pauseScreen = new PauseScreen(Chart.header.difficulty);
+		// The pause MENU is a gameplay construct. The editor's pause is a
+		// bare pause(false) — the frozen-flag freeze, no menu, no ticking
+		// (Main skips update+render while paused, both modes) — so the
+		// screen is never constructed there and every access below is
+		// null-guarded.
+		if (!playfieldEditorMode) {
+			PauseScreen.init(roof);
+			pauseScreen = new PauseScreen(Chart.header.difficulty);
+		}
 
 		scrollSpeed = Chart.header.speed;
 
@@ -539,6 +546,12 @@ class PlayField {
 			if (noteSystem != null)
 				noteSystem.update(pos);
 
+			// AFTER hud.update (whose updateScoreText is overwritten) and
+			// AFTER noteSystem.update (so the cull window is this frame's
+			// live value, not last frame's).
+			if (editorMode != null)
+				editorMode.updateReadout();
+
 			if (editorMode != null && editorMode.strumlineInput != null)
 				editorMode.strumlineInput.update();
 			return;
@@ -618,26 +631,6 @@ class PlayField {
 	}
 
 	/**
-		Paused-editor tick, called by Main while the editor's pause menu is
-		open. A PURE render pass at the FROZEN editor position — the
-		editor's note rendering stays on screen underneath the pause menu.
-	**/
-	function updatePausedEditor(deltaTime:Float) {
-		if (disposed || !paused || !playfieldEditorMode)
-			return;
-
-		display.update();
-		view.update();
-
-		if (hud != null)
-			hud.update(deltaTime);
-
-		var pos = MetaNote.floatToMetaNotePosition(songPosition);
-		if (noteSystem != null)
-			noteSystem.update(pos);
-	}
-
-	/**
 		There is mainly nothing in this render function except a couple extra things.
 	**/
 	function render() {
@@ -707,7 +700,7 @@ class PlayField {
 		if (luaCallStop('pause', null))
 			return;
 
-		if (showpausescreen)
+		if (showpausescreen && pauseScreen != null)
 			pauseScreen.open();
 		if (songStarted)
 			Mixer.stopMusic();
@@ -715,10 +708,7 @@ class PlayField {
 			var pos = MetaNote.floatToMetaNotePosition(songPosition);
 			noteSystem.resetStrumlines();
 		}
-		if (playfieldEditorMode) {
-			if (editorMode != null)
-				editorMode.onPause();
-		} else if (inputSystem != null)
+		if (!playfieldEditorMode && inputSystem != null)
 			inputSystem.removeEvents();
 
 		paused = true;
@@ -739,13 +729,11 @@ class PlayField {
 
 		luaCall('resume', null);
 
-		pauseScreen.close();
+		if (pauseScreen != null)
+			pauseScreen.close();
 		if (!RenderingMode.enabled && songStarted && !songEnded)
 			Mixer.startMusic();
-		if (playfieldEditorMode) {
-			if (editorMode != null)
-				editorMode.onResume();
-		} else if (inputSystem != null) {
+		if (!playfieldEditorMode && inputSystem != null) {
 			Tools.forSync(inputSystem.addEvents);
 		}
 

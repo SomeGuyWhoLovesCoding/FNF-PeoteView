@@ -504,14 +504,12 @@ class Main extends Application {
 							pauseScreen.update(newDeltaTime);
 					}
 
+					// Paused = paused, in BOTH modes: no playfield update
+					// of any kind while the pause menu is open (the last
+					// rendered frame simply stays on screen, exactly like
+					// gameplay pause).
 					if (!playField.paused && !RenderingMode.enabled) {
 						playField.update(newDeltaTime);
-					} else if (playField.paused && playField.playfieldEditorMode) {
-						// Editor mode: the playfield keeps ticking while the
-						// pause menu is open so the notes stay on screen —
-						// a pure render at the FROZEN position; nothing
-						// moves the song, no input runs.
-						playField.updatePausedEditor(newDeltaTime);
 					}
 				}
 
@@ -551,11 +549,10 @@ class Main extends Application {
 
 		try {
 			if (playField != null && !playField.disposed) {
+				// Paused = no render either, in BOTH modes — the last
+				// rendered frame persists on screen while the pause menu
+				// is open, exactly like gameplay pause.
 				if (!playField.paused) {
-					playField.render();
-				} else if (playField.playfieldEditorMode) {
-					// Editor mode keeps rendering notes under the pause
-					// menu (frozen position).
 					playField.render();
 				}
 			}

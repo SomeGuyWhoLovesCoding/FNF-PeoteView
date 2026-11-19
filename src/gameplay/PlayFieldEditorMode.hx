@@ -140,10 +140,16 @@ class PlayFieldEditorMode {
 		if (field.disposed)
 			return;
 
-		// ESC/back opens the pause menu (resume re-hooks input).
+		// ESC/back toggles the editor's pause: the BARE pause(false) /
+		// resume() freeze — no pause menu exists in the editor. Main
+		// skips playfield update+render while paused (both modes), so the
+		// last rendered frame simply stays on screen with nothing — not
+		// the note system, not the mixer clock — moving.
 		if (code == SaveData.state.controls.ui.back || code == KeyCode.ESCAPE) {
-			if (!field.paused)
-				field.pause();
+			if (field.paused)
+				field.resume();
+			else
+				field.pause(false);
 			return;
 		}
 
@@ -338,21 +344,47 @@ class PlayFieldEditorMode {
 	}
 
 	// -------------------------------------------------------------------
-	// Pause menu interplay (called from PlayField.pause/resume)
+	// Debug readout (score text)
 	// -------------------------------------------------------------------
 
-	/** Called by PlayField.pause: unhook editor input while the menu is up. */
-	function onPause() {
-		if (strumlineInput != null)
-			strumlineInput.removeEvents();
-		detachKeys();
-	}
+	/**
+		Replaces the score text with the editor readout, called once per
+		frame from PlayField.update's editor branch AFTER hud.update (so
+		the HUD's own score/misses/accuracy write is always overwritten —
+		the editor never touches score state, so that text is meaningless
+		there anyway).
 
-	/** Called by PlayField.resume: rehook editor input. */
-	function onResume() {
-		if (strumlineInput != null)
-			Tools.forSync(strumlineInput.addEvents);
-		Tools.forSync(attachKeys);
+		Shows the RAW values, no rounding or unit conversion:
+		  pos    — the editor-owned songPosition, exactly as the note
+		           system consumes it (ms)
+		  bot/top— the note spawner's live cull window as RAW global chart
+		           indices (bottom = first note not yet despawned,
+		           top = first note outside spawn range), read straight
+		           off NoteSpawner.bottom/top after this frame's
+		           noteSystem.update ran the cull loops.
+	**/
+	function updateReadout() {
+		if (field.hud == null)
+			return;
+
+		var scoreTxt = HUD.scoreTxt;
+		if (scoreTxt == null)
+			return;
+
+		// Raw values, straight off the live objects — no rounding, no
+		// unit conversion. Int64 interpolates through Std.string, which
+		// prints the full 64-bit decimal value.
+		if (field.noteSystem != null && field.noteSystem.noteSpawner != null) {
+			var spawner = field.noteSystem.noteSpawner;
+			scoreTxt.text = 'pos: ${field.songPosition} | bottom: ${spawner.bottom} | top: ${spawner.top}';
+		} else {
+			scoreTxt.text = 'pos: ${field.songPosition} | bottom: - | top: -';
+		}
+
+		// Re-center for the readout's own width (hud.update positioned the
+		// text for the score string it wrote; ours is a different length).
+		var healthBar = field.hud.healthBar;
+		scoreTxt.x = healthBar.bg.x + ((healthBar.bg.w - scoreTxt.width) * 0.5);
 	}
 
 	// -------------------------------------------------------------------
