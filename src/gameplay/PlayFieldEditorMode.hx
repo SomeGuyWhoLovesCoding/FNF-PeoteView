@@ -52,7 +52,8 @@ import lime.app.Application;
 	  (± one snap step per notch) or drag along the lane to set the
 	  sustain duration; the note keeps its position, the duration is
 	  written live (remove + re-add with the new duration).
-	- Snap grid: (60 / Main.conductor.bpm / 4) * x ms — BPM-reactive.
+	- Snap grid: (60000 / Main.conductor.bpm / 4) * x ms — BPM-reactive,
+	  in the ms unit all chart times use (matches stepCrochet = 15000 / bpm).
 
 	@since Development
 **/
@@ -63,22 +64,31 @@ class PlayFieldEditorMode {
 
 	/**
 	 * Snap resolution multiplier x — the grid step is
-	 * `(60 / Main.conductor.bpm / 4) * snapMultiplier` ms (one 16th at the
-	 * current BPM times x). x = 1 is a 16th-note grid, 2 an 8th, 4 a
+	 * `(60000 / Main.conductor.bpm / 4) * snapMultiplier` ms (one 16th at
+	 * the current BPM times x). x = 1 is a 16th-note grid, 2 an 8th, 4 a
 	 * quarter, 0.5 a 32nd... The base recomputes from the conductor's
 	 * current BPM, so BPM changes (events, seek past a changeBpmAt) keep
 	 * the grid locked to the beat.
 	 */
 	var snapMultiplier:Float = 1.0;
 
-	/** The live snap step in ms: (60 / bpm / 4) * snapMultiplier. */
+	/**
+	 * The live snap step in MILLISECONDS: (60000 / bpm / 4) * snapMultiplier.
+	 * One 16th note at the current BPM times x, in the ms unit every
+	 * consumer uses (snapTime rounding, hold-duration writes, wheel
+	 * notches). The old `(60 / bpm / 4) * x` produced SECONDS — 1000x
+	 * too small — so the grid snapped to sub-microsecond steps and every
+	 * hold-edit notch was a thousandth of its intended length.
+	 */
 	var snapMs(get, never):Float;
 
 	inline function get_snapMs():Float {
 		var bpm = Main.conductor != null ? Main.conductor.bpm : 100.0;
 		if (bpm <= 0)
 			bpm = 100.0;
-		return (60 / bpm / 4) * snapMultiplier;
+		// 60000ms per minute / bpm beats per minute / 4 sixteenths per beat.
+		// Same unit the conductor's stepCrochet uses (15000 / bpm).
+		return (60000 / bpm / 4) * snapMultiplier;
 	}
 
 	/**
@@ -313,9 +323,23 @@ class PlayFieldEditorMode {
 			conductor.onStep.remove(field.stepHit);
 			conductor.onBeat.remove(field.beatHit);
 
+			// Freeze at where the transport ACTUALLY is, not where the
+			// audio clock last read: a stopped device still reports its
+			// buffered-ahead position, which would resume the next ENTER
+			// ahead of what was heard ("position offsets itself before the
+			// song plays again").
+			field.songPosition = MiniAudio.getPlaybackPosition();
 			Mixer.stopMusic();
 			field.songStarted = false;
 			playing = false;
+
+			// The spawner window was built against the moving position; a
+			// stop is a position change for rendering purposes — rebuild it
+			// so the frozen frame shows the correct note set immediately.
+			if (field.noteSystem != null) {
+				var pos = MetaNote.floatToMetaNotePosition(field.songPosition);
+				field.noteSystem.onSongPositionJump(pos);
+			}
 		} else {
 			// Align the mixer's PCM position with the editor's (frozen)
 			// position BEFORE the transport spins up. The countdown path
@@ -334,6 +358,18 @@ class PlayFieldEditorMode {
 
 			field.onStartSong.dispatch(Chart.header);
 			playing = true;
+
+			// Re-align the editor position with the REAL audio clock right
+			// after the transport spins up. seekToPCMFrame leaves
+			// filePosition at the seek target the instant it returns, but
+			// the device output is still priming (the buffers deliberately
+			// read PADDING_MS ahead of/behind the target), so the first
+			// getPlaybackPosition() reads can run ahead of what is actually
+			// audible. Reading the position back from the mixer once here
+			// makes the editor clock start exactly where the transport
+			// actually is, instead of holding the pre-start seek target and
+			// appearing to "jump ahead" the moment playback becomes audible.
+			field.songPosition = MiniAudio.getPlaybackPosition();
 		}
 		updateInstructionsText();
 	}
@@ -366,6 +402,19 @@ class PlayFieldEditorMode {
 	/** Called by StrumlineNoteInteraction after every successful add/remove. */
 	function onChartEdited() {
 		dirtyChart = true;
+
+		// Structural edit: global indices AFTER the edit point shifted
+		// (the sharded store re-sorts), so every cached window/index is
+		// stale — rebuild the spawner window from the current frozen
+		// position immediately. Without this the note pool keeps drawing
+		// the OLD VirtualNote set (bound to pre-edit indices) until the
+		// next position change rebuilds it, which is exactly the "new
+		// note doesn't render until I move the position" bug.
+		if (field.noteSystem != null && !field.paused) {
+			var pos = MetaNote.floatToMetaNotePosition(field.songPosition);
+			field.noteSystem.onSongPositionJump(pos);
+		}
+
 		updateInstructionsText();
 	}
 

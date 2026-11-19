@@ -189,8 +189,16 @@ class NoteSpawner {
 			return;
 
 		var songPos = MetaNote.floatToMetaNotePosition(songPosition);
-		var minPos:Int64 = songPos;
-		var maxPos:Int64 = songPos - spawnDist;
+		// Window mirrors the cull semantics exactly:
+		//   bottom = first note NOT yet despawned (pos - duration - notePos
+		//            <= despawnDist  <=>  notePos >= songPos - despawnDist)
+		//   top    = first note OUTSIDE spawn range (notePos - songPos
+		//            >= spawnDist  <=>  notePos > songPos + spawnDist)
+		// The old math used `songPos - spawnDist` for the top bound — an
+		// INVERTED offset that made top <= bottom on every reset, leaving
+		// the window empty until the next update's cull loops healed it.
+		var minPos:Int64 = songPos - despawnDist;
+		var maxPos:Int64 = songPos + spawnDist;
 
 		function lowerBound(target:Int64):Int64 {
 			var lo:Int64 = 0, hi:Int64 = len;
@@ -219,7 +227,14 @@ class NoteSpawner {
 		var newBottom = lowerBound(minPos);
 		var newTop = upperBound(maxPos);
 
-		minBottom = lowerBound(songPos + MetaNote.floatToMetaNotePosition(pushToOffset));
+		// minBottom exists for GAMEPLAY (processNotes must not re-run the
+		// miss/hit side effects on notes already judged before a forward
+		// jump). The editor's pure-render path has no side effects and
+		// must show every note in the window — including ones behind the
+		// frozen playhead — so it is not applied there.
+		minBottom = parent.parent.playfieldEditorMode
+			? 0
+			: lowerBound(songPos + MetaNote.floatToMetaNotePosition(pushToOffset));
 
 		bottom = newBottom;
 		top = newTop;
