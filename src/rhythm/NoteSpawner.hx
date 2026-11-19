@@ -81,6 +81,23 @@ class NoteSpawner {
 		// pos is already latency-corrected noteTime as Int64 from PlayField
 		// No conductor.offset adjustment needed
 
+		// === CROSS-FRAME OVERLAP STATE RESET ===
+		// The overlap-merge (fakeReceptorMap / ambientOccludeYPrev) is only
+		// meaningful WITHIN one pass — consecutive notes of the same lane at
+		// the same pixel row merging into one sprite. Kept across frames it
+		// becomes STALE GHOST STATE: with a FROZEN position (editor pause /
+		// silent editor clock) every note's Y equals its own last-frame Y,
+		// so each note "overlaps" ITS OWN previous-frame sprite and is merged
+		// away without ever being drawn — the frozen-editor notes-vanish bug
+		// (gameplay pause never re-processes frames, which is why it looked
+		// correct there). Clearing per pass makes the merge decision purely
+		// intra-pass; during normal playback nothing changes (Y moves between
+		// frames, so cross-frame merges never legitimately fired).
+		for (i in 0...parent.strumlines.length) {
+			var strumline = parent.strumlines[i];
+			strumline.clearOverlapState();
+		}
+
 		var i = (minBottom != -1 && bottom < minBottom) ? minBottom : bottom;
 		var scrollSpeed = parent.parent.scrollSpeed;
 		var noteSpr:VirtualNote = null;
