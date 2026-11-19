@@ -511,6 +511,11 @@ class PlayField {
 			// PLAYFIELD EDITOR MODE — update ONLY the song system, HUD,
 			// note system and stepped strumline input. lua is skipped
 			// above; no Field/EventSystem/CountdownDisplay exist here.
+			// The songPosition in editor mode is EDITOR-OWNED: frozen
+			// while silent (Mixer.update never adds deltaTime to it —
+			// see Mixer.update's editorFrozen branch), moved only by
+			// explicit editor seeks, and driven by the real audio clock
+			// while the pause keybind holds playback on.
 			// ============================================================
 			display.update();
 			view.update();
@@ -523,8 +528,7 @@ class PlayField {
 			if (hud != null)
 				hud.update(deltaTime);
 
-			var t = startedCountdown ? noteTime : songPosition;
-			var pos = MetaNote.floatToMetaNotePosition(t);
+			var pos = MetaNote.floatToMetaNotePosition(songPosition);
 			if (noteSystem != null)
 				noteSystem.update(pos);
 
@@ -639,12 +643,13 @@ class PlayField {
 			// PLAYFIELD EDITOR MODE — render the note system + HUD only.
 			// The StrumlineNoteInteraction square lives in its own program
 			// added AFTER notesProg, so it draws on top of the note system
-			// render (and everything else) automatically.
+			// render (and everything else) automatically. Position input is
+			// the same editor-owned songPosition the update loop uses
+			// (startedCountdown is always false in the editor).
 			// ============================================================
 			var noteSystem = noteSystem;
 			if (noteSystem != null) {
-				var t = startedCountdown ? noteTime : songPosition;
-				var pos = MetaNote.floatToMetaNotePosition(t);
+				var pos = MetaNote.floatToMetaNotePosition(songPosition);
 				noteSystem.renderNotes(pos);
 			}
 

@@ -158,16 +158,20 @@ class NoteSystem {
 	private function refreshRendering(noteTime:Float) {
 		// Receptors are persistent in the buffer — just update animations.
 		// Pooled spawned notes are managed by notePool.beginFrame/endFrame.
+		// Editor mode: receptors never animate at all — nothing ever hits
+		// a note there, so no confirm/press/reset timers ever get set
+		// (skip the calls entirely; the timers are all Infinity there).
 
+		var editorRender = parent.playfieldEditorMode;
 		for (i in 0...strumlines.length) {
 			var strumline = strumlines[i];
 			var canMess = !strumline.playable || RenderingMode.enabled || parent.botplay;
 			for (j in 0...strumline.receptors.length) {
 				var receptor = strumline.receptors[j];
 				var rec = receptor.note;
-				if (parent.botplay)
+				if (!editorRender && parent.botplay)
 					canMess = true;
-				if (canMess) {
+				if (canMess && !editorRender) {
 					receptor.updateAnimation(noteTime);
 				}
 			}
@@ -175,7 +179,9 @@ class NoteSystem {
 	}
 
 	function renderNotes(pos:Int64) {
-		var t = parent.startedCountdown ? parent.noteTime : parent.songPosition;
+		// Editor mode always uses its own songPosition (startedCountdown is
+		// false there); the latency split below is the vanilla gameplay path.
+		var t = parent.playfieldEditorMode ? parent.songPosition : (parent.startedCountdown ? parent.noteTime : parent.songPosition);
 		refreshRendering(t);
 		notePool.beginFrame();
 		noteSpawner.renderNotes(pos);
@@ -408,6 +414,59 @@ class NoteSystem {
 		var receptor = strumline.receptors[index];
 		var rec = receptor.note;
 		var handle = NoteSystem.typeToHandle[note.type];
+
+		// === PLAYFIELD EDITOR: pure render, zero gameplay ===
+		// In playfieldEditorMode notes never hit, never miss, never judge:
+		// no File.setJudgement/setHitFlag writes, no onNoteHit/onNoteMiss/
+		// onSustainComplete dispatches, no receptor confirm dance — the
+		// notes are ONLY drawn, and sustains are drawn whole ("go
+		// completely unnoticed": no clipping, no resolve, no completion).
+		// The editor owns songPosition, and the chart is never mutated by
+		// the renderer — the only writes to it come from the editor input.
+		var editorRender = parent.playfieldEditorMode;
+		if (editorRender) {
+			var noteSpr = notePool.getNote(index, note, _id);
+			if (noteSpr == null)
+				return noteSpr;
+			var sustainSpr = duration != 0 ? notePool.getSustain(index, note, _id) : null;
+
+			var d = Std.int(-diff);
+			if (parent.downScroll)
+				d = -d;
+			noteSpr.diff = d;
+			noteSpr.globalIndex = _id;
+
+			var lut = movementLUTs[lane][index];
+			noteSpr.Sx = rec.x + lut.lookupX(noteSpr.diff);
+			noteSpr.Sy = rec.y + lut.lookupY(noteSpr.diff);
+			noteSpr.scale = lut.hasExtendedLUT ? lut.lookupScale(noteSpr.diff, rec.scale) * rec.scale : rec.scale;
+
+			if (sustainSpr != null) {
+				sustainSpr.ref = noteSpr;
+				sustainSpr.speed = parent.scrollSpeed;
+				sustainSpr.scale = rec.scale;
+				sustainSpr.length = duration - SUSTAIN_TAIL;
+				sustainSpr.w = duration - SUSTAIN_TAIL;
+				sustainSpr.followNote(noteSpr.Sx + receptor.sustainPivotX, noteSpr.Sy + receptor.sustainPivotY, index);
+				sustainSpr.diff = Std.int(diff);
+				if (lut.hasExtendedLUT) {
+					sustainSpr.r = lut.lookupSustainRot(d);
+					var scrollMul = lut.lookupScrollMul(d);
+					if (scrollMul != 1.0) {
+						noteSpr.diff = Math.round(d * scrollMul);
+						sustainSpr.w = Math.round(sustainSpr.w * scrollMul);
+					}
+				} else {
+					noteMovement.run(this, noteSpr, sustainSpr, receptor, index, note.type, false);
+				}
+				virtualNoteBuffer.addSustain(sustainSpr, noteSpr);
+			} else if (!lut.hasExtendedLUT) {
+				noteMovement.run(this, noteSpr, null, receptor, index, note.type, false);
+			}
+
+			virtualNoteBuffer.addNote(noteSpr);
+			return noteSpr;
+		}
 
 		var noteSpr = notePool.getNote(index, note, _id);
 		if (noteSpr == null)

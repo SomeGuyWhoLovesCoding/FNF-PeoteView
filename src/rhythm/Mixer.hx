@@ -145,6 +145,13 @@ class Mixer {
 
 	static function update(playField:PlayField, deltaTime:Float):Void {
 		if (playField != null) {
+			// Editor mode owns its songPosition outright: while silent it is
+			// FROZEN — it only ever moves through an explicit editor seek or
+			// (once the pause keybind starts real playback) the real audio
+			// clock below. The fake-clock delta advance never runs there;
+			// that advance is what made the editor drift forward on its own.
+			var editorFrozen = playField.playfieldEditorMode && !playField.songStarted;
+
 			if (!playField.songEnded) {
 				if (RenderingMode.enabled && playField.songPosition > length) {
 					Sys.println('  [ Audio Pipeline ]   Stopping song playback due to rendering mode.\n');
@@ -155,7 +162,9 @@ class Mixer {
 				}
 			}
 
-			if (!playField.songStarted || playField.songEnded || RenderingMode.enabled) {
+			if (editorFrozen) {
+				// Frozen: no clock of any kind advances the position.
+			} else if (!playField.songStarted || playField.songEnded || RenderingMode.enabled) {
 				playField.songPosition += deltaTime * Mixer.speed;
 			} else {
 				var window = lime.app.Application.current.window;

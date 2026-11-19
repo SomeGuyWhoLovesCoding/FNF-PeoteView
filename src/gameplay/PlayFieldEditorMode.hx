@@ -12,27 +12,47 @@ import lime.app.Application;
 	the instructions overlay, chart saving, and the stepped-strumline
 	mouse input. PlayField delegates its editor-mode branches here.
 
+	=== The editor's song position: owned, frozen, unmodified ===
+
+	Editor mode has its OWN song position semantics: `PlayField.
+	songPosition` while in the editor is editor-owned and starts out
+	COMPLETELY UNMODIFIED — no clock of any kind adds deltaTime to it
+	(Mixer.update's fake-clock branch, the one that drives the gameplay
+	countdown, explicitly skips playfieldEditorMode fields). It moves
+	ONLY through an explicit editor seek (wheel, LEFT/RIGHT, hold-drag
+	edits never touch it either). Every editor consumer — note system
+	update/render, HUD time bar, conductor time, strumline input math —
+	reads this same editor-owned position, so there is one global owner
+	of "where in the song the editor is" and nothing else moves it.
+
 	=== Audio by default: SILENT, without touching volume ===
 
-	The normal gameplay start path is the countdown path: create() parks
-	songPosition in the negative (countdown) range and lets Mixer.update
-	advance it on a FAKE clock (songPosition += deltaTime) while
-	!songStarted; only when the countdown conductor crosses beat 0 does
-	countdownBeatHit dispatch onStartSong, whose listener startSong() is
-	the single place that ever calls Mixer.startMusic().
-
-	The editor reuses exactly that mechanism, minus the countdown lead-in:
-	- create() leaves songStarted false and songPosition at 0 —
-	  Mixer.update advances the position on the fake clock. The mixer
-	  transport is NEVER started at entry, so there is nothing to mute;
-	  the audio device never pulls song frames.
+	- create() leaves songStarted false and songPosition at 0, frozen.
+	  The mixer transport is NEVER started at entry, so there is nothing
+	  to mute; the audio device never pulls song frames.
 	- The pause keybind (controls.game.pause, default ENTER) dispatches
-	  onStartSong — the same event the countdown path uses — which
-	  starts real audio playback from the current fake-clock position.
-	  Pressing it again stops the transport back to the fake clock
+	  onStartSong — the same event the gameplay countdown path uses —
+	  which starts real audio playback from the current (seek-aligned)
+	  position. While playing, the real audio clock drives the position;
+	  pressing it again stops the transport and re-freezes the position
 	  (Mixer.stopMusic preserves the PCM position).
+
 	No master-volume parking, no volume writes anywhere: what you hear
 	outside the editor is untouched by entering it.
+
+	=== Editor feature set ===
+
+	- Notes NEVER hit in the editor: NoteSystem's editor render path
+	  draws notes/sustains purely — no judgement, no receptor confirms,
+	  no sustain resolve/complete. Sustains render whole.
+	- ALT+LEFT / ALT+RIGHT cycle the notetype number placed by LMB
+	  (type % strumlineCount picks the strumline; the visual column
+	  follows).
+	- Hold-edit: press LMB on an existing note and either roll the wheel
+	  (± one snap step per notch) or drag along the lane to set the
+	  sustain duration; the note keeps its position, the duration is
+	  written live (remove + re-add with the new duration).
+	- Snap grid: (60 / Main.conductor.bpm / 4) * x ms — BPM-reactive.
 
 	@since Development
 **/
@@ -41,8 +61,33 @@ class PlayFieldEditorMode {
 	/** Owning playfield (never null after construction). */
 	var field:PlayField;
 
-	/** Grid + wheel snap resolution in ms (1 step at 120 BPM 4/4 = 125 ms). */
-	var snapMs:Float = 125.0;
+	/**
+	 * Snap resolution multiplier x — the grid step is
+	 * `(60 / Main.conductor.bpm / 4) * snapMultiplier` ms (one 16th at the
+	 * current BPM times x). x = 1 is a 16th-note grid, 2 an 8th, 4 a
+	 * quarter, 0.5 a 32nd... The base recomputes from the conductor's
+	 * current BPM, so BPM changes (events, seek past a changeBpmAt) keep
+	 * the grid locked to the beat.
+	 */
+	var snapMultiplier:Float = 1.0;
+
+	/** The live snap step in ms: (60 / bpm / 4) * snapMultiplier. */
+	var snapMs(get, never):Float;
+
+	inline function get_snapMs():Float {
+		var bpm = Main.conductor != null ? Main.conductor.bpm : 100.0;
+		if (bpm <= 0)
+			bpm = 100.0;
+		return (60 / bpm / 4) * snapMultiplier;
+	}
+
+	/**
+	 * The notetype number the editor places (ALT+LEFT/RIGHT cycles it).
+	 * Gameplay maps `type % strumlineCount` to the owning strumline
+	 * (0 = opponent side, 1 = player side), so odd types flip a note to
+	 * the player's strumline — the visible column follows the value.
+	 */
+	var notetype:Int = 1;
 
 	/** The dedicated stepped-strumline mouse input system. */
 	var strumlineInput:StrumlineNoteInteraction;
@@ -74,14 +119,14 @@ class PlayFieldEditorMode {
 		Builds the editor subset inside PlayField.create()'s editor branch:
 		HUD, note system, song system, pause menu, then the stepped
 		strumline input + this class's key handler. On success
-		songStarted is still false — the song runs on the fake clock,
-		completely silent (see class doc).
+		songStarted is still false and songPosition stays frozen at 0 —
+		completely silent and completely still (see class doc).
 	**/
 	function build() {
 		// Editor subset only: no Field (stage/characters/camera), no
 		// FunkinViewLua, no EventSystem, no InputSystem, no
-		// CountdownDisplay. The song starts silently at position 0 on
-		// the fake clock — audio never starts at entry.
+		// CountdownDisplay. The editor's position starts frozen at 0 —
+		// audio never starts at entry and nothing advances the clock.
 		field.songPosition = 0;
 
 		// Receptors enter the STATIC NoteSystem.notesBuf mid-constructor;
@@ -92,6 +137,17 @@ class PlayFieldEditorMode {
 		HUD.init();
 		if (!SaveData.state.preferences.hideHUD)
 			field.hud = new HUD(field.display, field);
+		// The HUD must be visible the instant the editor appears — the
+		// gameplay fade-in (alphaLerp lerp toward 1 on songStarted) would
+		// otherwise keep it invisible until ENTER starts playback. Jump
+		// straight to full alpha, exactly what PlayField.resetHUD does.
+		if (field.hud != null) {
+			field.hud.alphaLerp = 1;
+			field.hud.setHUDAlpha(1);
+			field.hud.render();
+			field.hud.update(Math.POSITIVE_INFINITY);
+			field.hud.updateBuffers();
+		}
 
 		NoteSystem.init();
 		field.noteSystem = new NoteSystem(field);
@@ -101,11 +157,11 @@ class PlayFieldEditorMode {
 		PauseScreen.init(field.roof);
 		field.pauseScreen = new PauseScreen(Chart.header.difficulty);
 
-		// Both strumlines non-playable: no keybind input path exists,
-		// receptors auto-confirm through the spawner's bot path.
+		// Both strumlines non-playable: no keybind input path exists, and
+		// with the pure-render editor note path nothing ever hits a note —
+		// receptors stay static and sustains never resolve.
 		for (strumline in field.noteSystem.strumlines)
 			strumline.playable = false;
-		field.botplay = true;
 
 		field.scrollSpeed = Chart.header.speed;
 
@@ -163,6 +219,25 @@ class PlayFieldEditorMode {
 		if (field.paused)
 			return;
 
+		// ALT+LEFT / ALT+RIGHT cycle the notetype number the editor places
+		// (wrapped through 0..255, the 8-bit type field of the chart note).
+		if ((mod & KeyModifier.ALT) != 0) {
+			switch (code) {
+				case KeyCode.LEFT:
+					notetype = notetype <= 0 ? 255 : notetype - 1;
+					updateInstructionsText();
+					return;
+				case KeyCode.RIGHT:
+					notetype = notetype >= 255 ? 0 : notetype + 1;
+					updateInstructionsText();
+					return;
+				default:
+					// fall through to plain LEFT/RIGHT? No — with ALT held the
+					// user asked for the notetype action; eat the key.
+					return;
+			}
+		}
+
 		switch (code) {
 			case KeyCode.F1 | KeyCode.H:
 				if (showInstructions)
@@ -174,10 +249,12 @@ class PlayFieldEditorMode {
 			case KeyCode.RIGHT:
 				seekTo(field.songPosition + ((mod & KeyModifier.CTRL) != 0 ? 4000 : 1000));
 			case KeyCode.MINUS:
-				snapMs = snapMs / 2 < 10 ? snapMs : snapMs / 2;
+				// Halve the snap multiplier (finer grid), floored at 1/32nd notes.
+				snapMultiplier = Math.max(snapMultiplier / 2, 0.03125);
 				updateInstructionsText();
 			case KeyCode.EQUALS:
-				snapMs *= 2;
+				// Double the snap multiplier (coarser grid), capped at 16 beats.
+				snapMultiplier = Math.min(snapMultiplier * 2, 64);
 				updateInstructionsText();
 			case KeyCode.S:
 				if ((mod & KeyModifier.CTRL) != 0)
@@ -195,11 +272,12 @@ class PlayFieldEditorMode {
 		field.onStartSong.dispatch — the exact countdown-path event —
 		so the transport starts the same way gameplay does (startSong is
 		its only listener: it spins the mixer, hooks conductor events,
-		sets songStarted). Stopping mirrors what stopSong/gameOver do:
-		detach the conductor listeners (lime's Event.add does NOT dedupe,
-		so a start cycle must not stack duplicates), stop the transport
-		(PCM position preserved) and drop songStarted, which puts
-		Mixer.update back on the fake clock.
+		sets songStarted). While playing, the REAL audio clock drives the
+		editor-owned position (Mixer.updateWithAudioTime). Stopping mirrors
+		what stopSong/gameOver do: detach the conductor listeners (lime's
+		Event.add does NOT dedupe, so a start cycle must not stack
+		duplicates), stop the transport (PCM position preserved) and drop
+		songStarted, which re-freezes the position where it stopped.
 	**/
 	function togglePlayback() {
 		if (field.disposed || field.paused || field.songEnded)
@@ -215,13 +293,13 @@ class PlayFieldEditorMode {
 			field.songStarted = false;
 			playing = false;
 		} else {
-			// Align the mixer's PCM position with the fake clock BEFORE the
-			// transport spins up. The countdown path gets this for free
-			// (audio starts at 0 exactly when the fake clock crosses 0);
-			// here the fake clock has been running since entry (and a
-			// stop→restart cycle leaves the PCM position wherever the
-			// transport was stopped), so without this seek the audio would
-			// resume behind the notes.
+			// Align the mixer's PCM position with the editor's (frozen)
+			// position BEFORE the transport spins up. The countdown path
+			// gets this for free (audio starts at 0 exactly when the fake
+			// clock crosses 0); here the position has been frozen wherever
+			// the last seek left it (and a stop→restart cycle leaves the PCM
+			// position wherever the transport was stopped), so without this
+			// seek the audio would resume behind the notes.
 			var target = field.songPosition;
 			if (target < 0)
 				target = 0;
@@ -379,13 +457,18 @@ class PlayFieldEditorMode {
 			return;
 
 		var saved = dirtyChart ? "UNSAVED" : "saved";
+		var bpm = Main.conductor != null ? Main.conductor.bpm : 100.0;
 		instructionsText.text = "=== PLAYFIELD EDITOR ===\n"
-			+ "MOUSE        move the square over a lane (snaps to " + Std.int(snapMs) + "ms steps)\n"
-			+ "LMB          add note on release (empty slot only)\n"
+			+ "Position is FROZEN until you seek — nothing advances it.\n"
+			+ "MOUSE        move the square over a lane (snaps to the beat grid)\n"
+			+ "LMB          add note on release (empty slot only; hold on a note to edit its sustain)\n"
+			+ "  hold+WHEEL or hold+DRAG   lengthen/shorten the held note's sustain\n"
 			+ "RMB          remove note under the square\n"
 			+ "WHEEL        seek song  (CTRL = 4x speed)\n"
 			+ "LEFT/RIGHT   seek 1s    (CTRL = 4s)\n"
-			+ "- / =        halve / double the snap step\n"
+			+ "ALT+LEFT/RIGHT   notetype: " + notetype + " (type % 2 = " + (notetype % 2) + " = " + ((notetype % 2) == 0 ? "opponent" : "player") + " strumline)\n"
+			+ "- / =        halve / double the snap grid (currently " + snapName() + ")\n"
+			+ "             (" + Math.round(snapMs * 100) / 100 + "ms at " + Math.round(bpm * 100) / 100 + " BPM)\n"
 			+ "CTRL+S       save chart (.fvc)\n"
 			+ "ENTER        " + (playing ? "STOP audio (currently PLAYING)" : "play audio (currently SILENT)") + "\n"
 			+ "F1 or H      toggle this help\n"
@@ -410,5 +493,24 @@ class PlayFieldEditorMode {
 				instructionsBuf.update();
 			} catch (e) {}
 		}
+	}
+
+	/** Human name for the current snap multiplier relative to a 16th note. */
+	function snapName():String {
+		if (snapMultiplier == 1)
+			return "1/16";
+		if (snapMultiplier == 2)
+			return "1/8";
+		if (snapMultiplier == 4)
+			return "1/4 (beat)";
+		if (snapMultiplier == 8)
+			return "1/2";
+		if (snapMultiplier == 16)
+			return "1/1 (measure)";
+		if (snapMultiplier == 0.5)
+			return "1/32";
+		if (snapMultiplier == 0.25)
+			return "1/64";
+		return Std.string(snapMultiplier) + "x 1/16";
 	}
 }

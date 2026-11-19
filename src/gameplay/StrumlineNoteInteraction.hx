@@ -16,15 +16,25 @@ import lime.ui.MouseWheelMode;
 	               snapped slot already holds a note, the square turns red
 	               (right-click removes); otherwise it is green (click adds).
 	* mouseDown  — darkens the square temporarily while the button is held.
-	* mouseUp    — LEFT: if the press was on a grid slot, the mouse didn't
-	               drag beyond the slop, and the pressed slot is empty, a note
-	               is added there via `File.addNote(position, duration, index,
-	               type)`. The slot is the one captured at PRESS time — the
-	               song keeps scrolling under a held cursor, but the click
-	               lands where the user aimed. RIGHT: removes the note in the
-	               hovered slot.
-	* mouseWheel — shifts the song position forward or backward; holding
-	               Ctrl accelerates the seek by 4x.
+	               Pressing an EXISTING note enters hold-edit mode instead of
+	               an add-click: the note's sustain can then be adjusted with
+	               the wheel (± one snap step per notch) or by dragging the
+	               cursor along the lane (the sustain end follows the cursor,
+	               snapped to the grid; the note's position never moves).
+	* mouseUp    — LEFT: a plain press on an empty slot (no drag beyond the
+	               slop) adds a note there via `File.addNote(position, 0,
+	               lane, editorMode.notetype)` — the notetype comes from the
+	               editor's ALT+LEFT/RIGHT selector. A hold-edit press keeps
+	               the note with whatever duration was dialed in (every wheel
+	               notch / drag step was already written to the chart).
+	               RIGHT: removes the note in the hovered slot.
+	* mouseWheel — shifts the song position forward or backward (Ctrl = 4x);
+	               while hold-editing it edits the sustain length instead.
+
+	The song position in editor mode is frozen by design (see
+	PlayFieldEditorMode / Mixer.update): it moves ONLY on explicit seeks,
+	so "the song scrolls under a held cursor" can no longer happen while
+	silent — the pressed-slot capture is kept for the audible case.
 
 	This class is deliberately self-contained: the playfield editor (the
 	playfieldEditorMode branch of PlayField) creates it, updates it once per
@@ -47,6 +57,9 @@ class StrumlineNoteInteraction {
 	/** Side length of the square ghost graphic, in pixels (before strumline scale). */
 	static inline var SQUARE_SIZE:Int = 40;
 
+	/** Minimum sustain duration (ms) the editor will write — shorter is a tap. */
+	static inline var MIN_SUSTAIN_MS:Float = 0.0;
+
 	var parent(default, null):PlayField;
 
 	// --- Event bookkeeping ---
@@ -59,6 +72,14 @@ class StrumlineNoteInteraction {
 	var downLane:Int = -1;
 	var downStrumline:Int = -1;
 	var downTimeMs:Float = 0;
+	/** Chart index of the note captured at press time; -1 = pressed an empty slot. */
+	var downNoteId:Int64 = -1;
+
+	// --- Hold-note sustain editing (LMB held on an existing note) ---
+	/** True while LMB is held on a note, editing its sustain via wheel/drag. */
+	var holdEditing:Bool = false;
+	/** Live sustain duration (ms) while hold-editing — written to the chart on change. */
+	var holdDurationMs:Float = 0;
 
 	// --- Hover state (from mouseMove; refreshed per frame) ---
 	var hoverX:Float = 0;
@@ -177,7 +198,8 @@ class StrumlineNoteInteraction {
 	/**
 		Detect the strumline + lane + snapped time hitbox under the cursor.
 		Searches ALL strumlines by X (the editor can place notes on either
-		side — type = strumline index, matching gameplay's type % count
+		side — the placed note's type comes from editorMode.notetype, whose
+		`type % strumlineCount` picks the strumline, matching gameplay's
 		mapping). Returns true when the cursor is over a receptor column.
 	*/
 	function detectHitbox(x:Float, y:Float):Bool {
@@ -217,7 +239,10 @@ class StrumlineNoteInteraction {
 
 	/**
 		Find an existing note at the given lane/strumline/snapped time.
-		Binary search by position, then walk equal positions.
+		Binary search by position, then walk equal positions. A note at the
+		same time+lane with a DIFFERENT notetype also counts — hold-editing
+		any of them is the same gesture (the type is preserved per-note on
+		the duration rewrite).
 	*/
 	function findNoteAt(lane:Int, strumlineIdx:Int, timeMs:Float):Int64 {
 		var len = File.getLength();
@@ -265,8 +290,80 @@ class StrumlineNoteInteraction {
 				moved = true;
 		}
 
+		// Hold-edit drag: while LMB is held on a note, the cursor's lane
+		// position (snapped to the grid, relative to the note's fixed
+		// position) directly sets the sustain length. Dragging above the
+		// note (upscroll) shortens toward a tap; dragging below lengthens.
+		if (holdEditing && downNoteId >= 0) {
+			updateHoldFromCursor(local.y);
+			return;
+		}
+
 		detectHitbox(local.x, local.y);
 		updateSquareVisual();
+	}
+
+	/**
+		Hold-edit helper: set the edited note's sustain so it ends at the
+		cursor's current (snapped) song time. The note's own position stays
+		fixed — only the duration changes.
+	*/
+	function updateHoldFromCursor(y:Float) {
+		var strumlines = parent.noteSystem.strumlines;
+		if (downStrumline < 0 || downStrumline >= strumlines.length)
+			return;
+		var strumline = strumlines[downStrumline];
+		if (strumline.length == 0)
+			return;
+		var anchor = strumline.receptors[0].note;
+
+		var cursorMs = yToTimeMs(y, anchor.y);
+		var noteMs = downTimeMs;
+		// Upscroll: the sustain extends DOWN the screen (later times are
+		// lower); downscroll mirrors that. Either way "cursor below the
+		// note head" = longer sustain — clamp to a tap when inverted.
+		var endMs = snapTime(cursorMs);
+		var dur = endMs - noteMs;
+		if (dur < MIN_SUSTAIN_MS)
+			dur = MIN_SUSTAIN_MS;
+		setHoldDuration(dur);
+	}
+
+	/**
+		Writes `dur` (ms) as the hold-edited note's sustain duration. The
+		chart stores duration in 1 ms ticks (16-bit field, max 65535 ms),
+		snapped to whole grid steps. The note is removed and re-added at
+		the same position with the new duration (the chart has no in-place
+		edit), which keeps its slot in the sorted order.
+	*/
+	function setHoldDuration(dur:Float) {
+		if (downNoteId < 0)
+			return;
+
+		var step = parent.editorMode.snapMs;
+		if (step > 0)
+			dur = Math.round(dur / step) * step;
+		if (dur < MIN_SUSTAIN_MS)
+			dur = MIN_SUSTAIN_MS;
+		if (dur > 65535)
+			dur = 65535; // the chart's 16-bit duration field
+		if (dur == holdDurationMs)
+			return; // no change — don't churn the chart
+
+		var old = File.getNote(downNoteId);
+		if (old == null)
+			return;
+		var position = old.position;
+		var index = old.index;
+		var type = old.type;
+
+		File.removeNote(downNoteId);
+		downNoteId = File.addNote(position, Std.int(dur), index, type);
+		if (downNoteId < 0)
+			return; // write failed — stop editing
+
+		holdDurationMs = dur;
+		parent.editorMode.onChartEdited();
 	}
 
 	function mouseDown(x:Float, y:Float, button:MouseButton) {
@@ -285,6 +382,13 @@ class StrumlineNoteInteraction {
 			downLane = hoverLane;
 			downStrumline = hoverStrumline;
 			downTimeMs = hoverTimeMs;
+			// Pressing an EXISTING note enters hold-edit mode: the sustain
+			// can now be adjusted with the wheel or by dragging. Pressing
+			// an empty slot stays a plain add-click.
+			downNoteId = downOnGrid ? findNoteAt(downLane, downStrumline, downTimeMs) : -1;
+			holdEditing = downNoteId >= 0;
+			// note.duration is already in ms (the chart's duration unit).
+			holdDurationMs = downNoteId >= 0 ? File.getNote(downNoteId).duration : 0;
 			updateSquareVisual(); // darken while held
 		}
 	}
@@ -302,14 +406,25 @@ class StrumlineNoteInteraction {
 			var lane = downLane;
 			var strumlineIdx = downStrumline;
 			var timeMs = downTimeMs;
+			var wasHoldEdit = holdEditing;
+			var heldDur = holdDurationMs;
+			var noteId = downNoteId;
 			downOnGrid = false;
 			downLane = -1;
 			downStrumline = -1;
+			downNoteId = -1;
+			holdEditing = false;
 
-			if (wasOnGrid && !moved && lane >= 0) {
+			// A hold-edit release that never dragged and never wheeled is
+			// just a click on an existing note — nothing to add, nothing to
+			// remove; the (possibly wheel-adjusted) duration was already
+			// written through setHoldDuration.
+			if (wasHoldEdit)
+				heldNoopRelease(noteId, heldDur);
+			else if (wasOnGrid && !moved && lane >= 0) {
 				// Only add when the slot is empty ("hasn't appeared there yet").
 				if (findNoteAt(lane, strumlineIdx, timeMs) < 0) {
-					var id = File.addNote(MetaNote.floatToMetaNotePosition(timeMs), 0, lane, strumlineIdx);
+					var id = File.addNote(MetaNote.floatToMetaNotePosition(timeMs), 0, lane, parent.editorMode.notetype);
 					if (id >= 0) {
 						Main.current.playScrollSound();
 						parent.editorMode.onChartEdited();
@@ -338,6 +453,15 @@ class StrumlineNoteInteraction {
 		}
 	}
 
+	/** Hold-edit release. Nothing to do beyond clearing state — the chart
+	 *  already holds every wheel/drag write. Kept as a named hook so the
+	 *  release path reads clearly. */
+	function heldNoopRelease(noteId:Int64, finalDuration:Float) {
+		// The note keeps its (possibly modified) duration. A tap-length
+		// hold-edit (duration 0) stays a tap note — exactly what the user
+		// dialed in.
+	}
+
 	function mouseWheel(deltaX:Float, deltaY:Float, mode:MouseWheelMode) {
 		if (parent.disposed || parent.paused)
 			return;
@@ -345,6 +469,13 @@ class StrumlineNoteInteraction {
 		var notches = -Math.floor(deltaY);
 		if (notches == 0)
 			return;
+
+		// While hold-editing, the wheel edits the sustain length instead of
+		// seeking: each notch adds/removes one snap step of duration.
+		if (holdEditing && downNoteId >= 0) {
+			setHoldDuration(holdDurationMs + notches * parent.editorMode.snapMs);
+			return;
+		}
 
 		var seek = WHEEL_SEEK_MS * (ctrlPressed ? CTRL_SEEK_MULT : 1.0);
 		parent.editorMode.seekTo(parent.songPosition + notches * seek);
@@ -379,17 +510,38 @@ class StrumlineNoteInteraction {
 			var anchor = strumline.receptors[0].note;
 			var size = Std.int(SQUARE_SIZE * strumline.scale);
 			var cx = note.x + note.w * strumline.scale * 0.5;
-			var cy = timeToY(timeMs, anchor.y);
 
-			square.w = size;
-			square.h = size;
-			square.x = Std.int(cx - size * 0.5);
-			square.y = Std.int(cy - size * 0.5);
+			// Hold-editing: the square stretches along the lane to cover the
+			// note head PLUS its live sustain length — a direct visual ruler
+			// of the duration being dialed in (wheel notches / drag).
+			if (holdEditing && isDown) {
+				var headY = timeToY(downTimeMs, anchor.y);
+				var endY = timeToY(downTimeMs + holdDurationMs, anchor.y);
+				var y0 = Std.int(Math.min(headY, endY));
+				var y1 = Std.int(Math.max(headY, endY));
+				var pad = size * 0.5;
 
-			// Red = occupied (right-click removes), green = empty (click adds).
-			var occupied = showHeld ? findNoteAt(lane, strumlineIdx, timeMs) >= 0 : hoverOccupied;
-			square.c = occupied ? 0xFF0000FF : 0x00FF00FF;
-			square.c.aF = showHeld ? 0.18 : 0.35; // darkened while held
+				square.w = Std.int(size * 0.6);
+				square.h = Std.int(Math.max(y1 - y0 + pad * 2, size));
+				square.x = Std.int(cx - square.w * 0.5);
+				square.y = y0 - Std.int(pad);
+				square.c = 0x0080FFFF; // cyan = hold-edit (duration editing)
+				square.c.aF = 0.25;
+				square.r = 0; // axis-aligned ruler
+			} else {
+				var cy = timeToY(timeMs, anchor.y);
+
+				square.w = size;
+				square.h = size;
+				square.x = Std.int(cx - size * 0.5);
+				square.y = Std.int(cy - size * 0.5);
+				square.r = 45; // diamond orientation over the lane
+
+				// Red = occupied (right-click removes), green = empty (click adds).
+				var occupied = showHeld ? findNoteAt(lane, strumlineIdx, timeMs) >= 0 : hoverOccupied;
+				square.c = occupied ? 0xFF0000FF : 0x00FF00FF;
+				square.c.aF = showHeld ? 0.18 : 0.35; // darkened while held
+			}
 		}
 
 		if (squareBuf != null) {
@@ -411,6 +563,14 @@ class StrumlineNoteInteraction {
 	function update() {
 		if (parent.disposed)
 			return;
+		// While hold-editing, skip hitbox re-detection — the edited note's
+		// slot is frozen at press time and the ruler square below reads
+		// downTimeMs/holdDurationMs directly. Otherwise keep detecting so
+		// occupancy colors track the (seekable) playhead.
+		if (holdEditing) {
+			updateSquareVisual();
+			return;
+		}
 		if (hoverLane >= 0 || (isDown && downOnGrid))
 			detectHitbox(hoverX, hoverY);
 		updateSquareVisual();
