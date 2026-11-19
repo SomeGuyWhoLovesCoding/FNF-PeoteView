@@ -284,6 +284,17 @@ class PlayField {
 	function create(roof:CustomDisplay, display:CustomDisplay, initialMania:Int = 4) {
 		mania = initialMania;
 
+		// The debug key (controls.game.debug, same bind the Main Menu
+		// uses for GAME_DEBUG) is attached at the WINDOW level and for
+		// the playfield's whole lifetime — gameplay AND editor mode,
+		// running AND paused. A window listener is the only single place
+		// that covers all of those: InputSystem is gameplay-only and is
+		// detached while paused, and the editor's keyDown bails on
+		// paused. DeveloperStuff has its own window listener for the
+		// same key; debugKeyDown re-dispatches into its shared action
+		// only when DeveloperStuff has NOT already consumed the press.
+		attachDebugKey();
+
 		healthLoss = [for (i in 0...128) 0.02];
 		healthGain = [for (i in 0...128) 0.025];
 
@@ -628,6 +639,32 @@ class PlayField {
 	/**
 		There is mainly nothing in this render function except a couple extra things.
 	**/
+	/**
+		Paused-editor tick, called by Main while the editor's pause menu is
+		open. A PURE render pass at the FROZEN editor position — the editor's
+		note rendering stays on screen underneath the pause menu for its
+		entire lifetime. Nothing here can move the song or process input:
+		no Mixer.update (the transport is stopped and songPosition stays
+		frozen), no conductor.time write, no strumlineInput.update, no
+		eventSystem. Only the note system + HUD keep ticking at the frozen
+		position, exactly what the un-paused editor branch does each frame
+		while silent.
+	**/
+	function updatePausedEditor(deltaTime:Float) {
+		if (disposed || !paused || !playfieldEditorMode)
+			return;
+
+		display.update();
+		view.update();
+
+		if (hud != null)
+			hud.update(deltaTime);
+
+		var pos = MetaNote.floatToMetaNotePosition(songPosition);
+		if (noteSystem != null)
+			noteSystem.update(pos);
+	}
+
 	function render() {
 		#if linc_luajit_funkinview
 		if (!playfieldEditorMode)
@@ -1123,6 +1160,99 @@ class PlayField {
 	var customSongName = "";
 
 	// helper function made for playfield
+	/**
+		Debug-key handler (the controls.game.debug bind, default 7/C per
+		saved binds). Works from BOTH gameplay and editor mode and while
+		paused: flips the editorModeNext flag the next GAMEPLAY build
+		reads, dispatches the lua `toggleEditorMode` callback BEFORE the
+		toggle (song name, difficulty, artist — same name formatting the
+		startSong callbacks use), then restarts the song so the playfield
+		is rebuilt in the other mode. Mirrors exactly what
+		DeveloperStuff.testPlayfieldInputStuff does, minus the other dev
+		test keys, so both entry points stay in one behavior.
+	**/
+	function debugToggleEditorMode() {
+		if (disposed)
+			return;
+
+		var entering = !PlayField.editorModeNext;
+		var header = Chart.header;
+
+		#if linc_luajit_funkinview
+		// The toggle dispatch happens BEFORE the mode flips — scripts get
+		// the song context while the (still running) playfield can still
+		// answer questions about it. In editor mode lua never runs, so
+		// this only fires when toggling OUT of gameplay into the editor
+		// (the gameplay→editor direction is where a script cares anyway:
+		// it is about to lose control until the toggle back).
+		if (!playfieldEditorMode) {
+			funkinviewlua.callFunction('toggleEditorMode', formatCustomSongName(header.title), header.difficulty, header.artist);
+		}
+		#end
+
+		PlayField.editorModeNext = entering;
+		File.setEditorMode(entering);
+		Sys.println('  [ Developer ] playfieldEditorMode ${entering ? "ON" : "OFF"} — restarting song.');
+
+		// Same teardown the backwards-seek restart does: stop the music
+		// and unhook input BEFORE the dispose + recreate cycle, so the
+		// playfield is never disposed while its audio clock is still
+		// running (which leaves the mixer state machine mid-flight for
+		// the next Mixer.init/startMusic).
+		if (!paused)
+			pause(false);
+		Tools.forSync(() -> {
+			Main.switchState(GAMEPLAY, true);
+		});
+	}
+
+	// -------------------------------------------------------------------
+	// Debug key (playfield-owned window listener)
+	// -------------------------------------------------------------------
+
+	var debugKeysActive:Bool = false;
+
+	function attachDebugKey() {
+		if (debugKeysActive || disposed)
+			return;
+		debugKeysActive = true;
+		#if !android
+		lime.app.Application.current.window.onKeyDown.add(debugKeyDown);
+		#end
+	}
+
+	function detachDebugKey() {
+		if (!debugKeysActive)
+			return;
+		debugKeysActive = false;
+		#if !android
+		lime.app.Application.current.window.onKeyDown.remove(debugKeyDown);
+		#end
+	}
+
+	/**
+		Window-level dispatch for the debug key. DeveloperStuff (FV_DEBUG
+		builds) fires on the same window event with its own listener; to
+		avoid a double toggle, whoever runs first wins — DeveloperStuff
+		flips this flag as part of its restart, and the same-frame
+		re-press here sees the flag already moved and bails.
+	**/
+	function debugKeyDown(code:lime.ui.KeyCode, mod:lime.ui.KeyModifier) {
+		if (disposed)
+			return;
+		if (code != SaveData.state.controls.game.debug)
+			return;
+
+		// Already consumed by DeveloperStuff this press? It flips
+		// editorModeNext AND queues the restart; if the flag or the
+		// queued switch changed since this playfield was built, the
+		// press belongs to the other handler.
+		if (editorModeNext != playfieldEditorMode)
+			return;
+
+		debugToggleEditorMode();
+	}
+
 	inline function formatCustomSongName(title:String) {
 		return customSongName == "" ? title : customSongName;
 	}
@@ -1148,6 +1278,10 @@ class PlayField {
 	function dispose() {
 		ready = false;
 		disposed = true;
+
+		// The playfield-owned debug-key window listener goes first —
+		// nothing after this point may receive input.
+		detachDebugKey();
 
 		// Editor-only systems first (they own window events + programs).
 		if (playfieldEditorMode && editorMode != null) {

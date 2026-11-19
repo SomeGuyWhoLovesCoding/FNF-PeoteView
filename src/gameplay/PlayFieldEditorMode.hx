@@ -105,6 +105,23 @@ class PlayFieldEditorMode {
 	var instructionsProg:CustomProgram;
 	var showInstructions:Bool = false;
 
+	/**
+	 * The notetype number indicator (bottom-right readout, scale 2.2).
+	 * PERSISTENT exactly like the NoteskinEditor's static text elements:
+	 * a STATIC Text that lives on the roof display (the top layer, the
+	 * same one the pause screen renders on), created once at build(),
+	 * addProgram()'d immediately and NEVER removed for the editor's
+	 * whole lifetime — not on ESC-pause, not while the instructions
+	 * popup is open, not on the playback toggle. It only goes away with
+	 * the editor itself in dispose(). Because the roof display is never
+	 * torn down between editor frames, the readout survives every
+	 * in-editor screen state and always sits on the proper layer ABOVE
+	 * the pause menu's dimmer, mirroring how the noteskin editor keeps
+	 * its text elements alive across the whole game and re-shows them
+	 * on the right display when you enter its menu.
+	 */
+	static var notetypeText:render.text.Text;
+
 	var keysActive:Bool = false;
 
 	function new(field:PlayField) {
@@ -168,6 +185,8 @@ class PlayFieldEditorMode {
 		strumlineInput = new StrumlineNoteInteraction(field);
 		strumlineInput.attach();
 		attachKeys();
+
+		ensureNotetypeText();
 	}
 
 	// -------------------------------------------------------------------
@@ -215,6 +234,11 @@ class PlayFieldEditorMode {
 			togglePlayback();
 			return;
 		}
+
+		// (The debug key is NOT handled here: PlayField owns it via its
+		// own window-level listener, which stays attached while paused —
+		// see PlayField.debugKeyDown. Handling it here too would
+		// double-fire on every press.)
 
 		if (field.paused)
 			return;
@@ -396,6 +420,12 @@ class PlayFieldEditorMode {
 			instructionsProg = null;
 			instructionsBackground = null;
 		}
+		// The persistent notetype readout only detaches its program from
+		// the roof display (the NoteskinEditor static-text pattern) — the
+		// static Text object itself survives for the next editor session,
+		// and ensureNotetypeText() re-adds + refreshes it there.
+		if (notetypeText != null)
+			notetypeText.removeProgram();
 	}
 
 	// -------------------------------------------------------------------
@@ -452,7 +482,61 @@ class PlayFieldEditorMode {
 		}
 	}
 
+	// -------------------------------------------------------------------
+	// Notetype indicator (persistent bottom-right readout)
+	// -------------------------------------------------------------------
+
+	/**
+		Creates (once) and shows the notetype indicator. Static + roof
+		display + never removed = persistent across every editor screen
+		state, on the layer above the pause menu — see the field docs on
+		`notetypeText`. RIGHT-aligned so the text grows leftward from the
+		bottom-right corner and never leaves the screen as numbers change.
+	**/
+	function ensureNotetypeText() {
+		if (notetypeText == null) {
+			notetypeText = new Text("PLAYFIELD_EDITOR_NOTETYPE", 0, 0, field.roof, "", "vcr");
+			notetypeText.scale = 2.2;
+			notetypeText.alpha = 1;
+			notetypeText.alignment = RIGHT;
+			notetypeText.outlineColor = Color.BLACK;
+			notetypeText.outlineSize = 1;
+		}
+		// Re-add in case a previous editor session removed it (dispose)
+		// or the roof display was recreated by a window change.
+		notetypeText.addProgram();
+		updateNotetypeText();
+	}
+
+	/**
+		Refreshes the readout. Called from every path that changes what
+		it shows: notetype cycling (ALT+LEFT/RIGHT), editor build, and
+		the instructions refresh (which also passes through here so the
+		saved/playing state stays in sync after menu actions).
+	**/
+	function updateNotetypeText() {
+		if (notetypeText == null)
+			return;
+
+		var side = (notetype % 2) == 0 ? "opponent" : "player";
+		notetypeText.text = 'NOTETYPE ${notetype} (${side})';
+
+		// Anchor the RIGHT-aligned text's right edge ~24px from the
+		// window's right edge and its baseline ~24px from the bottom.
+		// width is the SCALED text width, so this keeps the corner
+		// anchor exact at any scale.
+		notetypeText.x = Main.INITIAL_WIDTH - notetypeText.width - 24;
+		notetypeText.y = Main.INITIAL_HEIGHT - notetypeText.height - 24;
+	}
+
 	function updateInstructionsText() {
+		// Keep the persistent bottom-right notetype readout in sync with
+		// whatever changed (notetype cycle, playback toggle, save state).
+		// Runs BEFORE the instructions early-return: the readout must
+		// refresh even in sessions where the help popup was never opened
+		// (instructionsText stays null until then).
+		updateNotetypeText();
+
 		if (instructionsText == null)
 			return;
 
@@ -466,7 +550,7 @@ class PlayFieldEditorMode {
 			+ "RMB          remove note under the square\n"
 			+ "WHEEL        seek song  (CTRL = 4x speed)\n"
 			+ "LEFT/RIGHT   seek 1s    (CTRL = 4s)\n"
-			+ "ALT+LEFT/RIGHT   notetype: " + notetype + " (type % 2 = " + (notetype % 2) + " = " + ((notetype % 2) == 0 ? "opponent" : "player") + " strumline)\n"
+			+ "ALT+LEFT/RIGHT   notetype: " + notetype + " (type % 2 = " + (notetype % 2) + " = " + ((notetype % 2) == 0 ? "opponent" : "player") + " strumline; shown bottom-right)\n"
 			+ "- / =        halve / double the snap grid (currently " + snapName() + ")\n"
 			+ "             (" + Math.round(snapMs * 100) / 100 + "ms at " + Math.round(bpm * 100) / 100 + " BPM)\n"
 			+ "CTRL+S       save chart (.fvc)\n"

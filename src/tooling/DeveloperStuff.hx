@@ -26,20 +26,12 @@ class DeveloperStuff {
 		// mode. In editor mode only the note system, HUD, song system and
 		// pause menu are ever created/updated; lua never runs.
 		if (code == SaveData.state.controls.game.debug) {
-			var entering = !PlayField.editorModeNext;
-			PlayField.editorModeNext = entering;
-			File.setEditorMode(entering);
-			Sys.println('  [ Developer ] playfieldEditorMode ${entering ? "ON" : "OFF"} — restarting song.');
-			// Same teardown the backwards-seek restart does: stop the music
-			// and unhook input BEFORE the dispose + recreate cycle, so the
-			// playfield is never disposed while its audio clock is still
-			// running (which leaves the mixer state machine mid-flight for
-			// the next Mixer.init/startMusic).
-			if (!playField.paused)
-				playField.pause(false);
-			Tools.forSync(() -> {
-				Main.switchState(GAMEPLAY, true);
-			});
+			// Delegates to the playfield's shared toggle (same path the
+			// in-playfield debug keybind takes, so the lua
+			// toggleEditorMode callback fires from here too). The
+			// playfield's own window listener for the same key bails
+			// when it sees editorModeNext already flipped by this call.
+			playField.debugToggleEditorMode();
 			return;
 		}
 		switch (code) {
