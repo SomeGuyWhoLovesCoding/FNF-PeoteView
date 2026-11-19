@@ -26,47 +26,18 @@ class PlayField {
 	 * updated. The Field, lua (FunkinViewLua), EventSystem, InputSystem and
 	 * CountdownDisplay never exist here — no note hit registration, no
 	 * keybind input, no events, no stage.
+	 *
+	 * All editor logic lives in PlayFieldEditorMode (field `editorMode`);
+	 * the branches in this class only delegate to it. Audio there is
+	 * silent by default: the song runs on Mixer.update's fake clock and
+	 * the mixer transport is never started at entry — the pause keybind
+	 * starts playback through the same onStartSong event the countdown
+	 * path uses.
 	 */
 	var playfieldEditorMode(default, null):Bool = false;
 
-	// ------------------------------------------------------------------
-	// Playfield editor state
-	// ------------------------------------------------------------------
-	/** Grid + wheel snap resolution in ms (1 step at 120 BPM 4/4 = 125 ms). */
-	var editorSnapMs(default, set):Float = 125.0;
-
-	function set_editorSnapMs(value:Float):Float {
-		if (value < 10)
-			value = 10;
-		return editorSnapMs = value;
-	}
-
-	/** The dedicated stepped-strumline mouse input system (editor only). */
-	var strumlineInput(default, null):StrumlineNoteInteraction;
-
-	/** True when the chart has unsaved edits. */
-	var dirtyChart:Bool = false;
-
-	// ------------------------------------------------------------------
-	// Editor audio state — the editor enters with the mixer SILENT
-	// (volume 0, position still advancing) so you can place notes in
-	// peace; the pause keybind toggles audible playback on/off.
-	// ------------------------------------------------------------------
-	/** Mixer master volume before the editor muted it (-1 = not stored). */
-	var editorSavedVolume:Float = -1;
-	/** True while the editor's audio is muted by volume-0. */
-	var editorAudioMuted:Bool = false;
-	/** True while the song is audibly playing in the editor. */
-	var editorPlaying:Bool = false;
-
-	// --- Editor instructions menu (NoteskinEditor-style popup) ---
-	var editorInstructionsText:Text;
-	var editorInstructionsBackground:RepeatSprite;
-	var editorInstructionsBuf(default, null):Buffer<RepeatSprite>;
-	var editorInstructionsProg(default, null):CustomProgram;
-	var showEditorInstructions:Bool = false;
-
-	var editorKeysActive:Bool = false;
+	/** The editor-mode subsystem; non-null only in playfieldEditorMode. */
+	var editorMode(default, null):PlayFieldEditorMode;
 
 	var roof(default, null):CustomDisplay;
 	var display(default, null):CustomDisplay;
@@ -183,12 +154,20 @@ class PlayField {
 	}
 
 	var practiceMode:Bool;
-	var songStarted(default, null):Bool;
+	var songStarted(default, set):Bool;
 	var songEnded(default, null):Bool;
 	var disposed(default, null):Bool;
 	var paused(default, null):Bool;
 	var died(default, null):Bool;
 	var botplay(default, set):Bool;
+
+	/** Editor-only write access: PlayFieldEditorMode.togglePlayback stops
+	 *  playback by dropping songStarted (switches Mixer.update to the
+	 *  fake clock). startSong's own writes go through the class itself. */
+	@:allow(gameplay.PlayFieldEditorMode)
+	function set_songStarted(value:Bool):Bool {
+		return songStarted = value;
+	}
 
 	function set_botplay(value:Bool) {
 		if (noteSystem != null) {
@@ -219,13 +198,19 @@ class PlayField {
 	}
 
 	var field(default, null):Field;
+	/** Editor-only write access (PlayFieldEditorMode builds the editor subset). */
+	@:allow(gameplay.PlayFieldEditorMode)
 	var hud(default, null):HUD;
 
 	var inputSystem(default, null):InputSystem;
+	/** Editor-only write access (PlayFieldEditorMode builds the editor subset). */
+	@:allow(gameplay.PlayFieldEditorMode)
 	var noteSystem(default, null):NoteSystem;
 	var eventSystem(default, null):EventSystem;
 
 	var countdownDisp(default, null):CountdownDisplay;
+	/** Editor-only write access (PlayFieldEditorMode builds the editor subset). */
+	@:allow(gameplay.PlayFieldEditorMode)
 	var pauseScreen(default, null):PauseScreen;
 
 	var onStartSong:Event<Header->Void>;
@@ -327,12 +312,18 @@ class PlayField {
 
 		if (playfieldEditorMode) {
 			// ============================================================
-			// PLAYFIELD EDITOR MODE — create ONLY the note system, HUD,
-			// song system and pause menu. No Field (stage/characters/
-			// camera), no FunkinViewLua, no EventSystem, no InputSystem,
-			// no CountdownDisplay. The song starts immediately at 0.
+			// PLAYFIELD EDITOR MODE — PlayFieldEditorMode.build() creates
+			// ONLY the note system, HUD, song system and pause menu, and
+			// hooks the editor's key + mouse input. No Field (stage/
+			// characters/camera), no FunkinViewLua, no EventSystem, no
+			// InputSystem, no CountdownDisplay. The song NEVER starts at
+			// entry: songStarted stays false so Mixer.update advances
+			// songPosition on its fake clock (completely silent — the
+			// mixer transport is never started, nothing to mute). The
+			// pause keybind starts real audio through onStartSong, the
+			// same event the countdown path dispatches in gameplay.
 			// ============================================================
-			songPosition = 0; // no countdown — the audio clock starts at 0 too
+			editorMode = new PlayFieldEditorMode(this);
 
 			// Receptors enter the STATIC NoteSystem.notesBuf mid-constructor;
 			// if anything below throws, `noteSystem` never gets assigned and
@@ -340,48 +331,14 @@ class PlayField {
 			// strumline ghosts on screen. Wrap the build so a failure cleans
 			// up whatever got created before rethrowing.
 			try {
-				HUD.init();
-				if (!SaveData.state.preferences.hideHUD)
-					hud = new HUD(display, this);
-
-				NoteSystem.init();
-				noteSystem = new NoteSystem(this);
-
-				Mixer.init(Chart.header); // the song system
-
-				PauseScreen.init(roof);
-				pauseScreen = new PauseScreen(Chart.header.difficulty);
+				editorMode.build();
 			} catch (e:Dynamic) {
 				Sys.println('[ PlayField ] editor-mode create failed: $e — cleaning up partial build');
 				cleanupFailedCreate();
 				throw e;
 			}
 
-			// Both strumlines non-playable: no keybind input path exists,
-			// receptors auto-confirm through the spawner's bot path.
-			for (strumline in noteSystem.strumlines)
-				strumline.playable = false;
-			botplay = true;
-
-			scrollSpeed = Chart.header.speed;
-
-			// Stepped Strumline note input — its square renders directly on
-			// top of the note system render.
-			strumlineInput = new StrumlineNoteInteraction(this);
-			strumlineInput.attach();
-			attachEditorKeys();
-
 			startedCountdown = false;
-			// Enter the editor SILENT: park the mixer's master volume in
-			// editorSavedVolume, mute it, then let startSong spin the
-			// transport. Position keeps advancing so the editor stays fully
-			// functional — only the sound is held back until the pause
-			// keybind is pressed (see editorKeyDown → toggleEditorAudio).
-			editorSavedVolume = Mixer.globalVolume;
-			Mixer.globalVolume = 0;
-			editorAudioMuted = true;
-			editorPlaying = false;
-			startSong(Chart.header);
 			return;
 		}
 
@@ -454,9 +411,6 @@ class PlayField {
 	 * screen forever. Drop everything that was partially built here.
 	 */
 	function cleanupFailedCreate() {
-		// Editor audio may already be parked/muted when the failure happened.
-		restoreEditorVolume();
-
 		if (noteSystem != null) {
 			noteSystem.dispose();
 			noteSystem = null;
@@ -479,13 +433,11 @@ class PlayField {
 			pauseScreen = null;
 		}
 
-		if (strumlineInput != null) {
-			strumlineInput.dispose();
-			strumlineInput = null;
+		// Editor subsystem (keys, mouse input, instructions overlay).
+		if (editorMode != null) {
+			editorMode.dispose();
+			editorMode = null;
 		}
-
-		detachEditorKeys();
-		hideEditorInstructions();
 	}
 
 	/**
@@ -576,8 +528,8 @@ class PlayField {
 			if (noteSystem != null)
 				noteSystem.update(pos);
 
-			if (strumlineInput != null)
-				strumlineInput.update();
+			if (editorMode != null && editorMode.strumlineInput != null)
+				editorMode.strumlineInput.update();
 			return;
 		}
 
@@ -759,9 +711,8 @@ class PlayField {
 			noteSystem.resetStrumlines();
 		}
 		if (playfieldEditorMode) {
-			if (strumlineInput != null)
-				strumlineInput.removeEvents();
-			detachEditorKeys();
+			if (editorMode != null)
+				editorMode.onPause();
 		} else if (inputSystem != null)
 			inputSystem.removeEvents();
 
@@ -794,9 +745,8 @@ class PlayField {
 		if (!RenderingMode.enabled && songStarted && !songEnded)
 			Mixer.startMusic();
 		if (playfieldEditorMode) {
-			if (strumlineInput != null)
-				Tools.forSync(strumlineInput.addEvents);
-			Tools.forSync(attachEditorKeys);
+			if (editorMode != null)
+				editorMode.onResume();
 		} else if (inputSystem != null) {
 			Tools.forSync(inputSystem.addEvents);
 		}
@@ -1195,29 +1145,9 @@ class PlayField {
 		disposed = true;
 
 		// Editor-only systems first (they own window events + programs).
-		if (playfieldEditorMode) {
-			detachEditorKeys();
-			if (strumlineInput != null) {
-				strumlineInput.dispose();
-				strumlineInput = null;
-			}
-			// Give the parked mixer volume back before anything downstream
-			// reuses the mixer — exiting the editor must not leave the
-			// game silent.
-			restoreEditorVolume();
-			hideEditorInstructions();
-			if (editorInstructionsText != null) {
-				editorInstructionsText.dispose();
-				editorInstructionsText = null;
-			}
-			if (editorInstructionsBuf != null) {
-				try
-					editorInstructionsBuf.clear()
-				catch (e) {}
-				editorInstructionsBuf = null;
-				editorInstructionsProg = null;
-				editorInstructionsBackground = null;
-			}
+		if (playfieldEditorMode && editorMode != null) {
+			editorMode.dispose();
+			editorMode = null;
 		}
 
 		#if linc_luajit_funkinview
@@ -1303,245 +1233,4 @@ class PlayField {
 		#end
 	}
 
-	// ===================================================================
-	// PLAYFIELD EDITOR MODE — input, seek, instructions menu, save
-	// (Everything below only runs when playfieldEditorMode is true.)
-	// ===================================================================
-
-	function attachEditorKeys() {
-		if (disposed || editorKeysActive || !playfieldEditorMode)
-			return;
-		editorKeysActive = true;
-		#if !android
-		Application.current.window.onKeyDown.add(editorKeyDown);
-		#end
-	}
-
-	function detachEditorKeys() {
-		if (!editorKeysActive)
-			return;
-		editorKeysActive = false;
-		#if !android
-		Application.current.window.onKeyDown.remove(editorKeyDown);
-		#end
-	}
-
-	function editorKeyDown(code:lime.ui.KeyCode, mod:lime.ui.KeyModifier) {
-		if (disposed)
-			return;
-
-		// Pause first — ESC/back also closes the instructions popup.
-		if (code == SaveData.state.controls.ui.back || code == lime.ui.KeyCode.ESCAPE) {
-			if (showEditorInstructions) {
-				hideEditorInstructions();
-				return;
-			}
-			if (!paused)
-				pause();
-			return;
-		}
-
-		// The game's pause keybind (default: ENTER) toggles audible
-		// playback in the editor: first press restores the parked volume
-		// and starts the mixer, second press silences it again.
-		if (code == SaveData.state.controls.game.pause) {
-			toggleEditorAudio();
-			return;
-		}
-
-		if (paused)
-			return;
-
-		switch (code) {
-			case lime.ui.KeyCode.F1 | lime.ui.KeyCode.H:
-				if (showEditorInstructions)
-					hideEditorInstructions();
-				else
-					showEditorInstructionsMenu();
-			case lime.ui.KeyCode.LEFT:
-				setTimeEditor(songPosition - ((mod & lime.ui.KeyModifier.CTRL) != 0 ? 4000 : 1000));
-			case lime.ui.KeyCode.RIGHT:
-				setTimeEditor(songPosition + ((mod & lime.ui.KeyModifier.CTRL) != 0 ? 4000 : 1000));
-			case lime.ui.KeyCode.MINUS:
-				editorSnapMs = editorSnapMs / 2 < 10 ? editorSnapMs : editorSnapMs / 2;
-				// Main.controlVolume also listens to MINUS/EQUALS globally —
-				// re-assert the mute so snap changes can't un-mute the editor.
-				if (editorAudioMuted)
-					Mixer.globalVolume = 0;
-				updateEditorInstructionsText();
-			case lime.ui.KeyCode.EQUALS:
-				editorSnapMs *= 2;
-				if (editorAudioMuted)
-					Mixer.globalVolume = 0;
-				updateEditorInstructionsText();
-			case lime.ui.KeyCode.S:
-				if ((mod & lime.ui.KeyModifier.CTRL) != 0)
-					saveEditorChart();
-			default:
-		}
-	}
-
-	/**
-	 * Editor playback toggle (pause keybind, default ENTER). The editor
-	 * enters muted — volume parked in editorSavedVolume, transport
-	 * running. First press restores the volume so the song is audible;
-	 * pressing again silences it. The mixer's playback position is never
-	 * touched, so seek/notes stay in sync either way.
-	 */
-	function toggleEditorAudio() {
-		if (disposed || paused)
-			return;
-
-		if (editorPlaying) {
-			// Audible → silent. Park nothing this time; editorSavedVolume
-			// already holds the pre-editor value.
-			Mixer.globalVolume = 0;
-			editorAudioMuted = true;
-			editorPlaying = false;
-		} else {
-			if (editorAudioMuted) {
-				Mixer.globalVolume = editorSavedVolume >= 0 ? editorSavedVolume : 1;
-				editorAudioMuted = false;
-			}
-			if (songStarted && !songEnded)
-				Mixer.startMusic(); // no-op when already running, but safe after a pause-cycle
-			editorPlaying = true;
-		}
-		updateEditorInstructionsText();
-	}
-
-	/** Restore the parked mixer volume (leaving the editor / disposal). */
-	function restoreEditorVolume() {
-		if (editorAudioMuted) {
-			Mixer.globalVolume = editorSavedVolume >= 0 ? editorSavedVolume : 1;
-			editorAudioMuted = false;
-		}
-	}
-
-	/**
-	 * Editor seek — works while the song runs, bypassing the base setTime's
-	 * countdown/latency gates (no restart dance; Mixer stop/start preserve
-	 * position, seekToPCMFrame lands exactly).
-	 */
-	function setTimeEditor(value:Float) {
-		if (disposed || paused)
-			return;
-		if (value < 0)
-			value = 0;
-		if (value > Mixer.length - 1000)
-			value = Mixer.length - 1000;
-
-		Mixer.setTime(Math.max(value, 0.0), this);
-		songPosition = value;
-
-		var pos = MetaNote.floatToMetaNotePosition(value);
-		if (noteSystem != null)
-			noteSystem.onSongPositionJump(pos);
-	}
-
-	/** Called by StrumlineNoteInteraction after every successful add/remove. */
-	function onChartEdited() {
-		dirtyChart = true;
-		updateEditorInstructionsText();
-	}
-
-	function saveEditorChart() {
-		if (File.saveChart()) {
-			dirtyChart = false;
-			updateEditorInstructionsText();
-			Main.current.playHitsound();
-		}
-	}
-
-	// -------------------------------------------------------------------
-	// Editor instructions menu (NoteskinEditor-style popup)
-	// -------------------------------------------------------------------
-
-	function showEditorInstructionsMenu() {
-		showEditorInstructions = true;
-		ensureEditorInstructionsAssets();
-		if (editorInstructionsProg != null && !editorInstructionsProg.isIn(display))
-			display.addProgram(editorInstructionsProg);
-		if (editorInstructionsBuf != null && editorInstructionsBackground != null) {
-			editorInstructionsBackground.c = 0x000000FF;
-			editorInstructionsBackground.c.aF = 0.6;
-			editorInstructionsBuf.addElement(editorInstructionsBackground);
-		}
-		if (editorInstructionsText != null) {
-			editorInstructionsText.addProgram();
-			editorInstructionsText.alpha = 1;
-		}
-		updateEditorInstructionsText();
-	}
-
-	function hideEditorInstructions() {
-		if (!showEditorInstructions)
-			return;
-		showEditorInstructions = false;
-		if (editorInstructionsBuf != null && editorInstructionsBackground != null) {
-			try
-				editorInstructionsBuf.removeElement(editorInstructionsBackground)
-			catch (e) {}
-		}
-		if (editorInstructionsText != null) {
-			editorInstructionsText.alpha = 0;
-			editorInstructionsText.removeProgram();
-		}
-	}
-
-	function ensureEditorInstructionsAssets() {
-		if (editorInstructionsText == null) {
-			editorInstructionsText = new Text("PLAYFIELD_EDITOR_INSTRUCTIONS", 0, 0, display, "", "vcr");
-			editorInstructionsText.scale = 0.7;
-			editorInstructionsText.alpha = 0;
-			editorInstructionsText.multiline = true;
-			editorInstructionsText.alignment = LEFT;
-			editorInstructionsText.spacerPercent = -0.1;
-			editorInstructionsText.outlineColor = Color.BLACK;
-			editorInstructionsText.outlineSize = 1;
-		}
-		if (editorInstructionsBuf == null) {
-			editorInstructionsBuf = new Buffer<RepeatSprite>(2, 2, true);
-			editorInstructionsProg = new CustomProgram(editorInstructionsBuf);
-			editorInstructionsBackground = new RepeatSprite(0, 0, 0, 0);
-		}
-	}
-
-	function updateEditorInstructionsText() {
-		if (editorInstructionsText == null)
-			return;
-
-		var saved = dirtyChart ? "UNSAVED" : "saved";
-		editorInstructionsText.text = "=== PLAYFIELD EDITOR ===\n"
-			+ "MOUSE        move the square over a lane (snaps to " + Std.int(editorSnapMs) + "ms steps)\n"
-			+ "LMB          add note on release (empty slot only)\n"
-			+ "RMB          remove note under the square\n"
-			+ "WHEEL        seek song  (CTRL = 4x speed)\n"
-			+ "LEFT/RIGHT   seek 1s    (CTRL = 4s)\n"
-			+ "- / =        halve / double the snap step\n"
-			+ "CTRL+S       save chart (.fvc)\n"
-			+ "ENTER        " + (editorPlaying ? "MUTE audio (currently PLAYING)" : "un-mute audio (currently MUTED)") + "\n"
-			+ "F1 or H      toggle this help\n"
-			+ "ESC          pause menu\n"
-			+ "DEBUG KEY    exit editor mode (song restarts)\n"
-			+ "Chart: " + saved;
-
-		if (showEditorInstructions && editorInstructionsBackground != null && editorInstructionsBuf != null) {
-			var padding = 24;
-			var bgW = Std.int(editorInstructionsText.width + padding * 2);
-			var bgH = Std.int(editorInstructionsText.height + padding * 2);
-			var bgX = Std.int((Main.INITIAL_WIDTH - bgW) * 0.5);
-			var bgY = Std.int((Main.INITIAL_HEIGHT - bgH) * 0.5);
-			editorInstructionsBackground.x = bgX;
-			editorInstructionsBackground.y = bgY;
-			editorInstructionsBackground.w = bgW;
-			editorInstructionsBackground.h = bgH;
-			editorInstructionsText.x = bgX + padding;
-			editorInstructionsText.y = bgY + padding;
-			try {
-				editorInstructionsBuf.updateElement(editorInstructionsBackground);
-				editorInstructionsBuf.update();
-			} catch (e) {}
-		}
-	}
 }

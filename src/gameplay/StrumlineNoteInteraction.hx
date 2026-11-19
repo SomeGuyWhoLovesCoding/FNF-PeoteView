@@ -168,7 +168,7 @@ class StrumlineNoteInteraction {
 
 	/** Snap a song time (ms) to the editor step grid. */
 	inline function snapTime(timeMs:Float):Float {
-		var step = parent.editorSnapMs;
+		var step = parent.editorMode.snapMs;
 		if (step <= 0)
 			return timeMs;
 		return Math.round(timeMs / step) * step;
@@ -312,7 +312,7 @@ class StrumlineNoteInteraction {
 					var id = File.addNote(MetaNote.floatToMetaNotePosition(timeMs), 0, lane, strumlineIdx);
 					if (id >= 0) {
 						Main.current.playScrollSound();
-						parent.onChartEdited();
+						parent.editorMode.onChartEdited();
 					}
 				}
 			}
@@ -331,7 +331,7 @@ class StrumlineNoteInteraction {
 				if (id >= 0) {
 					File.removeNote(id);
 					Main.current.playScrollSound();
-					parent.onChartEdited();
+					parent.editorMode.onChartEdited();
 				}
 			}
 			updateSquareVisual();
@@ -347,7 +347,7 @@ class StrumlineNoteInteraction {
 			return;
 
 		var seek = WHEEL_SEEK_MS * (ctrlPressed ? CTRL_SEEK_MULT : 1.0);
-		parent.setTimeEditor(parent.songPosition + notches * seek);
+		parent.editorMode.seekTo(parent.songPosition + notches * seek);
 	}
 
 	// ==================================================================
