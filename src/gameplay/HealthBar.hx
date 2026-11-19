@@ -76,8 +76,8 @@ class HealthBar {
 		bg.x = 275;
 		bg.y = parent.downScroll ? 90 : Main.INITIAL_HEIGHT - 90;
 
-		// Null in playfield editor mode (no Field/actors there) — fall back
-		// to the default palette and the default health icon grid IDs.
+		// Null in editor mode (no Field/actors there) — fall back to the
+		// default palette and the default health icon grid IDs.
 		var actors = parent.field != null ? parent.field.actors : null;
 
 		// HEALTH BAR PART SETUP

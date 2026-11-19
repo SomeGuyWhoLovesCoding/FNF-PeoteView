@@ -24,7 +24,7 @@ extern class File {
 	}
 	@:native("insertNote") static function insertNote(atGlobalPosition:Int64, duration:Int, index:Int, type:Int):Void;
 	/**
-	 * Adds a note from its raw fields — the flexible editor-facing API.
+	 * Adds a note from its raw fields — the editor-facing API.
 	 *   position: 100ns ticks (the unit MetaNote.position uses)
 	 *   duration: 1ms ticks (0 = tap note)
 	 *   index:    column index within the strumline (0..mania-1)
@@ -37,9 +37,10 @@ extern class File {
 	@:native("addNote") static function addNote(position:Int64, duration:Int, index:Int, type:Int):Int64;
 	/** Removes the note with the given global chart index. */
 	@:native("removeNote") static function removeNote(atIndex:Int64):Void;
+	/** Writes the live sharded store back out as a .fvc snapshot. */
+	@:native("saveChart") static function saveChart():Bool;
 	@:native("getLength") static function getLength():Int64;
 	@:native("destroyChart") static function destroyChart():Void;
-	@:native("saveChart") static function saveChart():Bool;
 	@:native("getJudgement") static function getJudgement(globalIndex:Int64):Bool;
 	@:native("setJudgement") static function setJudgement(globalIndex:Int64, value:Bool):Void;
 	@:native("getHitFlag") static function getHitFlag(globalIndex:Int64):Bool;
@@ -75,7 +76,7 @@ class File {
 	public static function insertNote(atGlobalPosition:hl.I64, duration:Int, index:Int, type:Int):Void {}
 
 	/**
-	 * Adds a note from its raw fields — the flexible editor-facing API.
+	 * Adds a note from its raw fields — the editor-facing API.
 	 * See the cpp target's addNote docs for the field units.
 	 * Returns the new note's global chart index.
 	 */
@@ -88,6 +89,12 @@ class File {
 	@:hlNative("chart_file", "removeNote")
 	public static function removeNote(atIndex:hl.I64):Void {}
 
+	/** Writes the live sharded store back out as a .fvc snapshot. */
+	@:hlNative("chart_file", "saveChart")
+	public static function saveChart():Bool {
+		return false;
+	}
+
 	@:hlNative("chart_file", "getLength")
 	public static function getLength():hl.I64 {
 		return 0;
@@ -95,12 +102,6 @@ class File {
 
 	@:hlNative("chart_file", "destroyChart")
 	public static function destroyChart():Void {}
-
-	/** Writes the live sharded store back out as a .fvc snapshot. */
-	@:hlNative("chart_file", "saveChart")
-	public static function saveChart():Bool {
-		return false;
-	}
 
 	@:hlNative("chart_file", "getJudgement")
 	public static function getJudgement(globalIndex:hl.I64):Bool {

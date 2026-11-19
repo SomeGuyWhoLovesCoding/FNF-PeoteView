@@ -185,8 +185,12 @@ class EditorMenu extends MenuInput {
 		switch (editorIndex) {
 			case 0: // Noteskin Editor
 				Main.switchState(NOTE_VIEW);
-			case 1: // Chart Editor (TODO)
-				Main.current.playConfirmSound();
+			case 1: // Chart Editor — pick the song through Freeplay, then
+			// the editor opens on it (FreeplayMenu.enter consumes
+			// pickForEditor and routes the pick into the editor).
+			Main.current.playConfirmSound();
+			Main.current.freeplayMenu.pickForEditor = true;
+			Main.current.freeplayMenu.open();
 			case 2: // Mod Manager (TODO)
 				Main.current.playConfirmSound();
 		}

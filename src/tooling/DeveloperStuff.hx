@@ -20,20 +20,6 @@ class DeveloperStuff {
 		var playField = Main.current?.playField;
 		//trace(code, playField);
 		if (playField == null || playField.disposed) return;
-		// Debug key: toggle playfieldEditorMode. Flipping the flag and
-		// switching to GAMEPLAY disposes + recreates the playfield — the
-		// state machine's built-in song restart — building it in the other
-		// mode. In editor mode only the note system, HUD, song system and
-		// pause menu are ever created/updated; lua never runs.
-		if (code == SaveData.state.controls.game.debug) {
-			// Delegates to the playfield's shared toggle (same path the
-			// in-playfield debug keybind takes, so the lua
-			// toggleEditorMode callback fires from here too). The
-			// playfield's own window listener for the same key bails
-			// when it sees editorModeNext already flipped by this call.
-			playField.debugToggleEditorMode();
-			return;
-		}
 		switch (code) {
 			case KeyCode.PERIOD:
 				playField.setTime(playField.songPosition + 1500, 350);

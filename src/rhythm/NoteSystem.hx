@@ -158,18 +158,18 @@ class NoteSystem {
 	private function refreshRendering(noteTime:Float) {
 		// Receptors are persistent in the buffer — just update animations.
 		// Pooled spawned notes are managed by notePool.beginFrame/endFrame.
-		// Editor mode: receptors never animate at all — nothing ever hits
-		// a note there, so no confirm/press/reset timers ever get set
-		// (skip the calls entirely; the timers are all Infinity there).
 
+		// Editor mode: receptors never animate at all — nothing ever hits
+		// a note there, so no confirm/press/reset timers ever get set.
 		var editorRender = parent.playfieldEditorMode;
+
 		for (i in 0...strumlines.length) {
 			var strumline = strumlines[i];
 			var canMess = !strumline.playable || RenderingMode.enabled || parent.botplay;
 			for (j in 0...strumline.receptors.length) {
 				var receptor = strumline.receptors[j];
 				var rec = receptor.note;
-				if (!editorRender && parent.botplay)
+				if (parent.botplay)
 					canMess = true;
 				if (canMess && !editorRender) {
 					receptor.updateAnimation(noteTime);
@@ -415,21 +415,21 @@ class NoteSystem {
 		var rec = receptor.note;
 		var handle = NoteSystem.typeToHandle[note.type];
 
+		var noteSpr = notePool.getNote(index, note, _id);
+		if (noteSpr == null)
+			return noteSpr;
+		var sustainSpr = duration != 0 ? notePool.getSustain(index, note, _id) : null;
+		var sustainExists = duration != 0;
+
 		// === PLAYFIELD EDITOR: pure render, zero gameplay ===
 		// In playfieldEditorMode notes never hit, never miss, never judge:
 		// no File.setJudgement/setHitFlag writes, no onNoteHit/onNoteMiss/
 		// onSustainComplete dispatches, no receptor confirm dance — the
-		// notes are ONLY drawn, and sustains are drawn whole ("go
-		// completely unnoticed": no clipping, no resolve, no completion).
-		// The editor owns songPosition, and the chart is never mutated by
-		// the renderer — the only writes to it come from the editor input.
-		var editorRender = parent.playfieldEditorMode;
-		if (editorRender) {
-			var noteSpr = notePool.getNote(index, note, _id);
-			if (noteSpr == null)
-				return noteSpr;
-			var sustainSpr = duration != 0 ? notePool.getSustain(index, note, _id) : null;
-
+		// notes are ONLY drawn, and sustains are drawn whole (no clipping,
+		// no resolve, no completion). The editor owns songPosition, and
+		// the chart is never mutated by the renderer — the only writes to
+		// it come from the editor input.
+		if (parent.playfieldEditorMode) {
 			var d = Std.int(-diff);
 			if (parent.downScroll)
 				d = -d;
@@ -467,12 +467,6 @@ class NoteSystem {
 			virtualNoteBuffer.addNote(noteSpr);
 			return noteSpr;
 		}
-
-		var noteSpr = notePool.getNote(index, note, _id);
-		if (noteSpr == null)
-			return noteSpr;
-		var sustainSpr = duration != 0 ? notePool.getSustain(index, note, _id) : null;
-		var sustainExists = duration != 0;
 
 		// Deferred: leftover is only needed for sustain notes.
 		// Avoids MetaNote.metaNotePositionToSongTime() per-note for the majority case.

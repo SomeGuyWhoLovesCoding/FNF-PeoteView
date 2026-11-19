@@ -194,9 +194,9 @@ class NoteSpawner {
 		//            <= despawnDist  <=>  notePos >= songPos - despawnDist)
 		//   top    = first note OUTSIDE spawn range (notePos - songPos
 		//            >= spawnDist  <=>  notePos > songPos + spawnDist)
-		// The old math used `songPos - spawnDist` for the top bound — an
-		// INVERTED offset that made top <= bottom on every reset, leaving
-		// the window empty until the next update's cull loops healed it.
+		// The old `songPos - spawnDist` top bound was an INVERTED offset
+		// that made top <= bottom on every reset, leaving the window
+		// empty until the next update's cull loops healed it.
 		var minPos:Int64 = songPos - despawnDist;
 		var maxPos:Int64 = songPos + spawnDist;
 

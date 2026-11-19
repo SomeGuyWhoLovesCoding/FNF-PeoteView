@@ -162,7 +162,10 @@ class StrumlineNoteInteraction {
 	}
 
 	inline function playheadMs():Float {
-		return parent.startedCountdown ? parent.noteTime : parent.songPosition;
+		// Editor mode always runs on its own songPosition (startedCountdown
+		// is false there); the noteTime split is the latency-corrected
+		// gameplay path.
+		return parent.playfieldEditorMode || !parent.startedCountdown ? parent.songPosition : parent.noteTime;
 	}
 
 	/**

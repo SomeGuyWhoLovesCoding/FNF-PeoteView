@@ -8,49 +8,87 @@ import lime.app.Event;
 	This is the main class that handles the playfield and all of its components.
 	It is responsible for initializing the playfield, updating it, and disposing of it when the game is over.
 	This class is used in the Main class to handle the gameplay state.
+
+	=== Editor mode ===
+
+	When `editorModeNext` was set before the state switch, create() builds
+	the editor subset ONLY (see PlayFieldEditorMode): HUD, note system,
+	song system (Mixer), pause menu — plus the stepped strumline input.
+	The frontend (PlayFieldFrontEnd: stage/actors, countdown, lua),
+	EventSystem and InputSystem are NEVER CONSTRUCTED in editor mode, so
+	`frontend`, `eventSystem` and `inputSystem` are null there and every
+	path that touches them already null-guards.
+
 	@since Development
 **/
 @:publicFields
 class PlayField {
-	/**
-	 * Set by the debug key (DeveloperStuff) before the state switch; consumed
-	 * by create() to build the playfield in playfieldEditorMode. Toggling
-	 * routes through Main.switchState(GAMEPLAY), whose dispose + recreate IS
-	 * the song restart.
-	 */
-	static var editorModeNext:Bool = false;
+	var roof(default, null):CustomDisplay;
+	var display(default, null):CustomDisplay;
+	var view(default, null):CustomDisplay;
 
 	/**
-	 * True when this playfield is the playfield editor: only the note system,
-	 * HUD, song system (Mixer/conductor) and pause menu are created and
-	 * updated. The Field, lua (FunkinViewLua), EventSystem, InputSystem and
-	 * CountdownDisplay never exist here — no note hit registration, no
-	 * keybind input, no events, no stage.
-	 *
-	 * All editor logic lives in PlayFieldEditorMode (field `editorMode`);
-	 * the branches in this class only delegate to it. Audio there is
-	 * silent by default: the song runs on Mixer.update's fake clock and
-	 * the mixer transport is never started at entry — the pause keybind
-	 * starts playback through the same onStartSong event the countdown
-	 * path uses.
-	 */
+		Set by the editor entry points (EditorMenu, DeveloperStuff debug
+		key) before the state switch; consumed by create() to build the
+		playfield in editor mode. Toggling routes through
+		Main.switchState(GAMEPLAY), whose dispose + recreate IS the song
+		restart.
+	**/
+	static var editorModeNext:Bool = false;
+
+	/** True when this playfield is the chart editor. */
 	var playfieldEditorMode(default, null):Bool = false;
 
 	/** The editor-mode subsystem; non-null only in playfieldEditorMode. */
 	var editorMode(default, null):PlayFieldEditorMode;
 
-	var roof(default, null):CustomDisplay;
-	var display(default, null):CustomDisplay;
-	var view(default, null):CustomDisplay;
+	/**
+		The gameplay frontend (stage/actors, countdown, lua). NEVER built
+		in editor mode — `frontend` is null there, and the `field`,
+		`countdownDisp` and `funkinviewlua` accessors below return null
+		with it. All gameplay call sites null-guard these.
+	**/
+	var frontend(default, null):PlayFieldFrontEnd;
 
-	// lua
-	// (This was previously `if (!playfieldEditorMode) { var funkinviewlua... }`
-	// at class level — a syntax error whenever the lua lib is compiled in,
-	// i.e. in every non-FV_NO_LUA build. The mode check lives at runtime now:
-	// every access goes through the #if blocks' !playfieldEditorMode guards.)
+	/** The stage/characters — null in editor mode (no frontend). */
+	var field(get, never):Field;
+
+	inline function get_field():Field {
+		return frontend != null ? frontend.field : null;
+	}
+
+	/** The countdown display — null in editor mode (no frontend). */
+	var countdownDisp(get, never):CountdownDisplay;
+
+	inline function get_countdownDisp():CountdownDisplay {
+		return frontend != null ? frontend.countdownDisp : null;
+	}
+
 	#if linc_luajit_funkinview
-	var funkinviewlua(default, null):FunkinViewLua;
+	/** The lua VM — null in editor mode (no frontend). */
+	var funkinviewlua(get, never):FunkinViewLua;
+
+	inline function get_funkinviewlua():FunkinViewLua {
+		return frontend != null ? frontend.funkinviewlua : null;
+	}
 	#end
+
+	/** Fire-and-forget lua dispatch; no-op in editor mode. */
+	inline function luaCall(fname:String, args:haxe.Rest<Dynamic>) {
+		#if linc_luajit_funkinview
+		if (frontend != null)
+			frontend.luaCall(fname, args);
+		#end
+	}
+
+	/** Lua dispatch whose Function_Stop result matters; false without a frontend. */
+	inline function luaCallStop(fname:String, args:haxe.Rest<Dynamic>):Bool {
+		#if linc_luajit_funkinview
+		if (frontend != null)
+			return frontend.luaCallStop(fname, args);
+		#end
+		return false;
+	}
 
 	private var chartPath(default, null):String;
 
@@ -64,14 +102,6 @@ class PlayField {
 		this.roof = roof;
 		this.display = display;
 		this.view = view;
-
-		playfieldEditorMode = editorModeNext;
-
-		#if linc_luajit_funkinview
-		// In playfieldEditorMode lua never runs (as intended).
-		if (!playfieldEditorMode)
-			funkinviewlua = new FunkinViewLua(this, chartPath, Chart.header);
-		#end
 
 		create(roof, display, Chart.header.mania);
 	}
@@ -95,7 +125,7 @@ class PlayField {
 		[1.0 - 0.34, 1, 0.8, 200],
 		[1.0, 2, 0.675, 100],
 		[Math.POSITIVE_INFINITY, 3, 0.5, 50]
-	]; // how this new modifiable system works: you simply just set this array to a new selection of ratings, however you want.
+	]; // how this new modifiable system works: you simply just set this array to a new selection of ratings, however you want it.
 
 	var score:Int64 = 0;
 	var misses:Int64 = 0;
@@ -161,9 +191,12 @@ class PlayField {
 	var died(default, null):Bool;
 	var botplay(default, set):Bool;
 
-	/** Editor-only write access: PlayFieldEditorMode.togglePlayback stops
-	 *  playback by dropping songStarted (switches Mixer.update to the
-	 *  fake clock). startSong's own writes go through the class itself. */
+	/**
+		Editor-only write access: PlayFieldEditorMode.togglePlayback stops
+		playback by dropping songStarted (switches Mixer.update to the
+		frozen-clock branch). startSong's own writes go through the class
+		itself.
+	**/
 	@:allow(gameplay.PlayFieldEditorMode)
 	function set_songStarted(value:Bool):Bool {
 		return songStarted = value;
@@ -197,20 +230,12 @@ class PlayField {
 		return mania = value;
 	}
 
-	var field(default, null):Field;
-	/** Editor-only write access (PlayFieldEditorMode builds the editor subset). */
-	@:allow(gameplay.PlayFieldEditorMode)
 	var hud(default, null):HUD;
 
 	var inputSystem(default, null):InputSystem;
-	/** Editor-only write access (PlayFieldEditorMode builds the editor subset). */
-	@:allow(gameplay.PlayFieldEditorMode)
 	var noteSystem(default, null):NoteSystem;
 	var eventSystem(default, null):EventSystem;
 
-	var countdownDisp(default, null):CountdownDisplay;
-	/** Editor-only write access (PlayFieldEditorMode builds the editor subset). */
-	@:allow(gameplay.PlayFieldEditorMode)
 	var pauseScreen(default, null):PauseScreen;
 
 	var onStartSong:Event<Header->Void>;
@@ -230,7 +255,36 @@ class PlayField {
 	var ready:Bool = false;
 
 	function setTime(value:Float, pushToOffset:Float = 0) {
-		if (disposed || !songStarted || songEnded || paused || died)
+		if (disposed || songEnded || paused || died)
+			return;
+
+		// EDITOR MODE: the base setTime's backwards-seek branch is a full
+		// song restart (pause + switchState + recreate) because judged
+		// gameplay state cannot be un-judged. The editor has no judged
+		// state — its render path is pure — so ALL editor seeks, backwards
+		// included, take the light path: seek the PCM transport, snap the
+		// editor-owned position, reset+redraw the note system.
+		if (playfieldEditorMode) {
+			// Frozen editor with no playback: seekTo() is the only mover
+			// (base setTime is a no-op there). While ENTER playback is on,
+			// external setters (DeveloperStuff PERIOD/COMMA) take the
+			// same light seek path.
+			if (!songStarted && (editorMode == null || !editorMode.playing))
+				return;
+			if (value < 0)
+				value = 0;
+			if (value > Mixer.length - 1000)
+				value = Mixer.length - 1000;
+			Mixer.setTime(Math.max(value, 0.0), this);
+			songPosition = value;
+			if (noteSystem != null) {
+				var pos = MetaNote.floatToMetaNotePosition(value);
+				noteSystem.onSongPositionJump(pos, pushToOffset);
+			}
+			return;
+		}
+
+		if (!songStarted)
 			return;
 		if (value > Mixer.length - 1000)
 			value = Mixer.length - 1000;
@@ -244,11 +298,7 @@ class PlayField {
 			if (eventSystem != null)
 				eventSystem.clearEventTimers(); // immediately clear out any event timers to prevent them flooding the rest of the song through
 
-			#if linc_luajit_funkinview
-			if (!playfieldEditorMode) {
-				funkinviewlua.callFunction('preTimeChange', timeForRestartingBackwardTime, Chart.header);
-			}
-			#end
+			luaCall('preTimeChange', timeForRestartingBackwardTime, Chart.header);
 
 			pause(false);
 			Tools.forSync(() -> {
@@ -283,17 +333,7 @@ class PlayField {
 	 */
 	function create(roof:CustomDisplay, display:CustomDisplay, initialMania:Int = 4) {
 		mania = initialMania;
-
-		// The debug key (controls.game.debug, same bind the Main Menu
-		// uses for GAME_DEBUG) is attached at the WINDOW level and for
-		// the playfield's whole lifetime — gameplay AND editor mode,
-		// running AND paused. A window listener is the only single place
-		// that covers all of those: InputSystem is gameplay-only and is
-		// detached while paused, and the editor's keyDown bails on
-		// paused. DeveloperStuff has its own window listener for the
-		// same key; debugKeyDown re-dispatches into its shared action
-		// only when DeveloperStuff has NOT already consumed the press.
-		attachDebugKey();
+		playfieldEditorMode = editorModeNext;
 
 		healthLoss = [for (i in 0...128) 0.02];
 		healthGain = [for (i in 0...128) 0.025];
@@ -320,67 +360,65 @@ class PlayField {
 
 		var conductor = Main.conductor;
 		conductor.offset = 0; // latency is now handled via noteTime, not conductor.offset
-
-		if (playfieldEditorMode) {
-			// ============================================================
-			// PLAYFIELD EDITOR MODE — PlayFieldEditorMode.build() creates
-			// ONLY the note system, HUD, song system and pause menu, and
-			// hooks the editor's key + mouse input. No Field (stage/
-			// characters/camera), no FunkinViewLua, no EventSystem, no
-			// InputSystem, no CountdownDisplay. The song NEVER starts at
-			// entry: songStarted stays false so Mixer.update advances
-			// songPosition on its fake clock (completely silent — the
-			// mixer transport is never started, nothing to mute). The
-			// pause keybind starts real audio through onStartSong, the
-			// same event the countdown path dispatches in gameplay.
-			// ============================================================
-			editorMode = new PlayFieldEditorMode(this);
-
-			// Receptors enter the STATIC NoteSystem.notesBuf mid-constructor;
-			// if anything below throws, `noteSystem` never gets assigned and
-			// dispose() would skip it — leaving those receptors as permanent
-			// strumline ghosts on screen. Wrap the build so a failure cleans
-			// up whatever got created before rethrowing.
-			try {
-				editorMode.build();
-			} catch (e:Dynamic) {
-				Sys.println('[ PlayField ] editor-mode create failed: $e — cleaning up partial build');
-				cleanupFailedCreate();
-				throw e;
-			}
-
-			startedCountdown = false;
-			return;
-		}
-
 		songPosition = -conductor.crochet * 4.5;
-
-		field = new Field(this);
 
 		HUD.init();
 		if (!SaveData.state.preferences.hideHUD)
 			hud = new HUD(display, this);
 
-		inputSystem = new InputSystem(initialMania, this);
+		// InputSystem's constructor attaches the gameplay keybind handlers
+		// to the window — the editor (StrumlineNoteInteraction + its own
+		// key handler) must never have them, so it is not constructed at
+		// all in editor mode instead of being disposed after the fact.
+		if (!playfieldEditorMode)
+			inputSystem = new InputSystem(initialMania, this);
 
 		NoteSystem.init();
 		noteSystem = new NoteSystem(this);
 
 		Mixer.init(Chart.header);
 
-		eventSystem = new EventSystem(this);
-
-		CountdownDisplay.init(roof);
-		countdownDisp = new CountdownDisplay();
-		countdownDisp.setupSounds();
-
-		// Attach countdown-specific handler (drives countdownDisp and triggers onStartSong)
-		countdownDisp.conductor.onBeatUnoffsetted.add(countdownBeatHit);
+		// EventSystem scans and dispatches the song's scripted events —
+		// a pure gameplay concern; the editor chart carries no runtime
+		// events and must never trigger them.
+		if (!playfieldEditorMode)
+			eventSystem = new EventSystem(this);
 
 		PauseScreen.init(roof);
 		pauseScreen = new PauseScreen(Chart.header.difficulty);
 
 		scrollSpeed = Chart.header.speed;
+
+		// ----------------------------------------------------------------
+		// EDITOR MODE: build the editor subset and STOP here. The frontend
+		// (stage/actors, countdown, lua), InputSystem and EventSystem are
+		// never constructed, so `field`, `countdownDisp`, `funkinviewlua`,
+		// `inputSystem` and `eventSystem` are all null by construction.
+		// ----------------------------------------------------------------
+		if (playfieldEditorMode) {
+			editorMode = new PlayFieldEditorMode(this);
+			editorMode.build();
+			startedCountdown = false;
+
+			// The playfield-owned debug-key window listener (see
+			// attachDebugKey) covers both modes for the playfield's whole
+			// lifetime — running, paused, gameplay and editor.
+			attachDebugKey();
+			return;
+		}
+
+		// ----------------------------------------------------------------
+		// GAMEPLAY: build the frontend (stage, countdown, lua) on top of
+		// the shared subsystems above.
+		// ----------------------------------------------------------------
+		frontend = new PlayFieldFrontEnd(this);
+		frontend.build(chartPath);
+
+		// Debug key active in gameplay too (see attachDebugKey).
+		attachDebugKey();
+
+		// Attach countdown-specific handler (drives countdownDisp and triggers onStartSong)
+		countdownDisp.conductor.onBeatUnoffsetted.add(countdownBeatHit);
 
 		if (RenderingMode.enabled) {
 			RenderingMode.initRender();
@@ -388,14 +426,12 @@ class PlayField {
 
 		startedCountdown = !onRestartingForBackwardTimeSetting;
 
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode) {
-			startedCountdown = startedCountdown
-			|| funkinviewlua.callFunction('startCountdown', formatCustomSongName(Chart.header.title),
-				Chart.header.difficulty)[0] != FunkinViewLua.Function_Stop;
-			funkinviewlua.callFunction('createPost', null);
-		}
-		#end
+		// A script returning Function_Stop cancels the automatic countdown
+		// (the script starts the song itself); anything else — including
+		// no frontend at all — keeps the engine countdown.
+		if (luaCallStop('startCountdown', formatCustomSongName(Chart.header.title), Chart.header.difficulty))
+			startedCountdown = true;
+		luaCall('createPost', null);
 
 		if (onRestartingForBackwardTimeSetting) {
 			onRestartingForBackwardTimeSetting = false;
@@ -404,50 +440,9 @@ class PlayField {
 
 			songPosition = timeForRestartingBackwardTime;
 
-			#if linc_luajit_funkinview
-			if (!playfieldEditorMode) {
-				funkinviewlua.callFunction('postTimeChange', timeForRestartingBackwardTime, Chart.header);
-			}
-			#end
+			luaCall('postTimeChange', timeForRestartingBackwardTime, Chart.header);
 
 			timeForRestartingBackwardTime = 0;
-		}
-	}
-
-	/**
-	 * Editor-mode create() failure recovery. A NoteSystem constructor that
-	 * throws mid-way has already added its receptors to the STATIC
-	 * NoteSystem.notesBuf/sustainsBuf — but `noteSystem` never got assigned,
-	 * so a later dispose() would skip it and those receptors would stay on
-	 * screen forever. Drop everything that was partially built here.
-	 */
-	function cleanupFailedCreate() {
-		if (noteSystem != null) {
-			noteSystem.dispose();
-			noteSystem = null;
-		} else {
-			// The ctor threw before assignment: nothing references the
-			// half-built instance, but its receptors sit in the static
-			// buffers. Clear them — the buffers are re-filled element-by-
-			// element by the next NoteSystem construction.
-			NoteSystem.notesBuf.clear();
-			NoteSystem.sustainsBuf.clear();
-		}
-
-		if (hud != null) {
-			hud.dispose();
-			hud = null;
-		}
-
-		if (pauseScreen != null) {
-			pauseScreen.dispose();
-			pauseScreen = null;
-		}
-
-		// Editor subsystem (keys, mouse input, instructions overlay).
-		if (editorMode != null) {
-			editorMode.dispose();
-			editorMode = null;
 		}
 	}
 
@@ -506,31 +501,32 @@ class PlayField {
 			return;
 
 		#if linc_luajit_funkinview
-		if (!playfieldEditorMode) {
+		if (funkinviewlua != null)
 			funkinviewlua.updateVariablesList();
-			funkinviewlua.callFunction('update', deltaTime);
-		}
 		#end
+		luaCall('update', deltaTime);
 
 		if (!ready) {
 			ready = true;
 			return;
 		}
 
+		display.update();
+		view.update();
+
+		additiveDispShake.x = 0;
+		additiveDispShake.y = 0;
+		additiveViewShake.x = 0;
+		additiveViewShake.y = 0;
+
 		if (playfieldEditorMode) {
 			// ============================================================
-			// PLAYFIELD EDITOR MODE — update ONLY the song system, HUD,
-			// note system and stepped strumline input. lua is skipped
-			// above; no Field/EventSystem/CountdownDisplay exist here.
-			// The songPosition in editor mode is EDITOR-OWNED: frozen
-			// while silent (Mixer.update never adds deltaTime to it —
-			// see Mixer.update's editorFrozen branch), moved only by
-			// explicit editor seeks, and driven by the real audio clock
-			// while the pause keybind holds playback on.
+			// EDITOR MODE — update ONLY the song system, HUD, note system
+			// and the stepped strumline input. No frontend (stage/countdown/
+			// lua never exist), no EventSystem, no InputSystem. The
+			// songPosition is editor-owned: frozen while silent, driven by
+			// the real audio clock while ENTER playback is on.
 			// ============================================================
-			display.update();
-			view.update();
-
 			Mixer.update(this, deltaTime);
 			updateNoteLatency();
 			noteTime = songPosition - noteLatency;
@@ -548,16 +544,8 @@ class PlayField {
 			return;
 		}
 
-		display.update();
-		view.update();
-
-		additiveDispShake.x = 0;
-		additiveDispShake.y = 0;
-		additiveViewShake.x = 0;
-		additiveViewShake.y = 0;
-
-		if (field != null)
-			field.update(deltaTime);
+		if (frontend != null)
+			frontend.update(deltaTime);
 
 		var ratio = Math.max(Math.min((deltaTime * 0.01), 1), 0);
 		if (display.fov != 1)
@@ -565,16 +553,13 @@ class PlayField {
 		if (view.fov != 1)
 			view.fov = Tools.lerp(view.fov, 1, ratio);
 
-		if (countdownDisp != null)
-			countdownDisp.update(deltaTime);
-
 		if (eventSystem != null && !died) {
 			eventSystem.update(deltaTime, songPosition);
 		}
 
 		display.shake(dispShake.x + additiveDispShake.x, dispShake.y + additiveDispShake.y);
-		if (field != null)
-			field.updateCamera(deltaTime);
+		if (frontend != null)
+			frontend.updateCamera(deltaTime);
 
 		if (!died) {
 			if (startedCountdown) {
@@ -605,12 +590,8 @@ class PlayField {
 				noteSystem.update(pos);
 			}
 
-			#if linc_luajit_funkinview
-			if (!playfieldEditorMode) {
-				funkinviewlua.callFunction('updatePost', deltaTime);
-				funkinviewlua.callFunction('postUpdate', deltaTime); // alternative syntax
-			}
-			#end
+			luaCall('updatePost', deltaTime);
+			luaCall('postUpdate', deltaTime); // alternative syntax
 
 			return;
 		}
@@ -620,9 +601,9 @@ class PlayField {
 			noteSystem = null;
 		}
 
-		if (countdownDisp != null) {
-			countdownDisp.dispose();
-			countdownDisp = null;
+		if (frontend != null) {
+			frontend.dispose();
+			frontend = null;
 		}
 
 		if (pauseScreen != null) {
@@ -637,18 +618,9 @@ class PlayField {
 	}
 
 	/**
-		There is mainly nothing in this render function except a couple extra things.
-	**/
-	/**
 		Paused-editor tick, called by Main while the editor's pause menu is
-		open. A PURE render pass at the FROZEN editor position — the editor's
-		note rendering stays on screen underneath the pause menu for its
-		entire lifetime. Nothing here can move the song or process input:
-		no Mixer.update (the transport is stopped and songPosition stays
-		frozen), no conductor.time write, no strumlineInput.update, no
-		eventSystem. Only the note system + HUD keep ticking at the frozen
-		position, exactly what the un-paused editor branch does each frame
-		while silent.
+		open. A PURE render pass at the FROZEN editor position — the
+		editor's note rendering stays on screen underneath the pause menu.
 	**/
 	function updatePausedEditor(deltaTime:Float) {
 		if (disposed || !paused || !playfieldEditorMode)
@@ -665,31 +637,21 @@ class PlayField {
 			noteSystem.update(pos);
 	}
 
+	/**
+		There is mainly nothing in this render function except a couple extra things.
+	**/
 	function render() {
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode)
-			funkinviewlua.callFunction('render', null);
-		#end
-
-		var renderingModeEnabled = RenderingMode.enabled;
-		if (renderingModeEnabled)
-			update(1000 / RenderingMode.frameRate);
-
+		// EDITOR MODE: notes + HUD only, at the editor-owned position
+		// (startedCountdown is always false there — but keep the split
+		// explicit anyway). The StrumlineNoteInteraction square's program
+		// was added AFTER notesProg, so it draws on top of the note
+		// system render automatically.
 		if (playfieldEditorMode) {
-			// ============================================================
-			// PLAYFIELD EDITOR MODE — render the note system + HUD only.
-			// The StrumlineNoteInteraction square lives in its own program
-			// added AFTER notesProg, so it draws on top of the note system
-			// render (and everything else) automatically. Position input is
-			// the same editor-owned songPosition the update loop uses
-			// (startedCountdown is always false in the editor).
-			// ============================================================
 			var noteSystem = noteSystem;
 			if (noteSystem != null) {
 				var pos = MetaNote.floatToMetaNotePosition(songPosition);
 				noteSystem.renderNotes(pos);
 			}
-
 			if (hud != null) {
 				hud.render();
 				hud.updateBuffers();
@@ -697,6 +659,13 @@ class PlayField {
 			return;
 		}
 
+		// GAMEPLAY: baseline order — lua render, rendering-mode tick,
+		// notes, stage, HUD.
+		luaCall('render', null);
+
+		var renderingModeEnabled = RenderingMode.enabled;
+		if (renderingModeEnabled)
+			update(1000 / RenderingMode.frameRate);
 		var noteSystem = noteSystem;
 		if (noteSystem != null) {
 			var t = startedCountdown ? noteTime : songPosition;
@@ -704,9 +673,9 @@ class PlayField {
 			noteSystem.renderNotes(pos);
 		}
 
-		var field = field;
-		if (field != null) {
-			field.render();
+		var frontend = frontend;
+		if (frontend != null) {
+			frontend.render();
 		}
 
 		var hud = hud;
@@ -724,12 +693,8 @@ class PlayField {
 		if (renderingModeEnabled)
 			RenderingMode.pipeFrame();
 
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode) {
-			funkinviewlua.callFunction('renderPost', null);
-			funkinviewlua.callFunction('postRender', null); // alternative syntax
-		}
-		#end
+		luaCall('renderPost', null);
+		luaCall('postRender', null); // alternative syntax
 	}
 
 	/**
@@ -739,10 +704,8 @@ class PlayField {
 		if (disposed || paused || died || RenderingMode.enabled)
 			return;
 
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode && funkinviewlua.callFunction('pause', null)[0] == FunkinViewLua.Function_Stop)
+		if (luaCallStop('pause', null))
 			return;
-		#end
 
 		if (showpausescreen)
 			pauseScreen.open();
@@ -763,12 +726,8 @@ class PlayField {
 		if (showpausescreen)
 			Main.current.playScrollSound();
 
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode) {
-			funkinviewlua.callFunction('pausePost', null);
-			funkinviewlua.callFunction('postPause', null); // alternative syntax
-		}
-		#end
+		luaCall('pausePost', null);
+		luaCall('postPause', null); // alternative syntax
 	}
 
 	/**
@@ -778,10 +737,7 @@ class PlayField {
 		if (disposed || !paused || died)
 			return;
 
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode)
-			funkinviewlua.callFunction('resume', null);
-		#end
+		luaCall('resume', null);
 
 		pauseScreen.close();
 		if (!RenderingMode.enabled && songStarted && !songEnded)
@@ -795,12 +751,8 @@ class PlayField {
 
 		paused = false;
 
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode) {
-			funkinviewlua.callFunction('resumePost', null);
-			funkinviewlua.callFunction('postResume', null); // alternative syntax
-		}
-		#end
+		luaCall('resumePost', null);
+		luaCall('postResume', null); // alternative syntax
 	}
 
 	function countdownBeatHit(beat:Float) {
@@ -818,27 +770,15 @@ class PlayField {
 	}
 
 	function stepHit(step:Float) {
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode) {
-			funkinviewlua.callFunction('stepHit', step);
-		}
-		#end
+		luaCall('stepHit', step);
 	}
 
 	function beatHit(beat:Float) {
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode) {
-			funkinviewlua.callFunction('beatHit', beat);
-		}
-		#end
+		luaCall('beatHit', beat);
 	}
 
 	function measureHit(measure:Float) {
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode) {
-			funkinviewlua.callFunction('measureHit', measure);
-		}
-		#end
+		luaCall('measureHit', measure);
 
 		if (measure >= 0 && !playfieldEditorMode && SaveData.state.preferences.cameraZooming && songStarted) {
 			display.fov += 0.025;
@@ -847,13 +787,10 @@ class PlayField {
 	}
 
 	function hitNote(note:MetaNote, timing:Float, notesInOne:Int64, _i:Int64) {
-		#if linc_luajit_funkinview
-		var notePos:Float = playfieldEditorMode ? 0 : MetaNote.metaNotePositionToSongTime(note.position);
-		if (!playfieldEditorMode
-			&& funkinviewlua.callFunction('hitNote', notePos, note.index, note.duration, note.type, timing, notesInOne)[0] == FunkinViewLua.Function_Stop) {
+		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
+		if (luaCallStop('hitNote', notePos, note.index, note.duration, note.type, timing, notesInOne)) {
 			return;
 		}
-		#end
 
 		var lane = note.type;
 
@@ -863,10 +800,11 @@ class PlayField {
 		if (index > 0 && index <= Mixer.trackCount)
 			Mixer.changeTrackVolume(index, 1);
 
-		// During create() the NoteSystem constructor itself draws the spawn
-		// window (editor mode starts at songPosition 0) and calls back into
-		// here before `noteSystem` has been assigned. No note system →
-		// nothing is playable → opponent-style health-only handling.
+		// During create() the NoteSystem constructor itself draws the
+		// spawn window (editor mode starts at songPosition 0) and calls
+		// back into here before `noteSystem` has been assigned. No note
+		// system → nothing is playable → opponent-style health-only
+		// handling.
 		var playable = noteSystem != null && noteSystem.strumlines[lane].playable;
 
 		if (!playable) {
@@ -904,7 +842,7 @@ class PlayField {
 			playJudgementHitsound(judgementID);
 			accuracy.increment(judgementAcc, false, notesInOne * 10000);
 			score += judgementScore * notesInOne;
-			postHitNote(#if linc_luajit_funkinview notePos, #end note, timing, notesInOne);
+			postHitNote(notePos, note, timing, notesInOne);
 			return;
 		}
 
@@ -919,7 +857,7 @@ class PlayField {
 				playJudgementHitsound(judgementID);
 				accuracy.increment(judgementAcc, false, notesInOne * 10000);
 				score += judgementScore * notesInOne;
-				postHitNote(#if linc_luajit_funkinview notePos, #end note, timing, notesInOne);
+				postHitNote(notePos, note, timing, notesInOne);
 				return;
 			}
 		}
@@ -935,23 +873,16 @@ class PlayField {
 			Main.current.playHitsound();
 	}
 
-	function postHitNote(#if linc_luajit_funkinview notePos:Float, #end note:MetaNote, timing:Float, notesInOne:Int64) {
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode) {
-			funkinviewlua.callFunction('hitNotePost', notePos, note.index, note.duration, note.type, timing, notesInOne);
-			funkinviewlua.callFunction('postHitNote', notePos, note.index, note.duration, note.type, timing, notesInOne); // alternative syntax
-		}
-		#end
+	function postHitNote(notePos:Float, note:MetaNote, timing:Float, notesInOne:Int64) {
+		luaCall('hitNotePost', notePos, note.index, note.duration, note.type, timing, notesInOne);
+		luaCall('postHitNote', notePos, note.index, note.duration, note.type, timing, notesInOne); // alternative syntax
 	}
 
 	function missNote(note:MetaNote, notesInOne:Int64, _i:Int64) {
-		#if linc_luajit_funkinview
-		var notePos:Float = playfieldEditorMode ? 0 : MetaNote.metaNotePositionToSongTime(note.position);
-		if (!playfieldEditorMode
-			&& funkinviewlua.callFunction('missNote', notePos, note.index, note.duration, note.type, notesInOne)[0] == FunkinViewLua.Function_Stop) {
+		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
+		if (luaCallStop('missNote', notePos, note.index, note.duration, note.type, notesInOne)) {
 			return;
 		}
-		#end
 
 		if (practiceMode && health < 0.05) {
 			health = 0.05;
@@ -975,28 +906,21 @@ class PlayField {
 		if (health < 0 && !disposed)
 			onDeath.dispatch(Chart.header, lane);
 
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode) {
-			funkinviewlua.callFunction('missNotePost', notePos, note.index, note.duration, note.type, notesInOne);
-			funkinviewlua.callFunction('postMissNote', notePos, note.index, note.duration, note.type, notesInOne); // alternative syntax
-		}
-		#end
+		luaCall('missNotePost', notePos, note.index, note.duration, note.type, notesInOne);
+		luaCall('postMissNote', notePos, note.index, note.duration, note.type, notesInOne); // alternative syntax
 	}
 
 	function completeSustain(note:MetaNote, _i:Int64) {
-		#if linc_luajit_funkinview
-		var notePos:Float = playfieldEditorMode ? 0 : MetaNote.metaNotePositionToSongTime(note.position);
-		if (!playfieldEditorMode)
-			funkinviewlua.callFunction('completeSustain', notePos, note.index, note.duration, note.type);
-		#end
+		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
+		luaCall('completeSustain', notePos, note.index, note.duration, note.type);
 
 		var lane = note.type;
 
-		// Same create()-time guard as hitNote: the NoteSystem ctor can call
-		// back into here before `noteSystem` is assigned.
 		if (noteSystem != null && noteSystem.strumlines[lane].confirmed(note.index))
 			return;
 
+		// Same create()-time guard as hitNote: the NoteSystem ctor can
+		// call back into here before `noteSystem` is assigned.
 		var playable = noteSystem != null && noteSystem.strumlines[lane].playable;
 
 		if (!playable) {
@@ -1013,38 +937,24 @@ class PlayField {
 			}
 		}
 
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode) {
-			funkinviewlua.callFunction('completeSustainPost', notePos, note.index, note.duration, note.type);
-			funkinviewlua.callFunction('postCompleteSustain', notePos, note.index, note.duration, note.type); // alternative syntax
-		}
-		#end
+		luaCall('completeSustainPost', notePos, note.index, note.duration, note.type);
+		luaCall('postCompleteSustain', notePos, note.index, note.duration, note.type); // alternative syntax
 	}
 
 	inline function releaseSustain(note:MetaNote, _i:Int64) {
-		#if linc_luajit_funkinview
-		var notePos:Float = playfieldEditorMode ? 0 : MetaNote.metaNotePositionToSongTime(note.position);
-		if (!playfieldEditorMode)
-			funkinviewlua.callFunction('releaseSustain', notePos, note.index, note.duration, note.type);
-		#end
+		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
+		luaCall('releaseSustain', notePos, note.index, note.duration, note.type);
 
 		combo = 0;
 
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode) {
-			funkinviewlua.callFunction('releaseSustainPost', notePos, note.index, note.duration, note.type);
-			funkinviewlua.callFunction('postReleaseSustain', notePos, note.index, note.duration, note.type); // alternative syntax
-		}
-		#end
+		luaCall('releaseSustainPost', notePos, note.index, note.duration, note.type);
+		luaCall('postReleaseSustain', notePos, note.index, note.duration, note.type); // alternative syntax
 	}
 
 	var songStartTime:Float = 0.0; // Hardware timestamp when the song actually started
 
 	function startSong(header:Header) {
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode)
-			funkinviewlua.callFunction('startSong', formatCustomSongName(header.title), header.difficulty);
-		#end
+		luaCall('startSong', formatCustomSongName(header.title), header.difficulty);
 
 		Sys.println('Song activity is on');
 
@@ -1056,6 +966,13 @@ class PlayField {
 		songEnded = false;
 
 		var conductor = Main.conductor;
+		// Idempotent hook-up: lime's Event.add does NOT dedupe, and the
+		// editor's ENTER toggle dispatches onStartSong repeatedly
+		// (start→stop→start cycles) — remove-first keeps the listeners
+		// from stacking one copy per playback cycle.
+		conductor.onStep.remove(stepHit);
+		conductor.onBeat.remove(beatHit);
+		conductor.onMeasure.remove(measureHit);
 		conductor.onStep.add(stepHit);
 		conductor.onBeat.add(beatHit);
 		conductor.onMeasure.add(measureHit);
@@ -1065,19 +982,12 @@ class PlayField {
 				countdownDisp.conductor.onBeatUnoffsetted.remove(countdownBeatHit);
 		}
 
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode) {
-			funkinviewlua.callFunction('startSongPost', formatCustomSongName(header.title), header.difficulty);
-			funkinviewlua.callFunction('postStartSong', formatCustomSongName(header.title), header.difficulty); // alternative syntax
-		}
-		#end
+		luaCall('startSongPost', formatCustomSongName(header.title), header.difficulty);
+		luaCall('postStartSong', formatCustomSongName(header.title), header.difficulty); // alternative syntax
 	}
 
 	function stopSong(header:Header) {
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode)
-			funkinviewlua.callFunction('stopSong', formatCustomSongName(header.title), header.difficulty);
-		#end
+		luaCall('stopSong', formatCustomSongName(header.title), header.difficulty);
 
 		Sys.println('Song activity is off');
 
@@ -1092,26 +1002,16 @@ class PlayField {
 
 		Mixer.setTime(0, null);
 
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode) {
-			funkinviewlua.callFunction('stopSongPost', formatCustomSongName(header.title), header.difficulty);
-			funkinviewlua.callFunction('postStopSong', formatCustomSongName(header.title), header.difficulty); // alternative syntax
-		}
-		#end
+		luaCall('stopSongPost', formatCustomSongName(header.title), header.difficulty);
+		luaCall('postStopSong', formatCustomSongName(header.title), header.difficulty); // alternative syntax
 
 		// Editor mode returns to the main menu like gameplay does.
 		Main.switchState(MAIN_MENU);
 	}
 
 	function gameOver(header:Header, lane:Int) {
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode) {
-			funkinviewlua.callFunction('gameOver', null);
-		}
-		#end
+		luaCall('gameOver', null);
 
-		// Editor mode never dies (no playable strumlines → no misses), but
-		// inputSystem is null there, so guard the teardown anyway.
 		if (inputSystem != null) {
 			inputSystem.removeEvents();
 			haxe.Timer.delay(inputSystem.addEvents, 2000); // prevent instant end gameover
@@ -1138,7 +1038,7 @@ class PlayField {
 
 		Mixer.setTime(0, null);
 
-		// field (stage/actors) never exists in editor mode.
+		// The frontend (stage/actors) never exists in editor mode.
 		if (field != null) {
 			var char = field.actors[lane + field.numSpectators];
 			if (char == null)
@@ -1147,12 +1047,8 @@ class PlayField {
 			field.actorOnGameOver = char;
 		}
 
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode) {
-			funkinviewlua.callFunction('gameOverPost', null);
-			funkinviewlua.callFunction('postGameOverPost', null); // alternative syntax
-		}
-		#end
+		luaCall('gameOverPost', null);
+		luaCall('postGameOverPost', null); // alternative syntax
 
 		deathCounter++;
 	}
@@ -1160,50 +1056,19 @@ class PlayField {
 	var customSongName = "";
 
 	// helper function made for playfield
-	/**
-		Debug-key handler (the controls.game.debug bind, default 7/C per
-		saved binds). Works from BOTH gameplay and editor mode and while
-		paused: flips the editorModeNext flag the next GAMEPLAY build
-		reads, dispatches the lua `toggleEditorMode` callback BEFORE the
-		toggle (song name, difficulty, artist — same name formatting the
-		startSong callbacks use), then restarts the song so the playfield
-		is rebuilt in the other mode. Mirrors exactly what
-		DeveloperStuff.testPlayfieldInputStuff does, minus the other dev
-		test keys, so both entry points stay in one behavior.
-	**/
-	function debugToggleEditorMode() {
-		if (disposed)
-			return;
+	inline function formatCustomSongName(title:String) {
+		return customSongName == "" ? title : customSongName;
+	}
 
-		var entering = !PlayField.editorModeNext;
-		var header = Chart.header;
+	var customStage = "";
 
-		#if linc_luajit_funkinview
-		// The toggle dispatch happens BEFORE the mode flips — scripts get
-		// the song context while the (still running) playfield can still
-		// answer questions about it. In editor mode lua never runs, so
-		// this only fires when toggling OUT of gameplay into the editor
-		// (the gameplay→editor direction is where a script cares anyway:
-		// it is about to lose control until the toggle back).
-		if (!playfieldEditorMode) {
-			funkinviewlua.callFunction('toggleEditorMode', formatCustomSongName(header.title), header.difficulty, header.artist);
-		}
-		#end
+	// helper function made for playfield
+	inline function formatCustomStage(stage:String) {
+		return customStage == "" ? stage : customStage;
+	}
 
-		PlayField.editorModeNext = entering;
-		File.setEditorMode(entering);
-		Sys.println('  [ Developer ] playfieldEditorMode ${entering ? "ON" : "OFF"} — restarting song.');
-
-		// Same teardown the backwards-seek restart does: stop the music
-		// and unhook input BEFORE the dispose + recreate cycle, so the
-		// playfield is never disposed while its audio clock is still
-		// running (which leaves the mixer state machine mid-flight for
-		// the next Mixer.init/startMusic).
-		if (!paused)
-			pause(false);
-		Tools.forSync(() -> {
-			Main.switchState(GAMEPLAY, true);
-		});
+	inline function setCustomStage(stage:String) {
+		luaCall('onChangeStage', stage);
 	}
 
 	// -------------------------------------------------------------------
@@ -1212,6 +1077,20 @@ class PlayField {
 
 	var debugKeysActive:Bool = false;
 
+	/**
+		The debug key (controls.game.debug) toggles playfieldEditorMode:
+		it flips the `editorModeNext` static and routes through
+		Main.switchState(GAMEPLAY, true) — the state machine's dispose +
+		recreate IS the song restart, rebuilding the playfield in the
+		other mode (frontend-less editor subset, or the full gameplay
+		stack).
+
+		The listener is attached at the WINDOW level for the playfield's
+		whole lifetime — gameplay AND editor mode, running AND paused —
+		because InputSystem (gameplay) and PlayFieldEditorMode's handler
+		(editor) are both detached while the pause menu is open. It is
+		removed in dispose(), before any subsystem teardown.
+	**/
 	function attachDebugKey() {
 		if (debugKeysActive || disposed)
 			return;
@@ -1230,46 +1109,35 @@ class PlayField {
 		#end
 	}
 
-	/**
-		Window-level dispatch for the debug key. DeveloperStuff (FV_DEBUG
-		builds) fires on the same window event with its own listener; to
-		avoid a double toggle, whoever runs first wins — DeveloperStuff
-		flips this flag as part of its restart, and the same-frame
-		re-press here sees the flag already moved and bails.
-	**/
 	function debugKeyDown(code:lime.ui.KeyCode, mod:lime.ui.KeyModifier) {
 		if (disposed)
 			return;
 		if (code != SaveData.state.controls.game.debug)
 			return;
 
-		// Already consumed by DeveloperStuff this press? It flips
-		// editorModeNext AND queues the restart; if the flag or the
-		// queued switch changed since this playfield was built, the
-		// press belongs to the other handler.
-		if (editorModeNext != playfieldEditorMode)
-			return;
-
-		debugToggleEditorMode();
-	}
-
-	inline function formatCustomSongName(title:String) {
-		return customSongName == "" ? title : customSongName;
-	}
-
-	var customStage = "";
-
-	// helper function made for playfield
-	inline function formatCustomStage(stage:String) {
-		return customStage == "" ? stage : customStage;
-	}
-
-	inline function setCustomStage(stage:String) {
 		#if linc_luajit_funkinview
+		// Gameplay → editor: let the script know it is about to lose
+		// control until the toggle back. (Editor → gameplay fires nothing:
+		// there is no lua in the editor.)
 		if (!playfieldEditorMode) {
-			funkinviewlua.callFunction('onChangeStage', stage);
+			luaCall('toggleEditorMode', formatCustomSongName(Chart.header.title), Chart.header.difficulty, Chart.header.artist);
 		}
 		#end
+
+		PlayField.editorModeNext = !playfieldEditorMode;
+		File.setEditorMode(editorModeNext);
+		Sys.println('  [ Developer ] playfieldEditorMode ${editorModeNext ? "ON" : "OFF"} — restarting song.');
+
+		// Same teardown the backwards-seek restart does: stop the music
+		// and unhook input BEFORE the dispose + recreate cycle, so the
+		// playfield is never disposed while its audio clock is still
+		// running (which would leave the mixer state machine mid-flight
+		// for the next Mixer.init/startMusic).
+		if (!paused)
+			pause(false);
+		Tools.forSync(() -> {
+			Main.switchState(GAMEPLAY, true);
+		});
 	}
 
 	/**
@@ -1279,30 +1147,26 @@ class PlayField {
 		ready = false;
 		disposed = true;
 
+		luaCall('dispose', null);
+
 		// The playfield-owned debug-key window listener goes first —
 		// nothing after this point may receive input.
 		detachDebugKey();
-
-		// Editor-only systems first (they own window events + programs).
-		if (playfieldEditorMode && editorMode != null) {
-			editorMode.dispose();
-			editorMode = null;
-		}
-
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode) {
-			funkinviewlua.callFunction('dispose', null);
-		}
-		#end
 
 		var conductor = Main.conductor;
 		conductor.onMeasure.remove(measureHit);
 		conductor.onStep.remove(stepHit);
 		conductor.onBeat.remove(beatHit);
 
-		if (field != null) {
-			field.dispose();
-			field = null;
+		// Editor-only subsystem first (it owns window events + programs).
+		if (editorMode != null) {
+			editorMode.dispose();
+			editorMode = null;
+		}
+
+		if (frontend != null) {
+			frontend.dispose();
+			frontend = null;
 		}
 
 		if (inputSystem != null) {
@@ -1313,11 +1177,6 @@ class PlayField {
 		if (noteSystem != null) {
 			noteSystem.dispose();
 			noteSystem = null;
-		}
-
-		if (countdownDisp != null) {
-			countdownDisp.dispose();
-			countdownDisp = null;
 		}
 
 		if (pauseScreen != null) {
@@ -1363,13 +1222,7 @@ class PlayField {
 			view.r = 0;
 		}
 
-		#if linc_luajit_funkinview
-		if (!playfieldEditorMode) {
-			funkinviewlua.callFunction('disposePost', null);
-			funkinviewlua.callFunction('postDispose', null); // alternative syntax
-			funkinviewlua.dispose();
-		}
-		#end
+		luaCall('disposePost', null);
+		luaCall('postDispose', null); // alternative syntax
 	}
-
 }

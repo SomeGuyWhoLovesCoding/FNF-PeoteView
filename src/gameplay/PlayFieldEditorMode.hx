@@ -3,57 +3,32 @@ package gameplay;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 import lime.app.Application;
+import miniaudio.MiniAudio;
 
 /**
-	The playfield editor, split out of PlayField.
+	The playfield editor — the MINIMAL one.
 
-	Owns every editor-only concern: construction of the editor subset
-	(note system, HUD, song system, pause menu), the keyboard shortcuts,
-	the instructions overlay, chart saving, and the stepped-strumline
-	mouse input. PlayField delegates its editor-mode branches here.
+	Owns only: the editor keybinds, the stepped-strumline mouse input
+	(StrumlineNoteInteraction), seek/snap math, chart saving, and the
+	playback toggle. Everything else the editor uses (HUD, note system,
+	song system, pause menu) is built by PlayField.create()'s editor
+	branch and lives on the PlayField itself, exactly like gameplay.
 
-	=== The editor's song position: owned, frozen, unmodified ===
+	=== The editor's song position: owned, frozen, silent ===
 
-	Editor mode has its OWN song position semantics: `PlayField.
-	songPosition` while in the editor is editor-owned and starts out
-	COMPLETELY UNMODIFIED — no clock of any kind adds deltaTime to it
-	(Mixer.update's fake-clock branch, the one that drives the gameplay
-	countdown, explicitly skips playfieldEditorMode fields). It moves
-	ONLY through an explicit editor seek (wheel, LEFT/RIGHT, hold-drag
-	edits never touch it either). Every editor consumer — note system
-	update/render, HUD time bar, conductor time, strumline input math —
-	reads this same editor-owned position, so there is one global owner
-	of "where in the song the editor is" and nothing else moves it.
+	`PlayField.songPosition` in editor mode starts FROZEN at 0 — no clock
+	advances it (Mixer.update's editorFrozen branch skips the fake-clock
+	delta; see Mixer.hx). It moves ONLY on explicit editor seeks (wheel,
+	LEFT/RIGHT). ENTER toggles audible playback through the same
+	onStartSong event the gameplay countdown path dispatches; while
+	playing, the real audio clock drives the position, and stopping
+	re-freezes it at where the transport actually is.
 
-	=== Audio by default: SILENT, without touching volume ===
+	=== Snap grid ===
 
-	- create() leaves songStarted false and songPosition at 0, frozen.
-	  The mixer transport is NEVER started at entry, so there is nothing
-	  to mute; the audio device never pulls song frames.
-	- The pause keybind (controls.game.pause, default ENTER) dispatches
-	  onStartSong — the same event the gameplay countdown path uses —
-	  which starts real audio playback from the current (seek-aligned)
-	  position. While playing, the real audio clock drives the position;
-	  pressing it again stops the transport and re-freezes the position
-	  (Mixer.stopMusic preserves the PCM position).
-
-	No master-volume parking, no volume writes anywhere: what you hear
-	outside the editor is untouched by entering it.
-
-	=== Editor feature set ===
-
-	- Notes NEVER hit in the editor: NoteSystem's editor render path
-	  draws notes/sustains purely — no judgement, no receptor confirms,
-	  no sustain resolve/complete. Sustains render whole.
-	- ALT+LEFT / ALT+RIGHT cycle the notetype number placed by LMB
-	  (type % strumlineCount picks the strumline; the visual column
-	  follows).
-	- Hold-edit: press LMB on an existing note and either roll the wheel
-	  (± one snap step per notch) or drag along the lane to set the
-	  sustain duration; the note keeps its position, the duration is
-	  written live (remove + re-add with the new duration).
-	- Snap grid: (60000 / Main.conductor.bpm / 4) * x ms — BPM-reactive,
-	  in the ms unit all chart times use (matches stepCrochet = 15000 / bpm).
+	(60000 / Main.conductor.bpm / 4) * snapMultiplier ms — one 16th note
+	at the current BPM times x, in the ms unit every chart time uses
+	(matches the conductor's stepCrochet = 15000 / bpm).
 
 	@since Development
 **/
@@ -63,40 +38,30 @@ class PlayFieldEditorMode {
 	var field:PlayField;
 
 	/**
-	 * Snap resolution multiplier x — the grid step is
-	 * `(60000 / Main.conductor.bpm / 4) * snapMultiplier` ms (one 16th at
-	 * the current BPM times x). x = 1 is a 16th-note grid, 2 an 8th, 4 a
-	 * quarter, 0.5 a 32nd... The base recomputes from the conductor's
-	 * current BPM, so BPM changes (events, seek past a changeBpmAt) keep
-	 * the grid locked to the beat.
-	 */
+		Snap resolution multiplier x — 1 is a 16th-note grid, 2 an 8th,
+		4 a quarter, 0.5 a 32nd... The base recomputes from the
+		conductor's current BPM, so BPM changes keep the grid locked to
+		the beat.
+	*/
 	var snapMultiplier:Float = 1.0;
 
-	/**
-	 * The live snap step in MILLISECONDS: (60000 / bpm / 4) * snapMultiplier.
-	 * One 16th note at the current BPM times x, in the ms unit every
-	 * consumer uses (snapTime rounding, hold-duration writes, wheel
-	 * notches). The old `(60 / bpm / 4) * x` produced SECONDS — 1000x
-	 * too small — so the grid snapped to sub-microsecond steps and every
-	 * hold-edit notch was a thousandth of its intended length.
-	 */
+	/** The live snap step in MILLISECONDS (see class doc). */
 	var snapMs(get, never):Float;
 
 	inline function get_snapMs():Float {
 		var bpm = Main.conductor != null ? Main.conductor.bpm : 100.0;
 		if (bpm <= 0)
 			bpm = 100.0;
-		// 60000ms per minute / bpm beats per minute / 4 sixteenths per beat.
-		// Same unit the conductor's stepCrochet uses (15000 / bpm).
+		// 60000ms per minute / bpm beats / 4 sixteenths per beat — the
+		// same unit the conductor's stepCrochet uses (15000 / bpm).
 		return (60000 / bpm / 4) * snapMultiplier;
 	}
 
 	/**
-	 * The notetype number the editor places (ALT+LEFT/RIGHT cycles it).
-	 * Gameplay maps `type % strumlineCount` to the owning strumline
-	 * (0 = opponent side, 1 = player side), so odd types flip a note to
-	 * the player's strumline — the visible column follows the value.
-	 */
+		The notetype number the editor places (ALT+LEFT/RIGHT cycles it).
+		Gameplay maps `type % strumlineCount` to the owning strumline
+		(0 = opponent side, 1 = player side).
+	*/
 	var notetype:Int = 1;
 
 	/** The dedicated stepped-strumline mouse input system. */
@@ -107,30 +72,6 @@ class PlayFieldEditorMode {
 
 	/** True while the song transport is running (audible). */
 	var playing:Bool = false;
-
-	// --- Instructions menu (NoteskinEditor-style popup) ---
-	var instructionsText:render.text.Text;
-	var instructionsBackground:RepeatSprite;
-	var instructionsBuf:Buffer<RepeatSprite>;
-	var instructionsProg:CustomProgram;
-	var showInstructions:Bool = false;
-
-	/**
-	 * The notetype number indicator (bottom-right readout, scale 2.2).
-	 * PERSISTENT exactly like the NoteskinEditor's static text elements:
-	 * a STATIC Text that lives on the roof display (the top layer, the
-	 * same one the pause screen renders on), created once at build(),
-	 * addProgram()'d immediately and NEVER removed for the editor's
-	 * whole lifetime — not on ESC-pause, not while the instructions
-	 * popup is open, not on the playback toggle. It only goes away with
-	 * the editor itself in dispose(). Because the roof display is never
-	 * torn down between editor frames, the readout survives every
-	 * in-editor screen state and always sits on the proper layer ABOVE
-	 * the pause menu's dimmer, mirroring how the noteskin editor keeps
-	 * its text elements alive across the whole game and re-shows them
-	 * on the right display when you enter its menu.
-	 */
-	static var notetypeText:render.text.Text;
 
 	var keysActive:Bool = false;
 
@@ -143,31 +84,17 @@ class PlayFieldEditorMode {
 	// -------------------------------------------------------------------
 
 	/**
-		Builds the editor subset inside PlayField.create()'s editor branch:
-		HUD, note system, song system, pause menu, then the stepped
-		strumline input + this class's key handler. On success
-		songStarted is still false and songPosition stays frozen at 0 —
-		completely silent and completely still (see class doc).
+		Called from PlayField.create()'s editor branch AFTER the shared
+		subsystems (HUD, note system, Mixer, pause screen) were built.
+		On success songStarted is still false and songPosition stays
+		frozen at 0 — completely silent and still.
 	**/
 	function build() {
-		// Editor subset only: no Field (stage/characters/camera), no
-		// FunkinViewLua, no EventSystem, no InputSystem, no
-		// CountdownDisplay. The editor's position starts frozen at 0 —
-		// audio never starts at entry and nothing advances the clock.
 		field.songPosition = 0;
 
-		// Receptors enter the STATIC NoteSystem.notesBuf mid-constructor;
-		// if anything below throws, PlayField.noteSystem never gets
-		// assigned and dispose() would skip it — leaving those receptors
-		// as permanent strumline ghosts on screen. PlayField's create
-		// wraps this call in try/catch → cleanupFailedCreate().
-		HUD.init();
-		if (!SaveData.state.preferences.hideHUD)
-			field.hud = new HUD(field.display, field);
 		// The HUD must be visible the instant the editor appears — the
-		// gameplay fade-in (alphaLerp lerp toward 1 on songStarted) would
-		// otherwise keep it invisible until ENTER starts playback. Jump
-		// straight to full alpha, exactly what PlayField.resetHUD does.
+		// gameplay fade-in (alphaLerp toward 1 on songStarted) would
+		// otherwise keep it invisible until ENTER starts playback.
 		if (field.hud != null) {
 			field.hud.alphaLerp = 1;
 			field.hud.setHUDAlpha(1);
@@ -176,27 +103,15 @@ class PlayFieldEditorMode {
 			field.hud.updateBuffers();
 		}
 
-		NoteSystem.init();
-		field.noteSystem = new NoteSystem(field);
-
-		Mixer.init(Chart.header); // the song system (transport NOT started)
-
-		PauseScreen.init(field.roof);
-		field.pauseScreen = new PauseScreen(Chart.header.difficulty);
-
 		// Both strumlines non-playable: no keybind input path exists, and
 		// with the pure-render editor note path nothing ever hits a note —
 		// receptors stay static and sustains never resolve.
 		for (strumline in field.noteSystem.strumlines)
 			strumline.playable = false;
 
-		field.scrollSpeed = Chart.header.speed;
-
 		strumlineInput = new StrumlineNoteInteraction(field);
 		strumlineInput.attach();
 		attachKeys();
-
-		ensureNotetypeText();
 	}
 
 	// -------------------------------------------------------------------
@@ -225,12 +140,8 @@ class PlayFieldEditorMode {
 		if (field.disposed)
 			return;
 
-		// ESC/back first — also closes the instructions popup.
+		// ESC/back opens the pause menu (resume re-hooks input).
 		if (code == SaveData.state.controls.ui.back || code == KeyCode.ESCAPE) {
-			if (showInstructions) {
-				hideInstructions();
-				return;
-			}
 			if (!field.paused)
 				field.pause();
 			return;
@@ -238,58 +149,43 @@ class PlayFieldEditorMode {
 
 		// The game's pause keybind (default ENTER) toggles playback:
 		// first press starts the song through the same onStartSong event
-		// the countdown path dispatches (startSong → Mixer.startMusic);
-		// second press stops the transport back to the silent fake clock.
+		// the countdown path dispatches; second press stops the transport
+		// back to the silent frozen clock.
 		if (code == SaveData.state.controls.game.pause) {
 			togglePlayback();
 			return;
 		}
 
-		// (The debug key is NOT handled here: PlayField owns it via its
-		// own window-level listener, which stays attached while paused —
-		// see PlayField.debugKeyDown. Handling it here too would
-		// double-fire on every press.)
-
 		if (field.paused)
 			return;
 
-		// ALT+LEFT / ALT+RIGHT cycle the notetype number the editor places
-		// (wrapped through 0..255, the 8-bit type field of the chart note).
+		// ALT+LEFT / ALT+RIGHT cycle the notetype number the editor
+		// places (wrapped through 0..255, the chart's 8-bit type field).
 		if ((mod & KeyModifier.ALT) != 0) {
 			switch (code) {
 				case KeyCode.LEFT:
 					notetype = notetype <= 0 ? 255 : notetype - 1;
-					updateInstructionsText();
-					return;
 				case KeyCode.RIGHT:
 					notetype = notetype >= 255 ? 0 : notetype + 1;
-					updateInstructionsText();
-					return;
 				default:
-					// fall through to plain LEFT/RIGHT? No — with ALT held the
-					// user asked for the notetype action; eat the key.
+					// With ALT held the user asked for the notetype
+					// action; eat the key.
 					return;
 			}
+			return;
 		}
 
 		switch (code) {
-			case KeyCode.F1 | KeyCode.H:
-				if (showInstructions)
-					hideInstructions();
-				else
-					showInstructionsMenu();
 			case KeyCode.LEFT:
 				seekTo(field.songPosition - ((mod & KeyModifier.CTRL) != 0 ? 4000 : 1000));
 			case KeyCode.RIGHT:
 				seekTo(field.songPosition + ((mod & KeyModifier.CTRL) != 0 ? 4000 : 1000));
 			case KeyCode.MINUS:
-				// Halve the snap multiplier (finer grid), floored at 1/32nd notes.
+				// Halve the snap multiplier (finer grid), floored at 1/32nds.
 				snapMultiplier = Math.max(snapMultiplier / 2, 0.03125);
-				updateInstructionsText();
 			case KeyCode.EQUALS:
 				// Double the snap multiplier (coarser grid), capped at 16 beats.
 				snapMultiplier = Math.min(snapMultiplier * 2, 64);
-				updateInstructionsText();
 			case KeyCode.S:
 				if ((mod & KeyModifier.CTRL) != 0)
 					saveChartToDisk();
@@ -303,15 +199,19 @@ class PlayFieldEditorMode {
 
 	/**
 		Starts/stops audible playback. Starting goes through
-		field.onStartSong.dispatch — the exact countdown-path event —
-		so the transport starts the same way gameplay does (startSong is
-		its only listener: it spins the mixer, hooks conductor events,
-		sets songStarted). While playing, the REAL audio clock drives the
-		editor-owned position (Mixer.updateWithAudioTime). Stopping mirrors
-		what stopSong/gameOver do: detach the conductor listeners (lime's
+		field.onStartSong.dispatch — the exact countdown-path event — so
+		the transport starts the same way gameplay does (startSong is its
+		only listener: it spins the mixer, hooks conductor events, sets
+		songStarted). While playing, the REAL audio clock drives the
+		editor-owned position (Mixer.updateWithAudioTime). Stopping
+		mirrors stopSong/gameOver: detach the conductor listeners (lime's
 		Event.add does NOT dedupe, so a start cycle must not stack
 		duplicates), stop the transport (PCM position preserved) and drop
 		songStarted, which re-freezes the position where it stopped.
+
+		The audio clock is read DIRECTLY through MiniAudio.getPlaybackPosition()
+		(never through a Mixer wrapper — a same-named static there resolved
+		to itself on cpp and produced C4717 infinite recursion).
 	**/
 	function togglePlayback() {
 		if (field.disposed || field.paused || field.songEnded)
@@ -326,16 +226,15 @@ class PlayFieldEditorMode {
 			// Freeze at where the transport ACTUALLY is, not where the
 			// audio clock last read: a stopped device still reports its
 			// buffered-ahead position, which would resume the next ENTER
-			// ahead of what was heard ("position offsets itself before the
-			// song plays again").
+			// ahead of what was heard.
 			field.songPosition = MiniAudio.getPlaybackPosition();
 			Mixer.stopMusic();
 			field.songStarted = false;
 			playing = false;
 
 			// The spawner window was built against the moving position; a
-			// stop is a position change for rendering purposes — rebuild it
-			// so the frozen frame shows the correct note set immediately.
+			// stop is a position change for rendering purposes — rebuild
+			// it so the frozen frame shows the correct note set.
 			if (field.noteSystem != null) {
 				var pos = MetaNote.floatToMetaNotePosition(field.songPosition);
 				field.noteSystem.onSongPositionJump(pos);
@@ -345,9 +244,8 @@ class PlayFieldEditorMode {
 			// position BEFORE the transport spins up. The countdown path
 			// gets this for free (audio starts at 0 exactly when the fake
 			// clock crosses 0); here the position has been frozen wherever
-			// the last seek left it (and a stop→restart cycle leaves the PCM
-			// position wherever the transport was stopped), so without this
-			// seek the audio would resume behind the notes.
+			// the last seek left it, so without this seek the audio would
+			// resume behind the notes.
 			var target = field.songPosition;
 			if (target < 0)
 				target = 0;
@@ -360,18 +258,12 @@ class PlayFieldEditorMode {
 			playing = true;
 
 			// Re-align the editor position with the REAL audio clock right
-			// after the transport spins up. seekToPCMFrame leaves
-			// filePosition at the seek target the instant it returns, but
-			// the device output is still priming (the buffers deliberately
-			// read PADDING_MS ahead of/behind the target), so the first
-			// getPlaybackPosition() reads can run ahead of what is actually
-			// audible. Reading the position back from the mixer once here
-			// makes the editor clock start exactly where the transport
-			// actually is, instead of holding the pre-start seek target and
-			// appearing to "jump ahead" the moment playback becomes audible.
+			// after the transport spins up — the editor clock begins
+			// exactly where the transport actually is, instead of holding
+			// the pre-start seek target and jumping ahead the moment
+			// playback becomes audible.
 			field.songPosition = MiniAudio.getPlaybackPosition();
 		}
-		updateInstructionsText();
 	}
 
 	// -------------------------------------------------------------------
@@ -379,9 +271,23 @@ class PlayFieldEditorMode {
 	// -------------------------------------------------------------------
 
 	/**
-		Editor seek — works on both clocks, bypassing the base setTime's
-		countdown/latency gates (no restart dance; Mixer stop/start
-		preserve position, seekToPCMFrame lands exactly).
+		Editor seek — the ONE position mover in the editor.
+
+		Works identically on both clocks (frozen silent or ENTER playback)
+		and NEVER restarts the song: the base PlayField.setTime treats a
+		backwards seek as a full song restart (pause + switchState +
+		recreate) because judged/missed gameplay state cannot be un-judged;
+		the editor has no such state (its render path is pure, nothing is
+		ever judged or hit), so backwards seeking is just a window
+		rebuild.
+
+		Instead: Mixer.setTime seeks the PCM transport directly (safe
+		while stopped AND while playing — the audio follows the seek), the
+		editor-owned songPosition snaps to the target, and
+		noteSystem.onSongPositionJump does the resetNoteRender-style
+		teardown/redraw — every element of the note system is removed and
+		redrawn at the new position (pool reset, spawn window rebuilt by
+		binary search, strumline caches cleared). One frame, no restart.
 	**/
 	function seekTo(value:Float) {
 		if (field.disposed || field.paused)
@@ -394,36 +300,39 @@ class PlayFieldEditorMode {
 		Mixer.setTime(Math.max(value, 0.0), field);
 		field.songPosition = value;
 
-		var pos = MetaNote.floatToMetaNotePosition(value);
-		if (field.noteSystem != null)
+		// Full note-system reset + redraw at the new position — both
+		// directions, same path. No File.setJudgement/setHitFlag cleanup
+		// is needed: the editor render path never writes judgement state.
+		if (field.noteSystem != null) {
+			var pos = MetaNote.floatToMetaNotePosition(value);
 			field.noteSystem.onSongPositionJump(pos);
+		}
 	}
 
-	/** Called by StrumlineNoteInteraction after every successful add/remove. */
+	/**
+		Called by StrumlineNoteInteraction after every successful
+		add/remove/duration write. Rebuilds the note system's window at
+		the current (frozen) position so the edit is visible the same
+		frame: a structural edit shifts global indices AFTER the edit
+		point (the sharded store re-sorts), which invalidates every
+		cached window/index until the next rebuild.
+	**/
 	function onChartEdited() {
 		dirtyChart = true;
 
-		// Structural edit: global indices AFTER the edit point shifted
-		// (the sharded store re-sorts), so every cached window/index is
-		// stale — rebuild the spawner window from the current frozen
-		// position immediately. Without this the note pool keeps drawing
-		// the OLD VirtualNote set (bound to pre-edit indices) until the
-		// next position change rebuilds it, which is exactly the "new
-		// note doesn't render until I move the position" bug.
-		if (field.noteSystem != null && !field.paused) {
+		if (field.noteSystem != null) {
 			var pos = MetaNote.floatToMetaNotePosition(field.songPosition);
 			field.noteSystem.onSongPositionJump(pos);
 		}
-
-		updateInstructionsText();
 	}
 
-	/** Persists the chart. NOTE: must not be named `saveChart` — the
-	 *  local method would shadow File.saveChart in the call below. */
+	/**
+		Persists the chart. NOTE: must not be named `saveChart` — the
+		local method would shadow File.saveChart in the call below.
+	**/
 	function saveChartToDisk() {
 		if (File.saveChart()) {
 			dirtyChart = false;
-			updateInstructionsText();
 			Main.current.playHitsound();
 		}
 	}
@@ -456,194 +365,5 @@ class PlayFieldEditorMode {
 			strumlineInput.dispose();
 			strumlineInput = null;
 		}
-		hideInstructions();
-		if (instructionsText != null) {
-			instructionsText.dispose();
-			instructionsText = null;
-		}
-		if (instructionsBuf != null) {
-			try
-				instructionsBuf.clear()
-			catch (e) {}
-			instructionsBuf = null;
-			instructionsProg = null;
-			instructionsBackground = null;
-		}
-		// The persistent notetype readout only detaches its program from
-		// the roof display (the NoteskinEditor static-text pattern) — the
-		// static Text object itself survives for the next editor session,
-		// and ensureNotetypeText() re-adds + refreshes it there.
-		if (notetypeText != null)
-			notetypeText.removeProgram();
-	}
-
-	// -------------------------------------------------------------------
-	// Instructions menu (NoteskinEditor-style popup)
-	// -------------------------------------------------------------------
-
-	function showInstructionsMenu() {
-		showInstructions = true;
-		ensureInstructionsAssets();
-		if (instructionsProg != null && !instructionsProg.isIn(field.display))
-			field.display.addProgram(instructionsProg);
-		if (instructionsBuf != null && instructionsBackground != null) {
-			instructionsBackground.c = 0x000000FF;
-			instructionsBackground.c.aF = 0.6;
-			instructionsBuf.addElement(instructionsBackground);
-		}
-		if (instructionsText != null) {
-			instructionsText.addProgram();
-			instructionsText.alpha = 1;
-		}
-		updateInstructionsText();
-	}
-
-	function hideInstructions() {
-		if (!showInstructions)
-			return;
-		showInstructions = false;
-		if (instructionsBuf != null && instructionsBackground != null) {
-			try
-				instructionsBuf.removeElement(instructionsBackground)
-			catch (e) {}
-		}
-		if (instructionsText != null) {
-			instructionsText.alpha = 0;
-			instructionsText.removeProgram();
-		}
-	}
-
-	function ensureInstructionsAssets() {
-		if (instructionsText == null) {
-			instructionsText = new Text("PLAYFIELD_EDITOR_INSTRUCTIONS", 0, 0, field.display, "", "vcr");
-			instructionsText.scale = 0.7;
-			instructionsText.alpha = 0;
-			instructionsText.multiline = true;
-			instructionsText.alignment = LEFT;
-			instructionsText.spacerPercent = -0.1;
-			instructionsText.outlineColor = Color.BLACK;
-			instructionsText.outlineSize = 1;
-		}
-		if (instructionsBuf == null) {
-			instructionsBuf = new Buffer<RepeatSprite>(2, 2, true);
-			instructionsProg = new CustomProgram(instructionsBuf);
-			instructionsBackground = new RepeatSprite(0, 0, 0, 0);
-		}
-	}
-
-	// -------------------------------------------------------------------
-	// Notetype indicator (persistent bottom-right readout)
-	// -------------------------------------------------------------------
-
-	/**
-		Creates (once) and shows the notetype indicator. Static + roof
-		display + never removed = persistent across every editor screen
-		state, on the layer above the pause menu — see the field docs on
-		`notetypeText`. RIGHT-aligned so the text grows leftward from the
-		bottom-right corner and never leaves the screen as numbers change.
-	**/
-	function ensureNotetypeText() {
-		if (notetypeText == null) {
-			notetypeText = new Text("PLAYFIELD_EDITOR_NOTETYPE", 0, 0, field.roof, "", "vcr");
-			notetypeText.scale = 2.2;
-			notetypeText.alpha = 1;
-			notetypeText.alignment = RIGHT;
-			notetypeText.outlineColor = Color.BLACK;
-			notetypeText.outlineSize = 1;
-		}
-		// Re-add in case a previous editor session removed it (dispose)
-		// or the roof display was recreated by a window change.
-		notetypeText.addProgram();
-		updateNotetypeText();
-	}
-
-	/**
-		Refreshes the readout. Called from every path that changes what
-		it shows: notetype cycling (ALT+LEFT/RIGHT), editor build, and
-		the instructions refresh (which also passes through here so the
-		saved/playing state stays in sync after menu actions).
-	**/
-	function updateNotetypeText() {
-		if (notetypeText == null)
-			return;
-
-		var side = (notetype % 2) == 0 ? "opponent" : "player";
-		notetypeText.text = 'NOTETYPE ${notetype} (${side})';
-
-		// Anchor the RIGHT-aligned text's right edge ~24px from the
-		// window's right edge and its baseline ~24px from the bottom.
-		// width is the SCALED text width, so this keeps the corner
-		// anchor exact at any scale.
-		notetypeText.x = Main.INITIAL_WIDTH - notetypeText.width - 24;
-		notetypeText.y = Main.INITIAL_HEIGHT - notetypeText.height - 24;
-	}
-
-	function updateInstructionsText() {
-		// Keep the persistent bottom-right notetype readout in sync with
-		// whatever changed (notetype cycle, playback toggle, save state).
-		// Runs BEFORE the instructions early-return: the readout must
-		// refresh even in sessions where the help popup was never opened
-		// (instructionsText stays null until then).
-		updateNotetypeText();
-
-		if (instructionsText == null)
-			return;
-
-		var saved = dirtyChart ? "UNSAVED" : "saved";
-		var bpm = Main.conductor != null ? Main.conductor.bpm : 100.0;
-		instructionsText.text = "=== PLAYFIELD EDITOR ===\n"
-			+ "Position is FROZEN until you seek — nothing advances it.\n"
-			+ "MOUSE        move the square over a lane (snaps to the beat grid)\n"
-			+ "LMB          add note on release (empty slot only; hold on a note to edit its sustain)\n"
-			+ "  hold+WHEEL or hold+DRAG   lengthen/shorten the held note's sustain\n"
-			+ "RMB          remove note under the square\n"
-			+ "WHEEL        seek song  (CTRL = 4x speed)\n"
-			+ "LEFT/RIGHT   seek 1s    (CTRL = 4s)\n"
-			+ "ALT+LEFT/RIGHT   notetype: " + notetype + " (type % 2 = " + (notetype % 2) + " = " + ((notetype % 2) == 0 ? "opponent" : "player") + " strumline; shown bottom-right)\n"
-			+ "- / =        halve / double the snap grid (currently " + snapName() + ")\n"
-			+ "             (" + Math.round(snapMs * 100) / 100 + "ms at " + Math.round(bpm * 100) / 100 + " BPM)\n"
-			+ "CTRL+S       save chart (.fvc)\n"
-			+ "ENTER        " + (playing ? "STOP audio (currently PLAYING)" : "play audio (currently SILENT)") + "\n"
-			+ "F1 or H      toggle this help\n"
-			+ "ESC          pause menu\n"
-			+ "DEBUG KEY    exit editor mode (song restarts)\n"
-			+ "Chart: " + saved;
-
-		if (showInstructions && instructionsBackground != null && instructionsBuf != null) {
-			var padding = 24;
-			var bgW = Std.int(instructionsText.width + padding * 2);
-			var bgH = Std.int(instructionsText.height + padding * 2);
-			var bgX = Std.int((Main.INITIAL_WIDTH - bgW) * 0.5);
-			var bgY = Std.int((Main.INITIAL_HEIGHT - bgH) * 0.5);
-			instructionsBackground.x = bgX;
-			instructionsBackground.y = bgY;
-			instructionsBackground.w = bgW;
-			instructionsBackground.h = bgH;
-			instructionsText.x = bgX + padding;
-			instructionsText.y = bgY + padding;
-			try {
-				instructionsBuf.updateElement(instructionsBackground);
-				instructionsBuf.update();
-			} catch (e) {}
-		}
-	}
-
-	/** Human name for the current snap multiplier relative to a 16th note. */
-	function snapName():String {
-		if (snapMultiplier == 1)
-			return "1/16";
-		if (snapMultiplier == 2)
-			return "1/8";
-		if (snapMultiplier == 4)
-			return "1/4 (beat)";
-		if (snapMultiplier == 8)
-			return "1/2";
-		if (snapMultiplier == 16)
-			return "1/1 (measure)";
-		if (snapMultiplier == 0.5)
-			return "1/32";
-		if (snapMultiplier == 0.25)
-			return "1/64";
-		return Std.string(snapMultiplier) + "x 1/16";
 	}
 }

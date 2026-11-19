@@ -21,6 +21,14 @@ class FreeplayMenu extends MenuInput {
 
 	var freeplayScreen(default, null):FreeplayScreen;
 
+	/**
+		When true the selected song opens the CHART EDITOR instead of
+		gameplay — set by EditorMenu's Chart Editor entry right before
+		open(), consumed (and reset) by enter(). The flag lives here
+		because this menu owns the song-picking flow for both targets.
+	**/
+	var pickForEditor:Bool = false;
+
 	var nav(default, null):Navigation = new Navigation();
 
 	//////////////////////// SCROLL (LIKE PHONE) ////////////////////////
@@ -113,6 +121,10 @@ class FreeplayMenu extends MenuInput {
 	function back(isDown:Bool, param:Int) {
 		if (!isDown || !active)
 			return;
+		// Leaving the picker without a selection cancels the editor pick
+		// too — otherwise a later normal freeplay open would still route
+		// its song into the editor.
+		pickForEditor = false;
 		close();
 		Main.current.playCancelSound();
 	}
@@ -148,6 +160,12 @@ class FreeplayMenu extends MenuInput {
 		close();
 		freeplayScreen.shutDown();
 		active = false;
+		// Editor picks route the SAME song through the SAME state switch —
+		// PlayField.create() sees editorModeNext and builds the editor
+		// subset instead of the gameplay stack.
+		PlayField.editorModeNext = pickForEditor;
+		File.setEditorMode(pickForEditor);
+		pickForEditor = false;
 		Main.switchState(GAMEPLAY);
 	}
 
