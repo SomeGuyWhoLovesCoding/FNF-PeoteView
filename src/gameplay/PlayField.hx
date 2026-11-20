@@ -92,6 +92,18 @@ class PlayField {
 
 	private var chartPath(default, null):String;
 
+	/**
+		Editor-only accessor for the private chartPath — the editor's
+		event lane needs the folder that holds eventList.json (same
+		folder EventSystem scans). Same pass-in spirit as
+		PlayFieldFrontEnd.build(chartPath), but the editor subsystem is
+		built from the playfield itself, so an accessor is the honest
+		minimal surface.
+	**/
+	function chartPathForEditor():String {
+		return chartPath;
+	}
+
 	function new(path:String) {
 		chartPath = Paths.asset(path);
 
@@ -542,7 +554,13 @@ class PlayField {
 			if (hud != null)
 				hud.update(deltaTime);
 
-			var pos = MetaNote.floatToMetaNotePosition(songPosition);
+			// Smooth scroll: the note window/conductor run on the
+			// SMOOTHED render position (a fast lerp toward songPosition
+			// while silent — wheel/arrow seeks glide instead of
+			// teleporting; exact while playing). songPosition itself
+			// stays the exact seek target for the readout and edit math.
+			var renderPos = editorMode != null ? editorMode.advanceSmoothScroll(deltaTime) : songPosition;
+			var pos = MetaNote.floatToMetaNotePosition(renderPos);
 			if (noteSystem != null)
 				noteSystem.update(pos);
 
@@ -554,6 +572,9 @@ class PlayField {
 
 			if (editorMode != null && editorMode.strumlineInput != null)
 				editorMode.strumlineInput.update();
+
+			if (editorMode != null && editorMode.exitPopup != null)
+				editorMode.exitPopup.update(deltaTime);
 			return;
 		}
 
@@ -642,8 +663,11 @@ class PlayField {
 		if (playfieldEditorMode) {
 			var noteSystem = noteSystem;
 			if (noteSystem != null) {
-				var pos = MetaNote.floatToMetaNotePosition(songPosition);
-				noteSystem.renderNotes(pos);
+				// Render at the SAME smoothed position update() advanced
+				// the window to — otherwise renderNotes' own cull pass
+				// fights the lerp and the notes jitter.
+				var renderPos = editorMode != null ? editorMode.smoothPosition : songPosition;
+				noteSystem.renderNotes(MetaNote.floatToMetaNotePosition(renderPos));
 			}
 			if (hud != null) {
 				hud.render();
@@ -1103,6 +1127,16 @@ class PlayField {
 		if (code != SaveData.state.controls.game.debug)
 			return;
 
+		toggleEditorMode();
+	}
+
+	/**
+		The editor ⇄ gameplay toggle, shared by the debug key and the
+		editor's exit popup: flips `editorModeNext`, syncs File's editor
+		flag, then routes through the state machine's dispose + recreate
+		cycle (which IS the song restart).
+	**/
+	function toggleEditorMode() {
 		#if linc_luajit_funkinview
 		// Gameplay → editor: let the script know it is about to lose
 		// control until the toggle back. (Editor → gameplay fires nothing:

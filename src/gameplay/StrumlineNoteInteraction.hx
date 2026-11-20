@@ -15,12 +15,16 @@ import lime.ui.MouseWheelMode;
 	               cursor is over and moves the ghost square there. When the
 	               snapped slot already holds a note, the square turns red
 	               (right-click removes); otherwise it is green (click adds).
-	* mouseDown  — darkens the square temporarily while the button is held.
-	               Pressing an EXISTING note enters hold-edit mode instead of
-	               an add-click: the note's sustain can then be adjusted with
-	               the wheel (± one snap step per notch) or by dragging the
-	               cursor along the lane (the sustain end follows the cursor,
-	               snapped to the grid; the note's position never moves).
+	               While LMB is held on a note, the drag sets the sustain
+	               length; while held on BACKGROUND, the drag PANS the chart
+	               (the song position follows the cursor's Y slide).
+	* mouseDown  — on an empty slot: adds the note immediately and enters
+	               the hold-duration state (press-and-hold IS the placing
+	               gesture — drag/wheel/UI-keys all dial the length from
+	               there; release just ends it). On an existing note: the
+	               same hold-duration state on that note. On the event
+	               lane: adds/removes placeholder events. On background:
+	               starts the pan gesture.
 	* mouseUp    — LEFT: a plain press on an empty slot (no drag beyond the
 	               slop) adds a note there via `File.addNote(position, 0,
 	               lane, editorMode.notetype)` — the notetype comes from the
@@ -75,6 +79,19 @@ class StrumlineNoteInteraction {
 	/** Chart index of the note captured at press time; -1 = pressed an empty slot. */
 	var downNoteId:Int64 = -1;
 
+	// --- Background drag-pan (R3): hold LMB on empty background + slide = shift the song position ---
+	/**
+		True while LMB is held on BACKGROUND (not a lane slot, not the
+		event lane) and the gesture is a pan. Vertical slide shifts the
+		song position live: dragging UP moves the chart forward in time
+		(downscroll-mirrored), so the notes track the cursor exactly.
+	**/
+	var panning:Bool = false;
+	/** Playhead (ms) when the pan started — deltas apply against it. */
+	var panStartPos:Float = 0;
+	/** Cursor Y when the pan started — deltas apply against it. */
+	var panStartY:Float = 0;
+
 	// --- Hold-note sustain editing (LMB held on an existing note) ---
 	/** True while LMB is held on a note, editing its sustain via wheel/drag. */
 	var holdEditing:Bool = false;
@@ -90,8 +107,49 @@ class StrumlineNoteInteraction {
 	var hoverOccupied:Bool = false;
 	var ctrlPressed:Bool = false;
 
+	// --- Event lane (F2): insertion column at the LEFT of the strumlines ---
+	/** The event lane's element (a diamond icon, like the note ghost). */
+	var eventGhost:RepeatSprite;
+	/** Editor-side event list, mirrors EventSystem.EventObject's shape. */
+	var editorEvents:Array<{name:String, value1:String, value2:String, time:Float}> = [];
+	/** True while the cursor is over the event lane's column. */
+	var hoverEventLane:Bool = false;
+	/** Snapped time under the cursor while hovering the event lane. */
+	var hoverEventTimeMs:Float = 0;
+	/** Events loaded/saved flag — the list is lazily read from eventList.json on first use. */
+	var eventsLoaded:Bool = false;
+	/**
+		The chart's folder (set by PlayFieldEditorMode.build from
+		PlayField's private chartPath — same pass-in pattern as
+		PlayFieldFrontEnd.build). The event lane's eventList.json lives
+		there, next to the chart file EventSystem reads at runtime.
+	**/
+	var chartPath:String = "";
+
+	/** Small markers for already-placed events along the lane (yellow diamonds). */
+	var eventMarkerBuf:Buffer<RepeatSprite>;
+	var eventMarkerProg:CustomProgram;
+	/** Marker elements currently in the buffer (rebuilt on seek/edit). */
+	var eventMarkers:Array<RepeatSprite> = [];
+
+	/** X position (display-local) of the event lane's center — just left of the first strumline's receptors. */
+	function eventLaneX():Float {
+		var noteSystem = parent.noteSystem;
+		if (noteSystem == null || noteSystem.strumlines.length == 0)
+			return 0;
+		var strumline = noteSystem.strumlines[0];
+		if (strumline.length == 0 || strumline.receptors[0] == null)
+			return 0;
+		// Left of the leftmost receptor by ~1.5 note-widths; the lane's
+		// own column width is one note.
+		var note = strumline.receptors[0].note;
+		var cx = note.x + note.w * strumline.scale * 0.5;
+		return cx - note.w * strumline.scale * 1.5;
+	}
 	// --- Ghost square element (plain colored square, NoteskinEditor-popup style) ---
 	var square:RepeatSprite;
+	/** Red tail ruler for the hold-duration state: 2px thicker than the hold-note graphic, drawn over the (shortened) cyan ruler. */
+	var holdTail:RepeatSprite;
 	var squareBuf:Buffer<RepeatSprite>;
 	var squareProg:CustomProgram;
 
@@ -103,12 +161,27 @@ class StrumlineNoteInteraction {
 		this.parent = parent;
 		display = parent.display;
 
-		squareBuf = new Buffer<RepeatSprite>(2, 2, true);
+		// 4 elements: the ghost square, the hold-edit cyan ruler cap, the
+		// red tail ruler (F4), and the event-lane icon (F2).
+		squareBuf = new Buffer<RepeatSprite>(4, 2, true);
 		squareProg = new CustomProgram(squareBuf);
 		square = new RepeatSprite(0, 0, SQUARE_SIZE, SQUARE_SIZE);
 		square.c = 0x00FF00FF; // green = add (red = occupied)
 		square.c.aF = 0.35;
 		square.r = 45; // diamond orientation over the lane
+		holdTail = new RepeatSprite(0, 0, 0, 0);
+		holdTail.c = 0xFF0000FF; // red = the sustain tail being dialed in
+		holdTail.c.aF = 0.4;
+		holdTail.r = 0;
+		// The event lane's insertion icon: a violet diamond that hangs
+		// VERTICALLY CENTERED in the lane (the insertion point marker),
+		// plus small yellow diamonds marking already-placed events.
+		eventGhost = new RepeatSprite(0, 0, SQUARE_SIZE, SQUARE_SIZE);
+		eventGhost.c = 0x8000FFFF; // violet = event insertion
+		eventGhost.c.aF = 0.35;
+		eventGhost.r = 45;
+		eventMarkerBuf = new Buffer<RepeatSprite>(32, 2, true);
+		eventMarkerProg = new CustomProgram(eventMarkerBuf);
 	}
 
 	function addEvents() {
@@ -164,8 +237,17 @@ class StrumlineNoteInteraction {
 	inline function playheadMs():Float {
 		// Editor mode always runs on its own songPosition (startedCountdown
 		// is false there); the noteTime split is the latency-corrected
-		// gameplay path.
-		return parent.playfieldEditorMode || !parent.startedCountdown ? parent.songPosition : parent.noteTime;
+		// gameplay path. In editor mode the SMOOTHED render position is
+		// used — that's where the notes actually draw, so hit-testing and
+		// the drag-to-duration mapping agree with what's on screen during
+		// the smooth-scroll glide.
+		if (parent.playfieldEditorMode) {
+			var em = parent.editorMode;
+			if (em != null)
+				return em.smoothPosition;
+			return parent.songPosition;
+		}
+		return !parent.startedCountdown ? parent.songPosition : parent.noteTime;
 	}
 
 	/**
@@ -354,6 +436,9 @@ class StrumlineNoteInteraction {
 	function mouseMove(x:Float, y:Float) {
 		if (parent.disposed || parent.paused)
 			return;
+		// The exit popup owns ALL input while open.
+		if (parent.editorMode != null && parent.editorMode.exitPopup != null && parent.editorMode.exitPopup.opened)
+			return;
 
 		var local = toLocal(x, y);
 		hoverX = local.x;
@@ -362,6 +447,16 @@ class StrumlineNoteInteraction {
 		if (isDown) {
 			if (Math.abs(local.x - downX) > CLICK_SLOP || Math.abs(local.y - downY) > CLICK_SLOP)
 				moved = true;
+		}
+
+		// Background PAN (R3): LMB held on background + slide shifts the
+		// song position. Dragging UP pulls the chart up = later times
+		// come into view (upscroll); downscroll mirrors. The chart tracks
+		// the cursor 1:1 through the shared px→ms mapping, and the seek
+		// path reuses the editor's clamp + smooth-scroll machinery.
+		if (panning && isDown) {
+			updatePanFromCursor(local.y);
+			return;
 		}
 
 		// Hold-edit drag: while LMB is held on a note, the cursor's lane
@@ -373,8 +468,198 @@ class StrumlineNoteInteraction {
 			return;
 		}
 
-		detectHitbox(local.x, local.y);
+		detectEventLane(local.x, local.y);
+		if (!hoverEventLane)
+			detectHitbox(local.x, local.y);
 		updateSquareVisual();
+	}
+
+	/**
+		Pan helper: apply the cursor's Y delta (from the press point) to
+		the song position. Upscroll: dragging up (negative dy) moves the
+		playhead FORWARD in time — the notes slide up with the cursor.
+		Downscroll mirrors the axis, so the chart still tracks the
+		cursor. Clamped by seekTo (0..length-1s), silent or playing.
+	**/
+	function updatePanFromCursor(y:Float) {
+		var dy = y - panStartY;
+		var scrollSpeed = parent.scrollSpeed;
+		if (scrollSpeed <= 0)
+			scrollSpeed = 1;
+
+		// px → ms with the same sign convention as timeToY: upscroll Y
+		// grows downward with time, downscroll flips.
+		var dMs = parent.downScroll ? dy / scrollSpeed : -dy / scrollSpeed;
+		parent.editorMode.seekTo(panStartPos + dMs);
+	}
+
+	// ==================================================================
+	// Event lane (F2)
+	// ==================================================================
+
+	/**
+		Detect the event insertion lane under the cursor: a column the
+		width of one note, to the LEFT of the leftmost strumline's
+		receptors. Sets hoverEventLane + the snapped time under the
+		cursor. When true, the note hitbox detection is skipped (the
+		lanes don't overlap).
+	**/
+	function detectEventLane(x:Float, y:Float):Bool {
+		hoverEventLane = false;
+		hoverEventTimeMs = 0;
+
+		var noteSystem = parent.noteSystem;
+		if (noteSystem == null || noteSystem.strumlines.length == 0) {
+			return false;
+		}
+		var strumline = noteSystem.strumlines[0];
+		if (strumline.length == 0 || strumline.receptors[0] == null)
+			return false;
+		var note = strumline.receptors[0].note;
+		var laneW = note.w * strumline.scale;
+		var cx = eventLaneX();
+		if (x < cx - laneW * 0.5 || x > cx + laneW * 0.5)
+			return false;
+
+		// Same time mapping as the note lanes, anchored on the shared
+		// receptor row.
+		var anchor = strumline.receptors[0].note;
+		hoverEventTimeMs = snapTime(yToTimeMs(y, anchor.y));
+		hoverEventLane = true;
+		return true;
+	}
+
+	/** Lazy-load the song's events from eventList.json (the same file EventSystem reads). */
+	function loadEvents() {
+		if (eventsLoaded)
+			return;
+		eventsLoaded = true;
+		editorEvents = [];
+		var eventsPath = '${chartPath}/eventList.json';
+		if (!sys.FileSystem.exists(eventsPath))
+			return;
+		try {
+			var raw = haxe.Json.parse(sys.io.File.getContent(eventsPath));
+			if (raw.events == null)
+				return;
+			for (ev in (raw.events:Array<Dynamic>)) {
+				editorEvents.push({
+					name: Std.string(ev.evName),
+					value1: ev.value1 != null ? Std.string(ev.value1) : "",
+					value2: ev.value2 != null ? Std.string(ev.value2) : "",
+					time: Std.parseFloat(Std.string(ev.evTime))
+				});
+			}
+		} catch (e:Dynamic) {
+			// Corrupt event json — start from empty rather than crash.
+			editorEvents = [];
+		}
+	}
+
+	/** Write the editor's event list back to eventList.json (sorted by time). */
+	function saveEvents() {
+		editorEvents.sort(function(a, b) {
+			if (a.time < b.time)
+				return -1;
+			if (a.time > b.time)
+				return 1;
+			return 0;
+		});
+		var out = {events: [for (ev in editorEvents) {evName: ev.name, value1: ev.value1, value2: ev.value2, evTime: ev.time}]};
+		try {
+			sys.io.File.saveContent('${chartPath}/eventList.json', haxe.Json.stringify(out, "\t"));
+		} catch (e:Dynamic) {
+			// Unwritable chart folder — the edit stays in memory.
+		}
+	}
+
+	/** Adds a PLACEHOLDER event at the snapped cursor time (F2: for now, placeholders only). */
+	function addEventAt(timeMs:Float) {
+		loadEvents();
+		editorEvents.push({name: "Placeholder", value1: "", value2: "", time: timeMs});
+		editorEvents.sort(function(a, b) {
+			if (a.time < b.time)
+				return -1;
+			if (a.time > b.time)
+				return 1;
+			return 0;
+		});
+		saveEvents();
+		Main.current.playScrollSound();
+		rebuildEventMarkers();
+	}
+
+	/** Removes any event within half a snap step of the snapped cursor time. */
+	function removeEventNear(timeMs:Float) {
+		loadEvents();
+		var halfStep = parent.editorMode.snapMs * 0.5;
+		var found = false;
+		var i = editorEvents.length - 1;
+		while (i >= 0) {
+			if (Math.abs(editorEvents[i].time - timeMs) <= halfStep) {
+				editorEvents.splice(i, 1);
+				found = true;
+			}
+			i--;
+		}
+		if (found) {
+			saveEvents();
+			Main.current.playScrollSound();
+			rebuildEventMarkers();
+		}
+	}
+
+	/**
+		Rebuild the event markers around the current playhead: one small
+		yellow diamond per event within the visible time span, riding the
+		lane at the event's Y (same mapping as notes).
+	**/
+	function rebuildEventMarkers() {
+		if (eventMarkerBuf == null)
+			return;
+		loadEvents();
+
+		// Out with the old.
+		for (m in eventMarkers) {
+			try
+				eventMarkerBuf.removeElement(m)
+			catch (e) {}
+		}
+		eventMarkers = [];
+
+		var noteSystem = parent.noteSystem;
+		if (noteSystem == null || noteSystem.strumlines.length == 0)
+			return;
+		var strumline = noteSystem.strumlines[0];
+		if (strumline.length == 0 || strumline.receptors[0] == null)
+			return;
+		var anchor = strumline.receptors[0].note;
+		var cx = eventLaneX();
+		var scale = strumline.scale;
+		var size = Std.int(SQUARE_SIZE * 0.5 * scale);
+		var capacity = eventMarkerBuf.length;
+
+		for (ev in editorEvents) {
+			if (eventMarkers.length >= capacity)
+				break;
+			// Only the ones on screen (± one screen of travel).
+			var y = timeToY(ev.time, anchor.y);
+			if (y < -100 || y > Main.INITIAL_HEIGHT + 100)
+				continue;
+			var m = new RepeatSprite(0, 0, size, size);
+			m.x = Std.int(cx - size * 0.5);
+			m.y = Std.int(y - size * 0.5);
+			m.c = 0xFFE600FF; // yellow = placed event
+			m.c.aF = 0.6;
+			m.r = 45;
+			eventMarkers.push(m);
+			try
+				eventMarkerBuf.addElement(m)
+			catch (e) {}
+		}
+		try
+			eventMarkerBuf.update()
+		catch (e) {}
 	}
 
 	/**
@@ -440,16 +725,48 @@ class StrumlineNoteInteraction {
 		parent.editorMode.onChartEdited();
 	}
 
+	/**
+		Steps the hold-edited note's duration by `steps` snap steps (UI
+		UP/DOWN while in the duration-change state). Works both while the
+		mouse is still held (the classic hold-edit) and after a
+		press-drag-release edit is re-entered via UI keys.
+	**/
+	function nudgeHoldDuration(steps:Int) {
+		if (!holdEditing || downNoteId < 0)
+			return;
+		setHoldDuration(holdDurationMs + steps * parent.editorMode.snapMs);
+		updateSquareVisual();
+	}
+
 	function mouseDown(x:Float, y:Float, button:MouseButton) {
 		if (parent.disposed || parent.paused)
 			return;
+		// The exit popup owns ALL input while open — clicks included.
+		if (parent.editorMode != null && parent.editorMode.exitPopup != null && parent.editorMode.exitPopup.opened) {
+			if (button == MouseButton.LEFT)
+				parent.editorMode.exitPopup.click(x, y);
+			return;
+		}
 
 		var local = toLocal(x, y);
+
+		// Event lane: LMB adds a placeholder event at the snapped cursor
+		// time; RMB removes one near it. Handled before the note lane
+		// logic — the lanes never overlap.
+		if (detectEventLane(local.x, local.y)) {
+			if (button == MouseButton.LEFT)
+				addEventAt(hoverEventTimeMs);
+			else if (button == MouseButton.RIGHT)
+				removeEventNear(hoverEventTimeMs);
+			return;
+		}
+
 		if (button == MouseButton.LEFT) {
 			isDown = true;
 			moved = false;
 			downX = local.x;
 			downY = local.y;
+			panning = false;
 			// Capture the slot NOW — the click target stays fixed even as
 			// the song scrolls under a held cursor.
 			downOnGrid = detectHitbox(local.x, local.y);
@@ -458,17 +775,43 @@ class StrumlineNoteInteraction {
 			downTimeMs = hoverTimeMs;
 			// Pressing an EXISTING note enters hold-edit mode: the sustain
 			// can now be adjusted with the wheel or by dragging. Pressing
-			// an empty slot stays a plain add-click.
+			// an empty slot adds the note IMMEDIATELY (still holding the
+			// button) and enters the SAME hold-duration state on the fresh
+			// note — placing and lengthening is one continuous gesture
+			// (drag down / wheel / UI up-down all work from here).
 			downNoteId = downOnGrid ? findNoteAt(downLane, downStrumline, downTimeMs) : -1;
+			if (downNoteId < 0 && downOnGrid) {
+				// Empty slot: add the note right away and capture it for
+				// hold-editing. If the add fails (or the slot got occupied
+				// between press and now), this stays a plain click.
+				var id = File.addNote(MetaNote.floatToMetaNotePosition(downTimeMs), 0, downLane, parent.editorMode.notetype);
+				if (id >= 0) {
+					downNoteId = id;
+					Main.current.playScrollSound();
+					parent.editorMode.onChartEdited();
+				}
+			}
 			holdEditing = downNoteId >= 0;
-			// note.duration is already in ms (the chart's duration unit).
-			holdDurationMs = downNoteId >= 0 ? File.getNote(downNoteId).duration : 0;
-			updateSquareVisual(); // darken while held
+			if (holdEditing) {
+				// note.duration is already in ms (the chart's duration unit).
+				holdDurationMs = File.getNote(downNoteId).duration;
+			} else if (!downOnGrid) {
+				// BACKGROUND press: no slot, no note — this gesture is a
+				// PAN. Slide to shift the song position (see mouseMove);
+				// a press-release without moving does nothing.
+				panning = true;
+				panStartPos = parent.editorMode.playing ? parent.songPosition : parent.editorMode.smoothPosition;
+				panStartY = local.y;
+			}
+			updateSquareVisual(); // ruler while held
 		}
 	}
 
 	function mouseUp(x:Float, y:Float, button:MouseButton) {
 		if (parent.disposed || parent.paused)
+			return;
+		// The exit popup owns ALL input while open.
+		if (parent.editorMode != null && parent.editorMode.exitPopup != null && parent.editorMode.exitPopup.opened)
 			return;
 
 		if (button == MouseButton.LEFT) {
@@ -476,35 +819,24 @@ class StrumlineNoteInteraction {
 				return;
 			isDown = false;
 
-			var wasOnGrid = downOnGrid;
-			var lane = downLane;
-			var strumlineIdx = downStrumline;
-			var timeMs = downTimeMs;
+			// The add already happened at mouseDown (F5: placing a note
+			// with the button held goes straight into the duration
+			// state), and every wheel/drag/UI-key write went straight
+			// to the chart through setHoldDuration. The release just
+			// ends the gesture — nothing further to write. A click on
+			// an occupied slot that never dragged is likewise already
+			// final.
 			var wasHoldEdit = holdEditing;
-			var heldDur = holdDurationMs;
 			var noteId = downNoteId;
 			downOnGrid = false;
 			downLane = -1;
 			downStrumline = -1;
 			downNoteId = -1;
 			holdEditing = false;
+			panning = false;
 
-			// A hold-edit release that never dragged and never wheeled is
-			// just a click on an existing note — nothing to add, nothing to
-			// remove; the (possibly wheel-adjusted) duration was already
-			// written through setHoldDuration.
 			if (wasHoldEdit)
-				heldNoopRelease(noteId, heldDur);
-			else if (wasOnGrid && !moved && lane >= 0) {
-				// Only add when the slot is empty ("hasn't appeared there yet").
-				if (findNoteAt(lane, strumlineIdx, timeMs) < 0) {
-					var id = File.addNote(MetaNote.floatToMetaNotePosition(timeMs), 0, lane, parent.editorMode.notetype);
-					if (id >= 0) {
-						Main.current.playScrollSound();
-						parent.editorMode.onChartEdited();
-					}
-				}
-			}
+				heldNoopRelease(noteId, holdDurationMs);
 
 			// Re-detect for the release position's visual state.
 			var local = toLocal(x, y);
@@ -514,7 +846,12 @@ class StrumlineNoteInteraction {
 		}
 
 		if (button == MouseButton.RIGHT) {
+			// The event lane eats RMB first (remove event near cursor).
 			var local = toLocal(x, y);
+			if (detectEventLane(local.x, local.y)) {
+				removeEventNear(hoverEventTimeMs);
+				return;
+			}
 			if (detectHitbox(local.x, local.y) && hoverLane >= 0) {
 				var id = findNoteAt(hoverLane, hoverStrumline, hoverTimeMs);
 				if (id >= 0) {
@@ -538,6 +875,9 @@ class StrumlineNoteInteraction {
 
 	function mouseWheel(deltaX:Float, deltaY:Float, mode:MouseWheelMode) {
 		if (parent.disposed || parent.paused)
+			return;
+		// The exit popup owns ALL input while open.
+		if (parent.editorMode != null && parent.editorMode.exitPopup != null && parent.editorMode.exitPopup.opened)
 			return;
 
 		var notches = -Math.floor(deltaY);
@@ -614,27 +954,37 @@ class StrumlineNoteInteraction {
 			var cx = drawX + drawW * 0.5;
 			var cy = drawY + drawH * 0.5;
 
-			// Hold-editing: the square stretches along the lane to cover the
-			// note head PLUS its live sustain length — a direct visual ruler
-			// of the duration being dialed in (wheel notches / drag). The
-			// head anchor is the note's real drawn top (LUT path); the tail
-			// stretches from it at scroll speed, matching how the sustain
-			// sprite itself follows and stretches from the head note.
+			// Hold-editing: the graphic matches the user's reference —
+			// the NOTE HEAD IS LEFT COMPLETELY BARE (its normal arrow
+			// sprite, no cap), and a narrow solid RED BAR extends from
+			// the head's visual center along the lane for the whole
+			// dialed duration. Reference proportions: the bar is ~44%
+			// of the note head's width, square-edged, horizontally
+			// centered on the lane. The bar is hidden when the duration
+			// is zero (a tap).
 			if (holdEditing && isDown) {
-				var stretch = holdDurationMs * parent.scrollSpeed;
-				var tailY = drawY + (parent.downScroll ? -stretch : stretch);
-				var y0 = Std.int(Math.min(drawY, tailY));
-				var y1 = Std.int(Math.max(drawY, tailY));
-				var pad = size * 0.5;
+				// No ghost square over the head while editing — the bare
+				// note plus the red bar is the whole graphic.
+				square.w = 0;
+				square.h = 0;
 
-				square.w = Std.int(size * 0.6);
-				square.h = Std.int(Math.max(y1 - y0 + pad * 2, size));
-				square.x = Std.int(cx - square.w * 0.5);
-				square.y = y0 - Std.int(pad);
-				square.c = 0x0080FFFF; // cyan = hold-edit (duration editing)
-				square.c.aF = 0.25;
-				square.r = 0; // axis-aligned ruler
+				var stretch = holdDurationMs * parent.scrollSpeed;
+				var barY = cy + (parent.downScroll ? -stretch : stretch);
+				var barW = Std.int(Math.max(drawW * 0.44, 4)); // ~44% of the note head's width
+				var y0 = Std.int(Math.min(cy, barY));
+				var y1 = Std.int(Math.max(cy, barY));
+
+				holdTail.w = barW;
+				holdTail.h = Std.int(Math.max(y1 - y0, 0));
+				holdTail.x = Std.int(cx - barW * 0.5);
+				holdTail.y = y0;
+				holdTail.c = 0xFF0000FF; // solid red, reference-style
+				holdTail.c.aF = 0.85;
 			} else {
+				// Not hold-editing: no bar.
+				holdTail.w = 0;
+				holdTail.h = 0;
+
 				// Square centered exactly on the note's visual center.
 				square.w = size;
 				square.h = size;
@@ -652,8 +1002,31 @@ class StrumlineNoteInteraction {
 		if (squareBuf != null) {
 			try {
 				squareBuf.updateElement(square);
+				squareBuf.updateElement(holdTail);
 				squareBuf.update();
 			} catch (e) {}
+		}
+
+		// Event lane icon (F2): a violet diamond, VERTICALLY CENTERED in
+		// the event column, always visible while the editor runs — the
+		// "insertion point" affordance. Brightens when hovered.
+		if (eventGhost != null && parent.noteSystem != null && parent.noteSystem.strumlines.length > 0) {
+			var strumline = parent.noteSystem.strumlines[0];
+			if (strumline.length > 0 && strumline.receptors[0] != null) {
+				var scale = strumline.scale;
+				var size = Std.int(SQUARE_SIZE * scale);
+				eventGhost.w = size;
+				eventGhost.h = size;
+				eventGhost.x = Std.int(eventLaneX() - size * 0.5);
+				eventGhost.y = Std.int((Main.INITIAL_HEIGHT - size) * 0.5); // vertical center
+				eventGhost.c = hoverEventLane ? 0xB880FFFF : 0x8000FFFF;
+				eventGhost.c.aF = hoverEventLane ? 0.6 : 0.35;
+				if (squareBuf != null) {
+					try {
+						squareBuf.updateElement(eventGhost);
+					} catch (e) {}
+				}
+			}
 		}
 	}
 
@@ -664,10 +1037,23 @@ class StrumlineNoteInteraction {
 	/**
 		Per-frame refresh: the square must track the playhead even with a
 		still cursor — notes scroll under it, changing slot occupancy.
+		The event markers are rebuilt when the playhead moved more than
+		one snap step since the last rebuild (they ride the lane at
+		fixed times, so scrolling the window needs new markers).
 	*/
+	var lastMarkerRebuildPos:Float = -1e9;
+
 	function update() {
 		if (parent.disposed)
 			return;
+
+		// Event markers follow the (smoothed) scroll window.
+		var renderPos = parent.playfieldEditorMode && parent.editorMode != null ? parent.editorMode.smoothPosition : parent.songPosition;
+		if (Math.abs(renderPos - lastMarkerRebuildPos) > parent.editorMode.snapMs) {
+			lastMarkerRebuildPos = renderPos;
+			rebuildEventMarkers();
+		}
+
 		// While hold-editing, skip hitbox re-detection — the edited note's
 		// slot is frozen at press time and the ruler square below reads
 		// downTimeMs/holdDurationMs directly. Otherwise keep detecting so
@@ -676,7 +1062,7 @@ class StrumlineNoteInteraction {
 			updateSquareVisual();
 			return;
 		}
-		if (hoverLane >= 0 || (isDown && downOnGrid))
+		if (hoverLane >= 0 || hoverEventLane || (isDown && downOnGrid))
 			detectHitbox(hoverX, hoverY);
 		updateSquareVisual();
 	}
@@ -685,9 +1071,23 @@ class StrumlineNoteInteraction {
 	function attach() {
 		if (!squareProg.isIn(display))
 			display.addProgram(squareProg);
+		if (!eventMarkerProg.isIn(display))
+			display.addProgram(eventMarkerProg);
+		// Start HIDDEN: a fresh editor must not show any ghost/bar until
+		// the cursor actually hovers a lane or an edit begins. The
+		// elements' constructor sizes (SQUARE_SIZE at 0,0) would otherwise
+		// render for the frames before the first updateSquareVisual().
+		square.w = 0;
+		square.h = 0;
+		holdTail.w = 0;
+		holdTail.h = 0;
 		squareBuf.addElement(square);
+		squareBuf.addElement(holdTail);
+		squareBuf.addElement(eventGhost);
 		try {
 			squareBuf.updateElement(square);
+			squareBuf.updateElement(holdTail);
+			squareBuf.updateElement(eventGhost);
 			squareBuf.update();
 		} catch (e) {}
 		addEvents();
@@ -700,20 +1100,39 @@ class StrumlineNoteInteraction {
 		removeEvents();
 		try {
 			squareBuf.removeElement(square);
+			squareBuf.removeElement(holdTail);
+			squareBuf.removeElement(eventGhost);
 		} catch (e) {}
+		for (m in eventMarkers) {
+			try
+				eventMarkerBuf.removeElement(m)
+			catch (e) {}
+		}
+		eventMarkers = [];
 		if (squareProg.isIn(display))
 			display.removeProgram(squareProg);
+		if (eventMarkerProg.isIn(display))
+			display.removeProgram(eventMarkerProg);
 	}
 
 	function dispose() {
 		detach();
 		square = null;
+		holdTail = null;
+		eventGhost = null;
 		if (squareBuf != null) {
 			try
 				squareBuf.clear()
 			catch (e) {}
 			squareBuf = null;
 		}
+		if (eventMarkerBuf != null) {
+			try
+				eventMarkerBuf.clear()
+			catch (e) {}
+			eventMarkerBuf = null;
+		}
 		squareProg = null;
+		eventMarkerProg = null;
 	}
 }

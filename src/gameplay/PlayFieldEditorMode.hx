@@ -67,11 +67,61 @@ class PlayFieldEditorMode {
 	/** The dedicated stepped-strumline mouse input system. */
 	var strumlineInput:StrumlineNoteInteraction;
 
+	/** The exit-confirmation popup (F8): editor/menu/titlescreen. */
+	var exitPopup:EditorExitPopup;
+
 	/** True when the chart has unsaved edits. */
 	var dirtyChart:Bool = false;
 
 	/** True while the song transport is running (audible). */
 	var playing:Bool = false;
+
+	// -------------------------------------------------------------------
+	// Smooth scroll (wheel/arrow seeks while SILENT) — render-side lerp
+	// -------------------------------------------------------------------
+
+	/**
+		The position the note system actually renders at while silent:
+		a FAST lerp toward `field.songPosition` (the exact seek target).
+		`songPosition` itself stays exact — everything that consumes it
+		(the readout, seek math, note adds) keeps snapping to the grid —
+		while the VISIBLE chart glides to it. One wheel notch is a tiny
+		nudge (feels smooth); a Ctrl+wheel jump or an arrow-key seek
+		glides for a few frames instead of teleporting. On the first
+		frame after a seek the distance is snap-committed when it is
+		below SNAP_MS so micro-seeks don't wobble.
+	**/
+	var smoothPosition:Float = 0;
+
+	/** Fast-lerp ratio per frame (at 60fps ≈ 0.55 → ~95% in 4 frames). */
+	static inline var SMOOTH_RATIO:Float = 0.55;
+
+	/**
+		Remaining render distance below which the lerp snaps to the
+		target — stops sub-pixel wobble on micro-seeks.
+	**/
+	static inline var SMOOTH_SNAP_MS:Float = 4.0;
+
+	// -------------------------------------------------------------------
+	// Playback rate (ALT+[ / ALT+])
+	// -------------------------------------------------------------------
+
+	/** Current editor playback rate (ALT+[ / ALT+] cycles it). */
+	var playbackRate:Float = 1.0;
+
+	/** The rate ladder the editor cycles through, FNF-style. */
+	static var RATES:Array<Float> = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+
+	// -------------------------------------------------------------------
+	// Keybind placement mode (F1)
+	// -------------------------------------------------------------------
+
+	/**
+		When true, the PLAYER keybinds place notes at the playhead
+		(ALT+LEFT/RIGHT still cycle the notetype while paused). Lets you
+		chart with the keyboard alone, Arrow-Vortex style.
+	**/
+	var keybindPlaceMode:Bool = false;
 
 	var keysActive:Bool = false;
 
@@ -91,6 +141,9 @@ class PlayFieldEditorMode {
 	**/
 	function build() {
 		field.songPosition = 0;
+		smoothPosition = 0;
+		playbackRate = 1.0;
+		Mixer.speed = 1.0;
 
 		// The HUD must be visible the instant the editor appears — the
 		// gameplay fade-in (alphaLerp toward 1 on songStarted) would
@@ -110,8 +163,10 @@ class PlayFieldEditorMode {
 			strumline.playable = false;
 
 		strumlineInput = new StrumlineNoteInteraction(field);
+		strumlineInput.chartPath = field.chartPathForEditor();
 		strumlineInput.attach();
 		attachKeys();
+		exitPopup = new EditorExitPopup(this);
 	}
 
 	// -------------------------------------------------------------------
@@ -140,12 +195,22 @@ class PlayFieldEditorMode {
 		if (field.disposed)
 			return;
 
-		// ESC/back toggles the editor's pause: the BARE pause(false) /
-		// resume() freeze — no pause menu exists in the editor. Main
-		// skips playfield update+render while paused (both modes), so the
-		// last rendered frame simply stays on screen with nothing — not
-		// the note system, not the mixer clock — moving.
+		// ESC/back opens the exit popup (exit editor mode / back to
+		// menu / back to titlescreen). While the popup is open, it owns
+		// every key — the popup itself closes on ESC (plain pause).
+		if (exitPopup != null && exitPopup.opened) {
+			exitPopup.handleKey(code, mod);
+			return;
+		}
+
+		// ESC/back while the popup is closed: open it.
 		if (code == SaveData.state.controls.ui.back || code == KeyCode.ESCAPE) {
+			if (exitPopup != null) {
+				exitPopup.open();
+				return;
+			}
+			// No popup available (shouldn't happen): fall back to the
+			// bare pause toggle.
 			if (field.paused)
 				field.resume();
 			else
@@ -165,14 +230,45 @@ class PlayFieldEditorMode {
 		if (field.paused)
 			return;
 
+		// F1 toggles keybind placement: the player keybinds place notes
+		// at the playhead on whichever lane they map to. (Checked BEFORE
+		// the ALT branch so ALT+F1 can never be eaten by it, and before
+		// the keybind-place dispatch so the toggle key itself never
+		// places a note.)
+		if (code == KeyCode.F1) {
+			keybindPlaceMode = !keybindPlaceMode;
+			Main.current.playScrollSound();
+			return;
+		}
+
+		// Keybind placement mode: every player keybind press places (or
+		// removes, when ALT is held) a note at the playhead on that
+		// keybind's lane. Runs even while the ALT modifier is held —
+		// ALT+keybind is the remove gesture.
+		if (keybindPlaceMode) {
+			var lane = laneForBind(code);
+			if (lane >= 0) {
+				placeAtPlayhead(lane, (mod & KeyModifier.ALT) != 0);
+				return;
+			}
+			// Non-player keys still fall through to the binds below
+			// (seek, snap, notetype) — only the PLAYER keys are captured.
+		}
+
 		// ALT+LEFT / ALT+RIGHT cycle the notetype number the editor
 		// places (wrapped through 0..255, the chart's 8-bit type field).
+		// Works paused or not — in keybind-place mode this is how you
+		// re-color the pen without the mouse.
 		if ((mod & KeyModifier.ALT) != 0) {
 			switch (code) {
 				case KeyCode.LEFT:
 					notetype = notetype <= 0 ? 255 : notetype - 1;
 				case KeyCode.RIGHT:
 					notetype = notetype >= 255 ? 0 : notetype + 1;
+				case KeyCode.LEFT_BRACKET:
+					cyclePlaybackRate(-1);
+				case KeyCode.RIGHT_BRACKET:
+					cyclePlaybackRate(1);
 				default:
 					// With ALT held the user asked for the notetype
 					// action; eat the key.
@@ -186,6 +282,14 @@ class PlayFieldEditorMode {
 				seekTo(field.songPosition - ((mod & KeyModifier.CTRL) != 0 ? 4000 : 1000));
 			case KeyCode.RIGHT:
 				seekTo(field.songPosition + ((mod & KeyModifier.CTRL) != 0 ? 4000 : 1000));
+			case KeyCode.UP:
+				// UI up/down lengthen/shorten the hold note being edited
+				// (the duration-change state) by one snap step.
+				if (strumlineInput != null)
+					strumlineInput.nudgeHoldDuration(1);
+			case KeyCode.DOWN:
+				if (strumlineInput != null)
+					strumlineInput.nudgeHoldDuration(-1);
 			case KeyCode.MINUS:
 				// Halve the snap multiplier (finer grid), floored at 1/32nds.
 				snapMultiplier = Math.max(snapMultiplier / 2, 0.03125);
@@ -197,6 +301,93 @@ class PlayFieldEditorMode {
 					saveChartToDisk();
 			default:
 		}
+	}
+
+	// -------------------------------------------------------------------
+	// Keybind placement (F1 mode)
+	// -------------------------------------------------------------------
+
+	/**
+		The player-strumline lane a KeyCode maps to under the CURRENT
+		mania's keybind set (keybindArray[mania-1]), or -1. The editor
+		reads the same keybinds gameplay's InputSystem does — both
+		keybinds and keybindsTwo alternates match.
+	**/
+	function laneForBind(code:KeyCode):Int {
+		var keybindArray = SaveData.state.controls.game.keybindArray;
+		var mania = Chart.header.mania;
+		if (keybindArray == null || mania < 1 || mania > keybindArray.length)
+			return -1;
+		var bind = keybindArray[mania - 1];
+		if (bind == null)
+			return -1;
+		for (i in 0...bind.length) {
+			var keybind = bind[i];
+			if (keybind == null || keybind.length == 0)
+				continue;
+			if (code == keybind[0] || (keybind.length > 1 && code == keybind[1]))
+				return i;
+		}
+		return -1;
+	}
+
+	/**
+		Place (or with `remove`, delete) a note at the CURRENT playhead
+		time on the PLAYER strumline (`type = 1`, matching how the mouse
+		editor's default notetype 1 maps: type % strumlineCount = 1).
+		Snapped to the grid, and the type used is the editor's selected
+		notetype — ALT+LEFT/RIGHT re-colors this pen live.
+	**/
+	function placeAtPlayhead(lane:Int, remove:Bool) {
+		if (strumlineInput == null)
+			return;
+
+		var timeMs = strumlineInput.snapTime(field.songPosition);
+		var noteSystem = field.noteSystem;
+		if (noteSystem == null || lane >= noteSystem.strumlines[1].length)
+			return;
+
+		if (remove) {
+			var id = strumlineInput.findNoteAt(lane, 1, timeMs);
+			if (id >= 0) {
+				File.removeNote(id);
+				Main.current.playScrollSound();
+				onChartEdited();
+			}
+			return;
+		}
+
+		if (strumlineInput.findNoteAt(lane, 1, timeMs) < 0) {
+			var id = File.addNote(MetaNote.floatToMetaNotePosition(timeMs), 0, lane, notetype);
+			if (id >= 0) {
+				Main.current.playScrollSound();
+				onChartEdited();
+			}
+		}
+	}
+
+	/**
+		Steps the playback rate one rung down (-1) or up (+1) the RATES
+		ladder and applies it through Mixer.speed — the same setter the
+		gameplay speed options use, so the pitch-preservation preference
+		is respected. Also updates the readout immediately.
+	**/
+	function cyclePlaybackRate(dir:Int) {
+		var idx = 0;
+		for (i in 0...RATES.length) {
+			if (Math.abs(RATES[i] - playbackRate) < 0.001) {
+				idx = i;
+				break;
+			}
+		}
+		idx += dir;
+		if (idx < 0)
+			idx = 0;
+		if (idx >= RATES.length)
+			idx = RATES.length - 1;
+		playbackRate = RATES[idx];
+		Mixer.speed = playbackRate;
+		updateReadout();
 	}
 
 	// -------------------------------------------------------------------
@@ -237,6 +428,9 @@ class PlayFieldEditorMode {
 			Mixer.stopMusic();
 			field.songStarted = false;
 			playing = false;
+			// The smooth-scroll render position restarts from exactly
+			// where playback stopped — no glide after a stop.
+			smoothPosition = field.songPosition;
 
 			// The spawner window was built against the moving position; a
 			// stop is a position change for rendering purposes — rebuild
@@ -363,6 +557,33 @@ class PlayFieldEditorMode {
 	// -------------------------------------------------------------------
 
 	/**
+		Per-frame smooth-scroll advance (called from PlayField.update's
+		editor branch BEFORE the note system consumes the position).
+		While SILENT the render position fast-lerps toward the exact
+		`songPosition`; while PLAYING it tracks exactly (the audio clock
+		is already continuous) and re-syncs on stop. Returns the position
+		the note system should render at this frame.
+	**/
+	function advanceSmoothScroll(deltaTime:Float):Float {
+		if (playing) {
+			smoothPosition = field.songPosition;
+			return smoothPosition;
+		}
+
+		var target = field.songPosition;
+		if (Math.abs(target - smoothPosition) <= SMOOTH_SNAP_MS) {
+			smoothPosition = target;
+			return smoothPosition;
+		}
+
+		// Frame-rate-normalized ratio: at 60fps this is SMOOTH_RATIO,
+		// at 120fps half of it per frame — same glide per real second.
+		var ratio = 1 - Math.pow(1 - SMOOTH_RATIO, Math.max(deltaTime, 0) / (1000 / 60));
+		smoothPosition = Tools.lerp(smoothPosition, target, ratio);
+		return smoothPosition;
+	}
+
+	/**
 		Replaces the score text with the editor readout, called once per
 		frame from PlayField.update's editor branch AFTER hud.update (so
 		the HUD's own score/misses/accuracy write is always overwritten —
@@ -372,6 +593,8 @@ class PlayFieldEditorMode {
 		Shows the RAW values, no rounding or unit conversion:
 		  pos    — the editor-owned songPosition, exactly as the note
 		           system consumes it (ms)
+		  rate   — the current playback rate (x0.5 .. x2)
+		  kbd    — ON when F1 keybind-placement is active
 		  bot/top— the note spawner's live cull window as RAW global chart
 		           indices (bottom = first note not yet despawned,
 		           top = first note outside spawn range), read straight
@@ -389,11 +612,13 @@ class PlayFieldEditorMode {
 		// Raw values, straight off the live objects — no rounding, no
 		// unit conversion. Int64 interpolates through Std.string, which
 		// prints the full 64-bit decimal value.
+		var rateStr = playbackRate == Math.floor(playbackRate) ? Std.string(Math.floor(playbackRate)) : Std.string(playbackRate);
 		if (field.noteSystem != null && field.noteSystem.noteSpawner != null) {
 			var spawner = field.noteSystem.noteSpawner;
-			scoreTxt.text = 'pos: ${field.songPosition} | bottom: ${spawner.bottom} | top: ${spawner.top}';
+			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"}'
+				+ ' | bottom: ${spawner.bottom} | top: ${spawner.top}';
 		} else {
-			scoreTxt.text = 'pos: ${field.songPosition} | bottom: - | top: -';
+			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"} | bottom: - | top: -';
 		}
 
 		// Re-center for the readout's own width (hud.update positioned the
@@ -408,6 +633,13 @@ class PlayFieldEditorMode {
 
 	function dispose() {
 		detachKeys();
+		if (exitPopup != null) {
+			exitPopup.dispose();
+			exitPopup = null;
+		}
+		// Never leak a non-1x rate into gameplay or the menus — the
+		// editor's rate is editor-only state.
+		Mixer.speed = 1.0;
 		if (strumlineInput != null) {
 			strumlineInput.dispose();
 			strumlineInput = null;
