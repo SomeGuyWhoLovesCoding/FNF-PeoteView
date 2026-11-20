@@ -222,7 +222,7 @@ class NoteSpawner {
 			while (lo < hi) {
 				var mid = (lo + hi) >> 1;
 				if (File.getNote(mid).position < target)
-					lo = mid + 1;
+				lo = mid + 1;
 				else
 					hi = mid;
 			}
@@ -244,14 +244,7 @@ class NoteSpawner {
 		var newBottom = lowerBound(minPos);
 		var newTop = upperBound(maxPos);
 
-		// minBottom exists for GAMEPLAY (processNotes must not re-run the
-		// miss/hit side effects on notes already judged before a forward
-		// jump). The editor's pure-render path has no side effects and
-		// must show every note in the window — including ones behind the
-		// frozen playhead — so it is not applied there.
-		minBottom = parent.parent.playfieldEditorMode
-			? 0
-			: lowerBound(songPos + MetaNote.floatToMetaNotePosition(pushToOffset));
+		minBottom = lowerBound(songPos + MetaNote.floatToMetaNotePosition(pushToOffset));
 
 		bottom = newBottom;
 		top = newTop;
