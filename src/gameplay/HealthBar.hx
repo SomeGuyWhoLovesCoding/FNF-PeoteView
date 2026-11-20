@@ -29,60 +29,47 @@ class HealthBar {
 		[Color.LIME, Color.LIME, Color.LIME, Color.LIME, Color.LIME, Color.LIME]
 	];
 
-	// Editor-mode fallback actor data (see resolveActorData): the chart's
-	// player/opponent charData.json, parsed once and cached — no Field,
-	// no sprites, no stage. [opponent, player], matching Field.actors[1..2].
+	// Editor-mode actor data (see actorDataAt): Field's character trio
+	// (gf/dad/bfSgwlfnf — Field.SPECTATOR_NAME etc.), each one's
+	// charData.json parsed once and cached. No Field, no sprites, no
+	// stage. Indexed like Field.actors: [0]=spectator, [1]=opponent,
+	// [2]=player. THIS mirrors the same names Field builds actors from,
+	// so the editor's icons/palette match gameplay by construction.
 	var _editorActorData:Array<ActorData> = null;
 
 	/**
-		Editor-mode actor data source: the chart header's actor metas name
-		the player and opponent characters. Reads each one's charData.json
-		through ActorData.parse (the same parser gameplay's Actor uses)
-		and caches the result. Returns null on any failure — callers then
-		keep the built-in default palette/icons, exactly like before.
+		ActorData for actor slot `index` (Field.actors layout), or null.
+		Gameplay: straight from the real actors. Editor mode: parsed from
+		the SAME characters Field would build (no Field exists there) —
+		this is what makes the editor health icons match the game's.
 	**/
-	function resolveActorData():Array<ActorData> {
-		if (parent.field != null)
-			return parent.field.actors;
-
-		if (_editorActorData != null)
-			return _editorActorData;
-
-		var header = Chart.header;
-		if (header == null || header.actors == null)
-			return null;
-
-		var opponentName:String = null;
-		var playerName:String = null;
-		for (meta in header.actors) {
-			if (meta == null || meta.name == null)
-				continue;
-			if (meta.player && playerName == null)
-				playerName = meta.name;
-			else if (!meta.player && opponentName == null)
-				opponentName = meta.name;
+	function actorDataAt(index:Int):ActorData {
+		var field = parent.field;
+		if (field != null) {
+			var actor = field.actors[index];
+			return actor != null ? actor.data : null;
 		}
-		if (opponentName == null && playerName == null)
+
+		if (index < 0 || index > 2)
 			return null;
 
-		_editorActorData = [null, null, null];
-		var folder = "images/characters/";
-		for (i => name in [opponentName, playerName]) {
-			if (name == null)
-				continue;
-			var path = 'assets/$folder$name/charData.json';
-			if (!sys.FileSystem.exists(path))
-				continue;
-			try {
-				_editorActorData[i + 1] = ActorData.parse(path);
-			} catch (e:Dynamic) {
-				// Unparseable/missing char data — leave null; the default
-				// palette/IDs apply for this side only.
+		if (_editorActorData == null) {
+			_editorActorData = [null, null, null];
+			var folder = "images/characters/";
+			var names = [Field.SPECTATOR_NAME, Field.OPPONENT_NAME, Field.PLAYER_NAME];
+			for (i => name in names) {
+				var path = 'assets/$folder$name/charData.json';
+				if (name == null || !sys.FileSystem.exists(path))
+					continue;
+				try {
+					_editorActorData[i] = ActorData.parse(path);
+				} catch (e:Dynamic) {
+					// Unparseable/missing char data — that slot keeps the
+					// default palette/icons (null below).
+				}
 			}
 		}
-		if (_editorActorData[1] == null && _editorActorData[2] == null)
-			_editorActorData = null;
-		return _editorActorData;
+		return _editorActorData[index];
 	}
 
 	var healthBarWS(default, null):Float;
@@ -132,10 +119,11 @@ class HealthBar {
 		bg.x = 275;
 		bg.y = parent.downScroll ? 90 : Main.INITIAL_HEIGHT - 90;
 
-		// Null in editor mode (no Field/actors there) — resolveActorData
-		// falls back to the chart's own charData.json (no sprites built)
-		// so the editor shows the same icons and palette as gameplay.
-		var actors = resolveActorData();
+		// Actor data per slot via actorDataAt(): gameplay reads the real
+		// actors; editor mode reads the SAME trio's charData.json (no
+		// sprites built), so the editor shows the same icons and palette
+		// as gameplay. Null slot → default palette/IDs (guards below).
+		var actorData = [actorDataAt(1), actorDataAt(2)]; // [opponent, player]
 
 		// HEALTH BAR PART SETUP
 		for (i in 0...2) {
@@ -143,10 +131,10 @@ class HealthBar {
 			part.h = bg.h - healthBarHS;
 			part.y = bg.y + healthBarYA;
 			part.gradientMode = 1.0;
-			// Editor fallback data can have a null side (character without
-			// charData.json) — that side keeps the default palette.
-			if (!customHealthBarColorEnabled && actors != null && actors[i] != null)
-				part.setAllColors(actors[i].data.colors);
+			// A side without data (missing charData.json) keeps the
+			// default palette.
+			if (!customHealthBarColorEnabled && actorData[i] != null)
+				part.setAllColors(actorData[i].colors);
 
 			hbBuf.addElement(part);
 		}
@@ -160,8 +148,8 @@ class HealthBar {
 		var x = bg.x + (bg.w * 0.5);
 
 		for (i in 0...2) {
-			if (actors != null && actors[i + 1] != null) {
-				var healthIconIndexes = Tools.fromIconGridXMLCharacter(actors[i + 1].data.healthIcon);
+			if (actorData[i] != null) {
+				var healthIconIndexes = Tools.fromIconGridXMLCharacter(actorData[i].healthIcon);
 				// Unknown character name in iconData.xml → keep the default
 				// grid IDs for that side instead of crashing on null.
 				if (healthIconIndexes != null)
@@ -217,17 +205,18 @@ class HealthBar {
 
 		bg.y = parent.downScroll ? 90 : Main.INITIAL_HEIGHT - 90;
 
-		// Editor mode: resolveActorData() (chart charData.json fallback).
-		var actors = resolveActorData();
+		// Actor data per slot via actorDataAt() (editor: charData.json of
+		// the same trio gameplay uses; null slot → default palette).
+		var actorData = [actorDataAt(1), actorDataAt(2)]; // [opponent, player]
 
 		var part1 = parts[0];
 
 		if (part1 == null)
 			return;
 
-		// Editor-mode fallback palette (white/red) when there are no actors.
-		var actor1 = actors != null ? actors[(parent.flipHealthBar ? 1 : 0) + 1] : null;
-		var healthIconColor = actor1 != null ? actor1.data.colors : healthIconColors[0];
+		// Default palette (white/red) when a side has no actor data.
+		var actor1 = actorData[parent.flipHealthBar ? 1 : 0];
+		var healthIconColor = actor1 != null ? actor1.colors : healthIconColors[0];
 
 		if (customHealthBarColorEnabled)
 			healthIconColor = healthIconColors[(parent.flipHealthBar ? 1 : 0)];
@@ -246,8 +235,8 @@ class HealthBar {
 		if (part2 == null)
 			return;
 
-		var actor2 = actors != null ? actors[(parent.flipHealthBar ? 0 : 1) + 1] : null;
-		var healthIconColor = actor2 != null ? actor2.data.colors : healthIconColors[1];
+		var actor2 = actorData[parent.flipHealthBar ? 0 : 1];
+		var healthIconColor = actor2 != null ? actor2.colors : healthIconColors[1];
 
 		if (customHealthBarColorEnabled)
 			healthIconColor = healthIconColors[(parent.flipHealthBar ? 0 : 1)];

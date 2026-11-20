@@ -201,9 +201,12 @@ class StrumlineNoteInteraction {
 		// scrollDirection (-90 upscroll: sin = -1, Y falls as diff grows);
 		// downscroll flips the DIFF sign, not the LUT — so centerY(q) is
 		// monotonic DECREASING in q in both scroll modes.
+		// (No nullable Int: cpp/hl are static platforms — track found
+		// with a flag and clamp the bracket instead.)
 		var lo = lutCtx.minDiff;
 		var hi = lutCtx.maxDiff;
-		var bestQ:Int = null;
+		var found = false;
+		var bestQ = lo;
 
 		while (lo <= hi) {
 			var mid = (lo + hi) >> 1;
@@ -216,9 +219,10 @@ class StrumlineNoteInteraction {
 				hi = mid - 1;
 				bestQ = mid;
 			}
+			found = true;
 		}
 
-		if (bestQ == null)
+		if (!found)
 			return linear;
 
 		// diff → time: drawNote computes d = -(t - now) * speed, negated

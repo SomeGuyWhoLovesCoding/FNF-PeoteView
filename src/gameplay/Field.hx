@@ -53,18 +53,25 @@ class Field {
 	static var singPoses:Array<String> = ["singLEFT", "singDOWN", "singUP", "singRIGHT"];
 	static var missPoses:Array<String> = ["singLEFTmiss", "singDOWNmiss", "singUPmiss", "singRIGHTmiss"];
 
+	// The character trio every song uses. Single source of truth — the
+	// editor HUD (HealthBar.actorDataAt) mirrors these names so the
+	// editor's health icons/palette match gameplay by construction.
+	static var SPECTATOR_NAME:String = "gf";
+	static var OPPONENT_NAME:String = "dad";
+	static var PLAYER_NAME:String = "bfSgwlfnf";
+
 	function new(parent:PlayField) {
 		this.parent = parent;
 
 		actors = [];
 		actors.resize(3);
 
-		spectator = Actor.create(parent.view, "spectator", "gf", 250, -100, 24, true);
+		spectator = Actor.create(parent.view, "spectator", SPECTATOR_NAME, 250, -100, 24, true);
 		spectator.mirror = !spectator.mirror;
 		spectator.playAnimation("danceLeft");
 		spectator.addToBuffer();
 
-		opponent = Actor.create(parent.view, "opponent", "dad", 250, -100, 24, true);
+		opponent = Actor.create(parent.view, "opponent", OPPONENT_NAME, 250, -100, 24, true);
 		opponent.mirror = !opponent.mirror;
 		opponent.preComputeSingPosesOfAnimations(singPoses);
 		opponent.preComputeMissPosesOfAnimations(missPoses);
@@ -74,7 +81,7 @@ class Field {
 		opponent.finishAnim = "idle";
 		opponent.addToBuffer();
 
-		player = Actor.create(parent.view, "player", "bfSgwlfnf", 625, 250, 24, true);
+		player = Actor.create(parent.view, "player", PLAYER_NAME, 625, 250, 24, true);
 		player.preComputeSingPosesOfAnimations(singPoses);
 		player.preComputeMissPosesOfAnimations(missPoses);
 		player.playAnimation("idle");
