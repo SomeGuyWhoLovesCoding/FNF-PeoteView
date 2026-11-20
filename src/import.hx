@@ -41,6 +41,13 @@ import overlay.*;
 // INPUT & HANDLER
 import handler.*;
 
+// UNDERLYING STUFF
+import underlying.*;
+import underlying.data.*;
+import underlying.overlay.*;
+import underlying.miniaudio.*;
+import underlying.rhythm.*;
+
 // TOOLING & INFRASTRUCTURE
 import tooling.*;
 import tooling.fvlua.*;
