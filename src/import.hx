@@ -23,8 +23,6 @@ import sprites.*;
 // RENDER MODE
 import ffmpeg.*;
 
-#if FV_DEBUG import tooling.*; #end
-
 // AUDIO
 import miniaudio.*;
 import rhythm.*;
