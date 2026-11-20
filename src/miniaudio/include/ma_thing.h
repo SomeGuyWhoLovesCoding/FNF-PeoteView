@@ -6,6 +6,7 @@
 // Main stuff
 int detectLatency(void);
 int getMixerState(void);
+int getSampleRate(void);
 double getPlaybackPosition(void);
 double getDuration(void);
 void seekToPCMFrame(int64_t pos);

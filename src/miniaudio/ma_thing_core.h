@@ -1038,6 +1038,13 @@ public:
     double getGlobalVolume() const { return MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed); }
     double setGlobalVolume(double v) { MUSIC_MASTER_VOLUME_099.store(v, std::memory_order_relaxed); return v; }
     int getMixerState() const { return mixerState.load(std::memory_order_acquire); }
+    // The device/decoder sample rate (SAMPLE_RATE, 48000). Exposed so the
+    // Haxe side converts ms <-> PCM frames with the SAME rate the engine
+    // uses — Mixer.hx used to hardcode 44100 while the engine ran at
+    // 48000, so every seek landed at 91.9% of the target: a position-
+    // proportional send-back on every editor resume ("the further in,
+    // the further back").
+    int getSampleRate() const { return SAMPLE_RATE; }
 
     bool isSurroundEnabled() const { return surroundEnabled.load(std::memory_order_acquire); }
     void setSurroundEnabled(bool enable) {

@@ -48,8 +48,8 @@ class StrumlineNoteInteraction {
 	/** Pixels the mouse may drift (mouse-down → mouse-up) for a click to count. */
 	static inline var CLICK_SLOP:Float = 8.0;
 
-	/** Base seek per wheel notch, in ms (Ctrl multiplies by CTRL_SEEK_MULT). */
-	static inline var WHEEL_SEEK_MS:Float = 250.0;
+	/** Base seek per wheel notch, in ms (Ctrl multiplies by CTRL_SEEK_MULT). Halved from 250 — the old step felt too coarse. */
+	static inline var WHEEL_SEEK_MS:Float = 125.0;
 
 	/** Ctrl accelerates wheel seeking by this factor. */
 	static inline var CTRL_SEEK_MULT:Float = 4.0;
@@ -169,17 +169,71 @@ class StrumlineNoteInteraction {
 	}
 
 	/**
-		Display-local Y → song time (ms). Mirrors drawNote's LUT math exactly:
-		  upscroll   Sy = rec.y + (t - now) * speed
-		  downscroll Sy = rec.y - (t - now) * speed
-	*/
+		Display-local Y → song time (ms). LUT-exact inverse of how notes
+		actually draw: binary-searches the lane's movement LUT for the
+		diff whose drawn note CENTER is at `y`, then converts diff → time.
+		The old linear inverse disagreed with the LUT (and with the
+		diamond square, which is centered on the drawn note) whenever the
+		noteskin used a non-linear formula — the cursor's slot felt
+		"sensitive"/off-center relative to the square.
+		Returns the LINEAR fallback when the LUT is unavailable.
+	**/
 	function yToTimeMs(y:Float, receptorY:Float):Float {
 		var scrollSpeed = parent.scrollSpeed;
 		if (scrollSpeed <= 0)
 			scrollSpeed = 1;
+
+		// Linear fallback (and the fast path when no LUT context yet).
 		var d = y - receptorY;
-		return parent.downScroll ? playheadMs() - d / scrollSpeed : playheadMs() + d / scrollSpeed;
+		var linear = parent.downScroll ? playheadMs() - d / scrollSpeed : playheadMs() + d / scrollSpeed;
+
+		if (lutCtx == null)
+			return linear;
+
+		// The drawn note's center Y at diff value q: the square/notes ride
+		// the LUT; the center is half the drawn size below the drawn top.
+		function centerYAtDiff(q:Int):Float {
+			var scale = lutCtx.hasExtendedLUT ? lutCtx.lookupScale(q, lutCtxScale) * lutCtxScale : lutCtxScale;
+			return lutCtxNoteY + lutCtx.lookupY(q) + (lutCtxNoteH * scale) * 0.5;
+		}
+
+		// Binary search over diff. The LUT is built from the strumline's
+		// scrollDirection (-90 upscroll: sin = -1, Y falls as diff grows);
+		// downscroll flips the DIFF sign, not the LUT — so centerY(q) is
+		// monotonic DECREASING in q in both scroll modes.
+		var lo = lutCtx.minDiff;
+		var hi = lutCtx.maxDiff;
+		var bestQ:Int = null;
+
+		while (lo <= hi) {
+			var mid = (lo + hi) >> 1;
+			var cy = centerYAtDiff(mid);
+			if (cy > y) {
+				// note center still below cursor -> need larger q (higher Y)
+				lo = mid + 1;
+				bestQ = mid;
+			} else {
+				hi = mid - 1;
+				bestQ = mid;
+			}
+		}
+
+		if (bestQ == null)
+			return linear;
+
+		// diff → time: drawNote computes d = -(t - now) * speed, negated
+		// again for downscroll. Invert the same way.
+		var t = playheadMs() - bestQ / scrollSpeed;
+		if (parent.downScroll)
+			t = playheadMs() + bestQ / scrollSpeed;
+		return t;
 	}
+
+	// --- LUT context for yToTimeMs (set by detectHitbox each call) ---
+	var lutCtx:NoteMovementLUT = null;
+	var lutCtxNoteY:Float = 0;
+	var lutCtxNoteH:Float = 0;
+	var lutCtxScale:Float = 1;
 
 	/** Song time (ms) → display-local Y (inverse of yToTimeMs). */
 	function timeToY(timeMs:Float, receptorY:Float):Float {
@@ -231,6 +285,19 @@ class StrumlineNoteInteraction {
 				if (x >= cx - halfW && x <= cx + halfW) {
 					hoverLane = li;
 					hoverStrumline = si;
+					// Feed yToTimeMs the LUT context of THIS lane so its
+					// inverse is exact for how notes draw here (the square
+					// is centered on the drawn note; the hitbox now agrees
+					// with it instead of the old linear approximation).
+					var luts = noteSystem.movementLUTs;
+					if (luts != null && si < luts.length && li < luts[si].length) {
+						lutCtx = luts[si][li];
+						lutCtxNoteY = note.y;
+						lutCtxNoteH = note.h;
+						lutCtxScale = note.scale;
+					} else {
+						lutCtx = null;
+					}
 					hoverTimeMs = snapTime(yToTimeMs(y, anchor.y));
 					hoverOccupied = findNoteAt(li, si, hoverTimeMs) >= 0;
 					return true;

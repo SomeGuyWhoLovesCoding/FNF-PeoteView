@@ -28,6 +28,10 @@ extern class MiniAudio {
 	@:native("getPlaybackPosition") static function getPlaybackPosition():Float;
 	@:native("getDuration") static function getDuration():Float;
 	@:native("getMixerState") static function getMixerState():Int;
+	// The engine's device/decoder sample rate. Use this (NOT a hardcoded
+	// constant) whenever converting ms <-> PCM frames, so the two sides can
+	// never disagree (a disagreement scales every seek by rateA/rateB).
+	@:native("getSampleRate") static function getSampleRate():Int;
 
 	@:native("setPlaybackRate") static function setPlaybackRate(playbackRate:Float):Void;
 	@:native("setStretchEnabled") static function setStretchEnabled(enabled:Bool):Void;

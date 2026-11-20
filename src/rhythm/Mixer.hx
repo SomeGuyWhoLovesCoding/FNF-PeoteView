@@ -18,7 +18,25 @@ class Mixer {
 	}
 
 	static var trackCount:Int;
-	static inline var sampleRate:Int = 44100;
+
+	/**
+		The ENGINE's device/decoder sample rate, queried from the native
+		side (48 kHz as compiled). Every ms <-> PCM-frame conversion MUST
+		use this — the old hardcoded 44100 while the engine ran at 48000
+		scaled every seek to 91.9% of its target, which showed up as the
+		editor resume sending the position BACK by an amount that grew the
+		further into the song you were.
+	**/
+	static var sampleRate(get, never):Int;
+
+	static function get_sampleRate():Int {
+		#if (cpp || hl)
+		var rate = MiniAudio.getSampleRate();
+		return rate > 0 ? rate : 48000;
+		#else
+		return 48000;
+		#end
+	}
 
 	static var length(default, null):Float;
 

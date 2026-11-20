@@ -40,6 +40,7 @@ HL_PRIM void HL_NAME(destroy)(_NO_ARG){ g_audioSystem.destroy(); }
 
 HL_PRIM void   HL_NAME(seek_to_pcm_frame)(int64_t pos) { g_audioSystem.seekToPCMFrame(pos); }
 HL_PRIM int    HL_NAME(get_mixer_state)(_NO_ARG)        { return g_audioSystem.getMixerState(); }
+HL_PRIM int    HL_NAME(get_sample_rate)(_NO_ARG)        { return g_audioSystem.getSampleRate(); }
 HL_PRIM double HL_NAME(get_playback_position)(_NO_ARG)  { return g_audioSystem.getPlaybackPosition(); }
 HL_PRIM double HL_NAME(get_duration)(_NO_ARG)           { return g_audioSystem.getDuration(); }
 
@@ -90,6 +91,7 @@ DEFINE_PRIM(_BOOL, stopped,                _NO_ARG)
 DEFINE_PRIM(_VOID, destroy,                _NO_ARG)
 DEFINE_PRIM(_VOID, seek_to_pcm_frame,      _I64)
 DEFINE_PRIM(_I32,  get_mixer_state,        _NO_ARG)
+DEFINE_PRIM(_I32,  get_sample_rate,        _NO_ARG)
 DEFINE_PRIM(_F64,  get_playback_position,  _NO_ARG)
 DEFINE_PRIM(_F64,  get_duration,           _NO_ARG)
 DEFINE_PRIM(_VOID, deactivate_decoder,     _I32)

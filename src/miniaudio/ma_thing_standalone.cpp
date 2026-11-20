@@ -28,6 +28,7 @@ bool stopped()                                 { return g_audioSystem.stopped();
 void destroy()                                 { g_audioSystem.destroy(); }
 void seekToPCMFrame(int64_t pos)               { g_audioSystem.seekToPCMFrame(pos); }
 int  getMixerState()                           { return g_audioSystem.getMixerState(); }
+int  getSampleRate()                           { return g_audioSystem.getSampleRate(); }
 double getPlaybackPosition()                   { return g_audioSystem.getPlaybackPosition(); }
 double getDuration()                           { return g_audioSystem.getDuration(); }
 void deactivate_decoder(int index)             { g_audioSystem.deactivate_decoder(index); }
