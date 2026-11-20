@@ -976,6 +976,19 @@ public:
         mixerState.store(2, std::memory_order_release);
         if (asyncLoader) asyncLoader->pauseLoading();
         ma_device_stop(&device);
+        // Kill the predicted-clock extrapolation the moment the transport
+        // stops. Without this, getPlaybackPosition() keeps integrating
+        // baseFrames + wallClockDelta * rate across the whole stopped span:
+        // a read after a long stop (editor pause / playback toggle) returns
+        // a position FAR ahead of the audio, and the first data_callback
+        // after resume sees a huge position error that the alpha-beta filter
+        // then walks BACKWARD ~15% per callback — heard and shown as the
+        // song position being subtracted for a second or more after every
+        // resume, landing wherever it pleases (often an empty section).
+        // With predictInit cleared, the position after stop reads exactly
+        // the frozen filePosition, and resume re-bases the predictor on the
+        // first callback — no gap integration, no backward walk, no drift.
+        predictInit.store(false, std::memory_order_relaxed);
     }
 
     bool stopped() const { return mixerState.load(std::memory_order_acquire) == 3; }

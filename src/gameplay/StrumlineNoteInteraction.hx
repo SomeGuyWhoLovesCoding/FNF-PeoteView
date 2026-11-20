@@ -509,19 +509,51 @@ class StrumlineNoteInteraction {
 			var strumline = strumlines[strumlineIdx];
 			if (lane >= strumline.length)
 				return;
-			var note = strumline.receptors[lane].note;
-			var anchor = strumline.receptors[0].note;
+			var receptor = strumline.receptors[lane];
+			var note = receptor.note;
 			var size = Std.int(SQUARE_SIZE * strumline.scale);
-			var cx = note.x + note.w * strumline.scale * 0.5;
+
+			// The center of the note as it actually DRAWS, via the exact
+			// same path drawNote uses: receptor origin + movement-LUT
+			// offset at this diff (the LUT can be non-linear for fancy
+			// noteskins — the old linear timeToY drifted off the note),
+			// plus half the drawn size (a drawn note's y is its TOP, so
+			// the true visual center sits half the sprite below it).
+			// The square element is pivot-centered (px/py = w/2, h/2), so
+			// placing x/y AT the note center puts the diamond's center
+			// exactly on the note's center.
+			var noteSystem = parent.noteSystem;
+			var lut = noteSystem.movementLUTs[strumlineIdx][lane];
+			if (lut == null)
+				return;
+			var scrollSpeed = parent.scrollSpeed;
+			if (scrollSpeed <= 0)
+				scrollSpeed = 1;
+			// drawNote's exact diff convention: -(time - now) * speed,
+			// negated again for downscroll.
+			var d = -(timeMs - playheadMs()) * scrollSpeed;
+			if (parent.downScroll)
+				d = -d;
+			var diff = Std.int(d);
+			var drawX = note.x + lut.lookupX(diff);
+			var drawY = note.y + lut.lookupY(diff);
+			var drawScale = lut.hasExtendedLUT ? lut.lookupScale(diff, note.scale) * note.scale : note.scale;
+			var drawW = note.w * drawScale;
+			var drawH = note.h * drawScale;
+			var cx = drawX + drawW * 0.5;
+			var cy = drawY + drawH * 0.5;
 
 			// Hold-editing: the square stretches along the lane to cover the
 			// note head PLUS its live sustain length — a direct visual ruler
-			// of the duration being dialed in (wheel notches / drag).
+			// of the duration being dialed in (wheel notches / drag). The
+			// head anchor is the note's real drawn top (LUT path); the tail
+			// stretches from it at scroll speed, matching how the sustain
+			// sprite itself follows and stretches from the head note.
 			if (holdEditing && isDown) {
-				var headY = timeToY(downTimeMs, anchor.y);
-				var endY = timeToY(downTimeMs + holdDurationMs, anchor.y);
-				var y0 = Std.int(Math.min(headY, endY));
-				var y1 = Std.int(Math.max(headY, endY));
+				var stretch = holdDurationMs * parent.scrollSpeed;
+				var tailY = drawY + (parent.downScroll ? -stretch : stretch);
+				var y0 = Std.int(Math.min(drawY, tailY));
+				var y1 = Std.int(Math.max(drawY, tailY));
 				var pad = size * 0.5;
 
 				square.w = Std.int(size * 0.6);
@@ -532,8 +564,7 @@ class StrumlineNoteInteraction {
 				square.c.aF = 0.25;
 				square.r = 0; // axis-aligned ruler
 			} else {
-				var cy = timeToY(timeMs, anchor.y);
-
+				// Square centered exactly on the note's visual center.
 				square.w = size;
 				square.h = size;
 				square.x = Std.int(cx - size * 0.5);

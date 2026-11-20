@@ -60,6 +60,17 @@ class NoteSpawner {
 		_lastbottom = bottom;
 		_lasttop = top;
 
+		// EDITOR MODE: the render path is pure (no judgement writes, no
+		// miss/hit side effects), so the gameplay-only minBottom guard —
+		// which exists to stop processNotes re-running miss side effects
+		// on already-judged notes after a forward jump — must not censor
+		// the window there. Clamp it to 0 per pass: every note between
+		// bottom and top must draw, including ones behind the frozen
+		// playhead (same as the un-paused editor at position 0 on entry).
+		// Gameplay keeps its stored value untouched.
+		if (parent.parent.playfieldEditorMode)
+			minBottom = 0;
+
 		cullTop(pos);
 		cullBottom(pos);
 
@@ -155,7 +166,16 @@ class NoteSpawner {
 		}
 
 		// === BACKWARD: Exclude notes now too far ahead ===
-		while (top > bottom) {
+		// No `top > bottom` cross-guard: on a backward seek out of an
+		// empty section, `top` must be allowed to walk BELOW the stale
+		// `bottom` (the window is transiently inverted) so it can reach
+		// the first note within spawn range of the new position. The
+		// range condition alone is the correct bound — and since
+		// despawnDist < spawnDist, `bottom <= top` re-establishes itself
+		// as an invariant once both culls have run. The old guard is what
+		// wedged the renderer in empty sections (top == bottom could
+		// never move backward).
+		while (top > 0) {
 			var n = File.getNote(top - 1);
 			if (n.position - pos < spawnDist)
 				break;
@@ -182,7 +202,15 @@ class NoteSpawner {
 		}
 
 		// === BACKWARD: Include notes now back in range ===
-		while (bottom > 0 && bottom < top) {
+		// No `bottom < top` cross-guard, same reasoning as cullTop's
+		// backward loop: a backward seek can transiently invert the window
+		// (bottom must walk DOWN from a stale-high value while top has
+		// already moved). The despawn range condition alone bounds the
+		// loop; `bottom <= top` re-establishes itself because despawnDist
+		// < spawnDist. The old guard is the other half of the empty-window
+		// wedge (an empty section scrolled INTO could never reopen
+		// backward either).
+		while (bottom > 0) {
 			var n = File.getNote(bottom - 1);
 			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - n.position;
 			if (despawnCheck > despawnDist)
@@ -249,8 +277,11 @@ class NoteSpawner {
 		bottom = newBottom;
 		top = newTop;
 
-		curBottomNote = File.getNote(bottom);
-		curTopNote = File.getNote(top);
+		// bottom/top are EXCLUSIVE window ends — both can legitimately be
+		// == len (playhead past the last note). File.getNote(len) would
+		// read out of bounds, so null them there instead.
+		curBottomNote = bottom < len ? File.getNote(bottom) : null;
+		curTopNote = top < len ? File.getNote(top) : null;
 
 		parent.resetStrumlines();
 	}

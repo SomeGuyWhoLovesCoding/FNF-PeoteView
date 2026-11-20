@@ -303,16 +303,31 @@ class PlayFieldEditorMode {
 		if (value > Mixer.length - 1000)
 			value = Mixer.length - 1000;
 
-		Mixer.setTime(Math.max(value, 0.0), field);
-		field.songPosition = value;
-
-		// Full note-system reset + redraw at the new position — both
-		// directions, same path. No File.setJudgement/setHitFlag cleanup
-		// is needed: the editor render path never writes judgement state.
-		if (field.noteSystem != null) {
-			var pos = MetaNote.floatToMetaNotePosition(value);
-			field.noteSystem.onSongPositionJump(pos);
+		if (playing) {
+			// Audible playback: the transport must follow the new position.
+			// One seek + one window reset per wheel burst is fine here —
+			// the playhead is moving anyway, and the reset also re-aligns
+			// the predict clock after the decoder re-prime.
+			Mixer.setTime(Math.max(value, 0.0), field);
+			field.songPosition = value;
+			if (field.noteSystem != null) {
+				var pos = MetaNote.floatToMetaNotePosition(value);
+				field.noteSystem.onSongPositionJump(pos);
+			}
+			return;
 		}
+
+		// Frozen (silent) editor: the position is editor-owned and NOTHING
+		// is listening to the transport. Seeking the PCM decoder here was
+		// a full stop/re-prime of the audio pipeline per wheel notch —
+		// the scroll stall — for a seek whose result would be thrown away
+		// on the next resume anyway. Instead: move ONLY the editor
+		// position; the note window follows through the same per-frame
+		// cullTop/cullBottom that move it during playback (no rebuild,
+		// no strumline reset, no pool flush — notes simply slide in and
+		// out of the window). The transport is re-synced exactly once,
+		// at the next ENTER resume, from wherever the position froze.
+		field.songPosition = value;
 	}
 
 	/**
