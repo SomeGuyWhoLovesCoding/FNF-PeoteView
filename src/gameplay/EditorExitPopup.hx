@@ -4,6 +4,7 @@ import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 import lime.ui.MouseButton;
 import render.RepeatSprite;
+import render.text.Text;
 
 /**
 	The playfield editor's exit popup (F8 / ESC).
@@ -37,10 +38,12 @@ class EditorExitPopup {
 	// --- Elements (plain colored rects; the editor's visual language) ---
 	var backdrop:RepeatSprite;
 	var options:Array<RepeatSprite> = [];
-	var optionLabels:Array<{text:String}> = [
-		{text: "Exit Editor Mode"},
-		{text: "Exit to Menu"},
-		{text: "Exit to Title Screen (placeholder)"}
+	/** Real rendered label per option (Text = the project's font widget). */
+	var labels:Array<Text> = [];
+	var optionTexts:Array<String> = [
+		"Exit Editor Mode",
+		"Exit to Menu",
+		"Exit to Title Screen (placeholder)"
 	];
 	var buf:Buffer<RepeatSprite>;
 	var prog:CustomProgram;
@@ -61,12 +64,23 @@ class EditorExitPopup {
 		backdrop.c = 0x000000FF;
 		backdrop.c.aF = 0.6;
 
-		var totalH = optionLabels.length * BAR_H + (optionLabels.length - 1) * BAR_GAP;
+		var totalH = optionTexts.length * BAR_H + (optionTexts.length - 1) * BAR_GAP;
 		var y0 = Std.int((Main.INITIAL_HEIGHT - totalH) * 0.5);
-		for (i in 0...optionLabels.length) {
+		for (i in 0...optionTexts.length) {
 			var bar = new RepeatSprite(Std.int((Main.INITIAL_WIDTH - BAR_W) * 0.5), y0 + i * (BAR_H + BAR_GAP), BAR_W, BAR_H);
 			bar.c = 0x202020FF;
 			options.push(bar);
+		}
+		// Real text labels — the project's Text widget (same one the HUD
+		// uses), centered on each bar. Their program is added/removed with
+		// the popup's open/close so they never draw while closed.
+		for (i in 0...optionTexts.length) {
+			var label = new Text('exitPopupLabel$i', 0, 0, display, optionTexts[i]);
+			label.x = (Main.INITIAL_WIDTH - label.width) * 0.5;
+			label.y = y0 + i * (BAR_H + BAR_GAP) + (BAR_H - label.height) * 0.5;
+			label.outlineColor = 0x000000FF;
+			label.outlineSize = 1;
+			labels.push(label);
 		}
 		refreshColors();
 	}
@@ -85,6 +99,8 @@ class EditorExitPopup {
 		buf.addElement(backdrop);
 		for (bar in options)
 			buf.addElement(bar);
+		for (label in labels)
+			label.addProgram();
 		refreshColors();
 		flush();
 		// NOTE: deliberately NOT pausing the playfield. Main skips
@@ -104,6 +120,8 @@ class EditorExitPopup {
 			for (bar in options)
 				buf.removeElement(bar);
 		} catch (e:Dynamic) {}
+		for (label in labels)
+			label.removeProgram();
 		var display = parent.field.display;
 		if (prog.isIn(display))
 			display.removeProgram(prog);
@@ -191,14 +209,18 @@ class EditorExitPopup {
 
 	function refreshColors() {
 		for (i in 0...options.length) {
+			var selected = i == nav.value();
 			var bar = options[i];
-			if (i == nav.value()) {
+			if (selected) {
 				bar.c = 0x606060FF; // bright = selected
 				bar.c.aF = 0.9;
 			} else {
 				bar.c = 0x202020FF;
 				bar.c.aF = 0.7;
 			}
+			// The label matches: white when selected, dim gray otherwise.
+			if (i < labels.length)
+				labels[i].color = selected ? 0xFFFFFFFF : 0xB0B0B0FF;
 		}
 	}
 
@@ -216,6 +238,9 @@ class EditorExitPopup {
 
 	function dispose() {
 		close();
+		for (label in labels)
+			label.dispose();
+		labels = [];
 		try
 			buf.clear()
 		catch (e:Dynamic) {}

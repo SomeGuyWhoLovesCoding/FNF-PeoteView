@@ -891,8 +891,16 @@ class StrumlineNoteInteraction {
 			return;
 		}
 
+		// Scrolling while the song plays PAUSES it first (the editor's own
+		// stop path — audio transport stops, position freezes, the note
+		// window rebuilds), then the seek below scrolls the now-silent
+		// chart. Wheel = a scrub, never a live seek.
+		var em = parent.editorMode;
+		if (em != null && em.playing)
+			em.togglePlayback();
+
 		var seek = WHEEL_SEEK_MS * (ctrlPressed ? CTRL_SEEK_MULT : 1.0);
-		parent.editorMode.seekTo(parent.songPosition + notches * seek);
+		em.seekTo(parent.songPosition + notches * seek);
 	}
 
 	// ==================================================================
@@ -978,8 +986,8 @@ class StrumlineNoteInteraction {
 				holdTail.h = Std.int(Math.max(y1 - y0, 0));
 				holdTail.x = Std.int(cx - barW * 0.5);
 				holdTail.y = y0;
-				holdTail.c = 0xFF0000FF; // solid red, reference-style
-				holdTail.c.aF = 0.85;
+				holdTail.c = 0xFF0000FF; // reference-style red, half-transparent
+				holdTail.c.aF = 0.4;
 			} else {
 				// Not hold-editing: no bar.
 				holdTail.w = 0;
