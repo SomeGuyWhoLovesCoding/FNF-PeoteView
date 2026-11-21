@@ -60,6 +60,23 @@ class NoteSystem {
 	static var noteTypeToStrumline:Array<Int> = [for (i in 0...1 << 8) i == 0 ? 0 : 1];
 
 	/**
+		Clamps a STORED lane (the v2 note format's 6-bit strumline field)
+		into the available strumlines. The lane on a note is already a
+		strumline id — it must NOT go through noteTypeToStrumline (that
+		table maps TYPES to strumlines for placement coercion); this only
+		guards against a stale lane written when more strumlines existed.
+	**/
+	static function clampLane(lane:Int, strumlineCount:Int):Int {
+		if (lane < 0)
+			return 0;
+		if (strumlineCount <= 1)
+			return 0;
+		if (lane >= strumlineCount)
+			return strumlineCount - 1;
+		return lane;
+	}
+
+	/**
 		The strumline id a notetype belongs to. Clamps the type into the
 		0..255 ID space and the result into the available strumlines, so
 		even a stale table entry (written when more strumlines existed)
@@ -416,7 +433,7 @@ class NoteSystem {
 			// far side here (at most the anchor note can be far-future).
 			if (n.position < late || n.position > early)
 				return;
-			if (n.index == index && strumlineForType(n.type, laneCount) == lane && !File.getJudgement(i)) {
+			if (n.index == index && clampLane(n.lane, laneCount) == lane && !File.getJudgement(i)) {
 				// Among hittable notes keep the earliest (smallest position) so a
 				// jack progresses in order; once `found`, only a smaller index can
 				// replace it.
@@ -450,11 +467,12 @@ class NoteSystem {
 
 	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64):VirtualNote {
 		var index = note.index;
-		var lane = 0;
 		var duration = note.duration;
 		var position = note.position;
 
-		lane = strumlineForType(note.type, strumlines.length);
+		// The lane is STORED on the note (v2 format) — no more deriving
+		// it from the notetype routing table at every draw.
+		var lane = clampLane(note.lane, strumlines.length);
 
 		var strumline = strumlines[lane];
 		var receptor = strumline.receptors[index];

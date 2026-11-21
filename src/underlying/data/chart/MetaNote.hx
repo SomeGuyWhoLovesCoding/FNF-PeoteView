@@ -2,32 +2,52 @@ package underlying.data.chart;
 
 /**
  * This is the source of the single note element at the chart format.
- * It's that small. 10 byte chart format.
+ * It's that small. 12 byte chart format (96 bits):
+ *   [0..47]  position (100ns ticks)
+ *   [48..71] duration (1ms ticks, 24-bit)
+ *   [72..81] index (column within the strumline, 10-bit)
+ *   [82..89] type (notetype, 8-bit)
+ *   [90..95] lane (strumline id, 6-bit)
+ * The lane is stored ON the note — the chart editor needs a per-note
+ * lane property, and the format is the minimum element size that fits
+ * these fields while staying 4-byte aligned.
  * @since Development
  */
 @:publicFields
 abstract MetaNote(MetaNoteImpl) from MetaNoteImpl to MetaNoteImpl {
-	// Masks and shifts matching C++ layout
+	// Masks and shifts matching the C++ layout
+	// first8: [0..47] position, [48..63] duration's LOW 16 bits
 	static var SHIFT_POSITION = 0; // 48 bits: bits 0-47
-	static var SHIFT_DURATION = 48; // 16 bits: bits 49-63
-	static var SHIFT_INDEX = 64; // 8 bits:  bits 64-71
-	static var SHIFT_TYPE = 72; // 8 bits:  bits 72-79
+	static var SHIFT_DURATION = 48; // low 16 bits: bits 48-63 (high 8 in last4)
+	static var SHIFT_INDEX = 8; // 10 bits: last4 bits 8-17
+	static var SHIFT_TYPE = 18; // 8 bits:  last4 bits 18-25
+	static var SHIFT_LANE = 26; // 6 bits:  last4 bits 26-31
+	static var SHIFT_DURATION_HIGH = 0; // high 8 bits of duration: last4 bits 0-7
 
-	static var POSITION_MASK = Int64.sub(Int64.shl(Int64.ofInt(1), 48), Int64.ofInt(1));
-	static var DURATION_MASK = 0xFFFF; // 16 bits
-	static var INDEX_MASK = 0xFF; // 8 bits
-	static var TYPE_MASK = 0xFF; // 8 bits
+	static var POSITION_MASK:Int64 = Int64.sub(Int64.shl(Int64.ofInt(1), 48), Int64.ofInt(1));
+	static var DURATION_LOW_MASK:Int = 0xFFFF; // 16 bits of first8
+	static var DURATION_HIGH_MASK:Int = 0xFF; // 8 bits of last4
+	static var INDEX_MASK:Int = 0x3FF; // 10 bits
+	static var TYPE_MASK:Int = 0xFF; // 8 bits
+	static var LANE_MASK:Int = 0x3F; // 6 bits
+	static var DURATION_MAX:Int = 0xFFFFFF; // 24-bit field, 16,777,215 ms
 
 	// Constructor
-	inline function new(position:Int64, duration:Int, index:Int, type:Int) {
+	inline function new(position:Int64, duration:Int, index:Int, type:Int, lane:Int = -1) {
 		// Pack into the low 64 bits
-		var high:Int64 = (position & POSITION_MASK) | (Int64.ofInt(duration & DURATION_MASK) << SHIFT_DURATION);
+		var high:Int64 = (position & POSITION_MASK)
+			| (Int64.ofInt(duration & DURATION_LOW_MASK) << SHIFT_DURATION);
 
-		// Pack into the high 64 bits
-		var low:Int = ((index >> (SHIFT_INDEX - 64)) & INDEX_MASK) // upper 9 bits of duration
-			| ((type & TYPE_MASK) << (SHIFT_TYPE - 64)); // type at bits 9-15
+		// Pack into the high 32 bits. lane defaults to the routing the
+		// type implies (type 0 -> strumline 0 opponent, else 1 player) —
+		// callers that KNOW the lane pass it explicitly.
+		var laneVal:Int = (lane < 0) ? (type == 0 ? 0 : 1) : lane;
+		var low:Int = (duration >>> 16) & DURATION_HIGH_MASK
+			| ((index & INDEX_MASK) << SHIFT_INDEX)
+			| ((type & TYPE_MASK) << SHIFT_TYPE)
+			| ((laneVal & LANE_MASK) << SHIFT_LANE);
 
-		this = new MetaNoteImpl(high, low); // Adjust parameter order if your library expects (low, high)
+		this = new MetaNoteImpl(high, low);
 	}
 
 	// Immutable core fields
@@ -35,6 +55,7 @@ abstract MetaNote(MetaNoteImpl) from MetaNoteImpl to MetaNoteImpl {
 	var duration(get, never):Int;
 	var index(get, never):Int;
 	var type(get, never):Int;
+	var lane(get, never):Int;
 
 	// Getters
 	inline function get_position():Int64 {
@@ -42,15 +63,20 @@ abstract MetaNote(MetaNoteImpl) from MetaNoteImpl to MetaNoteImpl {
 	}
 
 	inline function get_duration():Int {
-		return ((this.high >> SHIFT_DURATION) & DURATION_MASK).low;
+		return (Std.int((this.high >> SHIFT_DURATION).low) & DURATION_LOW_MASK)
+			| ((this.low & DURATION_HIGH_MASK) << 16);
 	}
 
 	inline function get_index():Int {
-		return ((this.low >> SHIFT_INDEX - 64) & INDEX_MASK);
+		return (this.low >> SHIFT_INDEX) & INDEX_MASK;
 	}
 
 	inline function get_type():Int {
-		return ((this.low >> SHIFT_TYPE - 64) & TYPE_MASK);
+		return (this.low >> SHIFT_TYPE) & TYPE_MASK;
+	}
+
+	inline function get_lane():Int {
+		return (this.low >> SHIFT_LANE) & LANE_MASK;
 	}
 
 	// Time conversion - IMPORTANT: position is in 100 nanosecond ticks
@@ -71,6 +97,7 @@ abstract MetaNote(MetaNoteImpl) from MetaNoteImpl to MetaNoteImpl {
 		var isNegative = pos < 0;
 		var absPos = isNegative ? -pos : pos;
 
+		//BOTTLENECK: mid Int64 division + modulo per note-time conversion; heavy when called per note per frame | FIX: single Float divide (ticks are 48-bit, no usable precision lost) or fixed-point with precomputed reciprocal
 		var scaled:Int64 = absPos / TICKS_PER_MS;
 		var remainder:Int64 = absPos % TICKS_PER_MS;
 
@@ -79,7 +106,7 @@ abstract MetaNote(MetaNoteImpl) from MetaNoteImpl to MetaNoteImpl {
 		return isNegative ? -result : result;
 	}
 
-	// duration field is in 0.5ms units — convert to/from ticks accordingly
+	// duration field is in 1ms units — convert to/from ticks accordingly
 	inline static function intToMetaNoteDuration(i:Int):Int64 {
 		return Int64.ofInt(i) * TICKS_PER_MS;
 	}
@@ -98,7 +125,7 @@ abstract MetaNote(MetaNoteImpl) from MetaNoteImpl to MetaNoteImpl {
 @:struct
 class MetaNoteImpl {
 	public var high:Int64;
-	public var low:#if cpp cpp.UInt16 #elseif hl hl.UI16 #else Int #end;
+	public var low:#if cpp cpp.UInt32 #elseif hl hl.UI32 #else Int #end;
 
 	public inline function new(high, low) {
 		this.high = high;

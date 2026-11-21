@@ -80,16 +80,61 @@ public:
 };
 
 // ============================================================================
-// 10-Byte Packed Note Struct
+// 12-Byte Packed Note Struct (96-bit bit-stream)
+// ----------------------------------------------------------------------------
+//   [0..47]  position (100ns ticks)      — first8 bits [0..47]
+//   [48..71] duration (1ms ticks)        — LOW 16 bits in first8 [48..63],
+//                                           HIGH 8 bits in last4 [0..7]
+//   [72..81] index   (column, 10 bits)   — last4 [8..17]
+//   [82..89] type    (notetype, 8 bits)  — last4 [18..25]
+//   [90..95] lane    (strumline, 6 bits) — last4 [26..31]
+// The lane (which strumline owns the note) is stored WITH the note — the
+// chart editor needs a per-note lane property and the old 10-byte format
+// had nowhere to put one (the lane used to be re-derived from the
+// notetype routing table at every read). 12 bytes is the minimum element
+// size that fits these fields, and it divides by 4: every element in a
+// packed array lands on a 4-byte boundary (the old 10-byte records only
+// managed 2).
 // ============================================================================
 #pragma pack(push, 1)
 struct ChartNote {
-    uint64_t first8; // [0..47] Position (100ns ticks), [48..63] Duration (1ms)
-    uint16_t last2;  // [0..7] Index, [8..15] Type
+    uint64_t first8; // position + duration's low 16 bits
+    uint32_t last4;  // duration's high 8 bits, index, type, lane
 };
 #pragma pack(pop)
 
-static_assert(sizeof(ChartNote) == 10, "ChartNote must be exactly 10 bytes!");
+static_assert(sizeof(ChartNote) == 12, "ChartNote must be exactly 12 bytes!");
+static_assert(sizeof(ChartNote) % 4 == 0, "ChartNote must stay 4-byte aligned!");
+
+// Field pack/unpack — the ONLY places that know the bit positions.
+static inline ChartNote packNote(uint64_t position, uint32_t duration, uint32_t index, uint32_t type, uint32_t lane) {
+    ChartNote n;
+    n.first8 = (position & 0x0000FFFFFFFFFFFFULL) | ((uint64_t)(duration & 0xFFFF) << 48);
+    n.last4 = ((duration >> 16) & 0xFF)
+            | ((index & 0x3FF) << 8)
+            | ((type & 0xFF) << 18)
+            | ((lane & 0x3F) << 26);
+    return n;
+}
+static inline uint64_t notePos(const ChartNote& n)  { return n.first8 & 0x0000FFFFFFFFFFFFULL; }
+static inline uint32_t noteDur(const ChartNote& n)  { return (uint32_t)(n.first8 >> 48) | ((n.last4 & 0xFF) << 16); }
+static inline uint32_t noteIdx(const ChartNote& n)  { return (n.last4 >> 8) & 0x3FF; }
+static inline uint32_t noteType(const ChartNote& n) { return (n.last4 >> 18) & 0xFF; }
+static inline uint32_t noteLane(const ChartNote& n) { return (n.last4 >> 26) & 0x3F; }
+
+// .fvc snapshot file header (v2). A file WITHOUT this magic is the legacy
+// v1 format: a bare run of 10-byte notes ([0..47] pos, [48..63] dur16,
+// [64..71] index, [72..79] type — no lane field).
+#pragma pack(push, 1)
+struct FvcFileHeader {
+    char     magic[4];   // "FVC2"
+    uint32_t noteCount;  // notes following the header
+    uint32_t noteSize;   // sizeof(ChartNote) — the reader rejects mismatches
+    uint32_t flags;      // 0 (reserved)
+};
+#pragma pack(pop)
+
+static_assert(sizeof(FvcFileHeader) == 16, "FvcFileHeader must be exactly 16 bytes!");
 
 // Helper function to sort an array of ChartNote in-place
 static void radix_sort_notes_inplace(ChartNote* notes, size_t n) {
@@ -101,7 +146,7 @@ static void radix_sort_notes_inplace(ChartNote* notes, size_t n) {
     // Find max position
     uint64_t maxVal = 0;
     for (size_t i = 0; i < n; ++i) {
-        uint64_t pos = src[i].first8 & 0x0000FFFFFFFFFFFFULL;
+        uint64_t pos = notePos(src[i]);
         if (pos > maxVal) maxVal = pos;
     }
     if (maxVal == 0) return;
@@ -114,12 +159,12 @@ static void radix_sort_notes_inplace(ChartNote* notes, size_t n) {
     for (int shift = 0; shift < passes * 8; shift += 8) {
         uint32_t counts[256] = {0};
         for (size_t i = 0; i < n; ++i) {
-            uint64_t val = src[i].first8 & 0x0000FFFFFFFFFFFFULL;
+            uint64_t val = notePos(src[i]);
             counts[(val >> shift) & 0xFF]++;
         }
         for (int j = 1; j < 256; ++j) counts[j] += counts[j-1];
         for (int64_t j = (int64_t)n - 1; j >= 0; --j) {
-            uint64_t val = src[j].first8 & 0x0000FFFFFFFFFFFFULL;
+            uint64_t val = notePos(src[j]);
             uint8_t idx = (val >> shift) & 0xFF;
             dst[--counts[idx]] = src[j];
         }
@@ -172,8 +217,6 @@ private:
     std::vector<Shard> shards;  // ordered by startTick; no empty shards kept
     int64_t totalNotes = 0;
     mutable size_t lastShard = 0;  // sequential-read cache
-
-    static uint64_t posOf(uint64_t first8) { return first8 & POS_MASK; }
 
     // Index of the shard covering `pos`, or shards.size() if none does.
     size_t findShardByPos(uint64_t pos) const {
@@ -240,9 +283,9 @@ public:
         return sh.notes[(size_t)(id - sh.baseId)].first8;
     }
 
-    uint16_t getLast2(int64_t id) const {
+    uint32_t getLast4(int64_t id) const {
         const Shard& sh = shards[shardById(id)];
-        return sh.notes[(size_t)(id - sh.baseId)].last2;
+        return sh.notes[(size_t)(id - sh.baseId)].last4;
     }
 
     bool getJudge(int64_t id) const {
@@ -266,12 +309,12 @@ public:
     }
 
     // ---- ADD ----
-    // `first8` packs [0..47] position (100ns ticks) and [48..63] duration
-    // (1ms ticks). The position is extracted HERE — callers never pass a
-    // separate position — to locate the 1/4-second shard and the sorted
-    // slot inside its run. Returns the new note's global chart index.
-    int64_t add(uint64_t first8, uint16_t last2) {
-        const uint64_t pos = posOf(first8);
+    // `cn` is a fully packed note; the position is extracted from it HERE —
+    // callers never pass a separate position — to locate the 1/4-second
+    // shard and the sorted slot inside its run. Returns the new note's
+    // global chart index.
+    int64_t add(const ChartNote& cn) {
+        const uint64_t pos = notePos(cn);
 
         size_t si = findShardByPos(pos);
         if (si == shards.size()) {
@@ -289,12 +332,9 @@ public:
         Shard& sh = shards[si];
         size_t local = (size_t)(std::lower_bound(
             sh.notes.begin(), sh.notes.end(), pos,
-            [](const ChartNote& n, uint64_t p) { return posOf(n.first8) < p; }
+            [](const ChartNote& n, uint64_t p) { return notePos(n) < p; }
         ) - sh.notes.begin());
 
-        ChartNote cn;
-        cn.first8 = first8;
-        cn.last2 = last2;
         sh.notes.insert(sh.notes.begin() + local, cn);
         sh.judge.insert(local, false);
         sh.hit.insert(local, false);
@@ -335,7 +375,7 @@ public:
     void loadFromSortedFlat(const ChartNote* data, size_t n) {
         clear();
         for (size_t i = 0; i < n; ++i) {
-            const uint64_t pos = posOf(data[i].first8);
+            const uint64_t pos = notePos(data[i]);
             if (shards.empty() || pos >= shards.back().startTick + SHARD_TICKS) {
                 Shard sh;
                 sh.startTick = pos - (pos % SHARD_TICKS);
@@ -352,10 +392,17 @@ public:
     }
 
     // ---- SAVE ----
-    // Sequential write of every shard's run; the output is globally sorted.
+    // Sequential write of the FVC2 header + every shard's run; the note
+    // stream is globally sorted.
     bool writeTo(const char* path) const {
         std::ofstream out(path, std::ios::binary | std::ios::trunc);
         if (!out) return false;
+        FvcFileHeader hdr;
+        std::memcpy(hdr.magic, "FVC2", 4);
+        hdr.noteCount = (uint32_t)totalNotes;
+        hdr.noteSize = (uint32_t)sizeof(ChartNote);
+        hdr.flags = 0;
+        out.write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
         for (const Shard& sh : shards) {
             if (!sh.notes.empty()) {
                 out.write(
@@ -372,7 +419,7 @@ public:
         uint64_t prev = 0;
         for (const Shard& sh : shards) {
             for (const ChartNote& n : sh.notes) {
-                const uint64_t p = posOf(n.first8);
+                const uint64_t p = notePos(n);
                 if (p < prev) return false;
                 prev = p;
             }
@@ -402,8 +449,14 @@ private:
 
     mutable std::mutex dataMutex;
 
-    // Load a .fvc snapshot into the sharded store: one sequential read,
-    // one sortedness check (radix sort only if a hand-edited file lied).
+    // Load a .fvc snapshot into the sharded store. Two on-disk formats:
+    //   v2 ("FVC2" header): 16-byte header + 12-byte notes — the current
+    //   format, with the lane (strumline) field stored per note.
+    //   v1 (no magic): a bare run of 10-byte notes (pos48 | dur16 | idx8 |
+    //   type8 — no lane). Loaded, then converted in RAM: the lane is
+    //   derived from the type through the default routing (type 0 →
+    //   strumline 0 opponent, everything else → 1 player). The conversion
+    //   only lives in RAM + the next save; a save always writes v2.
     bool loadFromFvc(const char* path) {
         std::ifstream in(path, std::ios::binary | std::ios::ate);
         if (!in) {
@@ -412,34 +465,104 @@ private:
         }
         const std::streamsize fileSize = in.tellg();
         if (fileSize < 0) return false;
+        in.seekg(0, std::ios::beg);
 
-        const size_t n = (size_t)fileSize / sizeof(ChartNote);
-        std::vector<ChartNote> flat(n);
-        if (n > 0) {
-            in.seekg(0, std::ios::beg);
-            in.read(reinterpret_cast<char*>(flat.data()),
-                    (std::streamsize)n * (std::streamsize)sizeof(ChartNote));
-            if (in.gcount() != (std::streamsize)(n * sizeof(ChartNote))) {
-                std::cerr << "  [ Chart File ] Truncated read on " << path << std::endl;
+        std::vector<ChartNote> flat;
+        bool legacy = true;
+
+        if (fileSize >= (std::streamsize)sizeof(FvcFileHeader)) {
+            FvcFileHeader hdr;
+            in.read(reinterpret_cast<char*>(&hdr), sizeof(hdr));
+            if (in.gcount() == (std::streamsize)sizeof(hdr)
+                && std::memcmp(hdr.magic, "FVC2", 4) == 0) {
+                if (hdr.noteSize != sizeof(ChartNote)) {
+                    std::cerr << "  [ Chart File ] " << path
+                              << " has FVC2 magic but noteSize " << hdr.noteSize
+                              << " (expected " << sizeof(ChartNote) << ")" << std::endl;
+                    return false;
+                }
+                legacy = false;
+                const std::streamsize payload =
+                    fileSize - (std::streamsize)sizeof(FvcFileHeader);
+                if (payload % (std::streamsize)sizeof(ChartNote) != 0) {
+                    std::cerr << "  [ Chart File ] Trailing bytes in " << path
+                              << " (file size not a multiple of the 12-byte note)" << std::endl;
+                    return false;
+                }
+                const size_t n = (size_t)(payload / (std::streamsize)sizeof(ChartNote));
+                if ((uint64_t)n != hdr.noteCount) {
+                    std::cerr << "  [ Chart File ] Header/count mismatch in " << path
+                              << " (" << hdr.noteCount << " declared, " << n << " present)"
+                              << std::endl;
+                    return false;
+                }
+                flat.resize(n);
+                if (n > 0) {
+                    in.read(reinterpret_cast<char*>(flat.data()),
+                            (std::streamsize)n * (std::streamsize)sizeof(ChartNote));
+                    if (in.gcount() != (std::streamsize)(n * sizeof(ChartNote))) {
+                        std::cerr << "  [ Chart File ] Truncated read on " << path << std::endl;
+                        return false;
+                    }
+                }
+            } else {
+                in.seekg(0, std::ios::beg); // not v2 — rewind for the legacy read
+            }
+        }
+
+        if (legacy) {
+            // v1: 10-byte records, no file header.
+            const size_t n = (size_t)fileSize / 10;
+            const size_t rem = (size_t)fileSize % 10;
+            if (n == 0 && fileSize != 0) {
+                std::cerr << "  [ Chart File ] Empty non-legacy file " << path << std::endl;
                 return false;
+            }
+            (void)rem; // a hand-edited trailing fragment is ignored, as before
+            flat.resize(n);
+            if (n > 0) {
+                std::vector<uint8_t> raw((size_t)fileSize);
+                in.read(reinterpret_cast<char*>(raw.data()), fileSize);
+                if (in.gcount() != fileSize) {
+                    std::cerr << "  [ Chart File ] Truncated read on " << path << std::endl;
+                    return false;
+                }
+                for (size_t i = 0; i < n; ++i) {
+                    const uint8_t* r = raw.data() + i * 10;
+                    const uint64_t pos = (uint64_t)r[0]
+                        | ((uint64_t)r[1] << 8) | ((uint64_t)r[2] << 16)
+                        | ((uint64_t)r[3] << 24) | ((uint64_t)r[4] << 32)
+                        | ((uint64_t)r[5] << 40);
+                    const uint16_t dur16 = (uint16_t)(r[6] | (r[7] << 8));
+                    const uint8_t idx = r[8];
+                    const uint8_t type = r[9];
+                    // Derive the lane from the DEFAULT routing the v1
+                    // format implied (the gameplay code recomputed it from
+                    // type at every read anyway).
+                    const uint8_t lane = (type == 0) ? 0 : 1;
+                    flat[i] = packNote(pos, dur16, idx, type, lane);
+                }
+                std::cout << "  [ Chart File ] Legacy 10-byte .fvc (" << n
+                          << " notes) — converted to 12-byte in RAM; next save writes FVC2."
+                          << std::endl;
             }
         }
         in.close();
 
         bool sorted = true;
         uint64_t prev = 0;
-        for (size_t i = 0; i < n; ++i) {
-            const uint64_t p = flat[i].first8 & ShardedNoteStore::POS_MASK;
+        for (size_t i = 0; i < flat.size(); ++i) {
+            const uint64_t p = notePos(flat[i]);
             if (p < prev) { sorted = false; break; }
             prev = p;
         }
         if (!sorted) {
             std::cout << "  [ Chart File ] Unsorted .fvc detected — radix sorting." << std::endl;
-            radix_sort_notes_inplace(flat.data(), n);
+            radix_sort_notes_inplace(flat.data(), flat.size());
         }
 
         std::lock_guard<std::mutex> lk(dataMutex);
-        store.loadFromSortedFlat(flat.data(), n);
+        store.loadFromSortedFlat(flat.data(), flat.size());
         return true;
     }
 
@@ -447,18 +570,6 @@ private:
     // ========================================================================
     // Integrated JSON Transpiler
     // ========================================================================
-    static void addNote(std::vector<ChartNote>& notes, double time_ms, int lane, double sustain_ms, int type) {
-        if (lane < 0) return;
-
-        uint64_t pos = (uint64_t)(time_ms * 100000.0); // 10ns ticks
-        uint16_t dur = (uint16_t)(sustain_ms);         // 1ms ticks
-
-        ChartNote n;
-        n.first8 = (pos & 0xFFFFFFFFFFFFULL) | ((uint64_t)(dur & 0xFFFF) << 48);
-        n.last2 = (uint16_t)(lane & 0xFF) | ((uint16_t)(type & 0xFF) << 8);
-        notes.push_back(n);
-    }
-
     // ========================================================================
     // Header File Generator (Backup Plan)
     // ========================================================================
@@ -700,13 +811,18 @@ private:
             type = gottaHitNote ? 1 : 0;
         }
 
-        int index = lane % totalColumns;
+        // v2 semantics: `lane` in the source chart is an ABSOLUTE column
+        // across both strumlines. `index` is the column within the owning
+        // strumline, and the stored `lane` field is the strumline id —
+        // same routing the type implies (0 opponent, 1 player) under the
+        // default table, which is what every transpiled chart used.
+        const int index = lane % totalColumns;
+        const int strumline = (type == 0) ? 0 : 1;
 
-        uint64_t pos = (uint64_t)(time_ms * 100000.0);   // 10ns ticks
-        uint16_t dur = (uint16_t)(sustain_ms);           // Solid 1ms duration
+        const uint64_t pos = (uint64_t)(time_ms * 100000.0); // 100ns ticks
+        const uint32_t dur = (uint32_t)(sustain_ms);         // 1ms ticks
 
-        outNote.first8 = (pos & 0xFFFFFFFFFFFFULL) | ((uint64_t)(dur & 0xFFFF) << 48);
-        outNote.last2 = (uint16_t)(index & 0xFF) | ((uint16_t)(type & 0xFF) << 8);
+        outNote = packNote(pos, dur, (uint32_t)index, (uint32_t)type, (uint32_t)strumline);
         return true;
     }
 
@@ -785,6 +901,18 @@ private:
             return;
         }
 
+        // v2 snapshot: FVC2 header first; the count is patched in by a
+        // seek-back after the single-pass note stream below (the writer
+        // itself stays streaming — nothing is buffered).
+        {
+            FvcFileHeader hdr;
+            std::memcpy(hdr.magic, "FVC2", 4);
+            hdr.noteCount = 0; // patched after the stream
+            hdr.noteSize = (uint32_t)sizeof(ChartNote);
+            hdr.flags = 0;
+            out.write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
+        }
+
         size_t writeIndex = 0;
         ChartNote currentNote;
 
@@ -848,6 +976,10 @@ private:
             }
         }
 
+        // Patch the header's note count (offset 4 in FvcFileHeader).
+        out.seekp(4, std::ios::beg);
+        const uint32_t noteCount = (uint32_t)writeIndex;
+        out.write(reinterpret_cast<const char*>(&noteCount), sizeof(noteCount));
         out.close();
 
         if (writeIndex == 0) {
@@ -1000,7 +1132,25 @@ public:
             fvcTest.close();
 
             if (fvcExists) {
-                filename = fvcPath;
+                // An existing .fvc is only trusted when it is the CURRENT
+                // v2 format. A legacy 10-byte snapshot (or a stale file
+                // from an older run) is re-transpiled from the .json —
+                // the .json is the source of truth for the notes.
+                bool fvcIsV2 = false;
+                {
+                    std::ifstream fvcHead(fvcPath, std::ios::binary);
+                    char magic[4] = {0, 0, 0, 0};
+                    if (fvcHead.read(magic, 4) && fvcHead.gcount() == 4)
+                        fvcIsV2 = (std::memcmp(magic, "FVC2", 4) == 0);
+                    fvcHead.close();
+                }
+                if (fvcIsV2) {
+                    filename = fvcPath;
+                } else {
+                    std::cout << "  [ Transpiler ] Existing .fvc is not FVC2 — re-transpiling "
+                              << pathStr << std::endl;
+                    transpileJsonToFvc(pathStr.c_str());
+                }
 
                 if (!headerExists) {
                     // We already have the JSON path (pathStr), so pass it directly!
@@ -1046,39 +1196,41 @@ public:
         return store.getFirst8(index);
     }
 
-    uint16_t getNote_last2(int64_t index) {
+    uint32_t getNote_last4(int64_t index) {
         if (index < 0 || index >= store.size()) return 0;
         std::lock_guard<std::mutex> lk(dataMutex);
-        return store.getLast2(index);
+        return store.getLast4(index);
     }
 
     // ========================================================================
-    // ADD — flexible 4-argument form: addNote(position, duration, index, type).
+    // ADD — flexible 5-argument form: addNote(position, duration, index,
+    //                                        type, lane).
     //   position: 100ns ticks (the unit MetaNote.position uses)
-    //   duration: 1ms ticks
-    //   index:    column index within the strumline (0..mania-1)
-    //   type:     note type; gameplay maps type % strumlineCount to the
-    //             owning strumline (0 = opponent, 1 = player)
+    //   duration: 1ms ticks (24-bit field, max 16,777,215 ms ≈ 4.66 h)
+    //   index:    column index within the strumline (0..1023, 10-bit field)
+    //   type:     note type (0..255 — still routed through
+    //             NoteSystem.noteTypeToStrumline for skins/behavior)
+    //   lane:     strumline id the note belongs to (0..63, 6-bit field) —
+    //             STORED on the note; every read site uses it directly
+    //             instead of re-deriving the strumline from the type
     // The position locates the note's 1/4-second shard and its sorted slot
     // inside it; later shards' baseIds shift by one. Returns the new note's
     // global chart index — feed that same value to removeNote() to take it
     // back out.
     // ========================================================================
-    int64_t addNote(uint64_t position, uint16_t duration, uint8_t index, uint8_t type) {
-        const uint64_t first8 =
-            (position & ShardedNoteStore::POS_MASK) | ((uint64_t)(duration & 0xFFFF) << 48);
-        const uint16_t last2 =
-            (uint16_t)(index & 0xFF) | ((uint16_t)(type & 0xFF) << 8);
+    int64_t addNote(uint64_t position, uint32_t duration, uint32_t index, uint32_t type, uint32_t lane) {
+        const ChartNote cn = packNote(position, duration, index, type, lane);
         std::lock_guard<std::mutex> lk(dataMutex);
-        const int64_t id = store.add(first8, last2);
+        const int64_t id = store.add(cn);
         dirty = true;
         return id;
     }
 
-    // Legacy alias kept so the existing chart_test build compiles; identical
-    // to addNote(position, duration, index, type).
+    // Legacy alias kept so the existing chart_test build compiles; the
+    // lane is derived from the type through the default routing (type 0 →
+    // strumline 0, else 1).
     void insertNote(uint64_t pos, uint16_t dur, uint8_t idx, uint8_t type) {
-        addNote(pos, dur, idx, type);
+        addNote(pos, dur, idx, type, type == 0 ? 0 : 1);
     }
 
     // ========================================================================
@@ -1179,19 +1331,21 @@ void core_setEditorMode(bool enabled) { if (gReader) gReader->setEditorMode(enab
 void core_setApplyingNotes(bool enabled) { if (gReader) gReader->setApplyingNotes(enabled); }
 
 int64_t core_getNote_first8(int64_t index) { if (!gReader) return 0; return (int64_t)gReader->getNote_first8(index); }
-int core_getNote_last2(int64_t index) { if (!gReader) return 0; return gReader->getNote_last2(index); }
+int core_getNote_last4(int64_t index) { if (!gReader) return 0; return (int)gReader->getNote_last4(index); }
 
-// Primary API: addNote(position, duration, index, type). Position is in
-// 100ns ticks, duration in 1ms ticks. Returns the new note's global chart
-// index, which removeNote() accepts.
-int64_t core_addNote(int64_t position, int duration, int index, int type) {
+// Primary API: addNote(position, duration, index, type, lane). Position is
+// in 100ns ticks, duration in 1ms ticks, lane is the strumline id stored on
+// the note. Returns the new note's global chart index, which removeNote()
+// accepts.
+int64_t core_addNote(int64_t position, int duration, int index, int type, int lane) {
     if (!gReader) return -1;
-    return gReader->addNote(static_cast<uint64_t>(position), static_cast<uint16_t>(duration),
-                            static_cast<uint8_t>(index), static_cast<uint8_t>(type));
+    return gReader->addNote(static_cast<uint64_t>(position), static_cast<uint32_t>(duration),
+                            static_cast<uint32_t>(index), static_cast<uint32_t>(type),
+                            static_cast<uint32_t>(lane));
 }
 
-// Legacy alias kept for the existing callers (Main.hx chart_test); identical
-// to core_addNote(position, duration, index, type).
+// Legacy alias kept for the existing callers (Main.hx chart_test); the lane
+// is derived from the type through the default routing.
 void core_insertNote(int64_t globalPosition, int duration, int index, int type) {
     if (!gReader) return;
     gReader->insertNote(static_cast<uint64_t>(globalPosition), static_cast<uint16_t>(duration),

@@ -17,12 +17,12 @@ int64_t getNote_first8(int64_t index) {
     return core_getNote_first8(index);
 }
 
-int64_t getNote_last2(int64_t index) {
-    return (int64_t)core_getNote_last2(index);
+int64_t getNote_last4(int64_t index) {
+    return (int64_t)core_getNote_last4(index);
 }
 
-int64_t addNote(int64_t position, int duration, int index, int type) {
-    return core_addNote(position, duration, index, type);
+int64_t addNote(int64_t position, int duration, int index, int type, int lane) {
+    return core_addNote(position, duration, index, type, lane);
 }
 
 void insertNote(int64_t globalPosition, int duration, int index, int type) {

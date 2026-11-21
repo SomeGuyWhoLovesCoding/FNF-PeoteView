@@ -18,24 +18,28 @@ extern class File {
 	}
 	@:native("loadChart") static function _loadChart(inFile:ConstCharStar):Void;
 	@:native("getNote_first8") static function getNote_first8(atIndex:Int64):Int64;
-	@:native("getNote_last2") static function getNote_last2(atIndex:Int64):Int;
+	@:native("getNote_last4") static function getNote_last4(atIndex:Int64):Int64;
 	@:runtime inline static function getNote(atIndex:Int64):MetaNote {
-		return new MetaNote.MetaNoteImpl(getNote_first8(atIndex), Int64.toInt(getNote_last2(atIndex)));
+		return new MetaNote.MetaNoteImpl(getNote_first8(atIndex), Int64.toInt(getNote_last4(atIndex)));
 	}
 	@:native("insertNote") static function insertNote(atGlobalPosition:Int64, duration:Int, index:Int, type:Int):Void;
 	/**
 	 * Adds a note from its raw fields — the editor-facing API.
 	 *   position: 100ns ticks (the unit MetaNote.position uses)
-	 *   duration: 1ms ticks (0 = tap note)
-	 *   index:    column index within the strumline (0..mania-1)
-	 *   type:     note type; routed to its owning strumline through
-	 *             NoteSystem.noteTypeToStrumline (default: 0 → 0
-	 *             opponent, everything else → 1 player)
+	 *   duration: 1ms ticks (0 = tap note; 24-bit field, max 16,777,215 ms)
+	 *   index:    column index within the strumline (0..1023, 10-bit field)
+	 *   type:     note type; still routed through NoteSystem.typeToHandle
+	 *             for the skin, and through NoteSystem.noteTypeToStrumline
+	 *             where a side's base type must be resolved (default:
+	 *             0 → 0 opponent, everything else → 1 player)
+	 *   lane:     strumline id STORED ON the note (0..63, 6-bit field) —
+	 *             the note draws/judges on this strumline, regardless of
+	 *             what the routing table says its type implies
 	 * The C++ side locates the note's 1/4-second shard and its sorted slot
 	 * from the position. Returns the new note's global chart index — pass
 	 * it to removeNote() later.
 	 */
-	@:native("addNote") static function addNote(position:Int64, duration:Int, index:Int, type:Int):Int64;
+	@:native("addNote") static function addNote(position:Int64, duration:Int, index:Int, type:Int, lane:Int):Int64;
 	/** Removes the note with the given global chart index. */
 	@:native("removeNote") static function removeNote(atIndex:Int64):Void;
 	/** Writes the live sharded store back out as a .fvc snapshot. */
@@ -63,14 +67,14 @@ class File {
 		return 0;
 	}
 
-	@:hlNative("chart_file", "getNote_last2")
-	public static function getNote_last2(atIndex:hl.I64):Int {
+	@:hlNative("chart_file", "getNote_last4")
+	public static function getNote_last4(atIndex:hl.I64):hl.I64 {
 		return 0;
 	}
 
 	//BOTTLENECK: low per-call heap allocation of MetaNoteImpl in the note-read path; GC churn if called per-frame in note loops | FIX: return the packed Int64 and decode in the caller, or fill a reusable scratch MetaNote via out-param
 	@:runtime inline public static function getNote(atIndex:Int64):MetaNote {
-		return new MetaNote.MetaNoteImpl(getNote_first8(atIndex), Int64.toInt(getNote_last2(atIndex)));
+		return new MetaNote.MetaNoteImpl(getNote_first8(atIndex), Int64.toInt(getNote_last4(atIndex)));
 	}
 
 	@:hlNative("chart_file", "insertNote")
@@ -82,7 +86,7 @@ class File {
 	 * Returns the new note's global chart index.
 	 */
 	@:hlNative("chart_file", "addNote")
-	public static function addNote(position:hl.I64, duration:Int, index:Int, type:Int):hl.I64 {
+	public static function addNote(position:hl.I64, duration:Int, index:Int, type:Int, lane:Int):hl.I64 {
 		return 0;
 	}
 

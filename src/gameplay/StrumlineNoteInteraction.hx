@@ -30,8 +30,10 @@ import lime.ui.MouseWheelMode;
 	               background click/tap toggles the instructions popup.
 	* mouseUp    — LEFT: a plain press on an empty slot (no drag beyond the
 	               slop) adds a note there via `File.addNote(position, 0,
-	               lane, editorMode.notetype)` — the notetype comes from the
-	               editor's ALT+LEFT/RIGHT selector. A hold-edit press keeps
+	               lane, editorMode.notetype, hoveredStrumline)` — the
+	               notetype comes from the editor's ALT+LEFT/RIGHT selector
+	               and the hovered strumline is written into the note's
+	               stored lane. A hold-edit press keeps
 	               the note with whatever duration was dialed in (every wheel
 	               notch / drag step was already written to the chart).
 	               RIGHT: removes the note in the hovered slot.
@@ -388,10 +390,9 @@ class StrumlineNoteInteraction {
 	/**
 		Detect the strumline + lane + snapped time hitbox under the cursor.
 		Searches ALL strumlines by X (the editor can place notes on either
-		side — the placed note's type is coercedType(hovered strumline),
-		the lowest type id the routing table
-		NoteSystem.noteTypeToStrumline sends there, matching gameplay's
-		routing). Returns true when the cursor is over a receptor column.
+		side — the hovered strumline is written into the note's STORED
+		lane field, independently of the notetype). Returns true when the
+		cursor is over a receptor column.
 	*/
 	function detectHitbox(x:Float, y:Float):Bool {
 		hoverLane = -1;
@@ -442,16 +443,11 @@ class StrumlineNoteInteraction {
 	}
 
 	/**
-		The notetype that would actually be written when placing on
-		`strumlineIdx`: routing is table-driven now
-		(NoteSystem.noteTypeToStrumline), so the pen notetype must
-		RESOLVE to the hovered strumline or gameplay would draw it on
-		the wrong side. The placement COERCES the type to the hovered
-		strumline's base type — the lowest type id that routes there
-		(0 for the opponent strumline, 1 for the player strumline with
-		the default table; a Lua-remapped table follows whatever
-		setNoteTypeIdToStrumline configured). The ghost square shows
-		VIOLET exactly when this coercion fires.
+		Kept for the score readout's hover hint: the notetype that would
+		route to `strumlineIdx` through the table. Under the v2 format
+		the stored lane is independent of the type, so this no longer
+		affects placement — it only tells the user which type number
+		"belongs" to the side they are hovering.
 	**/
 	function coercedType(strumlineIdx:Int):Int {
 		var noteSystem = parent.noteSystem;
@@ -462,21 +458,14 @@ class StrumlineNoteInteraction {
 			return parent.editorMode.notetype;
 		var t = parent.editorMode.notetype;
 		if (NoteSystem.strumlineForType(t, laneCount) == strumlineIdx)
-			return t; // already routes to the hovered strumline — keep the pen's type
-		// Coerce to the strumline's base type: the lowest type id whose
-		// table entry routes there.
+			return t; // the pen's type already belongs to this side
+		// The side's base type: the lowest type id whose table entry
+		// routes there.
 		for (candidate in 0...1 << 8) {
 			if (NoteSystem.strumlineForType(candidate, laneCount) == strumlineIdx)
 				return candidate;
 		}
 		return strumlineIdx; // unreachable with a valid table; keep a sane value
-	}
-
-	/** True when placing here would NOT use the pen's own notetype. */
-	function willCoerceType(lane:Int, strumlineIdx:Int):Bool {
-		if (parent.editorMode == null)
-			return false;
-		return coercedType(strumlineIdx) != parent.editorMode.notetype;
 	}
 
 	/**
@@ -507,7 +496,7 @@ class StrumlineNoteInteraction {
 			var n = File.getNote(i);
 			if (n.position != target)
 				break;
-			if (n.index == lane && NoteSystem.strumlineForType(n.type, parent.noteSystem.strumlines.length) == strumlineIdx)
+			if (n.index == lane && NoteSystem.clampLane(n.lane, parent.noteSystem.strumlines.length) == strumlineIdx)
 				return i;
 			i++;
 		}
@@ -860,10 +849,11 @@ class StrumlineNoteInteraction {
 
 	/**
 		Writes `dur` (ms) as the hold-edited note's sustain duration. The
-		chart stores duration in 1 ms ticks (16-bit field, max 65535 ms),
-		snapped to whole grid steps. The note is removed and re-added at
-		the same position with the new duration (the chart has no in-place
-		edit), which keeps its slot in the sorted order.
+		chart stores duration in 1 ms ticks (24-bit field, max
+		16,777,215 ms ≈ 4.66 h), snapped to whole grid steps. The note is
+		removed and re-added at the same position with the new duration
+		(the chart has no in-place edit), which keeps its slot in the
+		sorted order.
 	*/
 	function setHoldDuration(dur:Float) {
 		if (downNoteId < 0)
@@ -874,8 +864,8 @@ class StrumlineNoteInteraction {
 			dur = Math.round(dur / step) * step;
 		if (dur < MIN_SUSTAIN_MS)
 			dur = MIN_SUSTAIN_MS;
-		if (dur > 65535)
-			dur = 65535; // the chart's 16-bit duration field
+		if (dur > 16777215)
+			dur = 16777215; // the chart's 24-bit duration field
 		if (dur == holdDurationMs)
 			return; // no change — don't churn the chart
 
@@ -885,9 +875,10 @@ class StrumlineNoteInteraction {
 		var position = old.position;
 		var index = old.index;
 		var type = old.type;
+		var lane = old.lane; // the stored lane rides along unchanged
 
 		File.removeNote(downNoteId);
-		downNoteId = File.addNote(position, Std.int(dur), index, type);
+		downNoteId = File.addNote(position, Std.int(dur), index, type, lane);
 		if (downNoteId < 0)
 			return; // write failed — stop editing
 
@@ -910,13 +901,10 @@ class StrumlineNoteInteraction {
 
 	/**
 		ALT+LEFT/RIGHT while a note is held (hold-edit state): retype that
-		note to the pen's new type — coerced to the note's OWN strumline
-		(the routing table decides which side a type draws on; a type that
-		routes elsewhere would make the note jump strumlines), then hand
-		the coerced type back so the editor-global pen FOLLOWS it: the next
-		placement (mouse or keybind) uses exactly the type just dialed in
-		("add it on there again"). With no held note it is a no-op that
-		just returns the pen unchanged.
+		note to the pen's new type. The note KEEPS its stored lane — the
+		v2 format stores the strumline on the note, so a retype can never
+		move it to the other strumline. With no held note it is a no-op
+		that just returns the pen unchanged.
 	**/
 	function retypeHeldNote(penType:Int):Int {
 		if (!holdEditing || downNoteId < 0)
@@ -926,34 +914,19 @@ class StrumlineNoteInteraction {
 		if (old == null)
 			return penType;
 
-		// The held note's strumline — the type must keep routing here.
-		var laneCount = parent.noteSystem.strumlines.length;
-		var noteStrumline = NoteSystem.strumlineForType(old.type, laneCount);
-
-		var newType = penType;
-		if (NoteSystem.strumlineForType(newType, laneCount) != noteStrumline) {
-			// Coerce: the lowest type id that routes to the note's
-			// strumline (same rule coercedType uses at placement).
-			for (candidate in 0...1 << 8) {
-				if (NoteSystem.strumlineForType(candidate, laneCount) == noteStrumline) {
-					newType = candidate;
-					break;
-				}
-			}
-		}
-
-		if (newType != old.type) {
+		if (penType != old.type) {
 			var position = old.position;
 			var duration = old.duration;
 			var index = old.index;
+			var lane = old.lane; // unchanged — retyping never moves sides
 			File.removeNote(downNoteId);
-			downNoteId = File.addNote(position, duration, index, newType);
+			downNoteId = File.addNote(position, duration, index, penType, lane);
 			if (downNoteId < 0)
 				return penType; // write failed — pen unchanged, stop editing
 			Main.current.playScrollSound();
 			parent.editorMode.onChartEdited();
 		}
-		return newType;
+		return penType;
 	}
 
 	function mouseDown(x:Float, y:Float, button:MouseButton) {
@@ -1049,13 +1022,11 @@ class StrumlineNoteInteraction {
 			var pressedExisting = downNoteId >= 0;
 			if (downNoteId < 0 && downOnGrid) {
 				// Empty slot: add the note right away and capture it for
-				// hold-editing. The NOTETYPE is COERCED to the hovered
-				// strumline (the routing table must send it there — pen
-				// type 2 hovered over the opponent strumline places type
-				// 0; the ghost square shows violet for exactly this
-				// case). If the add fails (or the slot got occupied
-				// between press and now), this stays a plain click.
-				var id = File.addNote(MetaNote.floatToMetaNotePosition(downTimeMs), 0, downLane, coercedType(downStrumline));
+				// hold-editing. The NOTETYPE comes from the pen as-is —
+				// the v2 note stores the lane (the hovered strumline)
+				// independently of the type, so the ghost's type no
+				// longer needs coercing to a side.
+				var id = File.addNote(MetaNote.floatToMetaNotePosition(downTimeMs), 0, downLane, parent.editorMode.notetype, downStrumline);
 				if (id >= 0) {
 					downNoteId = id;
 					Main.current.playScrollSound();
@@ -1307,17 +1278,13 @@ class StrumlineNoteInteraction {
 				square.r = 45; // diamond orientation over the lane
 
 				// Red = occupied (right-click removes), green = empty
-				// (click adds). VIOLET = the pen's notetype will be
-				// COERCED by the hovered strumline (e.g. pen type 2
-				// hovered over the opponent strumline places type 0;
-				// pen type 0 over the player strumline places type 1):
-				// the note would still be placed, just not with the
-				// pen's own type number.
+				// (click adds). Under the v2 format the hovered
+				// strumline goes into the note's STORED lane, so the
+				// pen's notetype always rides along unchanged — no more
+				// violet coercion square.
 				var occupied = showHeld ? findNoteAt(lane, strumlineIdx, timeMs) >= 0 : hoverOccupied;
 				if (occupied) {
 					square.c = 0xFF0000FF; // red = a note is already there
-				} else if (willCoerceType(lane, strumlineIdx)) {
-					square.c = 0xB880FFFF; // violet = type will change
 				} else {
 					square.c = 0x00FF00FF; // green = clean add
 				}

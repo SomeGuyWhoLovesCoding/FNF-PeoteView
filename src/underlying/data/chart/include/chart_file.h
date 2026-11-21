@@ -7,17 +7,18 @@
 
 void loadChart(const char* inFile);
 int64_t getNote_first8(int64_t atIndex);
-int64_t getNote_last2(int64_t atIndex);
+int64_t getNote_last4(int64_t atIndex);
 int64_t getLength(void);
 void destroyChart();
-// Primary add API: addNote(position, duration, index, type).
+// Primary add API: addNote(position, duration, index, type, lane).
 //   position: 100ns ticks (the unit MetaNote.position uses)
-//   duration: 1ms ticks
-//   index:    column index within the strumline (0..mania-1)
-//   type:     note type (gameplay maps type % strumlineCount to a strumline)
+//   duration: 1ms ticks (24-bit field, max 16,777,215 ms)
+//   index:    column index within the strumline (0..1023, 10-bit field)
+//   type:     note type (0..255, still routed through the skin table)
+//   lane:     strumline id stored ON the note (0..63, 6-bit field)
 // Returns the new note's global chart index — pass it to removeNote().
-int64_t addNote(int64_t position, int duration, int index, int type);
-// Legacy alias for addNote(position, duration, index, type).
+int64_t addNote(int64_t position, int duration, int index, int type, int lane);
+// Legacy alias: the lane is derived from the type (0 → strumline 0, else 1).
 void insertNote(int64_t globalPosition, int duration, int index, int type);
 // Remove by global chart index (the id addNote returned).
 void removeNote(int64_t id);

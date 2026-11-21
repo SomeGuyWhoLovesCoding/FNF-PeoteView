@@ -374,10 +374,10 @@ class PlayFieldEditorMode {
 
 	/**
 		Place (or with `remove`, delete) a note at the CURRENT playhead
-		time on the PLAYER strumline (the editor's default notetype 1
-		routes to the player strumline through the routing table).
-		Snapped to the grid, and the type used is the editor's selected
-		notetype — ALT+LEFT/RIGHT re-colors this pen live.
+		time on the PLAYER strumline (written straight into the note's
+		stored lane). Snapped to the grid, and the type used is the
+		editor's selected notetype — ALT+LEFT/RIGHT re-colors this pen
+		live.
 	**/
 	function placeAtPlayhead(lane:Int, remove:Bool) {
 		if (strumlineInput == null)
@@ -399,7 +399,10 @@ class PlayFieldEditorMode {
 		}
 
 		if (strumlineInput.findNoteAt(lane, 1, timeMs) < 0) {
-			var id = File.addNote(MetaNote.floatToMetaNotePosition(timeMs), 0, lane, notetype);
+			// Keybind placement writes the PLAYER strumline into the
+			// note's stored lane; the pen type rides along as-is (the
+			// lane no longer depends on the type's routing).
+			var id = File.addNote(MetaNote.floatToMetaNotePosition(timeMs), 0, lane, notetype, 1);
 			if (id >= 0) {
 				Main.current.playScrollSound();
 				onChartEdited();
