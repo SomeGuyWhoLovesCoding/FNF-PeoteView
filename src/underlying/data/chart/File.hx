@@ -28,13 +28,12 @@ extern class File {
 	 *   position: 100ns ticks (the unit MetaNote.position uses)
 	 *   duration: 1ms ticks (0 = tap note; 24-bit field, max 16,777,215 ms)
 	 *   index:    column index within the strumline (0..1023, 10-bit field)
-	 *   type:     note type; still routed through NoteSystem.typeToHandle
-	 *             for the skin, and through NoteSystem.noteTypeToStrumline
-	 *             where a side's base type must be resolved (default:
-	 *             0 → 0 opponent, everything else → 1 player)
+	 *   type:     notetype — a pure skin/behavior id (NoteSystem.typeToHandle);
+	 *             it does NOT decide where the note draws
 	 *   lane:     strumline id STORED ON the note (0..63, 6-bit field) —
-	 *             the note draws/judges on this strumline, regardless of
-	 *             what the routing table says its type implies
+	 *             the note draws/judges on this strumline; placement
+	 *             passes the hovered strumline, the transpiler the source
+	 *             chart's side
 	 * The C++ side locates the note's 1/4-second shard and its sorted slot
 	 * from the position. Returns the new note's global chart index — pass
 	 * it to removeNote() later.

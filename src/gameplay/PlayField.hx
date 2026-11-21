@@ -815,11 +815,16 @@ class PlayField {
 
 	function hitNote(note:MetaNote, timing:Float, notesInOne:Int64, _i:Int64) {
 		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
-		if (luaCallStop('hitNote', notePos, note.index, note.duration, note.type, timing, notesInOne)) {
+		// Lane (stored on the note) goes LAST in the Lua arg lists, after
+		// the type — old scripts that destructure a prefix keep working.
+		if (luaCallStop('hitNote', notePos, note.index, note.duration, note.type, timing, notesInOne, note.lane)) {
 			return;
 		}
 
-		var lane = note.type;
+		// The strumline comes from the note's STORED lane — never from
+		// the notetype (the type is a free 0..255 skin id now; using it
+		// here would index strumlines out of bounds).
+		var lane = noteSystem != null ? NoteSystem.clampLane(note.lane, noteSystem.strumlines.length) : note.lane;
 
 		var index = 1 + lane;
 		if (Chart.header.voicesDirs.length > 1)
@@ -901,13 +906,13 @@ class PlayField {
 	}
 
 	function postHitNote(notePos:Float, note:MetaNote, timing:Float, notesInOne:Int64) {
-		luaCall('hitNotePost', notePos, note.index, note.duration, note.type, timing, notesInOne);
-		luaCall('postHitNote', notePos, note.index, note.duration, note.type, timing, notesInOne); // alternative syntax
+		luaCall('hitNotePost', notePos, note.index, note.duration, note.type, timing, notesInOne, note.lane);
+		luaCall('postHitNote', notePos, note.index, note.duration, note.type, timing, notesInOne, note.lane); // alternative syntax
 	}
 
 	function missNote(note:MetaNote, notesInOne:Int64, _i:Int64) {
 		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
-		if (luaCallStop('missNote', notePos, note.index, note.duration, note.type, notesInOne)) {
+		if (luaCallStop('missNote', notePos, note.index, note.duration, note.type, notesInOne, note.lane)) {
 			return;
 		}
 
@@ -915,7 +920,8 @@ class PlayField {
 			health = 0.05;
 		}
 
-		var lane = note.type;
+		// Stored lane — same rule as hitNote (the type is a free skin id).
+		var lane = noteSystem != null ? NoteSystem.clampLane(note.lane, noteSystem.strumlines.length) : note.lane;
 
 		var index = 1 + lane;
 		if (Chart.header.voicesDirs.length > 1)
@@ -933,15 +939,16 @@ class PlayField {
 		if (health < 0 && !disposed)
 			onDeath.dispatch(Chart.header, lane);
 
-		luaCall('missNotePost', notePos, note.index, note.duration, note.type, notesInOne);
-		luaCall('postMissNote', notePos, note.index, note.duration, note.type, notesInOne); // alternative syntax
+		luaCall('missNotePost', notePos, note.index, note.duration, note.type, notesInOne, note.lane);
+		luaCall('postMissNote', notePos, note.index, note.duration, note.type, notesInOne, note.lane); // alternative syntax
 	}
 
 	function completeSustain(note:MetaNote, _i:Int64) {
 		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
-		luaCall('completeSustain', notePos, note.index, note.duration, note.type);
+		luaCall('completeSustain', notePos, note.index, note.duration, note.type, note.lane);
 
-		var lane = note.type;
+		// Stored lane — same rule as hitNote (the type is a free skin id).
+		var lane = noteSystem != null ? NoteSystem.clampLane(note.lane, noteSystem.strumlines.length) : note.lane;
 
 		if (noteSystem != null && noteSystem.strumlines[lane].confirmed(note.index))
 			return;
@@ -964,18 +971,18 @@ class PlayField {
 			}
 		}
 
-		luaCall('completeSustainPost', notePos, note.index, note.duration, note.type);
-		luaCall('postCompleteSustain', notePos, note.index, note.duration, note.type); // alternative syntax
+		luaCall('completeSustainPost', notePos, note.index, note.duration, note.type, note.lane);
+		luaCall('postCompleteSustain', notePos, note.index, note.duration, note.type, note.lane); // alternative syntax
 	}
 
 	inline function releaseSustain(note:MetaNote, _i:Int64) {
 		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
-		luaCall('releaseSustain', notePos, note.index, note.duration, note.type);
+		luaCall('releaseSustain', notePos, note.index, note.duration, note.type, note.lane);
 
 		combo = 0;
 
-		luaCall('releaseSustainPost', notePos, note.index, note.duration, note.type);
-		luaCall('postReleaseSustain', notePos, note.index, note.duration, note.type); // alternative syntax
+		luaCall('releaseSustainPost', notePos, note.index, note.duration, note.type, note.lane);
+		luaCall('postReleaseSustain', notePos, note.index, note.duration, note.type, note.lane); // alternative syntax
 	}
 
 	var songStartTime:Float = 0.0; // Hardware timestamp when the song actually started

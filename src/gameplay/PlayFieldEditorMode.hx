@@ -59,9 +59,9 @@ class PlayFieldEditorMode {
 
 	/**
 		The notetype number the editor places (ALT+LEFT/RIGHT cycles it).
-		Gameplay routes notetypes to strumlines through
-		NoteSystem.noteTypeToStrumline (default table: 0 → opponent
-		strumline, everything else → player strumline).
+		Purely a skin/behavior id (NoteSystem.typeToHandle) — the strumline
+		a note draws on comes from its STORED lane (the hovered strumline at
+		placement), so the type can be dialed freely without moving sides.
 	*/
 	var notetype:Int = 1;
 
@@ -661,24 +661,22 @@ class PlayFieldEditorMode {
 
 		// Raw values, straight off the live objects — no rounding, no
 		// unit conversion. Int64 interpolates through Std.string, which
-		// prints the full 64-bit decimal value. The notetype segment
-		// shows BOTH the pen's type and, when hovering a strumline that
-		// would coerce it (see StrumlineNoteInteraction.coercedType),
-		// the coerced type it would actually place there — e.g.
-		// "type: 2→0" for pen 2 over the opponent strumline.
+		// prints the full 64-bit decimal value. The notetype segment is
+		// the pen alone — the lane is stored on the note independently
+		// (the hovered strumline), so there is no coercion to hint at.
+		// The lane segment shows where a placement is headed while the
+		// cursor is over a strumline.
 		var rateStr = playbackRate == Math.floor(playbackRate) ? Std.string(Math.floor(playbackRate)) : Std.string(playbackRate);
 		var typeStr = 'type: $notetype';
-		if (strumlineInput != null && strumlineInput.hoverStrumline >= 0) {
-			var c = strumlineInput.coercedType(strumlineInput.hoverStrumline);
-			if (c != notetype)
-				typeStr = 'type: $notetype->$c';
-		}
+		var laneStr = '';
+		if (strumlineInput != null && strumlineInput.hoverStrumline >= 0)
+			laneStr = ' | lane: ${strumlineInput.hoverStrumline}';
 		if (field.noteSystem != null && field.noteSystem.noteSpawner != null) {
 			var spawner = field.noteSystem.noteSpawner;
-			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | $typeStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"}'
+			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | $typeStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"}$laneStr'
 				+ ' | bottom: ${spawner.bottom} | top: ${spawner.top}';
 		} else {
-			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | $typeStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"} | bottom: - | top: -';
+			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | $typeStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"}$laneStr | bottom: - | top: -';
 		}
 
 		// Re-center for the readout's own width (hud.update positioned the

@@ -73,30 +73,12 @@ class CustomNoteUtilsComponent extends LuaComponentObject {
 			return FunkinViewLua.Function_Continue;
 		});
 
-		// Notetype → strumline routing: notetype `type` is drawn/judged
-		// on strumline `id` from now on. This is the engine's ONE
-		// routing table (NoteSystem.noteTypeToStrumline) — hit-scan,
-		// draw, the spawner and the chart editor all resolve through
-		// NoteSystem.strumlineForType(), so a remap here is instantly
-		// everywhere. Defaults: type 0 → strumline 0 (opponent), every
-		// other type → strumline 1 (player).
-		//
-		// Table-driven on purpose: a chart-header strumline count or a
-		// per-song strumline visibility mask can plug in later without
-		// any mapping code changing.
-		vm.addCallback('setNoteTypeIdToStrumline', function(type:Int, id:Int) {
-			if (type < 0 || type > 255) {
-				FunkinViewLua.error('Notetype ID out of range! $type > 255 or $type < 0');
-				return FunkinViewLua.Function_Stop;
-			}
-			if (id < 0 || id > 255) {
-				FunkinViewLua.error('Strumline ID out of range! $id > 255 or $id < 0');
-				return FunkinViewLua.Function_Stop;
-			}
-
-			NoteSystem.noteTypeToStrumline[type] = id;
-			return FunkinViewLua.Function_Continue;
-		});
+		// NOTE ROUTING: setNoteTypeIdToStrumline is REMOVED. Since the
+		// v2 chart format the strumline is stored on every note (the
+		// 6-bit lane field) — written at placement (the hovered
+		// strumline) or by the transpiler (the source chart's side) and
+		// read at every draw/judge/spawn site. The notetype is purely a
+		// skin/behavior id; it no longer decides where a note draws.
 	}
 
 	override public function dispose():Void {

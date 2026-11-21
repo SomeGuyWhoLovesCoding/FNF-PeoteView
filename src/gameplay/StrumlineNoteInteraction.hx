@@ -443,32 +443,6 @@ class StrumlineNoteInteraction {
 	}
 
 	/**
-		Kept for the score readout's hover hint: the notetype that would
-		route to `strumlineIdx` through the table. Under the v2 format
-		the stored lane is independent of the type, so this no longer
-		affects placement — it only tells the user which type number
-		"belongs" to the side they are hovering.
-	**/
-	function coercedType(strumlineIdx:Int):Int {
-		var noteSystem = parent.noteSystem;
-		if (noteSystem == null)
-			return parent.editorMode.notetype;
-		var laneCount = noteSystem.strumlines.length;
-		if (laneCount <= 0)
-			return parent.editorMode.notetype;
-		var t = parent.editorMode.notetype;
-		if (NoteSystem.strumlineForType(t, laneCount) == strumlineIdx)
-			return t; // the pen's type already belongs to this side
-		// The side's base type: the lowest type id whose table entry
-		// routes there.
-		for (candidate in 0...1 << 8) {
-			if (NoteSystem.strumlineForType(candidate, laneCount) == strumlineIdx)
-				return candidate;
-		}
-		return strumlineIdx; // unreachable with a valid table; keep a sane value
-	}
-
-	/**
 		Find an existing note at the given lane/strumline/snapped time.
 		Binary search by position, then walk equal positions. A note at the
 		same time+lane with a DIFFERENT notetype also counts — hold-editing
@@ -1149,6 +1123,16 @@ class StrumlineNoteInteraction {
 		if (parent.editorMode != null && parent.editorMode.anyPopupOpen())
 			return;
 
+		// While the editor transport is PLAYING (ENTER), the wheel is
+		// dead: no scrub, no sustain edit. The wheel only ever scrolls
+		// the frozen chart — pausing first was a side effect nobody
+		// asked for; ENTER is the one deliberate playback toggle now.
+		// (parent.paused above is the GAME's pause screen; em.playing is
+		// the editor's own audio transport.)
+		var em = parent.editorMode;
+		if (em != null && em.playing)
+			return;
+
 		var notches = -Math.floor(deltaY);
 		if (notches == 0)
 			return;
@@ -1159,14 +1143,6 @@ class StrumlineNoteInteraction {
 			setHoldDuration(holdDurationMs + notches * parent.editorMode.snapMs);
 			return;
 		}
-
-		// Scrolling while the song plays PAUSES it first (the editor's own
-		// stop path — audio transport stops, position freezes, the note
-		// window rebuilds), then the seek below scrolls the now-silent
-		// chart. Wheel = a scrub, never a live seek.
-		var em = parent.editorMode;
-		if (em != null && em.playing)
-			em.togglePlayback();
 
 		var seek = WHEEL_SEEK_MS * (ctrlPressed ? CTRL_SEEK_MULT : 1.0);
 		// SHIFT = fine scroll: the intensity drops to 1/3 (applies on

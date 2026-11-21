@@ -9,24 +9,26 @@ using StringTools;
 /**
 	A strumline manipulation component instance for Funkin' View.
 
-	Adds a strumline-focused Lua API on top of the note system:
-	- mid-song mania changes (changeStrumlineMania, ceiling = the chart's absolute mania)
-	- strumline position / gap / scale get + set
-	- per-arrow offsets (x, y and local rotation)
-	- extra strumlines at runtime (addStrumline), auto-hit like the opponent's
-	- note type routing (assignNoteTypeToStrumline)
+Adds a strumline-focused Lua API on top of the note system:
+- mid-song mania changes (changeStrumlineMania, ceiling = the chart's absolute mania)
+- strumline position / gap / scale get + set
+- per-arrow offsets (x, y and local rotation)
+- extra strumlines at runtime (addStrumline), auto-hit like the opponent's
 
-	Everything lives in this one file - no engine classes are modified.
-	The few bits the engine itself has to adopt are documented as
-	ready-to-paste snippets in INTEGRATION.md, centred around
-	`CustomStrumlineComponent.laneForType()` below.
+Everything lives in this one file - no engine classes are modified.
 
-	Position / gap / offset numbers are FLOATS at the Lua boundary. The
-	stock engine stores strumline x/y/gap and Note x/y as Int, so on an
-	unpatched engine fractional values simply truncate to whole pixels.
-	INTEGRATION.md Patch 7 widens those engine fields to Float, which
-	makes every position sub-pixel precise — the component compiles and
-	runs correctly against BOTH (see the dual-mode helpers getF/setF).
+NOTE ROUTING: since the v2 chart format, the strumline a note belongs
+to is stored ON the note (the 6-bit lane field) — written at placement
+(hovered strumline) or by the transpiler (source-chart side), read at
+every draw/judge/spawn site. There is no type→strumline routing table
+anymore; the notetype is purely a skin/behavior id, freely adjustable.
+
+Position / gap / offset numbers are FLOATS at the Lua boundary. The
+stock engine stores strumline x/y/gap and Note x/y as Int, so on an
+unpatched engine fractional values simply truncate to whole pixels.
+INTEGRATION.md Patch 7 widens those engine fields to Float, which
+makes every position sub-pixel precise — the component compiles and
+runs correctly against BOTH (see the dual-mode helpers getF/setF).
 
 	Pause survival: PlayField.pause() runs NoteSystem.resetStrumlines(),
 	which re-slots every strumline by the vanilla formula — anything past
@@ -50,24 +52,6 @@ using StringTools;
 **/
 @:publicFields
 class CustomStrumlineComponent extends LuaComponentObject {
-	// ==================================================================
-	// Static note-type routing table.
-	// Kept OUTSIDE the linc_luajit_funkinview flag so engine code
-	// (NoteSystem / NoteSpawner / PlayField) can consult it without
-	// caring whether the Lua VMs are compiled in.
-	//
-	// The table itself now lives on NoteSystem
-	// (noteTypeToStrumline — 256 entries, default [0] = 0 opponent,
-	// everything else = 1 player) and every engine routing site already
-	// resolves through NoteSystem.strumlineForType(). This component
-	// only keeps a delegate so old call sites (and INTEGRATION.md
-	// snippets) stay source-compatible.
-	// ==================================================================
-
-	/** Delegate to the engine's routing table (NoteSystem.noteTypeToStrumline). */
-	public static function laneForType(type:Int, strumlineCount:Int):Int {
-		return NoteSystem.strumlineForType(type, strumlineCount);
-	}
 
 	#if linc_luajit_funkinview
 
@@ -358,36 +342,14 @@ class CustomStrumlineComponent extends LuaComponentObject {
 			return FunkinViewLua.Function_Continue;
 		});
 
-		// Routing: every note of `type` is drawn/judged on strumline `id`.
-		// DELEGATE — this now writes the ENGINE's routing table
-		// (NoteSystem.noteTypeToStrumline), the same one
-		// setNoteTypeIdToStrumline (CustomNoteUtilsComponent) writes;
-		// every routing site (hit-scan, draw, spawn, editor) reads it.
-		// Pass id = -1 to reset a type back to its default routing
-		// (type 0 → strumline 0, everything else → 1).
-		//
-		// Identity mappings (type 2 -> strumline 2) work once
-		// addStrumline(2) bumps the count to 3: just assign
-		// assignNoteTypeToStrumline(2, 2) — or let type 2 stay on its
-		// default player-side routing.
-		vm.addCallback('assignNoteTypeToStrumline', function(type:Int, id:Int) {
-			if (type < 0 || type >= 256) {
-				FunkinViewLua.error('Notetype ID out of range! $type >= 256 or $type < 0');
-				return FunkinViewLua.Function_Stop;
-			}
-			var ns = playField.noteSystem;
-			if (ns == null) {
-				FunkinViewLua.error("Can't do that - the note system isn't ready yet. Call this from createPost, not create.");
-				return FunkinViewLua.Function_Stop;
-			}
-			if (id != -1 && (id < 0 || id >= ns.strumlines.length)) {
-				FunkinViewLua.error('Can\'t do that - Strumline $id is null (there are ${ns.strumlines.length} strumlines). Use -1 to reset a type to default routing.');
-				return FunkinViewLua.Function_Stop;
-			}
-
-			NoteSystem.noteTypeToStrumline[type] = id == -1 ? (type == 0 ? 0 : 1) : id;
-			return FunkinViewLua.Function_Continue;
-		});
+		// =============================================================
+		// NOTE ROUTING: removed. Since the v2 chart format the strumline
+		// is STORED on every note (the 6-bit lane field) — written at
+		// placement / by the transpiler, read at every draw/judge/spawn
+		// site — so there is no type→strumline table to remap. The
+		// notetype is purely a skin/behavior id (see typeToHandle /
+		// setNotetypeSkin).
+		// =============================================================
 
 		// =============================================================
 		// Pause survival, zero-engine-patch edition.

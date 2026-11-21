@@ -797,27 +797,37 @@ private:
 
     // ========================================================================
     // Zero-Overhead Note Writer (Format & Mania Accurate)
+    // ------------------------------------------------------------------------
+    // `lane` here is the ABSOLUTE column of the SOURCE chart (both sides
+    // in one numbering). The v2 note stores the strumline it belongs to
+    // in its own LANE field, derived directly from that side — the
+    // notetype is a pure pass-through skin id and never decides where a
+    // note draws.
     // ========================================================================
     inline bool writeNote(ChartNote& outNote, double time_ms, int lane, double sustain_ms, bool mustHitSection, bool isPsychV1, bool isVSlice, int totalColumns) {
         if (lane < 0) return false;
 
-        int type;
+        // Which strumline (side) owns this note — straight from the
+        // source chart's own side encoding, not from any type routing.
+        int strumline;
         if (isVSlice) {
-            type = (lane >= totalColumns) ? 1 : 0;
+            strumline = (lane >= totalColumns) ? 1 : 0;
         } else if (isPsychV1) {
-            type = (lane < totalColumns) ? 1 : 0;
+            strumline = (lane < totalColumns) ? 1 : 0;
         } else {
+            // Base game: mustHitSection flips which half is the player's.
             bool gottaHitNote = (lane < totalColumns) ? mustHitSection : !mustHitSection;
-            type = gottaHitNote ? 1 : 0;
+            strumline = gottaHitNote ? 1 : 0;
         }
 
-        // v2 semantics: `lane` in the source chart is an ABSOLUTE column
-        // across both strumlines. `index` is the column within the owning
-        // strumline, and the stored `lane` field is the strumline id —
-        // same routing the type implies (0 opponent, 1 player) under the
-        // default table, which is what every transpiled chart used.
         const int index = lane % totalColumns;
-        const int strumline = (type == 0) ? 0 : 1;
+
+        // The notetype is a skin id only. The source formats carry no
+        // per-note type (Psych/VSlice type extensions can pass one
+        // through here later without touching the lane math), so the
+        // default skins keep differing per side the way they always
+        // looked: opponent side 0, player side 1.
+        const int type = strumline;
 
         const uint64_t pos = (uint64_t)(time_ms * 100000.0); // 100ns ticks
         const uint32_t dur = (uint32_t)(sustain_ms);         // 1ms ticks
@@ -1208,8 +1218,8 @@ public:
     //   position: 100ns ticks (the unit MetaNote.position uses)
     //   duration: 1ms ticks (24-bit field, max 16,777,215 ms ≈ 4.66 h)
     //   index:    column index within the strumline (0..1023, 10-bit field)
-    //   type:     note type (0..255 — still routed through
-    //             NoteSystem.noteTypeToStrumline for skins/behavior)
+    //   type:     notetype (0..255 — a pure skin/behavior id; it does NOT
+    //             decide where the note draws)
     //   lane:     strumline id the note belongs to (0..63, 6-bit field) —
     //             STORED on the note; every read site uses it directly
     //             instead of re-deriving the strumline from the type

@@ -40,31 +40,22 @@ class NoteSystem {
 	static var NOTE_HOLD_TIME_FAR_FACTOR = 4.0;
 
 	// ==================================================================
-	// Notetype → strumline routing table.
+	// Lane (strumline) resolution.
 	//
-	// THE single source of truth for which strumline a notetype belongs
-	// to — replaces the old `type % strumlineCount` arithmetic
-	// everywhere (NoteSystem hit-scan/draw, NoteSpawner, the editor's
-	// hit-testing/coercion, the Lua routing API). Table-driven so a
-	// chart-header-driven strumline count or a per-song strumline
-	// visibility mask can plug in later without touching any mapping
-	// logic: whatever strumlines exist, the table decides who draws and
-	// judges each notetype.
-	//
-	// Default: 256 entries (1 << 8, matching typeToHandle's ID space);
-	// index 0 = 0 (the opponent side), every other type = 1 (the player
-	// side) — identical outcomes to the old % arithmetic for 2
-	// strumlines. Lua re-maps entries at runtime through
-	// CustomNoteUtilsComponent.setNoteTypeIdToStrumline.
+	// The v2 note format stores the strumline ON every note (the 6-bit
+	// lane field) — placement writes it (the hovered strumline, or the
+	// transpiler from the source chart's side) and every draw/judge/
+	// spawn/editor site reads it back. The type→strumline routing
+	// table that used to sit here is GONE: the notetype is now purely
+	// a skin/behavior id (typeToHandle), freely adjustable without
+	// affecting which strumline a note belongs to.
 	// ==================================================================
-	static var noteTypeToStrumline:Array<Int> = [for (i in 0...1 << 8) i == 0 ? 0 : 1];
 
 	/**
 		Clamps a STORED lane (the v2 note format's 6-bit strumline field)
 		into the available strumlines. The lane on a note is already a
-		strumline id — it must NOT go through noteTypeToStrumline (that
-		table maps TYPES to strumlines for placement coercion); this only
-		guards against a stale lane written when more strumlines existed.
+		strumline id; this only guards against a stale lane written when
+		more strumlines existed.
 	**/
 	static function clampLane(lane:Int, strumlineCount:Int):Int {
 		if (lane < 0)
@@ -76,38 +67,12 @@ class NoteSystem {
 		return lane;
 	}
 
-	/**
-		The strumline id a notetype belongs to. Clamps the type into the
-		0..255 ID space and the result into the available strumlines, so
-		even a stale table entry (written when more strumlines existed)
-		never indexes out of bounds.
-	**/
-	static function strumlineForType(type:Int, strumlineCount:Int):Int {
-		if (type < 0)
-			type = 0;
-		else if (type >= 1 << 8)
-			type = (1 << 8) - 1;
-		var lane = noteTypeToStrumline[type];
-		if (lane < 0)
-			lane = 0;
-		if (strumlineCount <= 1)
-			return 0;
-		if (lane >= strumlineCount)
-			lane = strumlineCount - 1;
-		return lane;
-	}
-
 	static function init() {
 		if (NoteskinManager.textureCache == null) {
 			NoteskinManager.init();
 		}
 
 		typeToHandle = [for (_ in 0...1 << 8) NoteskinManager.get("default")];
-		// Reset the routing table too — statics survive between songs
-		// and a Lua-remapped table must not leak into the next one
-		// (same reason the strumline component resets its tables).
-		for (i in 0...1 << 8)
-			noteTypeToStrumline[i] = i == 0 ? 0 : 1;
 		// trace(typeToHandle);
 		var handle = typeToHandle[0];
 
