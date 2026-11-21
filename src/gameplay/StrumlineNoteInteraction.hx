@@ -629,7 +629,7 @@ class StrumlineNoteInteraction {
 		if (panning || Math.abs(panFlingMs) < 0.5)
 			return;
 		// Consume ~12%/frame (60fps-normalized): about 1s till rest.
-		var consume = 1 - Math.pow(0.88, deltaTime / (1000 / 60));
+		var consume = 1 - Math.pow(0.94, deltaTime / (1000 / 60));
 		var step = panFlingMs * consume;
 		panFlingMs -= step;
 		parent.editorMode.seekTo(parent.editorMode.smoothPosition + step);
