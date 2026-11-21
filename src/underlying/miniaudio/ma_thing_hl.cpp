@@ -37,6 +37,7 @@ HL_PRIM void HL_NAME(start)(_NO_ARG)  { g_audioSystem.start(); }
 HL_PRIM void HL_NAME(stop)(_NO_ARG)   { g_audioSystem.stop(); }
 HL_PRIM bool HL_NAME(stopped)(_NO_ARG){ return g_audioSystem.stopped(); }
 HL_PRIM void HL_NAME(destroy)(_NO_ARG){ g_audioSystem.destroy(); }
+HL_PRIM void HL_NAME(pump_device_recovery)(_NO_ARG) { g_audioSystem.pumpDeviceRecovery(); g_mixer.pumpDeviceRecovery(); }
 
 HL_PRIM void   HL_NAME(seek_to_pcm_frame)(int64_t pos) { g_audioSystem.seekToPCMFrame(pos); }
 HL_PRIM int    HL_NAME(get_mixer_state)(_NO_ARG)        { return g_audioSystem.getMixerState(); }
@@ -89,6 +90,7 @@ DEFINE_PRIM(_VOID, start,                  _NO_ARG)
 DEFINE_PRIM(_VOID, stop,                   _NO_ARG)
 DEFINE_PRIM(_BOOL, stopped,                _NO_ARG)
 DEFINE_PRIM(_VOID, destroy,                _NO_ARG)
+DEFINE_PRIM(_VOID, pump_device_recovery,   _NO_ARG)
 DEFINE_PRIM(_VOID, seek_to_pcm_frame,      _I64)
 DEFINE_PRIM(_I32,  get_mixer_state,        _NO_ARG)
 DEFINE_PRIM(_I32,  get_sample_rate,        _NO_ARG)

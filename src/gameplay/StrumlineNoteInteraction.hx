@@ -22,9 +22,12 @@ import lime.ui.MouseWheelMode;
 	               the hold-duration state (press-and-hold IS the placing
 	               gesture — drag/wheel/UI-keys all dial the length from
 	               there; release just ends it). On an existing note: the
-	               same hold-duration state on that note. On the event
-	               lane: adds/removes placeholder events. On background:
-	               starts the pan gesture.
+	               same hold-duration state on that note, AND its type is
+	               picked up into the editor's pen (the next placement
+	               re-uses it; ALT+LEFT/RIGHT now retype the HELD note).
+	               On the event lane: adds/removes placeholder events. On
+	               background: starts the pan gesture; a TRIPLE
+	               background click/tap toggles the instructions popup.
 	* mouseUp    — LEFT: a plain press on an empty slot (no drag beyond the
 	               slop) adds a note there via `File.addNote(position, 0,
 	               lane, editorMode.notetype)` — the notetype comes from the
@@ -32,7 +35,7 @@ import lime.ui.MouseWheelMode;
 	               the note with whatever duration was dialed in (every wheel
 	               notch / drag step was already written to the chart).
 	               RIGHT: removes the note in the hovered slot.
-	* mouseWheel — shifts the song position forward or backward (Ctrl = 4x);
+	* mouseWheel — shifts the song position forward or backward (Ctrl = 4x;
 	               while hold-editing it edits the sustain length instead.
 
 	The song position in editor mode is frozen by design (see
@@ -138,7 +141,16 @@ class StrumlineNoteInteraction {
 	/** The pan fling's remaining travel (ms); decays per frame after release. */
 	var panFlingMs:Float = 0;
 
-	// --- Event lane (F2): insertion column at the LEFT of the strumlines ---
+	// --- Triple click/tap: opens the instructions popup (F1 alternative) ---
+	/** Presses so far in the current triple-click streak. */
+	var tripleClicks:Int = 0;
+	/** Wall-clock ms of the last counted press. */
+	var tripleLastMs:Float = 0;
+	/** Window coords of the last counted press (slop check). */
+	var tripleLastX:Float = 0;
+	var tripleLastY:Float = 0;
+
+	// --- Event lane: insertion column at the LEFT of the strumlines ---
 	/** The event lane's element (a diamond icon, like the note ghost). */
 	var eventGhost:RepeatSprite;
 	/** Editor-side event list, mirrors EventSystem.EventObject's shape. */
@@ -193,7 +205,7 @@ class StrumlineNoteInteraction {
 		display = parent.display;
 
 		// 4 elements: the ghost square, the hold-edit cyan ruler cap, the
-		// red tail ruler (F4), and the event-lane icon (F2).
+		// red tail ruler, and the event-lane icon.
 		squareBuf = new Buffer<RepeatSprite>(4, 2, true);
 		squareProg = new CustomProgram(squareBuf);
 		square = new RepeatSprite(0, 0, SQUARE_SIZE, SQUARE_SIZE);
@@ -510,7 +522,7 @@ class StrumlineNoteInteraction {
 		if (parent.disposed || parent.paused)
 			return;
 		// The exit popup owns ALL input while open.
-		if (parent.editorMode != null && parent.editorMode.exitPopup != null && parent.editorMode.exitPopup.opened)
+		if (parent.editorMode != null && parent.editorMode.anyPopupOpen())
 			return;
 
 		var local = toLocal(x, y);
@@ -620,6 +632,18 @@ class StrumlineNoteInteraction {
 	}
 
 	/**
+		Kills any running pan fling immediately. Called when playback
+		RESUMES (ENTER): the transport takes the position over from the
+		glide, and a live fling would keep seeking under the audible
+		clock for another second after the song already started — the
+		chart visibly fights the audio.
+	**/
+	function cancelPanFling() {
+		panFlingMs = 0;
+		panVelocityMs = 0;
+	}
+
+	/**
 		Per-frame fling step (called from update()). Applies a
 		frame-rate-normalized fraction of the remaining travel and decays
 		the rest — the same shape Android's overscroller uses (fast at
@@ -628,7 +652,9 @@ class StrumlineNoteInteraction {
 	function updatePanFling(deltaTime:Float) {
 		if (panning || Math.abs(panFlingMs) < 0.5)
 			return;
-		// Consume ~12%/frame (60fps-normalized): about 1s till rest.
+		// 0.94/frame (60fps-normalized): ~6% consumed per frame, a ~1.2s
+		// glide to rest — the same curve as the freeplay menu's fling
+		// (FLING_DECAY_PER_FRAME), so the two lists feel identical.
 		var consume = 1 - Math.pow(0.94, deltaTime / (1000 / 60));
 		var step = panFlingMs * consume;
 		panFlingMs -= step;
@@ -638,7 +664,7 @@ class StrumlineNoteInteraction {
 	}
 
 	// ==================================================================
-	// Event lane (F2)
+	// Event lane
 	// ==================================================================
 
 	/**
@@ -717,7 +743,7 @@ class StrumlineNoteInteraction {
 		}
 	}
 
-	/** Adds a PLACEHOLDER event at the snapped cursor time (F2: for now, placeholders only). */
+	/** Adds a PLACEHOLDER event at the snapped cursor time (placeholders only, for now). */
 	function addEventAt(timeMs:Float) {
 		loadEvents();
 		editorEvents.push({name: "Placeholder", value1: "", value2: "", time: timeMs});
@@ -882,13 +908,109 @@ class StrumlineNoteInteraction {
 		updateSquareVisual();
 	}
 
+	/**
+		ALT+LEFT/RIGHT while a note is held (hold-edit state): retype that
+		note to the pen's new type — coerced to the note's OWN strumline
+		(the routing table decides which side a type draws on; a type that
+		routes elsewhere would make the note jump strumlines), then hand
+		the coerced type back so the editor-global pen FOLLOWS it: the next
+		placement (mouse or keybind) uses exactly the type just dialed in
+		("add it on there again"). With no held note it is a no-op that
+		just returns the pen unchanged.
+	**/
+	function retypeHeldNote(penType:Int):Int {
+		if (!holdEditing || downNoteId < 0)
+			return penType;
+
+		var old = File.getNote(downNoteId);
+		if (old == null)
+			return penType;
+
+		// The held note's strumline — the type must keep routing here.
+		var laneCount = parent.noteSystem.strumlines.length;
+		var noteStrumline = NoteSystem.strumlineForType(old.type, laneCount);
+
+		var newType = penType;
+		if (NoteSystem.strumlineForType(newType, laneCount) != noteStrumline) {
+			// Coerce: the lowest type id that routes to the note's
+			// strumline (same rule coercedType uses at placement).
+			for (candidate in 0...1 << 8) {
+				if (NoteSystem.strumlineForType(candidate, laneCount) == noteStrumline) {
+					newType = candidate;
+					break;
+				}
+			}
+		}
+
+		if (newType != old.type) {
+			var position = old.position;
+			var duration = old.duration;
+			var index = old.index;
+			File.removeNote(downNoteId);
+			downNoteId = File.addNote(position, duration, index, newType);
+			if (downNoteId < 0)
+				return penType; // write failed — pen unchanged, stop editing
+			Main.current.playScrollSound();
+			parent.editorMode.onChartEdited();
+		}
+		return newType;
+	}
+
 	function mouseDown(x:Float, y:Float, button:MouseButton) {
 		if (parent.disposed || parent.paused)
 			return;
+
+		var em = parent.editorMode;
+
+		// Triple click/tap opens the instructions popup (the watermark's
+		// "Press F1 or triple click/tap..."): three LEFT presses within
+		// the click slop and a 900ms window. Counted only on the
+		// BACKGROUND (no lane slot, no event lane) so the gesture can
+		// never place, remove or edit notes — press 1-2 of the streak
+		// would otherwise already write to the chart before press 3
+		// completes the triple. Background presses are pure pan starts;
+		// an unmoved release is a no-op, so a background triple is
+		// completely inert. Not counted while a popup is open (an open
+		// popup consumes the clicks itself).
+		var localTri = toLocal(x, y);
+		var onBackground = !detectEventLane(localTri.x, localTri.y) && !detectHitbox(localTri.x, localTri.y);
+		if (button == MouseButton.LEFT && em != null && !em.anyPopupOpen() && onBackground) {
+			var nowMs = haxe.Timer.stamp() * 1000;
+			var withinSlop = Math.abs(x - tripleLastX) <= 64 && Math.abs(y - tripleLastY) <= 64;
+			if (nowMs - tripleLastMs <= 900 && withinSlop) {
+				tripleClicks++;
+				if (tripleClicks >= 3) {
+					tripleClicks = 0;
+					tripleLastMs = 0;
+					if (em.instructionsPopup != null)
+						em.instructionsPopup.toggle();
+					return;
+				}
+			} else {
+				tripleClicks = 1;
+			}
+			tripleLastMs = nowMs;
+			tripleLastX = x;
+			tripleLastY = y;
+		} else if (button == MouseButton.LEFT) {
+			// A press on a lane/event lane (or while a popup is open)
+			// breaks the streak — a background triple must be three pure
+			// background presses in a row.
+			tripleClicks = 0;
+		}
+
 		// The exit popup owns ALL input while open — clicks included.
-		if (parent.editorMode != null && parent.editorMode.exitPopup != null && parent.editorMode.exitPopup.opened) {
+		if (em != null && em.exitPopup != null && em.exitPopup.opened) {
 			if (button == MouseButton.LEFT)
-				parent.editorMode.exitPopup.click(x, y);
+				em.exitPopup.click(x, y);
+			tripleClicks = 0; // the popup consumed this gesture
+			return;
+		}
+		// The instructions card dismisses on any click.
+		if (em != null && em.instructionsPopup != null && em.instructionsPopup.opened) {
+			if (button == MouseButton.LEFT)
+				em.instructionsPopup.click(x, y);
+			tripleClicks = 0; // the card consumed this gesture — no close/re-open dance
 			return;
 		}
 
@@ -924,6 +1046,7 @@ class StrumlineNoteInteraction {
 			// note — placing and lengthening is one continuous gesture
 			// (drag down / wheel / UI up-down all work from here).
 			downNoteId = downOnGrid ? findNoteAt(downLane, downStrumline, downTimeMs) : -1;
+			var pressedExisting = downNoteId >= 0;
 			if (downNoteId < 0 && downOnGrid) {
 				// Empty slot: add the note right away and capture it for
 				// hold-editing. The NOTETYPE is COERCED to the hovered
@@ -937,6 +1060,20 @@ class StrumlineNoteInteraction {
 					downNoteId = id;
 					Main.current.playScrollSound();
 					parent.editorMode.onChartEdited();
+				}
+			}
+			if (pressedExisting) {
+				// Pen pickup: pressing an EXISTING note makes its type the
+				// editor-global pen type — the next placement (mouse or
+				// keybind) re-uses exactly what you just grabbed, and
+				// ALT+LEFT/RIGHT retype THIS note because it is the held
+				// one. (A freshly placed note does NOT do this — its type
+				// was just coerced by the placement, and re-writing the
+				// pen would fight the user's chosen pen type.)
+				var picked = File.getNote(downNoteId).type;
+				if (picked != parent.editorMode.notetype) {
+					parent.editorMode.notetype = picked;
+					parent.editorMode.updateReadout();
 				}
 			}
 			holdEditing = downNoteId >= 0;
@@ -969,7 +1106,7 @@ class StrumlineNoteInteraction {
 		if (parent.disposed || parent.paused)
 			return;
 		// The exit popup owns ALL input while open.
-		if (parent.editorMode != null && parent.editorMode.exitPopup != null && parent.editorMode.exitPopup.opened)
+		if (parent.editorMode != null && parent.editorMode.anyPopupOpen())
 			return;
 
 		if (button == MouseButton.LEFT) {
@@ -977,7 +1114,7 @@ class StrumlineNoteInteraction {
 				return;
 			isDown = false;
 
-			// The add already happened at mouseDown (F5: placing a note
+			// The add already happened at mouseDown (placing a note
 			// with the button held goes straight into the duration
 			// state), and every wheel/drag/UI-key write went straight
 			// to the chart through setHoldDuration. The release just
@@ -1038,7 +1175,7 @@ class StrumlineNoteInteraction {
 		if (parent.disposed || parent.paused)
 			return;
 		// The exit popup owns ALL input while open.
-		if (parent.editorMode != null && parent.editorMode.exitPopup != null && parent.editorMode.exitPopup.opened)
+		if (parent.editorMode != null && parent.editorMode.anyPopupOpen())
 			return;
 
 		var notches = -Math.floor(deltaY);
@@ -1196,7 +1333,7 @@ class StrumlineNoteInteraction {
 			} catch (e) {}
 		}
 
-		// Event lane icon (F2): a violet diamond, VERTICALLY CENTERED in
+		// Event lane icon: a violet diamond, VERTICALLY CENTERED in
 		// the event column, always visible while the editor runs — the
 		// "insertion point" affordance. Brightens when hovered.
 		if (eventGhost != null && parent.noteSystem != null && parent.noteSystem.strumlines.length > 0) {

@@ -100,9 +100,30 @@ class HUD {
 
 		if (watermarkTxt == null) {
 			watermarkTxt = new Text("watermarkTxtPF", 0, 0, display, 'FV v${MainMenu.fnfpVer}');
-			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height;
 			watermarkTxt.outlineColor = 0x000000FF;
 			watermarkTxt.outlineSize = 1;
+		}
+		// The watermark doubles as the editor's help hint: the version
+		// string did nothing useful there, so editor mode points at the
+		// instructions card instead (F1 opens it, a background triple
+		// click/tap too — see PlayFieldEditorMode). The hint is a long
+		// string, so it runs at half scale in the TOP-LEFT — the bottom
+		// row it used to share with "FV v..." is occupied by the centered
+		// time bar, which the long text would run into. Gameplay keeps
+		// the version watermark bottom-left at full size. set_text skips
+		// relayout when unchanged, and the HUD is rebuilt on every mode
+		// switch (the toggle restarts the song state), so the two modes
+		// can share the static text.
+		if (parent.playfieldEditorMode) {
+			watermarkTxt.text = "Press F1 or triple click/tap for editor's input instructions";
+			watermarkTxt.scale = 0.5;
+			watermarkTxt.x = 0;
+			watermarkTxt.y = 2;
+		} else {
+			watermarkTxt.text = 'FV v${MainMenu.fnfpVer}';
+			watermarkTxt.scale = 1;
+			watermarkTxt.x = 0;
+			watermarkTxt.y = Main.INITIAL_HEIGHT - watermarkTxt.height;
 		}
 		watermarkTxt.addProgram();
 

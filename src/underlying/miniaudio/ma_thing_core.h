@@ -789,6 +789,38 @@ private:
 };
 
 // ==========================================================================
+//  ma_device_lifecycle_watchdog
+// ==========================================================================
+// Runs a miniaudio device lifecycle call (stop / uninit / start) on a
+// helper thread and waits a bounded time. When the call does not come
+// back in time, the helper thread is DETACHED and the wedged device is
+// declared dead: `stuckFlag` is set so callers stop touching it (the
+// device object is leaked — its buffers stay alive — but the process
+// keeps running and still closes cleanly, instead of deadlocking on
+// every later stop/uninit like it did before).
+// NOTE: this is deliberately a free function taking a flag reference —
+// it must stay usable from both AudioSystem and AudioMixerManager.
+template <typename Fn>
+static bool ma_device_lifecycle_watchdog(Fn&& fn, std::atomic<bool>& stuckFlag, int timeoutMs) {
+    if (stuckFlag.load(std::memory_order_acquire)) return false; // already in leak mode — don't poke it
+    auto done = std::make_shared<std::atomic<bool>>(false);
+    auto fnCopy = std::make_shared<Fn>(std::forward<Fn>(fn));
+    std::thread helper([done, fnCopy]() {
+        (*fnCopy)();
+        done->store(true, std::memory_order_release);
+    });
+    auto limit = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+    while (std::chrono::steady_clock::now() < limit) {
+        if (done->load(std::memory_order_acquire)) { helper.join(); return true; }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    helper.detach();
+    stuckFlag.store(true, std::memory_order_release);
+    printf("[ma_thing] device lifecycle call timed out (%d ms) — device leaked, continuing without audio\n", timeoutMs);
+    return false;
+}
+
+// ==========================================================================
 //  AudioSystem
 // ==========================================================================
 class AudioSystem {
@@ -799,7 +831,22 @@ public:
     std::atomic<uint64_t> volumeVersion{0}; // FIX: Version counter for cache invalidation
     
     std::vector<std::string> filePaths;
-    ma_device device;
+    /**
+        The playback device, HEAP-ALLOCATED on purpose. When a device wedges
+        (a lifecycle watchdog fired), its storage is moved to a graveyard
+        vector and never touched again: the detached helper thread is still
+        blocked inside miniaudio on that object, so the memory must outlive
+        the process. A fresh device is then allocated for the rebuild. (A
+        value member would be memset-recycled under the stuck thread's feet
+        — use-after-free.)
+    */
+    ma_device* device = nullptr;
+    /**
+        Wedged device storage. Leaked on purpose (see `device` above) —
+        never freed, never reused; just parked so the stuck thread can keep
+        "using" it safely until process exit.
+    */
+    std::vector<ma_device*> deviceGraveyard;
     StretchPipeline* stretchPipe = nullptr;
     SubBusDSP subDSP;
     int longestDecoderIndex = 0;
@@ -823,7 +870,6 @@ public:
     mutable std::atomic<float> predictPrevRate{1.0f};
 
     AudioSystem() {
-        memset(&device, 0, sizeof(ma_device));
         init_simd_dispatch();
         stretchPipe = new StretchPipeline();
     }
@@ -835,6 +881,216 @@ public:
     }
     AudioSystem(const AudioSystem&) = delete;
     AudioSystem& operator=(const AudioSystem&) = delete;
+
+    // ---- device-change resilience ------------------------------------------
+    // A default-device switch (unplug, Bluetooth takeover, control-panel
+    // change) is handled by miniaudio's own device-change thread: it
+    // stops, reinits and restarts the device. When that internal reroute
+    // wedges or fails (the "collapse"), the device is dead while
+    // mixerState still reports playing — the position keeps integrating
+    // on wall clock over silence, and every later stop/uninit blocks
+    // forever (the close deadlock that needed a process kill). Three legs:
+    //   1) a notification callback that only raises flags — never calls
+    //      back into the device (doing so from miniaudio's own
+    //      device-change thread is the documented way to deadlock);
+    //   2) a main-thread pump (pumpDeviceRecovery, once per frame) that
+    //      waits out a short grace period for miniaudio's internal
+    //      recovery, then rebuilds the device itself;
+    //   3) watchdogged stop/uninit/start: a wedged device gets one
+    //      timeout window, then the call thread is detached and the
+    //      device LEAKED — audio is gone either way, but the game keeps
+    //      running and the process still closes.
+    std::atomic<bool> deviceLost{false};       // external stop seen (device died / switched)
+    std::atomic<bool> stoppingSelf{false};     // our own stop is in flight — its notification is not a loss
+    std::atomic<bool> recoveryInProgress{false};
+    std::atomic<bool> lifecycleStuck{false};   // a lifecycle watchdog fired — leak mode, stop trying
+    /** Consecutive pump frames the device looked dead; plain int — pump-only. */
+    int lostTicks = 0;
+    /** How many pump frames miniaudio's internal recovery gets before we take over. */
+    static constexpr int DEVICE_LOST_GRACE_TICKS = 60;
+    /** How long one watchdogged device lifecycle call may take. */
+    static constexpr int LIFECYCLE_TIMEOUT_MS = 1500;
+
+    static void onDeviceNotification(const ma_device_notification* pNotification) {
+        AudioSystem* sys = static_cast<AudioSystem*>(pNotification->pDevice->pUserData);
+        if (!sys) return;
+        switch (pNotification->type) {
+        case ma_device_notification_type_started:
+            // The device runs again — either our own start or miniaudio's
+            // internal reroute completed. Either way there is nothing to
+            // recover.
+            sys->deviceLost.store(false, std::memory_order_release);
+            break;
+        case ma_device_notification_type_stopped:
+            // Ours (guarded by stoppingSelf) or external (unplug/error).
+            // External means the device this engine built is no longer
+            // running — flag it and let the pump decide.
+            if (!sys->stoppingSelf.load(std::memory_order_acquire))
+                sys->deviceLost.store(true, std::memory_order_release);
+            break;
+        default:
+            // rerouted fires mid-recovery (before the restart); started
+            // above closes the sequence. Interruptions are mobile-only.
+            break;
+        }
+    }
+
+    bool stopDeviceWatchdog() {
+        if (!ma_device_is_started(device)) return true;
+        stoppingSelf.store(true, std::memory_order_release);
+        bool ok = ma_device_lifecycle_watchdog([this]() { ma_device_stop(device); }, lifecycleStuck, LIFECYCLE_TIMEOUT_MS);
+        stoppingSelf.store(false, std::memory_order_release);
+        return ok;
+    }
+
+    bool uninitDeviceWatchdog() {
+        return ma_device_lifecycle_watchdog([this]() { ma_device_uninit(device); }, lifecycleStuck, LIFECYCLE_TIMEOUT_MS);
+    }
+
+    bool startDeviceWatchdog() {
+        stoppingSelf.store(true, std::memory_order_release);
+        auto res = std::make_shared<ma_result>(MA_ERROR);
+        bool ok = ma_device_lifecycle_watchdog([this, res]() { *res = ma_device_start(device); }, lifecycleStuck, LIFECYCLE_TIMEOUT_MS);
+        stoppingSelf.store(false, std::memory_order_release);
+        return ok && *res == MA_SUCCESS;
+    }
+
+    /**
+        Parks the current device storage in the graveyard — the detached
+        helper thread is still blocked inside it, so the memory must
+        outlive the process. Callers only call this when a lifecycle
+        watchdog timed out. The stuck flag is cleared so the FRESH device
+        the rebuild allocates gets fresh watchdog chances (a set flag
+        would make every later start/stop no-op and the device would
+        never come back up).
+    **/
+    void parkWedgedDevice() {
+        if (!device) return;
+        deviceGraveyard.push_back(device);
+        device = nullptr;
+        lifecycleStuck.store(false, std::memory_order_release);
+    }
+
+    // (Re)builds the playback device with the current channel layout and
+    // the notification callback wired in. The caller must have stopped and
+    // uninitialized (or parked) the previous device. Returns true on
+    // success; on failure mixerState is left at stopped/finished.
+    bool buildDevice() {
+        int wantedChannels = surroundEnabled.load(std::memory_order_acquire) ? SURROUND_CHANNEL_COUNT : CHANNEL_COUNT;
+        int prevState = mixerState.load(std::memory_order_acquire);
+        bool wasPlaying = (prevState == 1);
+
+        device = new ma_device();
+        memset(device, 0, sizeof(ma_device));
+        ma_device_config deviceConfig = ma_device_config_init(ma_device_type_playback);
+        deviceConfig.playback.format = SAMPLE_FORMAT;
+        deviceConfig.playback.channels = wantedChannels;
+        deviceConfig.sampleRate = SAMPLE_RATE;
+        deviceConfig.periodSizeInFrames = PERIOD_SIZE;
+        deviceConfig.dataCallback = data_callback;
+        deviceConfig.notificationCallback = onDeviceNotification;
+        deviceConfig.pUserData = this;
+
+        if (ma_device_init(nullptr, &deviceConfig, device) != MA_SUCCESS && wantedChannels != CHANNEL_COUNT) {
+            playbackChannels.store(CHANNEL_COUNT, std::memory_order_release);
+            surroundEnabled.store(false, std::memory_order_release);
+            deviceConfig.playback.channels = CHANNEL_COUNT;
+            if (ma_device_init(nullptr, &deviceConfig, device) != MA_SUCCESS) {
+                printf("Failed to open playback device.\n");
+                delete device;
+                device = nullptr;
+                mixerState.store(3, std::memory_order_release);
+                return false;
+            }
+            printf("Surround Sound 3.1 unavailable on this device; falling back to stereo.\n");
+        } else {
+            playbackChannels.store(wantedChannels, std::memory_order_release);
+        }
+        // destroy() deletes the pipeline (loadFiles → destroy → build);
+        // re-create it so pitched playback keeps its FFT worker.
+        if (!stretchPipe) stretchPipe = new StretchPipeline();
+        if (stretchPipe) { stretchPipe->reset(); stretchPipe->configureChannels(playbackChannels.load(std::memory_order_acquire)); }
+        predictInit.store(false, std::memory_order_relaxed);
+        if (wasPlaying) {
+            if (startDeviceWatchdog()) mixerState.store(1, std::memory_order_release);
+            else mixerState.store(2, std::memory_order_release);
+        } else {
+            mixerState.store(prevState, std::memory_order_release);
+        }
+        return true;
+    }
+
+    // Full device rebuild (device-loss recovery, surround toggle). The
+    // recoveryInProgress gate keeps concurrent rebuild paths (pump,
+    // surround toggle, loadFiles) from interleaving their
+    // stop/uninit/init cycles; data_callback also silences itself while
+    // it is set, so a rebuild can never race the mix.
+    void rebuildDevice() {
+        bool expected = false;
+        if (!recoveryInProgress.compare_exchange_strong(expected, true, std::memory_order_acq_rel))
+            return;
+        if (device) {
+            if (!stopDeviceWatchdog() || !uninitDeviceWatchdog()) {
+                parkWedgedDevice();            // storage stays for the stuck thread
+            } else {
+                delete device;
+                device = nullptr;
+            }
+        }
+        buildDevice();
+        deviceLost.store(false, std::memory_order_release);
+        recoveryInProgress.store(false, std::memory_order_release);
+    }
+
+    // Main-thread pump — call once per frame. Gives miniaudio's internal
+    // reroute DEVICE_LOST_GRACE_TICKS frames to land (it restarts the
+    // device itself when a new default appears), then rebuilds the
+    // device. The rebuild triggers are deliberately CONSERVATIVE:
+    //   - mixerState says PLAYING but the device is not started — the
+    //     transport thinks audio flows while nothing runs (the collapse),
+    //     or a start failed (unplugged while paused);
+    //   - a lifecycle watchdog fired (lifecycleStuck) — every later
+    //     stop/start on that device no-ops, so rebuild = park + fresh.
+    // The deviceLost NOTIFICATION flag alone never triggers a rebuild: a
+    // normal pause also raises it (the stoppingSelf guard only covers the
+    // stop call itself), and rebuilding an intentionally stopped, healthy
+    // device every pause would churn the audio stack for nothing. When a
+    // real loss happens the flag is followed by one of the two triggers
+    // above anyway (stopped device under a playing state, or a stuck
+    // lifecycle call).
+    void pumpDeviceRecovery() {
+        if (!exists.load(std::memory_order_acquire)) { lostTicks = 0; return; }
+        if (recoveryInProgress.load(std::memory_order_acquire)) return;
+        if (device == nullptr) {                // last rebuild failed — retry every grace period
+            if (++lostTicks >= DEVICE_LOST_GRACE_TICKS) {
+                lostTicks = 0;
+                printf("[ma_thing] audio device lost — retrying playback device\n");
+                rebuildDevice();
+            }
+            return;
+        }
+        bool playing = (mixerState.load(std::memory_order_acquire) == 1);
+        bool started = ma_device_is_started(device);
+        bool stuck = lifecycleStuck.load(std::memory_order_acquire);
+        // Note: the deviceLost notification flag is intentionally NOT a
+        // rebuild trigger — it can lag a self-stop (our own stop's
+        // notification may land after stoppingSelf is cleared), which
+        // would rebuild a healthy paused device. The two triggers above
+        // cover every real loss: an external force-stop (unplug, reroute)
+        // drops a started device to not-started with mixerState still
+        // PLAYING (= the collapse trigger), and a wedged lifecycle call
+        // sets lifecycleStuck (= the stuck trigger). deviceLost stays as
+        // the diagnostic handshake for the started-notification path.
+        if ((playing && !started) || stuck) {
+            if (++lostTicks >= DEVICE_LOST_GRACE_TICKS) {
+                lostTicks = 0;
+                printf("[ma_thing] audio device lost — rebuilding playback device\n");
+                rebuildDevice();
+            }
+        } else {
+            lostTicks = 0;
+        }
+    }
 
     void loadFiles(std::vector<const char*> argv) {
         if (argv.empty()) { printf("No input files.\n"); return; }
@@ -905,42 +1161,37 @@ public:
         for (size_t i = 0; i < streams.size(); i++) {
             streamChannels.emplace_back((i == 0) ? MA_CH_BACKGROUND : MA_CH_CENTER);
         }
-        
-        int wantedChannels = surroundEnabled.load(std::memory_order_acquire) ? SURROUND_CHANNEL_COUNT : CHANNEL_COUNT;
-        playbackChannels.store(wantedChannels, std::memory_order_release);
-        ma_device_config deviceConfig = ma_device_config_init(ma_device_type_playback);
-        deviceConfig.playback.format = SAMPLE_FORMAT;
-        deviceConfig.playback.channels = wantedChannels;
-        deviceConfig.sampleRate = SAMPLE_RATE;
-        deviceConfig.periodSizeInFrames = PERIOD_SIZE;
-        deviceConfig.dataCallback = data_callback;
-        deviceConfig.pUserData = this;
-        
-        if (ma_device_init(nullptr, &deviceConfig, &device) != MA_SUCCESS && wantedChannels != CHANNEL_COUNT) {
-            playbackChannels.store(CHANNEL_COUNT, std::memory_order_release);
-            surroundEnabled.store(false, std::memory_order_release);
-            deviceConfig.playback.channels = CHANNEL_COUNT;
-            if (ma_device_init(nullptr, &deviceConfig, &device) != MA_SUCCESS) {
-                streams.clear(); decoderVolumes.reset(); decoderVolumesCount = 0; filePaths.clear();
-                streamChannels.clear(); streamLpfState.clear();
-                printf("Failed to open playback device.\n");
-                return;
-            }
-            printf("Surround Sound 3.1 unavailable on this device; falling back to stereo.\n");
+
+        // The shared builder wires data_callback + the device-change
+        // notification and applies the surround fallback (device == null
+        // means a failed build — exists stays false, pumpDeviceRecovery
+        // keeps retrying every grace period).
+        buildDevice();
+        exists.store(device != nullptr, std::memory_order_release);
+        if (device == nullptr) {
+            streams.clear(); decoderVolumes.reset(); decoderVolumesCount = 0; filePaths.clear();
+            streamChannels.clear(); streamLpfState.clear();
+            return;
         }
-        if (!stretchPipe) stretchPipe = new StretchPipeline();
-        stretchPipe->reset();
-        stretchPipe->configureChannels(playbackChannels.load(std::memory_order_acquire));
-        exists.store(true, std::memory_order_release);
         mixerState.store(3, std::memory_order_release);
     }
 
     void destroy() {
         if (!exists.load(std::memory_order_acquire)) return;
         exists.store(false, std::memory_order_release);
-        ma_device_stop(&device);
+        deviceLost.store(false, std::memory_order_release);
+        lostTicks = 0;
+        // Watchdogged teardown: a wedged device parks instead of hanging
+        // the close (the old close deadlock — process had to be killed).
+        if (device) {
+            if (stopDeviceWatchdog() && uninitDeviceWatchdog()) {
+                delete device;
+                device = nullptr;
+            } else {
+                parkWedgedDevice();
+            }
+        }
         if (asyncLoader) { delete asyncLoader; asyncLoader = nullptr; }
-        ma_device_uninit(&device);
         streams.clear();
         decoderVolumes.reset(); decoderVolumesCount = 0;
         filePaths.clear();
@@ -957,7 +1208,7 @@ public:
         predictRate.store(1.0, std::memory_order_relaxed);
         predictPrevRate.store(1.0f, std::memory_order_relaxed);
         subDSP.reset();
-        memset(&device, 0, sizeof(ma_device));
+        // device pointer already handled above (deleted or parked).
     }
 
     void start() {
@@ -968,14 +1219,14 @@ public:
         ma_uint64 startFrame = 0;
         if (!streams.empty()) startFrame = streams[longestDecoderIndex].filePosition.load(std::memory_order_relaxed);
         predictInit.store(false, std::memory_order_relaxed);
-        ma_device_start(&device);
+        if (device) startDeviceWatchdog();
     }
 
     void stop() {
         if (!exists.load(std::memory_order_acquire)) return;
         mixerState.store(2, std::memory_order_release);
         if (asyncLoader) asyncLoader->pauseLoading();
-        ma_device_stop(&device);
+        if (device) stopDeviceWatchdog();
         // Kill the predicted-clock extrapolation the moment the transport
         // stops. Without this, getPlaybackPosition() keeps integrating
         // baseFrames + wallClockDelta * rate across the whole stopped span:
@@ -995,11 +1246,11 @@ public:
 
     void seekToPCMFrame(int64_t pos) {
         if (!exists.load(std::memory_order_acquire)) return;
-        bool deviceRunning = ma_device_is_started(&device);
+        bool deviceRunning = device && ma_device_is_started(device);
         if (deviceRunning) mixerState.store(2, std::memory_order_release);
         if (asyncLoader) asyncLoader->pauseLoading();
         if (asyncLoader) asyncLoader->waitUntilIdle();
-        if (deviceRunning) ma_device_stop(&device);
+        if (deviceRunning) stopDeviceWatchdog();
         if (stretchPipe) stretchPipe->reset();
         for (size_t i = 0; i < streams.size(); i++) {
             DecoderStream& s = streams[i];
@@ -1018,7 +1269,7 @@ public:
         if (deviceRunning && mixerState.load(std::memory_order_acquire) == 2) {
             if (asyncLoader) asyncLoader->resumeLoading();
             mixerState.store(1, std::memory_order_release);
-            ma_device_start(&device);
+            startDeviceWatchdog();
         }
     }
 
@@ -1050,37 +1301,19 @@ public:
     void setSurroundEnabled(bool enable) {
         bool prev = surroundEnabled.exchange(enable, std::memory_order_acq_rel);
         if (prev == enable) return;
-        int wanted = enable ? SURROUND_CHANNEL_COUNT : CHANNEL_COUNT;
         if (!exists.load(std::memory_order_acquire)) {
+            int wanted = enable ? SURROUND_CHANNEL_COUNT : CHANNEL_COUNT;
             playbackChannels.store(wanted, std::memory_order_release);
             if (stretchPipe) { stretchPipe->reset(); stretchPipe->configureChannels(wanted); }
             return;
         }
         int prevState = mixerState.load(std::memory_order_acquire);
         bool wasPlaying = (prevState == 1);
-        ma_device_stop(&device);
-        if (stretchPipe) stretchPipe->reset();
-        ma_device_uninit(&device);
-        memset(&device, 0, sizeof(ma_device));
-        ma_device_config cfg = ma_device_config_init(ma_device_type_playback);
-        cfg.playback.format = SAMPLE_FORMAT;
-        cfg.playback.channels = wanted;
-        cfg.sampleRate = SAMPLE_RATE;
-        cfg.periodSizeInFrames = PERIOD_SIZE;
-        cfg.dataCallback = data_callback;
-        cfg.pUserData = this;
-        if (ma_device_init(nullptr, &cfg, &device) != MA_SUCCESS && wanted != CHANNEL_COUNT) {
-            playbackChannels.store(CHANNEL_COUNT, std::memory_order_release);
-            surroundEnabled.store(false, std::memory_order_release);
-            cfg.playback.channels = CHANNEL_COUNT;
-            if (ma_device_init(nullptr, &cfg, &device) != MA_SUCCESS) { mixerState.store(3, std::memory_order_release); return; }
-            printf("Surround Sound 3.1 unavailable on this device; falling back to stereo.\n");
-        } else {
-            playbackChannels.store(wanted, std::memory_order_release);
-        }
-        if (stretchPipe) { stretchPipe->reset(); stretchPipe->configureChannels(playbackChannels.load(std::memory_order_acquire)); }
-        if (wasPlaying) { mixerState.store(1, std::memory_order_release); ma_device_start(&device); }
-        else { mixerState.store(prevState, std::memory_order_release); }
+        // Full watchdogged rebuild — the same path device-loss recovery
+        // uses (stop, uninit, park-if-wedged, fresh build with the
+        // notification callback wired in).
+        rebuildDevice();
+        if (!wasPlaying) mixerState.store(prevState, std::memory_order_release);
     }
 
     void setStreamChannel(int index, int channel) {
@@ -1257,7 +1490,16 @@ private:
 
     static void data_callback(ma_device* pDevice, void* pOutput, const void* pInput, ma_uint32 frameCount) {
         AudioSystem* sys = static_cast<AudioSystem*>(pDevice->pUserData);
-        if (!sys || !sys->exists.load(std::memory_order_acquire)) return;
+        // Guard the rebuild window: while recoveryInProgress is set the
+        // old device may already be stopped/uninitialized and `this` may
+        // be mid-rebuild — a stale callback there would mix from freed
+        // buffers. Output silence and return. (Also covers a parked
+        // device's very last in-flight callback.)
+        if (!sys || !sys->exists.load(std::memory_order_acquire)
+            || sys->recoveryInProgress.load(std::memory_order_acquire)) {
+            memset(pOutput, 0, sizeof(float) * frameCount * (pDevice->playback.channels));
+            return;
+        }
         float* out = (float*)pOutput;
         int outCh = sys->playbackChannels.load(std::memory_order_relaxed);
         memset(out, 0, sizeof(float) * frameCount * outCh);
@@ -1392,8 +1634,9 @@ private:
         streamLpfState = std::move(other.streamLpfState);
         playbackChannels.store(other.playbackChannels.load(std::memory_order_relaxed), std::memory_order_relaxed);
         surroundEnabled.store(other.surroundEnabled.load(std::memory_order_relaxed), std::memory_order_relaxed);
-        memcpy(&device, &other.device, sizeof(ma_device));
-        memset(&other.device, 0, sizeof(ma_device));
+        device = other.device;
+        deviceGraveyard = std::move(other.deviceGraveyard);
+        other.device = nullptr;
         longestDecoderIndex = other.longestDecoderIndex;
         playbackRate.store(other.playbackRate.load(std::memory_order_relaxed), std::memory_order_relaxed);
         mixerState.store(other.mixerState.load(std::memory_order_relaxed), std::memory_order_relaxed);
@@ -1646,10 +1889,18 @@ private:
 // ==========================================================================
 class AudioMixerManager {
 public:
-    AudioMixerManager() { memset(&device, 0, sizeof(ma_device)); }
+    AudioMixerManager() = default;
     ~AudioMixerManager() { destroy(); }
+    /**
+        Same wedged-device discipline as AudioSystem: the sfx/background
+        device is heap-allocated, lifecycle calls run under the watchdog,
+        and a timed-out device is parked (leaked) instead of hanging the
+        process — this is the second half of the close deadlock.
+    */
     bool initialize() {
         if (deviceInitialized) return true;
+        device = new ma_device();
+        memset(device, 0, sizeof(ma_device));
         ma_device_config cfg = ma_device_config_init(ma_device_type_playback);
         cfg.playback.format = SAMPLE_FORMAT;
         cfg.playback.channels = CHANNEL_COUNT;
@@ -1657,19 +1908,33 @@ public:
         cfg.periodSizeInFrames = PERIOD_SIZE;
         cfg.dataCallback = audioCallback;
         cfg.pUserData = this;
-        if (ma_device_init(nullptr, &cfg, &device) != MA_SUCCESS) { printf("Failed to initialize audio mixer device\n"); return false; }
+        if (ma_device_init(nullptr, &cfg, device) != MA_SUCCESS) {
+            printf("Failed to initialize audio mixer device\n");
+            delete device;
+            device = nullptr;
+            return false;
+        }
         deviceInitialized = true;
-        ma_device_start(&device);
+        startDeviceWatchdog();
         return true;
     }
     void destroy() {
-        if (deviceInitialized) { ma_device_uninit(&device); deviceInitialized = false; }
+        if (deviceInitialized && device) {
+            if (stopDeviceWatchdog() && uninitDeviceWatchdog()) {
+                delete device;
+            } else {
+                deviceGraveyard.push_back(device); // wedged — park it
+            }
+            device = nullptr;
+            deviceInitialized = false;
+        }
         backgroundTracks.clear(); soundEffectPools.clear();
         backgroundTrackMap.clear(); soundEffectMap.clear();
         outFramesTotal.store(0, std::memory_order_relaxed);
         lastAnchorFrame.store(0, std::memory_order_relaxed);
         lastAnchorTime.store(0, std::memory_order_relaxed);
         for (int b = 0; b < 3; b++) { bgSnapshot[b].clear(); sfxSnapshot[b].clear(); }
+        lifecycleStuck.store(false, std::memory_order_release);
     }
     int loadBackgroundTrack(const char* path) {
         if (!deviceInitialized && !initialize()) return -1;
@@ -1751,13 +2016,73 @@ public:
     double setMasterVolume(double v) { MUSIC_MASTER_VOLUME_099.store(v, std::memory_order_relaxed); return v; }
     double getMasterVolume() const { return MUSIC_MASTER_VOLUME_099.load(std::memory_order_relaxed); }
 
+    /**
+        Device-loss pump for the mixer's own device — the same contract as
+        AudioSystem::pumpDeviceRecovery. The mixer device runs the menu
+        music and SFX (it is the ONLY device alive while sitting in the
+        menus), so losing the default device there must recover too.
+        Returns true when a rebuild attempt was made.
+    **/
+    bool pumpDeviceRecovery() {
+        if (!deviceInitialized) return false;
+        if (device == nullptr) {                // wedged earlier — retry periodically
+            if (++lostTicks >= 60) {
+                lostTicks = 0;
+                printf("[ma_thing] mixer device lost — retrying\n");
+                deviceInitialized = false;
+                initialize();
+                return true;
+            }
+            return false;
+        }
+        if (!ma_device_is_started(device)) {
+            if (++lostTicks >= 60) {
+                lostTicks = 0;
+                printf("[ma_thing] mixer device lost — rebuilding\n");
+                if (stopDeviceWatchdog() && uninitDeviceWatchdog()) {
+                    delete device;
+                } else {
+                    deviceGraveyard.push_back(device);
+                    lifecycleStuck.store(false, std::memory_order_release);
+                }
+                device = nullptr;
+                deviceInitialized = false;
+                initialize();
+                return true;
+            }
+        } else {
+            lostTicks = 0;
+        }
+        return false;
+    }
+
 private:
     std::deque<BackgroundTrack> backgroundTracks;
     std::deque<SoundEffectPool> soundEffectPools;
     std::unordered_map<std::string, int> backgroundTrackMap;
     std::unordered_map<std::string, int> soundEffectMap;
-    ma_device device;
+    ma_device* device = nullptr;                 // heap — see initialize()
+    std::vector<ma_device*> deviceGraveyard;     // wedged devices, leaked on purpose
     bool deviceInitialized = false;
+    std::atomic<bool> lifecycleStuck{false};
+    std::atomic<bool> stoppingSelf{false};
+    int lostTicks = 0;                           // pump-only (main thread)
+
+    bool stopDeviceWatchdog() {
+        if (!device || !ma_device_is_started(device)) return true;
+        stoppingSelf.store(true, std::memory_order_release);
+        bool ok = ma_device_lifecycle_watchdog([this]() { ma_device_stop(device); }, lifecycleStuck, 1500);
+        stoppingSelf.store(false, std::memory_order_release);
+        return ok;
+    }
+    bool uninitDeviceWatchdog() {
+        return ma_device_lifecycle_watchdog([this]() { ma_device_uninit(device); }, lifecycleStuck, 1500);
+    }
+    bool startDeviceWatchdog() {
+        auto res = std::make_shared<ma_result>(MA_ERROR);
+        bool ok = ma_device_lifecycle_watchdog([this, res]() { *res = ma_device_start(device); }, lifecycleStuck, 1500);
+        return ok && *res == MA_SUCCESS;
+    }
     std::atomic<ma_uint64> outFramesTotal{0};
     std::atomic<ma_uint64> lastAnchorFrame{0};
     std::atomic<long long> lastAnchorTime{0};

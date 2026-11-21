@@ -470,6 +470,14 @@ class Main extends Application {
 
 		averageFrames++;
 
+		// Audio device-change pump (every frame, every state): notices a
+		// lost/switched default audio device and rebuilds both playback
+		// devices (song transport + menu/sfx mixer) after a grace window;
+		// the watchdogged teardown is what keeps a wedged device from
+		// deadlocking the process on close. Runs first so a rebuild lands
+		// before any other audio call this frame.
+		MiniAudio.pumpDeviceRecovery();
+
 		if (startSimulatedDeltaTime == Math.POSITIVE_INFINITY) {
 			startSimulatedDeltaTime = haxe.Timer.stamp();
 		}

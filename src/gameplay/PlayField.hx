@@ -575,6 +575,9 @@ class PlayField {
 
 			if (editorMode != null && editorMode.exitPopup != null)
 				editorMode.exitPopup.update(deltaTime);
+
+			if (editorMode != null && editorMode.instructionsPopup != null)
+				editorMode.instructionsPopup.update(deltaTime);
 			return;
 		}
 

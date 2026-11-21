@@ -68,8 +68,21 @@ class PlayFieldEditorMode {
 	/** The dedicated stepped-strumline mouse input system. */
 	var strumlineInput:StrumlineNoteInteraction;
 
-	/** The exit-confirmation popup (F8): editor/menu/titlescreen. */
+	/** The exit-confirmation popup (ESC/back): editor/menu/titlescreen. */
 	var exitPopup:EditorExitPopup;
+
+	/**
+		The input-instructions popup (F1 / triple-click). The old watermark
+		("FV v...") did nothing useful in editor mode — it now points here
+		instead: "Press F1 or triple click/tap for editor's input
+		instructions".
+	**/
+	var instructionsPopup:EditorInstructionsPopup;
+
+	/** True when ANY modal popup (exit / instructions) is open. */
+	function anyPopupOpen():Bool {
+		return (exitPopup != null && exitPopup.opened) || (instructionsPopup != null && instructionsPopup.opened);
+	}
 
 	/** True when the chart has unsaved edits. */
 	var dirtyChart:Bool = false;
@@ -114,13 +127,14 @@ class PlayFieldEditorMode {
 	static var RATES:Array<Float> = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
 
 	// -------------------------------------------------------------------
-	// Keybind placement mode (F1)
+	// Keybind placement mode (F2)
 	// -------------------------------------------------------------------
 
 	/**
 		When true, the PLAYER keybinds place notes at the playhead
-		(ALT+LEFT/RIGHT still cycle the notetype while paused). Lets you
-		chart with the keyboard alone, Arrow-Vortex style.
+		(ALT+LEFT/RIGHT still cycle the notetype while paused — and retype
+		the held note, see StrumlineNoteInteraction.retypeHeldNote). Lets
+		you chart with the keyboard alone, Arrow-Vortex style.
 	**/
 	var keybindPlaceMode:Bool = false;
 
@@ -168,6 +182,7 @@ class PlayFieldEditorMode {
 		strumlineInput.attach();
 		attachKeys();
 		exitPopup = new EditorExitPopup(this);
+		instructionsPopup = new EditorInstructionsPopup(this);
 	}
 
 	// -------------------------------------------------------------------
@@ -196,15 +211,29 @@ class PlayFieldEditorMode {
 		if (field.disposed)
 			return;
 
-		// ESC/back opens the exit popup (exit editor mode / back to
-		// menu / back to titlescreen). While the popup is open, it owns
-		// every key — the popup itself closes on ESC (plain pause).
+		// While a modal popup is open it owns every key (the exit popup
+		// navigates/accepts, the instructions card swallows everything
+		// and closes on F1 / ESC / accept). Checked first — no editor
+		// action may fire underneath a popup.
 		if (exitPopup != null && exitPopup.opened) {
 			exitPopup.handleKey(code, mod);
 			return;
 		}
+		if (instructionsPopup != null && instructionsPopup.opened) {
+			instructionsPopup.handleKey(code, mod);
+			return;
+		}
 
-		// ESC/back while the popup is closed: open it.
+		// F1 (checked before everything else): open the instructions
+		// card. The watermark at the bottom of the editor points here.
+		if (code == KeyCode.F1) {
+			if (instructionsPopup != null)
+				instructionsPopup.open();
+			return;
+		}
+
+		// ESC/back opens the exit popup (exit editor mode / back to
+		// menu / back to titlescreen).
 		if (code == SaveData.state.controls.ui.back || code == KeyCode.ESCAPE) {
 			if (exitPopup != null) {
 				exitPopup.open();
@@ -231,12 +260,12 @@ class PlayFieldEditorMode {
 		if (field.paused)
 			return;
 
-		// F1 toggles keybind placement: the player keybinds place notes
-		// at the playhead on whichever lane they map to. (Checked BEFORE
-		// the ALT branch so ALT+F1 can never be eaten by it, and before
-		// the keybind-place dispatch so the toggle key itself never
-		// places a note.)
-		if (code == KeyCode.F1) {
+		// F2 toggles keybind placement: the player keybinds place notes
+		// at the playhead on whichever lane they map to. (Was F1 — F1 is
+		// the instructions card now. Checked BEFORE the ALT branch so
+		// ALT+F2 can never be eaten by it, and before the keybind-place
+		// dispatch so the toggle key itself never places a note.)
+		if (code == KeyCode.F2) {
 			keybindPlaceMode = !keybindPlaceMode;
 			Main.current.playScrollSound();
 			return;
@@ -259,13 +288,24 @@ class PlayFieldEditorMode {
 		// ALT+LEFT / ALT+RIGHT cycle the notetype number the editor
 		// places (wrapped through 0..255, the chart's 8-bit type field).
 		// Works paused or not — in keybind-place mode this is how you
-		// re-color the pen without the mouse.
+		// re-color the pen without the mouse. While a note is HELD
+		// (mouse hold-edit or the duration state), the same keys also
+		// RETYPE that held note — the type is coerced to the note's own
+		// strumline (the routing table decides the side, a mismatched
+		// type would jump strumlines) — and the pen follows, so the next
+		// placement uses the type you just dialed in.
 		if ((mod & KeyModifier.ALT) != 0) {
 			switch (code) {
 				case KeyCode.LEFT:
 					notetype = notetype <= 0 ? 255 : notetype - 1;
+					if (strumlineInput != null)
+						notetype = strumlineInput.retypeHeldNote(notetype);
+					updateReadout();
 				case KeyCode.RIGHT:
 					notetype = notetype >= 255 ? 0 : notetype + 1;
+					if (strumlineInput != null)
+						notetype = strumlineInput.retypeHeldNote(notetype);
+					updateReadout();
 				case KeyCode.LEFT_BRACKET:
 					cyclePlaybackRate(-1);
 				case KeyCode.RIGHT_BRACKET:
@@ -305,7 +345,7 @@ class PlayFieldEditorMode {
 	}
 
 	// -------------------------------------------------------------------
-	// Keybind placement (F1 mode)
+	// Keybind placement (F2 mode)
 	// -------------------------------------------------------------------
 
 	/**
@@ -455,6 +495,12 @@ class PlayFieldEditorMode {
 			Mixer.setTime(Math.max(target, 0.0), field);
 			field.songPosition = Math.max(target, 0.0);
 
+			// Resuming hands the position to the audible transport — any
+			// pan fling still gliding would keep seeking UNDER the audio
+			// clock (the chart fights the song for ~a second). Kill it.
+			if (strumlineInput != null)
+				strumlineInput.cancelPanFling();
+
 			field.onStartSong.dispatch(Chart.header);
 			playing = true;
 
@@ -595,7 +641,7 @@ class PlayFieldEditorMode {
 		  pos    — the editor-owned songPosition, exactly as the note
 		           system consumes it (ms)
 		  rate   — the current playback rate (x0.5 .. x2)
-		  kbd    — ON when F1 keybind-placement is active
+		  kbd    — ON when F2 keybind-placement is active
 		  bot/top— the note spawner's live cull window as RAW global chart
 		           indices (bottom = first note not yet despawned,
 		           top = first note outside spawn range), read straight
@@ -647,6 +693,10 @@ class PlayFieldEditorMode {
 		if (exitPopup != null) {
 			exitPopup.dispose();
 			exitPopup = null;
+		}
+		if (instructionsPopup != null) {
+			instructionsPopup.dispose();
+			instructionsPopup = null;
 		}
 		// Never leak a non-1x rate into gameplay or the menus — the
 		// editor's rate is editor-only state.

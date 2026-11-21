@@ -28,6 +28,10 @@ void start(void);
 void stop(void);
 bool stopped(void);
 void loadFiles(std::vector<const char*> argv);
+// Main-thread device-change pump — call once per frame. Detects a lost
+// default audio device (switch/unplug) after a grace window and rebuilds
+// the playback device; watchdogged teardown never hangs on close.
+void pumpDeviceRecovery(void);
 
 double getGlobalVolume();
 double setGlobalVolume(double value);

@@ -17,6 +17,17 @@ extern class MiniAudio {
 	@:native("start") static function start():Void;
 	@:native("stop") static function stop():Void;
 	@:native("stopped") static function stopped():Bool;
+	/**
+		Main-thread device-change pump — MUST be called once per frame
+		(Mixer.update does it). Detects a lost default audio device
+		(switch / unplug / Bluetooth takeover) after a short grace window
+		(the device rebuilds itself once a new default appears) and then
+		rebuilds the playback device, and keeps retrying while no device
+		can be opened. All device lifecycle calls (stop/uninit/start) run
+		watchdogged: a wedged device is parked (leaked) instead of hanging
+		the game — that was the close deadlock.
+	**/
+	@:native("pumpDeviceRecovery") static function pumpDeviceRecovery():Void;
 
 	@:runtime inline static function loadFiles(arr:Array<String>):Void {
 		var vec = StdVectorString.fromStringArray(arr);
@@ -87,6 +98,8 @@ class MiniAudio {
 	@:hlNative("ma_thing", "stopped") public static function stopped():Bool {
 		return false;
 	}
+
+	@:hlNative("ma_thing", "pump_device_recovery") public static function pumpDeviceRecovery():Void {}
 
 	@:runtime inline public static function loadFiles(arr:Array<String>):Void {
 		var nativeArray = new hl.NativeArray(arr.length);
@@ -191,6 +204,8 @@ class MiniAudio {
 	public static function stopped():Bool {
 		return false;
 	}
+
+	public static function pumpDeviceRecovery():Void {}
 
 	public static function loadFiles(arr:Array<String>):Void {}
 

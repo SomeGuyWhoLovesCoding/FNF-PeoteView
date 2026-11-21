@@ -26,6 +26,7 @@ void start()                                   { g_audioSystem.start(); }
 void stop()                                    { g_audioSystem.stop(); }
 bool stopped()                                 { return g_audioSystem.stopped(); }
 void destroy()                                 { g_audioSystem.destroy(); }
+void pumpDeviceRecovery()                      { g_audioSystem.pumpDeviceRecovery(); g_mixer.pumpDeviceRecovery(); }
 void seekToPCMFrame(int64_t pos)               { g_audioSystem.seekToPCMFrame(pos); }
 int  getMixerState()                           { return g_audioSystem.getMixerState(); }
 int  getSampleRate()                           { return g_audioSystem.getSampleRate(); }
