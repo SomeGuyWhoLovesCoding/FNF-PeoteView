@@ -1,7 +1,7 @@
 package render.actor;
 
-import data.atlas.AnimateAtlas;
-import data.atlas.SparrowAtlas.SubTexture;
+import underlying.data.atlas.AnimateAtlas;
+import underlying.data.atlas.SparrowAtlas.SubTexture;
 import render.actor.*;
 
 /**

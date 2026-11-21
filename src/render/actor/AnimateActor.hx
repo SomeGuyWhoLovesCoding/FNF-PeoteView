@@ -1,9 +1,9 @@
 package render.actor;
 
-import data.atlas.AnimateAtlas;
-import data.atlas.AnimateAtlas.AnimateSprite;
-import data.atlas.AnimateAtlas.ResolvedLeaf;
-import data.atlas.AnimateAtlas.ResolvedFrame;
+import underlying.data.atlas.AnimateAtlas;
+import underlying.data.atlas.AnimateAtlas.AnimateSprite;
+import underlying.data.atlas.AnimateAtlas.ResolvedLeaf;
+import underlying.data.atlas.AnimateAtlas.ResolvedFrame;
 import render.actor.*;
 
 /**
@@ -65,7 +65,7 @@ class AnimateActor extends Actor {
 	var activeLeafCount:Int = 0;
 
 	/** The resolved frames for the currently playing animation. */
-	var currentResolvedFrames:Array<data.atlas.AnimateAtlas.ResolvedFrame> = [];
+	var currentResolvedFrames:Array<underlying.data.atlas.AnimateAtlas.ResolvedFrame> = [];
 
 	/** True while leaf transforms changed (after an animation-frame switch) and a GPU upload is pending. */
 	var leafDirty:Bool = true;

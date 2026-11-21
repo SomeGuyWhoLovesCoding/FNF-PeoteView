@@ -571,7 +571,7 @@ class PlayField {
 				editorMode.updateReadout();
 
 			if (editorMode != null && editorMode.strumlineInput != null)
-				editorMode.strumlineInput.update();
+				editorMode.strumlineInput.update(deltaTime);
 
 			if (editorMode != null && editorMode.exitPopup != null)
 				editorMode.exitPopup.update(deltaTime);
@@ -630,24 +630,31 @@ class PlayField {
 			return;
 		}
 
-		if (noteSystem != null) {
-			noteSystem.dispose();
-			noteSystem = null;
-		}
-
-		if (frontend != null) {
-			frontend.dispose();
-			frontend = null;
-		}
-
+		// DIED: the game-over screen now OWNS the frame. Field.gameOver()
+		// (via frontend.update above) just started the death sequence —
+		// the death actor animates, its music/sfx play, InputSystem's
+		// gameCondition branch routes keys to endGameOver, and mouse
+		// clicks go through Main.mouseDown to the same place. All of
+		// that needs the frontend (Field), the HUD's actors and the
+		// input system to STAY ALIVE.
+		//
+		// The old code disposed noteSystem/frontend/pauseScreen/hud
+		// right here in the same frame died flipped — which destroyed
+		// the death screen the instant it appeared (frontend.dispose()
+		// nulls PlayField.field, so InputSystem bails on every key) and
+		// left a BLACK, SOFTLOCKED screen: no animation, no input, no
+		// state switch. The death flow tears itself down when it ends
+		// (endGameOver → switchState → stateDestroy → dispose()); the
+		// note system simply stops being updated (the conductor events
+		// were already detached by gameOver()) and the notes stay
+		// frozen on screen behind the fading actors, which is exactly
+		// the classic game-over look.
+		//
+		// Keep only the pause menu from intercepting input mid-death:
+		// its ESC handler would pause a dead playfield.
 		if (pauseScreen != null) {
 			pauseScreen.dispose();
 			pauseScreen = null;
-		}
-
-		if (hud != null) {
-			hud.dispose();
-			hud = null;
 		}
 	}
 

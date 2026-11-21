@@ -41,6 +41,15 @@ class FreeplayMenu extends MenuInput {
 	var dragVelocity:Float = 0.0;
 	var lastDragTime:Float = 0.0;
 
+	/**
+		Android-style fling falloff: per-frame exponential decay,
+		frame-rate normalized (about 0.94 per 60fps frame — the list
+		keeps gliding after a fast swipe, loses most speed in the first
+		third of a second, then settles with a long gentle tail; never
+		an abrupt stop). Matches the chart editor's pan fling curve.
+	**/
+	static inline var FLING_DECAY_PER_FRAME:Float = 0.94;
+
 	private static inline var DRAG_THRESHOLD:Float = 1.0; // pixels per nav tick
 
 	//////////////////////// THE REST ////////////////////////
@@ -81,7 +90,9 @@ class FreeplayMenu extends MenuInput {
 			freeplayScreen.curSelectedTarget = Math.max(0, Math.min(freeplayScreen.songsAvailable.length - 1, freeplayScreen.curSelectedTarget));
 			nav.setTo(Math.round(freeplayScreen.curSelectedTarget));
 
-			dragVelocity *= Math.pow(0.92, deltaTime * 0.04); // exponential decay
+			// Android-style slow falloff (frame-rate normalized decay,
+			// ~1s from release speed to rest).
+			dragVelocity *= Math.pow(FLING_DECAY_PER_FRAME, deltaTime / (1000 / 60));
 			if (Math.abs(dragVelocity) < 0.01)
 				dragVelocity = 0.0;
 		}

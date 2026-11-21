@@ -243,6 +243,28 @@ class Field {
 
 		Main.conductor.onStep.remove(stepHit);
 		Main.conductor.onBeat.remove(beatHit);
+
+		// Death audio: a game-over still running when the playfield
+		// tears down (endGameOver's delayed switchState, or a mid-death
+		// state switch) must not leak its loop/sfx into the next state.
+		// Invalidation happens BEFORE the stop calls: a pending
+		// haxe.Timer from endGameOver firing after dispose would
+		// otherwise restart state on a dead Field.
+		_gameover_end_call = null;
+		Main.current.mouseDown = null;
+		if (gameOverMusic >= 0) {
+			MiniAudio.stopBackgroundTrack(gameOverMusic);
+			gameOverMusic = -1;
+		}
+		if (gameOverSound >= 0) {
+			MiniAudio.stopSoundEffect(gameOverSound);
+			gameOverSound = -1;
+		}
+		if (gameOverConfirm >= 0) {
+			MiniAudio.stopSoundEffect(gameOverConfirm);
+			gameOverConfirm = -1;
+		}
+		isInGameOver = false;
 	}
 
 	// GAME OVER IMPL
@@ -308,6 +330,13 @@ class Field {
 		gameOverConfirmed = true;
 
 		haxe.Timer.delay(() -> {
+			// A state switch (or another death) may have torn the
+			// playfield down while this timer was pending — dispose()
+			// cleared the end call and the audio handles; nothing left
+			// to do on a dead Field.
+			if (parent.disposed || gameOverConfirm < 0)
+				return;
+
 			MiniAudio.stopSoundEffect(gameOverConfirm);
 			gameOverConfirm = -1;
 			isInGameOver = gameOverConfirmed = false;

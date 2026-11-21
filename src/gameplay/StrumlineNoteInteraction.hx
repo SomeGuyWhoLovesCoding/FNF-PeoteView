@@ -79,6 +79,15 @@ class StrumlineNoteInteraction {
 	/** Chart index of the note captured at press time; -1 = pressed an empty slot. */
 	var downNoteId:Int64 = -1;
 
+	/**
+		False until the cursor moves ≥36px from the press point while
+		hold-editing (the mouse-driven sustain edit dead zone — see
+		mouseMove). Wheel edits bypass it entirely.
+	**/
+	var holdDragArmed:Bool = false;
+	/** The dead zone radius in px (squared-compared against the press point). */
+	static inline var HOLD_DRAG_THRESHOLD_PX:Float = 36;
+
 	// --- Background drag-pan (R3): hold LMB on empty background + slide = shift the song position ---
 	/**
 		True while LMB is held on BACKGROUND (not a lane slot, not the
@@ -106,6 +115,28 @@ class StrumlineNoteInteraction {
 	var hoverTimeMs:Float = 0;
 	var hoverOccupied:Bool = false;
 	var ctrlPressed:Bool = false;
+	/** True while SHIFT is held — scroll/pan intensity drops to 1/3. */
+	var shiftPressed:Bool = false;
+
+	// --- Background pan: intensity + Android-style fling falloff ---
+	/**
+		Pan intensity multiplier: 1 cursor px = this many px of chart
+		travel. Tripled per request ("swiping intensity tripled") — the
+		pan used to track the cursor 1:1; now one screen of drag covers
+		three screens of chart.
+	**/
+	static inline var PAN_INTENSITY:Float = 3.0;
+	/**
+		Shift modifier for ALL editor scroll intensity (wheel seeks and
+		background pan): 1/3 while held, per request.
+	**/
+	static inline var SHIFT_SCROLL_DIVISOR:Float = 3.0;
+	/** Pan velocity (ms/frame at 60fps) captured at release — drives the fling. */
+	var panVelocityMs:Float = 0;
+	/** Last pan apply time (ms) — velocity is measured per wall-clock frame gap. */
+	var panLastTimeMs:Float = 0;
+	/** The pan fling's remaining travel (ms); decays per frame after release. */
+	var panFlingMs:Float = 0;
 
 	// --- Event lane (F2): insertion column at the LEFT of the strumlines ---
 	/** The event lane's element (a diamond icon, like the note ghost). */
@@ -217,11 +248,15 @@ class StrumlineNoteInteraction {
 	function keyDown(code:KeyCode, mod:KeyModifier) {
 		if ((mod & KeyModifier.CTRL) != 0)
 			ctrlPressed = true;
+		if ((mod & KeyModifier.SHIFT) != 0)
+			shiftPressed = true;
 	}
 
 	function keyUp(code:KeyCode, mod:KeyModifier) {
 		if ((mod & KeyModifier.CTRL) == 0)
 			ctrlPressed = false;
+		if ((mod & KeyModifier.SHIFT) == 0)
+			shiftPressed = false;
 	}
 
 	// ==================================================================
@@ -394,6 +429,37 @@ class StrumlineNoteInteraction {
 	}
 
 	/**
+		The notetype that would actually be written when placing on
+		`strumlineIdx`: gameplay owns notes through `type % strumlineCount`,
+		so a pen notetype that doesn't belong to the hovered strumline
+		would land on the WRONG side. The placement COERCES the type to
+		the strumline's base type (opponent strumline → 0, player → 1,
+		per the user's examples: pen type 2 on the opponent strumline
+		becomes note type 0; pen type 0 on the player strumline becomes
+		note type 2's family head — type 1). The ghost square shows
+		VIOLET exactly when this coercion fires.
+	**/
+	function coercedType(strumlineIdx:Int):Int {
+		var noteSystem = parent.noteSystem;
+		if (noteSystem == null)
+			return parent.editorMode.notetype;
+		var laneCount = noteSystem.strumlines.length;
+		if (laneCount <= 0)
+			return parent.editorMode.notetype;
+		var t = parent.editorMode.notetype;
+		if ((t % laneCount) == (strumlineIdx % laneCount))
+			return t; // already the right side — keep the pen's family
+		return strumlineIdx % laneCount; // coerce to the strumline's base type
+	}
+
+	/** True when placing here would NOT use the pen's own notetype. */
+	function willCoerceType(lane:Int, strumlineIdx:Int):Bool {
+		if (parent.editorMode == null)
+			return false;
+		return coercedType(strumlineIdx) != parent.editorMode.notetype;
+	}
+
+	/**
 		Find an existing note at the given lane/strumline/snapped time.
 		Binary search by position, then walk equal positions. A note at the
 		same time+lane with a DIFFERENT notetype also counts — hold-editing
@@ -463,8 +529,21 @@ class StrumlineNoteInteraction {
 		// position (snapped to the grid, relative to the note's fixed
 		// position) directly sets the sustain length. Dragging above the
 		// note (upscroll) shortens toward a tap; dragging below lengthens.
+		// A 36px DEAD ZONE applies first: placing a note immediately
+		// enters this state, and without the threshold the tiniest
+		// cursor wobble during the click would snap the fresh note's
+		// duration toward zero ("it just zeroed out"). Only real drags
+		// (36px or more from the press point) start editing the length;
+		// the wheel stays immediate.
 		if (holdEditing && downNoteId >= 0) {
-			updateHoldFromCursor(local.y);
+			if (!holdDragArmed) {
+				var dx = local.x - downX;
+				var dy = local.y - downY;
+				if (dx * dx + dy * dy >= HOLD_DRAG_THRESHOLD_PX * HOLD_DRAG_THRESHOLD_PX)
+					holdDragArmed = true;
+			}
+			if (holdDragArmed)
+				updateHoldFromCursor(local.y);
 			return;
 		}
 
@@ -480,17 +559,75 @@ class StrumlineNoteInteraction {
 		playhead FORWARD in time — the notes slide up with the cursor.
 		Downscroll mirrors the axis, so the chart still tracks the
 		cursor. Clamped by seekTo (0..length-1s), silent or playing.
+
+		INTENSITY: tripled (PAN_INTENSITY) — 1 cursor px = 3 chart px.
+		SHIFT while panning drops it to 1/3, the same fine-scroll
+		multiplier the wheel uses. Velocity is tracked every call so
+		mouseUp can hand the motion off to a decaying fling
+		(updatePanFling — Android-style slow falloff).
 	**/
 	function updatePanFromCursor(y:Float) {
-		var dy = y - panStartY;
 		var scrollSpeed = parent.scrollSpeed;
 		if (scrollSpeed <= 0)
 			scrollSpeed = 1;
 
+		var intensity = PAN_INTENSITY;
+		if (shiftPressed)
+			intensity /= SHIFT_SCROLL_DIVISOR;
+
 		// px → ms with the same sign convention as timeToY: upscroll Y
 		// grows downward with time, downscroll flips.
-		var dMs = parent.downScroll ? dy / scrollSpeed : -dy / scrollSpeed;
+		var dMs = (parent.downScroll ? 1 : -1) * (y - panStartY) * intensity / scrollSpeed;
 		parent.editorMode.seekTo(panStartPos + dMs);
+
+		// Velocity (ms per real ms) for the release fling: diff against
+		// the last move's position/time; a fresh grab resets the
+		// reference so a held-then-moved cursor doesn't fling at its
+		// full drag speed.
+		var nowMs = haxe.Timer.stamp() * 1000;
+		var dtMs = nowMs - panLastTimeMs;
+		if (dtMs > 0 && panLastTimeMs > 0)
+			panVelocityMs = (dMs - panLastDms) / dtMs;
+		panLastTimeMs = nowMs;
+		panLastDms = dMs;
+	}
+
+	/** Last pan delta (ms from the press point) — velocity reference. */
+	var panLastDms:Float = 0;
+
+	/**
+		Release handoff: a moving pan (recent velocity) becomes a FLING.
+		The remaining travel is velocity-scaled; update() steps it down
+		with an Android-style slow exponential falloff (the list keeps
+		gliding, gently losing speed, then settles — never a hard stop).
+	**/
+	function startPanFling() {
+		if (Math.abs(panVelocityMs) < 0.02) {
+			panFlingMs = 0;
+			return;
+		}
+		// Total fling travel ≈ 600ms of continued motion at release
+		// velocity (the decay curve then eats most of it early — the
+		// classic OverScroller feel).
+		panFlingMs = panVelocityMs * 600;
+	}
+
+	/**
+		Per-frame fling step (called from update()). Applies a
+		frame-rate-normalized fraction of the remaining travel and decays
+		the rest — the same shape Android's overscroller uses (fast at
+		first, long gentle tail, snap below epsilon).
+	**/
+	function updatePanFling(deltaTime:Float) {
+		if (panning || Math.abs(panFlingMs) < 0.5)
+			return;
+		// Consume ~12%/frame (60fps-normalized): about 1s till rest.
+		var consume = 1 - Math.pow(0.88, deltaTime / (1000 / 60));
+		var step = panFlingMs * consume;
+		panFlingMs -= step;
+		parent.editorMode.seekTo(parent.editorMode.smoothPosition + step);
+		if (Math.abs(panFlingMs) < 0.5)
+			panFlingMs = 0;
 	}
 
 	// ==================================================================
@@ -782,9 +919,13 @@ class StrumlineNoteInteraction {
 			downNoteId = downOnGrid ? findNoteAt(downLane, downStrumline, downTimeMs) : -1;
 			if (downNoteId < 0 && downOnGrid) {
 				// Empty slot: add the note right away and capture it for
-				// hold-editing. If the add fails (or the slot got occupied
+				// hold-editing. The NOTETYPE is COERCED to the hovered
+				// strumline (type % strumlineCount must match it — a pen
+				// type 2 hovered over the opponent strumline places type
+				// 0; the ghost square shows violet for exactly this
+				// case). If the add fails (or the slot got occupied
 				// between press and now), this stays a plain click.
-				var id = File.addNote(MetaNote.floatToMetaNotePosition(downTimeMs), 0, downLane, parent.editorMode.notetype);
+				var id = File.addNote(MetaNote.floatToMetaNotePosition(downTimeMs), 0, downLane, coercedType(downStrumline));
 				if (id >= 0) {
 					downNoteId = id;
 					Main.current.playScrollSound();
@@ -792,14 +933,24 @@ class StrumlineNoteInteraction {
 				}
 			}
 			holdEditing = downNoteId >= 0;
+			// The drag dead zone starts UNarmed at every press; only
+			// sustained 36px+ movement arms the mouse-driven duration
+			// edit (wheel/UI-key edits are always live).
+			holdDragArmed = false;
 			if (holdEditing) {
 				// note.duration is already in ms (the chart's duration unit).
 				holdDurationMs = File.getNote(downNoteId).duration;
 			} else if (!downOnGrid) {
 				// BACKGROUND press: no slot, no note — this gesture is a
 				// PAN. Slide to shift the song position (see mouseMove);
-				// a press-release without moving does nothing.
+				// a press-release without moving does nothing. A grab
+				// also kills any running fling and resets the velocity
+				// tracker.
 				panning = true;
+				panFlingMs = 0;
+				panVelocityMs = 0;
+				panLastTimeMs = 0;
+				panLastDms = 0;
 				panStartPos = parent.editorMode.playing ? parent.songPosition : parent.editorMode.smoothPosition;
 				panStartY = local.y;
 			}
@@ -833,6 +984,9 @@ class StrumlineNoteInteraction {
 			downStrumline = -1;
 			downNoteId = -1;
 			holdEditing = false;
+			holdDragArmed = false;
+			if (panning)
+				startPanFling(); // moving release → Android-style glide
 			panning = false;
 
 			if (wasHoldEdit)
@@ -900,6 +1054,14 @@ class StrumlineNoteInteraction {
 			em.togglePlayback();
 
 		var seek = WHEEL_SEEK_MS * (ctrlPressed ? CTRL_SEEK_MULT : 1.0);
+		// SHIFT = fine scroll: the intensity drops to 1/3 (applies on
+		// top of the Ctrl multiplier, so shift+ctrl still jumps far,
+		// just softly).
+		if (shiftPressed)
+			seek /= SHIFT_SCROLL_DIVISOR;
+		// A wheel notch interrupts any running pan fling — the two
+		// scroll modes never fight over the position.
+		panFlingMs = 0;
 		em.seekTo(parent.songPosition + notches * seek);
 	}
 
@@ -1000,9 +1162,21 @@ class StrumlineNoteInteraction {
 				square.y = Std.int(cy - size * 0.5);
 				square.r = 45; // diamond orientation over the lane
 
-				// Red = occupied (right-click removes), green = empty (click adds).
+				// Red = occupied (right-click removes), green = empty
+				// (click adds). VIOLET = the pen's notetype will be
+				// COERCED by the hovered strumline (e.g. pen type 2
+				// hovered over the opponent strumline places type 0;
+				// pen type 0 over the player strumline places type 1):
+				// the note would still be placed, just not with the
+				// pen's own type number.
 				var occupied = showHeld ? findNoteAt(lane, strumlineIdx, timeMs) >= 0 : hoverOccupied;
-				square.c = occupied ? 0xFF0000FF : 0x00FF00FF;
+				if (occupied) {
+					square.c = 0xFF0000FF; // red = a note is already there
+				} else if (willCoerceType(lane, strumlineIdx)) {
+					square.c = 0xB880FFFF; // violet = type will change
+				} else {
+					square.c = 0x00FF00FF; // green = clean add
+				}
 				square.c.aF = showHeld ? 0.18 : 0.35; // darkened while held
 			}
 		}
@@ -1051,9 +1225,13 @@ class StrumlineNoteInteraction {
 	*/
 	var lastMarkerRebuildPos:Float = -1e9;
 
-	function update() {
+	function update(deltaTime:Float = 16.6) {
 		if (parent.disposed)
 			return;
+
+		// Pan fling: continue the released gesture with the Android-style
+		// slow falloff (no-op while grabbing or with no remaining travel).
+		updatePanFling(deltaTime);
 
 		// Event markers follow the (smoothed) scroll window.
 		var renderPos = parent.playfieldEditorMode && parent.editorMode != null ? parent.editorMode.smoothPosition : parent.songPosition;

@@ -3,7 +3,7 @@ package gameplay;
 import lime.ui.KeyCode;
 import lime.ui.KeyModifier;
 import lime.app.Application;
-import miniaudio.MiniAudio;
+import underlying.miniaudio.MiniAudio;
 
 /**
 	The playfield editor — the MINIMAL one.
@@ -611,14 +611,24 @@ class PlayFieldEditorMode {
 
 		// Raw values, straight off the live objects — no rounding, no
 		// unit conversion. Int64 interpolates through Std.string, which
-		// prints the full 64-bit decimal value.
+		// prints the full 64-bit decimal value. The notetype segment
+		// shows BOTH the pen's type and, when hovering a strumline that
+		// would coerce it (see StrumlineNoteInteraction.coercedType),
+		// the coerced type it would actually place there — e.g.
+		// "type: 2→0" for pen 2 over the opponent strumline.
 		var rateStr = playbackRate == Math.floor(playbackRate) ? Std.string(Math.floor(playbackRate)) : Std.string(playbackRate);
+		var typeStr = 'type: $notetype';
+		if (strumlineInput != null && strumlineInput.hoverStrumline >= 0) {
+			var c = strumlineInput.coercedType(strumlineInput.hoverStrumline);
+			if (c != notetype)
+				typeStr = 'type: $notetype->$c';
+		}
 		if (field.noteSystem != null && field.noteSystem.noteSpawner != null) {
 			var spawner = field.noteSystem.noteSpawner;
-			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"}'
+			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | $typeStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"}'
 				+ ' | bottom: ${spawner.bottom} | top: ${spawner.top}';
 		} else {
-			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"} | bottom: - | top: -';
+			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | $typeStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"} | bottom: - | top: -';
 		}
 
 		// Re-center for the readout's own width (hud.update positioned the

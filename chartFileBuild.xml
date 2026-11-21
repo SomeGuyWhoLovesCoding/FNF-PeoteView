@@ -1,7 +1,7 @@
 <xml>
 	<pragma once="true" />
 
-	<set name="PROJECT_DIR" value="${this_dir}/src" />
+	<set name="PROJECT_DIR" value="${this_dir}/src/underlying" />
 
 	<files id="chart_file">
 		<compilerflag value="-I${PROJECT_DIR}/data/chart" />

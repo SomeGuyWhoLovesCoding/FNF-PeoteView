@@ -16,12 +16,12 @@ import lime.ui.MouseButton;
 import lime.ui.MouseCursor;
 import lime.ui.MouseWheelMode;
 // Project
-import rhythm.NoteskinHandle.BasicNoteskinClip;
-import rhythm.NoteskinHandle.NoteskinConfig;
-import rhythm.NoteskinHandle.NoteskinData;
-import rhythm.NoteskinHandle.NoteskinReceptorProperties;
-import rhythm.NoteskinHandle.TextureRotation;
-import rhythm.NoteskinRuntimeHelper;
+import underlying.rhythm.NoteskinHandle.BasicNoteskinClip;
+import underlying.rhythm.NoteskinHandle.NoteskinConfig;
+import underlying.rhythm.NoteskinHandle.NoteskinData;
+import underlying.rhythm.NoteskinHandle.NoteskinReceptorProperties;
+import underlying.rhythm.NoteskinHandle.TextureRotation;
+import underlying.rhythm.NoteskinRuntimeHelper;
 
 using StringTools;
 

@@ -8,10 +8,10 @@ import peote.view.intern.*;
 import peote.view.math.Vec2;
 
 // GAME
-import data.atlas.*;
-import data.chart.*;
-import data.gameplay.*;
-import data.SaveData;
+import underlying.data.atlas.*;
+import underlying.data.chart.*;
+import underlying.data.gameplay.*;
+import underlying.data.SaveData;
 
 // RENDERING
 import render.*;
@@ -23,9 +23,11 @@ import sprites.*;
 // RENDER MODE
 import ffmpeg.*;
 
+#if FV_DEBUG import tooling.*; #end
+
 // AUDIO
-import miniaudio.*;
-import rhythm.*;
+import underlying.miniaudio.*;
+import underlying.rhythm.*;
 
 // MENUS
 import menus.*;
@@ -34,7 +36,7 @@ import menus.*;
 import gameplay.*;
 
 // OVERLAYS
-import overlay.*;
+import underlying.overlay.*;
 
 // INPUT & HANDLER
 import handler.*;
