@@ -157,6 +157,7 @@ struct FvcFileHeader {
 
 static_assert(sizeof(FvcFileHeader) == 16, "FvcFileHeader must be exactly 16 bytes!");
 
+
 // Helper function to sort an array of ChartNote in-place
 static void radix_sort_notes_inplace(ChartNote* notes, size_t n) {
     if (n <= 1) return;
@@ -268,6 +269,163 @@ static inline const uint8_t* blob_geti(const uint8_t* p, const uint8_t* end, int
     v = (int64_t)((u >> 1) ^ (~(u & 1) + 1)); // un-zigzag
     return p;
 }
+// ============================================================================
+// FVC3 — COMPRESSED DISK FORMAT (v3)
+// ----------------------------------------------------------------------------
+// The v2 snapshot stores each note as its raw 12 bytes; a chart whose notes
+// sit on an editor grid (they almost always do) wastes nearly all of the
+// 48-bit position field. FVC3 factors that structure out:
+//
+//   header : "FVC3" | u32 noteCount | u8 codec | u32 payloadBytes
+//   codec 0 (GRID_KIND): u64 gridDivisor | u16 kindCount | kinds...
+//                        then varint planes over the SORTED notes:
+//                        positionDelta (grid units), duration (zz), kindId
+//   codec 1 (RAW): the v2 payload verbatim (n * 12 raw bytes)
+//
+// gridDivisor is the GCD of every position: a 4-minute chart at a 1/16 grid
+// collapses from ~2.4e9 100ns-ticks to a few thousand grid steps, so the
+// position-delta plane codes in 1-2 bytes. A "kind" is the
+// (index|type|lane) triple — charts use a handful of distinct triples, so
+// the dictionary turns 3 planes into one tiny id per note. Durations
+// zigzag-delta against the previous note (sustains come in bursts).
+// The writer encodes BOTH candidates and keeps the smaller: charts with no
+// grid at all (positions with GCD 1) simply fall back to RAW.
+// ============================================================================
+#pragma pack(push, 1)
+struct Fvc3Header {
+    char     magic[4];   // "FVC3"
+    uint32_t noteCount;
+    uint32_t payloadBytes;
+    uint8_t  codec;      // 0 = grid+kind, 1 = raw fallback
+    uint8_t  pad[3];     // zero — keeps the header a clean 16 bytes
+};
+#pragma pack(pop)
+static_assert(sizeof(Fvc3Header) == 16, "Fvc3Header must be exactly 16 bytes!");
+
+static constexpr uint8_t  FVC3_CODEC_GRID_KIND = 0;
+static constexpr uint8_t  FVC3_CODEC_RAW       = 1;
+static constexpr uint16_t FVC3_MAX_KINDS       = 4096; // fallback to RAW beyond this
+
+// Encode a SORTED note array as the FVC3 payload (header + payload).
+// Chooses GRID_KIND or RAW, whichever is smaller.
+static std::vector<uint8_t> fvc3_encode(const ChartNote* notes, size_t n) {
+    // ---- candidate 1: grid + kind dictionary + varint planes ----
+    uint64_t grid = 0;
+    for (size_t i = 0; i < n; ++i) {
+        const uint64_t p = notePos(notes[i]);
+        grid = grid ? std::__gcd(grid, p) : p;
+    }
+    if (grid == 0) grid = 1; // all-zero positions (empty/single note at 0)
+    std::vector<uint8_t> gk;
+    gk.reserve(n * 3 + 32);
+    // kinds
+    std::vector<uint32_t> kinds;
+    std::vector<uint32_t> ids(n);
+    for (size_t i = 0; i < n; ++i) {
+        const uint32_t k = (noteIdx(notes[i]) << 16) | (noteType(notes[i]) << 8) | noteLane(notes[i]);
+        uint32_t id = 0xFFFFFFFFu;
+        for (size_t j = 0; j < kinds.size(); ++j)
+            if (kinds[j] == k) { id = (uint32_t)j; break; }
+        if (id == 0xFFFFFFFFu) { kinds.push_back(k); id = (uint32_t)(kinds.size() - 1); }
+        ids[i] = id;
+    }
+    bool gkOk = kinds.size() <= FVC3_MAX_KINDS;
+    if (gkOk) {
+        blob_putu(gk, grid);
+        blob_putu(gk, (uint64_t)kinds.size());
+        for (uint32_t k : kinds) blob_putu(gk, k);
+        uint64_t prevP = 0; int64_t prevD = 0;
+        for (size_t i = 0; i < n; ++i) {
+            const uint64_t p = notePos(notes[i]) / grid;
+            blob_putu(gk, p - prevP); prevP = p;
+            blob_puti(gk, (int64_t)noteDur(notes[i]) - prevD); prevD = (int64_t)noteDur(notes[i]);
+            blob_putu(gk, ids[i]);
+        }
+    }
+
+    // ---- candidate 2: raw 12-byte stream ----
+    const size_t rawSize = n * sizeof(ChartNote);
+
+    // ---- pick the smaller (gk wins ties — it is the preferred codec) ----
+    std::vector<uint8_t> out;
+    out.reserve(16 + (gkOk && gk.size() < rawSize ? gk.size() : rawSize));
+    Fvc3Header hdr;
+    std::memcpy(hdr.magic, "FVC3", 4);
+    hdr.noteCount = (uint32_t)n;
+    if (gkOk && gk.size() < rawSize) {
+        hdr.codec = FVC3_CODEC_GRID_KIND;
+        hdr.payloadBytes = (uint32_t)gk.size();
+        out.insert(out.end(), reinterpret_cast<const uint8_t*>(&hdr),
+                   reinterpret_cast<const uint8_t*>(&hdr) + sizeof(hdr));
+        out.insert(out.end(), gk.begin(), gk.end());
+    } else {
+        hdr.codec = FVC3_CODEC_RAW;
+        hdr.payloadBytes = (uint32_t)rawSize;
+        out.insert(out.end(), reinterpret_cast<const uint8_t*>(&hdr),
+                   reinterpret_cast<const uint8_t*>(&hdr) + sizeof(hdr));
+        if (n) out.insert(out.end(), reinterpret_cast<const uint8_t*>(notes),
+                          reinterpret_cast<const uint8_t*>(notes + n));
+    }
+    return out;
+}
+
+// Decode a complete FVC3 file image (header + payload) into `out` (sorted,
+// position-ascending). Returns false on any inconsistency; the caller
+// rejects the file rather than loading partial data.
+static bool fvc3_decode(const uint8_t* data, size_t size, std::vector<ChartNote>& out) {
+    if (size < sizeof(Fvc3Header)) return false;
+    Fvc3Header hdr;
+    std::memcpy(&hdr, data, sizeof(hdr));
+    if (std::memcmp(hdr.magic, "FVC3", 4) != 0) return false;
+    const uint8_t* p = data + sizeof(Fvc3Header);
+    const uint8_t* end = data + size;
+    if ((size_t)(end - p) < hdr.payloadBytes) return false;
+    end = p + hdr.payloadBytes; // trailing junk = corrupt
+
+    if (hdr.codec == FVC3_CODEC_RAW) {
+        if (hdr.payloadBytes % sizeof(ChartNote) != 0) return false;
+        const size_t n = hdr.payloadBytes / sizeof(ChartNote);
+        if ((uint64_t)n != hdr.noteCount) return false;
+        out.resize(n);
+        if (n) std::memcpy(out.data(), p, hdr.payloadBytes);
+        return true;
+    }
+    if (hdr.codec != FVC3_CODEC_GRID_KIND) return false;
+
+    uint64_t grid = 0, kindCount = 0;
+    p = blob_getu(p, end, grid);
+    p = blob_getu(p, end, kindCount);
+    if (!p || grid == 0 || kindCount == 0 || kindCount > FVC3_MAX_KINDS
+        || kindCount > hdr.noteCount) return false;
+    std::vector<uint32_t> kinds((size_t)kindCount);
+    for (uint64_t i = 0; i < kindCount; ++i) {
+        uint64_t k = 0;
+        p = blob_getu(p, end, k);
+        if (!p || (k >> 24) != 0) return false; // idx(10b)|type(8b)|lane(6b) fits 24 bits
+        kinds[(size_t)i] = (uint32_t)k;
+    }
+    out.resize(hdr.noteCount);
+    uint64_t prevP = 0; int64_t prevD = 0;
+    for (uint32_t i = 0; i < hdr.noteCount; ++i) {
+        uint64_t dP = 0, id = 0; int64_t dD = 0;
+        p = blob_getu(p, end, dP);
+        p = blob_geti(p, end, dD);
+        p = blob_getu(p, end, id);
+        if (!p || id >= kindCount) return false;
+        // positions are sorted and non-negative: deltas can only grow
+        if (dP > 0xFFFFFFFFFFFFULL) return false;
+        prevP += dP;
+        prevD += dD;
+        if (prevP > 0xFFFFFFFFFFFFULL / (grid ? grid : 1) + 1) return false; // pos must fit 48 bits
+        const uint64_t pos = prevP * grid;
+        if (pos > 0xFFFFFFFFFFFFULL) return false;
+        if (prevD < 0 || prevD > 0xFFFFFF) return false; // duration is 24 bits
+        const uint32_t k = kinds[(size_t)id];
+        out[i] = packNote(pos, (uint32_t)prevD, (k >> 16) & 0x3FF, (k >> 8) & 0xFF, k & 0x3F);
+    }
+    return p == end;
+}
+
 
 class ShardedNoteStore {
 public:
@@ -822,29 +980,25 @@ public:
     }
 
     // ---- SAVE ----
-    // Sequential write of the FVC2 header + every shard's notes (opening
-    // each closed shard); the note stream is globally sorted.
+    // Gathers the globally sorted note stream (opening each closed shard)
+    // and writes it through the FVC3 codec (grid+kind varint planes, with
+    // a raw fallback for gridless charts). The RAM shard store keeps its
+    // own blob codec; the disk format is this one, for BOTH writers (the
+    // editor save and the JSON transpiler).
     bool writeTo(const char* path) {
+        std::vector<ChartNote> flat;
+        flat.reserve((size_t)totalNotes);
+        for (size_t si = 0; si < shards.size(); ++si) {
+            if (shards[si].size() == 0) continue;
+            ensureOpen(si);
+            for (const Run& r : shards[si].runs)
+                for (const ChartNote& n : r.notes) flat.push_back(n);
+        }
+        const std::vector<uint8_t> image = fvc3_encode(flat.data(), flat.size());
         std::ofstream out(path, std::ios::binary | std::ios::trunc);
         if (!out) return false;
-        FvcFileHeader hdr;
-        std::memcpy(hdr.magic, "FVC2", 4);
-        hdr.noteCount = (uint32_t)totalNotes;
-        hdr.noteSize = (uint32_t)sizeof(ChartNote);
-        hdr.flags = 0;
-        out.write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
-        for (Shard& sh : shards) {
-            if (sh.size() == 0) continue;
-            ensureOpen((size_t)(&sh - shards.data()));
-            for (const Run& r : sh.runs) {
-                if (!r.notes.empty()) {
-                    out.write(
-                        reinterpret_cast<const char*>(r.notes.data()),
-                        (std::streamsize)r.notes.size() * (std::streamsize)sizeof(ChartNote)
-                    );
-                }
-            }
-        }
+        out.write(reinterpret_cast<const char*>(image.data()),
+                  (std::streamsize)image.size());
         return out.good();
     }
 
@@ -912,14 +1066,16 @@ private:
 
     mutable std::mutex dataMutex;
 
-    // Load a .fvc snapshot into the sharded store. Two on-disk formats:
-    //   v2 ("FVC2" header): 16-byte header + 12-byte notes — the current
+    // Load a .fvc snapshot into the sharded store. Three on-disk formats:
+    //   v3 ("FVC3" header): COMPRESSED — grid+kind varint planes, or a raw
+    //   fallback payload; the current save format (see fvc3_encode).
+    //   v2 ("FVC2" header): 16-byte header + 12-byte notes — the previous
     //   format, with the lane (strumline) field stored per note.
     //   v1 (no magic): a bare run of 10-byte notes (pos48 | dur16 | idx8 |
     //   type8 — no lane). Loaded, then converted in RAM: the lane is
     //   derived from the type through the default routing (type 0 →
     //   strumline 0 opponent, everything else → 1 player). The conversion
-    //   only lives in RAM + the next save; a save always writes v2.
+    //   only lives in RAM + the next save; a save always writes v3.
     bool loadFromFvc(const char* path) {
         std::ifstream in(path, std::ios::binary | std::ios::ate);
         if (!in) {
@@ -933,7 +1089,29 @@ private:
         std::vector<ChartNote> flat;
         bool legacy = true;
 
-        if (fileSize >= (std::streamsize)sizeof(FvcFileHeader)) {
+        if (fileSize >= (std::streamsize)sizeof(Fvc3Header)) {
+            // v3 first — the current format
+            Fvc3Header h3;
+            in.read(reinterpret_cast<char*>(&h3), sizeof(h3));
+            if (in.gcount() == (std::streamsize)sizeof(h3)
+                && std::memcmp(h3.magic, "FVC3", 4) == 0) {
+                std::vector<uint8_t> image((size_t)fileSize);
+                in.seekg(0, std::ios::beg);
+                in.read(reinterpret_cast<char*>(image.data()), fileSize);
+                if (in.gcount() != fileSize
+                    || !fvc3_decode(image.data(), image.size(), flat)) {
+                    std::cerr << "  [ Chart File ] Corrupt FVC3 file " << path << std::endl;
+                    return false;
+                }
+                legacy = false;
+                std::cout << "  [ Chart File ] FVC3 compressed snapshot (" << flat.size()
+                          << " notes, " << fileSize << " bytes on disk)" << std::endl;
+            } else {
+                in.seekg(0, std::ios::beg); // not v3 — try v2
+            }
+        }
+
+        if (legacy && fileSize >= (std::streamsize)sizeof(FvcFileHeader)) {
             FvcFileHeader hdr;
             in.read(reinterpret_cast<char*>(&hdr), sizeof(hdr));
             if (in.gcount() == (std::streamsize)sizeof(hdr)
@@ -1374,17 +1552,11 @@ private:
             return;
         }
 
-        // v2 snapshot: FVC2 header first; the count is patched in by a
-        // seek-back after the single-pass note stream below (the writer
-        // itself stays streaming — nothing is buffered).
-        {
-            FvcFileHeader hdr;
-            std::memcpy(hdr.magic, "FVC2", 4);
-            hdr.noteCount = 0; // patched after the stream
-            hdr.noteSize = (uint32_t)sizeof(ChartNote);
-            hdr.flags = 0;
-            out.write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
-        }
+        // v3 snapshot: the notes are collected in RAM through the single
+        // pass below, then written once through the shared FVC3 codec
+        // (grid+kind varint planes, raw fallback — same format the editor
+        // save writes).
+        std::vector<ChartNote> collected;
 
         size_t writeIndex = 0;
         ChartNote currentNote;
@@ -1405,8 +1577,7 @@ private:
 
                                 // Write directly to disk if valid
                                 if (writeNote(currentNote, t, d, l, true, false, true, totalColumns)) {
-                                    out.write(reinterpret_cast<const char*>(&currentNote), sizeof(ChartNote));
-                                    writeIndex++;
+                                    collected.push_back(currentNote);
                                 }
                             }
                         }
@@ -1439,8 +1610,7 @@ private:
 
                                 // Write directly to disk if valid
                                 if (writeNote(currentNote, t, lane, sustain, mustHit, isPsychV1, false, totalColumns)) {
-                                    out.write(reinterpret_cast<const char*>(&currentNote), sizeof(ChartNote));
-                                    writeIndex++;
+                                    collected.push_back(currentNote);
                                 }
                             }
                         }
@@ -1449,10 +1619,17 @@ private:
             }
         }
 
-        // Patch the header's note count (offset 4 in FvcFileHeader).
-        out.seekp(4, std::ios::beg);
-        const uint32_t noteCount = (uint32_t)writeIndex;
-        out.write(reinterpret_cast<const char*>(&noteCount), sizeof(noteCount));
+        // Sort (the source formats are per-section, not globally ordered)
+        // and write the whole snapshot through the FVC3 codec in one go.
+        std::sort(collected.begin(), collected.end(), [](const ChartNote& a, const ChartNote& b) {
+            return notePos(a) < notePos(b);
+        });
+        writeIndex = collected.size();
+        if (writeIndex > 0) {
+            const std::vector<uint8_t> image = fvc3_encode(collected.data(), collected.size());
+            out.write(reinterpret_cast<const char*>(image.data()),
+                      (std::streamsize)image.size());
+        }
         out.close();
 
         if (writeIndex == 0) {
@@ -1461,7 +1638,7 @@ private:
             return;
         }
 
-        std::cout << "  [ Transpiler ] Wrote " << writeIndex << " notes directly to disk in a single pass." << std::endl;
+        std::cout << "  [ Transpiler ] Wrote " << writeIndex << " notes through the FVC3 codec." << std::endl;
         // ====================================================================
 
         // Generate header.txt if it doesn't already exist
@@ -1609,18 +1786,18 @@ public:
                 // v2 format. A legacy 10-byte snapshot (or a stale file
                 // from an older run) is re-transpiled from the .json —
                 // the .json is the source of truth for the notes.
-                bool fvcIsV2 = false;
+                bool fvcIsCurrent = false;
                 {
                     std::ifstream fvcHead(fvcPath, std::ios::binary);
                     char magic[4] = {0, 0, 0, 0};
                     if (fvcHead.read(magic, 4) && fvcHead.gcount() == 4)
-                        fvcIsV2 = (std::memcmp(magic, "FVC2", 4) == 0);
+                        fvcIsCurrent = (std::memcmp(magic, "FVC3", 4) == 0);
                     fvcHead.close();
                 }
-                if (fvcIsV2) {
+                if (fvcIsCurrent) {
                     filename = fvcPath;
                 } else {
-                    std::cout << "  [ Transpiler ] Existing .fvc is not FVC2 — re-transpiling "
+                    std::cout << "  [ Transpiler ] Existing .fvc is not FVC3 — re-transpiling "
                               << pathStr << std::endl;
                     transpileJsonToFvc(pathStr.c_str());
                 }
