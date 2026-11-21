@@ -635,23 +635,28 @@ class PlayField {
 		// the death actor animates, its music/sfx play, InputSystem's
 		// gameCondition branch routes keys to endGameOver, and mouse
 		// clicks go through Main.mouseDown to the same place. All of
-		// that needs the frontend (Field), the HUD's actors and the
-		// input system to STAY ALIVE.
+		// that needs the frontend (Field) and the input system to STAY
+		// ALIVE.
 		//
-		// The old code disposed noteSystem/frontend/pauseScreen/hud
-		// right here in the same frame died flipped — which destroyed
-		// the death screen the instant it appeared (frontend.dispose()
-		// nulls PlayField.field, so InputSystem bails on every key) and
-		// left a BLACK, SOFTLOCKED screen: no animation, no input, no
-		// state switch. The death flow tears itself down when it ends
-		// (endGameOver → switchState → stateDestroy → dispose()); the
-		// note system simply stops being updated (the conductor events
-		// were already detached by gameOver()) and the notes stay
-		// frozen on screen behind the fading actors, which is exactly
-		// the classic game-over look.
+		// The notes and the HUD, though, are DEAD the moment the death
+		// callback fires: gameOver() schedules
+		// disposeNoteSystemAndHUD() (deferred one tick — it can fire
+		// from inside NoteSystem's own update loop), and this branch
+		// runs it directly as the belt-and-suspenders path (whichever
+		// gets there first; the second call no-ops on nulls). What
+		// remains on screen: the stage fading to black, the death actor
+		// — the classic bare game-over look.
+		//
+		// (The OLD code also disposed the FRONTEND here, same frame,
+		// which destroyed the death screen the instant it appeared —
+		// frontend.dispose() nulls PlayField.field, so InputSystem
+		// bailed on every key: black screen, no input, no state switch.
+		// The frontend stays; teardown happens through endGameOver →
+		// switchState → stateDestroy → dispose().)
 		//
 		// Keep only the pause menu from intercepting input mid-death:
 		// its ESC handler would pause a dead playfield.
+		disposeNoteSystemAndHUD();
 		if (pauseScreen != null) {
 			pauseScreen.dispose();
 			pauseScreen = null;
@@ -706,10 +711,10 @@ class PlayField {
 		if (hud != null) {
 			hud.render();
 
-			var scoreTxt = HUD.scoreTxt;
-			var noteSpawner = noteSystem.noteSpawner;
-			// if (scoreTxt != null) scoreTxt.text = ((noteSpawner.timeSpentOnIt * 1000000000) / Tools.int64ToFloat(noteSpawner.top - noteSpawner.bottom)) + "ns";
-			// if (scoreTxt != null) scoreTxt.text = (noteSpawner.timeSpentOnIt * 1000) + "ms";
+			// (The old debug lines here dereferenced
+			// noteSystem.noteSpawner — a guaranteed NPE after the
+			// game-over dispose, which kills the note system while the
+			// HUD still renders one last frame.)
 
 			hud.updateBuffers();
 		}
@@ -1066,10 +1071,43 @@ class PlayField {
 			field.actorOnGameOver = char;
 		}
 
+		// The death screen owns the frame from here: the note system
+		// (notes + strumlines + receptors) and the ENTIRE HUD are torn
+		// down, leaving only the stage, the death actors and the death
+		// flow. DEFERRED one tick (Tools.forSync) because this callback
+		// can fire from INSIDE NoteSystem's own update loop
+		// (missNote → onDeath.dispatch) — disposing it right here would
+		// yank the strumlines out from under the running loop. The
+		// deferred dispose is still the same frame-ish (1ms), so the
+		// player never sees a post-death note or HUD element.
+		Tools.forSync(disposeNoteSystemAndHUD);
+
 		luaCall('gameOverPost', null);
 		luaCall('postGameOverPost', null); // alternative syntax
 
 		deathCounter++;
+	}
+
+	/**
+		Game-over teardown for the note system and the whole HUD. Also
+		called from the death branch of update() — whichever runs first
+		wins, the second call finds nulls and does nothing. Kept
+		null-safe because it runs on a timer: the playfield may have
+		been disposed (endGameOver → stateDestroy) in between.
+	**/
+	function disposeNoteSystemAndHUD() {
+		if (disposed)
+			return;
+
+		if (noteSystem != null) {
+			noteSystem.dispose();
+			noteSystem = null;
+		}
+
+		if (hud != null) {
+			hud.dispose();
+			hud = null;
+		}
 	}
 
 	var customSongName = "";

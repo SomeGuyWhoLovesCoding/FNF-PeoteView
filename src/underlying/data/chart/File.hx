@@ -28,8 +28,9 @@ extern class File {
 	 *   position: 100ns ticks (the unit MetaNote.position uses)
 	 *   duration: 1ms ticks (0 = tap note)
 	 *   index:    column index within the strumline (0..mania-1)
-	 *   type:     note type; gameplay maps type % strumlineCount to the
-	 *             owning strumline (0 = opponent, 1 = player)
+	 *   type:     note type; routed to its owning strumline through
+	 *             NoteSystem.noteTypeToStrumline (default: 0 → 0
+	 *             opponent, everything else → 1 player)
 	 * The C++ side locates the note's 1/4-second shard and its sorted slot
 	 * from the position. Returns the new note's global chart index — pass
 	 * it to removeNote() later.

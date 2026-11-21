@@ -376,9 +376,10 @@ class StrumlineNoteInteraction {
 	/**
 		Detect the strumline + lane + snapped time hitbox under the cursor.
 		Searches ALL strumlines by X (the editor can place notes on either
-		side — the placed note's type comes from editorMode.notetype, whose
-		`type % strumlineCount` picks the strumline, matching gameplay's
-		mapping). Returns true when the cursor is over a receptor column.
+		side — the placed note's type is coercedType(hovered strumline),
+		the lowest type id the routing table
+		NoteSystem.noteTypeToStrumline sends there, matching gameplay's
+		routing). Returns true when the cursor is over a receptor column.
 	*/
 	function detectHitbox(x:Float, y:Float):Bool {
 		hoverLane = -1;
@@ -430,13 +431,14 @@ class StrumlineNoteInteraction {
 
 	/**
 		The notetype that would actually be written when placing on
-		`strumlineIdx`: gameplay owns notes through `type % strumlineCount`,
-		so a pen notetype that doesn't belong to the hovered strumline
-		would land on the WRONG side. The placement COERCES the type to
-		the strumline's base type (opponent strumline → 0, player → 1,
-		per the user's examples: pen type 2 on the opponent strumline
-		becomes note type 0; pen type 0 on the player strumline becomes
-		note type 2's family head — type 1). The ghost square shows
+		`strumlineIdx`: routing is table-driven now
+		(NoteSystem.noteTypeToStrumline), so the pen notetype must
+		RESOLVE to the hovered strumline or gameplay would draw it on
+		the wrong side. The placement COERCES the type to the hovered
+		strumline's base type — the lowest type id that routes there
+		(0 for the opponent strumline, 1 for the player strumline with
+		the default table; a Lua-remapped table follows whatever
+		setNoteTypeIdToStrumline configured). The ghost square shows
 		VIOLET exactly when this coercion fires.
 	**/
 	function coercedType(strumlineIdx:Int):Int {
@@ -447,9 +449,15 @@ class StrumlineNoteInteraction {
 		if (laneCount <= 0)
 			return parent.editorMode.notetype;
 		var t = parent.editorMode.notetype;
-		if ((t % laneCount) == (strumlineIdx % laneCount))
-			return t; // already the right side — keep the pen's family
-		return strumlineIdx % laneCount; // coerce to the strumline's base type
+		if (NoteSystem.strumlineForType(t, laneCount) == strumlineIdx)
+			return t; // already routes to the hovered strumline — keep the pen's type
+		// Coerce to the strumline's base type: the lowest type id whose
+		// table entry routes there.
+		for (candidate in 0...1 << 8) {
+			if (NoteSystem.strumlineForType(candidate, laneCount) == strumlineIdx)
+				return candidate;
+		}
+		return strumlineIdx; // unreachable with a valid table; keep a sane value
 	}
 
 	/** True when placing here would NOT use the pen's own notetype. */
@@ -472,7 +480,6 @@ class StrumlineNoteInteraction {
 			return -1;
 
 		var target = MetaNote.floatToMetaNotePosition(timeMs);
-		var laneCount = parent.noteSystem.strumlines.length;
 
 		var lo:Int64 = 0, hi:Int64 = len;
 		while (lo < hi) {
@@ -488,7 +495,7 @@ class StrumlineNoteInteraction {
 			var n = File.getNote(i);
 			if (n.position != target)
 				break;
-			if (n.index == lane && (n.type % laneCount) == strumlineIdx)
+			if (n.index == lane && NoteSystem.strumlineForType(n.type, parent.noteSystem.strumlines.length) == strumlineIdx)
 				return i;
 			i++;
 		}
@@ -920,7 +927,7 @@ class StrumlineNoteInteraction {
 			if (downNoteId < 0 && downOnGrid) {
 				// Empty slot: add the note right away and capture it for
 				// hold-editing. The NOTETYPE is COERCED to the hovered
-				// strumline (type % strumlineCount must match it — a pen
+				// strumline (the routing table must send it there — pen
 				// type 2 hovered over the opponent strumline places type
 				// 0; the ghost square shows violet for exactly this
 				// case). If the add fails (or the slot got occupied

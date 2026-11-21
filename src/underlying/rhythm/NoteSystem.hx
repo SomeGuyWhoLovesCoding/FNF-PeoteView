@@ -39,12 +39,58 @@ class NoteSystem {
 	// threshold equals the base threshold.
 	static var NOTE_HOLD_TIME_FAR_FACTOR = 4.0;
 
+	// ==================================================================
+	// Notetype → strumline routing table.
+	//
+	// THE single source of truth for which strumline a notetype belongs
+	// to — replaces the old `type % strumlineCount` arithmetic
+	// everywhere (NoteSystem hit-scan/draw, NoteSpawner, the editor's
+	// hit-testing/coercion, the Lua routing API). Table-driven so a
+	// chart-header-driven strumline count or a per-song strumline
+	// visibility mask can plug in later without touching any mapping
+	// logic: whatever strumlines exist, the table decides who draws and
+	// judges each notetype.
+	//
+	// Default: 256 entries (1 << 8, matching typeToHandle's ID space);
+	// index 0 = 0 (the opponent side), every other type = 1 (the player
+	// side) — identical outcomes to the old % arithmetic for 2
+	// strumlines. Lua re-maps entries at runtime through
+	// CustomNoteUtilsComponent.setNoteTypeIdToStrumline.
+	// ==================================================================
+	static var noteTypeToStrumline:Array<Int> = [for (i in 0...1 << 8) i == 0 ? 0 : 1];
+
+	/**
+		The strumline id a notetype belongs to. Clamps the type into the
+		0..255 ID space and the result into the available strumlines, so
+		even a stale table entry (written when more strumlines existed)
+		never indexes out of bounds.
+	**/
+	static function strumlineForType(type:Int, strumlineCount:Int):Int {
+		if (type < 0)
+			type = 0;
+		else if (type >= 1 << 8)
+			type = (1 << 8) - 1;
+		var lane = noteTypeToStrumline[type];
+		if (lane < 0)
+			lane = 0;
+		if (strumlineCount <= 1)
+			return 0;
+		if (lane >= strumlineCount)
+			lane = strumlineCount - 1;
+		return lane;
+	}
+
 	static function init() {
 		if (NoteskinManager.textureCache == null) {
 			NoteskinManager.init();
 		}
 
 		typeToHandle = [for (_ in 0...1 << 8) NoteskinManager.get("default")];
+		// Reset the routing table too — statics survive between songs
+		// and a Lua-remapped table must not leak into the next one
+		// (same reason the strumline component resets its tables).
+		for (i in 0...1 << 8)
+			noteTypeToStrumline[i] = i == 0 ? 0 : 1;
 		// trace(typeToHandle);
 		var handle = typeToHandle[0];
 
@@ -370,7 +416,7 @@ class NoteSystem {
 			// far side here (at most the anchor note can be far-future).
 			if (n.position < late || n.position > early)
 				return;
-			if (n.index == index && (n.type % laneCount) == lane && !File.getJudgement(i)) {
+			if (n.index == index && strumlineForType(n.type, laneCount) == lane && !File.getJudgement(i)) {
 				// Among hittable notes keep the earliest (smallest position) so a
 				// jack progresses in order; once `found`, only a smaller index can
 				// replace it.
@@ -408,7 +454,7 @@ class NoteSystem {
 		var duration = note.duration;
 		var position = note.position;
 
-		lane = note.type % strumlines.length;
+		lane = strumlineForType(note.type, strumlines.length);
 
 		var strumline = strumlines[lane];
 		var receptor = strumline.receptors[index];

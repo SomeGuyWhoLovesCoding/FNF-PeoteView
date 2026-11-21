@@ -59,8 +59,9 @@ class PlayFieldEditorMode {
 
 	/**
 		The notetype number the editor places (ALT+LEFT/RIGHT cycles it).
-		Gameplay maps `type % strumlineCount` to the owning strumline
-		(0 = opponent side, 1 = player side).
+		Gameplay routes notetypes to strumlines through
+		NoteSystem.noteTypeToStrumline (default table: 0 → opponent
+		strumline, everything else → player strumline).
 	*/
 	var notetype:Int = 1;
 
@@ -333,8 +334,8 @@ class PlayFieldEditorMode {
 
 	/**
 		Place (or with `remove`, delete) a note at the CURRENT playhead
-		time on the PLAYER strumline (`type = 1`, matching how the mouse
-		editor's default notetype 1 maps: type % strumlineCount = 1).
+		time on the PLAYER strumline (the editor's default notetype 1
+		routes to the player strumline through the routing table).
 		Snapped to the grid, and the type used is the editor's selected
 		notetype — ALT+LEFT/RIGHT re-colors this pen live.
 	**/

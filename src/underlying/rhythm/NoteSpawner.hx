@@ -123,7 +123,7 @@ class NoteSpawner {
 			var strumCount = parent.strumlines.length;
 			if (strumCount == 0)
 				break; // no receptors available; nothing can be drawn
-			var lane = n.type % strumCount;
+			var lane = NoteSystem.strumlineForType(n.type, strumCount);
 			var strumline = parent.strumlines[lane];
 			var receptor = strumline.receptors[n.index];
 			var rec = receptor.note;

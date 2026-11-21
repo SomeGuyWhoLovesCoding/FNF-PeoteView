@@ -56,28 +56,17 @@ class CustomStrumlineComponent extends LuaComponentObject {
 	// (NoteSystem / NoteSpawner / PlayField) can consult it without
 	// caring whether the Lua VMs are compiled in.
 	//
-	// typeToStrumline[type] = target strumline id,
-	// or -1 to fall back to the engine default (type % strumline count).
-	//
-	// Engine integration (all optional, see INTEGRATION.md): anywhere a note
-	// picks its strumline, swap
-	//     var lane = n.type % strumlineCount;
-	// for
-	//     var lane = CustomStrumlineComponent.laneForType(n.type, strumlineCount);
+	// The table itself now lives on NoteSystem
+	// (noteTypeToStrumline — 256 entries, default [0] = 0 opponent,
+	// everything else = 1 player) and every engine routing site already
+	// resolves through NoteSystem.strumlineForType(). This component
+	// only keeps a delegate so old call sites (and INTEGRATION.md
+	// snippets) stay source-compatible.
 	// ==================================================================
-	public static var typeToStrumline:Array<Int> = [for (_ in 0...1 << 8) -1];
 
+	/** Delegate to the engine's routing table (NoteSystem.noteTypeToStrumline). */
 	public static function laneForType(type:Int, strumlineCount:Int):Int {
-		if (strumlineCount <= 0)
-			return 0;
-		if (type < 0)
-			type = 0;
-		if (type >= 256)
-			type = 255;
-		var lane = typeToStrumline[type];
-		if (lane < 0 || lane >= strumlineCount)
-			return type % strumlineCount;
-		return lane;
+		return NoteSystem.strumlineForType(type, strumlineCount);
 	}
 
 	#if linc_luajit_funkinview
@@ -93,10 +82,9 @@ class CustomStrumlineComponent extends LuaComponentObject {
 	public function new(_parent:FunkinViewLua) {
 		super(_parent);
 
-		// Statics survive between songs - start each song with a clean table.
-		for (i in 0...1 << 8)
-			typeToStrumline[i] = -1;
-
+		// Statics survive between songs - start each song with a clean
+		// table. NoteSystem.init() already resets the routing table;
+		// the position arrays are ours alone.
 		for (i in 0...1 << 8) {
 			customStrumlineX[i] = -9999;
 			customStrumlineY[i] = -9999;
@@ -371,18 +359,17 @@ class CustomStrumlineComponent extends LuaComponentObject {
 		});
 
 		// Routing: every note of `type` is drawn/judged on strumline `id`.
-		// Pass id = -1 to reset a type back to engine default routing
-		// (type % strumline count).
+		// DELEGATE — this now writes the ENGINE's routing table
+		// (NoteSystem.noteTypeToStrumline), the same one
+		// setNoteTypeIdToStrumline (CustomNoteUtilsComponent) writes;
+		// every routing site (hit-scan, draw, spawn, editor) reads it.
+		// Pass id = -1 to reset a type back to its default routing
+		// (type 0 → strumline 0, everything else → 1).
 		//
-		// Identity mappings (type 2 -> strumline 2) work out of the box
-		// because the engine's default routing is `type % strumlineCount`:
-		// once addStrumline(2) bumps the count to 3, type 2 % 3 = 2 lands on
-		// the new lane all by itself.
-		//
-		// ARBITRARY mappings (e.g. type 5 -> strumline 2) additionally need
-		// the one-line routing swaps from INTEGRATION.md, which all funnel
-		// into laneForType() above. The assignment is stored either way, so
-		// scripts can be written against the final API today.
+		// Identity mappings (type 2 -> strumline 2) work once
+		// addStrumline(2) bumps the count to 3: just assign
+		// assignNoteTypeToStrumline(2, 2) — or let type 2 stay on its
+		// default player-side routing.
 		vm.addCallback('assignNoteTypeToStrumline', function(type:Int, id:Int) {
 			if (type < 0 || type >= 256) {
 				FunkinViewLua.error('Notetype ID out of range! $type >= 256 or $type < 0');
@@ -398,7 +385,7 @@ class CustomStrumlineComponent extends LuaComponentObject {
 				return FunkinViewLua.Function_Stop;
 			}
 
-			typeToStrumline[type] = id;
+			NoteSystem.noteTypeToStrumline[type] = id == -1 ? (type == 0 ? 0 : 1) : id;
 			return FunkinViewLua.Function_Continue;
 		});
 
@@ -527,14 +514,13 @@ class CustomStrumlineComponent extends LuaComponentObject {
 	}
 
 	override public function dispose():Void {
-		// Reset the static routing table first — statics survive between
-		// songs, the next component instance re-fills the rest.
-		// (The old code wrote -9999 into customStrumlineX/Y AFTER nulling
-		// them: Null Object Reference, thrown out of FunkinViewLua.dispose
-		// and swallowed by StateMachine.safe — which also skipped closing
-		// every Lua VM below it.)
-		for (i in 0...1 << 8)
-			typeToStrumline[i] = -1;
+		// The routing table now lives on NoteSystem and is reset by
+		// NoteSystem.init() at every song start — nothing to clean here.
+		// (The old code reset a local table here; the position arrays
+		// below are still ours. The old write order — nulling before
+		// writing -9999 — was a Null Object Reference thrown out of
+		// FunkinViewLua.dispose and swallowed by StateMachine.safe,
+		// which also skipped closing every Lua VM below it.)
 		if (customStrumlineX != null) {
 			while (customStrumlineX.length != 0) customStrumlineX.pop();
 			customStrumlineX = null;
