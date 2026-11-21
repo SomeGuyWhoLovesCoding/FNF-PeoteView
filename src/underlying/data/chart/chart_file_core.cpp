@@ -306,6 +306,12 @@ static constexpr uint8_t  FVC3_CODEC_GRID_KIND = 0;
 static constexpr uint8_t  FVC3_CODEC_RAW       = 1;
 static constexpr uint16_t FVC3_MAX_KINDS       = 4096; // fallback to RAW beyond this
 
+// Euclidean GCD — std::__gcd is a GCC/Clang extension, not on MSVC.
+static uint64_t fvc3_gcd(uint64_t a, uint64_t b) {
+    while (b) { const uint64_t t = a % b; a = b; b = t; }
+    return a;
+}
+
 // Encode a SORTED note array as the FVC3 payload (header + payload).
 // Chooses GRID_KIND or RAW, whichever is smaller.
 static std::vector<uint8_t> fvc3_encode(const ChartNote* notes, size_t n) {
@@ -313,7 +319,7 @@ static std::vector<uint8_t> fvc3_encode(const ChartNote* notes, size_t n) {
     uint64_t grid = 0;
     for (size_t i = 0; i < n; ++i) {
         const uint64_t p = notePos(notes[i]);
-        grid = grid ? std::__gcd(grid, p) : p;
+        grid = grid ? fvc3_gcd(grid, p) : p;
     }
     if (grid == 0) grid = 1; // all-zero positions (empty/single note at 0)
     std::vector<uint8_t> gk;
