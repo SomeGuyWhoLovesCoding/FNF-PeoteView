@@ -549,6 +549,10 @@ class StrumlineNoteInteraction {
 		(updatePanFling — Android-style slow falloff).
 	**/
 	function updatePanFromCursor(y:Float) {
+		// A pan step while the transport plays (ENTER was hit mid-drag)
+		// stops it — the drag owns the position from here on.
+		haltPlaybackForScroll();
+
 		var scrollSpeed = parent.scrollSpeed;
 		if (scrollSpeed <= 0)
 			scrollSpeed = 1;
@@ -615,6 +619,11 @@ class StrumlineNoteInteraction {
 	function updatePanFling(deltaTime:Float) {
 		if (panning || Math.abs(panFlingMs) < 0.5)
 			return;
+		// Defensive: a fling step under a playing transport stops it
+		// (resume normally kills the fling first — PlayFieldEditorMode
+		// calls cancelPanFling on ENTER — so this only guards a path
+		// where the two somehow coexist).
+		haltPlaybackForScroll();
 		// 0.94/frame (60fps-normalized): ~6% consumed per frame, a ~1.2s
 		// glide to rest — the same curve as the freeplay menu's fling
 		// (FLING_DECAY_PER_FRAME), so the two lists feel identical.
@@ -1031,16 +1040,18 @@ class StrumlineNoteInteraction {
 				holdDurationMs = File.getNote(downNoteId).duration;
 			} else if (!downOnGrid) {
 				// BACKGROUND press: no slot, no note — this gesture is a
-				// PAN. Slide to shift the song position (see mouseMove);
-				// a press-release without moving does nothing. A grab
-				// also kills any running fling and resets the velocity
-				// tracker.
+				// PAN. A grab while the transport is playing STOPS it
+				// first (any scroll gesture pauses playback); the pan
+				// then drags the frozen chart. A press-release without
+				// moving does nothing. A grab also kills any running
+				// fling and resets the velocity tracker.
+				haltPlaybackForScroll();
 				panning = true;
 				panFlingMs = 0;
 				panVelocityMs = 0;
 				panLastTimeMs = 0;
 				panLastDms = 0;
-				panStartPos = parent.editorMode.playing ? parent.songPosition : parent.editorMode.smoothPosition;
+				panStartPos = parent.editorMode.smoothPosition;
 				panStartY = local.y;
 			}
 			updateSquareVisual(); // ruler while held
@@ -1123,15 +1134,11 @@ class StrumlineNoteInteraction {
 		if (parent.editorMode != null && parent.editorMode.anyPopupOpen())
 			return;
 
-		// While the editor transport is PLAYING (ENTER), the wheel is
-		// dead: no scrub, no sustain edit. The wheel only ever scrolls
-		// the frozen chart — pausing first was a side effect nobody
-		// asked for; ENTER is the one deliberate playback toggle now.
-		// (parent.paused above is the GAME's pause screen; em.playing is
-		// the editor's own audio transport.)
-		var em = parent.editorMode;
-		if (em != null && em.playing)
-			return;
+		// Any scroll while the editor transport is PLAYING stops it
+		// first — the same stop path ENTER uses — and the notch then
+		// scrubs the newly-frozen chart. Scrolling is always a scrub of
+		// a silent chart; it never fights the audible clock.
+		haltPlaybackForScroll();
 
 		var notches = -Math.floor(deltaY);
 		if (notches == 0)
@@ -1153,7 +1160,22 @@ class StrumlineNoteInteraction {
 		// A wheel notch interrupts any running pan fling — the two
 		// scroll modes never fight over the position.
 		panFlingMs = 0;
-		em.seekTo(parent.songPosition + notches * seek);
+		parent.editorMode.seekTo(parent.songPosition + notches * seek);
+	}
+
+	/**
+		Any scroll gesture — wheel notch, background pan grab, fling
+		glide — arriving while the editor transport is PLAYING stops the
+		transport (the editor's own stop path: audio stops, position
+		freezes at what was heard, the note window rebuilds). The gesture
+		then continues on the frozen chart. ENTER stays the one
+		deliberate playback toggle; a scroll mid-playback reads as "hold
+		on, let me look", not as a dead input.
+	**/
+	function haltPlaybackForScroll() {
+		var em = parent.editorMode;
+		if (em != null && em.playing)
+			em.togglePlayback();
 	}
 
 	// ==================================================================

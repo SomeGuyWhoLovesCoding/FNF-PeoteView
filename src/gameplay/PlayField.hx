@@ -1182,6 +1182,14 @@ class PlayField {
 		if (code != SaveData.state.controls.game.debug)
 			return;
 
+		// Dead while the game's pause screen is up: the pause menu (and
+		// the controls-rebind "listening..." capture inside it) owns all
+		// keys then — a debug press there must not flip modes and rip
+		// the playfield out from under the menu. It stays live while
+		// RUNNING in both modes, and in the editor's silent state.
+		if (paused)
+			return;
+
 		toggleEditorMode();
 	}
 
