@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <cstring>
 #include <mutex>
+#include <thread>
+#include <system_error>
 #include <algorithm>
 #include <unordered_map>
 
@@ -332,8 +334,13 @@ static constexpr uint32_t FVC3_ROWS_MAX_ROW    = 255;
 // ----------------------------------------------------------------------------
 // A v3 file is ONE fvc3_encode image of the whole chart, so any single-note
 // edit forces a full-chart re-encode on save. FVC4 keeps the v3 codec (and
-// its FNV) EXACTLY as it is, but splits the chart into fixed-size SEGMENTS
-// of consecutive shards, each written as a complete standalone FVC3 image:
+// its FNV) EXACTLY as it is, but splits the chart into SEGMENTS of
+// consecutive shards, each written as a complete standalone FVC3 image.
+// Segment length is chosen per slice in [2, 16] shards (see
+// ShardedNoteStore::LEGACY_SEGMENT_TICKS for the older fixed window, which
+// still loads): short where the chart changes shape, longer where notes
+// repeat, so an edit re-encodes a small slice without giving up the match
+// history the codec uses to compress.
 //
 //   Fvc4Header{ "FVC4", noteCount, segCount } followed by segCount
 //   Fvc4SegEntry{ startTick, noteCount, imageBytes } records, then the
@@ -353,7 +360,7 @@ struct Fvc4Header {
     uint32_t segCount;   // number of Fvc4SegEntry records that follow
 };
 struct Fvc4SegEntry {
-    uint64_t startTick;  // segment id * SEGMENT_TICKS (tick of its first shard)
+    uint64_t startTick;  // tick of the segment's first shard (shard-aligned)
     uint32_t noteCount;  // notes in this segment (cross-checks the decode)
     uint32_t imageBytes; // length of this segment's FVC3 image
 };
@@ -446,38 +453,15 @@ static int fvc3_kindBits(uint64_t kindCount) {
 //                 duration in coded units, chained in decode order
 // ---------------------------------------------------------------------------
 static void fvc3_rows_encode(const ChartNote* notes, size_t n, uint64_t grid,
+                             uint64_t durUnit, const std::vector<uint32_t>& kinds,
+                             const std::vector<uint32_t>& ids,
                              std::vector<uint8_t>& out) {
-    // kinds (order of first appearance — the decoder rebuilds it; hashed
-    // lookup because a megachart can carry hundreds of distinct kinds and
-    // the old linear scan was O(n*kinds))
-    std::vector<uint32_t> kinds;
-    std::unordered_map<uint32_t, uint32_t> kindId;
-    std::vector<uint32_t> ids(n);
-    for (size_t i = 0; i < n; ++i) {
-        const uint32_t k = (noteIdx(notes[i]) << 16) | (noteType(notes[i]) << 8) | noteLane(notes[i]);
-        auto it = kindId.find(k);
-        uint32_t id;
-        if (it == kindId.end()) {
-            kinds.push_back(k);
-            id = (uint32_t)(kinds.size() - 1);
-            kindId.emplace(k, id);
-        } else {
-            id = it->second;
-        }
-        ids[i] = id;
-    }
-    // Durations in their OWN grid (GCD of all sustain durations) when one
-    // exists — a chart-snapped sustain codes as a tiny delta in durUnit
-    // units instead of a multi-byte raw-tick varint. durUnit 1 = raw ticks.
-    uint64_t durUnit = 1;
-    {
-        uint64_t g = 0;
-        for (size_t i = 0; i < n; ++i) {
-            const uint32_t d = noteDur(notes[i]);
-            if (d != 0) g = g ? fvc3_gcd(g, d) : d;
-        }
-        if (g > 1) durUnit = g;
-    }
+    // kinds/ids are the first-appearance dictionary fvc3_encode already
+    // built (the decoder rebuilds that same order). durUnit is the GCD of
+    // every sustain (1 = raw ticks), shared with the AC candidate so the
+    // chart is scanned once. A chart-snapped sustain then codes as a tiny
+    // delta in durUnit units instead of a multi-byte raw-tick varint.
+    if (out.capacity() < n + 64) out.reserve(n + 64);
     const bool durGrid = durUnit > 1;
     const int kindBits = fvc3_kindBits(kinds.size());
 
@@ -820,12 +804,24 @@ static uint64_t fvc3_ac_notesHash(const ChartNote* notes, size_t n) {
     uint64_t h = 0xcbf29ce484222325ull;
     for (size_t i = 0; i < n; ++i) {
         const uint8_t* b = reinterpret_cast<const uint8_t*>(&notes[i]);
-        for (size_t k = 0; k < sizeof(ChartNote); ++k) { h ^= b[k]; h *= 0x100000001b3ull; }
+        // Unrolled FNV-1a over the 12-byte note. Same bytes, same hash.
+        h ^= b[0];  h *= 0x100000001b3ull;
+        h ^= b[1];  h *= 0x100000001b3ull;
+        h ^= b[2];  h *= 0x100000001b3ull;
+        h ^= b[3];  h *= 0x100000001b3ull;
+        h ^= b[4];  h *= 0x100000001b3ull;
+        h ^= b[5];  h *= 0x100000001b3ull;
+        h ^= b[6];  h *= 0x100000001b3ull;
+        h ^= b[7];  h *= 0x100000001b3ull;
+        h ^= b[8];  h *= 0x100000001b3ull;
+        h ^= b[9];  h *= 0x100000001b3ull;
+        h ^= b[10]; h *= 0x100000001b3ull;
+        h ^= b[11]; h *= 0x100000001b3ull;
     }
     return h;
 }
 static void fvc3_ac_encode(const ChartNote* notes, size_t n, uint64_t grid,
-                           std::vector<uint8_t>& out) {
+                           uint64_t durUnit, std::vector<uint8_t>& out) {
     // sorted unique kind keys; ids index into THIS table (decoder rebuilds
     // the same table from ascending deltas, so id space matches)
     std::vector<uint32_t> kinds;
@@ -839,19 +835,19 @@ static void fvc3_ac_encode(const ChartNote* notes, size_t n, uint64_t grid,
         kinds.erase(std::unique(kinds.begin(), kinds.end()), kinds.end());
     }
     std::vector<uint32_t> ids(n);
-    for (size_t i = 0; i < n; ++i) {
-        const uint32_t k = (noteIdx(notes[i]) << 16) | (noteType(notes[i]) << 8) | noteLane(notes[i]);
-        ids[i] = (uint32_t)(std::lower_bound(kinds.begin(), kinds.end(), k) - kinds.begin());
-    }
-    uint64_t durUnit = 1;
     {
-        uint64_t g = 0;
+        // Hashed id lookup. lower_bound on the sorted table was the same
+        // mapping, just O(n log kinds); a megachart segment pays that on
+        // every note.
+        std::unordered_map<uint32_t, uint32_t> idOf;
+        idOf.reserve(kinds.size() * 2 + 1);
+        for (uint32_t ki = 0; ki < (uint32_t)kinds.size(); ++ki) idOf.emplace(kinds[ki], ki);
         for (size_t i = 0; i < n; ++i) {
-            const uint32_t d = noteDur(notes[i]);
-            if (d != 0) g = g ? fvc3_gcd(g, d) : d;
+            const uint32_t k = (noteIdx(notes[i]) << 16) | (noteType(notes[i]) << 8) | noteLane(notes[i]);
+            ids[i] = idOf.find(k)->second;
         }
-        if (g > 1) durUnit = g;
     }
+    if (out.capacity() < n + 64) out.reserve(n + 64);
     blob_putu(out, grid);
     blob_putu(out, (uint64_t)kinds.size());
     blob_putu(out, durUnit);
@@ -882,6 +878,11 @@ static void fvc3_ac_encode(const ChartNote* notes, size_t n, uint64_t grid,
     std::vector<uint64_t> rowOff;   // rows+1 offsets into rowKinds/rowDurs
     std::vector<uint32_t> rowKinds; // concatenated kind ids
     std::vector<uint32_t> rowDurs;  // concatenated durations (coded units)
+    rowGap.reserve(n);
+    rowCnt.reserve(n);
+    rowOff.reserve(n + 1);
+    rowKinds.reserve(n);
+    rowDurs.reserve(n);
     rowOff.push_back(0); // begin of row 0
     std::vector<int32_t> matchTable(FVC3_AC_MATCH_ROWS, -1);
 
@@ -1073,6 +1074,11 @@ static bool fvc3_ac_decode(const uint8_t* data, size_t size, uint32_t noteCount,
     std::vector<uint64_t> rowOff; // rows+1 offsets into rowKinds/rowDurs
     std::vector<uint32_t> rowKinds;
     std::vector<uint32_t> rowDurs;
+    rowGap.reserve(noteCount);
+    rowCnt.reserve(noteCount);
+    rowOff.reserve((size_t)noteCount + 1);
+    rowKinds.reserve(noteCount);
+    rowDurs.reserve(noteCount);
     rowOff.push_back(0);
     std::vector<int32_t> matchTable(FVC3_AC_MATCH_ROWS_D, -1);
 
@@ -1239,26 +1245,51 @@ static bool fvc3_ac_decode(const uint8_t* data, size_t size, uint32_t noteCount,
 }
 
 
+// Two independent jobs, overlapped. Job 0 runs on a worker; the odd
+// jobs stay on the caller. If the OS refuses a thread, the same jobs
+// run in order on the caller — the result is identical either way.
+// `job` must only write its own slot (it may run on the worker).
+template <typename Fn>
+static void fvc_two_threads(size_t count, Fn&& job) {
+    if (count == 0) return;
+    if (count == 1) { job(0); return; }
+    std::thread worker;
+    try {
+        worker = std::thread([&]{
+            for (size_t i = 0; i < count; i += 2) job(i);
+        });
+    } catch (const std::system_error&) {
+        for (size_t i = 0; i < count; ++i) job(i);
+        return;
+    }
+    for (size_t i = 1; i < count; i += 2) job(i);
+    worker.join();
+}
+
 // Encode a SORTED note array as the FVC3 payload (header + payload).
 // Encodes ROWS, GRID_KIND, AC and RAW; keeps the smallest (ties: ROWS
 // wins — it is the preferred codec; AC only ships when strictly smaller).
-static std::vector<uint8_t> fvc3_encode(const ChartNote* notes, size_t n) {
-    // ---- candidate 1: grid + kind dictionary + varint planes ----
-    uint64_t grid = 0;
+// `splitCodecs` runs the two heavy candidates (AC and ROWS) at the same
+// time. Callers that are already one of two segment workers pass false
+// so a save stays at two threads, not four.
+static std::vector<uint8_t> fvc3_encode(const ChartNote* notes, size_t n, bool splitCodecs = true) {
+    // One pass for the position grid and the sustain grid. Both codecs
+    // used to redo the sustain GCD on their own.
+    uint64_t grid = 0, durG = 0;
     for (size_t i = 0; i < n; ++i) {
         const uint64_t p = notePos(notes[i]);
         grid = grid ? fvc3_gcd(grid, p) : p;
+        const uint32_t d = noteDur(notes[i]);
+        if (d != 0) durG = durG ? fvc3_gcd(durG, d) : d;
     }
     if (grid == 0) grid = 1; // all-zero positions (empty/single note at 0)
-    std::vector<uint8_t> gk;
-    gk.reserve(n * 3 + 32);
-    // kinds
-    // (hashed lookup — the linear scan was O(n*kinds), which a
-    // megachart with hundreds of distinct kinds turns into billions
-    // of comparisons; first-appearance order is kept, so the bytes
-    // this emits are identical to the old scan)
+    const uint64_t durUnit = durG > 1 ? durG : 1;
+
+    // kinds (hashed lookup — the linear scan was O(n*kinds); first-
+    // appearance order is kept, so the bytes are identical to that scan)
     std::vector<uint32_t> kinds;
     std::unordered_map<uint32_t, uint32_t> kindId;
+    kindId.reserve(64);
     std::vector<uint32_t> ids(n);
     for (size_t i = 0; i < n; ++i) {
         const uint32_t k = (noteIdx(notes[i]) << 16) | (noteType(notes[i]) << 8) | noteLane(notes[i]);
@@ -1273,29 +1304,47 @@ static std::vector<uint8_t> fvc3_encode(const ChartNote* notes, size_t n) {
         }
         ids[i] = id;
     }
-    bool gkOk = kinds.size() <= FVC3_MAX_KINDS;
-    if (gkOk) {
-        blob_putu(gk, grid);
-        blob_putu(gk, (uint64_t)kinds.size());
-        for (uint32_t k : kinds) blob_putu(gk, k);
-        uint64_t prevP = 0; int64_t prevD = 0;
-        for (size_t i = 0; i < n; ++i) {
-            const uint64_t p = notePos(notes[i]) / grid;
-            blob_putu(gk, p - prevP); prevP = p;
-            blob_puti(gk, (int64_t)noteDur(notes[i]) - prevD); prevD = (int64_t)noteDur(notes[i]);
-            blob_putu(gk, ids[i]);
+    const bool gkOk = kinds.size() <= FVC3_MAX_KINDS;
+
+    // ---- candidates -------------------------------------------------------
+    // GRID_KIND is the cheap plane pass. AC is the long one, so it owns
+    // the worker; this thread builds GRID_KIND and then ROWS while that
+    // runs. Below ~160 notes the spawn costs more than the overlap saves.
+    std::vector<uint8_t> gk, rows, ac;
+    const bool parallel = splitCodecs && gkOk && n >= 160;
+    std::thread acWorker;
+    bool acOnWorker = false;
+    if (parallel) {
+        ac.reserve(n + 64);
+        rows.reserve(n + 64);
+        try {
+            acWorker = std::thread([&]{ fvc3_ac_encode(notes, n, grid, durUnit, ac); });
+            acOnWorker = true;
+        } catch (const std::system_error&) {
+            acOnWorker = false;
         }
     }
-
-    // ---- candidate 2: ROWS bitstream (shared kind table) ----
-    std::vector<uint8_t> rows;
-    if (gkOk)
-        fvc3_rows_encode(notes, n, grid, rows);
-
-    // ---- candidate 3: AC (adaptive range coder + LZP row matches) ----
-    std::vector<uint8_t> ac;
-    if (gkOk)
-        fvc3_ac_encode(notes, n, grid, ac);
+    if (gkOk) {
+        try {
+            gk.reserve(n * 3 + 32);
+            blob_putu(gk, grid);
+            blob_putu(gk, (uint64_t)kinds.size());
+            for (uint32_t k : kinds) blob_putu(gk, k);
+            uint64_t prevP = 0; int64_t prevD = 0;
+            for (size_t i = 0; i < n; ++i) {
+                const uint64_t p = notePos(notes[i]) / grid;
+                blob_putu(gk, p - prevP); prevP = p;
+                blob_puti(gk, (int64_t)noteDur(notes[i]) - prevD); prevD = (int64_t)noteDur(notes[i]);
+                blob_putu(gk, ids[i]);
+            }
+            fvc3_rows_encode(notes, n, grid, durUnit, kinds, ids, rows);
+        } catch (...) {
+            if (acOnWorker) acWorker.join();
+            throw;
+        }
+    }
+    if (acOnWorker) acWorker.join();
+    else if (gkOk) fvc3_ac_encode(notes, n, grid, durUnit, ac);
 
     // ---- candidate 4: raw 12-byte stream ----
     const size_t rawSize = n * sizeof(ChartNote);
@@ -1408,17 +1457,32 @@ public:
     // mid-size chart's working set hot (no decode/encode thrash) while
     // bounding decoded RAM at ~256 shards * ~1.5 KB of runs.
     static constexpr size_t OPEN_SHARD_BUDGET = 256;
-    // SEGMENT = the unit of incremental save (FVC4). 4096 shards = 1024 s
-    // (~17 min) of chart: an edit re-encodes just its segment instead of
-    // the whole chart. This is the measured sweet spot between save cost
-    // and size: the AC codec's LZP match layer compresses repeating
-    // motifs far better with longer history, so finer segments (64 s)
-    // cost 9x the bytes on motif-heavy charts while saving only ~1 ms per
-    // edit-save; 1024 s lands within 1.7x of the monolithic file on the
-    // adversarial all-motif 210k shape (13.4 KB vs 7.8 KB) and single-
-    // digit ms per edit-save. Normal songs (2-4 min) are ONE segment —
-    // byte-identical behavior to the monolithic save.
-    static constexpr uint64_t SEGMENT_TICKS = SHARD_TICKS * 4096;
+    // Older FVC4 files used one fixed window of 4096 shards (1024 s).
+    // Load still accepts that alignment. New saves pick a length in
+    // [SEGMENT_MIN_SHARDS, SEGMENT_MAX_SHARDS] instead — see writeTo.
+    static constexpr uint64_t LEGACY_SEGMENT_TICKS = SHARD_TICKS * 4096;
+    static constexpr size_t SEGMENT_MIN_SHARDS = 2;
+    static constexpr size_t SEGMENT_MAX_SHARDS = 16;
+    // Notes to gather before a slice stops growing. Under this, extra
+    // shards pay for the per-segment codec header and give the matcher
+    // a longer history. Over it, another shard is a bigger re-encode
+    // for little ratio, so the slice closes (still capped at 16).
+    static constexpr uint32_t SEGMENT_TARGET_NOTES = 256;
+
+    // Tick at which notes stop belonging to a saved segment. `nextStart`
+    // is the following directory entry (ignored when `hasNext` is false).
+    // A legacy-aligned window also ends one fixed span later when the
+    // next entry is legacy-aligned too (empty windows were omitted, so
+    // the next entry can sit further out than one span).
+    static uint64_t savedSegmentWindowEnd(uint64_t startTick, bool hasNext, uint64_t nextStart) {
+        uint64_t end = hasNext ? nextStart : ~uint64_t(0);
+        if (startTick % LEGACY_SEGMENT_TICKS == 0) {
+            const bool nextLegacy = !hasNext || (nextStart % LEGACY_SEGMENT_TICKS == 0);
+            const uint64_t legacyEnd = startTick + LEGACY_SEGMENT_TICKS;
+            if (nextLegacy && legacyEnd < end) end = legacyEnd;
+        }
+        return end;
+    }
 
     // One saved FVC4 segment: its tick range and the exact FVC3 image
     // last written for it. Public because ChartFileReader's load path
