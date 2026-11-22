@@ -7,8 +7,9 @@
 #include <mutex>
 #include <algorithm>
 #include <unordered_map>
-#include <thread>   // ADDED: two-thread encode/decode paths
-
+#include <thread>
+#include <atomic>
+#include <exception>
 #ifdef _WIN32
 #define NOMINMAX
 #include <windows.h>
@@ -20,7 +21,6 @@
 #include <fcntl.h>
 #include <unistd.h>
 #endif
-
 // RapidJSON — only needed for the .json -> .fvc transpiler. Builds that
 // only ever consume .fvc snapshots (the gameplay runtime) can define
 // CHART_FILE_NO_TRANSPILER to drop the dependency entirely.
@@ -31,6 +31,33 @@
 #include "./include/rapidjson/prettywriter.h"
 #include "./include/rapidjson/error/en.h"
 #endif
+
+// ---------------------------------------------------------------------------
+// Two-thread execution helper: the CALLING thread runs mainFn while ONE
+// worker runs workerFn; both join before return. In-flight threads never
+// exceed 2 (the multi-segment paths pass twoThread=false into fvc3_encode,
+// so candidate-level threading never nests inside segment-level threading).
+// A worker exception is rethrown on the caller; if the OS refuses the
+// thread, both halves run inline — same results, just serial.
+// ---------------------------------------------------------------------------
+template <class MainFn, class WorkerFn>
+static void chart_dual_run(MainFn&& mainFn, WorkerFn&& workerFn) {
+    std::exception_ptr workerErr;
+    std::thread worker;
+    try {
+        worker = std::thread([&workerFn, &workerErr]() {
+            try { workerFn(); } catch (...) { workerErr = std::current_exception(); }
+        });
+    } catch (...) {
+        workerFn();
+        mainFn();
+        return;
+    }
+    try { mainFn(); }
+    catch (...) { worker.join(); throw; }
+    worker.join();
+    if (workerErr) std::rethrow_exception(workerErr);
+}
 
 // ============================================================================
 // 1-Bit Dynamic Flag Array (Strictly 1 bit per element in RAM)
@@ -57,7 +84,6 @@ public:
         size_t newCount = count + 1;
         size_t newBytes = (newCount + 7) / 8;
         if (data.size() < newBytes) data.push_back(0);
-
         // Word-wise ripple: every bit from `i` up moves one place right.
         // Whole bytes first, TOP-DOWN (each takes the still-original bit
         // 7 of the byte below it), then the partial byte at the insert
@@ -130,7 +156,6 @@ struct ChartNote {
     uint32_t last4;  // duration's high 8 bits, index, type, lane
 };
 #pragma pack(pop)
-
 static_assert(sizeof(ChartNote) == 12, "ChartNote must be exactly 12 bytes!");
 static_assert(sizeof(ChartNote) % 4 == 0, "ChartNote must stay 4-byte aligned!");
 
@@ -139,9 +164,9 @@ static inline ChartNote packNote(uint64_t position, uint32_t duration, uint32_t 
     ChartNote n;
     n.first8 = (position & 0x0000FFFFFFFFFFFFULL) | ((uint64_t)(duration & 0xFFFF) << 48);
     n.last4 = ((duration >> 16) & 0xFF)
-            | ((index & 0x3FF) << 8)
-            | ((type & 0xFF) << 18)
-            | ((lane & 0x3F) << 26);
+        | ((index & 0x3FF) << 8)
+        | ((type & 0xFF) << 18)
+        | ((lane & 0x3F) << 26);
     return n;
 }
 static inline uint64_t notePos(const ChartNote& n)  { return n.first8 & 0x0000FFFFFFFFFFFFULL; }
@@ -161,29 +186,28 @@ struct FvcFileHeader {
     uint32_t flags;      // 0 (reserved)
 };
 #pragma pack(pop)
-
 static_assert(sizeof(FvcFileHeader) == 16, "FvcFileHeader must be exactly 16 bytes!");
-
 
 // Helper function to sort an array of ChartNote in-place
 static void radix_sort_notes_inplace(ChartNote* notes, size_t n) {
     if (n <= 1) return;
+    // One pass: max position + sortedness. Already-sorted input (the
+    // common transpiler case) skips the n*12-byte buffer entirely.
+    uint64_t maxVal = 0, prev = 0;
+    bool sorted = true;
+    for (size_t i = 0; i < n; ++i) {
+        const uint64_t pos = notePos(notes[i]);
+        if (pos < prev) sorted = false;
+        prev = pos;
+        if (pos > maxVal) maxVal = pos;
+    }
+    if (sorted || maxVal == 0) return;
     std::vector<ChartNote> buffer(n);
     ChartNote* src = notes;
     ChartNote* dst = buffer.data();
-
-    // Find max position
-    uint64_t maxVal = 0;
-    for (size_t i = 0; i < n; ++i) {
-        uint64_t pos = notePos(src[i]);
-        if (pos > maxVal) maxVal = pos;
-    }
-    if (maxVal == 0) return;
-
     int passes = 0;
     while (maxVal > 0) { passes++; maxVal >>= 8; }
     if (passes > 6) passes = 6;
-
     // LSD Radix Sort
     for (int shift = 0; shift < passes * 8; shift += 8) {
         uint32_t counts[256] = {0};
@@ -199,7 +223,6 @@ static void radix_sort_notes_inplace(ChartNote* notes, size_t n) {
         }
         std::swap(src, dst);
     }
-
     if (src != notes) {
         std::memcpy(notes, src, n * sizeof(ChartNote));
     }
@@ -277,6 +300,7 @@ static inline const uint8_t* blob_geti(const uint8_t* p, const uint8_t* end, int
     v = (int64_t)((u >> 1) ^ (~(u & 1) + 1)); // un-zigzag
     return p;
 }
+
 // ============================================================================
 // FVC3 — COMPRESSED DISK FORMAT (v3)
 // ----------------------------------------------------------------------------
@@ -333,26 +357,24 @@ static constexpr uint32_t FVC3_ROWS_MAX_ROW    = 255;
 // ----------------------------------------------------------------------------
 // A v3 file is ONE fvc3_encode image of the whole chart, so any single-note
 // edit forces a full-chart re-encode on save. FVC4 keeps the v3 codec (and
-// its FNV) EXACTLY as it is, but splits the chart into fixed-size SEGMENTS
-// of consecutive shards, each written as a complete standalone FVC3 image:
+// its FNV) EXACTLY as it is, but splits the chart into ADAPTIVE SEGMENTS of
+// 2..32 consecutive shards (0.5 s .. 8 s of chart), each written as a
+// complete standalone FVC3 image:
 //
 //   Fvc4Header{ "FVC4", noteCount, segCount } followed by segCount
 //   Fvc4SegEntry{ startTick, noteCount, imageBytes } records, then the
 //   segment images back to back (in tick order).
 //
-// A segment image is byte-identical to what fvc3_encode produced for those
-// notes alone — nothing about the codec changed. Saving re-encodes only the
-// segments whose shards were structurally modified (the store's 1-bit
-// modified array, below); untouched segments are memcpy'd to disk without
-// even opening their shards. Old FVC3 (and FVC2/v1) files load as one
-// segment and upgrade on the next save.
-// ----------------------------------------------------------------------------
-// NOTE (adaptive sizing): the save path now computes segment width
-// adaptively from totalNotes (2..16 shards) via adaptiveSegmentShards()
-// below, so on any given save "fixed-size" means "one fixed width for
-// that save". Small charts get finer segments (cheap edit-save), dense
-// charts get wider segments (better LZP history). The on-disk format is
-// unchanged — segments are still self-contained FVC3 images.
+// A segment closes early once it holds >= 2 shards AND SEGMENT_NOTE_BUDGET
+// notes — dense regions re-encode in cheap units on edit-save, sparse
+// regions keep the long AC/LZP history compression wants — or across a
+// silence gap wider than 32 shards. A segment image is byte-identical to
+// what fvc3_encode produced for those notes alone — nothing about the codec
+// changed. Saving re-encodes only the segments whose shards were
+// structurally modified (the store's 1-bit modified array, below);
+// untouched segments are memcpy'd to disk without even opening their
+// shards. Old FVC3 (and FVC2/v1) files load as one segment and upgrade on
+// the next save.
 // ============================================================================
 #pragma pack(push, 1)
 struct Fvc4Header {
@@ -361,7 +383,7 @@ struct Fvc4Header {
     uint32_t segCount;   // number of Fvc4SegEntry records that follow
 };
 struct Fvc4SegEntry {
-    uint64_t startTick;  // segment id * SEGMENT_TICKS (tick of its first shard)
+    uint64_t startTick;  // tick of the segment's first shard (shard-aligned; adaptive width)
     uint32_t noteCount;  // notes in this segment (cross-checks the decode)
     uint32_t imageBytes; // length of this segment's FVC3 image
 };
@@ -454,41 +476,50 @@ static int fvc3_kindBits(uint64_t kindCount) {
 //                 duration in coded units, chained in decode order
 // ---------------------------------------------------------------------------
 static void fvc3_rows_encode(const ChartNote* notes, size_t n, uint64_t grid,
-                             std::vector<uint8_t>& out) {
+    std::vector<uint8_t>& out,
+    const std::vector<uint32_t>* kindsIn = nullptr,
+    const std::vector<uint32_t>* idsIn = nullptr) {
     // kinds (order of first appearance — the decoder rebuilds it; hashed
     // lookup because a megachart can carry hundreds of distinct kinds and
-    // the old linear scan was O(n*kinds))
-    std::vector<uint32_t> kinds;
-    std::unordered_map<uint32_t, uint32_t> kindId;
-    std::vector<uint32_t> ids(n);
-    for (size_t i = 0; i < n; ++i) {
-        const uint32_t k = (noteIdx(notes[i]) << 16) | (noteType(notes[i]) << 8) | noteLane(notes[i]);
-        auto it = kindId.find(k);
-        uint32_t id;
-        if (it == kindId.end()) {
-            kinds.push_back(k);
-            id = (uint32_t)(kinds.size() - 1);
-            kindId.emplace(k, id);
-        } else {
-            id = it->second;
+    // the old linear scan was O(n*kinds)). fvc3_encode already built this
+    // exact dictionary for GRID_KIND; reuse it when handed in — identical
+    // bytes, one hash pass instead of two.
+    std::vector<uint32_t> kindsLocal;
+    std::vector<uint32_t> idsLocal;
+    if (!kindsIn || !idsIn) {
+        std::unordered_map<uint32_t, uint32_t> kindId;
+        idsLocal.resize(n);
+        for (size_t i = 0; i < n; ++i) {
+            const uint32_t k = (noteIdx(notes[i]) << 16) | (noteType(notes[i]) << 8) | noteLane(notes[i]);
+            auto it = kindId.find(k);
+            uint32_t id;
+            if (it == kindId.end()) {
+                kindsLocal.push_back(k);
+                id = (uint32_t)(kindsLocal.size() - 1);
+                kindId.emplace(k, id);
+            } else {
+                id = it->second;
+            }
+            idsLocal[i] = id;
         }
-        ids[i] = id;
     }
+    const std::vector<uint32_t>& kinds = kindsIn ? *kindsIn : kindsLocal;
+    const std::vector<uint32_t>& ids   = idsIn   ? *idsIn   : idsLocal;
     // Durations in their OWN grid (GCD of all sustain durations) when one
     // exists — a chart-snapped sustain codes as a tiny delta in durUnit
     // units instead of a multi-byte raw-tick varint. durUnit 1 = raw ticks.
+    // 1 is the floor — stop the moment it is reached.
     uint64_t durUnit = 1;
     {
         uint64_t g = 0;
         for (size_t i = 0; i < n; ++i) {
             const uint32_t d = noteDur(notes[i]);
-            if (d != 0) g = g ? fvc3_gcd(g, d) : d;
+            if (d != 0) { g = g ? fvc3_gcd(g, d) : d; if (g == 1) break; }
         }
         if (g > 1) durUnit = g;
     }
     const bool durGrid = durUnit > 1;
     const int kindBits = fvc3_kindBits(kinds.size());
-
     // Row pass 1: group positions, histogram the gaps, pick the top-3
     // codes (count desc, then value asc for determinism).
     struct RowRec { uint64_t gpos; uint32_t len; };
@@ -504,7 +535,7 @@ static void fvc3_rows_encode(const ChartNote* notes, size_t n, uint64_t grid,
         size_t j = i;
         const uint64_t pos = notePos(notes[i]);
         while (j < n && notePos(notes[j]) == pos
-               && (j - i) < (size_t)FVC3_ROWS_MAX_ROW) ++j;
+            && (j - i) < (size_t)FVC3_ROWS_MAX_ROW) ++j;
         const uint64_t gpos = pos / grid;
         const uint64_t gap = gpos - prevPos;
         ++gapHist[gap];
@@ -516,21 +547,19 @@ static void fvc3_rows_encode(const ChartNote* notes, size_t n, uint64_t grid,
     {
         std::vector<std::pair<uint64_t, uint32_t>> gapHistV(gapHist.begin(), gapHist.end());
         std::sort(gapHistV.begin(), gapHistV.end(), [](const std::pair<uint64_t, uint32_t>& a,
-                                                       const std::pair<uint64_t, uint32_t>& b) {
+            const std::pair<uint64_t, uint32_t>& b) {
             if (a.second != b.second) return a.second > b.second;
             return a.first < b.first;
         });
         for (int c = 0; c < 3 && c < (int)gapHistV.size(); ++c)
             gapCode[c] = gapHistV[(size_t)c].first;
     }
-
     blob_putu(out, grid);
     blob_putu(out, (uint64_t)kinds.size());
     for (uint32_t k : kinds) blob_putu(out, k);
     blob_putu(out, gapCode[0]);
     blob_putu(out, gapCode[1]);
     blob_putu(out, gapCode[2]);
-
     // Row pass 2: emit the bitstream.
     Fvc3BitW bw(out);
     bw.put(durGrid ? 1u : 0u, 1);
@@ -569,7 +598,7 @@ static void fvc3_rows_encode(const ChartNote* notes, size_t n, uint64_t grid,
 // Decode a ROWS payload (after the FVC3 file header). Same validation
 // contract as the GRID_KIND decoder: any inconsistency rejects the file.
 static bool fvc3_rows_decode(const uint8_t* data, size_t size, uint32_t noteCount,
-                             std::vector<ChartNote>& out) {
+    std::vector<ChartNote>& out) {
     const uint8_t* p = data;
     const uint8_t* end = data + size;
     uint64_t grid = 0, kindCount = 0;
@@ -598,7 +627,6 @@ static bool fvc3_rows_decode(const uint8_t* data, size_t size, uint32_t noteCoun
         if (!br.takeVarint(durUnit) || durUnit < 2) return false;
     }
     const int kindBits = fvc3_kindBits(kindCount);
-
     out.clear();
     out.reserve(noteCount);
     uint64_t pos = 0;    // grid units
@@ -613,7 +641,6 @@ static bool fvc3_rows_decode(const uint8_t* data, size_t size, uint32_t noteCoun
         // row). Positions can never decrease: the gap decodes unsigned.
         if (pos > 0xFFFFFFFFFFFFULL - gap) return false; // pos+gap must stay 48-bit
         pos += gap;
-
         uint32_t cc = 0;
         if (!br.take(cc, 2)) return false;
         uint64_t cnt;
@@ -626,7 +653,6 @@ static bool fvc3_rows_decode(const uint8_t* data, size_t size, uint32_t noteCoun
         }
         if (cnt < 1 || cnt > FVC3_ROWS_MAX_ROW) return false;
         if (out.size() + cnt > (uint64_t)noteCount) return false;
-
         if (pos > 0xFFFFFFFFFFFFULL / grid) return false; // pos*grid must stay 48-bit
         const uint64_t absPos = pos * grid;
         for (uint64_t m = 0; m < cnt; ++m) {
@@ -684,7 +710,6 @@ static bool fvc3_rows_decode(const uint8_t* data, size_t size, uint32_t noteCoun
 // Overflow-hardened like ROWS: pos*grid and raw*durUnit checked BEFORE
 // the multiply, 48-bit pos, 24-bit dur, 255 row, table deltas bounded to
 // 24-bit kind keys.
-
 // LZMA-style binary range coder: 11-bit probabilities, adapt shift 5,
 // carry-propagating ShiftLow, 5-byte flush. The decoder reads 5 bytes
 // upfront; hitting end-of-stream only feeds zeros (flush slack) —
@@ -791,7 +816,7 @@ static int fvc3_ac_kindBits(uint64_t kindCount) {
 struct Fvc3AcModels {
     static const int GCTX = 12; // 6 gap classes x 2 run states
     uint16_t gapSame[GCTX], gapIs0[GCTX], gapIs1[GCTX], gapIs2[GCTX],
-             gapIs3[GCTX], gapIs4[GCTX];
+        gapIs3[GCTX], gapIs4[GCTX];
     uint16_t gapVar[FVC3_AC_VARINT_GROUPS * 8];
     uint16_t cntSame[4], cntIs1[4], cntIs2[4], cntIs3[4];
     uint16_t cntVar[FVC3_AC_VARINT_GROUPS * 8];
@@ -832,56 +857,41 @@ static uint64_t fvc3_ac_notesHash(const ChartNote* notes, size_t n) {
     }
     return h;
 }
-// ---- HOT-LOOP OPTIMIZATION (added) --------------------------------------
-// The LZP hit test used to recompute noteDur(notes[m]) / durUnit on every
-// compared note, i.e. one integer division per compared note per candidate
-// row. We precompute the coded durations ONCE into codedDurs[] and the hit
-// test becomes two memcmps; both row-recording paths reuse the same array.
-// Combined with rowKinds/rowDurs.reserve(n) this removes both the hottest
-// arithmetic op and the last mid-encode reallocation from the encoder.
-// -------------------------------------------------------------------------
 static void fvc3_ac_encode(const ChartNote* notes, size_t n, uint64_t grid,
-                           std::vector<uint8_t>& out) {
+    std::vector<uint8_t>& out) {
     // sorted unique kind keys; ids index into THIS table (decoder rebuilds
-    // the same table from ascending deltas, so id space matches)
+    // the same table from ascending deltas, so id space matches).
+    // Hash-collect the uniques, sort k << n keys, reindex, hash the ids —
+    // replaces sort(all n) + lower_bound-per-note (O(n log n) -> O(n + k log k)).
     std::vector<uint32_t> kinds;
+    std::unordered_map<uint32_t, uint32_t> kid;
     {
-        std::vector<uint32_t> raw;
-        raw.reserve(n);
-        for (size_t i = 0; i < n; ++i)
-            raw.push_back((noteIdx(notes[i]) << 16) | (noteType(notes[i]) << 8) | noteLane(notes[i]));
-        std::sort(raw.begin(), raw.end());
-        kinds.swap(raw);
-        kinds.erase(std::unique(kinds.begin(), kinds.end()), kinds.end());
+        for (size_t i = 0; i < n; ++i) {
+            const uint32_t k = (noteIdx(notes[i]) << 16) | (noteType(notes[i]) << 8) | noteLane(notes[i]);
+            if (kid.emplace(k, (uint32_t)kinds.size()).second) kinds.push_back(k);
+        }
+        std::sort(kinds.begin(), kinds.end());
+        for (size_t i = 0; i < kinds.size(); ++i) kid[kinds[i]] = (uint32_t)i;
     }
     std::vector<uint32_t> ids(n);
     for (size_t i = 0; i < n; ++i) {
         const uint32_t k = (noteIdx(notes[i]) << 16) | (noteType(notes[i]) << 8) | noteLane(notes[i]);
-        ids[i] = (uint32_t)(std::lower_bound(kinds.begin(), kinds.end(), k) - kinds.begin());
+        ids[i] = kid.find(k)->second;
     }
     uint64_t durUnit = 1;
     {
         uint64_t g = 0;
         for (size_t i = 0; i < n; ++i) {
             const uint32_t d = noteDur(notes[i]);
-            if (d != 0) g = g ? fvc3_gcd(g, d) : d;
+            if (d != 0) { g = g ? fvc3_gcd(g, d) : d; if (g == 1) break; }
         }
         if (g > 1) durUnit = g;
     }
-    // Coded durations, computed ONCE. Both the LZP hit test and both row
-    // recording paths consume this instead of re-dividing per note.
-    std::vector<uint32_t> codedDurs(n);
-    for (size_t i = 0; i < n; ++i) {
-        const uint32_t d = noteDur(notes[i]);
-        codedDurs[i] = d == 0 ? 0u : (durUnit > 1 ? d / durUnit : d);
-    }
-
     blob_putu(out, grid);
     blob_putu(out, (uint64_t)kinds.size());
     blob_putu(out, durUnit);
     const uint64_t hash = fvc3_ac_notesHash(notes, n);
     for (int i = 0; i < 8; ++i) out.push_back((uint8_t)(hash >> (8 * i)));
-
     Fvc3AcModels M;
     M.init(kinds.size());
     Fvc3AcEnc rc(out);
@@ -890,7 +900,6 @@ static void fvc3_ac_encode(const ChartNote* notes, size_t n, uint64_t grid,
         uint32_t prev = 0;
         for (uint32_t k : kinds) { fvc3_ac_putU(rc, M.tableVar, k - prev); prev = k; }
     }
-
     // LZP match layer: `stream` records EVERY row in order (coded or
     // replayed) with srcIdx = own index if coded / source index if
     // replayed. Prediction: after a hit, stream[srcIdx(prev)+1] (match
@@ -900,18 +909,19 @@ static void fvc3_ac_encode(const ChartNote* notes, size_t n, uint64_t grid,
     // rowKinds/rowDurs. The old per-row vectors cost two heap blocks per
     // row — millions of allocations and hundreds of MB on a megachart —
     // and a reference held across a push_back could dangle; the flat
-    // arrays make both impossible. Both planes have exactly n elements
-    // total, so reserve n up front and never reallocate mid-encode.
+    // arrays make both impossible.
     std::vector<uint64_t> rowGap;   // per-row gap (grid units)
     std::vector<uint64_t> rowCnt;   // per-row note count
     std::vector<uint64_t> rowOff;   // rows+1 offsets into rowKinds/rowDurs
     std::vector<uint32_t> rowKinds; // concatenated kind ids
     std::vector<uint32_t> rowDurs;  // concatenated durations (coded units)
+    rowOff.push_back(0); // begin of row 0
+    rowGap.reserve(n / 2 + 1);
+    rowCnt.reserve(n / 2 + 1);
+    rowOff.reserve(n / 2 + 2);
     rowKinds.reserve(n);
     rowDurs.reserve(n);
-    rowOff.push_back(0); // begin of row 0
     std::vector<int32_t> matchTable(FVC3_AC_MATCH_ROWS, -1);
-
     uint64_t prevGap = 0, prevCount = 1, prevPos = 0;
     uint32_t prevKind = 0, prevKind2 = 0;
     int sinceSustain = 7; // saturated start
@@ -925,12 +935,11 @@ static void fvc3_ac_encode(const ChartNote* notes, size_t n, uint64_t grid,
         while (j < n && notePos(notes[j]) == pos && (j - i) < FVC3_ROWS_MAX_ROW) ++j;
         const uint64_t gpos = pos / grid;
         const uint64_t gap = gpos - prevPos;
-
         const uint32_t h = (uint32_t)((prevGap * 0x9E3779B97F4A7C15ull
-                                     + prevCount * 0xC2B2AE3D27D4EB4Full
-                                     + (uint64_t)prevKind * 0x165667B19E3779F9ull
-                                     + (uint64_t)prevKind2 * 0x27D4EB2F165667C5ull
-                                     + (uint64_t)(sinceSustain < 7 ? sinceSustain : 7)) & (FVC3_AC_MATCH_ROWS - 1));
+            + prevCount * 0xC2B2AE3D27D4EB4Full
+            + (uint64_t)prevKind * 0x165667B19E3779F9ull
+            + (uint64_t)prevKind2 * 0x27D4EB2F165667C5ull
+            + (uint64_t)(sinceSustain < 7 ? sinceSustain : 7)) & (FVC3_AC_MATCH_ROWS - 1));
         int32_t predRow = -1;
         if (prevSrc >= 0 && prevSrc + 1 < (int32_t)rowGap.size())
             predRow = prevSrc + 1;      // match extension
@@ -941,20 +950,21 @@ static void fvc3_ac_encode(const ChartNote* notes, size_t n, uint64_t grid,
             const uint64_t prGap = rowGap[(size_t)predRow];
             bool hit = prGap == gap && prLen == (size_t)(j - i);
             if (hit) {
-                // Two memcmps instead of a per-note divide. `ids` and
-                // `codedDurs` are contiguous uint32_t; so is rowKinds/
-                // rowDurs. No mismatch is possible unless the row differs.
-                const size_t rowLen = (size_t)(j - i);
-                if (std::memcmp(&rowKinds[prBeg], &ids[i], rowLen * sizeof(uint32_t)) != 0 ||
-                    std::memcmp(&rowDurs[prBeg], &codedDurs[i], rowLen * sizeof(uint32_t)) != 0) {
-                    hit = false;
+                for (size_t m = i; m < j; ++m) {
+                    const uint32_t dd = noteDur(notes[m]);
+                    if (m - i >= prLen
+                        || rowKinds[prBeg + (m - i)] != ids[m]
+                        || rowDurs[prBeg + (m - i)] != (dd == 0 ? 0u : (durUnit > 1 ? dd / durUnit : dd))) {
+                        hit = false; break;
+                    }
                 }
             }
             if (hit) {
                 rc.bit(M.matchBit[prLen < 8 ? (uint32_t)prLen : 7], 0);
                 for (size_t m = i; m < j; ++m) {
+                    const uint32_t dd = noteDur(notes[m]);
                     rowKinds.push_back(ids[m]);
-                    rowDurs.push_back(codedDurs[m]);
+                    rowDurs.push_back(dd == 0 ? 0u : (durUnit > 1 ? dd / durUnit : dd));
                 }
                 rowGap.push_back(gap); rowCnt.push_back((uint64_t)(j - i));
                 rowOff.push_back(rowKinds.size());
@@ -962,8 +972,8 @@ static void fvc3_ac_encode(const ChartNote* notes, size_t n, uint64_t grid,
                 prevGap = gap; prevCount = (uint64_t)(j - i); prevPos = gpos;
                 for (size_t m = i; m < j; ++m) { // state as if coded
                     if (M.kindCount > 1) { prevKind2 = prevKind; prevKind = ids[m]; }
-                    const uint32_t cd = codedDurs[m];
-                    if (cd != 0) { sinceSustain = 0; prevDur = (int64_t)cd; }
+                    const uint32_t dd = noteDur(notes[m]);
+                    if (dd != 0) { sinceSustain = 0; prevDur = durUnit > 1 ? (int64_t)(dd / durUnit) : (int64_t)dd; }
                     else ++sinceSustain;
                 }
                 prevSrc = predRow;
@@ -1022,11 +1032,11 @@ static void fvc3_ac_encode(const ChartNote* notes, size_t n, uint64_t grid,
                 prevKind2 = prevKind;
                 prevKind = ids[m];
             }
-            const uint32_t cd = codedDurs[m];
-            if (cd != 0) {
+            const uint32_t d = noteDur(notes[m]);
+            if (d != 0) {
                 rc.bit(M.flag[sinceSustain < 7 ? sinceSustain : 7], 1);
                 sinceSustain = 0;
-                const int64_t abs = (int64_t)cd;
+                const int64_t abs = durUnit > 1 ? (int64_t)(d / durUnit) : (int64_t)d;
                 const int64_t dv = abs - prevDur;
                 if (dv == 0) rc.bit(M.durZero, 0);
                 else {
@@ -1042,8 +1052,9 @@ static void fvc3_ac_encode(const ChartNote* notes, size_t n, uint64_t grid,
         // record the coded row
         {
             for (size_t m = i; m < j; ++m) {
+                const uint32_t d = noteDur(notes[m]);
                 rowKinds.push_back(ids[m]);
-                rowDurs.push_back(codedDurs[m]);
+                rowDurs.push_back(d == 0 ? 0u : (durUnit > 1 ? d / durUnit : d));
             }
             rowGap.push_back(gap); rowCnt.push_back(count);
             rowOff.push_back(rowKinds.size());
@@ -1057,7 +1068,7 @@ static void fvc3_ac_encode(const ChartNote* notes, size_t n, uint64_t grid,
     rc.flush();
 }
 static bool fvc3_ac_decode(const uint8_t* data, size_t size, uint32_t noteCount,
-                           std::vector<ChartNote>& out) {
+    std::vector<ChartNote>& out) {
     const uint8_t* p = data;
     const uint8_t* end = data + size;
     uint64_t grid = 0, kindCount = 0, durUnit = 1;
@@ -1070,7 +1081,6 @@ static bool fvc3_ac_decode(const uint8_t* data, size_t size, uint32_t noteCount,
     if (end - p < 8) return false;
     uint64_t wantHash = 0;
     for (int i = 0; i < 8; ++i) wantHash |= (uint64_t)(*p++) << (8 * i);
-
     Fvc3AcModels M;
     M.init(kindCount);
     Fvc3AcDec rc(p, end);
@@ -1086,25 +1096,24 @@ static bool fvc3_ac_decode(const uint8_t* data, size_t size, uint32_t noteCount,
             prev = (uint32_t)k;
         }
     }
-
     static const size_t FVC3_AC_MATCH_ROWS_D = 4096;
     // Flat row stream, mirroring the encoder. Values are read by index
     // immediately before any push_back, so a reallocating append can never
     // invalidate them — the per-row-vector design here had exactly that
     // bug (a reference into the stream read after the push: silent
     // use-after-free that only detonated past the small-block heap).
-    // Both planes hold exactly noteCount entries total, so reserve up
-    // front and skip reallocation entirely.
     std::vector<uint64_t> rowGap;
     std::vector<uint64_t> rowCnt;
     std::vector<uint64_t> rowOff; // rows+1 offsets into rowKinds/rowDurs
     std::vector<uint32_t> rowKinds;
     std::vector<uint32_t> rowDurs;
+    rowOff.push_back(0);
+    rowGap.reserve((size_t)noteCount / 2 + 1);
+    rowCnt.reserve((size_t)noteCount / 2 + 1);
+    rowOff.reserve((size_t)noteCount / 2 + 2);
     rowKinds.reserve(noteCount);
     rowDurs.reserve(noteCount);
-    rowOff.push_back(0);
     std::vector<int32_t> matchTable(FVC3_AC_MATCH_ROWS_D, -1);
-
     out.clear();
     out.reserve(noteCount);
     uint64_t prevGap = 0, prevCount = 1, pos = 0;
@@ -1115,10 +1124,10 @@ static bool fvc3_ac_decode(const uint8_t* data, size_t size, uint32_t noteCount,
     bool prevWasHit = false;
     while (out.size() < noteCount) {
         const uint32_t h = (uint32_t)((prevGap * 0x9E3779B97F4A7C15ull
-                                     + prevCount * 0xC2B2AE3D27D4EB4Full
-                                     + (uint64_t)prevKind * 0x165667B19E3779F9ull
-                                     + (uint64_t)prevKind2 * 0x27D4EB2F165667C5ull
-                                     + (uint64_t)(sinceSustain < 7 ? sinceSustain : 7)) & (FVC3_AC_MATCH_ROWS_D - 1));
+            + prevCount * 0xC2B2AE3D27D4EB4Full
+            + (uint64_t)prevKind * 0x165667B19E3779F9ull
+            + (uint64_t)prevKind2 * 0x27D4EB2F165667C5ull
+            + (uint64_t)(sinceSustain < 7 ? sinceSustain : 7)) & (FVC3_AC_MATCH_ROWS_D - 1));
         int32_t predRow = -1;
         if (prevSrc >= 0 && prevSrc + 1 < (int32_t)rowGap.size())
             predRow = prevSrc + 1;      // match extension
@@ -1186,7 +1195,6 @@ static bool fvc3_ac_decode(const uint8_t* data, size_t size, uint32_t noteCount,
         }
         if (pos > 0xFFFFFFFFFFFFULL - gap) return false;
         pos += gap;
-
         uint64_t count;
         if (!rc.bit(M.cntSame[fvc3_ac_cntCtx(prevCount)])) count = prevCount;
         else {
@@ -1203,7 +1211,6 @@ static bool fvc3_ac_decode(const uint8_t* data, size_t size, uint32_t noteCount,
         if (out.size() + count > (uint64_t)noteCount) return false;
         if (pos > 0xFFFFFFFFFFFFULL / grid) return false;
         const uint64_t absPos = pos * grid;
-
         // decode notes interleaved as encoded: kind, flag, dur
         uint32_t decIds[256];
         uint32_t decDurs[256];   // coded units (history record)
@@ -1267,34 +1274,28 @@ static bool fvc3_ac_decode(const uint8_t* data, size_t size, uint32_t noteCount,
     return fvc3_ac_notesHash(out.data(), out.size()) == wantHash;
 }
 
-
 // Encode a SORTED note array as the FVC3 payload (header + payload).
 // Encodes ROWS, GRID_KIND, AC and RAW; keeps the smallest (ties: ROWS
 // wins — it is the preferred codec; AC only ships when strictly smaller).
-//
-// `parallel` = true runs AC on a worker thread while ROWS runs on the
-// calling thread (they walk the same flat input, produce disjoint
-// output buffers, and neither depends on the other). We only pay for
-// the spawn above a small note count — below that the whole encode
-// finishes in less time than a thread create + join. Callers that are
-// ALREADY fanning out at a higher level (writeTo's per-segment pass)
-// pass `false` to avoid nested thread spawning.
-static std::vector<uint8_t> fvc3_encode(const ChartNote* notes, size_t n,
-                                        bool parallel = true) {
-    // ---- candidate 1: grid + kind dictionary + varint planes ----
+// twoThread runs the heavy AC candidate on the worker while the caller
+// builds GRID_KIND + ROWS (lone-segment save / transpile). The multi-
+// segment save parallelizes ACROSS segments and leaves this false, so
+// in-flight threads never exceed 2. Output bytes are identical either way.
+static std::vector<uint8_t> fvc3_encode(const ChartNote* notes, size_t n, bool twoThread) {
+    const size_t rawSize = n * sizeof(ChartNote);
+    // ---- grid: GCD of every position (1 is the floor — stop early) ----
     uint64_t grid = 0;
     for (size_t i = 0; i < n; ++i) {
         const uint64_t p = notePos(notes[i]);
         grid = grid ? fvc3_gcd(grid, p) : p;
+        if (grid == 1) break;
     }
     if (grid == 0) grid = 1; // all-zero positions (empty/single note at 0)
-    std::vector<uint8_t> gk;
-    gk.reserve(n * 3 + 32);
-    // kinds
-    // (hashed lookup — the linear scan was O(n*kinds), which a
-    // megachart with hundreds of distinct kinds turns into billions
-    // of comparisons; first-appearance order is kept, so the bytes
-    // this emits are identical to the old scan)
+    // ---- kinds: first-appearance dictionary, SHARED by GRID_KIND + ROWS ----
+    // (hashed lookup — the linear scan was O(n*kinds), which a megachart
+    // with hundreds of distinct kinds turns into billions of comparisons;
+    // first-appearance order is kept, so the bytes this emits are identical
+    // to the old scan)
     std::vector<uint32_t> kinds;
     std::unordered_map<uint32_t, uint32_t> kindId;
     std::vector<uint32_t> ids(n);
@@ -1311,8 +1312,13 @@ static std::vector<uint8_t> fvc3_encode(const ChartNote* notes, size_t n,
         }
         ids[i] = id;
     }
-    bool gkOk = kinds.size() <= FVC3_MAX_KINDS;
-    if (gkOk) {
+    const bool gkOk = kinds.size() <= FVC3_MAX_KINDS;
+    std::vector<uint8_t> gk, rows, ac;
+    bool gkTooBig = false;
+    auto buildCheap = [&]() {
+        if (!gkOk) return;
+        // ---- candidate 1: grid + kind dictionary + varint planes ----
+        gk.reserve(n * 3 + 32);
         blob_putu(gk, grid);
         blob_putu(gk, (uint64_t)kinds.size());
         for (uint32_t k : kinds) blob_putu(gk, k);
@@ -1322,57 +1328,47 @@ static std::vector<uint8_t> fvc3_encode(const ChartNote* notes, size_t n,
             blob_putu(gk, p - prevP); prevP = p;
             blob_puti(gk, (int64_t)noteDur(notes[i]) - prevD); prevD = (int64_t)noteDur(notes[i]);
             blob_putu(gk, ids[i]);
+            if (gk.size() >= rawSize) { gkTooBig = true; break; } // can only lose from here
         }
-    }
-
-    // ---- candidate 2 + 3: ROWS and AC. Both are CPU-dominated and
-    // independent — run AC on the worker thread and ROWS on the caller.
-    // ----
-    std::vector<uint8_t> rows;
-    std::vector<uint8_t> ac;
-    const bool useThreads = parallel && gkOk && n >= 512;
-    if (useThreads) {
-        std::thread acThread([&]() { fvc3_ac_encode(notes, n, grid, ac); });
-        fvc3_rows_encode(notes, n, grid, rows);
-        acThread.join();
-    } else if (gkOk) {
-        fvc3_rows_encode(notes, n, grid, rows);
-        fvc3_ac_encode(notes, n, grid, ac);
-    }
-
-    // ---- candidate 4: raw 12-byte stream ----
-    const size_t rawSize = n * sizeof(ChartNote);
-
+        // ---- candidate 2: ROWS bitstream (shared kind table) ----
+        fvc3_rows_encode(notes, n, grid, rows, &kinds, &ids);
+    };
+    // ---- candidate 3: AC (adaptive range coder + LZP row matches) ----
+    auto buildAc = [&]() { if (gkOk) fvc3_ac_encode(notes, n, grid, ac); };
+    if (twoThread && gkOk && n >= 2048) chart_dual_run(buildCheap, buildAc);
+    else { buildCheap(); buildAc(); }
     // ---- pick the smallest (ROWS > AC > GRID_KIND > RAW on ties) ----
+    const size_t gkCost = gkTooBig ? SIZE_MAX : gk.size();
     std::vector<uint8_t> payload;
     uint8_t codec;
-    if (gkOk && !rows.empty() && rows.size() <= gk.size() && rows.size() <= rawSize
+    if (gkOk && !rows.empty() && rows.size() <= gkCost && rows.size() <= rawSize
         && rows.size() <= ac.size()) {
-        codec = FVC3_CODEC_ROWS;
-        payload = std::move(rows);
-    } else if (gkOk && !ac.empty() && ac.size() <= gk.size() && ac.size() <= rawSize) {
-        codec = FVC3_CODEC_AC;
-        payload = std::move(ac);
-    } else if (gkOk && gk.size() < rawSize) {
-        codec = FVC3_CODEC_GRID_KIND;
-        payload = std::move(gk);
+        codec = FVC3_CODEC_ROWS; payload = std::move(rows);
+    } else if (gkOk && !ac.empty() && ac.size() <= gkCost && ac.size() <= rawSize) {
+        codec = FVC3_CODEC_AC; payload = std::move(ac);
+    } else if (gkOk && !gkTooBig && gk.size() < rawSize) {
+        codec = FVC3_CODEC_GRID_KIND; payload = std::move(gk);
     } else {
+        // ---- candidate 4: raw 12-byte stream ----
         codec = FVC3_CODEC_RAW;
         payload.resize(rawSize);
         if (n) std::memcpy(payload.data(), notes, rawSize);
     }
-
     std::vector<uint8_t> out;
     out.reserve(16 + payload.size());
-    Fvc3Header hdr;
+    Fvc3Header hdr{}; // zero-init: pad[3] must be deterministic on disk
     std::memcpy(hdr.magic, "FVC3", 4);
     hdr.noteCount = (uint32_t)n;
     hdr.codec = codec;
     hdr.payloadBytes = (uint32_t)payload.size();
     out.insert(out.end(), reinterpret_cast<const uint8_t*>(&hdr),
-               reinterpret_cast<const uint8_t*>(&hdr) + sizeof(hdr));
+        reinterpret_cast<const uint8_t*>(&hdr) + sizeof(hdr));
     out.insert(out.end(), payload.begin(), payload.end());
     return out;
+}
+// Original entry point kept — serial candidates (multi-segment workers).
+static std::vector<uint8_t> fvc3_encode(const ChartNote* notes, size_t n) {
+    return fvc3_encode(notes, n, false);
 }
 
 // Decode a complete FVC3 file image (header + payload) into `out` (sorted,
@@ -1387,7 +1383,6 @@ static bool fvc3_decode(const uint8_t* data, size_t size, std::vector<ChartNote>
     const uint8_t* end = data + size;
     if ((size_t)(end - p) < hdr.payloadBytes) return false;
     end = p + hdr.payloadBytes; // trailing junk = corrupt
-
     if (hdr.codec == FVC3_CODEC_RAW) {
         if (hdr.payloadBytes % sizeof(ChartNote) != 0) return false;
         const size_t n = hdr.payloadBytes / sizeof(ChartNote);
@@ -1401,7 +1396,6 @@ static bool fvc3_decode(const uint8_t* data, size_t size, std::vector<ChartNote>
     if (hdr.codec == FVC3_CODEC_AC)
         return fvc3_ac_decode(p, (size_t)(end - p), hdr.noteCount, out);
     if (hdr.codec != FVC3_CODEC_GRID_KIND) return false;
-
     uint64_t grid = 0, kindCount = 0;
     p = blob_getu(p, end, grid);
     p = blob_getu(p, end, kindCount);
@@ -1436,6 +1430,89 @@ static bool fvc3_decode(const uint8_t* data, size_t size, std::vector<ChartNote>
     return p == end;
 }
 
+// ---------------------------------------------------------------------------
+// Adaptive FVC4 segment planner — shared by the store's save path and the
+// transpiler so both produce IDENTICAL boundaries for the same chart (the
+// first save after a transpile/load then re-encodes nothing).
+// A segment spans minShards..maxShards consecutive shards; it closes early
+// once it holds >= minShards shards AND noteBudget notes (dense regions
+// re-encode cheaply, sparse regions keep long AC/LZP history), or across a
+// silence gap wider than maxShards shards. A lone trailing shard of a
+// contiguous run is absorbed into the previous segment when capacity
+// allows, so the min-shard floor holds everywhere except a chart that is a
+// single shard (or an isolated shard after a gap).
+// ---------------------------------------------------------------------------
+struct ChartSegShard { uint64_t startTick; uint32_t noteCount; bool modified; };
+struct ChartSegRange {
+    size_t firstShard = 0, lastShard = 0; // [first, last] inclusive
+    uint64_t startTick = 0;
+    uint32_t noteCount = 0;
+    bool dirty = false;
+};
+static std::vector<ChartSegRange> chart_plan_segments(const std::vector<ChartSegShard>& sh,
+    uint64_t shardTicks, size_t minShards, size_t maxShards, uint32_t noteBudget) {
+    std::vector<ChartSegRange> plan;
+    for (size_t si = 0; si < sh.size(); ++si) {
+        bool startNew = plan.empty();
+        if (!startNew) {
+            const ChartSegRange& b = plan.back();
+            const size_t cnt = b.lastShard - b.firstShard + 1;
+            const uint64_t gapTicks = sh[si].startTick - sh[si - 1].startTick;
+            const bool gapped = gapTicks > shardTicks * (uint64_t)maxShards;
+            startNew = (cnt >= maxShards)
+                    || (cnt >= minShards && b.noteCount >= noteBudget)
+                    || gapped;
+            // Honor the min-shard floor: absorb a lone trailing shard
+            // when the break isn't a silence gap and capacity allows.
+            if (startNew && !gapped && si + 1 == sh.size() && cnt < maxShards)
+                startNew = false;
+        }
+        if (startNew) {
+            ChartSegRange r;
+            r.firstShard = si;
+            r.lastShard = si;
+            r.startTick = sh[si].startTick; // first shard's tick
+            plan.push_back(r);
+        } else {
+            plan.back().lastShard = si;
+        }
+        plan.back().noteCount += sh[si].noteCount;
+        if (sh[si].modified) plan.back().dirty = true;
+    }
+    return plan;
+}
+
+// Encode a batch of flat note arrays into FVC3 images on two threads.
+// >= 2 flats: split by NOTE VOLUME across caller + one worker (each encode
+// is serial inside). Exactly 1 flat: parallelize INSIDE fvc3_encode (AC on
+// the worker) instead. Flats are freed as they are consumed. Never more
+// than 2 threads in flight.
+static void chart_encode_segments_mt(std::vector<std::vector<ChartNote>>& flats,
+    std::vector<std::vector<uint8_t>>& images) {
+    images.clear();
+    images.resize(flats.size());
+    if (flats.empty()) return;
+    auto encodeRange = [&](size_t beg, size_t end) {
+        for (size_t k = beg; k < end; ++k) {
+            images[k] = fvc3_encode(flats[k].data(), flats[k].size());
+            std::vector<ChartNote>().swap(flats[k]); // free as we go
+        }
+    };
+    if (flats.size() >= 2) {
+        uint64_t totalN = 0;
+        for (const auto& f : flats) totalN += f.size();
+        uint64_t acc = 0; size_t half = 0;
+        while (half < flats.size() - 1 && acc < (totalN + 1) / 2) {
+            acc += flats[half].size(); ++half;
+        }
+        if (half == 0) half = 1;
+        chart_dual_run([&]{ encodeRange(0, half); },
+                       [&]{ encodeRange(half, flats.size()); });
+    } else {
+        images[0] = fvc3_encode(flats[0].data(), flats[0].size(), true);
+        std::vector<ChartNote>().swap(flats[0]);
+    }
+}
 
 class ShardedNoteStore {
 public:
@@ -1451,40 +1528,19 @@ public:
     // mid-size chart's working set hot (no decode/encode thrash) while
     // bounding decoded RAM at ~256 shards * ~1.5 KB of runs.
     static constexpr size_t OPEN_SHARD_BUDGET = 256;
-    // SEGMENT = the unit of incremental save (FVC4). 4096 shards = 1024 s
-    // (~17 min) of chart: an edit re-encodes just its segment instead of
-    // the whole chart. This is the measured sweet spot between save cost
-    // and size: the AC codec's LZP match layer compresses repeating
-    // motifs far better with longer history, so finer segments (64 s)
-    // cost 9x the bytes on motif-heavy charts while saving only ~1 ms per
-    // edit-save; 1024 s lands within 1.7x of the monolithic file on the
-    // adversarial all-motif 210k shape (13.4 KB vs 7.8 KB) and single-
-    // digit ms per edit-save. Normal songs (2-4 min) are ONE segment —
-    // byte-identical behavior to the monolithic save.
-    //
-    // NOTE: the save path now derives segment width per-save from
-    // adaptiveSegmentShards() below, so this constant is RETIRED (kept
-    // here so any external references and historical context remain
-    // intact; writeTo no longer reads it).
+    // SEGMENT = the unit of incremental save (FVC4), now ADAPTIVE: each
+    // segment spans SEGMENT_MIN_SHARDS..SEGMENT_MAX_SHARDS consecutive
+    // shards (0.5 s .. 8 s of chart). A segment closes early once it holds
+    // >= MIN shards AND SEGMENT_NOTE_BUDGET notes — dense regions re-encode
+    // in cheap units on edit-save, sparse regions keep the long AC/LZP
+    // history compression wants. A silence gap wider than MAX shards also
+    // breaks the segment. SEGMENT_TICKS is kept: it is the legacy fixed
+    // segment width (4096 shards = 1024 s) and remains the tail-window
+    // corruption bound on load.
     static constexpr uint64_t SEGMENT_TICKS = SHARD_TICKS * 4096;
-
-    // ---- ADAPTIVE SEGMENT SIZING (new) ----
-    // Segment width in shards doubles from SEG_MIN_SHARDS to
-    // SEG_MAX_SHARDS as the chart grows. Small charts get fine-grained
-    // segments so a single edit re-encodes only a tiny slice (cheap
-    // edit-save latency); dense charts get wider segments so the AC
-    // codec's LZP match layer has enough row history to compress well
-    // (better file size). The doubling step means most edits don't
-    // shift boundaries, so the FVC4 cache (matched by startTick AND
-    // noteCount) keeps hitting.
-    static constexpr size_t SEG_MIN_SHARDS = 2;
-    static constexpr size_t SEG_MAX_SHARDS = 16;
-    static size_t adaptiveSegmentShards(uint64_t totalNotes) {
-        size_t s = SEG_MIN_SHARDS;
-        while (s < SEG_MAX_SHARDS && totalNotes > (uint64_t)2048 * s) s *= 2;
-        return s;
-    }
-
+    static constexpr size_t   SEGMENT_MIN_SHARDS  = 2;
+    static constexpr size_t   SEGMENT_MAX_SHARDS  = 32;
+    static constexpr uint32_t SEGMENT_NOTE_BUDGET = 4096;
     // One saved FVC4 segment: its tick range and the exact FVC3 image
     // last written for it. Public because ChartFileReader's load path
     // builds the initial cache from the file it just decoded.
@@ -1496,7 +1552,6 @@ public:
     // Magic on every compressed blob ("CVS1" — Compressed V? Shard v1);
     // a mismatch is a hard error (the blob is not ours to interpret).
     static constexpr uint32_t BLOB_MAGIC = 0x31535643; // 'C''V''S''1' LE
-
 private:
     // ---- compressed blob layout ------------------------------------------
     //   u32 magic ('CVS1')
@@ -1519,40 +1574,32 @@ private:
         uint32_t noteCount;
         uint32_t payloadBytes;
     };
-
     struct Run {
         std::vector<ChartNote> notes; // sorted by position
     };
-
     struct Shard {
         uint64_t startTick = 0;       // shard id * SHARD_TICKS
         int64_t baseId = 0;           // global index of notes[0] (prefix sum)
-
         // CLOSED state (exactly one of blob/open is live at a time; an
         // OPEN shard keeps its PRE-EDIT blob until the first edit).
         bool open = false;
         bool dirty = false;           // edited since the blob was made
         std::vector<uint8_t> blob;    // compressed form (valid when !open or !dirty)
         uint32_t blobCount = 0;       // note count carried by the blob
-
         // OPEN state.
         std::vector<Run> runs;
         BitArray judge;
         BitArray hit;
         size_t noteCount = 0;         // live count while open (blobCount while closed)
-
         size_t size() const { return open ? noteCount : blobCount; }
     };
-
     std::vector<Shard> shards;  // ordered by startTick; no empty shards kept
     int64_t totalNotes = 0;
     mutable size_t lastShard = 0;  // sequential-read cache
     size_t openCount = 0;          // shards currently in the open (decoded) state
-
     // LRU ring of open shards (indices into `shards`). A shard's position
     // in `lru` IS its recency; the front is the most recent.
     std::vector<size_t> lru;
-
     // ---- incremental save state (FVC4) ------------------------------------
     // 1-bit flat array PARALLEL TO THE SHARD DIRECTORY: bit i == 1 means
     // shards[i] was STRUCTURALLY modified (note added/removed) since the
@@ -1565,14 +1612,13 @@ private:
     // exactly like the RAM-blob `dirty` flag.
     BitArray modifiedBits;
     std::vector<Segment> segments; // index-aligned with the FVC4 directory
-
     // ---- LRU --------------------------------------------------------------
     void touch(size_t si) {
         for (size_t k = 0; k < lru.size(); ++k) {
             if (lru[k] == si) {
                 if (k != 0) {
-                    lru.erase(lru.begin() + k);
-                    lru.insert(lru.begin(), si);
+                    // One pass instead of erase+insert's two memmoves.
+                    std::rotate(lru.begin(), lru.begin() + (long)k, lru.begin() + (long)k + 1);
                 }
                 return;
             }
@@ -1583,17 +1629,14 @@ private:
             lru.pop_back();
         }
     }
-
     // ---- codec: runs <-> blob --------------------------------------------
     static void encodeBlob(const Shard& sh, std::vector<uint8_t>& out) {
         out.clear();
         out.reserve(sh.size() * 3 + sizeof(BlobHeader) + 16);
         const size_t n = sh.size();
-
         // Reserve the header slot; the payload size is only known after
         // the planes are written, so the header is patched in at the end.
         out.resize(sizeof(BlobHeader), 0);
-
         // Plane 1: first8, zigzag-delta vs previous.
         uint64_t prevF = 0;
         for (const Run& r : sh.runs) {
@@ -1625,7 +1668,6 @@ private:
             }
             blob_putu(out, runLen); // final run (closes the alternation)
         }
-
         // Patch the header in (magic + note count + payload bytes). THE
         // COUNT IS ALWAYS IN THE BLOB — the compressed form is
         // self-describing.
@@ -1635,7 +1677,6 @@ private:
         hdr.payloadBytes = (uint32_t)(out.size() - sizeof(BlobHeader));
         std::memcpy(out.data(), &hdr, sizeof(hdr));
     }
-
     // Decode a blob back into runs + flags. Returns false on corruption.
     bool decodeBlob(Shard& sh) const {
         const uint8_t* p = sh.blob.data();
@@ -1647,7 +1688,6 @@ private:
         if (hdr.magic != BLOB_MAGIC) return false;
         if (hdr.payloadBytes != (uint32_t)(end - p)) return false;
         const size_t n = hdr.noteCount;
-
         std::vector<ChartNote> flat;
         flat.resize(n);
         uint64_t prevF = 0, prevL = 0;
@@ -1665,7 +1705,6 @@ private:
             prevL = (uint64_t)((int64_t)prevL + d);
             flat[i].last4 = prevL;
         }
-
         sh.judge.init(n);
         sh.hit.init(n);
         for (int plane = 0; plane < 2; ++plane) {
@@ -1681,7 +1720,6 @@ private:
             }
         }
         if (p != end) return false; // trailing junk = corruption
-
         // Distribute the flat run into runs of RUN_MAX.
         sh.runs.clear();
         sh.runs.reserve((n + RUN_MAX - 1) / RUN_MAX);
@@ -1693,7 +1731,6 @@ private:
         sh.noteCount = n;
         return true;
     }
-
     // ---- open / close ------------------------------------------------------
     // Opens a closed shard (decode). The OLD blob is kept untouched — it
     // survives as long as the shard stays clean, so a read-only open can
@@ -1721,7 +1758,6 @@ private:
         ++openCount;
         // (LRU touch happens at the caller — see ensureOpen.)
     }
-
     // Closes an open shard: destroy the editable runs. Only an EDITED
     // shard is recompressed; a clean one keeps its original blob bytes.
     void closeShard(Shard& sh) {
@@ -1737,12 +1773,10 @@ private:
         sh.dirty = false;
         --openCount;
     }
-
     void closeAll() {
         for (Shard& sh : shards) closeShard(sh);
         lru.clear();
     }
-
     // Opens `sh` and makes it the most recently used (evicting the least
     // recently used open shard past the budget).
     void ensureOpen(size_t si) {
@@ -1754,12 +1788,10 @@ private:
             touch(si);
         }
     }
-
     void rebuildTotals() {
         totalNotes = 0;
         for (const Shard& sh : shards) totalNotes += (int64_t)sh.size();
     }
-
     // ---- shard lookup ------------------------------------------------------
     // Index of the shard covering `pos`, or shards.size() if none does.
     size_t findShardByPos(uint64_t pos) const {
@@ -1773,7 +1805,6 @@ private:
         size_t idx = lo - 1;
         return (pos - shards[idx].startTick) < SHARD_TICKS ? idx : shards.size();
     }
-
     // Insertion index (in the shard directory) for a brand-new shard.
     size_t shardInsertAt(uint64_t startTick) const {
         size_t lo = 0, hi = shards.size();
@@ -1784,7 +1815,6 @@ private:
         }
         return lo;
     }
-
     // Index of the shard owning global id `id`.
     // Caller guarantees 0 <= id < totalNotes.
     size_t shardById(int64_t id) const {
@@ -1802,7 +1832,6 @@ private:
         lastShard = lo - 1;
         return lastShard;
     }
-
     // ---- run lookup (open shards) ------------------------------------------
     // The k-th note of an open shard: walk the runs accumulating sizes.
     // Splits make runs variable-sized (a 129-note run becomes 64+65), so
@@ -1817,7 +1846,6 @@ private:
         }
         return RunLoc{ sh.runs.size() ? sh.runs.size() - 1 : 0, 0, k }; // unreachable
     }
-
     // ---- run maintenance ----------------------------------------------------
     // Split an overfull run in place: the back half moves to a new run.
     void splitRun(Shard& sh, size_t ri) {
@@ -1828,18 +1856,15 @@ private:
         r.notes.resize(half);
         sh.runs.insert(sh.runs.begin() + (long)ri + 1, std::move(tail));
     }
-
 public:
     ShardedNoteStore() = default;
     ~ShardedNoteStore() = default;
     ShardedNoteStore(const ShardedNoteStore&) = delete;
     ShardedNoteStore& operator=(const ShardedNoteStore&) = delete;
-
     int64_t size() const { return totalNotes; }
     bool empty() const { return totalNotes == 0; }
     size_t shardCount() const { return shards.size(); }
     size_t openShardCount() const { return openCount; }
-
     void clear() {
         shards.clear();
         shards.shrink_to_fit();
@@ -1850,7 +1875,6 @@ public:
         modifiedBits = BitArray();
         segments.clear();
     }
-
     // ---- READ ----
     uint64_t getFirst8(int64_t id) {
         size_t si = shardById(id);
@@ -1859,7 +1883,6 @@ public:
         const RunLoc rl = runLoc(sh, (size_t)(id - sh.baseId));
         return sh.runs[rl.run].notes[rl.slot].first8;
     }
-
     uint32_t getLast4(int64_t id) {
         size_t si = shardById(id);
         Shard& sh = shards[si];
@@ -1867,14 +1890,12 @@ public:
         const RunLoc rl = runLoc(sh, (size_t)(id - sh.baseId));
         return sh.runs[rl.run].notes[rl.slot].last4;
     }
-
     bool getJudge(int64_t id) {
         size_t si = shardById(id);
         Shard& sh = shards[si];
         ensureOpen(si);
         return sh.judge.get((size_t)(id - sh.baseId));
     }
-
     void setJudge(int64_t id, bool value) {
         size_t si = shardById(id);
         Shard& sh = shards[si];
@@ -1883,7 +1904,6 @@ public:
         // Flag writes are gameplay state, not structural edits: the shard
         // is NOT marked dirty (judged/missed bits don't need to persist).
     }
-
     void setHit(int64_t id, bool value) {
         size_t si = shardById(id);
         Shard& sh = shards[si];
@@ -1891,14 +1911,12 @@ public:
         sh.hit.set((size_t)(id - sh.baseId), value);
         // Same as setJudge: a flag write is not a structural edit.
     }
-
     bool getHit(int64_t id) {
         size_t si = shardById(id);
         Shard& sh = shards[si];
         ensureOpen(si);
         return sh.hit.get((size_t)(id - sh.baseId));
     }
-
     // ---- ADD ----
     // `cn` is a fully packed note; the position is extracted from it HERE —
     // callers never pass a separate position — to locate the 1/4-second
@@ -1906,7 +1924,6 @@ public:
     // Returns the new note's global chart index.
     int64_t add(const ChartNote& cn) {
         const uint64_t pos = notePos(cn);
-
         size_t si = findShardByPos(pos);
         if (si == shards.size()) {
             // Materialize the shard, keeping the directory time-ordered.
@@ -1930,10 +1947,8 @@ public:
             encodeBlob(shards[si], shards[si].blob);
             shards[si].blobCount = 0;
         }
-
         Shard& sh = shards[si];
         ensureOpen(si);
-
         // Target run: the last run whose FIRST note is <= pos (runs are
         // position-ordered). A fresh shard opens with no runs — seed one
         // empty run; the search skips empty runs (an empty run is only
@@ -1947,13 +1962,11 @@ public:
             else hiRun = mid;
         }
         size_t ri = (loRun == 0) ? 0 : loRun - 1;
-
         Run& target = sh.runs[ri];
         size_t local = (size_t)(std::lower_bound(
             target.notes.begin(), target.notes.end(), pos,
             [](const ChartNote& n, uint64_t p) { return notePos(n) < p; }
         ) - target.notes.begin());
-
         target.notes.insert(target.notes.begin() + local, cn);
         // Flag index = flat shard-local index (runs before ri + local) —
         // runs hold variable counts after splits, so sum them.
@@ -1966,18 +1979,14 @@ public:
         // Structural edit: this shard's segment must be re-encoded on the
         // next save (the directory index of `sh` is `si` — see caller).
         modifiedBits.set(si, true);
-
         // Overflow -> split the run in place (keeps every memmove bounded
         // by RUN_MAX/2 * 12 bytes forever).
         if (target.notes.size() > RUN_MAX) splitRun(sh, ri);
-
         ++totalNotes;
         for (size_t k = si + 1; k < shards.size(); ++k) ++shards[k].baseId;
-
         lastShard = si;
         return sh.baseId + (int64_t)flagIdx;
     }
-
     // ---- REMOVE ----
     // Removes the note with global chart index `id`. Only the owning
     // shard's run and flag bits shift; later shards get a prefix fixup.
@@ -1985,7 +1994,6 @@ public:
         size_t si = shardById(id);
         Shard& sh = shards[si];
         ensureOpen(si);
-
         const RunLoc rl = runLoc(sh, (size_t)(id - sh.baseId));
         sh.runs[rl.run].notes.erase(sh.runs[rl.run].notes.begin() + (long)rl.slot);
         sh.judge.erase(rl.flat);
@@ -1993,12 +2001,10 @@ public:
         --sh.noteCount;
         sh.dirty = true;
         modifiedBits.set(si, true); // structural edit -> segment re-encode
-
         if (sh.runs[rl.run].notes.empty()) {
             sh.runs.erase(sh.runs.begin() + (long)rl.run);
         }
         --totalNotes;
-
         const bool gone = (sh.noteCount == 0);
         if (gone) {
             // Drop the shard entirely — its blob (if any) goes with it.
@@ -2019,30 +2025,21 @@ public:
         }
         lastShard = 0; // cheap; the next lookup re-runs the tiny binary search
     }
-
     // ---- BULK LOAD ----
     // Distribute a position-sorted flat array into shards, compressing
     // every shard as it completes (the load path leaves everything CLOSED
     // — the spawner opens just the window it needs).
-    //
-    // The shard SPLIT is sequential (positions arrive in order), but each
-    // shard's blob encode is fully independent (own input runs, own
-    // output blob vector), so the finish pass runs two threads over the
-    // built shard list. openCount stays 0 because we never increment it
-    // during the build; the old `++openCount / closeShard()` per-shard
-    // dance netted zero, so this is behaviour-preserving.
     void loadFromSortedFlat(const ChartNote* data, size_t n) {
         clear();
-        std::vector<Shard> built;
-        built.reserve((size_t)(n / 32) + 1);
         size_t i = 0;
         while (i < n) {
             const uint64_t pos = notePos(data[i]);
             Shard sh;
             sh.startTick = pos - (pos % SHARD_TICKS);
             sh.baseId = (int64_t)i;
-            sh.open = true;              // logical build state only
+            sh.open = true;
             sh.noteCount = 0;
+            ++openCount;
             while (i < n && notePos(data[i]) - sh.startTick < SHARD_TICKS) {
                 if (sh.runs.empty() || sh.runs.back().notes.size() >= RUN_MAX) {
                     sh.runs.push_back(Run());
@@ -2053,37 +2050,20 @@ public:
             }
             sh.judge.init(sh.noteCount);
             sh.hit.init(sh.noteCount);
-            built.push_back(std::move(sh));
-        }
-
-        // Two-thread finish pass: each shard's encodeBlob is independent.
-        auto finish = [](Shard& sh) {
+            // Fresh from load: the runs are the SOURCE, so encode the blob
+            // from them (a clean close would keep a nonexistent blob).
             encodeBlob(sh, sh.blob);
             sh.blobCount = (uint32_t)sh.noteCount;
             sh.dirty = false;
-            std::vector<Run>().swap(sh.runs);
-            sh.judge = BitArray();
-            sh.hit = BitArray();
-            sh.open = false;
-        };
-        if (built.size() >= 2) {
-            std::thread worker([&]() {
-                for (size_t k = 1; k < built.size(); k += 2) finish(built[k]);
-            });
-            for (size_t k = 0; k < built.size(); k += 2) finish(built[k]);
-            worker.join();
-        } else {
-            for (Shard& sh : built) finish(sh);
+            closeShard(sh); // destroy the temporary open state (blob kept)
+            shards.push_back(std::move(sh));
         }
-
-        shards = std::move(built);
         totalNotes = (int64_t)n;
         // Fresh from load: nothing is modified (every bit 0) — the save
         // cache, adopted right after this when the source was an FVC4
         // file, matches the file exactly.
         modifiedBits.init(shards.size());
     }
-
     // ---- SEGMENT CACHE ADOPTION (load path) -------------------------------
     // Takes the exact segment images a just-loaded FVC4 file provided, so
     // the FIRST save after load re-encodes nothing. Caller validates the
@@ -2092,8 +2072,7 @@ public:
     void adoptSegments(std::vector<Segment>&& segs) {
         segments = std::move(segs);
     }
-
-    // ---- SAVE (FVC4: incremental, adaptive segments, two-thread encode) --
+    // ---- SAVE (FVC4: incremental) -----------------------------------------
     // Writes the chart as the segmented FVC4 container: a directory of
     // segments, each a complete standalone FVC3 image (the exact codec
     // and FNV the monolithic file used — per segment now). Only segments
@@ -2102,21 +2081,19 @@ public:
     // cached image is memcpy'd to disk VERBATIM — those shards are never
     // even opened, so an untouched 2.36M-note megachart costs no decode
     // and no encode on save, just a sequential disk copy.
-    //
-    // Segment WIDTH comes from adaptiveSegmentShards(totalNotes) once per
-    // save; two consecutive saves at the same note-count tier produce
-    // identical boundaries, so the cache (matched by startTick AND
-    // noteCount) keeps hitting.
-    //
-    // The dirty-segment encode runs on two threads. Gathering each
-    // segment's note array must stay single-threaded because ensureOpen
-    // mutates the LRU / openCount; the encode itself is pure and fully
-    // independent per segment, so we parallelize only that.
     bool writeTo(const char* path) {
-        // Step 1 — group the shards into ADAPTIVE segments by time. Width
-        // is recomputed once per save from totalNotes.
-        const uint64_t segShards = (uint64_t)adaptiveSegmentShards((uint64_t)totalNotes);
-        const uint64_t segTicks  = SHARD_TICKS * segShards;
+        // Step 1 — ADAPTIVE segment plan (2..32 shards) via the shared
+        // planner. Deterministic given the shard directory, so an
+        // untouched region re-plans to identical boundaries and keeps its
+        // cache. This recompute is O(shards) and cannot go stale.
+        std::vector<ChartSegShard> infos(shards.size());
+        for (size_t si = 0; si < shards.size(); ++si) {
+            infos[si].startTick = shards[si].startTick;
+            infos[si].noteCount = (uint32_t)shards[si].size();
+            infos[si].modified = modifiedBits.get(si);
+        }
+        const std::vector<ChartSegRange> ranges = chart_plan_segments(infos,
+            SHARD_TICKS, SEGMENT_MIN_SHARDS, SEGMENT_MAX_SHARDS, SEGMENT_NOTE_BUDGET);
         struct SegPlan {
             size_t firstShard = 0, lastShard = 0; // [first, last] inclusive
             uint64_t startTick = 0;
@@ -2126,21 +2103,16 @@ public:
             std::vector<uint8_t> image;             // rebuilt image (dirty only)
         };
         std::vector<SegPlan> plan;
-        for (size_t si = 0; si < shards.size(); ++si) {
-            const uint64_t segTick = shards[si].startTick - (shards[si].startTick % segTicks);
-            if (plan.empty() || plan.back().startTick != segTick) {
-                SegPlan sp;
-                sp.firstShard = si;
-                sp.lastShard = si;
-                sp.startTick = segTick;
-                plan.push_back(sp);
-            } else {
-                plan.back().lastShard = si;
-            }
-            plan.back().noteCount += (uint32_t)shards[si].size();
-            if (modifiedBits.get(si)) plan.back().dirty = true;
+        plan.reserve(ranges.size());
+        for (const ChartSegRange& r : ranges) {
+            SegPlan sp;
+            sp.firstShard = r.firstShard;
+            sp.lastShard = r.lastShard;
+            sp.startTick = r.startTick;
+            sp.noteCount = r.noteCount;
+            sp.dirty = r.dirty;
+            plan.push_back(std::move(sp));
         }
-
         // Step 2 — match each planned segment against the cache left by
         // the previous save (or adopted from a loaded FVC4 file): same
         // startTick AND same noteCount => the cached image is exact, keep
@@ -2159,17 +2131,18 @@ public:
             // still match earlier cached ones (e.g. an edit shifted a
             // note across a segment boundary).
         }
-
-        // Step 3a — GATHER dirty-segment notes single-threaded. ensureOpen
-        // touches the LRU and may evict; that is state mutation, so it
-        // must not race. The gather is a pure memcpy and cheap next to
-        // the encode pass below. Each dirty segment gets its own `flat`
-        // so the encode pass can run them in parallel.
-        std::vector<SegPlan*> dirtyPlans;
-        std::vector<std::vector<ChartNote>> dirtyFlats;
-        for (SegPlan& sp : plan) {
+        // Step 3 — re-encode the dirty segments. Gathering opens shards
+        // (store mutation: decode + LRU), so it stays on THIS thread; the
+        // encodes are pure functions of their flat arrays and run on two
+        // threads when >1 segment is dirty (split by note volume). A lone
+        // dirty segment parallelizes INSIDE fvc3_encode instead (AC on
+        // the worker) — still exactly two threads, never nested.
+        std::vector<size_t> dirtyIdx;
+        std::vector<std::vector<ChartNote>> flats;
+        for (size_t pi = 0; pi < plan.size(); ++pi) {
+            SegPlan& sp = plan[pi];
             if (sp.cached) continue; // clean — copy the cached bytes later
-            dirtyPlans.push_back(&sp);
+            dirtyIdx.push_back(pi);
             std::vector<ChartNote> flat;
             size_t noteBudget = 0;
             for (size_t si = sp.firstShard; si <= sp.lastShard; ++si)
@@ -2181,33 +2154,12 @@ public:
                 for (const Run& r : shards[si].runs)
                     for (const ChartNote& nt : r.notes) flat.push_back(nt);
             }
-            dirtyFlats.push_back(std::move(flat));
+            flats.push_back(std::move(flat));
         }
-
-        // Step 3b — ENCODE dirty segments on two threads. Each segment is
-        // fully independent (own flat input, own image vector), and we
-        // pass parallel=false so fvc3_encode does not spawn a nested
-        // ROWS/AC worker per segment. With 0 or 1 dirty segments we let
-        // fvc3_encode's internal ROWS||AC thread use the second core
-        // instead of a segment-level split.
-        if (dirtyFlats.size() >= 2) {
-            std::vector<std::vector<uint8_t>> images(dirtyFlats.size());
-            auto enc = [&](size_t k) {
-                images[k] = fvc3_encode(dirtyFlats[k].data(), dirtyFlats[k].size(), false);
-            };
-            std::thread worker([&]() {
-                for (size_t k = 1; k < dirtyFlats.size(); k += 2) enc(k);
-            });
-            for (size_t k = 0; k < dirtyFlats.size(); k += 2) enc(k);
-            worker.join();
-            for (size_t k = 0; k < dirtyPlans.size(); ++k)
-                dirtyPlans[k]->image = std::move(images[k]);
-        } else {
-            for (size_t k = 0; k < dirtyPlans.size(); ++k)
-                dirtyPlans[k]->image = fvc3_encode(
-                    dirtyFlats[k].data(), dirtyFlats[k].size(), /*parallel=*/true);
-        }
-
+        std::vector<std::vector<uint8_t>> images;
+        chart_encode_segments_mt(flats, images);
+        for (size_t k = 0; k < dirtyIdx.size(); ++k)
+            plan[dirtyIdx[k]].image = std::move(images[k]);
         // Step 4 — write the container: header + directory + images. All
         // the I/O happens in one sequential pass with no further encode
         // work; a failure anywhere leaves the in-RAM cache untouched.
@@ -2215,20 +2167,20 @@ public:
         size_t totalOut = sizeof(Fvc4Header) + plan.size() * sizeof(Fvc4SegEntry);
         for (const SegPlan& sp : plan) totalOut += sp.cached ? sp.cached->size() : sp.image.size();
         out.reserve(totalOut);
-        Fvc4Header hdr;
+        Fvc4Header hdr{};
         std::memcpy(hdr.magic, "FVC4", 4);
         hdr.noteCount = (uint32_t)totalNotes;
         hdr.segCount = (uint32_t)plan.size();
         out.insert(out.end(), reinterpret_cast<const uint8_t*>(&hdr),
-                   reinterpret_cast<const uint8_t*>(&hdr) + sizeof(hdr));
+            reinterpret_cast<const uint8_t*>(&hdr) + sizeof(hdr));
         size_t off = sizeof(Fvc4Header) + plan.size() * sizeof(Fvc4SegEntry);
         for (const SegPlan& sp : plan) {
-            Fvc4SegEntry se;
+            Fvc4SegEntry se{};
             se.startTick = sp.startTick;
             se.noteCount = sp.noteCount;
             se.imageBytes = (uint32_t)(sp.cached ? sp.cached->size() : sp.image.size());
             out.insert(out.end(), reinterpret_cast<const uint8_t*>(&se),
-                       reinterpret_cast<const uint8_t*>(&se) + sizeof(se));
+                reinterpret_cast<const uint8_t*>(&se) + sizeof(se));
         }
         (void)off; // images begin at this offset (kept for clarity of layout)
         for (const SegPlan& sp : plan) {
@@ -2238,9 +2190,8 @@ public:
         std::ofstream fout(path, std::ios::binary | std::ios::trunc);
         if (!fout) return false;
         fout.write(reinterpret_cast<const char*>(out.data()),
-                   (std::streamsize)out.size());
+            (std::streamsize)out.size());
         if (!fout.good()) return false;
-
         // Step 5 — commit: rebuild the cache from what was written and
         // clear every modified bit (the file now matches the store). The
         // new cache is built ASIDE first: plan[i].cached pointers aim into
@@ -2259,7 +2210,6 @@ public:
         modifiedBits.init(shards.size()); // all zeros: saved == on-disk
         return true;
     }
-
     // ---- DEBUG / TESTS ----
     bool isSorted() const {
         uint64_t prev = 0;
@@ -2275,7 +2225,6 @@ public:
         }
         return true;
     }
-
     // TEST HOOKS (not used by the game):
     bool shardIsOpen(size_t si) const { return shards.at(si).open; }
     size_t blobBytes(size_t si) const {
@@ -2296,7 +2245,6 @@ public:
     // exactly the way a structural add/remove does, for tests that check
     // the save path skips clean segments.
     void testMarkModified(size_t si) { modifiedBits.set(si, true); }
-
 private:
     // Close that never re-encodes (eviction of a shard about to die).
     void closeShardForEviction(Shard& sh) {
@@ -2323,37 +2271,38 @@ class ChartFileReader {
 private:
     std::string filename;
     ShardedNoteStore store;
-
     bool loadedFromDisk = false; // a .fvc path is bound to this reader
     bool dirty = false;          // structural edits not yet saved
     bool editorMode = false;
     bool applyingNotes = false;
-
     mutable std::mutex dataMutex;
-
-    // Load a .fvc snapshot into the sharded store. Three on-disk formats:
-    //   v3 ("FVC3" header): COMPRESSED — grid+kind varint planes, or a raw
-    //   fallback payload; the current save format (see fvc3_encode).
+    // Load a .fvc snapshot into the sharded store. Four on-disk formats:
+    //   v4 ("FVC4" header): SEGMENTED — adaptive 2..32-shard segments,
+    //   each a standalone FVC3 image; the current save format. Decoded
+    //   on two threads.
+    //   v3 ("FVC3" header): COMPRESSED — grid+kind varint planes, ROWS,
+    //   AC, or a raw fallback payload; the previous monolithic format.
     //   v2 ("FVC2" header): 16-byte header + 12-byte notes — the previous
     //   format, with the lane (strumline) field stored per note.
     //   v1 (no magic): a bare run of 10-byte notes (pos48 | dur16 | idx8 |
     //   type8 — no lane). Loaded, then converted in RAM: the lane is
     //   derived from the type through the default routing (type 0 →
     //   strumline 0 opponent, everything else → 1 player). The conversion
-    //   only lives in RAM + the next save; a save always writes v3.
+    //   only lives in RAM + the next save; a save always writes FVC4.
     bool loadFromFvc(const char* path) {
         std::ifstream in(path, std::ios::binary | std::ios::ate);
-        if (!in) return false;
+        if (!in) {
+            std::cerr << "  [ Chart File ] Failed to open " << path << std::endl;
+            return false;
+        }
         const std::streamsize fileSize = in.tellg();
         if (fileSize < 0) return false;
         in.seekg(0, std::ios::beg);
-
         std::vector<ChartNote> flat;
         bool legacy = true;
         // Segments adopted from an FVC4 file (empty for every other
         // format — the first save then encodes them all once).
         std::vector<ShardedNoteStore::Segment> loadedSegments;
-
         // v4 first — the segmented incremental format. One 12-byte
         // header, a directory of segments, then each segment's complete
         // standalone FVC3 image.
@@ -2367,14 +2316,14 @@ private:
                 // bytes actually present (every field cross-checked — a
                 // flipped bit anywhere structural rejects the file).
                 if (h4.segCount > (uint32_t)((fileSize - (std::streamsize)sizeof(Fvc4Header))
-                                             / (std::streamsize)sizeof(Fvc4SegEntry))) {
+                    / (std::streamsize)sizeof(Fvc4SegEntry))) {
                     std::cerr << "  [ Chart File ] FVC4 directory overruns file " << path << std::endl;
                     return false;
                 }
                 std::vector<Fvc4SegEntry> dir(h4.segCount);
                 if (h4.segCount) {
                     in.read(reinterpret_cast<char*>(dir.data()),
-                            (std::streamsize)h4.segCount * (std::streamsize)sizeof(Fvc4SegEntry));
+                        (std::streamsize)h4.segCount * (std::streamsize)sizeof(Fvc4SegEntry));
                     if (in.gcount() != (std::streamsize)h4.segCount * (std::streamsize)sizeof(Fvc4SegEntry)) {
                         std::cerr << "  [ Chart File ] Truncated FVC4 directory in " << path << std::endl;
                         return false;
@@ -2391,61 +2340,107 @@ private:
                         return false;
                     }
                 }
-                // Validate + decode segment by segment. Images are read
-                // strictly sequentially; a segment's notes must stay
-                // inside its own tick window (the directory promised it).
-                uint64_t sumNotes = 0;
-                const uint8_t* ip = images.data();
-                const uint8_t* const iend = images.data() + images.size();
-                for (uint32_t s = 0; s < h4.segCount; ++s) {
-                    const Fvc4SegEntry& se = dir[s];
-                    if (se.startTick % ShardedNoteStore::SEGMENT_TICKS != 0
-                        || (s > 0 && se.startTick <= dir[s - 1].startTick)) {
-                        std::cerr << "  [ Chart File ] Bad FVC4 directory order in " << path << std::endl;
-                        return false;
-                    }
-                    if (se.imageBytes == 0 || (size_t)(iend - ip) < (size_t)se.imageBytes) {
-                        std::cerr << "  [ Chart File ] FVC4 segment " << s << " overruns payload in " << path << std::endl;
-                        return false;
-                    }
-                    std::vector<ChartNote> segNotes;
-                    if (!fvc3_decode(ip, se.imageBytes, segNotes)
-                        || segNotes.size() != se.noteCount) {
-                        std::cerr << "  [ Chart File ] Corrupt FVC4 segment " << s << " in " << path << std::endl;
-                        return false;
-                    }
-                    for (const ChartNote& cn : segNotes) {
-                        const uint64_t p = notePos(cn);
-                        if (p < se.startTick
-                            || p - se.startTick >= ShardedNoteStore::SEGMENT_TICKS) {
-                            std::cerr << "  [ Chart File ] FVC4 segment " << s << " notes outside its window in " << path << std::endl;
+                // Pre-walk the directory (sequential, cheap): shard-aligned
+                // starts, strict tick order, image bounds. Adaptive segments
+                // start on ANY shard boundary, so alignment is SHARD_TICKS
+                // (legacy 4096-shard starts pass it too).
+                std::vector<const uint8_t*> segPtr(h4.segCount);
+                {
+                    const uint8_t* ip = images.data();
+                    const uint8_t* const iend = images.data() + images.size();
+                    for (uint32_t s = 0; s < h4.segCount; ++s) {
+                        const Fvc4SegEntry& se = dir[s];
+                        if (se.startTick % ShardedNoteStore::SHARD_TICKS != 0
+                            || (s > 0 && se.startTick <= dir[s - 1].startTick)) {
+                            std::cerr << "  [ Chart File ] Bad FVC4 directory order in " << path << std::endl;
                             return false;
                         }
+                        if (se.imageBytes == 0 || (size_t)(iend - ip) < (size_t)se.imageBytes) {
+                            std::cerr << "  [ Chart File ] FVC4 segment " << s << " overruns payload in " << path << std::endl;
+                            return false;
+                        }
+                        segPtr[s] = ip;
+                        ip += se.imageBytes;
                     }
-                    ip += se.imageBytes;
+                    if (ip != iend) {
+                        std::cerr << "  [ Chart File ] FVC4 totals mismatch in " << path << std::endl;
+                        return false;
+                    }
+                }
+                // Decode on two threads — each segment is a standalone
+                // FVC3 image, so the halves are fully independent. Split
+                // by NOTE VOLUME (dense segments cost more than sparse).
+                std::vector<std::vector<ChartNote>> segNotes(h4.segCount);
+                std::atomic<bool> decodeOk{true};
+                auto decodeRange = [&](uint32_t beg, uint32_t end) {
+                    for (uint32_t s = beg; s < end; ++s) {
+                        if (!decodeOk.load(std::memory_order_relaxed)) return;
+                        const Fvc4SegEntry& se = dir[s];
+                        if (!fvc3_decode(segPtr[s], se.imageBytes, segNotes[s])
+                            || segNotes[s].size() != se.noteCount) {
+                            std::cerr << "  [ Chart File ] Corrupt FVC4 segment " << s << " in " << path << std::endl;
+                            decodeOk.store(false, std::memory_order_relaxed);
+                            return;
+                        }
+                        // Window: up to the next segment's start; the tail
+                        // keeps the legacy SEGMENT_TICKS bound (adaptive
+                        // segments are far narrower, so it still catches
+                        // garbage).
+                        const uint64_t winEnd = (s + 1 < h4.segCount)
+                            ? dir[s + 1].startTick
+                            : se.startTick + ShardedNoteStore::SEGMENT_TICKS;
+                        for (const ChartNote& cn : segNotes[s]) {
+                            const uint64_t p = notePos(cn);
+                            if (p < se.startTick || p >= winEnd) {
+                                std::cerr << "  [ Chart File ] FVC4 segment " << s << " notes outside its window in " << path << std::endl;
+                                decodeOk.store(false, std::memory_order_relaxed);
+                                return;
+                            }
+                        }
+                    }
+                };
+                if (h4.segCount >= 2) {
+                    uint64_t totalN = 0;
+                    for (uint32_t s = 0; s < h4.segCount; ++s) totalN += dir[s].noteCount;
+                    uint64_t acc = 0; uint32_t half = 0;
+                    while (half < h4.segCount - 1 && acc < (totalN + 1) / 2) {
+                        acc += dir[half].noteCount; ++half;
+                    }
+                    if (half == 0) half = 1;
+                    chart_dual_run([&]{ decodeRange(0, half); },
+                                   [&]{ decodeRange(half, h4.segCount); });
+                } else {
+                    decodeRange(0, h4.segCount);
+                }
+                if (!decodeOk.load()) return false;
+                // Merge in tick order + adopt the exact image bytes as
+                // the save cache (first save after load re-encodes nothing).
+                flat.reserve(h4.noteCount);
+                uint64_t sumNotes = 0;
+                for (uint32_t s = 0; s < h4.segCount; ++s) {
+                    const Fvc4SegEntry& se = dir[s];
+                    flat.insert(flat.end(), segNotes[s].begin(), segNotes[s].end());
+                    std::vector<ChartNote>().swap(segNotes[s]); // decay the decode peak
                     sumNotes += se.noteCount;
-                    flat.insert(flat.end(), segNotes.begin(), segNotes.end());
-                    // Adopt the exact image bytes as the save cache.
                     ShardedNoteStore::Segment seg;
                     seg.startTick = se.startTick;
                     seg.noteCount = se.noteCount;
-                    seg.image.assign(ip - se.imageBytes, ip);
+                    seg.image.assign(segPtr[s], segPtr[s] + se.imageBytes);
                     loadedSegments.push_back(std::move(seg));
                 }
-                if (ip != iend || sumNotes != h4.noteCount) {
+                if (sumNotes != h4.noteCount) {
                     std::cerr << "  [ Chart File ] FVC4 totals mismatch in " << path << std::endl;
                     return false;
                 }
                 std::cout << "  [ Chart File ] FVC4 segmented snapshot (" << flat.size()
-                          << " notes, " << h4.segCount << " segments, " << fileSize
-                          << " bytes on disk)" << std::endl;
+                    << " notes, " << h4.segCount << " segments, " << fileSize
+                    << " bytes on disk)" << std::endl;
             } else {
                 in.seekg(0, std::ios::beg); // not v4 — try v3
             }
         }
-
         if (legacy && fileSize >= (std::streamsize)sizeof(Fvc3Header)) {
-            // v3 first — the current format
+            // v3 — the previous monolithic format
             Fvc3Header h3;
             in.read(reinterpret_cast<char*>(&h3), sizeof(h3));
             if (in.gcount() == (std::streamsize)sizeof(h3)
@@ -2460,12 +2455,11 @@ private:
                 }
                 legacy = false;
                 std::cout << "  [ Chart File ] FVC3 compressed snapshot (" << flat.size()
-                          << " notes, " << fileSize << " bytes on disk)" << std::endl;
+                    << " notes, " << fileSize << " bytes on disk)" << std::endl;
             } else {
                 in.seekg(0, std::ios::beg); // not v3 — try v2
             }
         }
-
         if (legacy && fileSize >= (std::streamsize)sizeof(FvcFileHeader)) {
             FvcFileHeader hdr;
             in.read(reinterpret_cast<char*>(&hdr), sizeof(hdr));
@@ -2473,8 +2467,8 @@ private:
                 && std::memcmp(hdr.magic, "FVC2", 4) == 0) {
                 if (hdr.noteSize != sizeof(ChartNote)) {
                     std::cerr << "  [ Chart File ] " << path
-                              << " has FVC2 magic but noteSize " << hdr.noteSize
-                              << " (expected " << sizeof(ChartNote) << ")" << std::endl;
+                        << " has FVC2 magic but noteSize " << hdr.noteSize
+                        << " (expected " << sizeof(ChartNote) << ")" << std::endl;
                     return false;
                 }
                 legacy = false;
@@ -2482,20 +2476,20 @@ private:
                     fileSize - (std::streamsize)sizeof(FvcFileHeader);
                 if (payload % (std::streamsize)sizeof(ChartNote) != 0) {
                     std::cerr << "  [ Chart File ] Trailing bytes in " << path
-                              << " (file size not a multiple of the 12-byte note)" << std::endl;
+                        << " (file size not a multiple of the 12-byte note)" << std::endl;
                     return false;
                 }
                 const size_t n = (size_t)(payload / (std::streamsize)sizeof(ChartNote));
                 if ((uint64_t)n != hdr.noteCount) {
                     std::cerr << "  [ Chart File ] Header/count mismatch in " << path
-                              << " (" << hdr.noteCount << " declared, " << n << " present)"
-                              << std::endl;
+                        << " (" << hdr.noteCount << " declared, " << n << " present)"
+                        << std::endl;
                     return false;
                 }
                 flat.resize(n);
                 if (n > 0) {
                     in.read(reinterpret_cast<char*>(flat.data()),
-                            (std::streamsize)n * (std::streamsize)sizeof(ChartNote));
+                        (std::streamsize)n * (std::streamsize)sizeof(ChartNote));
                     if (in.gcount() != (std::streamsize)(n * sizeof(ChartNote))) {
                         std::cerr << "  [ Chart File ] Truncated read on " << path << std::endl;
                         return false;
@@ -2505,7 +2499,6 @@ private:
                 in.seekg(0, std::ios::beg); // not v2 — rewind for the legacy read
             }
         }
-
         if (legacy) {
             // v1: 10-byte records, no file header.
             const size_t n = (size_t)fileSize / 10;
@@ -2539,12 +2532,11 @@ private:
                     flat[i] = packNote(pos, dur16, idx, type, lane);
                 }
                 std::cout << "  [ Chart File ] Legacy 10-byte .fvc (" << n
-                          << " notes) — converted to 12-byte in RAM; next save writes FVC2."
-                          << std::endl;
+                    << " notes) — converted to 12-byte in RAM; next save writes FVC4."
+                    << std::endl;
             }
         }
         in.close();
-
         bool sorted = true;
         uint64_t prev = 0;
         for (size_t i = 0; i < flat.size(); ++i) {
@@ -2556,13 +2548,11 @@ private:
             std::cout << "  [ Chart File ] Unsorted .fvc detected — radix sorting." << std::endl;
             radix_sort_notes_inplace(flat.data(), flat.size());
         }
-
         std::lock_guard<std::mutex> lk(dataMutex);
         store.loadFromSortedFlat(flat.data(), flat.size());
         store.adoptSegments(std::move(loadedSegments));
         return true;
     }
-
 #ifndef CHART_FILE_NO_TRANSPILER
     // ========================================================================
     // Integrated JSON Transpiler
@@ -2573,7 +2563,6 @@ private:
     void writeHeaderFile(const std::string& songDir, const rapidjson::Document& doc, int totalColumns) {
         std::string headerPath = songDir + "/header.txt";
         //std::cout << headerPath << std::endl;
-
         // Backup plan: If the header already exists, do nothing
         std::ifstream test(headerPath);
         if (test.good()) {
@@ -2581,7 +2570,6 @@ private:
             return;
         }
         test.close();
-
         std::string title = "N/A";
         std::string artist = "N/A";
         std::string genre = "N/A";
@@ -2591,7 +2579,6 @@ private:
         std::string player1 = "dad"; // Opponent
         std::string player2 = "bf";  // Player
         std::string gf = "gf";
-
         if (doc.HasMember("song") && doc["song"].IsObject()) {
             const auto& song = doc["song"];
             if (song.HasMember("song") && song["song"].IsString()) title = song["song"].GetString();
@@ -2602,13 +2589,10 @@ private:
             if (song.HasMember("gfVersion") && song["gfVersion"].IsString()) gf = song["gfVersion"].GetString();
             if (song.HasMember("stage") && song["stage"].IsString()) stage = song["stage"].GetString();
         }
-
         // Multiply scroll speed by 0.45 for Funkin' Vieew
         speed *= 0.45;
-
         std::ofstream out(headerPath);
         if (!out) return;
-
         // Write exactly what the Haxe parser expects, line by line
         out << "Title: " << title << "\n";
         out << "Artist: " << artist << "\n";
@@ -2617,16 +2601,12 @@ private:
         out << "BPM: " << bpm << "\n";
         out << "Time Signature: 4/4\n";
         out << "Stage: " << stage << "\n";
-
         size_t lastSlash = songDir.find_last_of("/\\");
         std::string songName = (lastSlash == std::string::npos) ? songDir : songDir.substr(lastSlash + 1);
-
         out << "Instrumental: " << songDir << "/Inst.ogg\n";
-
         std::ifstream voicesPlayer(songDir + "/Voices-Player.ogg");
         std::ifstream voicesOpponent(songDir + "/Voices-Opponent.ogg");
         bool useTwoVoiceFiles = false;
-
         if (voicesPlayer.good()) {
             voicesPlayer.close();
             useTwoVoiceFiles = true;
@@ -2635,7 +2615,6 @@ private:
             voicesOpponent.close();
             useTwoVoiceFiles = true;
         }
-
         if (useTwoVoiceFiles) {
             std::cout << "  [ Transpiler ] Detected Voices-Player.ogg/Voices-Opponent.ogg for " << title << std::endl;
             out << "Voices: " << songDir << "/Voices-Player.ogg, " << songDir << "/Voices-Opponent.ogg\n";
@@ -2643,44 +2622,35 @@ private:
             std::cout << "  [ Transpiler ] Detected Voices.ogg for " << title << std::endl;
             out << "Voices: " << songDir << "/Voices.ogg\n";
         }
-
         // Use the dynamically detected mania instead of a hardcoded 4!
         out << "Mania: " << totalColumns << "\n";
         out << "Difficulty: #8\n";
-
         // Game Over block (Haxe reads and ignores the first line, then reads Theme and BPM)
         out << "Game Over:\n";
         out << "Theme: vanilla\n";
         out << "BPM: " << bpm << "\n";
-
         // Characters block (Haxe reads and ignores the first line, then reads actors)
         out << "Characters:\n";
-
         // Actor 1 (Opponent) - Exactly 3 lines
         out << player1 << ", enemy\n";
         out << "pos -700 300\n";
         out << "cam 0 45\n";
-
         // Actor 2 (GF) - Exactly 3 lines
         out << gf << ", other\n";
         out << "pos -100 300\n";
         out << "cam 0 45\n";
-
         // Actor 3 (Player) - Exactly 3 lines
         out << player2 << ", player\n";
         out << "pos 200 300\n";
         out << "cam 0 45";
-
         out.close();
         std::cout << "  [ Transpiler ] Generated header.txt for " << title << std::endl;
     }
-
     // ========================================================================
     // Event JSON Generator (100% Assertion-Free)
     // ========================================================================
     void generateEventJson(const std::string& songDir, const rapidjson::Document& doc) {
         std::string eventsPath = songDir + "/eventList.json";
-
         // Backup plan: If the eventList.json already exists, do nothing
         std::ifstream test(eventsPath);
         if (test.good()) {
@@ -2688,110 +2658,85 @@ private:
             return;
         }
         test.close();
-
         rapidjson::Document outDoc;
         outDoc.SetObject();
         rapidjson::Document::AllocatorType& allocator = outDoc.GetAllocator();
-
         rapidjson::Value eventsArray(rapidjson::kArrayType);
-
         // Safely check if the document has a "song" object
         if (doc.IsObject() && doc.HasMember("song") && doc["song"].IsObject()) {
             const auto& song = doc["song"];
-
             // 1. Parse Standard Psych Engine Events (song.events)
             if (song.HasMember("events") && song["events"].IsArray()) {
                 const auto& psychEvents = song["events"];
-
                 // SAFETY: We know psychEvents is an array, so GetArray() is safe
                 for (auto& eventGroup : psychEvents.GetArray()) {
                     // SAFETY: Check if eventGroup is an array before accessing []
                     if (!eventGroup.IsArray() || eventGroup.Size() < 2) continue;
-
                     double time_ms = 0.0;
                     if (eventGroup[0].IsNumber()) time_ms = eventGroup[0].GetDouble();
-
                     // SAFETY: Check if eventGroup[1] is an array before calling GetArray()
                     if (!eventGroup[1].IsArray()) continue;
-
                     for (auto& subEvent : eventGroup[1].GetArray()) {
                         // SAFETY: Check if subEvent is an array before accessing []
                         if (!subEvent.IsArray() || subEvent.Size() < 1) continue;
-
                         std::string evName = subEvent[0].IsString() ? subEvent[0].GetString() : "";
                         std::string val1 = "";
                         std::string val2 = "";
-
                         if (subEvent.Size() > 1 && subEvent[1].IsString()) val1 = subEvent[1].GetString();
                         else if (subEvent.Size() > 1 && subEvent[1].IsNumber()) {
                             val1 = subEvent[1].IsInt() ? std::to_string(subEvent[1].GetInt()) : std::to_string(subEvent[1].GetDouble());
                         }
-
                         if (subEvent.Size() > 2 && subEvent[2].IsString()) val2 = subEvent[2].GetString();
                         else if (subEvent.Size() > 2 && subEvent[2].IsNumber()) {
                             val2 = subEvent[2].IsInt() ? std::to_string(subEvent[2].GetInt()) : std::to_string(subEvent[2].GetDouble());
                         }
-
                         rapidjson::Value newEventObj(rapidjson::kObjectType);
                         newEventObj.AddMember("evName", rapidjson::Value(evName.c_str(), allocator).Move(), allocator);
                         newEventObj.AddMember("value1", rapidjson::Value(val1.c_str(), allocator).Move(), allocator);
                         newEventObj.AddMember("value2", rapidjson::Value(val2.c_str(), allocator).Move(), allocator);
                         newEventObj.AddMember("evTime", time_ms, allocator);
-
                         eventsArray.PushBack(newEventObj, allocator);
                     }
                 }
             }
-
             // 2. Parse Legacy Psych/Kade Events embedded in sectionNotes
             if (song.HasMember("notes") && song["notes"].IsArray()) {
                 // SAFETY: We know song["notes"] is an array
                 for (auto& section : song["notes"].GetArray()) {
                     // SAFETY: Check if section is an object and has sectionNotes as an array
                     if (!section.IsObject() || !section.HasMember("sectionNotes") || !section["sectionNotes"].IsArray()) continue;
-
                     // SAFETY: We know section["sectionNotes"] is an array
                     for (auto& note : section["sectionNotes"].GetArray()) {
                         // SAFETY: Check if note is an array before accessing []
                         if (!note.IsArray() || note.Size() < 3) continue;
-
                         // SAFETY: Check if note[1] is a number before calling GetDouble()
                         if (note[1].IsNumber() && note[1].GetDouble() == -1.0) {
                             double time_ms = note[0].IsNumber() ? note[0].GetDouble() : 0.0;
                             std::string evName = note[2].IsString() ? note[2].GetString() : "";
-
                             std::string val1 = (note.Size() > 3 && note[3].IsString()) ? note[3].GetString() : "";
                             std::string val2 = (note.Size() > 4 && note[4].IsString()) ? note[4].GetString() : "";
-
                             rapidjson::Value newEventObj(rapidjson::kObjectType);
                             newEventObj.AddMember("evName", rapidjson::Value(evName.c_str(), allocator).Move(), allocator);
                             newEventObj.AddMember("value1", rapidjson::Value(val1.c_str(), allocator).Move(), allocator);
                             newEventObj.AddMember("value2", rapidjson::Value(val2.c_str(), allocator).Move(), allocator);
                             newEventObj.AddMember("evTime", time_ms, allocator);
-
                             eventsArray.PushBack(newEventObj, allocator);
                         }
                     }
                 }
             }
         }
-
         // do this before it gets invalidated by closure
         size_t eventCount = eventsArray.Size();
-
         outDoc.AddMember("events", eventsArray, allocator);
-
         std::ofstream ofs(eventsPath);
         if (!ofs) return;
-
         rapidjson::OStreamWrapper osw(ofs);
         rapidjson::PrettyWriter<rapidjson::OStreamWrapper> writer(osw);
         outDoc.Accept(writer);
-
         ofs.close();
         std::cout << "  [ Transpiler ] Generated eventList.json with " << eventCount << " events." << std::endl;
     }
-
     // ========================================================================
     // Zero-Overhead Note Writer (Format & Mania Accurate)
     // ------------------------------------------------------------------------
@@ -2803,7 +2748,6 @@ private:
     // ========================================================================
     inline bool writeNote(ChartNote& outNote, double time_ms, int lane, double sustain_ms, bool mustHitSection, bool isPsychV1, bool isVSlice, int totalColumns) {
         if (lane < 0) return false;
-
         // Which strumline (side) owns this note — straight from the
         // source chart's own side encoding, not from any type routing.
         int strumline;
@@ -2816,23 +2760,18 @@ private:
             bool gottaHitNote = (lane < totalColumns) ? mustHitSection : !mustHitSection;
             strumline = gottaHitNote ? 1 : 0;
         }
-
         const int index = lane % totalColumns;
-
         // The notetype is a skin id only. The source formats carry no
         // per-note type (Psych/VSlice type extensions can pass one
         // through here later without touching the lane math), so the
         // default skins keep differing per side the way they always
         // looked: opponent side 0, player side 1.
         const int type = strumline;
-
         const uint64_t pos = (uint64_t)(time_ms * 100000.0); // 100ns ticks
         const uint32_t dur = (uint32_t)(sustain_ms);         // 1ms ticks
-
         outNote = packNote(pos, dur, (uint32_t)index, (uint32_t)type, (uint32_t)strumline);
         return true;
     }
-
     // ========================================================================
     // Main Transpiler
     // ========================================================================
@@ -2842,26 +2781,21 @@ private:
             std::cerr << "  [ Transpiler ] Failed to open JSON: " << jsonPath << std::endl;
             return;
         }
-
         rapidjson::IStreamWrapper isw(ifs);
         rapidjson::Document doc;
         doc.ParseStream(isw);
         ifs.close();
-
         if (doc.HasParseError()) {
             std::cerr << "  [ Transpiler ] JSON Parse Error at offset " << doc.GetErrorOffset() << std::endl;
             return;
         }
-
         // Determine song directory for the header file
         std::string jsonStr(jsonPath);
         size_t lastSlash = jsonStr.find_last_of("/\\");
         std::string songDir = (lastSlash == std::string::npos) ? "." : jsonStr.substr(0, lastSlash);
-
         bool isVSlice = doc.HasMember("chart");
         bool isPsych = doc.HasMember("song");
         bool isPsychV1 = false;
-
         if (isPsych) {
             const auto& song = doc["song"];
             if (song.HasMember("format") && song["format"].IsString()) {
@@ -2871,13 +2805,11 @@ private:
                 }
             }
         }
-
         // ====================================================================
         // MANIA DETECTION & LEGACY KADE/SHAGGY MOD LOGIC
         // ====================================================================
         int ammo[] = {4, 6, 7, 9};
         int totalColumns = 4;
-
         if (isPsych) {
             const auto& song = doc["song"];
             if (song.HasMember("mania") && song["mania"].IsInt()) {
@@ -2888,35 +2820,27 @@ private:
                 totalColumns = doc["mania"].GetInt();
             }
         }
-
         if (totalColumns < 4) {
             totalColumns = ammo[totalColumns];
         }
-
         std::cout << "  [ Transpiler ] Detected Mania/Key Count: " << totalColumns << "K" << std::endl;
         // ====================================================================
-
         // --- CREATE THE .fvc FILE ---
         std::string fvcPath = std::string(jsonPath);
         size_t dot = fvcPath.find_last_of('.');
         if (dot != std::string::npos) fvcPath = fvcPath.substr(0, dot);
         fvcPath += ".fvc";
-
         std::ofstream out(fvcPath, std::ios::binary | std::ios::trunc);
         if (!out) {
             std::cerr << "  [ Transpiler ] Failed to create .fvc file." << std::endl;
             return;
         }
-
-        // v3 snapshot: the notes are collected in RAM through the single
-        // pass below, then written once through the shared FVC3 codec
-        // (grid+kind varint planes, raw fallback — same format the editor
-        // save writes).
+        // FVC4 snapshot: the notes are collected in RAM through the single
+        // pass below, then written once through the shared adaptive
+        // segment planner + FVC3 codec (two threads).
         std::vector<ChartNote> collected;
-
         size_t writeIndex = 0;
         ChartNote currentNote;
-
         // ====================================================================
         // SINGLE PASS: COUNT AND WRITE NOTES DIRECTLY TO DISK
         // ====================================================================
@@ -2930,7 +2854,6 @@ private:
                                 double t = note["t"].GetDouble();
                                 int d = note["d"].GetInt();
                                 double l = note.HasMember("l") && note["l"].IsNumber() ? note["l"].GetDouble() : 0;
-
                                 // Write directly to disk if valid
                                 if (writeNote(currentNote, t, d, l, true, false, true, totalColumns)) {
                                     collected.push_back(currentNote);
@@ -2950,7 +2873,6 @@ private:
                         if (section.HasMember("mustHitSection") && section["mustHitSection"].IsBool()) {
                             mustHit = section["mustHitSection"].GetBool();
                         }
-
                         for (const auto& note : section["sectionNotes"].GetArray()) {
                             if (note.IsArray() && note.Size() >= 3) {
                                 // ====================================================================
@@ -2958,12 +2880,10 @@ private:
                                 // If we don't skip them, note[2].GetDouble() will assert on "Hey!"
                                 // ====================================================================
                                 if (note[1].IsNumber() && note[1].GetInt() == -1) continue;
-
                                 // SAFETY: Check IsNumber() before calling GetDouble()/GetInt()
                                 double t = note[0].IsNumber() ? note[0].GetDouble() : 0.0;
                                 int lane = note[1].IsNumber() ? note[1].GetInt() : 0;
                                 double sustain = note[2].IsNumber() ? note[2].GetDouble() : 0.0;
-
                                 // Write directly to disk if valid
                                 if (writeNote(currentNote, t, lane, sustain, mustHit, isPsychV1, false, totalColumns)) {
                                     collected.push_back(currentNote);
@@ -2974,39 +2894,81 @@ private:
                 }
             }
         }
-
-        // Sort (the source formats are per-section, not globally ordered)
-        // and write the whole snapshot through the FVC3 codec in one go.
-        std::sort(collected.begin(), collected.end(), [](const ChartNote& a, const ChartNote& b) {
-            return notePos(a) < notePos(b);
-        });
+        // Sort (the source formats are per-section, not globally ordered).
+        radix_sort_notes_inplace(collected.data(), collected.size());
         writeIndex = collected.size();
-        if (writeIndex > 0) {
-            const std::vector<uint8_t> image = fvc3_encode(collected.data(), collected.size());
-            out.write(reinterpret_cast<const char*>(image.data()),
-                      (std::streamsize)image.size());
-        }
-        out.close();
-
         if (writeIndex == 0) {
+            out.close();
             std::cerr << "  [ Transpiler ] No valid notes found." << std::endl;
             std::remove(fvcPath.c_str()); // Clean up the empty file
             return;
         }
-
-        std::cout << "  [ Transpiler ] Wrote " << writeIndex << " notes through the FVC3 codec." << std::endl;
+        // FVC4: derive the shard directory exactly as the store's
+        // loadFromSortedFlat will, run the SAME adaptive segment planner,
+        // and encode the segments on two threads. The boundaries match
+        // the first save's plan, so the loaded cache re-encodes nothing.
+        std::vector<ChartSegShard> infos;
+        std::vector<size_t> shardOff;
+        {
+            size_t i = 0;
+            while (i < collected.size()) {
+                const uint64_t st = notePos(collected[i])
+                    - (notePos(collected[i]) % ShardedNoteStore::SHARD_TICKS);
+                size_t j = i;
+                while (j < collected.size()
+                    && notePos(collected[j]) - st < ShardedNoteStore::SHARD_TICKS) ++j;
+                shardOff.push_back(i);
+                ChartSegShard inf;
+                inf.startTick = st;
+                inf.noteCount = (uint32_t)(j - i);
+                inf.modified = false;
+                infos.push_back(inf);
+                i = j;
+            }
+        }
+        const std::vector<ChartSegRange> ranges = chart_plan_segments(infos,
+            ShardedNoteStore::SHARD_TICKS, ShardedNoteStore::SEGMENT_MIN_SHARDS,
+            ShardedNoteStore::SEGMENT_MAX_SHARDS, ShardedNoteStore::SEGMENT_NOTE_BUDGET);
+        std::vector<std::vector<ChartNote>> flats(ranges.size());
+        for (size_t r = 0; r < ranges.size(); ++r) {
+            const size_t beg = shardOff[ranges[r].firstShard];
+            const size_t end = shardOff[ranges[r].lastShard] + infos[ranges[r].lastShard].noteCount;
+            flats[r].assign(collected.begin() + (long)beg, collected.begin() + (long)end);
+        }
+        std::vector<std::vector<uint8_t>> images;
+        chart_encode_segments_mt(flats, images);
+        std::vector<uint8_t> file;
+        size_t totalOut = sizeof(Fvc4Header) + ranges.size() * sizeof(Fvc4SegEntry);
+        for (const auto& img : images) totalOut += img.size();
+        file.reserve(totalOut);
+        Fvc4Header h4{};
+        std::memcpy(h4.magic, "FVC4", 4);
+        h4.noteCount = (uint32_t)writeIndex;
+        h4.segCount = (uint32_t)ranges.size();
+        file.insert(file.end(), reinterpret_cast<const uint8_t*>(&h4),
+            reinterpret_cast<const uint8_t*>(&h4) + sizeof(h4));
+        for (size_t r = 0; r < ranges.size(); ++r) {
+            Fvc4SegEntry se{};
+            se.startTick = ranges[r].startTick;
+            se.noteCount = ranges[r].noteCount;
+            se.imageBytes = (uint32_t)images[r].size();
+            file.insert(file.end(), reinterpret_cast<const uint8_t*>(&se),
+                reinterpret_cast<const uint8_t*>(&se) + sizeof(se));
+        }
+        for (const auto& img : images) file.insert(file.end(), img.begin(), img.end());
+        out.write(reinterpret_cast<const char*>(file.data()), (std::streamsize)file.size());
+        out.close();
+        std::cout << "  [ Transpiler ] Wrote " << writeIndex << " notes through the FVC4 codec ("
+            << ranges.size() << " segments)." << std::endl;
         // ====================================================================
-
         // Generate header.txt if it doesn't already exist
         writeHeaderFile(songDir, doc, totalColumns);
-
         // ====================================================================
         // EVENT PARSING ROUTING
         // ====================================================================
         // Check if a standard events.json exists in the song directory
         std::string evtPath = songDir + "/events.json";
         std::ifstream ifs_(evtPath);
-
         if (!ifs_) {
             // events.json doesn't exist. Extract legacy events from the main chart doc.
             generateEventJson(songDir, doc);
@@ -3016,19 +2978,15 @@ private:
             rapidjson::Document evtDoc;
             evtDoc.ParseStream(jsw);
             ifs_.close();
-
             if (evtDoc.HasParseError()) {
                 std::cerr << "  [ Transpiler ] JSON Parse Error in events.json at offset " << evtDoc.GetErrorOffset() << std::endl;
                 return;
             }
-
             // Pass the parsed events.json document to the generator
             generateEventJson(songDir, evtDoc);
         }
-
         filename = fvcPath;
     }
-
     // ========================================================================
     // Header-Only JSON Parser (Used when .fvc exists but header.txt is missing)
     // ========================================================================
@@ -3038,24 +2996,19 @@ private:
             std::cerr << "  [ Transpiler ] Failed to open JSON for header generation: " << jsonPath << std::endl;
             return;
         }
-
         rapidjson::IStreamWrapper isw(ifs);
         rapidjson::Document doc;
         doc.ParseStream(isw);
         ifs.close();
-
         if (doc.HasParseError()) {
             std::cerr << "  [ Transpiler ] JSON Parse Error at offset " << doc.GetErrorOffset() << std::endl;
             return;
         }
-
         bool isPsych = doc.HasMember("song");
         bool isVSlice = doc.HasMember("chart");
-
         // Detect Mania
         int ammo[] = {4, 6, 7, 9};
         int totalColumns = 4;
-
         if (isPsych) {
             const auto& song = doc["song"];
             if (song.HasMember("mania") && song["mania"].IsInt()) {
@@ -3066,41 +3019,32 @@ private:
                 totalColumns = doc["mania"].GetInt();
             }
         }
-
         if (totalColumns < 4) {
             totalColumns = ammo[0];
         }
-
         // Generate the header using your existing EOF-proof logic
         writeHeaderFile(songDir, doc, totalColumns);
-
         // Generate eventList.json if it doesn't already exist
         generateEventJson(songDir, doc);
-
         std::cout << "  [ Transpiler ] Generated missing header.txt from " << jsonPath << std::endl;
     }
-
     bool ends_with(const std::string& str, const std::string& suffix) {
         if (suffix.size() > str.size()) return false;
-
         // Compare str's substring (starting at the end minus suffix length) with suffix
         return str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
     }
 #endif // CHART_FILE_NO_TRANSPILER
-
 public:
     bool open(const char* path) {
         std::string pathStr(path);
-
         size_t lastSlash = pathStr.find_last_of("/\\");
         std::string songDir = (lastSlash == std::string::npos) ? "." : pathStr.substr(0, lastSlash);
-
 #ifdef CHART_FILE_NO_TRANSPILER
         // Runtime-only build: accept .fvc snapshots only. Transpiling a
         // .json is the tooling build's job.
         if (!ends_with_fvc(pathStr)) {
             std::cerr << "  [ Chart File ] Non-.fvc input '" << pathStr
-                      << "' needs the transpiler (built with CHART_FILE_NO_TRANSPILER)." << std::endl;
+                << "' needs the transpiler (built with CHART_FILE_NO_TRANSPILER)." << std::endl;
             return false;
         }
         filename = pathStr;
@@ -3110,18 +3054,14 @@ public:
         std::ifstream headerTest(headerPath);
         bool headerExists = headerTest.good();
         headerTest.close();
-
         if (ends_with(pathStr, ".fvc")) {
             filename = pathStr;
-
             if (!headerExists) {
                 // Derive the JSON path by replacing .fvc with .json
                 std::string jsonPath = pathStr.substr(0, pathStr.length() - 4) + ".json";
-
                 std::ifstream jsonTest(jsonPath);
                 bool jsonExists = jsonTest.good();
                 jsonTest.close();
-
                 if (jsonExists) {
                     // Pass the DERIVED json path, not the .fvc path!
                     generateHeaderOnly(jsonPath.c_str(), songDir);
@@ -3132,32 +3072,31 @@ public:
         } else {
             // Input is a .json file
             std::string fvcPath = pathStr.substr(0, pathStr.length() - 5) + ".fvc";
-
             std::ifstream fvcTest(fvcPath);
             bool fvcExists = fvcTest.good();
             fvcTest.close();
-
             if (fvcExists) {
-                // An existing .fvc is only trusted when it is the CURRENT
-                // v2 format. A legacy 10-byte snapshot (or a stale file
-                // from an older run) is re-transpiled from the .json —
-                // the .json is the source of truth for the notes.
+                // An existing .fvc is only trusted when it is a CURRENT
+                // format (FVC4 segmented, or legacy monolithic FVC3). A
+                // legacy 10-byte snapshot (or a stale file from an older
+                // run) is re-transpiled from the .json — the .json is the
+                // source of truth for the notes.
                 bool fvcIsCurrent = false;
                 {
                     std::ifstream fvcHead(fvcPath, std::ios::binary);
                     char magic[4] = {0, 0, 0, 0};
                     if (fvcHead.read(magic, 4) && fvcHead.gcount() == 4)
-                        fvcIsCurrent = (std::memcmp(magic, "FVC3", 4) == 0);
+                        fvcIsCurrent = (std::memcmp(magic, "FVC4", 4) == 0
+                                     || std::memcmp(magic, "FVC3", 4) == 0);
                     fvcHead.close();
                 }
                 if (fvcIsCurrent) {
                     filename = fvcPath;
                 } else {
-                    std::cout << "  [ Transpiler ] Existing .fvc is not FVC3 — re-transpiling "
-                              << pathStr << std::endl;
+                    std::cout << "  [ Transpiler ] Existing .fvc is not FVC4/FVC3 — re-transpiling "
+                        << pathStr << std::endl;
                     transpileJsonToFvc(pathStr.c_str());
                 }
-
                 if (!headerExists) {
                     // We already have the JSON path (pathStr), so pass it directly!
                     generateHeaderOnly(pathStr.c_str(), songDir);
@@ -3168,21 +3107,17 @@ public:
             }
         }
 #endif
-
         // Load the .fvc snapshot into the sharded store.
         if (!loadFromFvc(filename.c_str())) {
             return false;
         }
         loadedFromDisk = true;
         std::cout << "  [ Chart File ] Loaded " << store.size() << " notes ("
-                  << store.shardCount() << " shards) from " << filename << std::endl;
+            << store.shardCount() << " shards) from " << filename << std::endl;
         return true;
     }
-
 public:
-
     ChartFileReader() = default;
-
     ~ChartFileReader() {
         // Preserve the old mmap semantics: structural edits made through
         // the API are persisted back to the bound .fvc on destruction.
@@ -3190,27 +3125,21 @@ public:
             save();
         }
     }
-
     void setEditorMode(bool enabled) { editorMode = enabled; }
     void setApplyingNotes(bool enabled) { applyingNotes = enabled; }
-
     // TEST-ONLY: direct store access for chart_shard_test.cpp.
     ShardedNoteStore* testStore() { return &store; }
-
     int64_t getLength() const { return store.size(); }
-
     uint64_t getNote_first8(int64_t index) {
         if (index < 0 || index >= store.size()) return 0;
         std::lock_guard<std::mutex> lk(dataMutex);
         return store.getFirst8(index);
     }
-
     uint32_t getNote_last4(int64_t index) {
         if (index < 0 || index >= store.size()) return 0;
         std::lock_guard<std::mutex> lk(dataMutex);
         return store.getLast4(index);
     }
-
     // ========================================================================
     // ADD — flexible 5-argument form: addNote(position, duration, index,
     //                                        type, lane).
@@ -3234,14 +3163,12 @@ public:
         dirty = true;
         return id;
     }
-
     // Legacy alias kept so the existing chart_test build compiles; the
     // lane is derived from the type through the default routing (type 0 →
     // strumline 0, else 1).
     void insertNote(uint64_t pos, uint16_t dur, uint8_t idx, uint8_t type) {
         addNote(pos, dur, idx, type, type == 0 ? 0 : 1);
     }
-
     // ========================================================================
     // REMOVE — takes a global chart index (the `id` addNote returned, the
     // same id the gameplay code already tracks as globalIndex/_id).
@@ -3252,7 +3179,6 @@ public:
         store.remove(id);
         dirty = true;
     }
-
     // ========================================================================
     // GLOBAL FLAG SYSTEM API
     // ========================================================================
@@ -3261,25 +3187,21 @@ public:
         std::lock_guard<std::mutex> lk(dataMutex);
         return store.getJudge(index);
     }
-
     void setJudgement(int64_t index, bool value) {
         if (index < 0 || index >= store.size()) return;
         std::lock_guard<std::mutex> lk(dataMutex);
         store.setJudge(index, value);
     }
-
     bool getHitFlag(int64_t index) {
         if (index < 0 || index >= store.size()) return false;
         std::lock_guard<std::mutex> lk(dataMutex);
         return store.getHit(index);
     }
-
     void setHitFlag(int64_t index, bool value) {
         if (index < 0 || index >= store.size()) return;
         std::lock_guard<std::mutex> lk(dataMutex);
         store.setHit(index, value);
     }
-
     // ========================================================================
     // SAVE — write the (always sorted) store back out as a .fvc snapshot.
     // ========================================================================
@@ -3289,7 +3211,6 @@ public:
         dirty = false;
         return true;
     }
-
     bool saveAs(const char* path) {
         std::lock_guard<std::mutex> lk(dataMutex);
         if (!store.writeTo(path)) return false;
@@ -3298,7 +3219,6 @@ public:
         dirty = false;
         return true;
     }
-
     void createNew(const char* path, int64_t initialCapacity = 4096) {
         (void)initialCapacity; // capacity is a RAM concern now; shards grow on demand
         std::lock_guard<std::mutex> lk(dataMutex);
@@ -3316,32 +3236,25 @@ public:
 // Global API
 // ============================================================================
 static ChartFileReader* gReader = nullptr;
-
 void core_loadChart(const char* path) {
     if (gReader) { delete gReader; gReader = nullptr; }
     gReader = new ChartFileReader();
     gReader->open(path); // Automatically handles .json -> .fvc transpilation!
 }
-
 void core_createChart(const char* path) {
     if (gReader) { delete gReader; gReader = nullptr; }
     gReader = new ChartFileReader();
     gReader->createNew(path);
 }
-
 void core_destroyChart() {
     if (gReader) { delete gReader; gReader = nullptr; }
 }
-
 // Explicit snapshot save; the destructor also saves if edits are pending.
 bool core_saveChart() { if (!gReader) return false; return gReader->save(); }
-
 void core_setEditorMode(bool enabled) { if (gReader) gReader->setEditorMode(enabled); }
 void core_setApplyingNotes(bool enabled) { if (gReader) gReader->setApplyingNotes(enabled); }
-
 int64_t core_getNote_first8(int64_t index) { if (!gReader) return 0; return (int64_t)gReader->getNote_first8(index); }
 int core_getNote_last4(int64_t index) { if (!gReader) return 0; return (int)gReader->getNote_last4(index); }
-
 // Primary API: addNote(position, duration, index, type, lane). Position is
 // in 100ns ticks, duration in 1ms ticks, lane is the strumline id stored on
 // the note. Returns the new note's global chart index, which removeNote()
@@ -3349,21 +3262,18 @@ int core_getNote_last4(int64_t index) { if (!gReader) return 0; return (int)gRea
 int64_t core_addNote(int64_t position, int duration, int index, int type, int lane) {
     if (!gReader) return -1;
     return gReader->addNote(static_cast<uint64_t>(position), static_cast<uint32_t>(duration),
-                            static_cast<uint32_t>(index), static_cast<uint32_t>(type),
-                            static_cast<uint32_t>(lane));
+        static_cast<uint32_t>(index), static_cast<uint32_t>(type),
+        static_cast<uint32_t>(lane));
 }
-
 // Legacy alias kept for the existing callers (Main.hx chart_test); the lane
 // is derived from the type through the default routing.
 void core_insertNote(int64_t globalPosition, int duration, int index, int type) {
     if (!gReader) return;
     gReader->insertNote(static_cast<uint64_t>(globalPosition), static_cast<uint16_t>(duration),
-                        static_cast<uint8_t>(index), static_cast<uint8_t>(type));
+        static_cast<uint8_t>(index), static_cast<uint8_t>(type));
 }
-
 void core_removeNote(int64_t globalIndex) { if (!gReader) return; gReader->removeNote(globalIndex); }
 int64_t core_getLength() { if (!gReader) return 0; return gReader->getLength(); }
-
 // ============================================================================
 // GLOBAL FLAG SYSTEM API
 // ============================================================================
@@ -3371,26 +3281,21 @@ bool core_getJudgement(int64_t globalIndex) {
     if (!gReader) return false;
     return gReader->getJudgement(globalIndex);
 }
-
 void core_setJudgement(int64_t globalIndex, bool value) {
     if (!gReader) return;
     gReader->setJudgement(globalIndex, value);
 }
-
 bool core_getHitFlag(int64_t globalIndex) {
     if (!gReader) return false;
     return gReader->getHitFlag(globalIndex);
 }
-
 // ============================================================================
 // TEST-ONLY accessors into the live store (chart_shard_test.cpp). The game
 // never calls these; they expose the compressed-shard state so the test can
 // assert on blobs, counts and the open-shard budget.
 // ============================================================================
 ShardedNoteStore* core_testStore() { return gReader ? gReader->testStore() : nullptr; }
-
 void core_setHitFlag(int64_t globalIndex, bool value) {
     if (!gReader) return;
     gReader->setHitFlag(globalIndex, value);
 }
-
