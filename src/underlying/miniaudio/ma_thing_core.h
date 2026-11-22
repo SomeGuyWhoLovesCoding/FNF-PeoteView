@@ -78,7 +78,10 @@ std::atomic<double> MUSIC_MASTER_VOLUME_099{1.0};
 #define HALF_BUFFER_FRAMES  ((SAMPLE_RATE * HALF_BUFFER_MS) / 1000)
 #define TOTAL_BUFFER_FRAMES (PADDING_FRAMES + BUFFER_FRAMES + PADDING_FRAMES)
 #define MAX_CALLBACK_FRAMES 4096
-#define MAX_PITCH_FRAMES   (MAX_CALLBACK_FRAMES * 4)
+// Pitched playback reads up to rate * frameCount source frames per
+// callback; the editor allows up to 10x, so the buffers must cover
+// 10 * MAX_CALLBACK_FRAMES with headroom.
+#define MAX_PITCH_FRAMES   (MAX_CALLBACK_FRAMES * 12)
 
 // ---- surround sound system ------------------------------------------------
 #define SURROUND_CHANNEL_COUNT 4
@@ -640,7 +643,10 @@ private:
 
 class StretchPipeline {
 public:
-    static constexpr size_t RING_FRAMES = 1 << 14;      // 16384 stereo frames
+    // 16384 stereo frames; must hold a full rate-scaled callback push
+    // (10x * MAX_CALLBACK_FRAMES = 40960 with the editor's rate ladder —
+    // doubled to 1<<16 so the input ring never rejects a push at 10x).
+    static constexpr size_t RING_FRAMES = 1 << 16;      // 65536 stereo frames
     static constexpr size_t RING_MASK  = RING_FRAMES - 1;
     static constexpr size_t MAX_CHUNKS = 16;
 
@@ -820,6 +826,38 @@ static bool ma_device_lifecycle_watchdog(Fn&& fn, std::atomic<bool>& stuckFlag, 
     return false;
 }
 
+// Watchdogged ma_device_init: the ONE lifecycle call the original scheme
+// missed. Called on the main thread during a default-device switch, init
+// opens the new default endpoint through COM (GetDefaultAudioEndpoint /
+// IMMDevice_Activate) — exactly while Windows is mid-switch and the
+// audio session state is in flux, so it can block far past any sane
+// bound. Returns 1 = initialized, 0 = init failed cleanly (storage is
+// free, caller may delete it), -1 = TIMED OUT: the detached helper
+// thread may still be inside ma_device_init on `target`, so the caller
+// must treat the storage as owned by that thread forever (leak it).
+static int ma_device_init_watchdog(ma_device* target, const ma_device_config* cfg,
+                                   std::atomic<bool>& stuckFlag, int timeoutMs) {
+    if (stuckFlag.load(std::memory_order_acquire)) return 0;
+    auto done = std::make_shared<std::atomic<bool>>(false);
+    auto res = std::make_shared<ma_result>(MA_ERROR);
+    std::thread helper([done, res, target, cfg]() {
+        *res = ma_device_init(nullptr, cfg, target);
+        done->store(true, std::memory_order_release);
+    });
+    auto limit = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+    while (std::chrono::steady_clock::now() < limit) {
+        if (done->load(std::memory_order_acquire)) {
+            helper.join();
+            return *res == MA_SUCCESS ? 1 : 0;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    helper.detach();
+    stuckFlag.store(true, std::memory_order_release);
+    printf("[ma_thing] ma_device_init timed out (%d ms) — device storage leaked, retrying next pump\n", timeoutMs);
+    return -1;
+}
+
 // ==========================================================================
 //  AudioSystem
 // ==========================================================================
@@ -906,8 +944,17 @@ public:
     std::atomic<bool> lifecycleStuck{false};   // a lifecycle watchdog fired — leak mode, stop trying
     /** Consecutive pump frames the device looked dead; plain int — pump-only. */
     int lostTicks = 0;
-    /** How many pump frames miniaudio's internal recovery gets before we take over. */
-    static constexpr int DEVICE_LOST_GRACE_TICKS = 60;
+    /**
+        How many pump frames miniaudio's internal recovery gets before we
+        take over. A default-device switch makes miniaudio's own
+        device-change thread stop, RE-INIT and restart the device — on
+        Bluetooth/USB switches that sequence can take several seconds.
+        Rebuilding on top of that in-flight reroute (our stop/init vs
+        theirs, same audio session) is what wedged both threads and froze
+        the game, so the grace window must outlast the slowest reroute.
+        300 frames = 5 s at 60fps.
+    */
+    static constexpr int DEVICE_LOST_GRACE_TICKS = 300;
     /** How long one watchdogged device lifecycle call may take. */
     static constexpr int LIFECYCLE_TIMEOUT_MS = 1500;
 
@@ -979,7 +1026,12 @@ public:
         int wantedChannels = surroundEnabled.load(std::memory_order_acquire) ? SURROUND_CHANNEL_COUNT : CHANNEL_COUNT;
         int prevState = mixerState.load(std::memory_order_acquire);
         bool wasPlaying = (prevState == 1);
+        bool surroundFellBack = false;
 
+        // One attempt with the wanted layout, then a stereo retry when it
+        // failed CLEANLY (a timeout means a detached helper thread still
+        // owns the storage — that one leaks via the graveyard, never a
+        // retry on the same object).
         device = new ma_device();
         memset(device, 0, sizeof(ma_device));
         ma_device_config deviceConfig = ma_device_config_init(ma_device_type_playback);
@@ -991,17 +1043,39 @@ public:
         deviceConfig.notificationCallback = onDeviceNotification;
         deviceConfig.pUserData = this;
 
-        if (ma_device_init(nullptr, &deviceConfig, device) != MA_SUCCESS && wantedChannels != CHANNEL_COUNT) {
-            playbackChannels.store(CHANNEL_COUNT, std::memory_order_release);
-            surroundEnabled.store(false, std::memory_order_release);
+        int initRes = ma_device_init_watchdog(device, &deviceConfig, lifecycleStuck, LIFECYCLE_TIMEOUT_MS);
+        if (initRes < 0) {
+            // Timed out: leak the storage (the helper thread may still be
+            // inside ma_device_init on it) and report failure — the pump
+            // retries with a fresh allocation after the grace period.
+            parkWedgedDevice();
+            mixerState.store(3, std::memory_order_release);
+            return false;
+        }
+        if (initRes == 0 && wantedChannels != CHANNEL_COUNT) {
+            // Clean failure with surround: free the storage and retry stereo.
+            delete device;
+            device = new ma_device();
+            memset(device, 0, sizeof(ma_device));
             deviceConfig.playback.channels = CHANNEL_COUNT;
-            if (ma_device_init(nullptr, &deviceConfig, device) != MA_SUCCESS) {
-                printf("Failed to open playback device.\n");
-                delete device;
-                device = nullptr;
+            initRes = ma_device_init_watchdog(device, &deviceConfig, lifecycleStuck, LIFECYCLE_TIMEOUT_MS);
+            if (initRes < 0) {
+                parkWedgedDevice();
                 mixerState.store(3, std::memory_order_release);
                 return false;
             }
+            surroundFellBack = (initRes == 1);
+        }
+        if (initRes == 0) {
+            printf("Failed to open playback device.\n");
+            delete device;
+            device = nullptr;
+            mixerState.store(3, std::memory_order_release);
+            return false;
+        }
+        if (surroundFellBack) {
+            playbackChannels.store(CHANNEL_COUNT, std::memory_order_release);
+            surroundEnabled.store(false, std::memory_order_release);
             printf("Surround Sound 3.1 unavailable on this device; falling back to stereo.\n");
         } else {
             playbackChannels.store(wantedChannels, std::memory_order_release);
@@ -1907,8 +1981,24 @@ public:
         cfg.sampleRate = SAMPLE_RATE;
         cfg.periodSizeInFrames = PERIOD_SIZE;
         cfg.dataCallback = audioCallback;
+        cfg.notificationCallback = onMixerDeviceNotification;
         cfg.pUserData = this;
-        if (ma_device_init(nullptr, &cfg, device) != MA_SUCCESS) {
+        // Watchdogged init (same discipline as AudioSystem::buildDevice):
+        // during a default-device switch the COM endpoint open can block,
+        // and THIS device is the only one alive in the menus — a hang here
+        // freezes the whole game with no audio running at all.
+        const int initRes = ma_device_init_watchdog(device, &cfg, lifecycleStuck, 1500);
+        if (initRes < 0) {
+            // Timed out: leak the storage (a detached helper thread may
+            // still be inside ma_device_init on it). deviceInitialized
+            // stays false so the pump's retry path rebuilds fresh.
+            deviceGraveyard.push_back(device);
+            device = nullptr;
+            lifecycleStuck.store(false, std::memory_order_release);
+            printf("[ma_thing] mixer device init timed out — retrying next pump\n");
+            return false;
+        }
+        if (initRes == 0) {
             printf("Failed to initialize audio mixer device\n");
             delete device;
             device = nullptr;
@@ -2026,7 +2116,7 @@ public:
     bool pumpDeviceRecovery() {
         if (!deviceInitialized) return false;
         if (device == nullptr) {                // wedged earlier — retry periodically
-            if (++lostTicks >= 60) {
+            if (++lostTicks >= MIXER_LOST_GRACE_TICKS) {
                 lostTicks = 0;
                 printf("[ma_thing] mixer device lost — retrying\n");
                 deviceInitialized = false;
@@ -2036,7 +2126,7 @@ public:
             return false;
         }
         if (!ma_device_is_started(device)) {
-            if (++lostTicks >= 60) {
+            if (++lostTicks >= MIXER_LOST_GRACE_TICKS) {
                 lostTicks = 0;
                 printf("[ma_thing] mixer device lost — rebuilding\n");
                 if (stopDeviceWatchdog() && uninitDeviceWatchdog()) {
@@ -2055,6 +2145,32 @@ public:
         }
         return false;
     }
+
+    /**
+        Notification callback for the mixer device — flags only, NEVER a
+        call back into the device (miniaudio's own device-change thread
+        invoking ma_device_* here is the documented deadlock). The mixer
+        pump keys off ma_device_is_started, not these flags; this exists
+        so an external stop (unplug / default switch) leaves a diagnostic
+        breadcrumb and so behavior matches the AudioSystem device.
+    **/
+    static void onMixerDeviceNotification(const ma_device_notification* pNotification) {
+        AudioMixerManager* mixer = static_cast<AudioMixerManager*>(pNotification->pDevice->pUserData);
+        if (!mixer) return;
+        switch (pNotification->type) {
+        case ma_device_notification_type_started:
+            printf("[ma_thing] mixer device started\n");
+            break;
+        case ma_device_notification_type_stopped:
+            if (!mixer->stoppingSelf.load(std::memory_order_acquire))
+                printf("[ma_thing] mixer device stopped externally (device switched?)\n");
+            break;
+        default:
+            break;
+        }
+    }
+    /** Mixer grace window — mirrors AudioSystem::DEVICE_LOST_GRACE_TICKS. */
+    static constexpr int MIXER_LOST_GRACE_TICKS = 300;
 
 private:
     std::deque<BackgroundTrack> backgroundTracks;

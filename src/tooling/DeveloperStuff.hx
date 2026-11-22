@@ -20,6 +20,16 @@ class DeveloperStuff {
 		var playField = Main.current?.playField;
 		//trace(code, playField);
 		if (playField == null || playField.disposed) return;
+		// While the EDITOR owns the chart, SHIFT+[ / SHIFT+] and plain [ / ]
+		// are the editor's latency keys (calibration happens there, frozen
+		// or playing) — the debug bindings must not double-fire on top.
+		if (playField.playfieldEditorMode) {
+			switch (code) {
+				case KeyCode.LEFT_BRACKET | KeyCode.RIGHT_BRACKET:
+					return;
+				default:
+			}
+		}
 		switch (code) {
 			case KeyCode.PERIOD:
 				playField.setTime(playField.songPosition + 1500, 350);

@@ -280,16 +280,25 @@ static inline const uint8_t* blob_geti(const uint8_t* p, const uint8_t* end, int
 //   codec 0 (GRID_KIND): u64 gridDivisor | u16 kindCount | kinds...
 //                        then varint planes over the SORTED notes:
 //                        positionDelta (grid units), duration (zz), kindId
+//   codec 2 (ROWS): u64 gridDivisor | kinds... then ONE bitstream of
+//                        row-grouped records (see fvc3_rows_encode) —
+//                        the compact path real charts take
 //   codec 1 (RAW): the v2 payload verbatim (n * 12 raw bytes)
 //
 // gridDivisor is the GCD of every position: a 4-minute chart at a 1/16 grid
-// collapses from ~2.4e9 100ns-ticks to a few thousand grid steps, so the
-// position-delta plane codes in 1-2 bytes. A "kind" is the
-// (index|type|lane) triple — charts use a handful of distinct triples, so
-// the dictionary turns 3 planes into one tiny id per note. Durations
-// zigzag-delta against the previous note (sustains come in bursts).
-// The writer encodes BOTH candidates and keeps the smaller: charts with no
-// grid at all (positions with GCD 1) simply fall back to RAW.
+// collapses from ~2.4e9 100ns-ticks to a few thousand grid steps. A "kind"
+// is the (index|type|lane) triple — charts use a handful of distinct
+// triples, so the dictionary turns 3 planes into one tiny id per note.
+//
+// ROWS groups notes that share a position into rows and codes the whole
+// chart as a single LSB-first bitstream: per row a 2-bit gap code (1/2/4
+// common gaps, escape -> varint), a 2-bit count code (1/2/3, escape), per
+// note a ceil(log2(kindCount))-bit kind id and a sustain flag, and only
+// flagged sustains carry a zigzag-delta varint (durations come in bursts,
+// so the delta chain is tiny). A gridded stream lands at ~1 B/note vs 12
+// raw. The writer encodes ALL candidates and keeps the smallest: charts
+// with no grid at all (positions with GCD 1) still compress (varint gaps),
+// and a truly hostile payload falls back to RAW.
 // ============================================================================
 #pragma pack(push, 1)
 struct Fvc3Header {
@@ -304,7 +313,11 @@ static_assert(sizeof(Fvc3Header) == 16, "Fvc3Header must be exactly 16 bytes!");
 
 static constexpr uint8_t  FVC3_CODEC_GRID_KIND = 0;
 static constexpr uint8_t  FVC3_CODEC_RAW       = 1;
+static constexpr uint8_t  FVC3_CODEC_ROWS      = 2;
 static constexpr uint16_t FVC3_MAX_KINDS       = 4096; // fallback to RAW beyond this
+// Max notes one ROWS row may code (count-1 must fit a small varint; a
+// position with more notes splits into continuation rows coded gap 0).
+static constexpr uint32_t FVC3_ROWS_MAX_ROW    = 255;
 
 // Euclidean GCD — std::__gcd is a GCC/Clang extension, not on MSVC.
 static uint64_t fvc3_gcd(uint64_t a, uint64_t b) {
@@ -312,8 +325,285 @@ static uint64_t fvc3_gcd(uint64_t a, uint64_t b) {
     return a;
 }
 
+// ---- LSB-first bit writer/reader for the ROWS codec ----------------------
+// Varints inside the bitstream use the same 7+1 LEB128 coding as
+// blob_putu, just not byte-aligned (8-bit groups through the bit layer).
+struct Fvc3BitW {
+    std::vector<uint8_t>& out;
+    uint32_t acc = 0; int nbits = 0;
+    explicit Fvc3BitW(std::vector<uint8_t>& o) : out(o) {}
+    void put(uint32_t v, int bits) { // v < (1u << bits), bits <= 16
+        acc |= (v & 0xFFFFu) << nbits;
+        nbits += bits;
+        while (nbits >= 8) { out.push_back((uint8_t)(acc & 0xFF)); acc >>= 8; nbits -= 8; }
+    }
+    void putVarint(uint64_t v) {
+        while (v >= 0x80) { put((uint32_t)((v & 0x7F) | 0x80), 8); v >>= 7; }
+        put((uint32_t)v, 8);
+    }
+    void flush() { if (nbits > 0) { out.push_back((uint8_t)(acc & 0xFF)); acc = 0; nbits = 0; } }
+};
+struct Fvc3BitR {
+    const uint8_t* p; const uint8_t* end; uint32_t acc = 0; int nbits = 0;
+    Fvc3BitR(const uint8_t* p_, const uint8_t* end_) : p(p_), end(end_) {}
+    bool take(uint32_t& v, int bits) {
+        if (bits == 0) { v = 0; return true; }
+        while (nbits < bits) {
+            if (p >= end) return false;
+            acc |= (uint32_t)(*p++) << nbits;
+            nbits += 8;
+        }
+        v = acc & ((1u << bits) - 1u);
+        acc >>= bits; nbits -= bits;
+        return true;
+    }
+    bool takeVarint(uint64_t& v) {
+        v = 0; int shift = 0;
+        for (;;) {
+            uint32_t g;
+            if (!take(g, 8)) return false;
+            v |= (uint64_t)(g & 0x7F) << shift;
+            if (!(g & 0x80)) return true;
+            shift += 7;
+            if (shift > 63) return false;
+        }
+    }
+    bool consumedExactly() const {
+        // The encoder flushes <= 7 padding bits; the reader must land on
+        // the final byte with no whole byte left over.
+        return p == end && nbits < 8;
+    }
+};
+
+// ceil(log2(kindCount)) — the kind-id bit width. kindCount is 1..4096,
+// so this is 1..12 bits. A single-kind chart codes every id in 1 bit.
+static int fvc3_kindBits(uint64_t kindCount) {
+    int bits = 1;
+    while ((1ULL << bits) < kindCount) ++bits;
+    return bits;
+}
+
+// ---- ROWS codec (codec 2) -------------------------------------------------
+// Payload: varint grid | varint kindCount | varint kinds... |
+//          varint gapA | varint gapB | varint gapC | bitstream
+//   gapA/B/C = the three most frequent row gaps in this chart (histogram
+//   top-3; duplicates when fewer distinct gaps exist) — the common gaps
+//   code in 2 bits each, whatever they are. A grid misaligned by a
+//   lead-in offset (e.g. every gap = 3) still codes at the minimum.
+//   bitstream:
+//     1 bit  durMode (1 = durations coded in durUnit units, see below)
+//     [durMode 1] varint durUnit (GCD of all sustain durations)
+//     per row (rows self-terminate when noteCount notes are decoded):
+//       gap   2 bits: 0->gapA, 1->gapB, 2->gapC, 3->escape varint(gap)
+//             gap = grid units from the previous row's position (the
+//             first row measures from 0; gap 0 = continuation row for a
+//             position with > FVC3_ROWS_MAX_ROW notes)
+//       count 2 bits: 0->1, 1->2, 2->3, 3->escape varint(count-1)
+//       per note: kindId (fvc3_kindBits(kindCount) bits), sustain flag
+//                 (1 bit), and if flagged a zigzag-delta varint of the
+//                 duration in coded units, chained in decode order
+// ---------------------------------------------------------------------------
+static void fvc3_rows_encode(const ChartNote* notes, size_t n, uint64_t grid,
+                             std::vector<uint8_t>& out) {
+    // kinds (order of first appearance — the decoder rebuilds it)
+    std::vector<uint32_t> kinds;
+    std::vector<uint32_t> ids(n);
+    for (size_t i = 0; i < n; ++i) {
+        const uint32_t k = (noteIdx(notes[i]) << 16) | (noteType(notes[i]) << 8) | noteLane(notes[i]);
+        uint32_t id = 0xFFFFFFFFu;
+        for (size_t j = 0; j < kinds.size(); ++j)
+            if (kinds[j] == k) { id = (uint32_t)j; break; }
+        if (id == 0xFFFFFFFFu) { kinds.push_back(k); id = (uint32_t)(kinds.size() - 1); }
+        ids[i] = id;
+    }
+    // Durations in their OWN grid (GCD of all sustain durations) when one
+    // exists — a chart-snapped sustain codes as a tiny delta in durUnit
+    // units instead of a multi-byte raw-tick varint. durUnit 1 = raw ticks.
+    uint64_t durUnit = 1;
+    {
+        uint64_t g = 0;
+        for (size_t i = 0; i < n; ++i) {
+            const uint32_t d = noteDur(notes[i]);
+            if (d != 0) g = g ? fvc3_gcd(g, d) : d;
+        }
+        if (g > 1) durUnit = g;
+    }
+    const bool durGrid = durUnit > 1;
+    const int kindBits = fvc3_kindBits(kinds.size());
+
+    // Row pass 1: group positions, histogram the gaps, pick the top-3
+    // codes (count desc, then value asc for determinism).
+    struct RowRec { uint64_t gpos; uint32_t len; };
+    std::vector<RowRec> rows;
+    rows.reserve(n);
+    std::vector<std::pair<uint64_t, uint32_t>> gapHist; // gap -> count (small: distinct gaps are few)
+    uint64_t prevPos = 0;
+    size_t i = 0;
+    while (i < n) {
+        size_t j = i;
+        const uint64_t pos = notePos(notes[i]);
+        while (j < n && notePos(notes[j]) == pos
+               && (j - i) < (size_t)FVC3_ROWS_MAX_ROW) ++j;
+        const uint64_t gpos = pos / grid;
+        const uint64_t gap = gpos - prevPos;
+        bool found = false;
+        for (auto& h : gapHist)
+            if (h.first == gap) { ++h.second; found = true; break; }
+        if (!found) gapHist.push_back({gap, 1});
+        rows.push_back({gpos, (uint32_t)(j - i)});
+        prevPos = gpos;
+        i = j;
+    }
+    uint64_t gapCode[3] = {1, 1, 1}; // safe defaults (any value; unused codes just never fire)
+    {
+        std::sort(gapHist.begin(), gapHist.end(), [](const std::pair<uint64_t, uint32_t>& a,
+                                                     const std::pair<uint64_t, uint32_t>& b) {
+            if (a.second != b.second) return a.second > b.second;
+            return a.first < b.first;
+        });
+        for (int c = 0; c < 3 && c < (int)gapHist.size(); ++c)
+            gapCode[c] = gapHist[(size_t)c].first;
+    }
+
+    blob_putu(out, grid);
+    blob_putu(out, (uint64_t)kinds.size());
+    for (uint32_t k : kinds) blob_putu(out, k);
+    blob_putu(out, gapCode[0]);
+    blob_putu(out, gapCode[1]);
+    blob_putu(out, gapCode[2]);
+
+    // Row pass 2: emit the bitstream.
+    Fvc3BitW bw(out);
+    bw.put(durGrid ? 1u : 0u, 1);
+    if (durGrid) bw.putVarint(durUnit);
+    prevPos = 0;
+    int64_t prevDur = 0;   // absolute, in coded units
+    size_t noteI = 0;
+    for (const RowRec& r : rows) {
+        const uint64_t gap = r.gpos - prevPos;
+        int code = -1;
+        for (int c = 0; c < 3; ++c)
+            if (gapCode[c] == gap) { code = c; break; }
+        if (code >= 0) bw.put((uint32_t)code, 2);
+        else { bw.put(3u, 2); bw.putVarint(gap); }
+        const uint64_t cnt = (uint64_t)(r.len - 1); // count-1
+        if (cnt < 3) bw.put((uint32_t)cnt, 2);
+        else { bw.put(3u, 2); bw.putVarint(cnt); }
+        for (uint32_t m = 0; m < r.len; ++m, ++noteI) {
+            bw.put(ids[noteI], kindBits);
+            const uint32_t d = noteDur(notes[noteI]);
+            if (d != 0) {
+                bw.put(1u, 1);
+                const int64_t abs = durGrid ? (int64_t)(d / durUnit) : (int64_t)d;
+                const int64_t dv = abs - prevDur; // delta vs previous sustain
+                bw.putVarint((uint64_t)((dv << 1) ^ (dv >> 63))); // zigzag
+                prevDur = abs;
+            } else {
+                bw.put(0u, 1);
+            }
+        }
+        prevPos = r.gpos;
+    }
+    bw.flush();
+}
+
+// Decode a ROWS payload (after the FVC3 file header). Same validation
+// contract as the GRID_KIND decoder: any inconsistency rejects the file.
+static bool fvc3_rows_decode(const uint8_t* data, size_t size, uint32_t noteCount,
+                             std::vector<ChartNote>& out) {
+    const uint8_t* p = data;
+    const uint8_t* end = data + size;
+    uint64_t grid = 0, kindCount = 0;
+    p = blob_getu(p, end, grid);
+    p = blob_getu(p, end, kindCount);
+    if (!p || grid == 0 || kindCount == 0 || kindCount > FVC3_MAX_KINDS
+        || kindCount > noteCount) return false;
+    std::vector<uint32_t> kinds((size_t)kindCount);
+    for (uint64_t i = 0; i < kindCount; ++i) {
+        uint64_t k = 0;
+        p = blob_getu(p, end, k);
+        if (!p || (k >> 24) != 0) return false; // idx(10b)|type(8b)|lane(6b) fits 24 bits
+        kinds[(size_t)i] = (uint32_t)k;
+    }
+    uint64_t gapCode[3] = {1, 1, 1};
+    p = blob_getu(p, end, gapCode[0]);
+    p = blob_getu(p, end, gapCode[1]);
+    p = blob_getu(p, end, gapCode[2]);
+    if (!p) return false;
+    Fvc3BitR br(p, end);
+    uint32_t durGridBit = 0;
+    if (!br.take(durGridBit, 1)) return false;
+    const bool durGrid = durGridBit != 0;
+    uint64_t durUnit = 1;
+    if (durGrid) {
+        if (!br.takeVarint(durUnit) || durUnit < 2) return false;
+    }
+    const int kindBits = fvc3_kindBits(kindCount);
+
+    out.clear();
+    out.reserve(noteCount);
+    uint64_t pos = 0;    // grid units
+    int64_t prevDur = 0; // absolute, in coded units
+    while (out.size() < noteCount) {
+        uint32_t gc = 0;
+        if (!br.take(gc, 2)) return false;
+        uint64_t gap;
+        if (gc < 3) gap = gapCode[gc];
+        else { if (!br.takeVarint(gap)) return false; }
+        // gap 0 = same position (chord at 0, or a >255-note continuation
+        // row). Positions can never decrease: the gap decodes unsigned.
+        if (pos > 0xFFFFFFFFFFFFULL - gap) return false; // pos+gap must stay 48-bit
+        pos += gap;
+
+        uint32_t cc = 0;
+        if (!br.take(cc, 2)) return false;
+        uint64_t cnt;
+        if (cc < 3) cnt = cc + 1;
+        else {
+            uint64_t c1 = 0;
+            if (!br.takeVarint(c1)) return false;
+            if (c1 > FVC3_ROWS_MAX_ROW - 1) return false;
+            cnt = c1 + 1;
+        }
+        if (cnt < 1 || cnt > FVC3_ROWS_MAX_ROW) return false;
+        if (out.size() + cnt > (uint64_t)noteCount) return false;
+
+        if (pos > 0xFFFFFFFFFFFFULL / grid) return false; // pos*grid must stay 48-bit
+        const uint64_t absPos = pos * grid;
+        for (uint64_t m = 0; m < cnt; ++m) {
+            uint32_t id = 0, flag = 0;
+            if (!br.take(id, kindBits)) return false;
+            if (id >= kindCount) return false;
+            if (!br.take(flag, 1)) return false;
+            uint32_t dur = 0;
+            if (flag) {
+                uint64_t zz;
+                if (!br.takeVarint(zz)) return false;
+                const int64_t dv = (int64_t)((zz >> 1) ^ -(int64_t)(zz & 1));
+                // Durations are 24-bit; a delta beyond +/-2^43 is a
+                // corrupt stream (also guards prevDur+dv from overflow —
+                // prevDur is already bounded to [0, 0xFFFFFF]).
+                if (dv > (int64_t)0x7FFFFFFFFFFLL || dv < -(int64_t)0x7FFFFFFFFFFLL) return false;
+                const int64_t raw = prevDur + dv;
+                prevDur = raw;
+                if (raw < 0 || raw > 0xFFFFFF) return false;
+                if (durGrid) {
+                    if (raw > 0xFFFFFF / (int64_t)durUnit) return false; // raw*durUnit <= 0xFFFFFF
+                    dur = (uint32_t)(raw * (int64_t)durUnit);
+                } else {
+                    dur = (uint32_t)raw;
+                }
+            }
+            const uint32_t k = kinds[id];
+            out.push_back(packNote(absPos, dur, (k >> 16) & 0x3FF, (k >> 8) & 0xFF, k & 0x3F));
+        }
+    }
+    return br.consumedExactly();
+}
+
 // Encode a SORTED note array as the FVC3 payload (header + payload).
-// Chooses GRID_KIND or RAW, whichever is smaller.
+// Encodes ROWS, GRID_KIND and RAW; keeps the smallest (ties: ROWS wins —
+// it is the preferred codec).
 static std::vector<uint8_t> fvc3_encode(const ChartNote* notes, size_t n) {
     // ---- candidate 1: grid + kind dictionary + varint planes ----
     uint64_t grid = 0;
@@ -349,29 +639,39 @@ static std::vector<uint8_t> fvc3_encode(const ChartNote* notes, size_t n) {
         }
     }
 
-    // ---- candidate 2: raw 12-byte stream ----
+    // ---- candidate 2: ROWS bitstream (shared kind table) ----
+    std::vector<uint8_t> rows;
+    if (gkOk)
+        fvc3_rows_encode(notes, n, grid, rows);
+
+    // ---- candidate 3: raw 12-byte stream ----
     const size_t rawSize = n * sizeof(ChartNote);
 
-    // ---- pick the smaller (gk wins ties — it is the preferred codec) ----
+    // ---- pick the smallest (ROWS > GRID_KIND > RAW on ties) ----
+    std::vector<uint8_t> payload;
+    uint8_t codec;
+    if (gkOk && !rows.empty() && rows.size() <= gk.size() && rows.size() <= rawSize) {
+        codec = FVC3_CODEC_ROWS;
+        payload = std::move(rows);
+    } else if (gkOk && gk.size() < rawSize) {
+        codec = FVC3_CODEC_GRID_KIND;
+        payload = std::move(gk);
+    } else {
+        codec = FVC3_CODEC_RAW;
+        payload.resize(rawSize);
+        if (n) std::memcpy(payload.data(), notes, rawSize);
+    }
+
     std::vector<uint8_t> out;
-    out.reserve(16 + (gkOk && gk.size() < rawSize ? gk.size() : rawSize));
+    out.reserve(16 + payload.size());
     Fvc3Header hdr;
     std::memcpy(hdr.magic, "FVC3", 4);
     hdr.noteCount = (uint32_t)n;
-    if (gkOk && gk.size() < rawSize) {
-        hdr.codec = FVC3_CODEC_GRID_KIND;
-        hdr.payloadBytes = (uint32_t)gk.size();
-        out.insert(out.end(), reinterpret_cast<const uint8_t*>(&hdr),
-                   reinterpret_cast<const uint8_t*>(&hdr) + sizeof(hdr));
-        out.insert(out.end(), gk.begin(), gk.end());
-    } else {
-        hdr.codec = FVC3_CODEC_RAW;
-        hdr.payloadBytes = (uint32_t)rawSize;
-        out.insert(out.end(), reinterpret_cast<const uint8_t*>(&hdr),
-                   reinterpret_cast<const uint8_t*>(&hdr) + sizeof(hdr));
-        if (n) out.insert(out.end(), reinterpret_cast<const uint8_t*>(notes),
-                          reinterpret_cast<const uint8_t*>(notes + n));
-    }
+    hdr.codec = codec;
+    hdr.payloadBytes = (uint32_t)payload.size();
+    out.insert(out.end(), reinterpret_cast<const uint8_t*>(&hdr),
+               reinterpret_cast<const uint8_t*>(&hdr) + sizeof(hdr));
+    out.insert(out.end(), payload.begin(), payload.end());
     return out;
 }
 
@@ -396,6 +696,8 @@ static bool fvc3_decode(const uint8_t* data, size_t size, std::vector<ChartNote>
         if (n) std::memcpy(out.data(), p, hdr.payloadBytes);
         return true;
     }
+    if (hdr.codec == FVC3_CODEC_ROWS)
+        return fvc3_rows_decode(p, (size_t)(end - p), hdr.noteCount, out);
     if (hdr.codec != FVC3_CODEC_GRID_KIND) return false;
 
     uint64_t grid = 0, kindCount = 0;

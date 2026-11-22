@@ -123,8 +123,13 @@ class PlayFieldEditorMode {
 	/** Current editor playback rate (ALT+[ / ALT+] cycles it). */
 	var playbackRate:Float = 1.0;
 
-	/** The rate ladder the editor cycles through, FNF-style. */
-	static var RATES:Array<Float> = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0];
+	/**
+		The rate ladder the editor cycles through, FNF-style. Wide range on
+		request: 0.25x for frame-precise listening, up to 10x for skipping
+		through long charts. The audio pipeline time-stretches (or resamples,
+		per the performance preference) at any of these.
+	**/
+	static var RATES:Array<Float> = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0];
 
 	// -------------------------------------------------------------------
 	// Keybind placement mode (F2)
@@ -316,6 +321,27 @@ class PlayFieldEditorMode {
 					return;
 			}
 			return;
+		}
+
+		// SHIFT+[ / SHIFT+] adjust the latency compensation ±10 ms —
+		// works frozen or playing (the latency feeds noteTime, which drives
+		// note hits/misses and receptor timing live). The editor is where
+		// you CALIBRATE latency (hear a hit, adjust, hear it again), so it
+		// must work without playback running.
+		if ((mod & KeyModifier.SHIFT) != 0) {
+			switch (code) {
+				case KeyCode.LEFT_BRACKET:
+					field.latencyCompensation -= 10;
+					field.updateNoteLatency();
+					updateReadout();
+					return;
+				case KeyCode.RIGHT_BRACKET:
+					field.latencyCompensation += 10;
+					field.updateNoteLatency();
+					updateReadout();
+					return;
+				default:
+			}
 		}
 
 		switch (code) {
@@ -668,15 +694,16 @@ class PlayFieldEditorMode {
 		// cursor is over a strumline.
 		var rateStr = playbackRate == Math.floor(playbackRate) ? Std.string(Math.floor(playbackRate)) : Std.string(playbackRate);
 		var typeStr = 'type: $notetype';
+		var latStr = ' | lat: ${field.latencyCompensation}ms';
 		var laneStr = '';
 		if (strumlineInput != null && strumlineInput.hoverStrumline >= 0)
 			laneStr = ' | lane: ${strumlineInput.hoverStrumline}';
 		if (field.noteSystem != null && field.noteSystem.noteSpawner != null) {
 			var spawner = field.noteSystem.noteSpawner;
-			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | $typeStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"}$laneStr'
+			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | $typeStr$latStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"}$laneStr'
 				+ ' | bottom: ${spawner.bottom} | top: ${spawner.top}';
 		} else {
-			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | $typeStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"}$laneStr | bottom: - | top: -';
+			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | $typeStr$latStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"}$laneStr | bottom: - | top: -';
 		}
 
 		// Re-center for the readout's own width (hud.update positioned the

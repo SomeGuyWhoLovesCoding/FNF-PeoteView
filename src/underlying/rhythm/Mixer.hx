@@ -42,8 +42,11 @@ class Mixer {
 
 	static var speed(default, set):Float = 1;
 
-	static function set_speed(value:Float) {
-		speed = Math.max(value, 0.1);
+	static function set_speed(value:Float):Float {
+		// 0.1..10: the editor's rate ladder runs 0.25x..10x — clamp the
+		// shared setter so nothing (Lua, options, the ladder) can ask the
+		// pipeline for a rate its buffers cannot feed (see MAX_PITCH_FRAMES).
+		speed = Math.min(Math.max(value, 0.1), 10);
 		MiniAudio.setPlaybackRate(speed);
 		// Apply the performance preference: keep pitch-preserving time-stretch only when enabled.
 		#if (cpp || hl)
