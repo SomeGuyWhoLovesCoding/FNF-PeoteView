@@ -1514,747 +1514,551 @@ static void chart_encode_segments_mt(std::vector<std::vector<ChartNote>>& flats,
     }
 }
 
+// ============================================================================
+// Sharded Note Store — LAZY SEGMENT-BACKED store
+// ----------------------------------------------------------------------------
+// The FVC4 segment is the unit of laziness. At load the store holds ONLY the
+// compressed segment images + a directory (startTick / noteCount / baseId).
+// Nothing is decoded or encoded until a segment is touched. Opening a
+// segment decodes its FVC3 image into ONE flat block of raw 12-byte
+// ChartNote records (editable in place); closing it re-encodes only if it
+// was edited, then deletes the raw block. Clean segments keep their exact
+// image bytes, so an untouched chart costs no decode and no encode.
+//
+// The 1/4-second SHARD remains the time quantum used by the adaptive
+// planner; the shard-named test hooks below alias to segments (the lazy
+// unit) so the public API is unchanged.
+// ============================================================================
 class ShardedNoteStore {
 public:
     static constexpr uint64_t POS_MASK = 0x0000FFFFFFFFFFFFULL;
-    // 250 ms * 100,000 ticks/ms = 25,000,000 ticks per shard (1/4 second)
     static constexpr uint64_t SHARD_TICKS = 25000000ULL;
-    // Notes per RUN inside an open shard. 128 * 12 B = 1.5 KB worst-case
-    // memmove per insert — vs a dense 400-note shard's 4.8 KB — while the
-    // run count per shard stays in single digits.
+    // Legacy constant kept for API compatibility. Open segments are a flat
+    // raw block now (no runs), so this no longer bounds inserts.
     static constexpr size_t RUN_MAX = 128;
-    // Open-shard budget for the LRU: the spawner's live window is ~3-5
-    // shards; the editor sweeps more while scrubbing. 256 keeps a whole
-    // mid-size chart's working set hot (no decode/encode thrash) while
-    // bounding decoded RAM at ~256 shards * ~1.5 KB of runs.
+    // Open-SEGMENT budget for the LRU (name kept for API compatibility).
     static constexpr size_t OPEN_SHARD_BUDGET = 256;
-    // SEGMENT = the unit of incremental save (FVC4), now ADAPTIVE: each
-    // segment spans SEGMENT_MIN_SHARDS..SEGMENT_MAX_SHARDS consecutive
-    // shards (0.5 s .. 8 s of chart). A segment closes early once it holds
-    // >= MIN shards AND SEGMENT_NOTE_BUDGET notes — dense regions re-encode
-    // in cheap units on edit-save, sparse regions keep the long AC/LZP
-    // history compression wants. A silence gap wider than MAX shards also
-    // breaks the segment. SEGMENT_TICKS is kept: it is the legacy fixed
-    // segment width (4096 shards = 1024 s) and remains the tail-window
-    // corruption bound on load.
     static constexpr uint64_t SEGMENT_TICKS = SHARD_TICKS * 4096;
     static constexpr size_t   SEGMENT_MIN_SHARDS  = 2;
     static constexpr size_t   SEGMENT_MAX_SHARDS  = 32;
     static constexpr uint32_t SEGMENT_NOTE_BUDGET = 4096;
-    // One saved FVC4 segment: its tick range and the exact FVC3 image
-    // last written for it. Public because ChartFileReader's load path
-    // builds the initial cache from the file it just decoded.
+    // Legacy CVS1 blob magic kept for API compatibility (the blob codec is
+    // gone — segments are FVC3 images end to end).
+    static constexpr uint32_t BLOB_MAGIC = 0x31535643;
+
+    // One saved FVC4 segment: its tick and the exact FVC3 image. Public
+    // because ChartFileReader's load path builds these straight from disk.
     struct Segment {
-        uint64_t startTick = 0;  // tick of the segment's first shard
-        uint32_t noteCount = 0;  // notes in the saved image
-        std::vector<uint8_t> image; // the saved FVC3 image (clean only)
+        uint64_t startTick = 0;
+        uint32_t noteCount = 0;
+        std::vector<uint8_t> image;
     };
-    // Magic on every compressed blob ("CVS1" — Compressed V? Shard v1);
-    // a mismatch is a hard error (the blob is not ours to interpret).
-    static constexpr uint32_t BLOB_MAGIC = 0x31535643; // 'C''V''S''1' LE
+
 private:
-    // ---- compressed blob layout ------------------------------------------
-    //   u32 magic ('CVS1')
-    //   u32 noteCount            <- THE COUNT, always in the blob
-    //   u32 payloadBytes         (everything after this header)
-    //   varint plane 1: first8 values, zigzag-delta vs the previous note
-    //                  (positions are sorted -> tiny deltas; the plane is
-    //                  ORDERED first-64-bits, exactly the interleave asked
-    //                  for: all first8s first, then all last4s)
-    //   varint plane 2: last4 values, zigzag-delta vs the previous note
-    //                  (columns/types/lanes repeat -> ~0 deltas)
-    //   RLE plane 3: judge bits (run-length coded: varint count of 0s,
-    //                then 1s, alternating; empty -> single 0)
-    //   RLE plane 4: hit bits (same shape)
-    // The planes are self-terminating (varints), so the header only needs
-    // the total payload size; the count cross-checks the decode.
-    // -----------------------------------------------------------------------
-    struct BlobHeader {
-        uint32_t magic;
-        uint32_t noteCount;
-        uint32_t payloadBytes;
-    };
-    struct Run {
-        std::vector<ChartNote> notes; // sorted by position
-    };
-    struct Shard {
-        uint64_t startTick = 0;       // shard id * SHARD_TICKS
-        int64_t baseId = 0;           // global index of notes[0] (prefix sum)
-        // CLOSED state (exactly one of blob/open is live at a time; an
-        // OPEN shard keeps its PRE-EDIT blob until the first edit).
+    // A lazy segment. `image` is authoritative while closed/clean; `notes`
+    // is the live editable block while open. Exactly one is meaningful at
+    // a time (an open CLEAN segment keeps its pre-edit image too).
+    struct Unit {
+        uint64_t startTick = 0;
+        int64_t  baseId = 0;        // global index of notes[0]
+        uint32_t noteCount = 0;     // authoritative count while closed
         bool open = false;
-        bool dirty = false;           // edited since the blob was made
-        std::vector<uint8_t> blob;    // compressed form (valid when !open or !dirty)
-        uint32_t blobCount = 0;       // note count carried by the blob
-        // OPEN state.
-        std::vector<Run> runs;
+        bool dirty = false;         // edited since the image was made
+        std::vector<uint8_t> image; // FVC3 image (valid when !dirty)
+        std::vector<ChartNote> notes; // RAW editable 12-byte block (open only)
         BitArray judge;
         BitArray hit;
-        size_t noteCount = 0;         // live count while open (blobCount while closed)
-        size_t size() const { return open ? noteCount : blobCount; }
+        size_t size() const { return open ? notes.size() : (size_t)noteCount; }
     };
-    std::vector<Shard> shards;  // ordered by startTick; no empty shards kept
+
+    std::vector<Unit> units;   // ordered by startTick; no empty units kept
     int64_t totalNotes = 0;
-    mutable size_t lastShard = 0;  // sequential-read cache
-    size_t openCount = 0;          // shards currently in the open (decoded) state
-    // LRU ring of open shards (indices into `shards`). A shard's position
-    // in `lru` IS its recency; the front is the most recent.
-    std::vector<size_t> lru;
-    // ---- incremental save state (FVC4) ------------------------------------
-    // 1-bit flat array PARALLEL TO THE SHARD DIRECTORY: bit i == 1 means
-    // shards[i] was STRUCTURALLY modified (note added/removed) since the
-    // last successful save, so its FVC4 segment must be re-encoded; 0
-    // (the default, and the state after every load) means untouched —
-    // its on-disk segment image is still exact, so save skips it.
-    // The array uses the same BitArray as judge/hit (insert/erase keep it
-    // index-aligned with `shards` across add/remove). Flag writes
-    // (judge/hit) never set the bit — they are gameplay state, not edits,
-    // exactly like the RAM-blob `dirty` flag.
-    BitArray modifiedBits;
-    std::vector<Segment> segments; // index-aligned with the FVC4 directory
+    mutable size_t lastUnit = 0;
+    size_t openCount = 0;
+    std::vector<size_t> lru;   // front = most recently used open unit
+    BitArray modifiedBits;     // index-aligned with `units`
+
     // ---- LRU --------------------------------------------------------------
-    void touch(size_t si) {
+    void touch(size_t ui) {
         for (size_t k = 0; k < lru.size(); ++k) {
-            if (lru[k] == si) {
-                if (k != 0) {
-                    // One pass instead of erase+insert's two memmoves.
+            if (lru[k] == ui) {
+                if (k != 0)
                     std::rotate(lru.begin(), lru.begin() + (long)k, lru.begin() + (long)k + 1);
-                }
                 return;
             }
         }
-        lru.insert(lru.begin(), si);
+        lru.insert(lru.begin(), ui);
         while (lru.size() > OPEN_SHARD_BUDGET) {
-            closeShard(shards[lru.back()]);
+            closeUnit(units[lru.back()]);
             lru.pop_back();
         }
     }
-    // ---- codec: runs <-> blob --------------------------------------------
-    static void encodeBlob(const Shard& sh, std::vector<uint8_t>& out) {
-        out.clear();
-        out.reserve(sh.size() * 3 + sizeof(BlobHeader) + 16);
-        const size_t n = sh.size();
-        // Reserve the header slot; the payload size is only known after
-        // the planes are written, so the header is patched in at the end.
-        out.resize(sizeof(BlobHeader), 0);
-        // Plane 1: first8, zigzag-delta vs previous.
-        uint64_t prevF = 0;
-        for (const Run& r : sh.runs) {
-            for (const ChartNote& c : r.notes) {
-                blob_puti(out, (int64_t)c.first8 - (int64_t)prevF);
-                prevF = c.first8;
-            }
-        }
-        // Plane 2: last4, zigzag-delta vs previous.
-        uint64_t prevL = 0;
-        for (const Run& r : sh.runs) {
-            for (const ChartNote& c : r.notes) {
-                blob_puti(out, (int64_t)c.last4 - (int64_t)prevL);
-                prevL = c.last4;
-            }
-        }
-        // Planes 3+4: judge/hit, RLE (alternating runs of 0s and 1s,
-        // starting with 0s). An empty bit array codes to NOTHING — the
-        // decoder reads exactly n bits' worth of runs, and n == 0 means
-        // it reads nothing (so encode must write nothing).
-        for (int plane = 0; plane < 2; ++plane) {
-            const BitArray& bits = (plane == 0) ? sh.judge : sh.hit;
-            if (n == 0) continue;
-            size_t runVal = 0, runLen = 0;
-            for (size_t i = 0; i < n; ++i) {
-                const size_t v = bits.get(i) ? 1 : 0;
-                if (v == runVal) ++runLen;
-                else { blob_putu(out, runLen); runVal = v; runLen = 1; }
-            }
-            blob_putu(out, runLen); // final run (closes the alternation)
-        }
-        // Patch the header in (magic + note count + payload bytes). THE
-        // COUNT IS ALWAYS IN THE BLOB — the compressed form is
-        // self-describing.
-        BlobHeader hdr;
-        hdr.magic = BLOB_MAGIC;
-        hdr.noteCount = (uint32_t)n;
-        hdr.payloadBytes = (uint32_t)(out.size() - sizeof(BlobHeader));
-        std::memcpy(out.data(), &hdr, sizeof(hdr));
-    }
-    // Decode a blob back into runs + flags. Returns false on corruption.
-    bool decodeBlob(Shard& sh) const {
-        const uint8_t* p = sh.blob.data();
-        const uint8_t* const end = p + sh.blob.size();
-        if (sh.blob.size() < sizeof(BlobHeader)) return false;
-        BlobHeader hdr;
-        std::memcpy(&hdr, p, sizeof(hdr));
-        p += sizeof(BlobHeader);
-        if (hdr.magic != BLOB_MAGIC) return false;
-        if (hdr.payloadBytes != (uint32_t)(end - p)) return false;
-        const size_t n = hdr.noteCount;
-        std::vector<ChartNote> flat;
-        flat.resize(n);
-        uint64_t prevF = 0, prevL = 0;
-        for (size_t i = 0; i < n; ++i) {
-            int64_t d;
-            p = blob_geti(p, end, d);
-            if (!p) return false;
-            prevF = (uint64_t)((int64_t)prevF + d);
-            flat[i].first8 = prevF;
-        }
-        for (size_t i = 0; i < n; ++i) {
-            int64_t d;
-            p = blob_geti(p, end, d);
-            if (!p) return false;
-            prevL = (uint64_t)((int64_t)prevL + d);
-            flat[i].last4 = prevL;
-        }
-        sh.judge.init(n);
-        sh.hit.init(n);
-        for (int plane = 0; plane < 2; ++plane) {
-            BitArray& bits = (plane == 0) ? sh.judge : sh.hit;
-            size_t val = 0, done = 0;
-            while (done < n) {
-                uint64_t runLen;
-                p = blob_getu(p, end, runLen);
-                if (!p) return false;
-                for (uint64_t k = 0; k < runLen && done < n; ++k, ++done)
-                    bits.set(done, val != 0);
-                val ^= 1;
-            }
-        }
-        if (p != end) return false; // trailing junk = corruption
-        // Distribute the flat run into runs of RUN_MAX.
-        sh.runs.clear();
-        sh.runs.reserve((n + RUN_MAX - 1) / RUN_MAX);
-        for (size_t i = 0; i < n; i += RUN_MAX) {
-            Run r;
-            r.notes.assign(flat.begin() + (long)i, flat.begin() + (long)std::min(n, i + RUN_MAX));
-            sh.runs.push_back(std::move(r));
-        }
-        sh.noteCount = n;
-        return true;
-    }
+
     // ---- open / close ------------------------------------------------------
-    // Opens a closed shard (decode). The OLD blob is kept untouched — it
-    // survives as long as the shard stays clean, so a read-only open can
-    // close again without re-encoding a single byte.
-    void openShard(Shard& sh) {
-        if (sh.open) return;
-        // Decode can only fail on a corrupt blob; that is unrecoverable
-        // for this store, so crash loudly in debug and refuse in release.
-        if (!decodeBlob(sh)) {
-            std::cerr << "  [ Chart File ] CORRUPT SHARD BLOB — refusing to decode" << std::endl;
-            // Leave the shard closed but CONSISTENT: zero notes, one
-            // empty run (so run-locating readers never index garbage),
-            // and totals rebuilt from the surviving shards.
-            sh.blob.clear();
-            sh.blobCount = 0;
-            sh.dirty = false;
-            sh.runs.clear();
-            sh.runs.push_back(Run());
-            sh.noteCount = 0;
-            rebuildTotals();
-            return;
+    void ensureOpen(size_t ui) {
+        Unit& u = units[ui];
+        if (!u.open) {
+            u.notes.clear();
+            const bool ok = !u.image.empty()
+                && fvc3_decode(u.image.data(), u.image.size(), u.notes)
+                && u.notes.size() == (size_t)u.noteCount;
+            if (!ok) {
+                std::cerr << "  [ Chart File ] CORRUPT SEGMENT — refusing to decode" << std::endl;
+                // Leave a CONSISTENT empty editable unit; totals rebuilt.
+                u.notes.clear();
+                u.image.clear();
+                u.noteCount = 0;
+                u.open = true;
+                u.dirty = false;
+                u.judge.init(0);
+                u.hit.init(0);
+                ++openCount;
+                rebuildTotals();
+                touch(ui);
+                return;
+            }
+            u.open = true;
+            u.dirty = false;
+            u.judge.init(u.notes.size());
+            u.hit.init(u.notes.size());
+            ++openCount;
         }
-        sh.open = true;
-        sh.dirty = false;
-        ++openCount;
-        // (LRU touch happens at the caller — see ensureOpen.)
+        touch(ui);
     }
-    // Closes an open shard: destroy the editable runs. Only an EDITED
-    // shard is recompressed; a clean one keeps its original blob bytes.
-    void closeShard(Shard& sh) {
-        if (!sh.open) return;
-        if (sh.dirty) {
-            encodeBlob(sh, sh.blob);
+
+    // Close: re-encode ONLY if edited, then delete the raw block.
+    void closeUnit(Unit& u) {
+        if (!u.open) return;
+        if (u.dirty) {
+            u.image = fvc3_encode(u.notes.data(), u.notes.size());
+            u.noteCount = (uint32_t)u.notes.size();
         }
-        sh.blobCount = (uint32_t)sh.noteCount;
-        std::vector<Run>().swap(sh.runs);   // destroy the editable layout
-        sh.judge = BitArray();
-        sh.hit = BitArray();
-        sh.open = false;
-        sh.dirty = false;
+        std::vector<ChartNote>().swap(u.notes); // delete the decompressed data
+        u.judge = BitArray();
+        u.hit = BitArray();
+        u.open = false;
+        u.dirty = false;
         --openCount;
     }
     void closeAll() {
-        for (Shard& sh : shards) closeShard(sh);
+        for (Unit& u : units) closeUnit(u);
         lru.clear();
     }
-    // Opens `sh` and makes it the most recently used (evicting the least
-    // recently used open shard past the budget).
-    void ensureOpen(size_t si) {
-        Shard& sh = shards[si];
-        if (!sh.open) {
-            openShard(sh);
-            if (sh.open) touch(si);
-        } else {
-            touch(si);
-        }
-    }
+
     void rebuildTotals() {
-        totalNotes = 0;
-        for (const Shard& sh : shards) totalNotes += (int64_t)sh.size();
+        int64_t base = 0;
+        for (Unit& u : units) { u.baseId = base; base += (int64_t)u.size(); }
+        totalNotes = base;
     }
-    // ---- shard lookup ------------------------------------------------------
-    // Index of the shard covering `pos`, or shards.size() if none does.
-    size_t findShardByPos(uint64_t pos) const {
-        size_t lo = 0, hi = shards.size();
+
+    // ---- lookup ------------------------------------------------------------
+    // Last unit with startTick <= pos, or units.size() if pos precedes all.
+    // By construction pos < units[idx+1].startTick, so the window is exact.
+    size_t findUnitByPos(uint64_t pos) const {
+        size_t lo = 0, hi = units.size();
         while (lo < hi) {
             size_t mid = lo + (hi - lo) / 2;
-            if (shards[mid].startTick <= pos) lo = mid + 1;
+            if (units[mid].startTick <= pos) lo = mid + 1;
             else hi = mid;
         }
-        if (lo == 0) return shards.size();
-        size_t idx = lo - 1;
-        return (pos - shards[idx].startTick) < SHARD_TICKS ? idx : shards.size();
+        return lo == 0 ? units.size() : lo - 1;
     }
-    // Insertion index (in the shard directory) for a brand-new shard.
-    size_t shardInsertAt(uint64_t startTick) const {
-        size_t lo = 0, hi = shards.size();
+    size_t unitById(int64_t id) const {
+        if (lastUnit < units.size()) {
+            const Unit& c = units[lastUnit];
+            if (id >= c.baseId && id < c.baseId + (int64_t)c.size()) return lastUnit;
+        }
+        size_t lo = 0, hi = units.size();
         while (lo < hi) {
             size_t mid = lo + (hi - lo) / 2;
-            if (shards[mid].startTick < startTick) lo = mid + 1;
+            if (units[mid].baseId <= id) lo = mid + 1;
             else hi = mid;
         }
-        return lo;
+        lastUnit = lo - 1;
+        return lastUnit;
     }
-    // Index of the shard owning global id `id`.
-    // Caller guarantees 0 <= id < totalNotes.
-    size_t shardById(int64_t id) const {
-        if (lastShard < shards.size()) {
-            const Shard& c = shards[lastShard];
-            if (id >= c.baseId && id < c.baseId + (int64_t)c.size())
-                return lastShard;
-        }
-        size_t lo = 0, hi = shards.size();
-        while (lo < hi) {
-            size_t mid = lo + (hi - lo) / 2;
-            if (shards[mid].baseId <= id) lo = mid + 1;
-            else hi = mid;
-        }
-        lastShard = lo - 1;
-        return lastShard;
-    }
-    // ---- run lookup (open shards) ------------------------------------------
-    // The k-th note of an open shard: walk the runs accumulating sizes.
-    // Splits make runs variable-sized (a 129-note run becomes 64+65), so
-    // this is a scan over the handful of runs a shard holds.
-    struct RunLoc { size_t run; size_t slot; size_t flat; };
-    RunLoc runLoc(const Shard& sh, size_t k) const {
-        size_t seen = 0;
-        for (size_t r = 0; r < sh.runs.size(); ++r) {
-            const size_t sz = sh.runs[r].notes.size();
-            if (k < seen + sz) return RunLoc{ r, k - seen, k };
-            seen += sz;
-        }
-        return RunLoc{ sh.runs.size() ? sh.runs.size() - 1 : 0, 0, k }; // unreachable
-    }
-    // ---- run maintenance ----------------------------------------------------
-    // Split an overfull run in place: the back half moves to a new run.
-    void splitRun(Shard& sh, size_t ri) {
-        Run& r = sh.runs[ri];
-        const size_t half = r.notes.size() / 2;
-        Run tail;
-        tail.notes.assign(r.notes.begin() + (long)half, r.notes.end());
-        r.notes.resize(half);
-        sh.runs.insert(sh.runs.begin() + (long)ri + 1, std::move(tail));
-    }
+
 public:
     ShardedNoteStore() = default;
     ~ShardedNoteStore() = default;
     ShardedNoteStore(const ShardedNoteStore&) = delete;
     ShardedNoteStore& operator=(const ShardedNoteStore&) = delete;
+
     int64_t size() const { return totalNotes; }
     bool empty() const { return totalNotes == 0; }
-    size_t shardCount() const { return shards.size(); }
+    size_t shardCount() const { return units.size(); }   // lazy units (segments)
     size_t openShardCount() const { return openCount; }
+
     void clear() {
-        shards.clear();
-        shards.shrink_to_fit();
+        units.clear();
+        units.shrink_to_fit();
         totalNotes = 0;
-        lastShard = 0;
+        lastUnit = 0;
         openCount = 0;
         lru.clear();
         modifiedBits = BitArray();
-        segments.clear();
     }
-    // ---- READ ----
+
+    // ---- READ (O(1) inside an open segment) -------------------------------
     uint64_t getFirst8(int64_t id) {
-        size_t si = shardById(id);
-        Shard& sh = shards[si];
-        ensureOpen(si);
-        const RunLoc rl = runLoc(sh, (size_t)(id - sh.baseId));
-        return sh.runs[rl.run].notes[rl.slot].first8;
+        size_t ui = unitById(id);
+        ensureOpen(ui);
+        return units[ui].notes[(size_t)(id - units[ui].baseId)].first8;
     }
     uint32_t getLast4(int64_t id) {
-        size_t si = shardById(id);
-        Shard& sh = shards[si];
-        ensureOpen(si);
-        const RunLoc rl = runLoc(sh, (size_t)(id - sh.baseId));
-        return sh.runs[rl.run].notes[rl.slot].last4;
+        size_t ui = unitById(id);
+        ensureOpen(ui);
+        return units[ui].notes[(size_t)(id - units[ui].baseId)].last4;
     }
     bool getJudge(int64_t id) {
-        size_t si = shardById(id);
-        Shard& sh = shards[si];
-        ensureOpen(si);
-        return sh.judge.get((size_t)(id - sh.baseId));
+        size_t ui = unitById(id);
+        ensureOpen(ui);
+        return units[ui].judge.get((size_t)(id - units[ui].baseId));
     }
     void setJudge(int64_t id, bool value) {
-        size_t si = shardById(id);
-        Shard& sh = shards[si];
-        ensureOpen(si);
-        sh.judge.set((size_t)(id - sh.baseId), value);
-        // Flag writes are gameplay state, not structural edits: the shard
-        // is NOT marked dirty (judged/missed bits don't need to persist).
+        size_t ui = unitById(id);
+        ensureOpen(ui);
+        units[ui].judge.set((size_t)(id - units[ui].baseId), value);
+        // Gameplay state, not a structural edit: no dirty/modified bit.
     }
     void setHit(int64_t id, bool value) {
-        size_t si = shardById(id);
-        Shard& sh = shards[si];
-        ensureOpen(si);
-        sh.hit.set((size_t)(id - sh.baseId), value);
-        // Same as setJudge: a flag write is not a structural edit.
+        size_t ui = unitById(id);
+        ensureOpen(ui);
+        units[ui].hit.set((size_t)(id - units[ui].baseId), value);
     }
     bool getHit(int64_t id) {
-        size_t si = shardById(id);
-        Shard& sh = shards[si];
-        ensureOpen(si);
-        return sh.hit.get((size_t)(id - sh.baseId));
+        size_t ui = unitById(id);
+        ensureOpen(ui);
+        return units[ui].hit.get((size_t)(id - units[ui].baseId));
     }
-    // ---- ADD ----
-    // `cn` is a fully packed note; the position is extracted from it HERE —
-    // callers never pass a separate position — to locate the 1/4-second
-    // shard, the run inside it, and the sorted slot inside that run.
-    // Returns the new note's global chart index.
+
+    // ---- ADD ---------------------------------------------------------------
     int64_t add(const ChartNote& cn) {
         const uint64_t pos = notePos(cn);
-        size_t si = findShardByPos(pos);
-        if (si == shards.size()) {
-            // Materialize the shard, keeping the directory time-ordered.
-            // A brand-new shard starts OPEN (a note is being placed in
-            // it right now) with an empty blob.
-            Shard sh;
-            sh.startTick = pos - (pos % SHARD_TICKS);
-            size_t at = shardInsertAt(sh.startTick);
-            sh.baseId = (at == 0)
-                ? 0
-                : shards[at - 1].baseId + (int64_t)shards[at - 1].size();
-            si = at;
-            shards.insert(shards.begin() + at, std::move(sh));
-            // The modified-bit array is index-aligned with the shard
-            // directory; a materialized shard grows it in place.
-            modifiedBits.insert(at, false);
-            // Fresh shard: give it a valid EMPTY blob (header only, the
-            // codec's n==0 shape) and leave it CLOSED — the ensureOpen
-            // below brings it up through the normal decode path, runs
-            // and all, exactly like any other shard.
-            encodeBlob(shards[si], shards[si].blob);
-            shards[si].blobCount = 0;
+        size_t ui = findUnitByPos(pos);
+        if (ui == units.size()) {
+            // pos precedes every unit (or the store is empty): new unit at front.
+            Unit u;
+            u.startTick = pos - (pos % SHARD_TICKS);
+            u.open = true;
+            u.dirty = true;
+            u.noteCount = 0;
+            u.judge.init(0);
+            u.hit.init(0);
+            units.insert(units.begin(), std::move(u));
+            for (size_t& idx : lru) ++idx; // directory shifted under the ring
+            modifiedBits.insert(0, true);
+            ++openCount;
+            rebuildTotals();
+            lastUnit = 0;
+            ui = 0;
+            touch(0);
+        } else {
+            ensureOpen(ui);
+            // Safe split-off: appending far past the LAST unit's actual end
+            // starts a new unit (order preserved because pos > its max note).
+            if (ui + 1 == units.size() && !units[ui].notes.empty()) {
+                const uint64_t maxPos = notePos(units[ui].notes.back());
+                if (pos > maxPos && pos - units[ui].startTick >= SHARD_TICKS * SEGMENT_MAX_SHARDS) {
+                    Unit nu;
+                    nu.startTick = pos - (pos % SHARD_TICKS);
+                    nu.baseId = units[ui].baseId + (int64_t)units[ui].size();
+                    nu.open = true;
+                    nu.dirty = true;
+                    nu.noteCount = 0;
+                    nu.judge.init(0);
+                    nu.hit.init(0);
+                    units.push_back(std::move(nu));
+                    modifiedBits.insert(units.size() - 1, true);
+                    ++openCount;
+                    ui = units.size() - 1;
+                    lastUnit = ui;
+                    touch(ui);
+                }
+            }
         }
-        Shard& sh = shards[si];
-        ensureOpen(si);
-        // Target run: the last run whose FIRST note is <= pos (runs are
-        // position-ordered). A fresh shard opens with no runs — seed one
-        // empty run; the search skips empty runs (an empty run is only
-        // ever the sole run of a fresh shard) and lands on it.
-        if (sh.runs.empty())
-            sh.runs.push_back(Run());
-        size_t loRun = 0, hiRun = sh.runs.size();
-        while (loRun < hiRun) {
-            size_t mid = loRun + (hiRun - loRun) / 2;
-            if (!sh.runs[mid].notes.empty() && notePos(sh.runs[mid].notes.front()) <= pos) loRun = mid + 1;
-            else hiRun = mid;
-        }
-        size_t ri = (loRun == 0) ? 0 : loRun - 1;
-        Run& target = sh.runs[ri];
-        size_t local = (size_t)(std::lower_bound(
-            target.notes.begin(), target.notes.end(), pos,
+        Unit& u = units[ui];
+        const size_t slot = (size_t)(std::lower_bound(
+            u.notes.begin(), u.notes.end(), pos,
             [](const ChartNote& n, uint64_t p) { return notePos(n) < p; }
-        ) - target.notes.begin());
-        target.notes.insert(target.notes.begin() + local, cn);
-        // Flag index = flat shard-local index (runs before ri + local) —
-        // runs hold variable counts after splits, so sum them.
-        size_t flagIdx = local;
-        for (size_t k = 0; k < ri; ++k) flagIdx += sh.runs[k].notes.size();
-        sh.judge.insert(flagIdx, false);
-        sh.hit.insert(flagIdx, false);
-        ++sh.noteCount;
-        sh.dirty = true;
-        // Structural edit: this shard's segment must be re-encoded on the
-        // next save (the directory index of `sh` is `si` — see caller).
-        modifiedBits.set(si, true);
-        // Overflow -> split the run in place (keeps every memmove bounded
-        // by RUN_MAX/2 * 12 bytes forever).
-        if (target.notes.size() > RUN_MAX) splitRun(sh, ri);
+        ) - u.notes.begin());
+        u.notes.insert(u.notes.begin() + (long)slot, cn);
+        u.judge.insert(slot, false);
+        u.hit.insert(slot, false);
+        u.dirty = true;
+        modifiedBits.set(ui, true);
         ++totalNotes;
-        for (size_t k = si + 1; k < shards.size(); ++k) ++shards[k].baseId;
-        lastShard = si;
-        return sh.baseId + (int64_t)flagIdx;
+        for (size_t k = ui + 1; k < units.size(); ++k) ++units[k].baseId;
+        lastUnit = ui;
+        return u.baseId + (int64_t)slot;
     }
-    // ---- REMOVE ----
-    // Removes the note with global chart index `id`. Only the owning
-    // shard's run and flag bits shift; later shards get a prefix fixup.
+
+    // ---- REMOVE ------------------------------------------------------------
     void remove(int64_t id) {
-        size_t si = shardById(id);
-        Shard& sh = shards[si];
-        ensureOpen(si);
-        const RunLoc rl = runLoc(sh, (size_t)(id - sh.baseId));
-        sh.runs[rl.run].notes.erase(sh.runs[rl.run].notes.begin() + (long)rl.slot);
-        sh.judge.erase(rl.flat);
-        sh.hit.erase(rl.flat);
-        --sh.noteCount;
-        sh.dirty = true;
-        modifiedBits.set(si, true); // structural edit -> segment re-encode
-        if (sh.runs[rl.run].notes.empty()) {
-            sh.runs.erase(sh.runs.begin() + (long)rl.run);
-        }
+        size_t ui = unitById(id);
+        ensureOpen(ui);
+        Unit& u = units[ui];
+        const size_t slot = (size_t)(id - u.baseId);
+        u.notes.erase(u.notes.begin() + (long)slot);
+        u.judge.erase(slot);
+        u.hit.erase(slot);
+        u.dirty = true;
+        modifiedBits.set(ui, true);
         --totalNotes;
-        const bool gone = (sh.noteCount == 0);
+        const bool gone = u.notes.empty();
         if (gone) {
-            // Drop the shard entirely — its blob (if any) goes with it.
             for (size_t k = 0; k < lru.size(); ) {
-                if (lru[k] == si) { lru.erase(lru.begin() + (long)k); continue; }
-                if (lru[k] > si) --lru[k]; // directory shifted under the ring
+                if (lru[k] == ui) { lru.erase(lru.begin() + (long)k); continue; }
+                if (lru[k] > ui) --lru[k];
                 ++k;
             }
-            closeShardForEviction(sh); // frees runs/flags; blob irrelevant
-            shards.erase(shards.begin() + si);
-            // Its modified bit goes with it (a destroyed shard's segment
-            // change is caught by the save path's count checks).
-            modifiedBits.erase(si);
+            std::vector<ChartNote>().swap(u.notes);
+            u.judge = BitArray();
+            u.hit = BitArray();
+            if (u.open) { u.open = false; --openCount; }
+            u.dirty = false;
+            units.erase(units.begin() + ui);
+            modifiedBits.erase(ui);
         }
-        // Every note after the removed one slides down by one id.
-        for (size_t k = (gone ? si : si + 1); k < shards.size(); ++k) {
-            --shards[k].baseId;
-        }
-        lastShard = 0; // cheap; the next lookup re-runs the tiny binary search
+        for (size_t k = (gone ? ui : ui + 1); k < units.size(); ++k) --units[k].baseId;
+        lastUnit = 0;
     }
-    // ---- BULK LOAD ----
-    // Distribute a position-sorted flat array into shards, compressing
-    // every shard as it completes (the load path leaves everything CLOSED
-    // — the spawner opens just the window it needs).
+
+    // ---- LAZY LOAD (FVC4) --------------------------------------------------
+    // Adopt the exact on-disk images as the closed/clean units. NO decode,
+    // NO encode — just the directory + prefix sums. This is the whole load.
+    void adoptSegments(std::vector<Segment>&& segs) {
+        clear();
+        units.reserve(segs.size());
+        int64_t base = 0;
+        for (Segment& s : segs) {
+            Unit u;
+            u.startTick = s.startTick;
+            u.noteCount = s.noteCount;
+            u.baseId = base;
+            base += (int64_t)s.noteCount;
+            u.image = std::move(s.image);
+            u.open = false;
+            u.dirty = false;
+            units.push_back(std::move(u));
+        }
+        totalNotes = base;
+        modifiedBits.init(units.size()); // all clean
+    }
+
+    // ---- EAGER LOAD (legacy FVC3/FVC2/v1, or a flat source) ----------------
+    // Plans adaptive segments and encodes them once (two threads). Used only
+    // for non-FVC4 sources; FVC4 takes the lazy path above.
     void loadFromSortedFlat(const ChartNote* data, size_t n) {
         clear();
+        if (n == 0) { modifiedBits.init(0); return; }
+        std::vector<ChartSegShard> infos;
+        std::vector<size_t> offs;
         size_t i = 0;
         while (i < n) {
-            const uint64_t pos = notePos(data[i]);
-            Shard sh;
-            sh.startTick = pos - (pos % SHARD_TICKS);
-            sh.baseId = (int64_t)i;
-            sh.open = true;
-            sh.noteCount = 0;
-            ++openCount;
-            while (i < n && notePos(data[i]) - sh.startTick < SHARD_TICKS) {
-                if (sh.runs.empty() || sh.runs.back().notes.size() >= RUN_MAX) {
-                    sh.runs.push_back(Run());
-                }
-                sh.runs.back().notes.push_back(data[i]);
-                ++sh.noteCount;
-                ++i;
-            }
-            sh.judge.init(sh.noteCount);
-            sh.hit.init(sh.noteCount);
-            // Fresh from load: the runs are the SOURCE, so encode the blob
-            // from them (a clean close would keep a nonexistent blob).
-            encodeBlob(sh, sh.blob);
-            sh.blobCount = (uint32_t)sh.noteCount;
-            sh.dirty = false;
-            closeShard(sh); // destroy the temporary open state (blob kept)
-            shards.push_back(std::move(sh));
-        }
-        totalNotes = (int64_t)n;
-        // Fresh from load: nothing is modified (every bit 0) — the save
-        // cache, adopted right after this when the source was an FVC4
-        // file, matches the file exactly.
-        modifiedBits.init(shards.size());
-    }
-    // ---- SEGMENT CACHE ADOPTION (load path) -------------------------------
-    // Takes the exact segment images a just-loaded FVC4 file provided, so
-    // the FIRST save after load re-encodes nothing. Caller validates the
-    // images (they were the decode source); alignment with the shard
-    // directory is rebuilt on demand at save time, never trusted.
-    void adoptSegments(std::vector<Segment>&& segs) {
-        segments = std::move(segs);
-    }
-    // ---- SAVE (FVC4: incremental) -----------------------------------------
-    // Writes the chart as the segmented FVC4 container: a directory of
-    // segments, each a complete standalone FVC3 image (the exact codec
-    // and FNV the monolithic file used — per segment now). Only segments
-    // containing at least one shard whose modified bit is 1 (or whose
-    // shard/note counts changed) are re-encoded; every other segment's
-    // cached image is memcpy'd to disk VERBATIM — those shards are never
-    // even opened, so an untouched 2.36M-note megachart costs no decode
-    // and no encode on save, just a sequential disk copy.
-    bool writeTo(const char* path) {
-        // Step 1 — ADAPTIVE segment plan (2..32 shards) via the shared
-        // planner. Deterministic given the shard directory, so an
-        // untouched region re-plans to identical boundaries and keeps its
-        // cache. This recompute is O(shards) and cannot go stale.
-        std::vector<ChartSegShard> infos(shards.size());
-        for (size_t si = 0; si < shards.size(); ++si) {
-            infos[si].startTick = shards[si].startTick;
-            infos[si].noteCount = (uint32_t)shards[si].size();
-            infos[si].modified = modifiedBits.get(si);
+            const uint64_t st = notePos(data[i]) - (notePos(data[i]) % SHARD_TICKS);
+            size_t j = i;
+            while (j < n && notePos(data[j]) - st < SHARD_TICKS) ++j;
+            offs.push_back(i);
+            ChartSegShard inf; inf.startTick = st; inf.noteCount = (uint32_t)(j - i); inf.modified = false;
+            infos.push_back(inf);
+            i = j;
         }
         const std::vector<ChartSegRange> ranges = chart_plan_segments(infos,
             SHARD_TICKS, SEGMENT_MIN_SHARDS, SEGMENT_MAX_SHARDS, SEGMENT_NOTE_BUDGET);
-        struct SegPlan {
-            size_t firstShard = 0, lastShard = 0; // [first, last] inclusive
-            uint64_t startTick = 0;
-            uint32_t noteCount = 0;
-            bool dirty = false;
-            std::vector<uint8_t>* cached = nullptr; // clean image to reuse
-            std::vector<uint8_t> image;             // rebuilt image (dirty only)
-        };
-        std::vector<SegPlan> plan;
-        plan.reserve(ranges.size());
-        for (const ChartSegRange& r : ranges) {
-            SegPlan sp;
-            sp.firstShard = r.firstShard;
-            sp.lastShard = r.lastShard;
-            sp.startTick = r.startTick;
-            sp.noteCount = r.noteCount;
-            sp.dirty = r.dirty;
-            plan.push_back(std::move(sp));
-        }
-        // Step 2 — match each planned segment against the cache left by
-        // the previous save (or adopted from a loaded FVC4 file): same
-        // startTick AND same noteCount => the cached image is exact, keep
-        // it; anything else => re-encode.
-        size_t ci = 0; // walk both lists in tick order
-        for (SegPlan& sp : plan) {
-            while (ci < segments.size() && segments[ci].startTick < sp.startTick) ++ci;
-            if (ci < segments.size() && segments[ci].startTick == sp.startTick) {
-                if (!sp.dirty && segments[ci].noteCount == sp.noteCount) {
-                    sp.cached = &segments[ci].image;
-                }
-                ++ci;
-            }
-            // No cache match (new segment, edited, or count drift): the
-            // image is rebuilt below. `ci` stays — later segments may
-            // still match earlier cached ones (e.g. an edit shifted a
-            // note across a segment boundary).
-        }
-        // Step 3 — re-encode the dirty segments. Gathering opens shards
-        // (store mutation: decode + LRU), so it stays on THIS thread; the
-        // encodes are pure functions of their flat arrays and run on two
-        // threads when >1 segment is dirty (split by note volume). A lone
-        // dirty segment parallelizes INSIDE fvc3_encode instead (AC on
-        // the worker) — still exactly two threads, never nested.
-        std::vector<size_t> dirtyIdx;
-        std::vector<std::vector<ChartNote>> flats;
-        for (size_t pi = 0; pi < plan.size(); ++pi) {
-            SegPlan& sp = plan[pi];
-            if (sp.cached) continue; // clean — copy the cached bytes later
-            dirtyIdx.push_back(pi);
-            std::vector<ChartNote> flat;
-            size_t noteBudget = 0;
-            for (size_t si = sp.firstShard; si <= sp.lastShard; ++si)
-                noteBudget += shards[si].size();
-            flat.reserve(noteBudget);
-            for (size_t si = sp.firstShard; si <= sp.lastShard; ++si) {
-                if (shards[si].size() == 0) continue;
-                ensureOpen(si);
-                for (const Run& r : shards[si].runs)
-                    for (const ChartNote& nt : r.notes) flat.push_back(nt);
-            }
-            flats.push_back(std::move(flat));
+        std::vector<std::vector<ChartNote>> flats(ranges.size());
+        for (size_t r = 0; r < ranges.size(); ++r) {
+            const size_t beg = offs[ranges[r].firstShard];
+            const size_t end = offs[ranges[r].lastShard] + infos[ranges[r].lastShard].noteCount;
+            flats[r].assign(data + beg, data + end);
         }
         std::vector<std::vector<uint8_t>> images;
         chart_encode_segments_mt(flats, images);
-        for (size_t k = 0; k < dirtyIdx.size(); ++k)
-            plan[dirtyIdx[k]].image = std::move(images[k]);
-        // Step 4 — write the container: header + directory + images. All
-        // the I/O happens in one sequential pass with no further encode
-        // work; a failure anywhere leaves the in-RAM cache untouched.
+        units.reserve(ranges.size());
+        int64_t base = 0;
+        for (size_t r = 0; r < ranges.size(); ++r) {
+            Unit u;
+            u.startTick = ranges[r].startTick;
+            u.noteCount = ranges[r].noteCount;
+            u.baseId = base;
+            base += (int64_t)ranges[r].noteCount;
+            u.image = std::move(images[r]);
+            units.push_back(std::move(u));
+        }
+        totalNotes = (int64_t)n;
+        modifiedBits.init(units.size());
+    }
+
+    // ---- SAVE (FVC4, incremental) -----------------------------------------
+    // Clean units emit their cached image VERBATIM (never opened). Dirty
+    // units re-plan their raw notes into adaptive sub-segments and encode
+    // those on two threads. Clean boundaries never move, so an edit never
+    // invalidates a neighbouring segment's cache.
+    bool writeTo(const char* path) {
+        struct Piece {
+            uint64_t startTick = 0;
+            uint32_t noteCount = 0;
+            const std::vector<uint8_t>* cached = nullptr; // clean reuse
+            std::vector<uint8_t> image;                   // re-encoded
+            size_t srcUnit = 0;
+        };
+        std::vector<Piece> pieces;
+        std::vector<std::vector<ChartNote>> flats; // parallel to re-encoded pieces
+
+        for (size_t ui = 0; ui < units.size(); ++ui) {
+            Unit& u = units[ui];
+            if (!u.dirty && !u.image.empty()) {
+                Piece p;
+                p.startTick = u.startTick;
+                p.noteCount = u.noteCount;
+                p.cached = &u.image;
+                p.srcUnit = ui;
+                pieces.push_back(std::move(p));
+                continue;
+            }
+            if (u.notes.empty()) continue; // empty new unit: drop it
+            // Dirty: derive the shard directory from the raw block, plan,
+            // and slice into flats for the threaded encoder.
+            std::vector<ChartSegShard> infos;
+            std::vector<size_t> offs;
+            size_t i = 0;
+            while (i < u.notes.size()) {
+                const uint64_t st = notePos(u.notes[i]) - (notePos(u.notes[i]) % SHARD_TICKS);
+                size_t j = i;
+                while (j < u.notes.size() && notePos(u.notes[j]) - st < SHARD_TICKS) ++j;
+                offs.push_back(i);
+                ChartSegShard inf; inf.startTick = st; inf.noteCount = (uint32_t)(j - i); inf.modified = false;
+                infos.push_back(inf);
+                i = j;
+            }
+            const std::vector<ChartSegRange> ranges = chart_plan_segments(infos,
+                SHARD_TICKS, SEGMENT_MIN_SHARDS, SEGMENT_MAX_SHARDS, SEGMENT_NOTE_BUDGET);
+            for (const ChartSegRange& r : ranges) {
+                const size_t beg = offs[r.firstShard];
+                const size_t end = offs[r.lastShard] + infos[r.lastShard].noteCount;
+                Piece p;
+                p.startTick = r.startTick;
+                p.noteCount = r.noteCount;
+                p.srcUnit = ui;
+                pieces.push_back(std::move(p));
+                flats.emplace_back(u.notes.begin() + (long)beg, u.notes.begin() + (long)end);
+            }
+        }
+
+        std::vector<std::vector<uint8_t>> images;
+        chart_encode_segments_mt(flats, images);
+        {
+            size_t k = 0;
+            for (Piece& p : pieces)
+                if (!p.cached) p.image = std::move(images[k++]);
+        }
+
+        // Write header + directory + images in one sequential pass.
         std::vector<uint8_t> out;
-        size_t totalOut = sizeof(Fvc4Header) + plan.size() * sizeof(Fvc4SegEntry);
-        for (const SegPlan& sp : plan) totalOut += sp.cached ? sp.cached->size() : sp.image.size();
+        size_t totalOut = sizeof(Fvc4Header) + pieces.size() * sizeof(Fvc4SegEntry);
+        for (const Piece& p : pieces) totalOut += p.cached ? p.cached->size() : p.image.size();
         out.reserve(totalOut);
         Fvc4Header hdr{};
         std::memcpy(hdr.magic, "FVC4", 4);
         hdr.noteCount = (uint32_t)totalNotes;
-        hdr.segCount = (uint32_t)plan.size();
+        hdr.segCount = (uint32_t)pieces.size();
         out.insert(out.end(), reinterpret_cast<const uint8_t*>(&hdr),
             reinterpret_cast<const uint8_t*>(&hdr) + sizeof(hdr));
-        size_t off = sizeof(Fvc4Header) + plan.size() * sizeof(Fvc4SegEntry);
-        for (const SegPlan& sp : plan) {
+        for (const Piece& p : pieces) {
             Fvc4SegEntry se{};
-            se.startTick = sp.startTick;
-            se.noteCount = sp.noteCount;
-            se.imageBytes = (uint32_t)(sp.cached ? sp.cached->size() : sp.image.size());
+            se.startTick = p.startTick;
+            se.noteCount = p.noteCount;
+            se.imageBytes = (uint32_t)(p.cached ? p.cached->size() : p.image.size());
             out.insert(out.end(), reinterpret_cast<const uint8_t*>(&se),
                 reinterpret_cast<const uint8_t*>(&se) + sizeof(se));
         }
-        (void)off; // images begin at this offset (kept for clarity of layout)
-        for (const SegPlan& sp : plan) {
-            const std::vector<uint8_t>& img = sp.cached ? *sp.cached : sp.image;
+        for (const Piece& p : pieces) {
+            const std::vector<uint8_t>& img = p.cached ? *p.cached : p.image;
             out.insert(out.end(), img.begin(), img.end());
         }
         std::ofstream fout(path, std::ios::binary | std::ios::trunc);
         if (!fout) return false;
-        fout.write(reinterpret_cast<const char*>(out.data()),
-            (std::streamsize)out.size());
+        fout.write(reinterpret_cast<const char*>(out.data()), (std::streamsize)out.size());
         if (!fout.good()) return false;
-        // Step 5 — commit: rebuild the cache from what was written and
-        // clear every modified bit (the file now matches the store). The
-        // new cache is built ASIDE first: plan[i].cached pointers aim into
-        // the OLD `segments` vectors, which `assign` would destroy mid-loop.
-        std::vector<Segment> nextSegments;
-        nextSegments.reserve(plan.size());
-        for (const SegPlan& sp : plan) {
-            Segment sg;
-            sg.startTick = sp.startTick;
-            sg.noteCount = sp.noteCount;
-            if (sp.cached) sg.image = std::move(*sp.cached); // old cache dies anyway
-            else sg.image = std::move(sp.image);
-            nextSegments.push_back(std::move(sg));
+
+        // Commit: clean units move as-is (open state + flags preserved);
+        // dirty units are replaced by their new closed/clean sub-segments
+        // and their raw blocks are deleted.
+        std::vector<Unit> next;
+        next.reserve(pieces.size());
+        std::vector<size_t> newLru;
+        size_t newOpen = 0;
+        int64_t base = 0;
+        size_t pi = 0;
+        for (size_t ui = 0; ui < units.size(); ++ui) {
+            Unit& u = units[ui];
+            if (!u.dirty && !u.image.empty()) {
+                Unit nu = std::move(u);
+                nu.baseId = base;
+                base += (int64_t)nu.size();
+                if (nu.open) { newLru.push_back(next.size()); ++newOpen; }
+                next.push_back(std::move(nu));
+                ++pi;
+            } else {
+                while (pi < pieces.size() && pieces[pi].srcUnit == ui) {
+                    Unit nu;
+                    nu.startTick = pieces[pi].startTick;
+                    nu.noteCount = pieces[pi].noteCount;
+                    nu.baseId = base;
+                    base += (int64_t)nu.noteCount;
+                    nu.image = std::move(pieces[pi].image);
+                    nu.open = false;
+                    nu.dirty = false;
+                    next.push_back(std::move(nu));
+                    ++pi;
+                }
+                std::vector<ChartNote>().swap(u.notes);
+                u.judge = BitArray();
+                u.hit = BitArray();
+                u.open = false;
+                u.dirty = false;
+            }
         }
-        segments.swap(nextSegments);
-        modifiedBits.init(shards.size()); // all zeros: saved == on-disk
+        units.swap(next);
+        lru.swap(newLru);
+        openCount = newOpen;
+        lastUnit = 0;
+        modifiedBits.init(units.size()); // saved == on-disk
         return true;
     }
-    // ---- DEBUG / TESTS ----
+
+    // ---- DEBUG / TESTS -----------------------------------------------------
     bool isSorted() const {
         uint64_t prev = 0;
-        for (const Shard& sh : shards) {
-            if (!sh.open) continue; // closed shards are sorted by construction
-            for (const Run& r : sh.runs) {
-                for (const ChartNote& n : r.notes) {
-                    const uint64_t p = notePos(n);
-                    if (p < prev) return false;
-                    prev = p;
-                }
+        for (const Unit& u : units) {
+            if (!u.open) continue; // closed units are sorted by construction
+            for (const ChartNote& n : u.notes) {
+                const uint64_t p = notePos(n);
+                if (p < prev) return false;
+                prev = p;
             }
         }
         return true;
     }
-    // TEST HOOKS (not used by the game):
-    bool shardIsOpen(size_t si) const { return shards.at(si).open; }
+    // Shard-named hooks alias to the lazy unit (segment).
+    bool shardIsOpen(size_t si) const { return units.at(si).open; }
     size_t blobBytes(size_t si) const {
-        const Shard& sh = shards.at(si);
-        return sh.dirty ? 0 : sh.blob.size();
+        const Unit& u = units.at(si);
+        return u.dirty ? 0 : u.image.size();
     }
     uint32_t blobNoteCount(size_t si) const {
-        const Shard& sh = shards.at(si);
-        return (sh.dirty || sh.blob.empty()) ? 0 : sh.blobCount;
+        const Unit& u = units.at(si);
+        return (u.dirty || u.image.empty()) ? 0 : u.noteCount;
     }
-    void forceCloseShard(size_t si) { closeShard(shards.at(si)); }
+    void forceCloseShard(size_t si) { closeUnit(units.at(si)); }
     void forceCloseAll() { closeAll(); }
     size_t openShardCountPublic() const { return openCount; }
-    // Incremental-save introspection:
     bool modifiedBit(size_t si) const { return modifiedBits.get(si); }
-    size_t segmentCount() const { return segments.size(); }
-    // Simulates an editor edit on the store's own clock: flips the bit
-    // exactly the way a structural add/remove does, for tests that check
-    // the save path skips clean segments.
-    void testMarkModified(size_t si) { modifiedBits.set(si, true); }
-private:
-    // Close that never re-encodes (eviction of a shard about to die).
-    void closeShardForEviction(Shard& sh) {
-        if (!sh.open) return;
-        std::vector<Run>().swap(sh.runs);
-        sh.judge = BitArray();
-        sh.hit = BitArray();
-        sh.open = false;
-        sh.dirty = false;
-        --openCount;
+    size_t segmentCount() const { return units.size(); }
+    void testMarkModified(size_t si) {
+        ensureOpen(si);
+        units[si].dirty = true;
+        modifiedBits.set(si, true);
     }
 };
 
@@ -2298,23 +2102,20 @@ private:
         const std::streamsize fileSize = in.tellg();
         if (fileSize < 0) return false;
         in.seekg(0, std::ios::beg);
-        std::vector<ChartNote> flat;
+
+        std::vector<ChartNote> flat;             // legacy sources only
         bool legacy = true;
-        // Segments adopted from an FVC4 file (empty for every other
-        // format — the first save then encodes them all once).
+        bool lazyFvc4 = false;
         std::vector<ShardedNoteStore::Segment> loadedSegments;
-        // v4 first — the segmented incremental format. One 12-byte
-        // header, a directory of segments, then each segment's complete
-        // standalone FVC3 image.
+
+        // ---- v4: LAZY. Read bytes + directory, adopt images, decode nothing.
         if (fileSize >= (std::streamsize)sizeof(Fvc4Header)) {
             Fvc4Header h4;
             in.read(reinterpret_cast<char*>(&h4), sizeof(h4));
             if (in.gcount() == (std::streamsize)sizeof(h4)
                 && std::memcmp(h4.magic, "FVC4", 4) == 0) {
                 legacy = false;
-                // Directory: segCount entries, each validated against the
-                // bytes actually present (every field cross-checked — a
-                // flipped bit anywhere structural rejects the file).
+                lazyFvc4 = true;
                 if (h4.segCount > (uint32_t)((fileSize - (std::streamsize)sizeof(Fvc4Header))
                     / (std::streamsize)sizeof(Fvc4SegEntry))) {
                     std::cerr << "  [ Chart File ] FVC4 directory overruns file " << path << std::endl;
@@ -2340,107 +2141,44 @@ private:
                         return false;
                     }
                 }
-                // Pre-walk the directory (sequential, cheap): shard-aligned
-                // starts, strict tick order, image bounds. Adaptive segments
-                // start on ANY shard boundary, so alignment is SHARD_TICKS
-                // (legacy 4096-shard starts pass it too).
-                std::vector<const uint8_t*> segPtr(h4.segCount);
-                {
-                    const uint8_t* ip = images.data();
-                    const uint8_t* const iend = images.data() + images.size();
-                    for (uint32_t s = 0; s < h4.segCount; ++s) {
-                        const Fvc4SegEntry& se = dir[s];
-                        if (se.startTick % ShardedNoteStore::SHARD_TICKS != 0
-                            || (s > 0 && se.startTick <= dir[s - 1].startTick)) {
-                            std::cerr << "  [ Chart File ] Bad FVC4 directory order in " << path << std::endl;
-                            return false;
-                        }
-                        if (se.imageBytes == 0 || (size_t)(iend - ip) < (size_t)se.imageBytes) {
-                            std::cerr << "  [ Chart File ] FVC4 segment " << s << " overruns payload in " << path << std::endl;
-                            return false;
-                        }
-                        segPtr[s] = ip;
-                        ip += se.imageBytes;
-                    }
-                    if (ip != iend) {
-                        std::cerr << "  [ Chart File ] FVC4 totals mismatch in " << path << std::endl;
-                        return false;
-                    }
-                }
-                // Decode on two threads — each segment is a standalone
-                // FVC3 image, so the halves are fully independent. Split
-                // by NOTE VOLUME (dense segments cost more than sparse).
-                std::vector<std::vector<ChartNote>> segNotes(h4.segCount);
-                std::atomic<bool> decodeOk{true};
-                auto decodeRange = [&](uint32_t beg, uint32_t end) {
-                    for (uint32_t s = beg; s < end; ++s) {
-                        if (!decodeOk.load(std::memory_order_relaxed)) return;
-                        const Fvc4SegEntry& se = dir[s];
-                        if (!fvc3_decode(segPtr[s], se.imageBytes, segNotes[s])
-                            || segNotes[s].size() != se.noteCount) {
-                            std::cerr << "  [ Chart File ] Corrupt FVC4 segment " << s << " in " << path << std::endl;
-                            decodeOk.store(false, std::memory_order_relaxed);
-                            return;
-                        }
-                        // Window: up to the next segment's start; the tail
-                        // keeps the legacy SEGMENT_TICKS bound (adaptive
-                        // segments are far narrower, so it still catches
-                        // garbage).
-                        const uint64_t winEnd = (s + 1 < h4.segCount)
-                            ? dir[s + 1].startTick
-                            : se.startTick + ShardedNoteStore::SEGMENT_TICKS;
-                        for (const ChartNote& cn : segNotes[s]) {
-                            const uint64_t p = notePos(cn);
-                            if (p < se.startTick || p >= winEnd) {
-                                std::cerr << "  [ Chart File ] FVC4 segment " << s << " notes outside its window in " << path << std::endl;
-                                decodeOk.store(false, std::memory_order_relaxed);
-                                return;
-                            }
-                        }
-                    }
-                };
-                if (h4.segCount >= 2) {
-                    uint64_t totalN = 0;
-                    for (uint32_t s = 0; s < h4.segCount; ++s) totalN += dir[s].noteCount;
-                    uint64_t acc = 0; uint32_t half = 0;
-                    while (half < h4.segCount - 1 && acc < (totalN + 1) / 2) {
-                        acc += dir[half].noteCount; ++half;
-                    }
-                    if (half == 0) half = 1;
-                    chart_dual_run([&]{ decodeRange(0, half); },
-                                   [&]{ decodeRange(half, h4.segCount); });
-                } else {
-                    decodeRange(0, h4.segCount);
-                }
-                if (!decodeOk.load()) return false;
-                // Merge in tick order + adopt the exact image bytes as
-                // the save cache (first save after load re-encodes nothing).
-                flat.reserve(h4.noteCount);
+                // Structural validation only (order, shard alignment, bounds,
+                // totals). Content integrity is checked on OPEN, per segment.
+                const uint8_t* ip = images.data();
+                const uint8_t* const iend = images.data() + images.size();
                 uint64_t sumNotes = 0;
                 for (uint32_t s = 0; s < h4.segCount; ++s) {
                     const Fvc4SegEntry& se = dir[s];
-                    flat.insert(flat.end(), segNotes[s].begin(), segNotes[s].end());
-                    std::vector<ChartNote>().swap(segNotes[s]); // decay the decode peak
-                    sumNotes += se.noteCount;
+                    if (se.startTick % ShardedNoteStore::SHARD_TICKS != 0
+                        || (s > 0 && se.startTick <= dir[s - 1].startTick)) {
+                        std::cerr << "  [ Chart File ] Bad FVC4 directory order in " << path << std::endl;
+                        return false;
+                    }
+                    if (se.imageBytes == 0 || (size_t)(iend - ip) < (size_t)se.imageBytes) {
+                        std::cerr << "  [ Chart File ] FVC4 segment " << s << " overruns payload in " << path << std::endl;
+                        return false;
+                    }
                     ShardedNoteStore::Segment seg;
                     seg.startTick = se.startTick;
                     seg.noteCount = se.noteCount;
-                    seg.image.assign(segPtr[s], segPtr[s] + se.imageBytes);
+                    seg.image.assign(ip, ip + se.imageBytes);
                     loadedSegments.push_back(std::move(seg));
+                    ip += se.imageBytes;
+                    sumNotes += se.noteCount;
                 }
-                if (sumNotes != h4.noteCount) {
+                if (ip != iend || sumNotes != h4.noteCount) {
                     std::cerr << "  [ Chart File ] FVC4 totals mismatch in " << path << std::endl;
                     return false;
                 }
-                std::cout << "  [ Chart File ] FVC4 segmented snapshot (" << flat.size()
+                std::cout << "  [ Chart File ] FVC4 lazy snapshot (" << h4.noteCount
                     << " notes, " << h4.segCount << " segments, " << fileSize
-                    << " bytes on disk)" << std::endl;
+                    << " bytes on disk) — nothing decoded yet" << std::endl;
             } else {
                 in.seekg(0, std::ios::beg); // not v4 — try v3
             }
         }
+
+        // ---- v3 (legacy monolithic): eager, unchanged ----
         if (legacy && fileSize >= (std::streamsize)sizeof(Fvc3Header)) {
-            // v3 — the previous monolithic format
             Fvc3Header h3;
             in.read(reinterpret_cast<char*>(&h3), sizeof(h3));
             if (in.gcount() == (std::streamsize)sizeof(h3)
@@ -2457,9 +2195,11 @@ private:
                 std::cout << "  [ Chart File ] FVC3 compressed snapshot (" << flat.size()
                     << " notes, " << fileSize << " bytes on disk)" << std::endl;
             } else {
-                in.seekg(0, std::ios::beg); // not v3 — try v2
+                in.seekg(0, std::ios::beg);
             }
         }
+
+        // ---- v2 (legacy) ----
         if (legacy && fileSize >= (std::streamsize)sizeof(FvcFileHeader)) {
             FvcFileHeader hdr;
             in.read(reinterpret_cast<char*>(&hdr), sizeof(hdr));
@@ -2472,18 +2212,14 @@ private:
                     return false;
                 }
                 legacy = false;
-                const std::streamsize payload =
-                    fileSize - (std::streamsize)sizeof(FvcFileHeader);
+                const std::streamsize payload = fileSize - (std::streamsize)sizeof(FvcFileHeader);
                 if (payload % (std::streamsize)sizeof(ChartNote) != 0) {
-                    std::cerr << "  [ Chart File ] Trailing bytes in " << path
-                        << " (file size not a multiple of the 12-byte note)" << std::endl;
+                    std::cerr << "  [ Chart File ] Trailing bytes in " << path << std::endl;
                     return false;
                 }
                 const size_t n = (size_t)(payload / (std::streamsize)sizeof(ChartNote));
                 if ((uint64_t)n != hdr.noteCount) {
-                    std::cerr << "  [ Chart File ] Header/count mismatch in " << path
-                        << " (" << hdr.noteCount << " declared, " << n << " present)"
-                        << std::endl;
+                    std::cerr << "  [ Chart File ] Header/count mismatch in " << path << std::endl;
                     return false;
                 }
                 flat.resize(n);
@@ -2496,18 +2232,17 @@ private:
                     }
                 }
             } else {
-                in.seekg(0, std::ios::beg); // not v2 — rewind for the legacy read
+                in.seekg(0, std::ios::beg);
             }
         }
+
+        // ---- v1 (legacy 10-byte) ----
         if (legacy) {
-            // v1: 10-byte records, no file header.
             const size_t n = (size_t)fileSize / 10;
-            const size_t rem = (size_t)fileSize % 10;
             if (n == 0 && fileSize != 0) {
                 std::cerr << "  [ Chart File ] Empty non-legacy file " << path << std::endl;
                 return false;
             }
-            (void)rem; // a hand-edited trailing fragment is ignored, as before
             flat.resize(n);
             if (n > 0) {
                 std::vector<uint8_t> raw((size_t)fileSize);
@@ -2518,39 +2253,39 @@ private:
                 }
                 for (size_t i = 0; i < n; ++i) {
                     const uint8_t* r = raw.data() + i * 10;
-                    const uint64_t pos = (uint64_t)r[0]
-                        | ((uint64_t)r[1] << 8) | ((uint64_t)r[2] << 16)
-                        | ((uint64_t)r[3] << 24) | ((uint64_t)r[4] << 32)
-                        | ((uint64_t)r[5] << 40);
+                    const uint64_t pos = (uint64_t)r[0] | ((uint64_t)r[1] << 8)
+                        | ((uint64_t)r[2] << 16) | ((uint64_t)r[3] << 24)
+                        | ((uint64_t)r[4] << 32) | ((uint64_t)r[5] << 40);
                     const uint16_t dur16 = (uint16_t)(r[6] | (r[7] << 8));
                     const uint8_t idx = r[8];
                     const uint8_t type = r[9];
-                    // Derive the lane from the DEFAULT routing the v1
-                    // format implied (the gameplay code recomputed it from
-                    // type at every read anyway).
                     const uint8_t lane = (type == 0) ? 0 : 1;
                     flat[i] = packNote(pos, dur16, idx, type, lane);
                 }
                 std::cout << "  [ Chart File ] Legacy 10-byte .fvc (" << n
-                    << " notes) — converted to 12-byte in RAM; next save writes FVC4."
-                    << std::endl;
+                    << " notes) — converted to 12-byte in RAM; next save writes FVC4." << std::endl;
             }
         }
         in.close();
-        bool sorted = true;
-        uint64_t prev = 0;
-        for (size_t i = 0; i < flat.size(); ++i) {
-            const uint64_t p = notePos(flat[i]);
-            if (p < prev) { sorted = false; break; }
-            prev = p;
-        }
-        if (!sorted) {
-            std::cout << "  [ Chart File ] Unsorted .fvc detected — radix sorting." << std::endl;
-            radix_sort_notes_inplace(flat.data(), flat.size());
-        }
+
         std::lock_guard<std::mutex> lk(dataMutex);
-        store.loadFromSortedFlat(flat.data(), flat.size());
-        store.adoptSegments(std::move(loadedSegments));
+        if (lazyFvc4) {
+            // THE WHOLE LOAD: compressed images + directory. Nothing else.
+            store.adoptSegments(std::move(loadedSegments));
+        } else {
+            bool sorted = true;
+            uint64_t prev = 0;
+            for (size_t i = 0; i < flat.size(); ++i) {
+                const uint64_t p = notePos(flat[i]);
+                if (p < prev) { sorted = false; break; }
+                prev = p;
+            }
+            if (!sorted) {
+                std::cout << "  [ Chart File ] Unsorted .fvc detected — radix sorting." << std::endl;
+                radix_sort_notes_inplace(flat.data(), flat.size());
+            }
+            store.loadFromSortedFlat(flat.data(), flat.size());
+        }
         return true;
     }
 #ifndef CHART_FILE_NO_TRANSPILER
