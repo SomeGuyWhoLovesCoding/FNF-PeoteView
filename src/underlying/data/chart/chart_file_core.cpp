@@ -5,6 +5,9 @@
 #include <cstdint>
 #include <cstring>
 #include <mutex>
+#include <thread>
+#include <atomic>
+#include <utility>
 #include <algorithm>
 #include <unordered_map>
 
@@ -163,6 +166,34 @@ struct FvcFileHeader {
 
 static_assert(sizeof(FvcFileHeader) == 16, "FvcFileHeader must be exactly 16 bytes!");
 
+
+// ---------------------------------------------------------------------------
+// Two-thread work splitter.
+// ---------------------------------------------------------------------------
+// The chart codec is CPU-bound and embarrassingly parallel at two levels:
+// independent codec candidates (ROWS vs AC) and independent FVC4 segments.
+// This helper runs fn(i) for i in [0, count) on exactly TWO worker threads
+// (the caller joins; it does not take a third share). One item runs inline
+// so tiny segments never pay thread creation. The codecs share no mutable
+// state, so no locking is needed inside fn.
+// ---------------------------------------------------------------------------
+template <typename Fn>
+static void runOnTwoThreads(size_t count, Fn fn) {
+    if (count == 0) return;
+    if (count == 1) { fn(0); return; }
+    std::atomic<size_t> next{0};
+    auto worker = [&]() {
+        for (;;) {
+            const size_t i = next.fetch_add(1, std::memory_order_relaxed);
+            if (i >= count) break;
+            fn(i);
+        }
+    };
+    std::thread t0(worker);
+    std::thread t1(worker);
+    t0.join();
+    t1.join();
+}
 
 // Helper function to sort an array of ChartNote in-place
 static void radix_sort_notes_inplace(ChartNote* notes, size_t n) {
@@ -332,19 +363,31 @@ static constexpr uint32_t FVC3_ROWS_MAX_ROW    = 255;
 // ----------------------------------------------------------------------------
 // A v3 file is ONE fvc3_encode image of the whole chart, so any single-note
 // edit forces a full-chart re-encode on save. FVC4 keeps the v3 codec (and
-// its FNV) EXACTLY as it is, but splits the chart into fixed-size SEGMENTS
-// of consecutive shards, each written as a complete standalone FVC3 image:
+// its FNV) EXACTLY as it is, but splits the chart into ADAPTIVE SEGMENTS of
+// consecutive shards, each written as a complete standalone FVC3 image:
 //
 //   Fvc4Header{ "FVC4", noteCount, segCount } followed by segCount
 //   Fvc4SegEntry{ startTick, noteCount, imageBytes } records, then the
 //   segment images back to back (in tick order).
+//
+// A segment spans an ADAPTIVE number of shard widths: SEG_MIN_SHARDS to
+// SEG_MAX_SHARDS, chosen from the chart's note density so a segment holds
+// roughly SEG_TARGET_NOTES. Dense charts use the 2-shard floor (an edit
+// re-encodes very little); sparse charts stretch to the 16-shard ceiling
+// (more AC/LZP history, better ratio). Boundaries are time-anchored, so
+// adding/removing notes never shifts later segments or invalidates their
+// cached images. This is the adaptive balance between save latency and
+// compression: the old fixed 4096-shard segment maximized ratio but made
+// every edit redo ~17 minutes of chart, while a fixed tiny segment wasted
+// AC's history.
 //
 // A segment image is byte-identical to what fvc3_encode produced for those
 // notes alone — nothing about the codec changed. Saving re-encodes only the
 // segments whose shards were structurally modified (the store's 1-bit
 // modified array, below); untouched segments are memcpy'd to disk without
 // even opening their shards. Old FVC3 (and FVC2/v1) files load as one
-// segment and upgrade on the next save.
+// segment and upgrade on the next save; old fixed-size FVC4 files still
+// load because their start ticks are also shard-aligned.
 // ============================================================================
 #pragma pack(push, 1)
 struct Fvc4Header {
@@ -353,7 +396,7 @@ struct Fvc4Header {
     uint32_t segCount;   // number of Fvc4SegEntry records that follow
 };
 struct Fvc4SegEntry {
-    uint64_t startTick;  // segment id * SEGMENT_TICKS (tick of its first shard)
+    uint64_t startTick;  // tick of the segment's first shard
     uint32_t noteCount;  // notes in this segment (cross-checks the decode)
     uint32_t imageBytes; // length of this segment's FVC3 image
 };
@@ -447,6 +490,9 @@ static int fvc3_kindBits(uint64_t kindCount) {
 // ---------------------------------------------------------------------------
 static void fvc3_rows_encode(const ChartNote* notes, size_t n, uint64_t grid,
                              std::vector<uint8_t>& out) {
+    // Typical output is ~1 B/note; the reserve keeps the hot varint/bit
+    // writers from repeatedly reallocating on a large segment.
+    out.reserve(out.size() + n * 2 + 64);
     // kinds (order of first appearance — the decoder rebuilds it; hashed
     // lookup because a megachart can carry hundreds of distinct kinds and
     // the old linear scan was O(n*kinds))
@@ -826,6 +872,9 @@ static uint64_t fvc3_ac_notesHash(const ChartNote* notes, size_t n) {
 }
 static void fvc3_ac_encode(const ChartNote* notes, size_t n, uint64_t grid,
                            std::vector<uint8_t>& out) {
+    // The range coder emits ~1 B/note on normal charts; reserve so the
+    // per-byte ShiftLow pushes never reallocate mid-stream.
+    out.reserve(out.size() + n * 2 + 64);
     // sorted unique kind keys; ids index into THIS table (decoder rebuilds
     // the same table from ascending deltas, so id space matches)
     std::vector<uint32_t> kinds;
@@ -882,6 +931,11 @@ static void fvc3_ac_encode(const ChartNote* notes, size_t n, uint64_t grid,
     std::vector<uint64_t> rowOff;   // rows+1 offsets into rowKinds/rowDurs
     std::vector<uint32_t> rowKinds; // concatenated kind ids
     std::vector<uint32_t> rowDurs;  // concatenated durations (coded units)
+    rowGap.reserve(n / 2 + 1);
+    rowCnt.reserve(n / 2 + 1);
+    rowOff.reserve(n / 2 + 2);
+    rowKinds.reserve(n);
+    rowDurs.reserve(n);
     rowOff.push_back(0); // begin of row 0
     std::vector<int32_t> matchTable(FVC3_AC_MATCH_ROWS, -1);
 
@@ -1242,7 +1296,10 @@ static bool fvc3_ac_decode(const uint8_t* data, size_t size, uint32_t noteCount,
 // Encode a SORTED note array as the FVC3 payload (header + payload).
 // Encodes ROWS, GRID_KIND, AC and RAW; keeps the smallest (ties: ROWS
 // wins — it is the preferred codec; AC only ships when strictly smaller).
-static std::vector<uint8_t> fvc3_encode(const ChartNote* notes, size_t n) {
+// `useThreads` runs the two expensive candidates (ROWS and AC) on two
+// threads; callers that are already parallelizing segments pass false.
+static std::vector<uint8_t> fvc3_encode(const ChartNote* notes, size_t n,
+                                        bool useThreads = false) {
     // ---- candidate 1: grid + kind dictionary + varint planes ----
     uint64_t grid = 0;
     for (size_t i = 0; i < n; ++i) {
@@ -1288,14 +1345,29 @@ static std::vector<uint8_t> fvc3_encode(const ChartNote* notes, size_t n) {
     }
 
     // ---- candidate 2: ROWS bitstream (shared kind table) ----
-    std::vector<uint8_t> rows;
-    if (gkOk)
-        fvc3_rows_encode(notes, n, grid, rows);
-
     // ---- candidate 3: AC (adaptive range coder + LZP row matches) ----
+    // These two are independent and dominate encode time, so they are the
+    // natural two-thread split. AC pays an 8-byte FNV + 5-byte range-coder
+    // flush, so it never wins on a handful of notes — skip it there.
+    std::vector<uint8_t> rows;
     std::vector<uint8_t> ac;
-    if (gkOk)
-        fvc3_ac_encode(notes, n, grid, ac);
+    if (gkOk) {
+        rows.reserve(n * 2 + 64);
+        const bool tryAc = n >= 16;
+        if (tryAc) {
+            ac.reserve(n * 3 + 64);
+            if (useThreads) {
+                std::thread acThread([&]() { fvc3_ac_encode(notes, n, grid, ac); });
+                fvc3_rows_encode(notes, n, grid, rows);
+                acThread.join();
+            } else {
+                fvc3_rows_encode(notes, n, grid, rows);
+                fvc3_ac_encode(notes, n, grid, ac);
+            }
+        } else {
+            fvc3_rows_encode(notes, n, grid, rows);
+        }
+    }
 
     // ---- candidate 4: raw 12-byte stream ----
     const size_t rawSize = n * sizeof(ChartNote);
@@ -1408,17 +1480,24 @@ public:
     // mid-size chart's working set hot (no decode/encode thrash) while
     // bounding decoded RAM at ~256 shards * ~1.5 KB of runs.
     static constexpr size_t OPEN_SHARD_BUDGET = 256;
-    // SEGMENT = the unit of incremental save (FVC4). 4096 shards = 1024 s
-    // (~17 min) of chart: an edit re-encodes just its segment instead of
-    // the whole chart. This is the measured sweet spot between save cost
-    // and size: the AC codec's LZP match layer compresses repeating
-    // motifs far better with longer history, so finer segments (64 s)
-    // cost 9x the bytes on motif-heavy charts while saving only ~1 ms per
-    // edit-save; 1024 s lands within 1.7x of the monolithic file on the
-    // adversarial all-motif 210k shape (13.4 KB vs 7.8 KB) and single-
-    // digit ms per edit-save. Normal songs (2-4 min) are ONE segment —
-    // byte-identical behavior to the monolithic save.
-    static constexpr uint64_t SEGMENT_TICKS = SHARD_TICKS * 4096;
+    // SEGMENT = the unit of incremental save (FVC4). A segment spans an
+    // ADAPTIVE number of shard widths: at least SEG_MIN_SHARDS, at most
+    // SEG_MAX_SHARDS, chosen from the chart's note density so a segment
+    // targets roughly SEG_TARGET_NOTES. This balances two costs that pull
+    // in opposite directions:
+    //   * save latency — an edit re-encodes only its segment, so smaller
+    //     is better;
+    //   * compression — the AC codec's LZP history and the row/kind
+    //     models get better with more notes, so larger is better.
+    // Boundaries are TIME-anchored (segment index * span), not shard-index
+    // anchored, so inserting/removing notes never shifts a later segment
+    // and invalidates its cached image. SEGMENT_TICKS is the widest span
+    // a segment can ever have (16 shards = 4 s); the loader also accepts
+    // old fixed 4096-shard files because their starts are shard-aligned.
+    static constexpr size_t SEG_MIN_SHARDS = 2;
+    static constexpr size_t SEG_MAX_SHARDS = 16;
+    static constexpr size_t SEG_TARGET_NOTES = 512;
+    static constexpr uint64_t SEGMENT_TICKS = SHARD_TICKS * SEG_MAX_SHARDS;
 
     // One saved FVC4 segment: its tick range and the exact FVC3 image
     // last written for it. Public because ChartFileReader's load path
@@ -1500,6 +1579,22 @@ private:
     // exactly like the RAM-blob `dirty` flag.
     BitArray modifiedBits;
     std::vector<Segment> segments; // index-aligned with the FVC4 directory
+
+    // ---- adaptive segment span --------------------------------------------
+    // Pick how many shard widths a segment covers. Density is the average
+    // notes per shard; the target is SEG_TARGET_NOTES per segment. The
+    // result is quantized to powers of two so a one-note edit almost never
+    // crosses a bucket and re-buckets the whole chart (which would throw
+    // away every cached segment image).
+    static size_t shardsPerSegment(size_t noteCount, size_t shardCount) {
+        if (shardCount == 0) return SEG_MAX_SHARDS;
+        const size_t avg = (noteCount + shardCount - 1) / shardCount; // ceil
+        const size_t n = SEG_TARGET_NOTES / (avg ? avg : 1);
+        if (n >= 16) return 16;
+        if (n >= 8) return 8;
+        if (n >= 4) return 4;
+        return SEG_MIN_SHARDS;
+    }
 
     // ---- LRU --------------------------------------------------------------
     void touch(size_t si) {
@@ -2014,10 +2109,14 @@ public:
     // even opened, so an untouched 2.36M-note megachart costs no decode
     // and no encode on save, just a sequential disk copy.
     bool writeTo(const char* path) {
-        // Step 1 — group the shards into segments by time. A segment is
-        // every shard whose startTick lands in [k * SEGMENT_TICKS, (k+1)
-        // * SEGMENT_TICKS). Empty segments (no shards) simply have no
-        // entry; this recompute is O(shards) and cannot go stale.
+        // Step 1 — choose the adaptive segment span (N shard widths, N in
+        // [SEG_MIN_SHARDS, SEG_MAX_SHARDS]) from the chart's note density,
+        // then group shards by their TIME-anchored span. Time anchoring is
+        // what keeps incremental save incremental: an insert/remove moves
+        // shard indices but not ticks, so every later boundary and cached
+        // image survives untouched.
+        const size_t segShards = shardsPerSegment((size_t)totalNotes, shards.size());
+        const uint64_t segTicks = SHARD_TICKS * (uint64_t)segShards;
         struct SegPlan {
             size_t firstShard = 0, lastShard = 0; // [first, last] inclusive
             uint64_t startTick = 0;
@@ -2028,13 +2127,13 @@ public:
         };
         std::vector<SegPlan> plan;
         for (size_t si = 0; si < shards.size(); ++si) {
-            const uint64_t segTick = shards[si].startTick - (shards[si].startTick % SEGMENT_TICKS);
+            const uint64_t segTick = shards[si].startTick - (shards[si].startTick % segTicks);
             if (plan.empty() || plan.back().startTick != segTick) {
                 SegPlan sp;
                 sp.firstShard = si;
                 sp.lastShard = si;
                 sp.startTick = segTick;
-                plan.push_back(sp);
+                plan.push_back(std::move(sp));
             } else {
                 plan.back().lastShard = si;
             }
@@ -2062,25 +2161,42 @@ public:
         }
 
         // Step 3 — re-encode the dirty segments. Notes are gathered
-        // shard-by-shard (ensureOpen on each — the same as any read), the
-        // runs of the segment are flattened, and the FVC3 codec runs on
-        // the flat array. This is the ONLY encode work in the whole save.
+        // sequentially (ensureOpen mutates the store's LRU/open state, so
+        // that part stays on the calling thread), then the independent
+        // segment encoders run on TWO worker threads. This is the ONLY
+        // encode work in the whole save.
+        std::vector<size_t> dirty;
+        size_t dirtyNotes = 0;
+        for (size_t k = 0; k < plan.size(); ++k) {
+            if (plan[k].cached) continue;
+            dirty.push_back(k);
+            dirtyNotes += plan[k].noteCount;
+        }
         std::vector<ChartNote> flat;
-        for (SegPlan& sp : plan) {
-            if (sp.cached) continue; // clean — copy the cached bytes later
-            flat.clear();
-            size_t noteBudget = 0;
-            for (size_t si = sp.firstShard; si <= sp.lastShard; ++si)
-                noteBudget += shards[si].size();
-            flat.reserve(noteBudget);
-            for (size_t si = sp.firstShard; si <= sp.lastShard; ++si) {
-                if (shards[si].size() == 0) continue;
-                ensureOpen(si);
-                for (const Run& r : shards[si].runs)
+        flat.reserve(dirtyNotes);
+        std::vector<std::pair<size_t, size_t>> spans(dirty.size());
+        for (size_t d = 0; d < dirty.size(); ++d) {
+            SegPlan& sp = plan[dirty[d]];
+            const size_t begin = flat.size();
+            for (size_t s = sp.firstShard; s <= sp.lastShard; ++s) {
+                if (shards[s].size() == 0) continue;
+                ensureOpen(s);
+                for (const Run& r : shards[s].runs)
                     for (const ChartNote& nt : r.notes) flat.push_back(nt);
             }
-            sp.image = fvc3_encode(flat.data(), flat.size());
+            spans[d] = std::make_pair(begin, flat.size());
         }
+        // One dirty segment still gets two threads: fvc3_encode runs its
+        // ROWS and AC candidates concurrently. With two or more dirty
+        // segments the split is at the segment level instead (no nesting).
+        const bool candidateThreads = (dirty.size() == 1);
+        runOnTwoThreads(dirty.size(), [&](size_t d) {
+            SegPlan& sp = plan[dirty[d]];
+            const size_t begin = spans[d].first;
+            const size_t count = spans[d].second - begin;
+            sp.image = fvc3_encode(count ? flat.data() + begin : nullptr,
+                                   count, candidateThreads);
+        });
 
         // Step 4 — write the container: header + directory + images. All
         // the I/O happens in one sequential pass with no further encode
@@ -2268,50 +2384,72 @@ private:
                         return false;
                     }
                 }
-                // Validate + decode segment by segment. Images are read
-                // strictly sequentially; a segment's notes must stay
-                // inside its own tick window (the directory promised it).
+                // Phase 1 — validate the directory and locate every image
+                // (sequential and cheap). A segment starts on a shard
+                // boundary; old fixed-size FVC4 files qualify too because
+                // SEGMENT_TICKS was a multiple of SHARD_TICKS.
                 uint64_t sumNotes = 0;
-                const uint8_t* ip = images.data();
-                const uint8_t* const iend = images.data() + images.size();
-                for (uint32_t s = 0; s < h4.segCount; ++s) {
+                std::vector<size_t> offsets((size_t)h4.segCount);
+                {
+                    const uint8_t* ip = images.data();
+                    const uint8_t* const iend = images.data() + images.size();
+                    for (uint32_t s = 0; s < h4.segCount; ++s) {
+                        const Fvc4SegEntry& se = dir[s];
+                        if (se.startTick % ShardedNoteStore::SHARD_TICKS != 0
+                            || (s > 0 && se.startTick <= dir[s - 1].startTick)) {
+                            std::cerr << "  [ Chart File ] Bad FVC4 directory order in " << path << std::endl;
+                            return false;
+                        }
+                        if (se.imageBytes == 0 || (size_t)(iend - ip) < (size_t)se.imageBytes) {
+                            std::cerr << "  [ Chart File ] FVC4 segment " << s << " overruns payload in " << path << std::endl;
+                            return false;
+                        }
+                        offsets[s] = (size_t)(ip - images.data());
+                        ip += se.imageBytes;
+                        sumNotes += se.noteCount;
+                    }
+                    if (ip != iend) {
+                        std::cerr << "  [ Chart File ] FVC4 totals mismatch in " << path << std::endl;
+                        return false;
+                    }
+                }
+                if (sumNotes != h4.noteCount) {
+                    std::cerr << "  [ Chart File ] FVC4 totals mismatch in " << path << std::endl;
+                    return false;
+                }
+                // Phase 2 — segments are independent FVC3 images, so decode
+                // them on TWO threads. Each worker also checks that the
+                // decoded notes stay inside its segment's tick window
+                // ([startTick, nextStartTick); the last segment is open-
+                // ended because there is no following boundary).
+                std::vector<std::vector<ChartNote>> segNotes((size_t)h4.segCount);
+                std::vector<uint8_t> segOk((size_t)h4.segCount, 0);
+                runOnTwoThreads((size_t)h4.segCount, [&](size_t s) {
                     const Fvc4SegEntry& se = dir[s];
-                    if (se.startTick % ShardedNoteStore::SEGMENT_TICKS != 0
-                        || (s > 0 && se.startTick <= dir[s - 1].startTick)) {
-                        std::cerr << "  [ Chart File ] Bad FVC4 directory order in " << path << std::endl;
-                        return false;
+                    if (!fvc3_decode(images.data() + offsets[s], se.imageBytes, segNotes[s])
+                        || segNotes[s].size() != se.noteCount) return;
+                    const uint64_t endTick = (s + 1 < (size_t)h4.segCount)
+                        ? dir[s + 1].startTick : ~0ULL;
+                    for (const ChartNote& cn : segNotes[s]) {
+                        const uint64_t p = notePos(cn);
+                        if (p < se.startTick || (endTick != ~0ULL && p >= endTick)) return;
                     }
-                    if (se.imageBytes == 0 || (size_t)(iend - ip) < (size_t)se.imageBytes) {
-                        std::cerr << "  [ Chart File ] FVC4 segment " << s << " overruns payload in " << path << std::endl;
-                        return false;
-                    }
-                    std::vector<ChartNote> segNotes;
-                    if (!fvc3_decode(ip, se.imageBytes, segNotes)
-                        || segNotes.size() != se.noteCount) {
+                    segOk[s] = 1;
+                });
+                // Phase 3 — concatenate in tick order and adopt each exact
+                // image as the save cache (a first save re-encodes nothing).
+                for (uint32_t s = 0; s < h4.segCount; ++s) {
+                    if (!segOk[s]) {
                         std::cerr << "  [ Chart File ] Corrupt FVC4 segment " << s << " in " << path << std::endl;
                         return false;
                     }
-                    for (const ChartNote& cn : segNotes) {
-                        const uint64_t p = notePos(cn);
-                        if (p < se.startTick
-                            || p - se.startTick >= ShardedNoteStore::SEGMENT_TICKS) {
-                            std::cerr << "  [ Chart File ] FVC4 segment " << s << " notes outside its window in " << path << std::endl;
-                            return false;
-                        }
-                    }
-                    ip += se.imageBytes;
-                    sumNotes += se.noteCount;
-                    flat.insert(flat.end(), segNotes.begin(), segNotes.end());
-                    // Adopt the exact image bytes as the save cache.
+                    flat.insert(flat.end(), segNotes[s].begin(), segNotes[s].end());
                     ShardedNoteStore::Segment seg;
-                    seg.startTick = se.startTick;
-                    seg.noteCount = se.noteCount;
-                    seg.image.assign(ip - se.imageBytes, ip);
+                    seg.startTick = dir[s].startTick;
+                    seg.noteCount = dir[s].noteCount;
+                    const uint8_t* img = images.data() + offsets[s];
+                    seg.image.assign(img, img + dir[s].imageBytes);
                     loadedSegments.push_back(std::move(seg));
-                }
-                if (ip != iend || sumNotes != h4.noteCount) {
-                    std::cerr << "  [ Chart File ] FVC4 totals mismatch in " << path << std::endl;
-                    return false;
                 }
                 std::cout << "  [ Chart File ] FVC4 segmented snapshot (" << flat.size()
                           << " notes, " << h4.segCount << " segments, " << fileSize
@@ -2859,7 +2997,7 @@ private:
         });
         writeIndex = collected.size();
         if (writeIndex > 0) {
-            const std::vector<uint8_t> image = fvc3_encode(collected.data(), collected.size());
+            const std::vector<uint8_t> image = fvc3_encode(collected.data(), collected.size(), true);
             out.write(reinterpret_cast<const char*>(image.data()),
                       (std::streamsize)image.size());
         }
