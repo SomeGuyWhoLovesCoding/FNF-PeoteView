@@ -933,7 +933,7 @@ class StrumlineNoteInteraction {
 		if (button == MouseButton.LEFT && em != null && !em.anyPopupOpen() && onBackground) {
 			var nowMs = haxe.Timer.stamp() * 1000;
 			var withinSlop = Math.abs(x - tripleLastX) <= 64 && Math.abs(y - tripleLastY) <= 64;
-			if (nowMs - tripleLastMs <= 900 && withinSlop) {
+			if (nowMs - tripleLastMs <= 250 && withinSlop) {
 				tripleClicks++;
 				if (tripleClicks >= 3) {
 					tripleClicks = 0;
