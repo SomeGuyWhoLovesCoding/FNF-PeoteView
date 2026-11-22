@@ -61,8 +61,13 @@ public:
         // Whole bytes first, TOP-DOWN (each takes the still-original bit
         // 7 of the byte below it), then the partial byte at the insert
         // point — O(bytes), not O(bits).
+        // endByte must span the NEW top byte ((count)>>3): when count is a
+        // multiple of 8 the old top bit crosses into a fresh byte, and the
+        // old (count+7)>>3 bound stopped one short — silently dropping
+        // that bit whenever it was set (latent flag-corruption bug, now
+        // load-bearing for the modified-bit array too).
         const size_t startByte = i >> 3;
-        const size_t endByte = (count + 7) >> 3;
+        const size_t endByte = (count >> 3) + 1;
         for (size_t b = endByte; b-- > startByte + 1;) {
             data[b] = (uint8_t)((data[b] << 1) | ((data[b-1] >> 7) & 1u));
         }
@@ -231,10 +236,11 @@ static void radix_sort_notes_inplace(ChartNote* notes, size_t n) {
 //   REMOVE id -> shard -> run -> one small erase; an underflowed run
 //          (0 notes) is dropped; empty shards are dropped.
 //
-// The .fvc file on disk stays a pure uncompressed FVC2 snapshot: load
-// is one sequential pass, save is one sequential pass, and structural
-// edits never touch the disk until saveChart()/destroy (which mirrors
-// the old mmap semantics). Compression is a RAM measure.
+// The .fvc file on disk is the segmented FVC4 snapshot (or a legacy FVC3/
+// FVC2/v1 image, upgraded on the next save): load is one sequential pass,
+// save re-encodes only modified segments (see the Fvc4Header comment), and
+// structural edits never touch the disk until saveChart()/destroy (which
+// mirrors the old mmap semantics). Compression is a RAM measure.
 // ============================================================================
 
 // ---------------------------------------------------------------------------
@@ -320,6 +326,40 @@ static constexpr uint16_t FVC3_MAX_KINDS       = 4096; // fallback to RAW beyond
 // Max notes one ROWS row may code (count-1 must fit a small varint; a
 // position with more notes splits into continuation rows coded gap 0).
 static constexpr uint32_t FVC3_ROWS_MAX_ROW    = 255;
+
+// ============================================================================
+// FVC4 segmented container — the incremental save format.
+// ----------------------------------------------------------------------------
+// A v3 file is ONE fvc3_encode image of the whole chart, so any single-note
+// edit forces a full-chart re-encode on save. FVC4 keeps the v3 codec (and
+// its FNV) EXACTLY as it is, but splits the chart into fixed-size SEGMENTS
+// of consecutive shards, each written as a complete standalone FVC3 image:
+//
+//   Fvc4Header{ "FVC4", noteCount, segCount } followed by segCount
+//   Fvc4SegEntry{ startTick, noteCount, imageBytes } records, then the
+//   segment images back to back (in tick order).
+//
+// A segment image is byte-identical to what fvc3_encode produced for those
+// notes alone — nothing about the codec changed. Saving re-encodes only the
+// segments whose shards were structurally modified (the store's 1-bit
+// modified array, below); untouched segments are memcpy'd to disk without
+// even opening their shards. Old FVC3 (and FVC2/v1) files load as one
+// segment and upgrade on the next save.
+// ============================================================================
+#pragma pack(push, 1)
+struct Fvc4Header {
+    char     magic[4];   // "FVC4"
+    uint32_t noteCount;  // whole-chart total (cross-checks the directory)
+    uint32_t segCount;   // number of Fvc4SegEntry records that follow
+};
+struct Fvc4SegEntry {
+    uint64_t startTick;  // segment id * SEGMENT_TICKS (tick of its first shard)
+    uint32_t noteCount;  // notes in this segment (cross-checks the decode)
+    uint32_t imageBytes; // length of this segment's FVC3 image
+};
+#pragma pack(pop)
+static_assert(sizeof(Fvc4Header) == 12, "Fvc4Header must be exactly 12 bytes!");
+static_assert(sizeof(Fvc4SegEntry) == 16, "Fvc4SegEntry must be exactly 16 bytes!");
 
 // Euclidean GCD — std::__gcd is a GCC/Clang extension, not on MSVC.
 static uint64_t fvc3_gcd(uint64_t a, uint64_t b) {
@@ -1368,6 +1408,26 @@ public:
     // mid-size chart's working set hot (no decode/encode thrash) while
     // bounding decoded RAM at ~256 shards * ~1.5 KB of runs.
     static constexpr size_t OPEN_SHARD_BUDGET = 256;
+    // SEGMENT = the unit of incremental save (FVC4). 4096 shards = 1024 s
+    // (~17 min) of chart: an edit re-encodes just its segment instead of
+    // the whole chart. This is the measured sweet spot between save cost
+    // and size: the AC codec's LZP match layer compresses repeating
+    // motifs far better with longer history, so finer segments (64 s)
+    // cost 9x the bytes on motif-heavy charts while saving only ~1 ms per
+    // edit-save; 1024 s lands within 1.7x of the monolithic file on the
+    // adversarial all-motif 210k shape (13.4 KB vs 7.8 KB) and single-
+    // digit ms per edit-save. Normal songs (2-4 min) are ONE segment —
+    // byte-identical behavior to the monolithic save.
+    static constexpr uint64_t SEGMENT_TICKS = SHARD_TICKS * 4096;
+
+    // One saved FVC4 segment: its tick range and the exact FVC3 image
+    // last written for it. Public because ChartFileReader's load path
+    // builds the initial cache from the file it just decoded.
+    struct Segment {
+        uint64_t startTick = 0;  // tick of the segment's first shard
+        uint32_t noteCount = 0;  // notes in the saved image
+        std::vector<uint8_t> image; // the saved FVC3 image (clean only)
+    };
     // Magic on every compressed blob ("CVS1" — Compressed V? Shard v1);
     // a mismatch is a hard error (the blob is not ours to interpret).
     static constexpr uint32_t BLOB_MAGIC = 0x31535643; // 'C''V''S''1' LE
@@ -1427,6 +1487,19 @@ private:
     // LRU ring of open shards (indices into `shards`). A shard's position
     // in `lru` IS its recency; the front is the most recent.
     std::vector<size_t> lru;
+
+    // ---- incremental save state (FVC4) ------------------------------------
+    // 1-bit flat array PARALLEL TO THE SHARD DIRECTORY: bit i == 1 means
+    // shards[i] was STRUCTURALLY modified (note added/removed) since the
+    // last successful save, so its FVC4 segment must be re-encoded; 0
+    // (the default, and the state after every load) means untouched —
+    // its on-disk segment image is still exact, so save skips it.
+    // The array uses the same BitArray as judge/hit (insert/erase keep it
+    // index-aligned with `shards` across add/remove). Flag writes
+    // (judge/hit) never set the bit — they are gameplay state, not edits,
+    // exactly like the RAM-blob `dirty` flag.
+    BitArray modifiedBits;
+    std::vector<Segment> segments; // index-aligned with the FVC4 directory
 
     // ---- LRU --------------------------------------------------------------
     void touch(size_t si) {
@@ -1709,6 +1782,8 @@ public:
         lastShard = 0;
         openCount = 0;
         lru.clear();
+        modifiedBits = BitArray();
+        segments.clear();
     }
 
     // ---- READ ----
@@ -1780,6 +1855,9 @@ public:
                 : shards[at - 1].baseId + (int64_t)shards[at - 1].size();
             si = at;
             shards.insert(shards.begin() + at, std::move(sh));
+            // The modified-bit array is index-aligned with the shard
+            // directory; a materialized shard grows it in place.
+            modifiedBits.insert(at, false);
             // Fresh shard: give it a valid EMPTY blob (header only, the
             // codec's n==0 shape) and leave it CLOSED — the ensureOpen
             // below brings it up through the normal decode path, runs
@@ -1820,6 +1898,9 @@ public:
         sh.hit.insert(flagIdx, false);
         ++sh.noteCount;
         sh.dirty = true;
+        // Structural edit: this shard's segment must be re-encoded on the
+        // next save (the directory index of `sh` is `si` — see caller).
+        modifiedBits.set(si, true);
 
         // Overflow -> split the run in place (keeps every memmove bounded
         // by RUN_MAX/2 * 12 bytes forever).
@@ -1846,6 +1927,7 @@ public:
         sh.hit.erase(rl.flat);
         --sh.noteCount;
         sh.dirty = true;
+        modifiedBits.set(si, true); // structural edit -> segment re-encode
 
         if (sh.runs[rl.run].notes.empty()) {
             sh.runs.erase(sh.runs.begin() + (long)rl.run);
@@ -1862,6 +1944,9 @@ public:
             }
             closeShardForEviction(sh); // frees runs/flags; blob irrelevant
             shards.erase(shards.begin() + si);
+            // Its modified bit goes with it (a destroyed shard's segment
+            // change is caught by the save path's count checks).
+            modifiedBits.erase(si);
         }
         // Every note after the removed one slides down by one id.
         for (size_t k = (gone ? si : si + 1); k < shards.size(); ++k) {
@@ -1904,29 +1989,149 @@ public:
             shards.push_back(std::move(sh));
         }
         totalNotes = (int64_t)n;
+        // Fresh from load: nothing is modified (every bit 0) — the save
+        // cache, adopted right after this when the source was an FVC4
+        // file, matches the file exactly.
+        modifiedBits.init(shards.size());
     }
 
-    // ---- SAVE ----
-    // Gathers the globally sorted note stream (opening each closed shard)
-    // and writes it through the FVC3 codec (grid+kind varint planes, with
-    // a raw fallback for gridless charts). The RAM shard store keeps its
-    // own blob codec; the disk format is this one, for BOTH writers (the
-    // editor save and the JSON transpiler).
+    // ---- SEGMENT CACHE ADOPTION (load path) -------------------------------
+    // Takes the exact segment images a just-loaded FVC4 file provided, so
+    // the FIRST save after load re-encodes nothing. Caller validates the
+    // images (they were the decode source); alignment with the shard
+    // directory is rebuilt on demand at save time, never trusted.
+    void adoptSegments(std::vector<Segment>&& segs) {
+        segments = std::move(segs);
+    }
+
+    // ---- SAVE (FVC4: incremental) -----------------------------------------
+    // Writes the chart as the segmented FVC4 container: a directory of
+    // segments, each a complete standalone FVC3 image (the exact codec
+    // and FNV the monolithic file used — per segment now). Only segments
+    // containing at least one shard whose modified bit is 1 (or whose
+    // shard/note counts changed) are re-encoded; every other segment's
+    // cached image is memcpy'd to disk VERBATIM — those shards are never
+    // even opened, so an untouched 2.36M-note megachart costs no decode
+    // and no encode on save, just a sequential disk copy.
     bool writeTo(const char* path) {
-        std::vector<ChartNote> flat;
-        flat.reserve((size_t)totalNotes);
+        // Step 1 — group the shards into segments by time. A segment is
+        // every shard whose startTick lands in [k * SEGMENT_TICKS, (k+1)
+        // * SEGMENT_TICKS). Empty segments (no shards) simply have no
+        // entry; this recompute is O(shards) and cannot go stale.
+        struct SegPlan {
+            size_t firstShard = 0, lastShard = 0; // [first, last] inclusive
+            uint64_t startTick = 0;
+            uint32_t noteCount = 0;
+            bool dirty = false;
+            std::vector<uint8_t>* cached = nullptr; // clean image to reuse
+            std::vector<uint8_t> image;             // rebuilt image (dirty only)
+        };
+        std::vector<SegPlan> plan;
         for (size_t si = 0; si < shards.size(); ++si) {
-            if (shards[si].size() == 0) continue;
-            ensureOpen(si);
-            for (const Run& r : shards[si].runs)
-                for (const ChartNote& n : r.notes) flat.push_back(n);
+            const uint64_t segTick = shards[si].startTick - (shards[si].startTick % SEGMENT_TICKS);
+            if (plan.empty() || plan.back().startTick != segTick) {
+                SegPlan sp;
+                sp.firstShard = si;
+                sp.lastShard = si;
+                sp.startTick = segTick;
+                plan.push_back(sp);
+            } else {
+                plan.back().lastShard = si;
+            }
+            plan.back().noteCount += (uint32_t)shards[si].size();
+            if (modifiedBits.get(si)) plan.back().dirty = true;
         }
-        const std::vector<uint8_t> image = fvc3_encode(flat.data(), flat.size());
-        std::ofstream out(path, std::ios::binary | std::ios::trunc);
-        if (!out) return false;
-        out.write(reinterpret_cast<const char*>(image.data()),
-                  (std::streamsize)image.size());
-        return out.good();
+
+        // Step 2 — match each planned segment against the cache left by
+        // the previous save (or adopted from a loaded FVC4 file): same
+        // startTick AND same noteCount => the cached image is exact, keep
+        // it; anything else => re-encode.
+        size_t ci = 0; // walk both lists in tick order
+        for (SegPlan& sp : plan) {
+            while (ci < segments.size() && segments[ci].startTick < sp.startTick) ++ci;
+            if (ci < segments.size() && segments[ci].startTick == sp.startTick) {
+                if (!sp.dirty && segments[ci].noteCount == sp.noteCount) {
+                    sp.cached = &segments[ci].image;
+                }
+                ++ci;
+            }
+            // No cache match (new segment, edited, or count drift): the
+            // image is rebuilt below. `ci` stays — later segments may
+            // still match earlier cached ones (e.g. an edit shifted a
+            // note across a segment boundary).
+        }
+
+        // Step 3 — re-encode the dirty segments. Notes are gathered
+        // shard-by-shard (ensureOpen on each — the same as any read), the
+        // runs of the segment are flattened, and the FVC3 codec runs on
+        // the flat array. This is the ONLY encode work in the whole save.
+        std::vector<ChartNote> flat;
+        for (SegPlan& sp : plan) {
+            if (sp.cached) continue; // clean — copy the cached bytes later
+            flat.clear();
+            size_t noteBudget = 0;
+            for (size_t si = sp.firstShard; si <= sp.lastShard; ++si)
+                noteBudget += shards[si].size();
+            flat.reserve(noteBudget);
+            for (size_t si = sp.firstShard; si <= sp.lastShard; ++si) {
+                if (shards[si].size() == 0) continue;
+                ensureOpen(si);
+                for (const Run& r : shards[si].runs)
+                    for (const ChartNote& nt : r.notes) flat.push_back(nt);
+            }
+            sp.image = fvc3_encode(flat.data(), flat.size());
+        }
+
+        // Step 4 — write the container: header + directory + images. All
+        // the I/O happens in one sequential pass with no further encode
+        // work; a failure anywhere leaves the in-RAM cache untouched.
+        std::vector<uint8_t> out;
+        size_t totalOut = sizeof(Fvc4Header) + plan.size() * sizeof(Fvc4SegEntry);
+        for (const SegPlan& sp : plan) totalOut += sp.cached ? sp.cached->size() : sp.image.size();
+        out.reserve(totalOut);
+        Fvc4Header hdr;
+        std::memcpy(hdr.magic, "FVC4", 4);
+        hdr.noteCount = (uint32_t)totalNotes;
+        hdr.segCount = (uint32_t)plan.size();
+        out.insert(out.end(), reinterpret_cast<const uint8_t*>(&hdr),
+                   reinterpret_cast<const uint8_t*>(&hdr) + sizeof(hdr));
+        size_t off = sizeof(Fvc4Header) + plan.size() * sizeof(Fvc4SegEntry);
+        for (const SegPlan& sp : plan) {
+            Fvc4SegEntry se;
+            se.startTick = sp.startTick;
+            se.noteCount = sp.noteCount;
+            se.imageBytes = (uint32_t)(sp.cached ? sp.cached->size() : sp.image.size());
+            out.insert(out.end(), reinterpret_cast<const uint8_t*>(&se),
+                       reinterpret_cast<const uint8_t*>(&se) + sizeof(se));
+        }
+        (void)off; // images begin at this offset (kept for clarity of layout)
+        for (const SegPlan& sp : plan) {
+            const std::vector<uint8_t>& img = sp.cached ? *sp.cached : sp.image;
+            out.insert(out.end(), img.begin(), img.end());
+        }
+        std::ofstream fout(path, std::ios::binary | std::ios::trunc);
+        if (!fout) return false;
+        fout.write(reinterpret_cast<const char*>(out.data()),
+                   (std::streamsize)out.size());
+        if (!fout.good()) return false;
+
+        // Step 5 — commit: rebuild the cache from what was written and
+        // clear every modified bit (the file now matches the store). The
+        // new cache is built ASIDE first: plan[i].cached pointers aim into
+        // the OLD `segments` vectors, which `assign` would destroy mid-loop.
+        std::vector<Segment> nextSegments;
+        nextSegments.reserve(plan.size());
+        for (const SegPlan& sp : plan) {
+            Segment sg;
+            sg.startTick = sp.startTick;
+            sg.noteCount = sp.noteCount;
+            if (sp.cached) sg.image = std::move(*sp.cached); // old cache dies anyway
+            else sg.image = std::move(sp.image);
+            nextSegments.push_back(std::move(sg));
+        }
+        segments.swap(nextSegments);
+        modifiedBits.init(shards.size()); // all zeros: saved == on-disk
+        return true;
     }
 
     // ---- DEBUG / TESTS ----
@@ -1958,6 +2163,13 @@ public:
     void forceCloseShard(size_t si) { closeShard(shards.at(si)); }
     void forceCloseAll() { closeAll(); }
     size_t openShardCountPublic() const { return openCount; }
+    // Incremental-save introspection:
+    bool modifiedBit(size_t si) const { return modifiedBits.get(si); }
+    size_t segmentCount() const { return segments.size(); }
+    // Simulates an editor edit on the store's own clock: flips the bit
+    // exactly the way a structural add/remove does, for tests that check
+    // the save path skips clean segments.
+    void testMarkModified(size_t si) { modifiedBits.set(si, true); }
 
 private:
     // Close that never re-encodes (eviction of a shard about to die).
@@ -2015,8 +2227,101 @@ private:
 
         std::vector<ChartNote> flat;
         bool legacy = true;
+        // Segments adopted from an FVC4 file (empty for every other
+        // format — the first save then encodes them all once).
+        std::vector<ShardedNoteStore::Segment> loadedSegments;
 
-        if (fileSize >= (std::streamsize)sizeof(Fvc3Header)) {
+        // v4 first — the segmented incremental format. One 12-byte
+        // header, a directory of segments, then each segment's complete
+        // standalone FVC3 image.
+        if (fileSize >= (std::streamsize)sizeof(Fvc4Header)) {
+            Fvc4Header h4;
+            in.read(reinterpret_cast<char*>(&h4), sizeof(h4));
+            if (in.gcount() == (std::streamsize)sizeof(h4)
+                && std::memcmp(h4.magic, "FVC4", 4) == 0) {
+                legacy = false;
+                // Directory: segCount entries, each validated against the
+                // bytes actually present (every field cross-checked — a
+                // flipped bit anywhere structural rejects the file).
+                if (h4.segCount > (uint32_t)((fileSize - (std::streamsize)sizeof(Fvc4Header))
+                                             / (std::streamsize)sizeof(Fvc4SegEntry))) {
+                    std::cerr << "  [ Chart File ] FVC4 directory overruns file " << path << std::endl;
+                    return false;
+                }
+                std::vector<Fvc4SegEntry> dir(h4.segCount);
+                if (h4.segCount) {
+                    in.read(reinterpret_cast<char*>(dir.data()),
+                            (std::streamsize)h4.segCount * (std::streamsize)sizeof(Fvc4SegEntry));
+                    if (in.gcount() != (std::streamsize)h4.segCount * (std::streamsize)sizeof(Fvc4SegEntry)) {
+                        std::cerr << "  [ Chart File ] Truncated FVC4 directory in " << path << std::endl;
+                        return false;
+                    }
+                }
+                const std::streamsize payload =
+                    fileSize - (std::streamsize)sizeof(Fvc4Header)
+                    - (std::streamsize)h4.segCount * (std::streamsize)sizeof(Fvc4SegEntry);
+                std::vector<uint8_t> images((size_t)payload);
+                if (payload > 0) {
+                    in.read(reinterpret_cast<char*>(images.data()), payload);
+                    if (in.gcount() != payload) {
+                        std::cerr << "  [ Chart File ] Truncated FVC4 payload in " << path << std::endl;
+                        return false;
+                    }
+                }
+                // Validate + decode segment by segment. Images are read
+                // strictly sequentially; a segment's notes must stay
+                // inside its own tick window (the directory promised it).
+                uint64_t sumNotes = 0;
+                const uint8_t* ip = images.data();
+                const uint8_t* const iend = images.data() + images.size();
+                for (uint32_t s = 0; s < h4.segCount; ++s) {
+                    const Fvc4SegEntry& se = dir[s];
+                    if (se.startTick % ShardedNoteStore::SEGMENT_TICKS != 0
+                        || (s > 0 && se.startTick <= dir[s - 1].startTick)) {
+                        std::cerr << "  [ Chart File ] Bad FVC4 directory order in " << path << std::endl;
+                        return false;
+                    }
+                    if (se.imageBytes == 0 || (size_t)(iend - ip) < (size_t)se.imageBytes) {
+                        std::cerr << "  [ Chart File ] FVC4 segment " << s << " overruns payload in " << path << std::endl;
+                        return false;
+                    }
+                    std::vector<ChartNote> segNotes;
+                    if (!fvc3_decode(ip, se.imageBytes, segNotes)
+                        || segNotes.size() != se.noteCount) {
+                        std::cerr << "  [ Chart File ] Corrupt FVC4 segment " << s << " in " << path << std::endl;
+                        return false;
+                    }
+                    for (const ChartNote& cn : segNotes) {
+                        const uint64_t p = notePos(cn);
+                        if (p < se.startTick
+                            || p - se.startTick >= ShardedNoteStore::SEGMENT_TICKS) {
+                            std::cerr << "  [ Chart File ] FVC4 segment " << s << " notes outside its window in " << path << std::endl;
+                            return false;
+                        }
+                    }
+                    ip += se.imageBytes;
+                    sumNotes += se.noteCount;
+                    flat.insert(flat.end(), segNotes.begin(), segNotes.end());
+                    // Adopt the exact image bytes as the save cache.
+                    ShardedNoteStore::Segment seg;
+                    seg.startTick = se.startTick;
+                    seg.noteCount = se.noteCount;
+                    seg.image.assign(ip - se.imageBytes, ip);
+                    loadedSegments.push_back(std::move(seg));
+                }
+                if (ip != iend || sumNotes != h4.noteCount) {
+                    std::cerr << "  [ Chart File ] FVC4 totals mismatch in " << path << std::endl;
+                    return false;
+                }
+                std::cout << "  [ Chart File ] FVC4 segmented snapshot (" << flat.size()
+                          << " notes, " << h4.segCount << " segments, " << fileSize
+                          << " bytes on disk)" << std::endl;
+            } else {
+                in.seekg(0, std::ios::beg); // not v4 — try v3
+            }
+        }
+
+        if (legacy && fileSize >= (std::streamsize)sizeof(Fvc3Header)) {
             // v3 first — the current format
             Fvc3Header h3;
             in.read(reinterpret_cast<char*>(&h3), sizeof(h3));
@@ -2131,6 +2436,7 @@ private:
 
         std::lock_guard<std::mutex> lk(dataMutex);
         store.loadFromSortedFlat(flat.data(), flat.size());
+        store.adoptSegments(std::move(loadedSegments));
         return true;
     }
 
