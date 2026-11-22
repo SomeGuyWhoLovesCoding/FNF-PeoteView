@@ -6,6 +6,7 @@
 #include <cstring>
 #include <mutex>
 #include <algorithm>
+#include <unordered_map>
 
 #ifdef _WIN32
 #define NOMINMAX
@@ -406,15 +407,23 @@ static int fvc3_kindBits(uint64_t kindCount) {
 // ---------------------------------------------------------------------------
 static void fvc3_rows_encode(const ChartNote* notes, size_t n, uint64_t grid,
                              std::vector<uint8_t>& out) {
-    // kinds (order of first appearance — the decoder rebuilds it)
+    // kinds (order of first appearance — the decoder rebuilds it; hashed
+    // lookup because a megachart can carry hundreds of distinct kinds and
+    // the old linear scan was O(n*kinds))
     std::vector<uint32_t> kinds;
+    std::unordered_map<uint32_t, uint32_t> kindId;
     std::vector<uint32_t> ids(n);
     for (size_t i = 0; i < n; ++i) {
         const uint32_t k = (noteIdx(notes[i]) << 16) | (noteType(notes[i]) << 8) | noteLane(notes[i]);
-        uint32_t id = 0xFFFFFFFFu;
-        for (size_t j = 0; j < kinds.size(); ++j)
-            if (kinds[j] == k) { id = (uint32_t)j; break; }
-        if (id == 0xFFFFFFFFu) { kinds.push_back(k); id = (uint32_t)(kinds.size() - 1); }
+        auto it = kindId.find(k);
+        uint32_t id;
+        if (it == kindId.end()) {
+            kinds.push_back(k);
+            id = (uint32_t)(kinds.size() - 1);
+            kindId.emplace(k, id);
+        } else {
+            id = it->second;
+        }
         ids[i] = id;
     }
     // Durations in their OWN grid (GCD of all sustain durations) when one
@@ -437,7 +446,10 @@ static void fvc3_rows_encode(const ChartNote* notes, size_t n, uint64_t grid,
     struct RowRec { uint64_t gpos; uint32_t len; };
     std::vector<RowRec> rows;
     rows.reserve(n);
-    std::vector<std::pair<uint64_t, uint32_t>> gapHist; // gap -> count (small: distinct gaps are few)
+    // gap -> histogram slot (hashed — "distinct gaps are few" is a lie on
+    // a free-timed megachart, where nearly every row introduces a new gap
+    // and the old linear scan went quadratic)
+    std::unordered_map<uint64_t, uint32_t> gapHist;
     uint64_t prevPos = 0;
     size_t i = 0;
     while (i < n) {
@@ -447,23 +459,21 @@ static void fvc3_rows_encode(const ChartNote* notes, size_t n, uint64_t grid,
                && (j - i) < (size_t)FVC3_ROWS_MAX_ROW) ++j;
         const uint64_t gpos = pos / grid;
         const uint64_t gap = gpos - prevPos;
-        bool found = false;
-        for (auto& h : gapHist)
-            if (h.first == gap) { ++h.second; found = true; break; }
-        if (!found) gapHist.push_back({gap, 1});
+        ++gapHist[gap];
         rows.push_back({gpos, (uint32_t)(j - i)});
         prevPos = gpos;
         i = j;
     }
     uint64_t gapCode[3] = {1, 1, 1}; // safe defaults (any value; unused codes just never fire)
     {
-        std::sort(gapHist.begin(), gapHist.end(), [](const std::pair<uint64_t, uint32_t>& a,
-                                                     const std::pair<uint64_t, uint32_t>& b) {
+        std::vector<std::pair<uint64_t, uint32_t>> gapHistV(gapHist.begin(), gapHist.end());
+        std::sort(gapHistV.begin(), gapHistV.end(), [](const std::pair<uint64_t, uint32_t>& a,
+                                                       const std::pair<uint64_t, uint32_t>& b) {
             if (a.second != b.second) return a.second > b.second;
             return a.first < b.first;
         });
-        for (int c = 0; c < 3 && c < (int)gapHist.size(); ++c)
-            gapCode[c] = gapHist[(size_t)c].first;
+        for (int c = 0; c < 3 && c < (int)gapHistV.size(); ++c)
+            gapCode[c] = gapHistV[(size_t)c].first;
     }
 
     blob_putu(out, grid);
@@ -822,13 +832,17 @@ static void fvc3_ac_encode(const ChartNote* notes, size_t n, uint64_t grid,
     // replayed. Prediction: after a hit, stream[srcIdx(prev)+1] (match
     // extension); otherwise the hash table seed.
     static const size_t FVC3_AC_MATCH_ROWS = 4096;
-    struct RowRec {
-        uint64_t gap, count;
-        std::vector<uint32_t> kinds_;
-        std::vector<uint32_t> durs; // coded units, 0 = no sustain
-        int32_t srcIdx;
-    };
-    std::vector<RowRec> stream;
+    // Flat row stream: row r spans [rowOff[r], rowOff[r+1]) of
+    // rowKinds/rowDurs. The old per-row vectors cost two heap blocks per
+    // row — millions of allocations and hundreds of MB on a megachart —
+    // and a reference held across a push_back could dangle; the flat
+    // arrays make both impossible.
+    std::vector<uint64_t> rowGap;   // per-row gap (grid units)
+    std::vector<uint64_t> rowCnt;   // per-row note count
+    std::vector<uint64_t> rowOff;   // rows+1 offsets into rowKinds/rowDurs
+    std::vector<uint32_t> rowKinds; // concatenated kind ids
+    std::vector<uint32_t> rowDurs;  // concatenated durations (coded units)
+    rowOff.push_back(0); // begin of row 0
     std::vector<int32_t> matchTable(FVC3_AC_MATCH_ROWS, -1);
 
     uint64_t prevGap = 0, prevCount = 1, prevPos = 0;
@@ -851,34 +865,34 @@ static void fvc3_ac_encode(const ChartNote* notes, size_t n, uint64_t grid,
                                      + (uint64_t)prevKind2 * 0x27D4EB2F165667C5ull
                                      + (uint64_t)(sinceSustain < 7 ? sinceSustain : 7)) & (FVC3_AC_MATCH_ROWS - 1));
         int32_t predRow = -1;
-        if (prevSrc >= 0 && prevSrc + 1 < (int32_t)stream.size())
+        if (prevSrc >= 0 && prevSrc + 1 < (int32_t)rowGap.size())
             predRow = prevSrc + 1;      // match extension
         if (predRow < 0) predRow = matchTable[h]; // hash seed
         if (predRow >= 0) {
-            const RowRec& pr = stream[predRow];
-            bool hit = pr.gap == gap && pr.count == (uint64_t)(j - i);
+            const size_t prBeg = (size_t)rowOff[(size_t)predRow];
+            const size_t prLen = (size_t)rowCnt[(size_t)predRow];
+            const uint64_t prGap = rowGap[(size_t)predRow];
+            bool hit = prGap == gap && prLen == (size_t)(j - i);
             if (hit) {
                 for (size_t m = i; m < j; ++m) {
                     const uint32_t dd = noteDur(notes[m]);
-                    if (m - i >= pr.kinds_.size()
-                        || pr.kinds_[m - i] != ids[m]
-                        || pr.durs[m - i] != (dd == 0 ? 0u : (durUnit > 1 ? dd / durUnit : dd))) {
+                    if (m - i >= prLen
+                        || rowKinds[prBeg + (m - i)] != ids[m]
+                        || rowDurs[prBeg + (m - i)] != (dd == 0 ? 0u : (durUnit > 1 ? dd / durUnit : dd))) {
                         hit = false; break;
                     }
                 }
             }
             if (hit) {
-                rc.bit(M.matchBit[pr.count < 8 ? (uint32_t)pr.count : 7], 0);
-                RowRec r2;
-                r2.gap = gap; r2.count = (uint64_t)(j - i);
+                rc.bit(M.matchBit[prLen < 8 ? (uint32_t)prLen : 7], 0);
                 for (size_t m = i; m < j; ++m) {
-                    r2.kinds_.push_back(ids[m]);
                     const uint32_t dd = noteDur(notes[m]);
-                    r2.durs.push_back(dd == 0 ? 0u : (durUnit > 1 ? dd / durUnit : dd));
+                    rowKinds.push_back(ids[m]);
+                    rowDurs.push_back(dd == 0 ? 0u : (durUnit > 1 ? dd / durUnit : dd));
                 }
-                r2.srcIdx = predRow;
-                stream.push_back(std::move(r2));
-                matchTable[h] = (int32_t)stream.size() - 1;
+                rowGap.push_back(gap); rowCnt.push_back((uint64_t)(j - i));
+                rowOff.push_back(rowKinds.size());
+                matchTable[h] = (int32_t)rowGap.size() - 1;
                 prevGap = gap; prevCount = (uint64_t)(j - i); prevPos = gpos;
                 for (size_t m = i; m < j; ++m) { // state as if coded
                     if (M.kindCount > 1) { prevKind2 = prevKind; prevKind = ids[m]; }
@@ -891,7 +905,7 @@ static void fvc3_ac_encode(const ChartNote* notes, size_t n, uint64_t grid,
                 i = j;
                 continue;
             }
-            rc.bit(M.matchBit[pr.count < 8 ? (uint32_t)pr.count : 7], 1);
+            rc.bit(M.matchBit[prLen < 8 ? (uint32_t)prLen : 7], 1);
         }
         // ---- miss: code the row field-by-field ----
         const uint32_t gctx = fvc3_ac_gapCtx(prevGap, prevWasHit);
@@ -961,18 +975,16 @@ static void fvc3_ac_encode(const ChartNote* notes, size_t n, uint64_t grid,
         }
         // record the coded row
         {
-            RowRec r;
-            r.gap = gap; r.count = count;
             for (size_t m = i; m < j; ++m) {
-                r.kinds_.push_back(ids[m]);
                 const uint32_t d = noteDur(notes[m]);
-                r.durs.push_back(d == 0 ? 0u : (durUnit > 1 ? d / durUnit : d));
+                rowKinds.push_back(ids[m]);
+                rowDurs.push_back(d == 0 ? 0u : (durUnit > 1 ? d / durUnit : d));
             }
-            r.srcIdx = (int32_t)stream.size();
-            stream.push_back(std::move(r));
-            matchTable[h] = (int32_t)stream.size() - 1;
+            rowGap.push_back(gap); rowCnt.push_back(count);
+            rowOff.push_back(rowKinds.size());
+            matchTable[h] = (int32_t)rowGap.size() - 1;
         }
-        prevSrc = (int32_t)stream.size() - 1;
+        prevSrc = (int32_t)rowGap.size() - 1;
         prevWasHit = false;
         prevGap = gap; prevCount = count; prevPos = gpos;
         i = j;
@@ -1011,13 +1023,17 @@ static bool fvc3_ac_decode(const uint8_t* data, size_t size, uint32_t noteCount,
     }
 
     static const size_t FVC3_AC_MATCH_ROWS_D = 4096;
-    struct DRowRec {
-        uint64_t gap, count;
-        std::vector<uint32_t> kinds_;
-        std::vector<uint32_t> durs; // coded units, 0 = no sustain
-        int32_t srcIdx;
-    };
-    std::vector<DRowRec> stream;
+    // Flat row stream, mirroring the encoder. Values are read by index
+    // immediately before any push_back, so a reallocating append can never
+    // invalidate them — the per-row-vector design here had exactly that
+    // bug (a reference into the stream read after the push: silent
+    // use-after-free that only detonated past the small-block heap).
+    std::vector<uint64_t> rowGap;
+    std::vector<uint64_t> rowCnt;
+    std::vector<uint64_t> rowOff; // rows+1 offsets into rowKinds/rowDurs
+    std::vector<uint32_t> rowKinds;
+    std::vector<uint32_t> rowDurs;
+    rowOff.push_back(0);
     std::vector<int32_t> matchTable(FVC3_AC_MATCH_ROWS_D, -1);
 
     out.clear();
@@ -1035,44 +1051,50 @@ static bool fvc3_ac_decode(const uint8_t* data, size_t size, uint32_t noteCount,
                                      + (uint64_t)prevKind2 * 0x27D4EB2F165667C5ull
                                      + (uint64_t)(sinceSustain < 7 ? sinceSustain : 7)) & (FVC3_AC_MATCH_ROWS_D - 1));
         int32_t predRow = -1;
-        if (prevSrc >= 0 && prevSrc + 1 < (int32_t)stream.size())
+        if (prevSrc >= 0 && prevSrc + 1 < (int32_t)rowGap.size())
             predRow = prevSrc + 1;      // match extension
         if (predRow < 0) predRow = matchTable[h]; // hash seed
         if (predRow >= 0) {
-            const DRowRec& pr = stream[predRow];
-            if (!rc.bit(M.matchBit[pr.count < 8 ? (uint32_t)pr.count : 7])) {
-                // HIT: replay the recorded row verbatim
-                if (pr.count < 1 || pr.count > FVC3_ROWS_MAX_ROW) return false;
-                if (out.size() + pr.count > (uint64_t)noteCount) return false;
-                if (pos > 0xFFFFFFFFFFFFULL - pr.gap) return false;
-                pos += pr.gap;
+            const uint64_t prCount = rowCnt[(size_t)predRow];
+            const uint64_t prGap = rowGap[(size_t)predRow];
+            if (!rc.bit(M.matchBit[prCount < 8 ? (uint32_t)prCount : 7])) {
+                // HIT: replay the recorded row verbatim (and append the
+                // replayed row to the stream so match extension can chain
+                // off it). Source values are read by index before each
+                // append — safe across reallocation.
+                if (prCount < 1 || prCount > FVC3_ROWS_MAX_ROW) return false;
+                if (out.size() + prCount > (uint64_t)noteCount) return false;
+                if (pos > 0xFFFFFFFFFFFFULL - prGap) return false;
+                pos += prGap;
                 if (pos > 0xFFFFFFFFFFFFULL / grid) return false;
                 const uint64_t absPos = pos * grid;
-                for (size_t m = 0; m < pr.kinds_.size(); ++m) {
-                    if (pr.kinds_[m] >= kindCount) return false;
-                    const uint32_t k = kinds[pr.kinds_[m]];
+                const size_t prBeg = (size_t)rowOff[(size_t)predRow];
+                for (size_t m = 0; m < prCount; ++m) {
+                    const uint32_t id = rowKinds[prBeg + m]; // read first...
+                    const uint32_t du = rowDurs[prBeg + m];
+                    if (id >= kindCount) return false;
+                    const uint32_t k = kinds[id];
                     uint32_t dur = 0;
-                    if (pr.durs[m] != 0) {
-                        if (pr.durs[m] > 0xFFFFFF) return false;
+                    if (du != 0) {
+                        if (du > 0xFFFFFF) return false;
                         if (durUnit > 1) {
-                            if (pr.durs[m] > 0xFFFFFF / durUnit) return false;
-                            dur = pr.durs[m] * (uint32_t)durUnit;
+                            if (du > 0xFFFFFF / durUnit) return false;
+                            dur = du * (uint32_t)durUnit;
                         } else {
-                            dur = pr.durs[m];
+                            dur = du;
                         }
                     }
                     out.push_back(packNote(absPos, dur, (k >> 16) & 0x3FF, (k >> 8) & 0xFF, k & 0x3F));
-                    if (M.kindCount > 1) { prevKind2 = prevKind; prevKind = pr.kinds_[m]; }
-                    if (pr.durs[m] != 0) { sinceSustain = 0; prevDur = (int64_t)pr.durs[m]; }
+                    if (M.kindCount > 1) { prevKind2 = prevKind; prevKind = id; }
+                    if (du != 0) { sinceSustain = 0; prevDur = (int64_t)du; }
                     else ++sinceSustain;
+                    rowKinds.push_back(id); // ...then append the copy
+                    rowDurs.push_back(du);
                 }
-                DRowRec r2;
-                r2.gap = pr.gap; r2.count = pr.count;
-                r2.kinds_ = pr.kinds_; r2.durs = pr.durs;
-                r2.srcIdx = predRow;
-                stream.push_back(std::move(r2));
-                matchTable[h] = (int32_t)stream.size() - 1;
-                prevGap = pr.gap; prevCount = pr.count;
+                rowGap.push_back(prGap); rowCnt.push_back(prCount);
+                rowOff.push_back(rowKinds.size());
+                matchTable[h] = (int32_t)rowGap.size() - 1;
+                prevGap = prGap; prevCount = prCount;
                 prevSrc = predRow;
                 prevWasHit = true;
                 continue;
@@ -1114,9 +1136,9 @@ static bool fvc3_ac_decode(const uint8_t* data, size_t size, uint32_t noteCount,
         const uint64_t absPos = pos * grid;
 
         // decode notes interleaved as encoded: kind, flag, dur
-        uint32_t rowIds[256];
-        uint32_t rowDurs[256];   // coded units (history record)
-        uint32_t rowDurFin[256]; // final durations (emission)
+        uint32_t decIds[256];
+        uint32_t decDurs[256];   // coded units (history record)
+        uint32_t decDurFin[256]; // final durations (emission)
         for (uint64_t m = 0; m < count; ++m) {
             uint32_t id = 0;
             if (M.kindCount > 1) {
@@ -1126,7 +1148,7 @@ static bool fvc3_ac_decode(const uint8_t* data, size_t size, uint32_t noteCount,
                 prevKind2 = prevKind;
                 prevKind = id;
             }
-            rowIds[m] = id;
+            decIds[m] = id;
             uint32_t dur = 0;
             if (rc.bit(M.flag[sinceSustain < 7 ? sinceSustain : 7])) {
                 sinceSustain = 0;
@@ -1146,30 +1168,28 @@ static bool fvc3_ac_decode(const uint8_t* data, size_t size, uint32_t noteCount,
                     dur = (uint32_t)raw;
                 }
                 prevDur = raw;
-                rowDurs[m] = raw > 0 ? (uint32_t)raw : 0;
-                rowDurFin[m] = dur;
+                decDurs[m] = raw > 0 ? (uint32_t)raw : 0;
+                decDurFin[m] = dur;
             } else {
                 ++sinceSustain;
-                rowDurs[m] = 0;
-                rowDurFin[m] = 0;
+                decDurs[m] = 0;
+                decDurFin[m] = 0;
             }
         }
         for (uint64_t m = 0; m < count; ++m) {
-            const uint32_t k = kinds[rowIds[m]];
-            out.push_back(packNote(absPos, rowDurFin[m], (k >> 16) & 0x3FF, (k >> 8) & 0xFF, k & 0x3F));
+            const uint32_t k = kinds[decIds[m]];
+            out.push_back(packNote(absPos, decDurFin[m], (k >> 16) & 0x3FF, (k >> 8) & 0xFF, k & 0x3F));
         }
         { // record the coded row
-            DRowRec r;
-            r.gap = gap; r.count = count;
             for (uint64_t m = 0; m < count; ++m) {
-                r.kinds_.push_back(rowIds[m]);
-                r.durs.push_back(rowDurs[m]);
+                rowKinds.push_back(decIds[m]);
+                rowDurs.push_back(decDurs[m]);
             }
-            r.srcIdx = (int32_t)stream.size();
-            stream.push_back(std::move(r));
-            matchTable[h] = (int32_t)stream.size() - 1;
+            rowGap.push_back(gap); rowCnt.push_back(count);
+            rowOff.push_back(rowKinds.size());
+            matchTable[h] = (int32_t)rowGap.size() - 1;
         }
-        prevSrc = (int32_t)stream.size() - 1;
+        prevSrc = (int32_t)rowGap.size() - 1;
         prevWasHit = false;
         prevGap = gap; prevCount = count;
     }
@@ -1193,14 +1213,24 @@ static std::vector<uint8_t> fvc3_encode(const ChartNote* notes, size_t n) {
     std::vector<uint8_t> gk;
     gk.reserve(n * 3 + 32);
     // kinds
+    // (hashed lookup — the linear scan was O(n*kinds), which a
+    // megachart with hundreds of distinct kinds turns into billions
+    // of comparisons; first-appearance order is kept, so the bytes
+    // this emits are identical to the old scan)
     std::vector<uint32_t> kinds;
+    std::unordered_map<uint32_t, uint32_t> kindId;
     std::vector<uint32_t> ids(n);
     for (size_t i = 0; i < n; ++i) {
         const uint32_t k = (noteIdx(notes[i]) << 16) | (noteType(notes[i]) << 8) | noteLane(notes[i]);
-        uint32_t id = 0xFFFFFFFFu;
-        for (size_t j = 0; j < kinds.size(); ++j)
-            if (kinds[j] == k) { id = (uint32_t)j; break; }
-        if (id == 0xFFFFFFFFu) { kinds.push_back(k); id = (uint32_t)(kinds.size() - 1); }
+        auto it = kindId.find(k);
+        uint32_t id;
+        if (it == kindId.end()) {
+            kinds.push_back(k);
+            id = (uint32_t)(kinds.size() - 1);
+            kindId.emplace(k, id);
+        } else {
+            id = it->second;
+        }
         ids[i] = id;
     }
     bool gkOk = kinds.size() <= FVC3_MAX_KINDS;
