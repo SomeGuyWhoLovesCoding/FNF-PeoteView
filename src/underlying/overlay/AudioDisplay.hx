@@ -219,7 +219,7 @@ class AudioDisplay extends OptionsSubDisplay {
                 switch (audioStr[index]) {
                         case "output":
                                 // Cycle the Output selector: Stereo <-> Surround Sound 3.1.
-                                var next:AudioOutput = SaveData.state.audio.output == AudioOutput.SURROUND31 ? AudioOutput.STEREO : AudioOutput.SURROUND31;
+                                var next:AudioOutput = SaveData.state.audio.output == AudioOutput.SURROUND71 ? AudioOutput.STEREO : AudioOutput.SURROUND71;
                                 AudioSampleUnified.applyOutput(next);
                                 Main.current.playScrollSound();
                         case "timeStretch":
@@ -247,7 +247,7 @@ class AudioDisplay extends OptionsSubDisplay {
         function getValueString(index:Int):String {
                 switch (audioStr[index]) {
                         case "output":
-                                return SaveData.state.audio.output == AudioOutput.SURROUND31 ? "Surround Sound 3.1" : "Stereo";
+                                return SaveData.state.audio.output == AudioOutput.SURROUND71 ? "Surround Sound 7.1" : "Stereo";
                         case "timeStretch":
                                 return SaveData.state.preferences.timeStretch ? "ON" : "OFF";
                         case "hitsound":

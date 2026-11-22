@@ -29,7 +29,7 @@ import underlying.miniaudio.MiniAudio;
                                        sound remain exactly like they have
                                        always been: every track folds into
                                        the front pair.
-                "Surround Sound 3.1" — 4 channel output (FL/FR/C/LFE) for a
+                "Surround Sound 7.1" — 4 channel output (FL/FR/C/LFE) for a
                                        wider sounding song.  The decoders
                                        and the music/sound effect mixer
                                        (background music, menu and gameplay
@@ -54,7 +54,7 @@ class AudioSampleUnified {
                 return MiniAudio.isSurroundEnabled();
         }
 
-        /** The output mode saved in the save data ("Stereo" / "Surround Sound 3.1"). */
+        /** The output mode saved in the save data ("Stereo" / "Surround Sound 7.1"). */
         static var output(get, set):AudioOutput;
 
         inline static function get_output():AudioOutput {
@@ -76,7 +76,7 @@ class AudioSampleUnified {
                 for (i in 0...trackCount)
                         MiniAudio.setStreamChannel(i, (i == 0) ? AudioChannelIdentifier.BACKGROUND : AudioChannelIdentifier.CENTER);
 
-                MiniAudio.setSurroundEnabled(SaveData.state.audio.output == AudioOutput.SURROUND31);
+                MiniAudio.setSurroundEnabled(SaveData.state.audio.output == AudioOutput.SURROUND71);
         }
 
         /**
@@ -100,7 +100,7 @@ class AudioSampleUnified {
         static function applyOutput(value:AudioOutput):Void {
                 SaveData.state.audio.output = value;
                 SaveData.save();
-                MiniAudio.setSurroundEnabled(value == AudioOutput.SURROUND31);
+                MiniAudio.setSurroundEnabled(value == AudioOutput.SURROUND71);
         }
 }
 

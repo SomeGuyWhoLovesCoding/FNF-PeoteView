@@ -63,6 +63,11 @@ extern "C" {
 #endif
 
 std::atomic<double> MUSIC_MASTER_VOLUME_099{1.0};
+// Game-wide surround preference, shared by both devices: the AudioSystem
+// (song playback) AND the mixer (menu music + SFX) open with the
+// 8-channel map when this is set, so surround survives a device switch
+// on the mixer path too.
+static std::atomic<bool> g_maThingSurround{false};
 
 // ---- audio constants ------------------------------------------------------
 #define SAMPLE_FORMAT  ma_format_f32
@@ -84,10 +89,24 @@ std::atomic<double> MUSIC_MASTER_VOLUME_099{1.0};
 #define MAX_PITCH_FRAMES   (MAX_CALLBACK_FRAMES * 12)
 
 // ---- surround sound system ------------------------------------------------
-#define SURROUND_CHANNEL_COUNT 4
+// 8-channel map in miniaudio/Microsoft 7.1 order:
+//   0 FL  1 FR  2 C  3 LFE  4 BL  5 BR  6 SL  7 SR
+// The SAME order is the explicit channelMap handed to every device open,
+// so miniaudio's internal converters (rebuilt on device reroute or
+// rebuild) always place our indices correctly no matter what the device's
+// native layout is (stereo fold-down, 5.1, 7.1...). Without an explicit
+// map miniaudio assumes plain quad (FL FR BL BR) for 4+ channels and the
+// converter silently drops/misroutes center + LFE — the "plays barely
+// nothing after a device switch" bug.
+#define SURROUND_CHANNEL_COUNT 8
 #define SURROUND_LPF_COEF   0.016951f
 #define SURROUND_LFE_BASS_GAIN 0.75f
 #define SURROUND_LFE_FULL_GAIN 1.0f
+// Background bed spread: how much of the stereo bed goes to the rear
+// quad. The mains stay at FL/FR; the rears get a delayed-free mono blend
+// so a stereo-only song still fills the room (the "compensate for no
+// rears" ask) without doubling perceived loudness at the front.
+#define SURROUND_REAR_GAIN  0.6f
 
 // ---- SubBusDSP constants --------------------------------------------------
 #define SUB_LPF_BODY_HZ   55.0f
@@ -112,6 +131,27 @@ enum MaThingAudioChannel {
     MA_CH_BACKGROUND = 1,
     MA_CH_SUB        = 2
 };
+
+// The engine's 8-channel layout, indices as written by routeStreamToOutput
+// (Microsoft 7.1 order — what miniaudio's standard converter matrices
+// expect): FL FR C LFE BL BR SL SR.
+static ma_channel MA_THING_SURROUND_MAP[SURROUND_CHANNEL_COUNT] = {
+    MA_CHANNEL_FRONT_LEFT, MA_CHANNEL_FRONT_RIGHT, MA_CHANNEL_FRONT_CENTER, MA_CHANNEL_LFE,
+    MA_CHANNEL_BACK_LEFT,  MA_CHANNEL_BACK_RIGHT,  MA_CHANNEL_SIDE_LEFT,   MA_CHANNEL_SIDE_RIGHT
+};
+// Plain stereo: FL FR.
+static ma_channel MA_THING_STEREO_MAP[CHANNEL_COUNT] = {
+    MA_CHANNEL_FRONT_LEFT, MA_CHANNEL_FRONT_RIGHT
+};
+// Points a device config at the explicit channel map for its layout so
+// miniaudio's converters know exactly what our interleaved frames mean.
+// The arrays are static storage — they outlive the device. Without this,
+// a reroute or rebuild onto a device with a different native layout makes
+// miniaudio guess (quad for 4ch, etc.) and center/LFE content vanishes.
+static void ma_thing_set_channel_map(ma_device_config* cfg, int channels) {
+    cfg->playback.pChannelMap = (channels == SURROUND_CHANNEL_COUNT)
+        ? MA_THING_SURROUND_MAP : MA_THING_STEREO_MAP;
+}
 
 // Wrapper to allow std::atomic<int> inside standard containers like std::vector
 struct AtomicInt {
@@ -899,7 +939,12 @@ public:
     std::vector<float> streamLpfState;
     
     float pitchInputMix[MAX_PITCH_FRAMES * SURROUND_CHANNEL_COUNT] = {};
-    float streamStage[MAX_CALLBACK_FRAMES * CHANNEL_COUNT] = {};
+    // Staging for the surround routes. The PITCHED path stages up to
+    // MAX_PITCH_FRAMES frames here (rate up to 10x means frameCount*rate
+    // can far exceed MAX_CALLBACK_FRAMES), so it must be sized for the
+    // pitch worst case — a MAX_CALLBACK_FRAMES-sized stage overflows the
+    // heap the moment pitched playback runs with surround on.
+    float streamStage[MAX_PITCH_FRAMES * CHANNEL_COUNT] = {};
     
     mutable std::atomic<long long> predictBaseTimeNs{0};
     mutable std::atomic<double> predictBaseFrames{0.0};
@@ -1037,11 +1082,21 @@ public:
         ma_device_config deviceConfig = ma_device_config_init(ma_device_type_playback);
         deviceConfig.playback.format = SAMPLE_FORMAT;
         deviceConfig.playback.channels = wantedChannels;
+        ma_thing_set_channel_map(&deviceConfig, wantedChannels);
         deviceConfig.sampleRate = SAMPLE_RATE;
         deviceConfig.periodSizeInFrames = PERIOD_SIZE;
         deviceConfig.dataCallback = data_callback;
         deviceConfig.notificationCallback = onDeviceNotification;
         deviceConfig.pUserData = this;
+        // Own the recovery end-to-end: miniaudio's internal auto stream
+        // routing stops/reinits/restarts the device from its notification
+        // thread, colliding with this engine's pump/watchdog discipline
+        // and (because the reroute rebuilds converters from a guessed
+        // channel map) misrouting center/LFE after a default switch. With
+        // it disabled, a switch just leaves the device stopped — our pump
+        // notices (playing-but-not-started) and rebuilds cleanly with the
+        // explicit map above.
+        deviceConfig.wasapi.noAutoStreamRouting = MA_TRUE;
 
         int initRes = ma_device_init_watchdog(device, &deviceConfig, lifecycleStuck, LIFECYCLE_TIMEOUT_MS);
         if (initRes < 0) {
@@ -1058,6 +1113,7 @@ public:
             device = new ma_device();
             memset(device, 0, sizeof(ma_device));
             deviceConfig.playback.channels = CHANNEL_COUNT;
+            ma_thing_set_channel_map(&deviceConfig, CHANNEL_COUNT);
             initRes = ma_device_init_watchdog(device, &deviceConfig, lifecycleStuck, LIFECYCLE_TIMEOUT_MS);
             if (initRes < 0) {
                 parkWedgedDevice();
@@ -1373,6 +1429,7 @@ public:
 
     bool isSurroundEnabled() const { return surroundEnabled.load(std::memory_order_acquire); }
     void setSurroundEnabled(bool enable) {
+        g_maThingSurround.store(enable, std::memory_order_release); // mixer device reads this on (re)build
         bool prev = surroundEnabled.exchange(enable, std::memory_order_acq_rel);
         if (prev == enable) return;
         if (!exists.load(std::memory_order_acquire)) {
@@ -1465,6 +1522,8 @@ private:
         const int route = streamChannels[index].load(std::memory_order_acquire);
         float lpf = streamLpfState[index];
         if (outCh == SURROUND_CHANNEL_COUNT) {
+            // Channel indices (Microsoft 7.1 order, see MA_THING_SURROUND_MAP):
+            //   0 FL  1 FR  2 C  3 LFE  4 BL  5 BR  6 SL  7 SR
             switch (route) {
                 case MA_CH_CENTER:
                     for (ma_uint32 f = 0; f < outFrames; f++) {
@@ -1484,12 +1543,20 @@ private:
                     } break;
                 case MA_CH_BACKGROUND:
                 default:
+                    // The song bed: mains stay FL/FR; the same stereo is
+                    // spread across the rear quad at SURROUND_REAR_GAIN so
+                    // a stereo-only song fills the whole 7.1 room ("no
+                    // rears in the song" compensation). Bass still goes to
+                    // LFE via the one-pole LPF.
                     for (ma_uint32 f = 0; f < outFrames; f++) {
                         float sl = stage[f * 2], sr = stage[f * 2 + 1];
                         float mono = (sl + sr) * 0.5f;
                         lpf += SURROUND_LPF_COEF * (mono - lpf);
                         float* d = out + f * outCh;
                         d[0] += sl; d[1] += sr;
+                        float rear = mono * SURROUND_REAR_GAIN;
+                        d[4] += rear; d[5] += rear;   // back L/R
+                        d[6] += rear; d[7] += rear;   // side L/R
                         d[3] += lpf * SURROUND_LFE_BASS_GAIN;
                     } break;
             }
@@ -1973,21 +2040,46 @@ public:
     */
     bool initialize() {
         if (deviceInitialized) return true;
+        // Surround-aware channel count: with the game's surround setting
+        // on, the mixer device opens with the same 8-channel map as the
+        // AudioSystem device, so menu music + SFX also fill the room (and
+        // keep filling it across device switches). Falls back to stereo
+        // when the device rejects the layout.
+        const int wantedChannels = g_maThingSurround.load(std::memory_order_acquire) ? SURROUND_CHANNEL_COUNT : CHANNEL_COUNT;
         device = new ma_device();
         memset(device, 0, sizeof(ma_device));
         ma_device_config cfg = ma_device_config_init(ma_device_type_playback);
         cfg.playback.format = SAMPLE_FORMAT;
-        cfg.playback.channels = CHANNEL_COUNT;
+        cfg.playback.channels = wantedChannels;
+        ma_thing_set_channel_map(&cfg, wantedChannels);
         cfg.sampleRate = SAMPLE_RATE;
         cfg.periodSizeInFrames = PERIOD_SIZE;
         cfg.dataCallback = audioCallback;
         cfg.notificationCallback = onMixerDeviceNotification;
         cfg.pUserData = this;
+        // Same reasoning as AudioSystem::buildDevice: we own recovery via
+        // the pump; miniaudio's notification-thread auto reroute collides
+        // with it and rebuilds converters from a guessed channel map.
+        cfg.wasapi.noAutoStreamRouting = MA_TRUE;
         // Watchdogged init (same discipline as AudioSystem::buildDevice):
         // during a default-device switch the COM endpoint open can block,
         // and THIS device is the only one alive in the menus — a hang here
         // freezes the whole game with no audio running at all.
-        const int initRes = ma_device_init_watchdog(device, &cfg, lifecycleStuck, 1500);
+        int initRes = ma_device_init_watchdog(device, &cfg, lifecycleStuck, 1500);
+        int openedChannels = wantedChannels;
+        if (initRes > 0 && wantedChannels != CHANNEL_COUNT) {
+            // Clean failure with surround: free the storage and retry stereo.
+            delete device;
+            device = new ma_device();
+            memset(device, 0, sizeof(ma_device));
+            cfg.playback.channels = CHANNEL_COUNT;
+            ma_thing_set_channel_map(&cfg, CHANNEL_COUNT);
+            initRes = ma_device_init_watchdog(device, &cfg, lifecycleStuck, 1500);
+            if (initRes > 0) {
+                openedChannels = CHANNEL_COUNT;
+                printf("[ma_thing] mixer surround unavailable — falling back to stereo\n");
+            }
+        }
         if (initRes < 0) {
             // Timed out: leak the storage (a detached helper thread may
             // still be inside ma_device_init on it). deviceInitialized
@@ -2004,6 +2096,7 @@ public:
             device = nullptr;
             return false;
         }
+        playbackChannels.store(openedChannels, std::memory_order_release);
         deviceInitialized = true;
         startDeviceWatchdog();
         return true;
@@ -2018,6 +2111,7 @@ public:
             device = nullptr;
             deviceInitialized = false;
         }
+        playbackChannels.store(CHANNEL_COUNT, std::memory_order_release);
         backgroundTracks.clear(); soundEffectPools.clear();
         backgroundTrackMap.clear(); soundEffectMap.clear();
         outFramesTotal.store(0, std::memory_order_relaxed);
@@ -2180,6 +2274,9 @@ private:
     ma_device* device = nullptr;                 // heap — see initialize()
     std::vector<ma_device*> deviceGraveyard;     // wedged devices, leaked on purpose
     bool deviceInitialized = false;
+    /** The layout the mixer device actually opened with — the callback
+        mixes against this (2 = plain stereo, 8 = full surround map). */
+    std::atomic<int> playbackChannels{CHANNEL_COUNT};
     std::atomic<bool> lifecycleStuck{false};
     std::atomic<bool> stoppingSelf{false};
     int lostTicks = 0;                           // pump-only (main thread)
@@ -2229,7 +2326,14 @@ private:
         AudioMixerManager* mixer = static_cast<AudioMixerManager*>(pDevice->pUserData);
         if (!mixer) return;
         float* out = (float*)pOutput;
-        memset(out, 0, sizeof(float) * frameCount * CHANNEL_COUNT);
+        const int outCh = mixer->playbackChannels.load(std::memory_order_relaxed);
+        memset(out, 0, sizeof(float) * frameCount * outCh);
+        // The tracks/SFX are stereo; when the device runs the 8-channel
+        // map the content is spread the same way the AudioSystem spreads
+        // the song bed (mains FL/FR, rear quad at SURROUND_REAR_GAIN,
+        // bass to LFE) so menu music also fills the room. A plain stereo
+        // mix scratch buffer keeps readFrames() unchanged.
+        float stage[512 * CHANNEL_COUNT];
         ma_uint64 bufStart = mixer->outFramesTotal.fetch_add(frameCount, std::memory_order_relaxed);
         mixer->lastAnchorFrame.store(bufStart, std::memory_order_relaxed);
         mixer->lastAnchorTime.store(std::chrono::steady_clock::now().time_since_epoch().count(), std::memory_order_relaxed);
@@ -2237,10 +2341,36 @@ private:
         int r = mixer->readerIndex.load(std::memory_order_relaxed);
         int n = mixer->newestIndex.load(std::memory_order_acquire);
         if (r != n) { mixer->readerIndex.store(n, std::memory_order_release); r = n; }
-        for (BackgroundTrack* track : mixer->bgSnapshot[r])
-            if (track->active.load(std::memory_order_acquire)) track->readFrames(out, frameCount);
-        for (SoundEffectPool* pool : mixer->sfxSnapshot[r])
-            pool->readFrames(out, frameCount, bufStart, masterVol);
+        if (outCh == SURROUND_CHANNEL_COUNT) {
+            // Chunk through the stereo stage so the fixed scratch buffer
+            // covers any period size.
+            ma_uint32 done = 0;
+            while (done < frameCount) {
+                const ma_uint32 chunk = (frameCount - done > 512) ? 512 : frameCount - done;
+                memset(stage, 0, sizeof(float) * chunk * CHANNEL_COUNT);
+                for (BackgroundTrack* track : mixer->bgSnapshot[r])
+                    if (track->active.load(std::memory_order_acquire)) track->readFrames(stage, chunk);
+                for (SoundEffectPool* pool : mixer->sfxSnapshot[r])
+                    pool->readFrames(stage, chunk, bufStart + done, masterVol);
+                // spread: mains + rear quad + LFE (mono bass, one-pole LPF
+                // per chunk — stateless across chunks is fine for a bed)
+                for (ma_uint32 f = 0; f < chunk; f++) {
+                    float sl = stage[f * 2], sr = stage[f * 2 + 1];
+                    float mono = (sl + sr) * 0.5f;
+                    float* d = out + (size_t)(done + f) * outCh;
+                    d[0] += sl; d[1] += sr;
+                    float rear = mono * SURROUND_REAR_GAIN;
+                    d[4] += rear; d[5] += rear;
+                    d[6] += rear; d[7] += rear;
+                }
+                done += chunk;
+            }
+        } else {
+            for (BackgroundTrack* track : mixer->bgSnapshot[r])
+                if (track->active.load(std::memory_order_acquire)) track->readFrames(out, frameCount);
+            for (SoundEffectPool* pool : mixer->sfxSnapshot[r])
+                pool->readFrames(out, frameCount, bufStart, masterVol);
+        }
         (void)pInput;
     }
 };
