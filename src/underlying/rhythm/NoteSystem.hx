@@ -642,6 +642,19 @@ class NoteSystem {
 				if (parent.field != null)
 					parent.field.hitNote(note, 0, noteSpr.notesInOne);
 				parent.hitNote(note, 0, noteSpr.notesInOne, _id);
+
+				// Tiny sustains never register an ending in the sustain pass
+				// below (see the 80ms gate), so finish them right here: after
+				// the note-hit callbacks, fire the sustain-finish callbacks.
+				if (sustainExists && duration <= 80) {
+					receptor.sustainResolved = true;
+					isResolved = true;
+					if (@:privateAccess parent.onSustainComplete.__listeners.length != 0)
+						parent.onSustainComplete.dispatch(note);
+					if (parent.field != null)
+						parent.field.completeSustain(note);
+					parent.completeSustain(note, _id);
+				}
 			}
 		}
 

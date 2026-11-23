@@ -192,10 +192,15 @@ class ControlsDisplay extends OptionsSubDisplay {
 
 		if (combined != _lastInfoText) {
 			_lastInfoText = combined;
+
+			// The mania readout is a big centered block: real line breaks
+			// (multiline), double size, centered lines (the Text class's
+			// alignment), centered on the screen.
+			infoText.multiline = true;
+			infoText.scale = 2;
+			infoText.alignment = CENTER;
 			infoText.text = combined;
-			// Right-aligned with the top-right "tab" hint sprite, just below it.
-			infoText.x = Main.INITIAL_WIDTH - infoText.width - 5;
-			infoText.y = 18;
+			infoText.screenCenter();
 		}
 		var show = parent.opened && combined != "";
 		infoText.alpha = Tools.lerp(infoText.alpha, show ? 1.0 : 0.0, ratio);

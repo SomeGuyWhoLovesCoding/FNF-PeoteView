@@ -249,6 +249,22 @@ class Strumline {
 				pf.field.hitNote(noteToHit, timing, 1);
 			pf.hitNote(noteToHit, timing, 1, noteIndex);
 
+			// A sustain of 80ms or less never registers an ending in the
+			// completion pass (see NoteSystem's duration gate), so finish it
+			// right here: after the note-hit callbacks, fire the sustain-finish
+			// callbacks and resolve the hold state immediately.
+			if (noteToHit.duration != 0 && noteToHit.duration <= 80) {
+				rec.sustainResolved = true;
+				rec.sustainToHold = null;
+				rec.sustainToHold_index = 0;
+				rec.sustainToHold_duration = 0;
+				if (@:privateAccess pf.onSustainComplete.__listeners.length != 0)
+					pf.onSustainComplete.dispatch(noteToHit);
+				if (pf.field != null)
+					pf.field.completeSustain(noteToHit);
+				pf.completeSustain(noteToHit, noteIndex);
+			}
+
 			rec.noteToHit = null;
 			rec.noteToHit_index = 0;
 		} else {

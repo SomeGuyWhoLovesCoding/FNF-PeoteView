@@ -127,8 +127,13 @@ class OptionsMenu extends MenuInput {
                 tabHintSprite = new OptionsTabHintSprite();
                 tabHintSprite.x = Main.INITIAL_WIDTH - TAB_HINT_WIDTH - TAB_HINT_MARGIN;
                 tabHintSprite.y = TAB_HINT_MARGIN;
+                // addElement writes the element into the buffer's CPU-side bytes;
+                // the GPU upload happens when the program joins the display
+                // (Buffer.setNewGLContext -> createGLBuffer uploads the whole
+                // buffer). Calling buf.update() here would crash — it needs a GL
+                // context, which the buffer doesn't have until then (the same
+                // chicken-and-egg Text.safeUpdate guards against).
                 tabHintBuf.addElement(tabHintSprite);
-                tabHintBuf.update();
         }
 
         function new() {
@@ -177,8 +182,10 @@ class OptionsMenu extends MenuInput {
                                 dim = 0.5;
                         tabHintSprite.c.aF = alphaLerp * dim;
                         tabHintSprite.c.luminanceF = alphaLerp * dim;
+                        // updateElement is GL-guarded internally; a bare
+                        // buf.update() needs the GL context and would crash
+                        // before the program has joined the display.
                         tabHintBuf.updateElement(tabHintSprite);
-                        tabHintBuf.update();
                 }
 
                 optionsDisplay.update(deltaTime);
