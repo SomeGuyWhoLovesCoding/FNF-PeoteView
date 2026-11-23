@@ -112,29 +112,10 @@ class PreferencesDisplay extends OptionsSubDisplay {
 		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelectedTarget, ratio);
 		xLerp = 20 - (curSelectedLerp * 20);
 
-		// Update description text (shared infoText)
-		var index = Math.round(curSelectedTarget);
-		if (index >= 0 && index < prefsStr.length) {
-			var prefName = prefsStr[index];
-			var desc = prefDescriptions[index];
-			var isOn = Reflect.getProperty(SaveData.state.preferences, prefName);
-			var status = isOn ? "ON" : "OFF";
-			var combined = '${getDisplayName(prefName)}: $desc\nStatus: $status\nPress ENTER to toggle.';
-			if (combined != _lastInfoText) {
-				_lastInfoText = combined;
-				infoText.text = combined;
-			}
-		} else if (_lastInfoText != "") {
-			_lastInfoText = "";
-			infoText.text = "";
-		}
-		// Position at top-right
-		infoText.x = Main.INITIAL_WIDTH - infoText.width - 4;
-		infoText.y = 4;
-
-		// Fade text based on menu alpha
-		var show = parent.opened && index >= 0 && index < prefsStr.length;
-		infoText.alpha = Tools.lerp(infoText.alpha, show ? 1.0 : 0.0, ratio);
+		// The shared infoText is no longer used while browsing — the "tab"
+		// sprite at the top-right corner replaced the old instruction texts.
+		// Keep fading it out so a leftover readout disappears.
+		infoText.alpha = Tools.lerp(infoText.alpha, 0.0, ratio);
 
 		alphabet.setDeltaTime(deltaTime);
 		var incrementBest = prefsStr.length > 7 ? Math.floor(Math.min(Math.max(curSelectedLerp - 3, 0), prefsStr.length - 7)) : 0;

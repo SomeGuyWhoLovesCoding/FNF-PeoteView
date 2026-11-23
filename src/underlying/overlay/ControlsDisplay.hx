@@ -6,8 +6,9 @@ import underlying.overlay.OptionsSubDisplay;
 
 /**
 	Handles the display and interaction for the controls options in the options menu.
-	Uses the shared FreeplayAlphabet instance for the list and a combined Text element
-	for instructions and keybind info at the top-right.
+	Uses the shared FreeplayAlphabet instance. ENTER starts the key listen for the
+	selected row (mania binding on the Mania row); TAB is owned by OptionsMenu and
+	switches categories (the "tab" sprite at the top-right corner hints at it).
 	@since 0.94
 **/
 @:publicFields
@@ -36,26 +37,6 @@ class ControlsDisplay extends OptionsSubDisplay {
 		"game.reset",
 		"game.debug"
 	];
-
-	// Descriptions for each control label (matching order)
-	static var controlDescriptions:Array<String> = [
-		"Move cursor left in menus.",
-		"Move cursor down in menus.",
-		"Move cursor up in menus.",
-		"Move cursor right in menus.",
-		"Select / confirm an option.",
-		"Go back to previous menu.",
-		"Pause the game during gameplay.",
-		"Instantly blueball in the current song.",
-		"Enter the gameplay's play area (debug mode).",
-		"Unique keybinds per key count (Mania mode)."
-	];
-
-	inline static var INSTRUCTIONS_TEXT = "KEYBINDING Instructions:\nPress TAB to begin binding\nPress ESC to cancel binding\n\n"
-		+ "MANIA Instructions:\nPress DEBUG to swap between #M1#KEY1#M1# and #M2#KEY2#M2# modes\n"
-		+ "\nWhile you bind your mania, you press each key in order\nWhen you bind:\nPress CTRL+Left or CTRL+Right to change MANIA\n"
-		+ "Press ALT+Up or ALT+Down to switch slot\nPress BACK to reset current MANIA\n"
-		+ "Press RESET to remove binding (#M2#KEY2#M2# only)";
 
 	var parent(default, null):OptionsMenu;
 	var options(default, null):Array<OptionsSprite> = [];
@@ -120,6 +101,8 @@ class ControlsDisplay extends OptionsSubDisplay {
 		processingBinding = false;
 		bindingMania = false;
 		maniaBindNum = 0;
+		maniaSubBindNum = 0;
+		alphaMultiplier = 1.0;
 	}
 
 	function resetHostState() {
@@ -129,20 +112,43 @@ class ControlsDisplay extends OptionsSubDisplay {
 		alphaLerp = 0.0;
 	}
 
+	/**
+		TAB while mania binding is active: exit mania binding. (TAB is owned
+		by OptionsMenu everywhere else — it switches categories; the "tab"
+		sprite at the top-right corner hints at it.)
+	**/
 	function tab() {
-		if (binding || processingBinding || bindingMania || closed)
+		if (binding || processingBinding || closed)
 			return;
+		if (bindingMania) {
+			bindingMania = false;
+			maniaBindNum = 0;
+			maniaSubBindNum = 0;
+			Main.current.playCancelSound();
+		}
+	}
 
-		bindingIndex = parent.optionsNav.value();
-		if (bindingIndex >= controlFields.length)
-			bindingMania = true;
-		else
+	/**
+		ENTER on the controls list: starts the key listen for the selected
+		control row. On the Mania row it toggles mania binding mode — the
+		whole options display goes half-transparent to make room for the
+		mania input readout (only the current mania key and the key number
+		are colored in it).
+	**/
+	function enter() {
+		if (closed || binding || processingBinding)
+			return;
+		var selected = parent.optionsNav.value();
+		if (selected == controlFields.length) {
+			bindingMania = !bindingMania;
+			maniaBindNum = 0;
+			maniaSubBindNum = 0;
+			Main.current.playScrollSound();
+		} else if (selected >= 0 && selected < controlFields.length) {
 			binding = true;
-
-		// Routing stays on the OptionsMenu focus; the machine keeps dispatching
-		// key presses to onKeyDown and the menu's UI actions are suppressed by
-		// isInvalidKeyState() while binding.
-		Main.current.playScrollSound();
+			bindingIndex = selected;
+			Main.current.playScrollSound();
+		}
 	}
 
 	override function update(deltaTime:Float) {
@@ -158,67 +164,40 @@ class ControlsDisplay extends OptionsSubDisplay {
 		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelectedTarget, ratio);
 		xLerp = 20 - (curSelectedLerp * 20);
 
-		// Build the combined text for the info box
+		// The whole options display goes half-transparent while the player
+		// edits mania bindings (the tab hint dims along with it — see
+		// OptionsMenu.update); the mania readout below is the one thing that
+		// stays at full strength.
+		alphaMultiplier = bindingMania ? 0.5 : 1.0;
+
+		// The shared infoText only ever shows the mania input readout and the
+		// binding alerts — no browsing descriptions (the "tab" sprite replaced
+		// the old instruction texts). In the mania readout only the current
+		// mania key (#M1#) and the key number (#M2#) are colored.
 		var combined = "";
-		var selectedIndex = Math.round(curSelectedTarget);
-
-		// Add description of the selected item (if not in mania or binding)
-		if (!bindingMania && !binding && selectedIndex >= 0 && selectedIndex < controlLabels.length) {
-			var desc = controlDescriptions[selectedIndex] != null ? controlDescriptions[selectedIndex] : "";
-			if (desc != "") {
-				combined += controlLabels[selectedIndex] + ": " + desc + "\n\n";
-			}
-		}
-
-		// Append instructions and dynamic binding info
-		combined += INSTRUCTIONS_TEXT + "\n\n";
 		if (bindingMania) {
-			var str = "KEYBINDS\nUSING " + (maniaSubBindNum == 1 ? "#M2#KEY2#M2#" : "#M1#KEY1#M1#") + "\n";
-			if (alertDupebind) {
-				str += '#M3#${alertDupebindKeyName} is already bound to:\n${alertDupebindConflictName}\nTry a different key.#M3#\n';
-			} else if (alertKeybindReset) {
-				str += '#M3#Successfully reset current MANIA.#M3#\n';
-			} else {
-				str += "#M3#Currently binding...#M3#\n";
+			var keybindsArr = maniaKeybindArray(curManiaNum);
+			var keyName = "...";
+			if (maniaBindNum >= 0 && maniaBindNum < keybindsArr.length) {
+				var slot = keybindsArr[maniaBindNum];
+				if (slot != null && maniaSubBindNum >= 0 && maniaSubBindNum < slot.length)
+					keyName = KeyCodeConverter.getSimpleKeyName(slot[maniaSubBindNum]);
 			}
-			var keybindArr = maniaKeybindArray(curManiaNum);
-			for (k in 0...keybindArr.length) {
-				var maniaBinds = keybindArr[k];
-				str += (maniaBindNum == k && maniaSubBindNum == 0) ? "#M1#[ #M1#" : "[ ";
-				for (i in 0...maniaBinds.length) {
-					if (maniaSubBindNum == i)
-						str += '#M${maniaSubBindNum + 1}#';
-					str += KeyCodeConverter.getSimpleKeyName(maniaBinds[i]);
-					if (maniaSubBindNum == i)
-						str += '#M${maniaSubBindNum + 1}#';
-					if (i != maniaBinds.length - 1)
-						str += ", ";
-				}
-				str += (maniaBindNum == k && maniaSubBindNum == 1) ? "#M2# ]#M2#" : " ]";
-				str += "\n";
-			}
-			combined += str;
-		} else {
-			if (alertDupebind) {
-				combined += '#M3#${alertDupebindKeyName} is already bound to:\n${alertDupebindConflictName}\nTry a different key.#M3#\n';
-			} else {
-				combined += "KEYBINDS\n";
-				combined += binding ? "#M3#Currently binding...#M3#\n" : "...";
-			}
+			combined = 'MANIA ${curManiaNum + 1}K\nKEY #M2#${maniaBindNum + 1}#M2#\n#M1#${keyName}#M1#';
 		}
+		if (alertDupebind)
+			combined = '#M3#${alertDupebindKeyName} is already bound to:\n${alertDupebindConflictName}\nTry a different key.#M3#';
+		else if (alertKeybindReset)
+			combined = "#M3#Successfully reset current MANIA.#M3#";
 
-		//BOTTLENECK: high per-frame info-text rebuild: string concat allocations + set_text() full compare/relayout every frame | FIX: only rebuild when selection/binding/mania state changed; cache last built string
 		if (combined != _lastInfoText) {
 			_lastInfoText = combined;
 			infoText.text = combined;
-			// Position at top-right (align right by setting x = width‑4)
-			infoText.x = Main.INITIAL_WIDTH - infoText.width - 4;
-			infoText.y = 4;
+			// Right-aligned with the top-right "tab" hint sprite, just below it.
+			infoText.x = Main.INITIAL_WIDTH - infoText.width - 5;
+			infoText.y = 18;
 		}
-
-		// Show/hide based on conditions
-		var show = parent.opened
-			&& ((curSelectedTarget >= 0 && curSelectedTarget < controlFields.length + 1) || alertDupebind || binding || bindingMania);
+		var show = parent.opened && combined != "";
 		infoText.alpha = Tools.lerp(infoText.alpha, show ? 1.0 : 0.0, ratio);
 
 		alphabet.setDeltaTime(deltaTime);
@@ -267,32 +246,27 @@ class ControlsDisplay extends OptionsSubDisplay {
 		if (bindingMania) {
 			if (keyCode == BIND_KEY || keyCode == KeyCode.ESCAPE)
 				return;
-			if ((keyModifier == KeyModifier.LEFT_CTRL || keyModifier == KeyModifier.RIGHT_CTRL)) {
-				switch (keyCode) {
-					case KeyCode.LEFT:
-						curManiaNum--;
-						Main.current.playScrollSound();
-					case KeyCode.RIGHT:
-						curManiaNum++;
-						Main.current.playScrollSound();
-					default:
-				}
-				return;
+
+			// Use the configured UI directions, not hard-coded arrow keycodes.
+			var ui = SaveData.state.controls.ui;
+			var keybindsArr = maniaKeybindArray(curManiaNum);
+			if (keyCode == ui.left) {
+				curManiaNum--;
+				maniaBindNum = 0;
+				Main.current.playScrollSound();
+			} else if (keyCode == ui.right) {
+				curManiaNum++;
+				maniaBindNum = 0;
+				Main.current.playScrollSound();
+			} else if (keyCode == ui.up) {
+				maniaBindNum = Std.int(Math.max(0, maniaBindNum - 1));
+				Main.current.playScrollSound();
+			} else if (keyCode == ui.down) {
+				maniaBindNum = Std.int(Math.min(keybindsArr.length - 1, maniaBindNum + 1));
+				Main.current.playScrollSound();
+			} else {
+				applyManiaBinding(keyCode);
 			}
-			if ((keyModifier == KeyModifier.LEFT_ALT || keyModifier == KeyModifier.RIGHT_ALT)) {
-				var keybindsArr = maniaKeybindArray(curManiaNum);
-				switch (keyCode) {
-					case KeyCode.UP:
-						maniaBindNum = Std.int(Math.max(0, maniaBindNum - 1));
-						Main.current.playScrollSound();
-					case KeyCode.DOWN:
-						maniaBindNum = Std.int(Math.min(keybindsArr.length - 1, maniaBindNum + 1));
-						Main.current.playScrollSound();
-					default:
-				}
-				return;
-			}
-			applyManiaBinding(keyCode);
 			return;
 		}
 
@@ -549,6 +523,7 @@ class ControlsDisplay extends OptionsSubDisplay {
 		if (binding)
 			cancelBinding();
 		resetHostState();
+		alphaMultiplier = 1.0;
 
 		while (options.length != 0) {
 			var option = options.pop();
@@ -613,3 +588,4 @@ return controlLabels[index];
 		return KeyCodeConverter.getSimpleKeyName(rawKey);
 	}
 }
+

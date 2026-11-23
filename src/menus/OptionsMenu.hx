@@ -12,6 +12,11 @@ import handler.MenuInput;
         The options submenu.
         This is where you can change the game's settings, such as controls, preferences, and gameplay options.
         It is responsible for rendering the options menu and updating it based on the player's input.
+
+        The only navigation hint left is the tiny "tab" sprite pinned 5 pixels
+        in from the top-right corner of the screen — TAB switches categories.
+        (It replaces the old bottom navigation-hint text and the top-right
+        description text.)
         @since Development
 **/
 @:publicFields
@@ -21,12 +26,21 @@ class OptionsMenu extends MenuInput {
         static var optionsProg(default, null):CustomProgram;
 
         static inline var CATEGORY_COUNT = 4;
-        static inline var NAV_HINT_TEXT = "CTRL+LEFT/RIGHT Navigate | UP/DOWN Navigate option | ACCEPT Toggle option (shows live preview at gameplay state)";
+
+        // --- The "tab" hint sprite ---
+        // A tiny pixel-art key cap pinned 5 pixels in from the top-right
+        // corner of the options screen. It reads "tab", and TAB is the key
+        // that switches categories.
+        static inline var TAB_HINT_WIDTH = 15;
+        static inline var TAB_HINT_HEIGHT = 7;
+        static inline var TAB_HINT_MARGIN = 5;
+        static inline var TAB_HINT_TEXTURE_NAME:String = "optionsTabHintPixelTex";
+        static var tabHintBuf(default, null):Buffer<OptionsTabHintSprite>;
+        static var tabHintProg(default, null):CustomProgram;
+        static var tabHintSprite(default, null):OptionsTabHintSprite;
 
         var categoryNav(default, null):Navigation = new Navigation();
         var optionsNav(default, null):Navigation = new Navigation();
-
-        var navHint(default, null):Text;
 
         var shiftHeld:Bool = false;
         var ctrlHeld:Bool = false;
@@ -43,17 +57,88 @@ class OptionsMenu extends MenuInput {
                         display.addProgram(optionsProg);
                         display.removeProgram(optionsProg);
                 }
+
+                createTabHint();
+        }
+
+        /** Creates a tiny pixel-art "tab" texture in code, like the noteskin grid. */
+        static function createTabHint() {
+                if (tabHintProg != null)
+                        return;
+                // Fail soft: the hint is purely cosmetic. If anything in the texture
+                // or program setup goes wrong, disable it rather than crash the menu.
+                try {
+                        createTabHintUnsafe();
+                } catch (e:Dynamic) {
+                        tabHintProg = null;
+                        tabHintBuf = null;
+                        tabHintSprite = null;
+                        trace('Warning: options tab hint disabled (' + e + ')');
+                }
+        }
+
+        static function createTabHintUnsafe() {
+                var width = TAB_HINT_WIDTH;
+                var height = TAB_HINT_HEIGHT;
+                var pixels = haxe.io.Bytes.alloc(width * height * 4);
+                for (y in 0...height) {
+                        for (x in 0...width) {
+                                var idx = (y * width + x) * 4;
+                                var border = x == 0 || y == 0 || x == width - 1 || y == height - 1;
+                                pixels.set(idx, border ? 24 : 8);
+                                pixels.set(idx + 1, border ? 24 : 8);
+                                pixels.set(idx + 2, border ? 30 : 12);
+                                pixels.set(idx + 3, 210);
+                        }
+                }
+                // 3x5 lowercase glyphs: t, a, b. One-pixel spacing between letters.
+                var glyphs:Array<Array<Int>> = [[6, 2, 2, 2, 3], [0, 6, 1, 7, 5], [4, 4, 6, 5, 6]];
+                var glyphX = [2, 6, 10];
+                for (g in 0...glyphs.length) {
+                        for (gy in 0...5) {
+                                for (gx in 0...3) {
+                                        if ((glyphs[g][gy] & (1 << (2 - gx))) == 0)
+                                                continue;
+                                        var idx = ((gy + 1) * width + glyphX[g] + gx) * 4;
+                                        pixels.set(idx, 235);
+                                        pixels.set(idx + 1, 235);
+                                        pixels.set(idx + 2, 245);
+                                        pixels.set(idx + 3, 255);
+                                }
+                        }
+                }
+                var textureData = new TextureData(width, height, TextureFormat.RGBA);
+                textureData.bytes = pixels;
+                var texture = new Texture(width, height, null, {
+                        format: TextureFormat.RGBA,
+                        powerOfTwo: false,
+                        smoothExpand: false,
+                        smoothShrink: false
+                });
+                #if !android
+                if (Main.current != null && Main.current.peoteView != null && Main.current.peoteView.gl != null)
+                        @:privateAccess texture.setNewGLContext(Main.current.peoteView.gl);
+                #end
+                texture.setData(textureData);
+                TextureSystem.pool.set(TAB_HINT_TEXTURE_NAME, texture);
+
+                tabHintBuf = new Buffer<OptionsTabHintSprite>(1);
+                tabHintProg = new CustomProgram(tabHintBuf);
+                tabHintProg.setTexture(texture, TAB_HINT_TEXTURE_NAME, true);
+                tabHintProg.injectIntoFragmentShader('
+                        vec4 getOptionsTabColor(int textureID, vec4 c) {
+                                return getTextureColor(textureID, vTexCoord) * c;
+                        }
+                ');
+                tabHintProg.setColorFormula('getOptionsTabColor(${TAB_HINT_TEXTURE_NAME}_ID, c)');
+                tabHintSprite = new OptionsTabHintSprite();
+                tabHintSprite.x = Main.INITIAL_WIDTH - TAB_HINT_WIDTH - TAB_HINT_MARGIN;
+                tabHintSprite.y = TAB_HINT_MARGIN;
+                tabHintBuf.addElement(tabHintSprite);
+                tabHintBuf.update();
         }
 
         function new() {
-                navHint = new Text("optionsNavHint", 0, 0, display, NAV_HINT_TEXT, "vcr");
-                navHint.scale = 0.75;
-                navHint.alignment = CENTER;
-                navHint.color = Color.GREY3;
-                navHint.alpha = 0;
-                navHint.x = 12;
-                navHint.y = Main.INITIAL_HEIGHT - navHint.height - 50;
-
                 if (optionsDisplay == null) {
                         optionsDisplay = new OptionsDisplay(this);
                 }
@@ -88,7 +173,20 @@ class OptionsMenu extends MenuInput {
 
                 alphaLerp = Tools.lerp(alphaLerp, opened ? 1.0 : 0.0, ratio);
 
-                navHint.alpha = alphaLerp;
+                // The "tab" hint fades in/out with the menu. While the controls
+                // display is in mania binding mode the whole options display is
+                // half-transparent to make room for the mania input readout —
+                // the hint dims along with everything else.
+                if (tabHintSprite != null && tabHintBuf != null) {
+                        var dim = 1.0;
+                        var cd = optionsDisplay != null ? optionsDisplay.controlsDisplay : null;
+                        if (cd != null && cd.bindingMania)
+                                dim = 0.5;
+                        tabHintSprite.c.aF = alphaLerp * dim;
+                        tabHintSprite.c.luminanceF = alphaLerp * dim;
+                        tabHintBuf.updateElement(tabHintSprite);
+                        tabHintBuf.update();
+                }
 
                 optionsDisplay.update(deltaTime);
         }
@@ -99,13 +197,13 @@ class OptionsMenu extends MenuInput {
                 shiftHeld = false;
                 Main.current.popupOptionsMenu();
 
-                try {
-                        navHint.addProgram();
-                        alphaLerp = 0.0;
-                } catch (e) {}
+                alphaLerp = 0.0;
 
                 if (!optionsProg.isIn(display)) {
                         display.addProgram(optionsProg);
+                }
+                if (tabHintProg != null && !tabHintProg.isIn(display)) {
+                        display.addProgram(tabHintProg);
                 }
 
                 Main.current.stateMachine.setFocus(this);
@@ -192,11 +290,7 @@ class OptionsMenu extends MenuInput {
                         return;
                 if (shiftHeld && (cast categoryNav.value() : OptionsCategorySelection) == GAMEPLAY)
                         return;
-                optionsNav.setTo(0);
-                categoryNav.scroll(-1);
-                categoryNav.resetIfUnder(3);
-                optionsDisplay.reload(cast categoryNav.value());
-                Main.current.playScrollSound();
+                switchCategory(-1);
         }
 
         function right(isDown:Bool, param:Int) {
@@ -206,9 +300,21 @@ class OptionsMenu extends MenuInput {
                         return;
                 if (shiftHeld && (cast categoryNav.value() : OptionsCategorySelection) == GAMEPLAY)
                         return;
+                switchCategory(1);
+        }
+
+        /**
+                Switches to the next (dir = 1) / previous (dir = -1) options
+                category and resets the option cursor. Used by TAB (the top-right
+                "tab" hint) and the legacy CTRL+LEFT/RIGHT binds.
+        **/
+        function switchCategory(dir:Int) {
                 optionsNav.setTo(0);
-                categoryNav.scroll(1);
-                categoryNav.resetIfOver(CATEGORY_COUNT);
+                categoryNav.scroll(dir);
+                if (dir > 0)
+                        categoryNav.resetIfOver(CATEGORY_COUNT);
+                else
+                        categoryNav.resetIfUnder(3);
                 optionsDisplay.reload(cast categoryNav.value());
                 Main.current.playScrollSound();
         }
@@ -233,6 +339,18 @@ class OptionsMenu extends MenuInput {
 
                 if (optionsDisplay.closed)
                         return false;
+
+                // TAB switches categories (see the top-right "tab" hint).
+                // While a keybinding listen is active on the controls display,
+                // TAB stays owned by it (it exits mania binding / is ignored
+                // mid-listen).
+                if (keyCode == KeyCode.TAB) {
+                        var cd = optionsDisplay.controlsDisplay;
+                        if (cd == null || cd.closed || (!cd.binding && !cd.bindingMania)) {
+                                switchCategory(shiftHeld ? -1 : 1);
+                                return true;
+                        }
+                }
 
                 var disp = optionsDisplay.controlsDisplay;
                 if (disp != null && !disp.closed) {
@@ -322,7 +440,8 @@ class OptionsMenu extends MenuInput {
                 if (!optionsProg.isIn(display))
                         return;
 
-                navHint.removeProgram();
+                if (tabHintProg != null && tabHintProg.isIn(display))
+                        display.removeProgram(tabHintProg);
 
                 display.color = 0x00000000;
                 display.removeProgram(optionsProg);
@@ -334,11 +453,6 @@ class OptionsMenu extends MenuInput {
         override function dispose() {
                 close();
                 shutDown();
-
-                if (navHint != null) {
-                        navHint.dispose();
-                        navHint = null;
-                }
 
                 optionsDisplay.dispose();
 
