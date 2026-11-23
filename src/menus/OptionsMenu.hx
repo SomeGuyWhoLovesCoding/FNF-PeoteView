@@ -13,8 +13,9 @@ import handler.MenuInput;
         This is where you can change the game's settings, such as controls, preferences, and gameplay options.
         It is responsible for rendering the options menu and updating it based on the player's input.
 
-        The only navigation hint left is the tiny "tab" sprite pinned 5 pixels
-        in from the top-right corner of the screen — TAB switches categories.
+        The only navigation hint left is the "tab" sprite pinned 5 pixels in
+        from the top-right corner of the screen — TAB switches categories, and
+        so does clicking the invisible area around the sprite.
         (It replaces the old bottom navigation-hint text and the top-right
         description text.)
         @since Development
@@ -28,12 +29,17 @@ class OptionsMenu extends MenuInput {
         static inline var CATEGORY_COUNT = 4;
 
         // --- The "tab" hint sprite ---
-        // A tiny pixel-art key cap pinned 5 pixels in from the top-right
-        // corner of the options screen. It reads "tab", and TAB is the key
-        // that switches categories.
+        // A pixel-art key cap pinned 5 pixels in from the top-right corner of
+        // the options screen. It reads "tab", and TAB is the key that switches
+        // categories. The texture is 15x7 pixels of art rendered at four times
+        // that size (60x28) — the nearest-neighbor filtering keeps the pixels
+        // crisp — and an invisible, padded click area around it switches to
+        // the next category like the TAB key does.
         static inline var TAB_HINT_WIDTH = 15;
         static inline var TAB_HINT_HEIGHT = 7;
         static inline var TAB_HINT_MARGIN = 5;
+        static inline var TAB_HINT_SCALE = 4;
+        static inline var TAB_HINT_CLICK_PADDING = 10;
         static inline var TAB_HINT_TEXTURE_NAME:String = "optionsTabHintPixelTex";
         static var tabHintBuf(default, null):Buffer<OptionsTabHintSprite>;
         static var tabHintProg(default, null):CustomProgram;
@@ -125,7 +131,11 @@ class OptionsMenu extends MenuInput {
                 tabHintProg = new CustomProgram(tabHintBuf);
                 OptionsTabHintSprite.init(tabHintProg, TAB_HINT_TEXTURE_NAME, texture);
                 tabHintSprite = new OptionsTabHintSprite();
-                tabHintSprite.x = Main.INITIAL_WIDTH - TAB_HINT_WIDTH - TAB_HINT_MARGIN;
+                // Four times the art size; the clip stays 15x7 so the texture
+                // simply stretches across the quad (crisp, nearest-filtered).
+                tabHintSprite.w = TAB_HINT_WIDTH * TAB_HINT_SCALE;
+                tabHintSprite.h = TAB_HINT_HEIGHT * TAB_HINT_SCALE;
+                tabHintSprite.x = Main.INITIAL_WIDTH - (TAB_HINT_WIDTH * TAB_HINT_SCALE) - TAB_HINT_MARGIN;
                 tabHintSprite.y = TAB_HINT_MARGIN;
                 // addElement writes the element into the buffer's CPU-side bytes;
                 // the GPU upload happens when the program joins the display
@@ -379,6 +389,29 @@ class OptionsMenu extends MenuInput {
         public override function onMouseDown(x:Float, y:Float, button:MouseButton):Bool {
                 if (!active)
                         return false;
+
+                // The invisible, padded click area around the top-right "tab"
+                // hint does what the TAB key does: switch to the next category.
+                // It is checked before routing to the category displays — the
+                // scrollable lists consume every left click for dragging — and
+                // carries the same ownership guard as the TAB key: while a
+                // keybinding listen or mania binding is active, the controls
+                // display owns TAB instead.
+                if (button == LEFT && !optionsDisplay.closed && tabHintSprite != null) {
+                        var cd = optionsDisplay.controlsDisplay;
+                        if (cd == null || cd.closed || (!cd.binding && !cd.bindingMania)) {
+                                // The mouse gives window pixels; the display may be
+                                // zoomed, so convert to game coordinates first.
+                                var gx = (x - display.xOffset) / display.zoom;
+                                var gy = (y - display.yOffset) / display.zoom;
+                                var pad = TAB_HINT_CLICK_PADDING;
+                                if (gx >= tabHintSprite.x - pad && gx <= tabHintSprite.x + tabHintSprite.w + pad
+                                        && gy >= tabHintSprite.y - pad && gy <= tabHintSprite.y + tabHintSprite.h + pad) {
+                                        switchCategory(1);
+                                        return true;
+                                }
+                        }
+                }
 
                 var disp = optionsDisplay.activeDisplay;
                 if (disp != null) {
