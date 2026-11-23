@@ -430,7 +430,7 @@ class NoteSystem {
 		return bestId;
 	}
 
-	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64, overlapCount:Int = 1):VirtualNote {
+	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64):VirtualNote {
 		var index = note.index;
 		var duration = note.duration;
 		var position = note.position;
@@ -447,14 +447,6 @@ class NoteSystem {
 		var noteSpr = notePool.getNote(index, note, _id);
 		if (noteSpr == null)
 			return noteSpr;
-		// The sprite carries its whole overlap group's size from the
-		// moment it is created — the precomputed, chart-exact count from
-		// the spawner's block read. Every judgement path that reads
-		// notesInOne (the opponent/botplay auto-hit and the miss path,
-		// which multiply combo/score/accuracy by it) therefore applies
-		// the same predictable number no matter what the per-frame merge
-		// pass had accumulated when the note crossed the playhead.
-		noteSpr.notesInOne = overlapCount;
 		var sustainSpr = duration != 0 ? notePool.getSustain(index, note, _id) : null;
 		var sustainExists = duration != 0;
 

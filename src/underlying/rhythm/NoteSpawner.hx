@@ -5,11 +5,7 @@ import underlying.rhythm.NoteVB.VirtualSustain;
 
 /**
  * This is where notes behave when interconnected to the note system.
- * Ambient note occlusion is now the AUTOMATIC overlap removal system:
- * groups are precomputed in the chart loader (same strumline, receptor
- * column, notetype, duration and speed-2 timing row) and read here in
- * bulk from the chart-lifetime block — see overlapCounts and
- * File.getNotesFromRange. No per-frame pixel estimation is left.
+ * TODO: Rework Ambient Note occlusion system to be better than ever.
  * @since Development
  */
 @:publicFields
@@ -41,37 +37,23 @@ class NoteSpawner {
 	var timeSpentOnItIncrement:Float = 0;
 
 	// ------------------------------------------------------------------
-	// Automatic overlap removal (the ambient-occlusion rework).
-	//
-	// Overlap is no longer ESTIMATED per frame from each note's current
-	// pixel row — under lag that estimate could be stale for a frame, and
-	// the combo/score/accuracy multipliers that ride on the sprite's
-	// notesInOne (opponent/botplay auto-hit and miss paths) fluctuated
-	// with it. It is now a precomputed chart property: the native loader
-	// groups notes by (strumline lane, 256-wide receptor column,
-	// notetype, duration, speed-2 timing row) and bakes each group's size
-	// into 4 bytes per note — one persistent block for the whole chart
-	// lifetime, read here in bulk once per pass.
+	// Overlap scale: precomputed inverse of (INITIAL_HEIGHT / VARIABLE_HEIGHT)
+	// so the per-note overlap check uses multiplication instead of division.
+	// Updated lazily when the window scale changes.
 	// ------------------------------------------------------------------
-	#if cpp
-	/** Pointer into the chart-lifetime overlap block, refetched each pass. */
-	var overlapCounts(default, null):cpp.Pointer<cpp.UInt32>;
-	/** Global note index that overlapCounts[0] corresponds to. */
-	var overlapBase:Int64;
-	#end
+	static var _overlapScaleInv:Float = 0;
+	static var _overlapScaleCachedInitH:Float = -1;
+	static var _overlapScaleCachedVarH:Float = -1;
 
-	/**
-	 * The note's EXACT overlap-group size: a plain array index into the
-	 * block captured this pass (cpp), falling back to the per-note extern
-	 * call. Never below 1 — a lone note is its own group.
-	 */
-	inline function overlapCountOf(idx:Int64):Int {
-		#if cpp
-		if (overlapCounts != null && idx >= overlapBase)
-			return overlapCounts[Int64.toInt(idx - overlapBase)];
-		#end
-		var c = File.getNoteOverlapCount(idx);
-		return c > 0 ? c : 1;
+	inline static function getOverlapScaleInv():Float {
+		var initH = Main.INITIAL_HEIGHT;
+		var varH = Main.VARIABLE_HEIGHT;
+		if (initH != _overlapScaleCachedInitH || varH != _overlapScaleCachedVarH) {
+			_overlapScaleInv = varH / initH;
+			_overlapScaleCachedInitH = initH;
+			_overlapScaleCachedVarH = varH;
+		}
+		return _overlapScaleInv;
 	}
 
 	function update(pos:Int64) {
@@ -110,27 +92,30 @@ class NoteSpawner {
 		// pos is already latency-corrected noteTime as Int64 from PlayField
 		// No conductor.offset adjustment needed
 
+		// === CROSS-FRAME OVERLAP STATE RESET ===
+		// The overlap-merge (fakeReceptorMap / ambientOccludeYPrev) is only
+		// meaningful WITHIN one pass — consecutive notes of the same lane at
+		// the same pixel row merging into one sprite. Kept across frames it
+		// becomes STALE GHOST STATE: with a FROZEN position (editor pause /
+		// silent editor clock) every note's Y equals its own last-frame Y,
+		// so each note "overlaps" ITS OWN previous-frame sprite and is merged
+		// away without ever being drawn — the frozen-editor notes-vanish bug
+		// (gameplay pause never re-processes frames, which is why it looked
+		// correct there). Clearing per pass makes the merge decision purely
+		// intra-pass; during normal playback nothing changes (Y moves between
+		// frames, so cross-frame merges never legitimately fired).
+		for (i in 0...parent.strumlines.length) {
+			var strumline = parent.strumlines[i];
+			strumline.clearOverlapState();
+		}
+
 		var i = (minBottom != -1 && bottom < minBottom) ? minBottom : bottom;
 		var scrollSpeed = parent.parent.scrollSpeed;
+		var noteSpr:VirtualNote = null;
 		var j:Int = 0;
 
-		// One bulk read per pass: a pointer into the chart-lifetime
-		// overlap block covering [i, top). The per-note lookups below are
-		// plain array indexes into it — zero per-note extern calls.
-		#if cpp
-		overlapCounts = File.getNotesFromRange(i, top);
-		overlapBase = i;
-		#end
-
-		// Open overlap classes of the CURRENT timing row: pruned the
-		// moment the pass's position-sorted stream advances to a new row,
-		// so it only ever holds the handful of classes sharing one
-		// instant. (The native precompute groups by the same class
-		// identity — receptor lane + column + notetype + duration +
-		// speed-2 timing row — so the sprite a note merges into and the
-		// combo count that sprite carries can never disagree.)
-		var openClasses:Array<{lane:Int, idx:Int, type:Int, dur:Int, spr:VirtualNote}> = [];
-		var passRow:Int64 = Int64.ofInt(-1);
+		// Precompute overlap scale inverse once for the entire loop
+		var overlapInv = getOverlapScaleInv();
 
 		while (i < top) {
 			var n = File.getNote(i);
@@ -141,38 +126,31 @@ class NoteSpawner {
 			// The lane is STORED on the note (v2 format) — clamped only
 			// against a stale value, never re-derived from the type.
 			var lane = NoteSystem.clampLane(n.lane, strumCount);
+			var strumline = parent.strumlines[lane];
+			var receptor = strumline.receptors[n.index];
+			var rec = receptor.note;
 
 			var n_position = n.position;
 
 			var diff = (MetaNote.metaNotePositionToSongTime(n_position - pos)) * scrollSpeed;
+			var newY = rec.y + Math.floor(diff);
 
-			var row = Int64.div(n_position, MetaNote.OVERLAP_ROW_TICKS);
-			if (row != passRow) {
-				// Rows never decrease (the stream is position-sorted):
-				// every open class belongs to a row the stream has left
-				// behind — drop them all at once.
-				passRow = row;
-				openClasses.resize(0);
-			}
+			var prevNote = strumline.getPrevNote(n.index);
 
-			// Does this note belong to one of this row's open classes?
-			var mergeTarget:VirtualNote = null;
-			for (openClass in openClasses) {
-				if (openClass.lane == lane && openClass.idx == n.index && openClass.type == n.type && openClass.dur == n.duration) {
-					mergeTarget = openClass.spr;
-					break;
-				}
-			}
+			receptor.ambientOccludeYCur = newY;
 
-			if (mergeTarget != null) {
-				mergeNoteIntoSprite(mergeTarget, i);
+			var shouldOverlap = noteSpr != null
+				&& shouldNotesOverlap(prevNote, n, noteSpr, rec, receptor.ambientOccludeYPrev, receptor.ambientOccludeYCur, overlapInv);
+
+			if (shouldOverlap) {
+				mergeNoteIntoSprite(noteSpr, i);
 			} else {
 				++j;
-				var spr = parent.drawNote(pos, n, diff, i, overlapCountOf(i));
-				if (spr != null)
-					openClasses.push({lane: lane, idx: n.index, type: n.type, dur: n.duration, spr: spr});
+				noteSpr = parent.drawNote(pos, n, diff, i);
 			}
 
+			strumline.setPrevNote(n.index, n);
+			receptor.ambientOccludeYPrev = receptor.ambientOccludeYCur;
 			++i;
 		}
 
@@ -420,11 +398,32 @@ class NoteSpawner {
 		}
 	}
 
+	/**
+	 * Overlap check — uses precomputed inverse scale (multiplication)
+	 * instead of division per-note.
+	 *
+	 * @param overlapInv  Precomputed VARIABLE_HEIGHT / INITIAL_HEIGHT
+	 */
+	inline function shouldNotesOverlap(prev:MetaNote, current:MetaNote, noteSpr:VirtualNote, receptor:Note, newY:Int, prevY:Int, overlapInv:Float):Bool {
+		if (noteSpr == null || prev == null)
+			return false;
+
+		var OVERLAP_PIXEL_THRESHOLD = 0;
+
+		// Multiplication (overlapInv) replaces division by (INITIAL_HEIGHT / VARIABLE_HEIGHT).
+		// Mathematically: floor(y / (IH/VH)) == floor(y * (VH/IH))
+		var pixelDiff = Math.abs(Math.floor(newY * overlapInv) - Math.floor(prevY * overlapInv));
+
+		return pixelDiff <= OVERLAP_PIXEL_THRESHOLD
+			&& prev.type == current.type
+			&& noteSpr.scale == receptor.scale
+			&& prev.duration == current.duration
+			&& prev.index == current.index;
+	}
+
 	inline function mergeNoteIntoSprite(noteSpr:VirtualNote, i:Int64) {
 		var alphaToAdd = File.getHitFlag(i) ? Note.defaultMissAlpha : Note.defaultAlpha;
 		noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + alphaToAdd, 256);
-		// No notesInOne++ here: the sprite's count is the exact
-		// precomputed group size, set at creation from the same block —
-		// the stale-one-frame merge tally is gone for good.
+		noteSpr.notesInOne++;
 	}
 }

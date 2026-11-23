@@ -11,6 +11,8 @@ import lime.ui.KeyCode;
 class Strumline {
 	var receptors(default, null):Array<Receptor>;
 
+	var fakeReceptorMap(default, null):Array<MetaNote>;
+
 	var x(default, set):Int;
 	var y(default, set):Int;
 	var offsetX(default, set):Int;
@@ -97,6 +99,7 @@ class Strumline {
 
 	function set_length(value:Int) {
 		receptors.resize(value);
+		fakeReceptorMap.resize(value);
 
 		for (i in 0...value) {
 			var rec = receptors[i];
@@ -119,6 +122,7 @@ class Strumline {
 
 	function new(x:Int, y:Int, noteskinHandle:NoteskinHandle, gap:Int, scale:Float, length:Int, parent:NoteSystem) {
 		receptors = [];
+		fakeReceptorMap = [];
 
 		this.parent = parent;
 
@@ -163,6 +167,14 @@ class Strumline {
 			if (keybind.length == 2)
 				keybindsTwo[i] = i < len ? keybind[1] : -1;
 		}
+	}
+
+	inline function getPrevNote(index:Int):MetaNote {
+		return fakeReceptorMap[index];
+	}
+
+	inline function setPrevNote(index:Int, note:MetaNote):Void {
+		fakeReceptorMap[index] = note;
 	}
 
 	function applyNoteskinProperties(handle:NoteskinHandle, mania:Int) {
@@ -308,6 +320,29 @@ class Strumline {
 			var rec = receptors[i];
 			if (rec != null) {
 				rec.resetState();
+			}
+		}
+	}
+
+	/**
+		Resets the overlap-merge state: the per-lane prev-note map
+		(fakeReceptorMap) and each receptor's ambient occlusion Y values.
+		This state is only meaningful WITHIN one processNotes pass (the
+		same-pixel-row chord merge); left over from a previous pass it makes
+		notes "overlap" ghosts at a frozen position, and after a seek it
+		compares against the OLD position's Y — both make windowed notes
+		vanish instead of rendering. Called at the start of every
+		processNotes pass so the state can never go stale.
+	**/
+	function clearOverlapState() {
+		for (i in 0...fakeReceptorMap.length) {
+			fakeReceptorMap[i] = null;
+		}
+		for (i in 0...length) {
+			var rec = receptors[i];
+			if (rec != null) {
+				rec.ambientOccludeYPrev = 0;
+				rec.ambientOccludeYCur = 0;
 			}
 		}
 	}
