@@ -66,6 +66,35 @@ HL_PRIM void HL_NAME(setEditorMode)(bool value) {
     core_setEditorMode(value);
 }
 
+// === Two-dimensional judgement system (N lane rows x M note-index bits) ===
+
+HL_PRIM bool HL_NAME(getJudgement2D)(int lane, int64_t index) {
+    return core_getJudgement2D(lane, index);
+}
+
+HL_PRIM void HL_NAME(setJudgement2D)(int lane, int64_t index, bool value) {
+    core_setJudgement2D(lane, index, value);
+}
+
+HL_PRIM void HL_NAME(registerJudgementRange)(int lane, int64_t fromIndex, int64_t toIndex, bool value) {
+    core_registerJudgementRange(lane, fromIndex, toIndex, value);
+}
+
+HL_PRIM void HL_NAME(clearJudgements)(_NO_ARG) {
+    core_clearJudgements();
+}
+
+// === getNotesFromRange (persistent result block + custom length) ===
+
+HL_PRIM int HL_NAME(getNotesFromRange)(int strumlineCount, int lane, int index,
+    int64_t fromIndex, int64_t toIndex) {
+    return core_getNotesFromRange(strumlineCount, lane, index, fromIndex, toIndex);
+}
+
+HL_PRIM int64_t HL_NAME(getRangeNoteAt)(int at) {
+    return core_getRangeNoteAt(at);
+}
+
 // ============================================================================
 // Haxe bindings
 // ============================================================================
@@ -83,3 +112,9 @@ DEFINE_PRIM(_VOID, setJudgement, _I64 _BOOL)
 DEFINE_PRIM(_BOOL, getHitFlag, _I64)
 DEFINE_PRIM(_VOID, setHitFlag, _I64 _BOOL)
 DEFINE_PRIM(_VOID, setEditorMode, _BOOL)
+DEFINE_PRIM(_BOOL, getJudgement2D, _I32 _I64)
+DEFINE_PRIM(_VOID, setJudgement2D, _I32 _I64 _BOOL)
+DEFINE_PRIM(_VOID, registerJudgementRange, _I32 _I64 _I64 _BOOL)
+DEFINE_PRIM(_VOID, clearJudgements, _NO_ARG)
+DEFINE_PRIM(_I32,  getNotesFromRange, _I32 _I32 _I32 _I64 _I64)
+DEFINE_PRIM(_I64,  getRangeNoteAt, _I32)

@@ -173,7 +173,7 @@ class NoteVB {
 }
 
 /**
- * This object is the POD of the note element. 64-byte class.
+ * This object is the POD of the note element. 56-byte class.
  * @since Development
 **/
 #if cpp
@@ -183,6 +183,9 @@ class NoteVB {
 @:struct
 class VirtualNote {
 	// the amount of same notes within a line, combined (8 bytes)
+	// note: this is a RENDER-side visual count now — the ambient occlusion
+	// folding in NoteSystem.renderVirtualNotes() maintains it; it never
+	// touches note callbacks or lua functions anymore.
 	var notesInOne:Int64;
 
 	// the initial alpha of the note (8 bytes)
@@ -200,15 +203,6 @@ class VirtualNote {
 	// the global index branching down to the note (8 bytes)
 	// note: this had to be implemented as a result of a flaw that had to be fixed in the new judgement implementation on the way.
 	var globalIndex:Int64;
-
-	// the global index of the LAST note the ambient occlusion pass merged
-	// into this visual note (8 bytes) — with `globalIndex` (the head) it
-	// forms the judgement range [globalIndex .. judgementRangeEnd] the new
-	// two-dimensional judgement system registers when the visual note is
-	// hit or missed, so every merged note resolves with its head instead
-	// of lingering on the strumline as an un-judged "not pressed yet"
-	// ghost. Equals `globalIndex` when nothing merged in.
-	var judgementRangeEnd:Int64;
 
 	// the note diff relative to strum time (4 bytes)
 	var diff:Int;

@@ -206,7 +206,7 @@ class Field {
 		return (type == 0 ? opponent : player);
 	}
 
-	inline function hitNote(note:MetaNote, timing:Float, notesInOne:Int64) {
+	inline function hitNote(note:MetaNote, timing:Float) {
 		sing(note.index, (note.type == 0 ? opponent : player), false, note.duration > 80 && timing < parent.hitbox * 0.5);
 
 		// defaults to when you want to implement your own custom camera logic
@@ -218,7 +218,7 @@ class Field {
 		targetCamera.y = defaultCameraYpos[note.type];
 	}
 
-	inline function missNote(note:MetaNote, notesInOne:Int64) {
+	inline function missNote(note:MetaNote) {
 		var char = charFromNoteType(note.type);
 		sing(note.index, char, true, false);
 	}

@@ -2434,6 +2434,187 @@ public:
 		store.setHit(index, value);
 	}
 
+	// ================================================================
+	// Two-dimensional judgement system (N lane rows x M note-index bits)
+	// and getNotesFromRange's persistent result block.
+	//
+	// The judgement state is a 1-bit-per-cell array: one row per
+	// strumline (the note's stored lane, clamped by the caller the same
+	// way NoteSystem.clampLane does) and one bit per global chart note
+	// index. Because each lane owns its row, registering an index RANGE
+	// on one lane can never mark another lane's interleaved notes as
+	// judged. All storage is persistent for the reader's lifetime and
+	// grown geometrically — never reallocated per call — with its own
+	// length variables (lane count / words per lane), so RAM stays at
+	// laneCount * ceil(chartLength / 64) * 8 bytes.
+	// ================================================================
+
+	// Packed judgement bits, lane-major: word index
+	// lane * judgementWordsPerLane + (noteIndex >> 6), bit (noteIndex & 63).
+	std::vector<uint64_t> judgementWords;
+	int32_t judgementLaneCount = 0;
+	int32_t judgementWordsPerLane = 0;
+
+	// getNotesFromRange result block: persistent, reused across calls and
+	// grown geometrically, tracking its own custom length variable below
+	// (the number of valid entries from the LAST call). The host reads
+	// entries back through getRangeNoteAt() — zero allocation per query.
+	std::vector<int64_t> rangeBlock;
+	int32_t rangeBlockLength = 0;
+
+	static inline uint64_t judgementWordMask(int32_t fromBit, int32_t toBit) {
+		const int32_t count = toBit - fromBit + 1;
+		if (count >= 64) return ~0ULL;
+		return ((1ULL << count) - 1ULL) << fromBit;
+	}
+
+	// Grows the lane dimension, preserving existing bits. Never shrinks.
+	void judgementEnsureLanes(int32_t laneNeeded) {
+		if (laneNeeded < judgementLaneCount) return;
+		int32_t newLanes = judgementLaneCount > 0 ? judgementLaneCount : (laneNeeded + 1);
+		while (newLanes <= laneNeeded) newLanes *= 2; // geometric growth
+		std::vector<uint64_t> grown((size_t)newLanes * (size_t)judgementWordsPerLane, 0ULL);
+		for (int32_t l = 0; l < judgementLaneCount; ++l) {
+			if (judgementWordsPerLane > 0)
+				std::memcpy(&grown[(size_t)l * (size_t)judgementWordsPerLane],
+					&judgementWords[(size_t)l * (size_t)judgementWordsPerLane],
+					(size_t)judgementWordsPerLane * sizeof(uint64_t));
+		}
+		judgementWords.swap(grown);
+		judgementLaneCount = newLanes;
+	}
+
+	// Grows the per-lane word count, preserving existing bits. Never shrinks.
+	void judgementEnsureBits(int64_t indexNeeded) {
+		const int64_t wordsNeeded = (indexNeeded >> 6) + 1;
+		if (wordsNeeded <= (int64_t)judgementWordsPerLane) return;
+		int32_t newWords = judgementWordsPerLane > 0 ? judgementWordsPerLane : (int32_t)wordsNeeded;
+		while (newWords < wordsNeeded) newWords *= 2; // geometric growth
+		std::vector<uint64_t> grown((size_t)judgementLaneCount * (size_t)newWords, 0ULL);
+		for (int32_t l = 0; l < judgementLaneCount; ++l) {
+			if (judgementWordsPerLane > 0)
+				std::memcpy(&grown[(size_t)l * (size_t)newWords],
+					&judgementWords[(size_t)l * (size_t)judgementWordsPerLane],
+					(size_t)judgementWordsPerLane * sizeof(uint64_t));
+		}
+		judgementWords.swap(grown);
+		judgementWordsPerLane = newWords;
+	}
+
+	bool getJudgement2D(int32_t lane, int64_t index) {
+		if (lane < 0 || lane >= judgementLaneCount || index < 0) return false;
+		const int64_t word = index >> 6;
+		if (word >= (int64_t)judgementWordsPerLane) return false;
+		return (judgementWords[(size_t)lane * (size_t)judgementWordsPerLane + (size_t)word]
+			>> (index & 63)) & 1ULL;
+	}
+
+	void setJudgement2D(int32_t lane, int64_t index, bool value) {
+		if (lane < 0 || index < 0) return;
+		if (lane >= judgementLaneCount) {
+			if (!value) return; // the row is all zeros already
+			judgementEnsureLanes(lane);
+		}
+		const int64_t word = index >> 6;
+		if (word >= (int64_t)judgementWordsPerLane) {
+			if (!value) return; // the cell is zero already
+			judgementEnsureBits(index);
+		}
+		uint64_t& w = judgementWords[(size_t)lane * (size_t)judgementWordsPerLane + (size_t)word];
+		const uint64_t mask = 1ULL << (index & 63);
+		if (value) w |= mask;
+		else w &= ~mask;
+	}
+
+	// Registers a RANGE of global note indexes on one lane's row with
+	// word-aligned fills (head word, full middle words, tail word). Same
+	// span semantics as the single-bit setter; out-of-range clears are
+	// no-ops, out-of-range sets grow the array first.
+	void registerJudgementRange(int32_t lane, int64_t fromIndex, int64_t toIndex, bool value) {
+		if (lane < 0 || fromIndex > toIndex || toIndex < 0) return;
+		if (fromIndex < 0) fromIndex = 0;
+		if (lane >= judgementLaneCount) {
+			if (!value) return; // the row is all zeros already
+			judgementEnsureLanes(lane);
+		}
+		if (value) {
+			if ((toIndex >> 6) >= (int64_t)judgementWordsPerLane)
+				judgementEnsureBits(toIndex);
+		} else {
+			if ((fromIndex >> 6) >= (int64_t)judgementWordsPerLane) return; // whole span already clear
+			const int64_t capBits = (int64_t)judgementWordsPerLane * 64;
+			if (toIndex >= capBits) toIndex = capBits - 1; // clear only what exists
+		}
+		const int64_t firstWord = fromIndex >> 6;
+		const int64_t lastWord = toIndex >> 6;
+		uint64_t* row = &judgementWords[(size_t)lane * (size_t)judgementWordsPerLane];
+		if (firstWord == lastWord) {
+			const uint64_t mask = judgementWordMask((int32_t)(fromIndex & 63), (int32_t)(toIndex & 63));
+			if (value) row[firstWord] |= mask;
+			else row[firstWord] &= ~mask;
+		} else {
+			const uint64_t headMask = judgementWordMask((int32_t)(fromIndex & 63), 63);
+			const uint64_t tailMask = judgementWordMask(0, (int32_t)(toIndex & 63));
+			if (value) {
+				row[firstWord] |= headMask;
+				for (int64_t w = firstWord + 1; w < lastWord; ++w) row[w] = ~0ULL;
+				row[lastWord] |= tailMask;
+			} else {
+				row[firstWord] &= ~headMask;
+				for (int64_t w = firstWord + 1; w < lastWord; ++w) row[w] = 0ULL;
+				row[lastWord] &= ~tailMask;
+			}
+		}
+	}
+
+	// Clears every judgement bit (fresh judgement state for the chart).
+	void clearJudgements() {
+		std::fill(judgementWords.begin(), judgementWords.end(), 0ULL);
+	}
+
+	// Collects the global indexes inside [fromIndex .. toIndex] whose note
+	// belongs to (lane, index) — the exact member list of an ambient-
+	// occluded visual note (its head plus every chart note that folds into
+	// its sprite). `strumlineCount` clamps each note's stored lane the same
+	// way the Haxe side does, so stale 6-bit lane values route correctly.
+	// Results land in the persistent range block (see above); the return
+	// value is the block's custom length.
+	int32_t getNotesFromRange(int32_t strumlineCount, int32_t lane, int32_t index,
+		int64_t fromIndex, int64_t toIndex) {
+		rangeBlockLength = 0;
+		const int64_t len = (int64_t)store.size();
+		if (len <= 0 || lane < 0 || index < 0) return 0;
+		std::lock_guard<std::mutex> lk(dataMutex);
+		if (fromIndex < 0) fromIndex = 0;
+		if (toIndex >= len) toIndex = len - 1;
+		for (int64_t i = fromIndex; i <= toIndex; ++i) {
+			const uint32_t last4 = store.getLast4(i);
+			uint32_t effLane = (last4 >> 26) & 0x3F;
+			if (strumlineCount <= 1) {
+				effLane = 0;
+			} else if ((int32_t)effLane >= strumlineCount) {
+				effLane = (uint32_t)(strumlineCount - 1);
+			}
+			if ((int32_t)effLane == lane && (int32_t)((last4 >> 8) & 0x3FF) == index) {
+				if ((size_t)rangeBlockLength >= rangeBlock.size()) {
+					// Geometric growth of the persistent block — the common
+					// dense-spam group reuses yesterday's capacity untouched.
+					size_t newCap = rangeBlock.size() > 0 ? rangeBlock.size() * 2 : 16;
+					rangeBlock.resize(newCap);
+				}
+				rangeBlock[(size_t)rangeBlockLength++] = i;
+			}
+		}
+		return rangeBlockLength;
+	}
+
+	// Reads entry `at` of the persistent range block filled by the last
+	// getNotesFromRange call. Out-of-range reads return -1.
+	int64_t getRangeNoteAt(int32_t at) {
+		if (at < 0 || at >= rangeBlockLength) return -1;
+		return rangeBlock[(size_t)at];
+	}
+
 	bool save() {
 		std::lock_guard<std::mutex> lk(dataMutex);
 		if (filename.empty() || !store.writeTo(filename.c_str())) return false;
@@ -2522,4 +2703,39 @@ ShardedNoteStore* core_testStore() { return gReader ? gReader->testStore() : nul
 void core_setHitFlag(int64_t globalIndex, bool value) {
 	if (!gReader) return;
 	gReader->setHitFlag(globalIndex, value);
+}
+
+// === Two-dimensional judgement system (N lane rows x M note-index bits) ===
+
+bool core_getJudgement2D(int32_t lane, int64_t index) {
+	if (!gReader) return false;
+	return gReader->getJudgement2D(lane, index);
+}
+
+void core_setJudgement2D(int32_t lane, int64_t index, bool value) {
+	if (!gReader) return;
+	gReader->setJudgement2D(lane, index, value);
+}
+
+void core_registerJudgementRange(int32_t lane, int64_t fromIndex, int64_t toIndex, bool value) {
+	if (!gReader) return;
+	gReader->registerJudgementRange(lane, fromIndex, toIndex, value);
+}
+
+void core_clearJudgements() {
+	if (!gReader) return;
+	gReader->clearJudgements();
+}
+
+// === getNotesFromRange (persistent result block + custom length) ===
+
+int32_t core_getNotesFromRange(int32_t strumlineCount, int32_t lane, int32_t index,
+	int64_t fromIndex, int64_t toIndex) {
+	if (!gReader) return 0;
+	return gReader->getNotesFromRange(strumlineCount, lane, index, fromIndex, toIndex);
+}
+
+int64_t core_getRangeNoteAt(int32_t at) {
+	if (!gReader) return -1;
+	return gReader->getRangeNoteAt(at);
 }

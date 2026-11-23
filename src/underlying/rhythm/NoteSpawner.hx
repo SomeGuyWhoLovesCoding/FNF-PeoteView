@@ -1,11 +1,13 @@
 package underlying.rhythm;
 
-import underlying.rhythm.NoteVB.VirtualNote;
-import underlying.rhythm.NoteVB.VirtualSustain;
-
 /**
  * This is where notes behave when interconnected to the note system.
- * TODO: Rework Ambient Note occlusion system to be better than ever.
+ * The behavior pass COUNTS EVERY NOTE: processNotes draws — and therefore
+ * judges — each note in the window on its own timing. No overlap folding
+ * happens here anymore; the ambient note occlusion lives in the render
+ * block now (NoteSystem.renderVirtualNotes / renderVirtualSustains),
+ * which is decoupled from this pass, so combo counting stays 100%
+ * accurate while the pixels still fold.
  * @since Development
  */
 @:publicFields
@@ -35,26 +37,6 @@ class NoteSpawner {
 
 	var timeSpentOnIt:Float = 0;
 	var timeSpentOnItIncrement:Float = 0;
-
-	// ------------------------------------------------------------------
-	// Overlap scale: precomputed inverse of (INITIAL_HEIGHT / VARIABLE_HEIGHT)
-	// so the per-note overlap check uses multiplication instead of division.
-	// Updated lazily when the window scale changes.
-	// ------------------------------------------------------------------
-	static var _overlapScaleInv:Float = 0;
-	static var _overlapScaleCachedInitH:Float = -1;
-	static var _overlapScaleCachedVarH:Float = -1;
-
-	inline static function getOverlapScaleInv():Float {
-		var initH = Main.INITIAL_HEIGHT;
-		var varH = Main.VARIABLE_HEIGHT;
-		if (initH != _overlapScaleCachedInitH || varH != _overlapScaleCachedVarH) {
-			_overlapScaleInv = varH / initH;
-			_overlapScaleCachedInitH = initH;
-			_overlapScaleCachedVarH = varH;
-		}
-		return _overlapScaleInv;
-	}
 
 	function update(pos:Int64) {
 		_lastbottom = bottom;
@@ -92,77 +74,24 @@ class NoteSpawner {
 		// pos is already latency-corrected noteTime as Int64 from PlayField
 		// No conductor.offset adjustment needed
 
-		// === CROSS-FRAME OVERLAP STATE RESET ===
-		// The overlap-merge (fakeReceptorMap / ambientOccludeYPrev) is only
-		// meaningful WITHIN one pass — consecutive notes of the same lane at
-		// the same pixel row merging into one sprite. Kept across frames it
-		// becomes STALE GHOST STATE: with a FROZEN position (editor pause /
-		// silent editor clock) every note's Y equals its own last-frame Y,
-		// so each note "overlaps" ITS OWN previous-frame sprite and is merged
-		// away without ever being drawn — the frozen-editor notes-vanish bug
-		// (gameplay pause never re-processes frames, which is why it looked
-		// correct there). Clearing per pass makes the merge decision purely
-		// intra-pass; during normal playback nothing changes (Y moves between
-		// frames, so cross-frame merges never legitimately fired).
-		for (i in 0...parent.strumlines.length) {
-			var strumline = parent.strumlines[i];
-			strumline.clearOverlapState();
-		}
+		// === COUNT EVERY NOTE ===
+		// Every note in the window is drawn — and therefore judged — on its
+		// own timing here. The ambient-occlusion overlap folding no longer
+		// happens in this behavior pass: it moved to the render block
+		// (NoteSystem.renderVirtualNotes / renderVirtualSustains), which is
+		// decoupled from note behavior. Each note is counted, judged and
+		// scored individually (100% accurate combo counting); only the
+		// PIXELS fold, purely visually, at render time.
 
 		var i = (minBottom != -1 && bottom < minBottom) ? minBottom : bottom;
 		var scrollSpeed = parent.parent.scrollSpeed;
 
-		// Precompute overlap scale inverse once for the entire loop
-		var overlapInv = getOverlapScaleInv();
-
 		while (i < top) {
-			var n = File.getNote(i);
-
-			var strumCount = parent.strumlines.length;
-			if (strumCount == 0)
+			if (parent.strumlines.length == 0)
 				break; // no receptors available; nothing can be drawn
-			// The lane is STORED on the note (v2 format) — clamped only
-			// against a stale value, never re-derived from the type.
-			var lane = NoteSystem.clampLane(n.lane, strumCount);
-			var strumline = parent.strumlines[lane];
-			var receptor = strumline.receptors[n.index];
-			var rec = receptor.note;
-
-			var n_position = n.position;
-
-			var diff = (MetaNote.metaNotePositionToSongTime(n_position - pos)) * scrollSpeed;
-			var newY = rec.y + Math.floor(diff);
-
-			var prevNote = strumline.getPrevNote(n.index);
-
-			receptor.ambientOccludeYCur = newY;
-
-			// Merge target is THIS column's ambient-occlusion group head —
-			// never the globally last drawn sprite, which can belong to a
-			// chord partner on another column of the same lane.
-			var headSpr = receptor.ambientOccludeHead;
-			var shouldOverlap = headSpr != null
-				&& shouldNotesOverlap(prevNote, n, headSpr, rec, receptor.ambientOccludeYPrev, receptor.ambientOccludeYCur, overlapInv);
-
-			if (shouldOverlap) {
-				mergeNoteIntoSprite(headSpr, i, lane);
-			} else {
-				headSpr = parent.drawNote(pos, n, diff, i);
-				receptor.ambientOccludeHead = headSpr;
-				if (headSpr != null) {
-					// New group head for this column. drawNote() has just
-					// read the sprite's carried-over merge state
-					// (notesInOne / judgementRangeEnd from the previous
-					// pass — see NotePool.getNote), so only NOW restart
-					// the per-pass accumulation; the merges below build
-					// the group back up within this pass.
-					headSpr.notesInOne = 1;
-					headSpr.judgementRangeEnd = i;
-				}
-			}
-
-			strumline.setPrevNote(n.index, n);
-			receptor.ambientOccludeYPrev = receptor.ambientOccludeYCur;
+			var n = File.getNote(i);
+			var diff = (MetaNote.metaNotePositionToSongTime(n.position - pos)) * scrollSpeed;
+			parent.drawNote(pos, n, diff, i);
 			++i;
 		}
 
@@ -266,7 +195,7 @@ class NoteSpawner {
 				if (File.getNote(mid).position < target)
 				lo = mid + 1;
 				else
-					hi = mid;
+				hi = mid;
 			}
 			return lo;
 		}
@@ -276,9 +205,9 @@ class NoteSpawner {
 			while (lo < hi) {
 				var mid = (lo + hi) >> 1;
 				if (File.getNote(mid).position <= target)
-					lo = mid + 1;
+				lo = mid + 1;
 				else
-					hi = mid;
+				hi = mid;
 			}
 			return lo;
 		}
@@ -298,158 +227,5 @@ class NoteSpawner {
 		curTopNote = top < len ? File.getNote(top) : null;
 
 		parent.resetStrumlines();
-	}
-
-	function renderNotes(pos:Int64) {
-		var notes = parent.virtualNoteBuffer;
-		renderVirtualNotes(notes, pos);
-		renderVirtualSustains(notes);
-	}
-
-	function renderVirtualNotes(notes:NoteVB, pos:Int64) {
-		var downScroll = parent.parent.downScroll;
-		var virtualNotes = notes.notes;
-		for (i in 0...virtualNotes.length) {
-			var lane = virtualNotes[i];
-			var strumline = parent.strumlines[i];
-			var maxReceptor = strumline.receptors.length;
-			for (j in 0...Std.int(Math.min(lane.length, maxReceptor))) {
-				var index = lane[j];
-				var length = notes.noteLength[i][j];
-				if (length == 0)
-					continue;
-				var receptor = strumline.receptors[j];
-				var strumReceptor = receptor.note;
-
-				// Lane-constant values hoisted from inner loop
-				var mania = strumline.length;
-				var baseScrollDir = strumReceptor.scrollDirection;
-				if (downScroll)
-					baseScrollDir += 180;
-
-				var k = 0;
-				while (k < length) {
-					var virtualNote:VirtualNote = index[k];
-					k++;
-					if (virtualNote == null)
-						continue;
-
-					var handle = NoteSystem.typeToHandle[virtualNote.ref.type];
-					var note = parent.notePool.acquireNote();
-
-					if (note.handle != handle || note.texUnit != handle.texUnit || note.texSlot != handle.texSlot)
-						note.setHandle(handle);
-					note.x = virtualNote.Sx;
-					note.y = virtualNote.Sy;
-					note.scale = virtualNote.scale;
-					note.initialAlpha = virtualNote.initialAlpha;
-					note.addedAlpha = virtualNote.addedAlpha;
-
-					note.mania_for_clipruntimehelper = mania;
-					note.diff = -virtualNote.diff;
-					note.scrollDirection = baseScrollDir;
-
-					note.changeID(j);
-					note.toNote();
-
-					var noteToHitIdx = receptor.noteToHit_index;
-					receptor.noteToHit_sprite = noteToHitIdx == virtualNote.globalIndex ? note : null;
-				}
-			}
-		}
-	}
-
-	function renderVirtualSustains(notes:NoteVB) {
-		var downScroll = parent.parent.downScroll;
-		var virtualSustains = notes.sustains;
-		for (i in 0...virtualSustains.length) {
-			var lane = virtualSustains[i];
-			var strumline = parent.strumlines[i];
-			var maxReceptor = strumline.receptors.length;
-			for (j in 0...Std.int(Math.min(lane.length, maxReceptor))) {
-				var index = lane[j];
-				var length = notes.sustainLength[i][j];
-				var receptor = strumline.receptors[j];
-				var strumReceptor = receptor.note;
-
-				// Lane-constant values hoisted from inner loop
-				var mania = strumline.length;
-				var baseScrollDir = strumReceptor.scrollDirection;
-				var baseRot = baseScrollDir;
-				if (downScroll) {
-					baseRot += 180;
-					baseScrollDir += 180;
-				}
-
-				for (k in 0...length) {
-					var virtualSustain:VirtualSustain = index[k];
-					if (virtualSustain == null)
-						continue;
-
-					var handle = NoteSystem.typeToHandle[virtualSustain.ref.ref.type];
-					var sustain = parent.notePool.acquireSustain();
-
-					if (sustain.handle != handle || sustain.texUnit != handle.texUnit || sustain.texSlot != handle.texSlot)
-						sustain.setHandle(handle);
-					sustain.x = virtualSustain.Sx;
-					sustain.y = virtualSustain.Sy;
-					sustain.w = virtualSustain.w;
-					sustain.speed = virtualSustain.speed;
-					sustain.scale = virtualSustain.scale;
-
-					sustain.mania_for_clipruntimehelper = mania;
-					sustain.length = virtualSustain.length;
-					sustain.c.aF = virtualSustain.alpha;
-					sustain.c.luminanceF = virtualSustain.alpha;
-					sustain.diff = -virtualSustain.diff;
-					sustain.scrollDirection = baseScrollDir;
-					sustain.r = baseRot;
-					sustain.changeID(j);
-				}
-			}
-		}
-	}
-
-	/**
-	 * Overlap check — uses precomputed inverse scale (multiplication)
-	 * instead of division per-note.
-	 *
-	 * @param overlapInv  Precomputed VARIABLE_HEIGHT / INITIAL_HEIGHT
-	 */
-	inline function shouldNotesOverlap(prev:MetaNote, current:MetaNote, noteSpr:VirtualNote, receptor:Note, newY:Int, prevY:Int, overlapInv:Float):Bool {
-		if (noteSpr == null || prev == null)
-			return false;
-
-		var OVERLAP_PIXEL_THRESHOLD = 0;
-
-		// Multiplication (overlapInv) replaces division by (INITIAL_HEIGHT / VARIABLE_HEIGHT).
-		// Mathematically: floor(y / (IH/VH)) == floor(y * (VH/IH))
-		var pixelDiff = Math.abs(Math.floor(newY * overlapInv) - Math.floor(prevY * overlapInv));
-
-		return pixelDiff <= OVERLAP_PIXEL_THRESHOLD
-			&& prev.type == current.type
-			&& noteSpr.scale == receptor.scale
-			&& prev.duration == current.duration
-			&& prev.index == current.index;
-	}
-
-	inline function mergeNoteIntoSprite(noteSpr:VirtualNote, i:Int64, lane:Int) {
-		var alphaToAdd = File.getHitFlag(i) ? Note.defaultMissAlpha : Note.defaultAlpha;
-		noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + alphaToAdd, 256);
-		noteSpr.notesInOne++;
-		// The visual note now covers every global index up to this member —
-		// extend the judgement range its head registers when hit or missed.
-		noteSpr.judgementRangeEnd = i;
-
-		// Late-joining member of an already-judged group: the head was hit
-		// or missed before this note ever merged in (spawn-frame hits,
-		// seek edges). Inherit the head's judgement NOW so no merged note
-		// can stay pending forever as an un-judged "not pressed yet"
-		// ghost — the flaw that showed up after dense spam sections.
-		var headIdx = noteSpr.globalIndex;
-		if (parent.judgement.isJudged(lane, headIdx) && !parent.judgement.isJudged(lane, i)) {
-			File.setHitFlag(i, File.getHitFlag(headIdx));
-			parent.judgement.setJudged(lane, i);
-		}
 	}
 }

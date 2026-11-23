@@ -107,18 +107,6 @@ class NoteSystem {
 	var notePool(default, null):NotePool;
 	var virtualNoteBuffer(default, null):NoteVB;
 
-	/**
-	 * The two-dimensional judgement system — a 1-bit [lane][index] array
-	 * with range registration (see JudgementSystem). Replaces the flat
-	 * per-note File judgement flag: an ambient-occluded visual note (a
-	 * sprite with several chart notes merged into it) registers its whole
-	 * global-index span on its lane's row when it is hit or missed, so
-	 * every note the sprite represents resolves with its head and none
-	 * can scroll past un-judged, lingering on the strumline as a fake
-	 * "not pressed yet" overlap part.
-	**/
-	var judgement(default, null):JudgementSystem;
-
 	/** Per-lane movement LUTs: movementLUTs[strumline][receptor_index] */
 	var movementLUTs(default, null):Array<Array<NoteMovementLUT>>;
 
@@ -148,11 +136,6 @@ class NoteSystem {
 		}
 
 		virtualNoteBuffer = new NoteVB(strumlines.length, 1 << 8);
-
-		// Judgement state for this playthrough — one 1-bit [lane][index]
-		// row per strumline, sized to the loaded chart. Must exist before
-		// the first update() pass below (processNotes reads it per note).
-		judgement = new JudgementSystem(strumlines.length, Int64.toInt(File.getLength()));
 
 		// Build movement LUTs — one per (strumline, receptor lane).
 		// Replaces per-note Math.cos/Math.sin with precomputed offset lookups.
@@ -184,12 +167,6 @@ class NoteSystem {
 	function update(pos:Int64) {
 		movingBackward = pos < _stableLastPos;
 		_stableLastPos = pos;
-
-		// The chart can grow under the editor (addNote mid-session) — keep
-		// the judgement array's index capacity ahead of the chart length.
-		// No-op in gameplay, where the chart is frozen.
-		if (judgement != null)
-			judgement.ensureCapacity(strumlines.length, Int64.toInt(File.getLength()));
 
 		virtualNoteBuffer.clear();
 
@@ -235,7 +212,8 @@ class NoteSystem {
 		var t = parent.playfieldEditorMode ? parent.songPosition : (parent.startedCountdown ? parent.noteTime : parent.songPosition);
 		refreshRendering(t);
 		notePool.beginFrame();
-		noteSpawner.renderNotes(pos);
+		renderVirtualNotes(pos);
+		renderVirtualSustains(pos);
 		notePool.endFrame();
 		// Pooled elements had their @set("properties") fields modified in-place.
 		// Flush all pending CPU→GPU changes so the new positions/alphas/etc.
@@ -246,6 +224,188 @@ class NoteSystem {
 		try
 			sustainsBuf.update()
 		catch (e) {}
+	}
+
+	// ==================================================================
+	// RENDER BLOCK + AMBIENT NOTE OCCLUSION
+	//
+	// Note behavior (processNotes) and rendering are decoupled: the
+	// behavior pass counts and judges EVERY note on its own timing, and
+	// the ambient occlusion — the overlap folding that merges notes
+	// rendering on the same pixel row into one sprite — lives HERE, in
+	// this render block, purely visually. Consecutive VirtualNotes of
+	// one (lane, index) column on the same linear scroll row
+	// (Math.floor of the note's scroll diff — the exact criterion the
+	// old spawn-pass merge used, independent of the LUT and of Std.int
+	// truncation, so PAST notes fold as tightly as upcoming ones) with
+	// the same type and duration fold into the first one's sprite: the
+	// head accumulates their alpha as occlusion shading (a missed member
+	// dims with its own miss alpha) and every folded note skips its own
+	// pooled element — the sprite-count win the AO look was built for.
+	// Gameplay is untouched by the folding: each folded note still
+	// judges, hits, misses and counts on its own timing, so combo
+	// counting stays 100% accurate.
+	// ==================================================================
+	function renderVirtualNotes(pos:Int64) {
+		var downScroll = parent.downScroll;
+		var scrollSpeed = _cachedScrollSpeed;
+		var virtualNotes = virtualNoteBuffer.notes;
+		for (i in 0...virtualNotes.length) {
+			var lane = virtualNotes[i];
+			var strumline = strumlines[i];
+			var maxReceptor = strumline.receptors.length;
+			for (j in 0...Std.int(Math.min(lane.length, maxReceptor))) {
+				var index = lane[j];
+				var length = virtualNoteBuffer.noteLength[i][j];
+				if (length == 0)
+					continue;
+				var receptor = strumline.receptors[j];
+				var strumReceptor = receptor.note;
+
+				// Lane-constant values hoisted from inner loop
+				var mania = strumline.length;
+				var baseScrollDir = strumReceptor.scrollDirection;
+				if (downScroll)
+					baseScrollDir += 180;
+
+				// AO group state for this column's walk (slot order is
+				// chart order, so consecutive slots are consecutive notes
+				// of the column — the chain the folding follows).
+				var headVirtual:VirtualNote = null; // last rendered note of this column
+				var headNote:Note = null; // its pooled render note
+				var headRow:Float = 0; // its linear scroll row
+				var noteToHitIdx = receptor.noteToHit_index;
+				var hitSprite:Note = null;
+
+				var k = 0;
+				while (k < length) {
+					var virtualNote:VirtualNote = index[k];
+					k++;
+					if (virtualNote == null)
+						continue;
+
+					var row = Math.floor(MetaNote.metaNotePositionToSongTime(virtualNote.ref.position - pos) * scrollSpeed);
+
+					// === AMBIENT OCCLUSION (render-side folding) ===
+					if (headVirtual != null
+						&& row == headRow
+						&& virtualNote.ref.type == headVirtual.ref.type
+						&& virtualNote.ref.duration == headVirtual.ref.duration) {
+						// Fold into the head sprite: accumulate the
+						// occlusion shading and skip this note's own
+						// pooled element entirely.
+						headVirtual.addedAlpha = Math.min(headVirtual.addedAlpha + virtualNote.initialAlpha, 256);
+						headVirtual.notesInOne++;
+						if (headNote != null)
+							headNote.addedAlpha = headVirtual.addedAlpha;
+						// A folded note can still be the receptor's
+						// noteToHit (the earliest un-judged note) — its
+						// visual IS the head sprite.
+						if (noteToHitIdx == virtualNote.globalIndex)
+							hitSprite = headNote;
+						continue;
+					}
+
+					headVirtual = virtualNote;
+					headRow = row;
+					var handle = typeToHandle[virtualNote.ref.type];
+					var note = notePool.acquireNote();
+
+					if (note.handle != handle || note.texUnit != handle.texUnit || note.texSlot != handle.texSlot)
+						note.setHandle(handle);
+					note.x = virtualNote.Sx;
+					note.y = virtualNote.Sy;
+					note.scale = virtualNote.scale;
+					note.initialAlpha = virtualNote.initialAlpha;
+					note.addedAlpha = virtualNote.addedAlpha;
+
+					note.mania_for_clipruntimehelper = mania;
+					note.diff = -virtualNote.diff;
+					note.scrollDirection = baseScrollDir;
+
+					note.changeID(j);
+					note.toNote();
+
+					headNote = note;
+					if (noteToHitIdx == virtualNote.globalIndex)
+						hitSprite = note;
+				}
+				receptor.noteToHit_sprite = hitSprite;
+			}
+		}
+	}
+
+	function renderVirtualSustains(pos:Int64) {
+		var downScroll = parent.downScroll;
+		var scrollSpeed = _cachedScrollSpeed;
+		var virtualSustains = virtualNoteBuffer.sustains;
+		for (i in 0...virtualSustains.length) {
+			var lane = virtualSustains[i];
+			var strumline = strumlines[i];
+			var maxReceptor = strumline.receptors.length;
+			for (j in 0...Std.int(Math.min(lane.length, maxReceptor))) {
+				var index = lane[j];
+				var length = virtualNoteBuffer.sustainLength[i][j];
+				var receptor = strumline.receptors[j];
+				var strumReceptor = receptor.note;
+
+				// Lane-constant values hoisted from inner loop
+				var mania = strumline.length;
+				var baseScrollDir = strumReceptor.scrollDirection;
+				var baseRot = baseScrollDir;
+				if (downScroll) {
+					baseRot += 180;
+					baseScrollDir += 180;
+				}
+
+				// AO group state for this column's walk.
+				var headSustain:VirtualSustain = null; // last rendered sustain of this column
+				var headRow:Float = 0; // its linear scroll row
+
+				for (k in 0...length) {
+					var virtualSustain:VirtualSustain = index[k];
+					if (virtualSustain == null)
+						continue;
+
+					var row = Math.floor(MetaNote.metaNotePositionToSongTime(virtualSustain.ref.ref.position - pos) * scrollSpeed);
+
+					// === AMBIENT OCCLUSION (render-side folding) ===
+					// Identical trails: same scroll row, same type and
+					// duration render the exact same sustain — fold them
+					// into the one already drawn. (The behavior pass
+					// counts and judges each of these notes separately;
+					// only the duplicated pixels fold away.)
+					if (headSustain != null
+						&& row == headRow
+						&& virtualSustain.ref.ref.type == headSustain.ref.ref.type
+						&& virtualSustain.ref.ref.duration == headSustain.ref.ref.duration) {
+						continue;
+					}
+
+					headSustain = virtualSustain;
+					headRow = row;
+					var handle = typeToHandle[virtualSustain.ref.ref.type];
+					var sustain = notePool.acquireSustain();
+
+					if (sustain.handle != handle || sustain.texUnit != handle.texUnit || sustain.texSlot != handle.texSlot)
+						sustain.setHandle(handle);
+					sustain.x = virtualSustain.Sx;
+					sustain.y = virtualSustain.Sy;
+					sustain.w = virtualSustain.w;
+					sustain.speed = virtualSustain.speed;
+					sustain.scale = virtualSustain.scale;
+
+					sustain.mania_for_clipruntimehelper = mania;
+					sustain.length = virtualSustain.length;
+					sustain.c.aF = virtualSustain.alpha;
+					sustain.c.luminanceF = virtualSustain.alpha;
+					sustain.diff = -virtualSustain.diff;
+					sustain.scrollDirection = baseScrollDir;
+					sustain.r = baseRot;
+					sustain.changeID(j);
+				}
+			}
+		}
 	}
 
 	/**
@@ -421,7 +581,7 @@ class NoteSystem {
 			// far side here (at most the anchor note can be far-future).
 			if (n.position < late || n.position > early)
 				return;
-			if (n.index == index && clampLane(n.lane, laneCount) == lane && !judgement.isJudged(lane, i)) {
+			if (n.index == index && clampLane(n.lane, laneCount) == lane && !File.getJudgement2D(lane, i)) {
 				// Among hittable notes keep the earliest (smallest position) so a
 				// jack progresses in order; once `found`, only a smaller index can
 				// replace it.
@@ -451,43 +611,6 @@ class NoteSystem {
 		}
 
 		return bestId;
-	}
-
-	/**
-	 * Player-press registration for one visual note hit. Judges the
-	 * pressed head AND every ambient-occluded note merged into its
-	 * sprite — the whole global-index range the sprite covers on the
-	 * two-dimensional judgement array — as hit, so one press resolves
-	 * the entire visual group and no fake overlap part stays pending
-	 * as "not pressed yet" once the visual note is gone.
-	 * @param noteIndex The head's global chart index (from
-	 *                  findPlayerHitNote — the earliest un-judged note).
-	 * @param lane      The strumline row (the note's clamped stored lane).
-	 * @param index     The column (receptor index) of the note.
-	 * @return The size of the visual group (head + merged notes) — the
-	 *         notesInOne the press is scored with.
-	**/
-	function registerPlayerHit(noteIndex:Int64, lane:Int, index:Int):Int64 {
-		var pool = notePool;
-		var groupSize:Int64 = 1;
-		var tail = noteIndex;
-
-		if (pool != null) {
-			var slot = Int64.toInt(noteIndex);
-			var sprite:VirtualNote = slot < pool.virtualNoteSlots.length ? pool.virtualNoteSlots[slot] : null;
-			if (sprite != null) {
-				// The merge state the last processNotes pass left on the
-				// head's sprite: the group's size and range tail.
-				groupSize = sprite.notesInOne;
-				tail = sprite.judgementRangeEnd;
-			}
-			// No sprite bound (the head was never drawn, or it despawned
-			// between the pass and the press): register the head alone —
-			// getNotesFromRange resolves whatever the span still holds.
-		}
-
-		judgement.judgeRangeHit(lane, index, noteIndex, tail);
-		return groupSize;
 	}
 
 	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64):VirtualNote {
@@ -564,8 +687,9 @@ class NoteSystem {
 			leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
 
 		// Judgement-gated state reads — from the two-dimensional judgement
-		// system now (the [lane][index] bit), not the flat File flag.
-		var judged:Bool = judgement.isJudged(lane, _id);
+		// system inside the chart file extern (the native [lane][index]
+		// bit), not the flat per-note flag.
+		var judged:Bool = File.getJudgement2D(lane, _id);
 		var isHit:Bool = judged && !File.getHitFlag(_id); // judged + flag=false → hit
 		var isMissed:Bool = judged && File.getHitFlag(_id); // judged + flag=true → missed
 		var isResolved:Bool = receptor.sustainResolved;
@@ -634,20 +758,18 @@ class NoteSystem {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
 					File.setHitFlag(_id, true); // chosen to miss
 					isMissed = true;
-					// Miss the WHOLE ambient-occlusion group with its head —
-					// same range registration as the hit path, missed
-					// flavor, so the miss scoring's notesInOne matches the
-					// number of notes actually resolved and no merged note
-					// stays pending past the hit window.
-					judgement.judgeRangeMiss(lane, index, _id, noteSpr.judgementRangeEnd);
+					// Judged on the two-dimensional [lane][index] bit —
+					// one note, one judgement, one combo entry: every note
+					// of the chart counts on its own timing.
+					File.setJudgement2D(lane, _id, true);
 
 					var type = note.type;
 
 					if (@:privateAccess parent.onNoteMiss.__listeners.length != 0)
-						parent.onNoteMiss.dispatch(note, noteSpr.notesInOne);
+						parent.onNoteMiss.dispatch(note);
 					if (parent.field != null)
-						parent.field.missNote(note, noteSpr.notesInOne);
-					parent.missNote(note, noteSpr.notesInOne, _id);
+						parent.field.missNote(note);
+					parent.missNote(note, _id);
 
 					if (sustainExists && !isResolved) {
 						sustainSpr.alpha = Sustain.defaultMissAlpha;
@@ -672,16 +794,13 @@ class NoteSystem {
 				// opponent hit: judged as hit (missed=false)
 				File.setHitFlag(_id, false);
 				isHit = true;
-				// Hit the WHOLE ambient-occlusion group with its head: every
-				// chart note merged into this sprite (the global-index range
-				// it covers) resolves in one range registration. This is the
-				// botplay path too — botplay routes the player strumline
-				// through the opponent branch, and before this registration
-				// the merged notes never passed through drawNote at all, so
-				// after a dense spam part they piled up un-judged and the
-				// engine mistook the fake overlap parts for notes still
-				// waiting to be pressed.
-				judgement.judgeRangeHit(lane, index, _id, noteSpr.judgementRangeEnd);
+				// Judged on the two-dimensional [lane][index] bit — one
+				// note, one judgement, one combo entry. This is the botplay
+				// path too (botplay routes the player strumline through the
+				// opponent branch): every note of a dense spam burst hits
+				// and counts on its own timing, 100% accurate, while the
+				// RENDER block folds their pixels into one visual note.
+				File.setJudgement2D(lane, _id, true);
 
 				if (!rec.confirmed())
 					rec.confirm();
@@ -713,10 +832,10 @@ class NoteSystem {
 				}
 
 				if (@:privateAccess parent.onNoteHit.__listeners.length != 0)
-					parent.onNoteHit.dispatch(note, 0, noteSpr.notesInOne);
+					parent.onNoteHit.dispatch(note, 0);
 				if (parent.field != null)
-					parent.field.hitNote(note, 0, noteSpr.notesInOne);
-				parent.hitNote(note, 0, noteSpr.notesInOne, _id);
+					parent.field.hitNote(note, 0);
+				parent.hitNote(note, 0, _id);
 
 				// Tiny sustains never register an ending in the sustain pass
 				// below (see the 80ms gate), so finish them right here: after

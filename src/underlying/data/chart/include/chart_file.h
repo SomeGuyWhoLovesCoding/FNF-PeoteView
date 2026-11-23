@@ -30,4 +30,28 @@ bool getHitFlag(int64_t globalIndex);
 void setHitFlag(int64_t globalIndex, bool value);
 void setEditorMode(bool value);
 //void destroyAllJudgements(void);
+
+// === Two-dimensional judgement system (N lane rows x M note-index bits) ===
+// 1 bit per (lane, global note index), packed 64 indexes per word, persistent
+// for the chart's lifetime and grown geometrically (never per call).
+//   lane:  strumline row — the note's stored lane, clamped by the caller
+//   index: global chart note index
+bool getJudgement2D(int32_t lane, int64_t index);
+void setJudgement2D(int32_t lane, int64_t index, bool value);
+// Bulk set/clear of an index RANGE on one lane's row (word-aligned fills).
+// Other lanes' notes interleaved inside the span keep their own bits.
+void registerJudgementRange(int32_t lane, int64_t fromIndex, int64_t toIndex, bool value);
+// Clears every judgement bit (fresh judgement state).
+void clearJudgements(void);
+
+// === getNotesFromRange (persistent result block + custom length) ===
+// Collects the global indexes in [fromIndex .. toIndex] whose note belongs
+// to (lane, index) — the exact member list of an ambient-occluded visual
+// note. Results are written into a PERSISTENT memory block (reused across
+// calls, grown geometrically) that tracks its own custom length variable;
+// the return value is that length and getRangeNoteAt() reads entries back
+// with zero allocation. strumlineCount clamps stored lanes like the engine.
+int32_t getNotesFromRange(int32_t strumlineCount, int32_t lane, int32_t index,
+    int64_t fromIndex, int64_t toIndex);
+int64_t getRangeNoteAt(int32_t at);
 #endif /* CHART_FILE_H */

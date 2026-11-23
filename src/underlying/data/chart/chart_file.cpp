@@ -60,3 +60,32 @@ void setHitFlag(int64_t globalIndex, bool value) {
 void setEditorMode(bool value) {
     core_setEditorMode(value);
 }
+
+// === Two-dimensional judgement system (N lane rows x M note-index bits) ===
+
+bool getJudgement2D(int32_t lane, int64_t index) {
+    return core_getJudgement2D(lane, index);
+}
+
+void setJudgement2D(int32_t lane, int64_t index, bool value) {
+    core_setJudgement2D(lane, index, value);
+}
+
+void registerJudgementRange(int32_t lane, int64_t fromIndex, int64_t toIndex, bool value) {
+    core_registerJudgementRange(lane, fromIndex, toIndex, value);
+}
+
+void clearJudgements(void) {
+    core_clearJudgements();
+}
+
+// === getNotesFromRange (persistent result block + custom length) ===
+
+int32_t getNotesFromRange(int32_t strumlineCount, int32_t lane, int32_t index,
+    int64_t fromIndex, int64_t toIndex) {
+    return core_getNotesFromRange(strumlineCount, lane, index, fromIndex, toIndex);
+}
+
+int64_t getRangeNoteAt(int32_t at) {
+    return core_getRangeNoteAt(at);
+}

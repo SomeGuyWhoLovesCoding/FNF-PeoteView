@@ -255,8 +255,8 @@ class PlayField {
 	var onResumeSong:Event<Header->Void>;
 	var onStopSong:Event<Header->Void>;
 	var onDeath:Event<Header->Int->Void>;
-	var onNoteHit:Event<MetaNote->Float->Int64->Void>;
-	var onNoteMiss:Event<MetaNote->Int64->Void>;
+	var onNoteHit:Event<MetaNote->Float->Void>;
+	var onNoteMiss:Event<MetaNote->Void>;
 	var onSustainComplete:Event<MetaNote->Void>;
 	var onSustainRelease:Event<MetaNote->Void>;
 	var onKeyPress:Event<KeyCode->Void>;
@@ -356,8 +356,8 @@ class PlayField {
 		onStopSong = new Event<Header->Void>();
 		onDeath = new Event<Header->Int->Void>();
 
-		onNoteHit = new Event<MetaNote->Float->Int64->Void>();
-		onNoteMiss = new Event<MetaNote->Int64->Void>();
+		onNoteHit = new Event<MetaNote->Float->Void>();
+		onNoteMiss = new Event<MetaNote->Void>();
 		onSustainComplete = new Event<MetaNote->Void>();
 		onSustainRelease = new Event<MetaNote->Void>();
 		onKeyPress = new Event<KeyCode->Void>();
@@ -824,11 +824,14 @@ class PlayField {
 		}
 	}
 
-	function hitNote(note:MetaNote, timing:Float, notesInOne:Int64, _i:Int64) {
+	function hitNote(note:MetaNote, timing:Float, _i:Int64) {
 		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
 		// Lane (stored on the note) goes LAST in the Lua arg lists, after
 		// the type — old scripts that destructure a prefix keep working.
-		if (luaCallStop('hitNote', notePos, note.index, note.duration, note.type, timing, notesInOne, note.lane)) {
+		// One note, one judgement: the ambient-occlusion overlap folding is
+		// render-only, so every note fires this on its own timing and the
+		// combo counts each of them — no notesInOne multiplicity anymore.
+		if (luaCallStop('hitNote', notePos, note.index, note.duration, note.type, timing, note.lane)) {
 			return;
 		}
 
@@ -858,9 +861,9 @@ class PlayField {
 			return;
 		}
 
-		combo += notesInOne;
+		combo += 1;
 
-		health += healthGain[lane] * Tools.int64ToFloat(notesInOne);
+		health += healthGain[lane];
 		if (health > 1) {
 			health = 1;
 		}
@@ -873,7 +876,6 @@ class PlayField {
 		}
 
 		var absTiming = Math.abs(timing);
-		var notesInOne_accuracy = notesInOne * 10000;
 
 		if (absTiming >= ratingJudgementList[ratingJudgementList.length - 1][0]) {
 			var worstJudgement = ratingJudgementList[ratingJudgementList.length - 1];
@@ -883,9 +885,9 @@ class PlayField {
 			if (hud != null && preferences.ratingPopup)
 				hud.respondWithRatingID(judgementID);
 			playJudgementHitsound(judgementID);
-			accuracy.increment(judgementAcc, false, notesInOne * 10000);
-			score += judgementScore * notesInOne;
-			postHitNote(notePos, note, timing, notesInOne);
+			accuracy.increment(judgementAcc, false, 10000);
+			score += judgementScore;
+			postHitNote(notePos, note, timing);
 			return;
 		}
 
@@ -898,9 +900,9 @@ class PlayField {
 				if (hud != null && preferences.ratingPopup)
 					hud.respondWithRatingID(judgementID);
 				playJudgementHitsound(judgementID);
-				accuracy.increment(judgementAcc, false, notesInOne * 10000);
-				score += judgementScore * notesInOne;
-				postHitNote(notePos, note, timing, notesInOne);
+				accuracy.increment(judgementAcc, false, 10000);
+				score += judgementScore;
+				postHitNote(notePos, note, timing);
 				return;
 			}
 		}
@@ -916,14 +918,14 @@ class PlayField {
 			Main.current.playHitsound();
 	}
 
-	function postHitNote(notePos:Float, note:MetaNote, timing:Float, notesInOne:Int64) {
-		luaCall('hitNotePost', notePos, note.index, note.duration, note.type, timing, notesInOne, note.lane);
-		luaCall('postHitNote', notePos, note.index, note.duration, note.type, timing, notesInOne, note.lane); // alternative syntax
+	function postHitNote(notePos:Float, note:MetaNote, timing:Float) {
+		luaCall('hitNotePost', notePos, note.index, note.duration, note.type, timing, note.lane);
+		luaCall('postHitNote', notePos, note.index, note.duration, note.type, timing, note.lane); // alternative syntax
 	}
 
-	function missNote(note:MetaNote, notesInOne:Int64, _i:Int64) {
+	function missNote(note:MetaNote, _i:Int64) {
 		var notePos = MetaNote.metaNotePositionToSongTime(note.position);
-		if (luaCallStop('missNote', notePos, note.index, note.duration, note.type, notesInOne, note.lane)) {
+		if (luaCallStop('missNote', notePos, note.index, note.duration, note.type, note.lane)) {
 			return;
 		}
 
@@ -940,18 +942,18 @@ class PlayField {
 		if (index > 0 && index <= Mixer.trackCount)
 			Mixer.changeTrackVolume(index, 0);
 
-		health -= healthLoss[lane] * Tools.int64ToFloat(notesInOne);
+		health -= healthLoss[lane];
 
 		combo = 0;
-		score -= 50 * notesInOne;
-		misses += notesInOne;
-		accuracy.increment(10000, true, notesInOne * 10000);
+		score -= 50;
+		misses += 1;
+		accuracy.increment(10000, true, 10000);
 
 		if (health < 0 && !disposed)
 			onDeath.dispatch(Chart.header, lane);
 
-		luaCall('missNotePost', notePos, note.index, note.duration, note.type, notesInOne, note.lane);
-		luaCall('postMissNote', notePos, note.index, note.duration, note.type, notesInOne, note.lane); // alternative syntax
+		luaCall('missNotePost', notePos, note.index, note.duration, note.type, note.lane);
+		luaCall('postMissNote', notePos, note.index, note.duration, note.type, note.lane); // alternative syntax
 	}
 
 	function completeSustain(note:MetaNote, _i:Int64) {
