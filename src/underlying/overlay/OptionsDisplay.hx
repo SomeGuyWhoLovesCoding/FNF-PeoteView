@@ -93,8 +93,8 @@ class OptionsDisplay {
                                 graphicsDisplay.enter();
                         case AUDIO:
                                 audioDisplay.enter();
-                        case CONTROLS:
-                                controlsDisplay.enter();
+                        default:
+                                // ControlsDisplay does not handle enter for toggling; it uses TAB.
                 }
         }
 

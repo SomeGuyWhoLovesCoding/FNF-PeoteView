@@ -252,9 +252,7 @@ class Strumline {
 			rec.noteToHit = null;
 			rec.noteToHit_index = 0;
 		} else {
-			// Don't play an empty press animation when the input is slightly early
-			// for a nearby short note. This does not change note judgement.
-			if (!parent.isEarlyShortNote(this, index) && !note.pressed()) {
+			if (!note.pressed()) {
 				note.press();
 			}
 		}
