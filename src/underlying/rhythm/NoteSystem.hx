@@ -346,6 +346,47 @@ class NoteSystem {
 		return dynamicThreshold;
 	}
 
+	/**
+		True when the input is just early for a nearby short note. This only
+		suppresses the empty receptor press animation; judgement is unchanged.
+	**/
+	function isEarlyShortNote(strumline:Strumline, index:Int, extraEarlyMs:Float = 50.0):Bool {
+		var spawner = noteSpawner;
+		if (spawner == null)
+			return false;
+		var lane = strumlines.indexOf(strumline);
+		if (lane < 0)
+			return false;
+
+		var laneCount = strumlines.length;
+		var pos = MetaNote.floatToMetaNotePosition(parent.songPosition);
+		var normalEarly = Int64.add(pos, MetaNote.floatToMetaNotePosition(_cachedHitbox));
+		var extendedEarly = Int64.add(pos, MetaNote.floatToMetaNotePosition(_cachedHitbox + extraEarlyMs));
+
+		// Binary-search the first note at or after the current playhead.
+		var lo = spawner.bottom;
+		var hi = spawner.top;
+		while (lo < hi) {
+			var mid:Int64 = Int64.add(lo, Int64.div(Int64.sub(hi, lo), 2));
+			if (File.getNote(mid).position < pos)
+				lo = Int64.add(mid, 1);
+			else
+				hi = mid;
+		}
+
+		var i = lo;
+		while (i < spawner.top) {
+			var note = File.getNote(i);
+			if (note.position > extendedEarly)
+				break;
+			if (note.position > normalEarly && note.duration <= 20 && note.index == index
+				&& clampLane(note.lane, laneCount) == lane && !File.getJudgement(i))
+				return true;
+			i = Int64.add(i, 1);
+		}
+		return false;
+	}
+
 	function findPlayerHitNote(strumline:Strumline, index:Int):Int64 {
 		var spawner = noteSpawner;
 		if (spawner == null)
@@ -712,13 +753,12 @@ class NoteSystem {
 	}
 
 	var _cachedScrollSpeed:Float = 0;
-	var _cachedHitbox:Float = 200;
+	var _cachedHitbox:Float = 160;
 
 	function setScrollSpeed(value:Float) {
 		noteSpawner.spawnDist = MetaNote.floatToMetaNotePosition(1600 / value);
 		noteSpawner.despawnDist = MetaNote.floatToMetaNotePosition(360 / Math.min(Math.max(value, 0.0001), 1.0));
 		_cachedScrollSpeed = value;
-		_cachedHitbox = 200;
 		rebuildMovementLUTs();
 		return value;
 	}

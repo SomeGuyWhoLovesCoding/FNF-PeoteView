@@ -18,6 +18,7 @@ class FreeplayAlphabet {
 	var host:AlphabetScrollHost;
 	var display(default, null):CustomDisplay;
 	var _currentDeltaTime:Float = 0.0;
+	var alphaMultiplier:Float = 1.0;
 	var isDisposed:Bool = false;
 
 	static var ALPHABET_CHARACTER_LIMIT = 26; // This is the final limit.
@@ -296,7 +297,7 @@ class FreeplayAlphabet {
 			positionCharSprite(spr, char, x, k);
 
 			// Use host's alphaLerp for fade in/out
-			var alpha = isInvalidCharacter ? 0.0 : calcItemAlpha(k) * host.alphaLerp;
+			var alpha = isInvalidCharacter ? 0.0 : calcItemAlpha(k) * host.alphaLerp * alphaMultiplier;
 			spr.color.aF = alpha;
 			spr.color.luminanceF = disabled ? alpha * 0.25 : alpha;
 
