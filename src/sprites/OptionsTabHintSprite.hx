@@ -40,5 +40,31 @@ class OptionsTabHintSprite implements Element {
 
 	var OPTIONS = {texRepeatX: false, texRepeatY: false, blend: true};
 
+	/**
+		Wires a program up to the hint texture, in the same shape as the
+		noteskin editor's GridBackgroundSprite.init / UISprite.init: the color
+		formula multiplies the sampled texel by the element color, so the menu
+		can fade/dim the hint through `c`.
+	**/
+	static function init(program:CustomProgram, name:String, texture:Texture) {
+		// creates a texture-layer named "name"
+		program.setTexture(texture, name, true);
+
+		if (Main.current.upscale) {
+			program.injectIntoFragmentShader(Shaders.UPSCALE_FRAGMENT_SHADER);
+			program.setColorFormula('
+				iconPixel(${name}_ID, vTexCoord, vec2(clipSizeX, 0.0), vec2(clipSizeY, 0.0)) * c
+			');
+		} else {
+			program.injectIntoFragmentShader('
+				vec4 getTexColor(int textureID, vec4 c)
+				{
+					return getTextureColor(textureID, vTexCoord) * c;
+				}
+			');
+			program.setColorFormula('getTexColor(${name}_ID, c)');
+		}
+	}
+
 	function new() {}
 }

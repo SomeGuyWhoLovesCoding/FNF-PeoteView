@@ -247,8 +247,13 @@ class ControlsDisplay extends OptionsSubDisplay {
 			if (keyCode == BIND_KEY || keyCode == KeyCode.ESCAPE)
 				return;
 
-			// Use the configured UI directions, not hard-coded arrow keycodes.
+			// Use the configured UI binds, not hard-coded keycodes. The accept
+			// key is what toggles mania binding on/off (see enter()), so it must
+			// never register as a mania keybind — otherwise the very ENTER that
+			// opened the listen would bind itself to the first slot.
 			var ui = SaveData.state.controls.ui;
+			if (keyCode == ui.accept)
+				return;
 			var keybindsArr = maniaKeybindArray(curManiaNum);
 			if (keyCode == ui.left) {
 				curManiaNum--;

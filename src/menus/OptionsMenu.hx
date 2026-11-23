@@ -109,28 +109,21 @@ class OptionsMenu extends MenuInput {
                 }
                 var textureData = new TextureData(width, height, TextureFormat.RGBA);
                 textureData.bytes = pixels;
+                // Same manual-texture flow as the noteskin editor's grid texture: a
+                // power-of-two texture with no eager GL binding — the texture binds to
+                // the GL context lazily when its program is added to the display.
                 var texture = new Texture(width, height, null, {
                         format: TextureFormat.RGBA,
-                        powerOfTwo: false,
+                        powerOfTwo: true,
                         smoothExpand: false,
                         smoothShrink: false
                 });
-                #if !android
-                if (Main.current != null && Main.current.peoteView != null && Main.current.peoteView.gl != null)
-                        @:privateAccess texture.setNewGLContext(Main.current.peoteView.gl);
-                #end
                 texture.setData(textureData);
                 TextureSystem.pool.set(TAB_HINT_TEXTURE_NAME, texture);
 
                 tabHintBuf = new Buffer<OptionsTabHintSprite>(1);
                 tabHintProg = new CustomProgram(tabHintBuf);
-                tabHintProg.setTexture(texture, TAB_HINT_TEXTURE_NAME, true);
-                tabHintProg.injectIntoFragmentShader('
-                        vec4 getOptionsTabColor(int textureID, vec4 c) {
-                                return getTextureColor(textureID, vTexCoord) * c;
-                        }
-                ');
-                tabHintProg.setColorFormula('getOptionsTabColor(${TAB_HINT_TEXTURE_NAME}_ID, c)');
+                OptionsTabHintSprite.init(tabHintProg, TAB_HINT_TEXTURE_NAME, texture);
                 tabHintSprite = new OptionsTabHintSprite();
                 tabHintSprite.x = Main.INITIAL_WIDTH - TAB_HINT_WIDTH - TAB_HINT_MARGIN;
                 tabHintSprite.y = TAB_HINT_MARGIN;
