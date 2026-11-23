@@ -11,6 +11,14 @@ class AlphabetScrollHost {
 	var curSelectedTarget:Float = 0.0;
 	var alphaLerp:Float = 0.0;
 
+	/**
+		Extra multiplier applied to every row's alpha on top of `alphaLerp`.
+		Used to dim the whole list (e.g. the controls list goes half-transparent
+		while the player edits mania keybinds, making room for the mania input
+		readout).
+	**/
+	var alphaMultiplier:Float = 1.0;
+
 	function alphabetListLength():Int {
 		return 0;
 	}

@@ -252,7 +252,12 @@ class Strumline {
 			rec.noteToHit = null;
 			rec.noteToHit_index = 0;
 		} else {
-			if (!note.pressed()) {
+			// Ghost-tap guard: when the next unjudged note on this lane is only
+			// slightly ahead (beyond the hit window but within its grace margin),
+			// the press was just too early for that note — don't flash the press
+			// animation, the receptor stays idle so it can't read as if the
+			// approaching note consumed the input.
+			if (!parent.isEarlyPress(this, index) && !note.pressed()) {
 				note.press();
 			}
 		}
