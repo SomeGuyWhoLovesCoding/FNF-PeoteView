@@ -459,6 +459,17 @@ class PlayField {
 
 			songPosition = timeForRestartingBackwardTime;
 
+			// The restart branch forces startedCountdown false above to skip
+			// the 4-beat countdown display — but every song-clock gate keys
+			// off the same flag: update() only runs Mixer.update (the sole
+			// driver of songPosition), computes noteTime, and feeds the note
+			// system / conductor while startedCountdown is true. startSong
+			// starts the audio without ever flipping it, so after a
+			// backwards seek the music played on while the note system never
+			// updated. The countdown is over by definition here — the song
+			// is already running — so flip the flag back on.
+			startedCountdown = true;
+
 			luaCall('postTimeChange', timeForRestartingBackwardTime, Chart.header);
 
 			timeForRestartingBackwardTime = 0;
