@@ -15,7 +15,8 @@ import handler.MenuInput;
 
         The only navigation hint left is the "tab" sprite pinned 5 pixels in
         from the top-right corner of the screen — TAB switches categories, and
-        so does clicking the invisible area around the sprite.
+        so does clicking the invisible area around the sprite (LEFT = next,
+        RIGHT = previous, wrapping around at the ends).
         (It replaces the old bottom navigation-hint text and the top-right
         description text.)
         @since Development
@@ -31,14 +32,16 @@ class OptionsMenu extends MenuInput {
         // --- The "tab" hint sprite ---
         // A pixel-art key cap pinned 5 pixels in from the top-right corner of
         // the options screen. It reads "tab", and TAB is the key that switches
-        // categories. The texture is 15x7 pixels of art rendered at four times
-        // that size (60x28) — the nearest-neighbor filtering keeps the pixels
-        // crisp — and an invisible, padded click area around it switches to
-        // the next category like the TAB key does.
+        // categories. The texture is 15x7 pixels of art rendered at eight
+        // times that size (120x56) — the nearest-neighbor filtering keeps the
+        // pixels crisp — and an invisible, padded click area around it
+        // switches categories like the TAB key does: LEFT for the next
+        // category, RIGHT for the previous one, both wrapping around at the
+        // ends like the keyboard navigation.
         static inline var TAB_HINT_WIDTH = 15;
         static inline var TAB_HINT_HEIGHT = 7;
         static inline var TAB_HINT_MARGIN = 5;
-        static inline var TAB_HINT_SCALE = 4;
+        static inline var TAB_HINT_SCALE = 8;
         static inline var TAB_HINT_CLICK_PADDING = 10;
         static inline var TAB_HINT_TEXTURE_NAME:String = "optionsTabHintPixelTex";
         static var tabHintBuf(default, null):Buffer<OptionsTabHintSprite>;
@@ -315,8 +318,10 @@ class OptionsMenu extends MenuInput {
 
         /**
                 Switches to the next (dir = 1) / previous (dir = -1) options
-                category and resets the option cursor. Used by TAB (the top-right
-                "tab" hint) and the legacy CTRL+LEFT/RIGHT binds.
+                category — wrapping around at both ends (last → first and
+                first → last) — and resets the option cursor. Used by TAB /
+                SHIFT+TAB (the top-right "tab" hint and its click area) and
+                the legacy CTRL+LEFT/RIGHT binds.
         **/
         function switchCategory(dir:Int) {
                 optionsNav.setTo(0);
@@ -391,13 +396,17 @@ class OptionsMenu extends MenuInput {
                         return false;
 
                 // The invisible, padded click area around the top-right "tab"
-                // hint does what the TAB key does: switch to the next category.
-                // It is checked before routing to the category displays — the
-                // scrollable lists consume every left click for dragging — and
-                // carries the same ownership guard as the TAB key: while a
-                // keybinding listen or mania binding is active, the controls
-                // display owns TAB instead.
-                if (button == LEFT && !optionsDisplay.closed && tabHintSprite != null) {
+                // hint does what the TAB key does: LEFT switches to the next
+                // category and RIGHT switches back to the previous one, both
+                // wrapping around at the ends (last → first / first → last)
+                // just like TAB / SHIFT+TAB always did. It is checked before
+                // routing to the category displays — the scrollable lists
+                // consume every left click for dragging, and the controls
+                // category treats right clicks as close — and carries the
+                // same ownership guard as the TAB key: while a keybinding
+                // listen or mania binding is active, the controls display
+                // owns TAB instead.
+                if ((button == LEFT || button == RIGHT) && !optionsDisplay.closed && tabHintSprite != null) {
                         var cd = optionsDisplay.controlsDisplay;
                         if (cd == null || cd.closed || (!cd.binding && !cd.bindingMania)) {
                                 // The mouse gives window pixels; the display may be
@@ -407,7 +416,7 @@ class OptionsMenu extends MenuInput {
                                 var pad = TAB_HINT_CLICK_PADDING;
                                 if (gx >= tabHintSprite.x - pad && gx <= tabHintSprite.x + tabHintSprite.w + pad
                                         && gy >= tabHintSprite.y - pad && gy <= tabHintSprite.y + tabHintSprite.h + pad) {
-                                        switchCategory(1);
+                                        switchCategory(button == RIGHT ? -1 : 1);
                                         return true;
                                 }
                         }
