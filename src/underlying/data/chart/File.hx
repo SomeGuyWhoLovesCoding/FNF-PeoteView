@@ -50,6 +50,28 @@ extern class File {
 	@:native("getHitFlag") static function getHitFlag(globalIndex:Int64):Bool;
 	@:native("setHitFlag") static function setHitFlag(globalIndex:Int64, value:Bool):Void;
 	@:native("setEditorMode") static function setEditorMode(value:Bool):Void;
+
+	/**
+	 * The note's precomputed overlap-group size — the 4 extra bytes per
+	 * chart note (runtime-only; the on-disk format is unchanged). 1 = the
+	 * note stands alone; otherwise the number of notes its merged sprite
+	 * represents (same strumline, receptor column, notetype, duration and
+	 * quantized speed-2 timing row — see MetaNote.OVERLAP_ROW_TICKS).
+	 * Every member of a group carries the same value, so any note of an
+	 * overlapping sprite traces to the same predictable combo number.
+	 */
+	@:native("getNoteOverlapCount") static function getNoteOverlapCount(globalIndex:Int64):Int;
+
+	/**
+	 * Bulk accessor for the note spawner: a pointer into the persistent
+	 * per-note overlap-count block, covering notes [startIndex, endIndex)
+	 * — entries are uint32, 4 bytes per note. The block is one allocation
+	 * that lives for the whole chart lifetime and is freed on chart
+	 * destroy; the pointer stays valid until the next chart mutation
+	 * (addNote/removeNote rebuild the counts), so callers refetch it per
+	 * pass. Null when the range is empty or the block is unavailable.
+	 */
+	@:native("getNotesFromRange") static function getNotesFromRange(startIndex:Int64, endIndex:Int64):cpp.Pointer<cpp.UInt32>;
 }
 #elseif hl
 class File {
@@ -125,5 +147,13 @@ class File {
 
 	@:hlNative("chart_file", "setEditorMode")
 	public static function setEditorMode(value:Bool):Void {};
+
+	// Per-note overlap count (see the cpp target's docs). The bulk block
+	// accessor getNotesFromRange is cpp-only — it returns a raw pointer
+	// into the chart-lifetime block; the hl side reads counts per note.
+	@:hlNative("chart_file", "getNoteOverlapCount")
+	public static function getNoteOverlapCount(globalIndex:hl.I64):Int {
+		return 1;
+	}
 }
 #end

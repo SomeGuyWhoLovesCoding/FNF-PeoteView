@@ -66,6 +66,13 @@ HL_PRIM void HL_NAME(setEditorMode)(bool value) {
     core_setEditorMode(value);
 }
 
+// Per-note overlap count (see chart_file.h). The bulk block accessor
+// (getNotesFromRange, a raw pointer into the chart-lifetime block) is
+// cpp-only: the hl side reads counts one note at a time.
+HL_PRIM int HL_NAME(getNoteOverlapCount)(int64_t globalIndex) {
+    return core_getNoteOverlapCount(globalIndex);
+}
+
 // ============================================================================
 // Haxe bindings
 // ============================================================================
@@ -83,3 +90,4 @@ DEFINE_PRIM(_VOID, setJudgement, _I64 _BOOL)
 DEFINE_PRIM(_BOOL, getHitFlag, _I64)
 DEFINE_PRIM(_VOID, setHitFlag, _I64 _BOOL)
 DEFINE_PRIM(_VOID, setEditorMode, _BOOL)
+DEFINE_PRIM(_I32,  getNoteOverlapCount, _I64)

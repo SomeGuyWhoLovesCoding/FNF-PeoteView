@@ -60,3 +60,11 @@ void setHitFlag(int64_t globalIndex, bool value) {
 void setEditorMode(bool value) {
     core_setEditorMode(value);
 }
+
+int getNoteOverlapCount(int64_t globalIndex) {
+    return core_getNoteOverlapCount(globalIndex);
+}
+
+uint32_t* getNotesFromRange(int64_t startIndex, int64_t endIndex) {
+    return core_getNotesFromRange(startIndex, endIndex);
+}

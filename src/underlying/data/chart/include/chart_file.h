@@ -29,5 +29,17 @@ void setJudgement(int64_t globalIndex, bool value);
 bool getHitFlag(int64_t globalIndex);
 void setHitFlag(int64_t globalIndex, bool value);
 void setEditorMode(bool value);
+// The note's precomputed overlap-group size — the 4 extra bytes per chart
+// note (runtime-only; the on-disk format is unchanged). 1 = stands alone,
+// otherwise the number of notes its merged sprite represents (same
+// strumline, receptor column, notetype, duration and quantized speed-2
+// timing row). Every group member carries the same value.
+int getNoteOverlapCount(int64_t globalIndex);
+// Bulk accessor for the note spawner: a pointer into the persistent
+// per-note overlap-count block, covering notes [startIndex, endIndex).
+// The block is allocated for the whole chart lifetime and freed on chart
+// destroy; entries are uint32 (4 bytes per note). The pointer is valid
+// until the next chart mutation (addNote/removeNote) — refetch per pass.
+uint32_t* getNotesFromRange(int64_t startIndex, int64_t endIndex);
 //void destroyAllJudgements(void);
 #endif /* CHART_FILE_H */

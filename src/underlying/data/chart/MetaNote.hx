@@ -87,6 +87,19 @@ abstract MetaNote(MetaNoteImpl) from MetaNoteImpl to MetaNoteImpl {
 	static var TICKS_PER_MS:Int64 = 100000;
 	static var TICKS_PER_MS_FLOAT:Float = 100000.0;
 
+	// One pixel row of note travel at the REFERENCE SCROLL SPEED 2, in
+	// 100ns position ticks: at speed 2, 1 ms of song time is 2 px of
+	// travel, so one row is 0.5 ms = 50,000 ticks. A note's overlap row
+	// is floor(position / OVERLAP_ROW_TICKS) — perfectly predictable from
+	// the timing alone, independent of the runtime scroll speed, the
+	// window scale and the frame. Two notes on the same receptor (same
+	// lane + index, notetype and duration) with the same row form ONE
+	// overlap group: that is the rule the native chart precompute
+	// (chart_file_core.cpp, same-named constant) bakes into the per-note
+	// 4-byte overlap counts, and the rule the note spawner's merge test
+	// applies. MUST stay in sync with the C++ constant.
+	static var OVERLAP_ROW_TICKS:Int64 = 50000;
+
 	// Convert song time (ms) to position ticks
 	inline static function floatToMetaNotePosition(f:Float):Int64 {
 		return Tools.betterInt64FromFloat(f * TICKS_PER_MS_FLOAT);

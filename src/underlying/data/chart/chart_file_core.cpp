@@ -4,6 +4,8 @@
 #include <string>
 #include <cstdint>
 #include <cstring>
+#include <cstdlib>
+#include <array>
 #include <mutex>
 #include <algorithm>
 #include <unordered_map>
@@ -1814,6 +1816,119 @@ private:
 	bool applyingNotes = false;
 	mutable std::mutex dataMutex;
 
+	// === Automatic note-overlap precompute ==============================
+	// Four extra bytes per chart note, reserved for the overlap count:
+	// the size of the note's overlap group (see recomputeOverlapCounts).
+	// This is a RUNTIME extension — the on-disk .fvc format keeps its
+	// 12-byte note records untouched. The block is one contiguous
+	// allocation that persists for the whole chart lifetime (grown as
+	// notes are added, freed in the destructor / destroyChart).
+	// getNotesFromRange() hands the note spawner a pointer straight into
+	// it, so the per-note read is a plain array index with no per-call
+	// extern overhead. Every member of an overlap group carries the same
+	// count, so any note of a merged sprite traces to the same
+	// predictable combo number.
+	uint32_t* overlapCounts = nullptr;
+	size_t overlapCap = 0;
+	bool overlapDirty = true;
+
+	// One pixel row of note travel at the reference scroll speed 2, in
+	// 100ns position ticks: at speed 2, 1 ms of song time is 2 px, so one
+	// row is 0.5 ms = 50,000 ticks. The overlap row of a note is
+	// floor(position / OVERLAP_ROW_TICKS) — perfectly predictable from the
+	// timing alone, independent of the runtime scroll speed, the window
+	// scale and the frame. MUST stay in sync with
+	// MetaNote.OVERLAP_ROW_TICKS on the Haxe side (the note spawner's
+	// merge test is this same rule expressed twice).
+	static constexpr int64_t OVERLAP_ROW_TICKS = 50000;
+
+	// dataMutex must be held by the caller.
+	void recomputeOverlapCountsLocked() {
+		const size_t n = store.size();
+		overlapDirty = false;
+		if (n == 0)
+			return; // nothing to fill; the block (if any) is left allocated
+
+		if (overlapCap < n) {
+			free(overlapCounts);
+			overlapCounts = (uint32_t*)malloc(sizeof(uint32_t) * n);
+			if (!overlapCounts) {
+				overlapCap = 0;
+				return; // OOM: readers fall back to 1 (lone note) — graceful
+			}
+			overlapCap = n;
+		}
+
+		// Lane separation, mirroring the note system's strumline grouping:
+		// a 256-element array of per-lane class maps (one per strumline
+		// lane, like the strumlines themselves). One overlap class =
+		// (receptor column, notetype, duration, quantized timing row)
+		// within a lane; the map holds the class's first note index while
+		// the pass streams the chart in global (position-sorted) order.
+		// Classes are exact equivalence classes — two taps at the same
+		// instant on one receptor group even when a sustain or a
+		// custom-type note sorts between them.
+		struct OverlapClassKey {
+			int64_t row;    // position / OVERLAP_ROW_TICKS
+			uint32_t idx;   // receptor column within the strumline
+			uint32_t type;  // notetype
+			uint32_t dur;   // duration (ms)
+			bool operator==(const OverlapClassKey& o) const {
+				return row == o.row && idx == o.idx && type == o.type && dur == o.dur;
+			}
+		};
+		struct OverlapClassKeyHash {
+			size_t operator()(const OverlapClassKey& k) const {
+				size_t h = (size_t)std::hash<int64_t>()(k.row);
+				h = h * 1000003u ^ (size_t)k.idx;
+				h = h * 1000003u ^ (size_t)k.type;
+				h = h * 1000003u ^ (size_t)k.dur;
+				return h;
+			}
+		};
+		std::array<std::unordered_map<OverlapClassKey, int64_t, OverlapClassKeyHash>, 256> laneClasses;
+
+		// Pass 1: assign each note the global index of its class's first
+		// note. The key members are exactly the conditions the runtime
+		// sprite merge requires (same receptor, same skin fields, same
+		// pixel row at speed 2).
+		std::vector<int64_t> groupId(n);
+		for (int64_t i = 0; i < (int64_t)n; ++i) {
+			const uint64_t first8 = store.getFirst8(i);
+			const uint32_t last4 = store.getLast4(i);
+			groupId[i] = i; // lone note by default
+			const uint32_t idx = (last4 >> 8) & 0x3FF;
+			if (idx >= 256)
+				continue; // beyond max mania (256): cannot render, never groups
+			OverlapClassKey key;
+			key.row = (int64_t)(first8 & 0x0000FFFFFFFFFFFFULL) / OVERLAP_ROW_TICKS;
+			key.idx = idx;
+			key.type = (last4 >> 18) & 0xFF;
+			key.dur = (uint32_t)(first8 >> 48) | ((last4 & 0xFF) << 16);
+			auto& classes = laneClasses[(last4 >> 26) & 0x3F];
+			auto it = classes.find(key);
+			if (it != classes.end()) {
+				groupId[i] = it->second;
+			} else {
+				classes.emplace(key, i);
+			}
+		}
+
+		// Pass 2: histogram the group sizes, then every member carries its
+		// group's size.
+		std::vector<uint32_t> groupSize(n, 0);
+		for (int64_t i = 0; i < (int64_t)n; ++i)
+			++groupSize[groupId[i]];
+		for (int64_t i = 0; i < (int64_t)n; ++i)
+			overlapCounts[i] = groupSize[groupId[i]];
+	}
+
+	// dataMutex must be held by the caller.
+	inline void ensureOverlapCountsLocked() {
+		if (overlapDirty)
+			recomputeOverlapCountsLocked();
+	}
+
 	bool loadFromFvc(const char* path) {
 		std::ifstream in(path, std::ios::binary | std::ios::ate);
 		if (!in) {
@@ -2361,6 +2476,13 @@ public:
 
 		if (!loadFromFvc(filename.c_str())) return false;
 		loadedFromDisk = true;
+		{
+			// Eager build: the overlap block exists from the moment the
+			// chart is loaded, for the whole chart lifetime.
+			std::lock_guard<std::mutex> lk(dataMutex);
+			overlapDirty = true;
+			ensureOverlapCountsLocked();
+		}
 		std::cout << "  [ Chart File ] Loaded " << store.size() << " notes ("
 			<< store.shardCount() << " segments) from " << filename << std::endl;
 		return true;
@@ -2370,6 +2492,10 @@ public:
 	ChartFileReader() = default;
 	~ChartFileReader() {
 		if (dirty && loadedFromDisk && !filename.empty()) save();
+		// The persistent overlap block dies with the chart.
+		free(overlapCounts);
+		overlapCounts = nullptr;
+		overlapCap = 0;
 	}
 
 	void setEditorMode(bool enabled) { editorMode = enabled; }
@@ -2396,6 +2522,7 @@ public:
 		std::lock_guard<std::mutex> lk(dataMutex);
 		const int64_t id = store.add(cn);
 		dirty = true;
+		overlapDirty = true; // note set changed: overlap counts rebuild lazily on next read
 		return id;
 	}
 
@@ -2408,6 +2535,37 @@ public:
 		std::lock_guard<std::mutex> lk(dataMutex);
 		store.remove(id);
 		dirty = true;
+		overlapDirty = true; // note set changed: overlap counts rebuild lazily on next read
+	}
+
+	// The 4-byte overlap count of a single note: 1 when the note stands
+	// alone, otherwise the size of its overlap group (same strumline,
+	// receptor column, notetype, duration and quantized speed-2 timing
+	// row). Out-of-range indices read as 1 (a lone note) — the neutral
+	// value that can never inflate a combo.
+	uint32_t getNoteOverlapCount(int64_t index) {
+		if (index < 0 || index >= store.size()) return 1;
+		std::lock_guard<std::mutex> lk(dataMutex);
+		ensureOverlapCountsLocked();
+		return overlapCounts ? overlapCounts[index] : 1;
+	}
+
+	// Bulk accessor for the note spawner: a pointer into the persistent
+	// per-note overlap-count block, covering notes [startIndex, endIndex).
+	// Entries are uint32 — the 4 bytes reserved per note. The block lives
+	// for the whole chart lifetime; the returned pointer is valid until
+	// the next chart mutation (addNote/removeNote rebuild the counts), so
+	// callers refetch it per pass. Null when the range is empty or the
+	// block could not be allocated.
+	uint32_t* getNotesFromRange(int64_t startIndex, int64_t endIndex) {
+		const int64_t n = (int64_t)store.size();
+		std::lock_guard<std::mutex> lk(dataMutex);
+		ensureOverlapCountsLocked();
+		if (!overlapCounts) return nullptr;
+		if (startIndex < 0) startIndex = 0;
+		if (endIndex > n) endIndex = n;
+		if (startIndex >= endIndex || startIndex >= n) return nullptr;
+		return overlapCounts + startIndex;
 	}
 
 	bool getJudgement(int64_t index) {
@@ -2457,6 +2615,7 @@ public:
 		filename = path;
 		dirty = false;
 		loadedFromDisk = true;
+		overlapDirty = true; // empty chart: counts rebuild (to nothing) on next read
 		std::ofstream file(path, std::ios::binary | std::ios::trunc);
 		std::cout << "  [ Chart File ] Created new chart: " << path << std::endl;
 	}
@@ -2518,6 +2677,16 @@ bool core_getHitFlag(int64_t globalIndex) {
 }
 
 ShardedNoteStore* core_testStore() { return gReader ? gReader->testStore() : nullptr; }
+
+int core_getNoteOverlapCount(int64_t globalIndex) {
+	if (!gReader) return 1;
+	return (int)gReader->getNoteOverlapCount(globalIndex);
+}
+
+uint32_t* core_getNotesFromRange(int64_t startIndex, int64_t endIndex) {
+	if (!gReader) return nullptr;
+	return gReader->getNotesFromRange(startIndex, endIndex);
+}
 
 void core_setHitFlag(int64_t globalIndex, bool value) {
 	if (!gReader) return;
