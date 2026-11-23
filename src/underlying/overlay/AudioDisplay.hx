@@ -107,10 +107,31 @@ class AudioDisplay extends OptionsSubDisplay {
                 curSelectedLerp = Tools.lerp(curSelectedLerp, curSelectedTarget, ratio);
                 xLerp = 20 - (curSelectedLerp * 20);
 
-                // The shared infoText is no longer used while browsing — the "tab"
-                // sprite at the top-right corner replaced the old instruction texts.
-                // Keep fading it out so a leftover readout disappears.
-                infoText.alpha = Tools.lerp(infoText.alpha, 0.0, ratio);
+                // Update description text (shared infoText)
+                var index = Math.round(curSelectedTarget);
+                if (index >= 0 && index < audioStr.length) {
+                        var name = getDisplayName(index);
+                        var desc = audioDescriptions[index];
+                        var value = getValueString(index);
+                        var combined = '$name: $desc\nCurrent: $value\nPress ENTER to change.';
+
+                        if (combined != _lastInfoText) {
+                                _lastInfoText = combined;
+                                infoText.text = combined;
+                                // Position at top-right
+                                infoText.x = Main.INITIAL_WIDTH - infoText.width - 4;
+                                infoText.y = 4;
+                        }
+                } else {
+                        if (_lastInfoText != "") {
+                                _lastInfoText = "";
+                                infoText.text = "";
+                        }
+                }
+
+                // Fade text based on menu alpha
+                var show = parent.opened && index >= 0 && index < audioStr.length;
+                infoText.alpha = Tools.lerp(infoText.alpha, show ? 1.0 : 0.0, ratio);
 
                 alphabet.setDeltaTime(deltaTime);
                 var incrementBest = audioStr.length > 7 ? Math.floor(Math.min(Math.max(curSelectedLerp - 3, 0), audioStr.length - 7)) : 0;

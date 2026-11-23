@@ -26,14 +26,6 @@ class NoteSystem {
 	static var NOTE_HOLD_THRESHOLD = 17;
 	static var NOTE_HOLD_THRESHOLD_SUSTAIN = 18;
 
-	// Early-press grace (ms): how far beyond the early edge of the hit window
-	// an upcoming note still counts as "the press was just slightly too early
-	// for that note". A key press inside this margin must NOT flash the
-	// receptor's ghost-tap press animation — the input clearly targeted the
-	// approaching note (short-duration notes sit right on top of the window
-	// edge, and the flash reads as if the note swallowed the input).
-	static var EARLY_PRESS_GRACE = 160;
-
 	// === Dynamic hold-threshold tuning ===
 	// Absolute floor for the dynamic threshold so the confirm window is never
 	// reduced to zero (which would cause the receptor to never visibly "press").
@@ -438,55 +430,6 @@ class NoteSystem {
 		return bestId;
 	}
 
-	/**
-		Called by Strumline.press() when a key press found NO hittable note:
-		true when the next unjudged note on this lane is only slightly ahead —
-		beyond the early edge of the hit window but within EARLY_PRESS_GRACE ms
-		of it. The press was simply too early for that note, so the receptor
-		should stay idle instead of flashing its ghost-tap press animation.
-	**/
-	function isEarlyPress(strumline:Strumline, index:Int):Bool {
-		var spawner = noteSpawner;
-		if (spawner == null)
-			return false;
-
-		var lane = strumlines.indexOf(strumline);
-		if (lane < 0)
-			return false;
-
-		var laneCount = strumlines.length;
-		// Same playhead the hit search uses.
-		var posWithLatency = MetaNote.floatToMetaNotePosition(parent.songPosition);
-		// Notes at or before this are inside the hit window (already searched);
-		// "too early" notes live strictly after it.
-		var earlyEdge = Int64.add(posWithLatency, MetaNote.floatToMetaNotePosition(_cachedHitbox));
-		var graceEdge = Int64.add(earlyEdge, MetaNote.floatToMetaNotePosition(EARLY_PRESS_GRACE));
-
-		// Binary search the first note at or after the early edge (position-sorted).
-		var lo = spawner.bottom;
-		var hi = spawner.top;
-		while (lo < hi) {
-			var mid:Int64 = Int64.add(lo, Int64.div(Int64.sub(hi, lo), 2));
-			if (File.getNote(mid).position < earlyEdge)
-				lo = Int64.add(mid, 1);
-			else
-				hi = mid;
-		}
-
-		// Scan forward through the grace margin: any unjudged note on this
-		// lane+index makes the press "early for it".
-		var i = lo;
-		while (i < spawner.top) {
-			var n = File.getNote(i);
-			if (n.position > graceEdge)
-				break;
-			if (n.index == index && clampLane(n.lane, laneCount) == lane && !File.getJudgement(i))
-				return true;
-			i = Int64.add(i, 1);
-		}
-		return false;
-	}
-
 	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64):VirtualNote {
 		var index = note.index;
 		var duration = note.duration;
@@ -769,12 +712,13 @@ class NoteSystem {
 	}
 
 	var _cachedScrollSpeed:Float = 0;
-	var _cachedHitbox:Float = 160;
+	var _cachedHitbox:Float = 200;
 
 	function setScrollSpeed(value:Float) {
 		noteSpawner.spawnDist = MetaNote.floatToMetaNotePosition(1600 / value);
 		noteSpawner.despawnDist = MetaNote.floatToMetaNotePosition(360 / Math.min(Math.max(value, 0.0001), 1.0));
 		_cachedScrollSpeed = value;
+		_cachedHitbox = 200;
 		rebuildMovementLUTs();
 		return value;
 	}

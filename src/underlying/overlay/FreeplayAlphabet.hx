@@ -295,9 +295,8 @@ class FreeplayAlphabet {
 			advanceAnimFrame(spr, char, info.animKeys[j], states[j]);
 			positionCharSprite(spr, char, x, k);
 
-			// Use host's alphaLerp for fade in/out (times alphaMultiplier so a
-			// host can dim the whole list — e.g. mania binding mode).
-			var alpha = isInvalidCharacter ? 0.0 : calcItemAlpha(k) * host.alphaLerp * host.alphaMultiplier;
+			// Use host's alphaLerp for fade in/out
+			var alpha = isInvalidCharacter ? 0.0 : calcItemAlpha(k) * host.alphaLerp;
 			spr.color.aF = alpha;
 			spr.color.luminanceF = disabled ? alpha * 0.25 : alpha;
 

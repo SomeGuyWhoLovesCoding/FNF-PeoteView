@@ -93,11 +93,8 @@ class OptionsDisplay {
                                 graphicsDisplay.enter();
                         case AUDIO:
                                 audioDisplay.enter();
-                        case CONTROLS:
-                                // ENTER starts the key listen for the selected
-                                // control row (and toggles mania binding on the
-                                // Mania row). TAB is the category-switch key.
-                                controlsDisplay.enter();
+                        default:
+                                // ControlsDisplay does not handle enter for toggling; it uses TAB.
                 }
         }
 
