@@ -6,7 +6,8 @@ import underlying.overlay.OptionsSubDisplay;
 
 /**
 	Handles the display and interaction for the controls options in the options menu.
-	Uses the shared FreeplayAlphabet instance and a generated pixel-art TAB hint.
+	Uses the shared FreeplayAlphabet instance for the list and a combined Text element
+	for instructions and keybind info at the top-right.
 	@since 0.94
 **/
 @:publicFields
@@ -50,6 +51,12 @@ class ControlsDisplay extends OptionsSubDisplay {
 		"Unique keybinds per key count (Mania mode)."
 	];
 
+	inline static var INSTRUCTIONS_TEXT = "KEYBINDING Instructions:\nPress TAB to begin binding\nPress ESC to cancel binding\n\n"
+		+ "MANIA Instructions:\nPress DEBUG to swap between #M1#KEY1#M1# and #M2#KEY2#M2# modes\n"
+		+ "\nWhile you bind your mania, you press each key in order\nWhen you bind:\nPress CTRL+Left or CTRL+Right to change MANIA\n"
+		+ "Press ALT+Up or ALT+Down to switch slot\nPress BACK to reset current MANIA\n"
+		+ "Press RESET to remove binding (#M2#KEY2#M2# only)";
+
 	var parent(default, null):OptionsMenu;
 	var options(default, null):Array<OptionsSprite> = [];
 	var alphabet(default, null):FreeplayAlphabet; // shared instance
@@ -84,11 +91,6 @@ class ControlsDisplay extends OptionsSubDisplay {
 
 	var _lastInfoText:String = null; // last string pushed to the shared infoText
 
-	var tabHintBuf:Buffer<ControlsTabHintSprite>;
-	var tabHintProg:CustomProgram;
-	var tabHintSprite:ControlsTabHintSprite;
-	static inline var TAB_HINT_TEXTURE_NAME:String = "controlsTabHintPixelTex";
-
 	var closed:Bool;
 
 	function new(parent:OptionsMenu, alphabet:FreeplayAlphabet, infoText:Text) {
@@ -103,69 +105,6 @@ class ControlsDisplay extends OptionsSubDisplay {
 			new TextFormatMarkerPair('#M3#', 0xFFFF5353)
 		];
 		infoText.setMarkerPairs(subBindMarkup);
-		createTabHint();
-	}
-
-	/** Creates a tiny pixel-art "tab" texture in code, like the noteskin grid. */
-	function createTabHint() {
-		if (tabHintProg != null)
-			return;
-		var width = 15;
-		var height = 7;
-		var pixels = haxe.io.Bytes.alloc(width * height * 4);
-		for (y in 0...height) {
-			for (x in 0...width) {
-				var idx = (y * width + x) * 4;
-				var border = x == 0 || y == 0 || x == width - 1 || y == height - 1;
-				pixels.set(idx, border ? 24 : 8);
-				pixels.set(idx + 1, border ? 24 : 8);
-				pixels.set(idx + 2, border ? 30 : 12);
-				pixels.set(idx + 3, 210);
-			}
-		}
-		// 3x5 lowercase glyphs: t, a, b. One-pixel spacing between letters.
-		var glyphs:Array<Array<Int>> = [[6, 2, 2, 2, 3], [0, 6, 1, 7, 5], [4, 4, 6, 5, 6]];
-		var glyphX = [2, 6, 10];
-		for (g in 0...glyphs.length) {
-			for (gy in 0...5) {
-				for (gx in 0...3) {
-					if ((glyphs[g][gy] & (1 << (2 - gx))) == 0)
-						continue;
-					var idx = ((gy + 1) * width + glyphX[g] + gx) * 4;
-					pixels.set(idx, 235);
-					pixels.set(idx + 1, 235);
-					pixels.set(idx + 2, 245);
-					pixels.set(idx + 3, 255);
-				}
-			}
-		}
-		var textureData = new TextureData(width, height, TextureFormat.RGBA);
-		textureData.bytes = pixels;
-		var texture = new Texture(width, height, null, {
-			format: TextureFormat.RGBA,
-			powerOfTwo: true,
-			smoothExpand: false,
-			smoothShrink: false
-		});
-		texture.setData(textureData);
-		TextureSystem.pool.set(TAB_HINT_TEXTURE_NAME, texture);
-
-		tabHintBuf = new Buffer<ControlsTabHintSprite>(1);
-		tabHintProg = new CustomProgram(tabHintBuf);
-		tabHintProg.setTexture(texture, TAB_HINT_TEXTURE_NAME, true);
-		tabHintProg.injectIntoFragmentShader('
-			vec4 getControlsTabColor(int textureID, vec4 c) {
-				return getTextureColor(textureID, vTexCoord) * c;
-			}
-		');
-		tabHintProg.setColorFormula('getControlsTabColor(${TAB_HINT_TEXTURE_NAME}_ID, c)');
-		tabHintSprite = new ControlsTabHintSprite();
-		tabHintSprite.x = Main.INITIAL_WIDTH - width - 5;
-		tabHintSprite.y = 5;
-		tabHintSprite.w = width;
-		tabHintSprite.h = height;
-		tabHintBuf.addElement(tabHintSprite);
-		tabHintBuf.update();
 	}
 
 	function reload() {
@@ -181,10 +120,6 @@ class ControlsDisplay extends OptionsSubDisplay {
 		processingBinding = false;
 		bindingMania = false;
 		maniaBindNum = 0;
-		maniaSubBindNum = 0;
-		alphabet.alphaMultiplier = 1.0;
-		if (tabHintProg != null && !tabHintProg.isIn(OptionsMenu.display))
-			OptionsMenu.display.addProgram(tabHintProg);
 	}
 
 	function resetHostState() {
@@ -195,35 +130,19 @@ class ControlsDisplay extends OptionsSubDisplay {
 	}
 
 	function tab() {
-		if (binding || processingBinding || closed)
+		if (binding || processingBinding || bindingMania || closed)
 			return;
-		if (bindingMania) {
-			bindingMania = false;
-			maniaBindNum = 0;
-			maniaSubBindNum = 0;
-			Main.current.playCancelSound();
-			return;
-		}
-		bindingIndex = parent.optionsNav.value();
-		if (bindingIndex >= controlFields.length) {
-			bindingMania = true;
-			maniaBindNum = 0;
-			maniaSubBindNum = 0;
-		} else {
-			binding = true;
-		}
-		Main.current.playScrollSound();
-	}
 
-	function enter() {
-		if (closed || binding || processingBinding)
-			return;
-		if (parent.optionsNav.value() == controlFields.length) {
-			bindingMania = !bindingMania;
-			maniaBindNum = 0;
-			maniaSubBindNum = 0;
-			Main.current.playScrollSound();
-		}
+		bindingIndex = parent.optionsNav.value();
+		if (bindingIndex >= controlFields.length)
+			bindingMania = true;
+		else
+			binding = true;
+
+		// Routing stays on the OptionsMenu focus; the machine keeps dispatching
+		// key presses to onKeyDown and the menu's UI actions are suppressed by
+		// isInvalidKeyState() while binding.
+		Main.current.playScrollSound();
 	}
 
 	override function update(deltaTime:Float) {
@@ -239,47 +158,68 @@ class ControlsDisplay extends OptionsSubDisplay {
 		curSelectedLerp = Tools.lerp(curSelectedLerp, curSelectedTarget, ratio);
 		xLerp = 20 - (curSelectedLerp * 20);
 
-		// Dim the controls list while the player edits mania bindings.
-		alphabet.alphaMultiplier = bindingMania ? 0.5 : 1.0;
-
+		// Build the combined text for the info box
 		var combined = "";
 		var selectedIndex = Math.round(curSelectedTarget);
-		if (bindingMania) {
-			var keybindsArr = maniaKeybindArray(curManiaNum);
-			var keyName = "...";
-			if (maniaBindNum >= 0 && maniaBindNum < keybindsArr.length) {
-				var slot = keybindsArr[maniaBindNum];
-				if (slot != null && maniaSubBindNum >= 0 && maniaSubBindNum < slot.length)
-					keyName = KeyCodeConverter.getSimpleKeyName(slot[maniaSubBindNum]);
-			}
-			combined = 'MANIA ${curManiaNum + 1}K\nKEY #M2#${maniaBindNum + 1}#M2#\n#M1#${keyName}#M1#';
-		} else if (selectedIndex >= 0 && selectedIndex < controlLabels.length) {
-			var desc = controlDescriptions[selectedIndex] != null ? controlDescriptions[selectedIndex] : "";
-			if (desc != "")
-				combined = controlLabels[selectedIndex] + ": " + desc;
-			if (binding)
-				combined += (combined == "" ? "" : "\n") + "Press a key...";
-		}
-		if (alertDupebind)
-			combined = '#M3#${alertDupebindKeyName} is already bound to:\n${alertDupebindConflictName}\nTry a different key.#M3#';
-		else if (alertKeybindReset)
-			combined = "#M3#Successfully reset current MANIA.#M3#";
 
+		// Add description of the selected item (if not in mania or binding)
+		if (!bindingMania && !binding && selectedIndex >= 0 && selectedIndex < controlLabels.length) {
+			var desc = controlDescriptions[selectedIndex] != null ? controlDescriptions[selectedIndex] : "";
+			if (desc != "") {
+				combined += controlLabels[selectedIndex] + ": " + desc + "\n\n";
+			}
+		}
+
+		// Append instructions and dynamic binding info
+		combined += INSTRUCTIONS_TEXT + "\n\n";
+		if (bindingMania) {
+			var str = "KEYBINDS\nUSING " + (maniaSubBindNum == 1 ? "#M2#KEY2#M2#" : "#M1#KEY1#M1#") + "\n";
+			if (alertDupebind) {
+				str += '#M3#${alertDupebindKeyName} is already bound to:\n${alertDupebindConflictName}\nTry a different key.#M3#\n';
+			} else if (alertKeybindReset) {
+				str += '#M3#Successfully reset current MANIA.#M3#\n';
+			} else {
+				str += "#M3#Currently binding...#M3#\n";
+			}
+			var keybindArr = maniaKeybindArray(curManiaNum);
+			for (k in 0...keybindArr.length) {
+				var maniaBinds = keybindArr[k];
+				str += (maniaBindNum == k && maniaSubBindNum == 0) ? "#M1#[ #M1#" : "[ ";
+				for (i in 0...maniaBinds.length) {
+					if (maniaSubBindNum == i)
+						str += '#M${maniaSubBindNum + 1}#';
+					str += KeyCodeConverter.getSimpleKeyName(maniaBinds[i]);
+					if (maniaSubBindNum == i)
+						str += '#M${maniaSubBindNum + 1}#';
+					if (i != maniaBinds.length - 1)
+						str += ", ";
+				}
+				str += (maniaBindNum == k && maniaSubBindNum == 1) ? "#M2# ]#M2#" : " ]";
+				str += "\n";
+			}
+			combined += str;
+		} else {
+			if (alertDupebind) {
+				combined += '#M3#${alertDupebindKeyName} is already bound to:\n${alertDupebindConflictName}\nTry a different key.#M3#\n';
+			} else {
+				combined += "KEYBINDS\n";
+				combined += binding ? "#M3#Currently binding...#M3#\n" : "...";
+			}
+		}
+
+		//BOTTLENECK: high per-frame info-text rebuild: string concat allocations + set_text() full compare/relayout every frame | FIX: only rebuild when selection/binding/mania state changed; cache last built string
 		if (combined != _lastInfoText) {
 			_lastInfoText = combined;
 			infoText.text = combined;
+			// Position at top-right (align right by setting x = width‑4)
 			infoText.x = Main.INITIAL_WIDTH - infoText.width - 4;
 			infoText.y = 4;
 		}
-		var show = parent.opened && combined != "";
-		infoText.alpha = Tools.lerp(infoText.alpha, show ? 1.0 : 0.0, ratio);
 
-		if (tabHintSprite != null) {
-			tabHintSprite.c.aF = alphaLerp;
-			tabHintSprite.c.luminanceF = alphaLerp;
-			tabHintBuf.updateElement(tabHintSprite);
-			tabHintBuf.update();
-		}
+		// Show/hide based on conditions
+		var show = parent.opened
+			&& ((curSelectedTarget >= 0 && curSelectedTarget < controlFields.length + 1) || alertDupebind || binding || bindingMania);
+		infoText.alpha = Tools.lerp(infoText.alpha, show ? 1.0 : 0.0, ratio);
 
 		alphabet.setDeltaTime(deltaTime);
 		var incrementBest = controlLabels.length > 7 ? Math.floor(Math.min(Math.max(curSelectedLerp - 3, 0), controlLabels.length - 7)) : 0;
@@ -327,27 +267,32 @@ class ControlsDisplay extends OptionsSubDisplay {
 		if (bindingMania) {
 			if (keyCode == BIND_KEY || keyCode == KeyCode.ESCAPE)
 				return;
-
-			// Use the configured UI directions, not hard-coded arrow keycodes.
-			var ui = SaveData.state.controls.ui;
-			var keybindsArr = maniaKeybindArray(curManiaNum);
-			if (keyCode == ui.left) {
-				curManiaNum--;
-				maniaBindNum = 0;
-				Main.current.playScrollSound();
-			} else if (keyCode == ui.right) {
-				curManiaNum++;
-				maniaBindNum = 0;
-				Main.current.playScrollSound();
-			} else if (keyCode == ui.up) {
-				maniaBindNum = Std.int(Math.max(0, maniaBindNum - 1));
-				Main.current.playScrollSound();
-			} else if (keyCode == ui.down) {
-				maniaBindNum = Std.int(Math.min(keybindsArr.length - 1, maniaBindNum + 1));
-				Main.current.playScrollSound();
-			} else {
-				applyManiaBinding(keyCode);
+			if ((keyModifier == KeyModifier.LEFT_CTRL || keyModifier == KeyModifier.RIGHT_CTRL)) {
+				switch (keyCode) {
+					case KeyCode.LEFT:
+						curManiaNum--;
+						Main.current.playScrollSound();
+					case KeyCode.RIGHT:
+						curManiaNum++;
+						Main.current.playScrollSound();
+					default:
+				}
+				return;
 			}
+			if ((keyModifier == KeyModifier.LEFT_ALT || keyModifier == KeyModifier.RIGHT_ALT)) {
+				var keybindsArr = maniaKeybindArray(curManiaNum);
+				switch (keyCode) {
+					case KeyCode.UP:
+						maniaBindNum = Std.int(Math.max(0, maniaBindNum - 1));
+						Main.current.playScrollSound();
+					case KeyCode.DOWN:
+						maniaBindNum = Std.int(Math.min(keybindsArr.length - 1, maniaBindNum + 1));
+						Main.current.playScrollSound();
+					default:
+				}
+				return;
+			}
+			applyManiaBinding(keyCode);
 			return;
 		}
 
@@ -604,9 +549,6 @@ class ControlsDisplay extends OptionsSubDisplay {
 		if (binding)
 			cancelBinding();
 		resetHostState();
-		alphabet.alphaMultiplier = 1.0;
-		if (tabHintProg != null && tabHintProg.isIn(OptionsMenu.display))
-			OptionsMenu.display.removeProgram(tabHintProg);
 
 		while (options.length != 0) {
 			var option = options.pop();
@@ -671,4 +613,3 @@ return controlLabels[index];
 		return KeyCodeConverter.getSimpleKeyName(rawKey);
 	}
 }
-
