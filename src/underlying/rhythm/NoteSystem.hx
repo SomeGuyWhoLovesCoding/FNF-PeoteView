@@ -712,13 +712,12 @@ class NoteSystem {
 	}
 
 	var _cachedScrollSpeed:Float = 0;
-	var _cachedHitbox:Float = 200;
+	var _cachedHitbox:Float = 160;
 
 	function setScrollSpeed(value:Float) {
 		noteSpawner.spawnDist = MetaNote.floatToMetaNotePosition(1600 / value);
 		noteSpawner.despawnDist = MetaNote.floatToMetaNotePosition(360 / Math.min(Math.max(value, 0.0001), 1.0));
 		_cachedScrollSpeed = value;
-		_cachedHitbox = 200;
 		rebuildMovementLUTs();
 		return value;
 	}
