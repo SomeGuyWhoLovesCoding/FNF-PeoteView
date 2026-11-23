@@ -172,8 +172,9 @@ class ControlsDisplay extends OptionsSubDisplay {
 
 		// The shared infoText only ever shows the mania input readout and the
 		// binding alerts — no browsing descriptions (the "tab" sprite replaced
-		// the old instruction texts). In the mania readout only the current
-		// mania key (#M1#) and the key number (#M2#) are colored.
+		// the old instruction texts). In the mania readout the current mania
+		// key (#M1#) and the key number (#M2#) are colored, and the bottom
+		// line is the red (#M3#) ESC hint — ESC cancels via onKeyDown.
 		var combined = "";
 		if (bindingMania) {
 			var keybindsArr = maniaKeybindArray(curManiaNum);
@@ -183,7 +184,7 @@ class ControlsDisplay extends OptionsSubDisplay {
 				if (slot != null && maniaSubBindNum >= 0 && maniaSubBindNum < slot.length)
 					keyName = KeyCodeConverter.getSimpleKeyName(slot[maniaSubBindNum]);
 			}
-			combined = 'MANIA ${curManiaNum + 1}K\nKEY #M2#${maniaBindNum + 1}#M2#\n#M1#${keyName}#M1#';
+			combined = 'MANIA ${curManiaNum + 1}K\nKEY #M2#${maniaBindNum + 1}#M2#\n#M1#${keyName}#M1#\n#M3#Make sure to press ESC to cancel.#M3#';
 		}
 		if (alertDupebind)
 			combined = '#M3#${alertDupebindKeyName} is already bound to:\n${alertDupebindConflictName}\nTry a different key.#M3#';

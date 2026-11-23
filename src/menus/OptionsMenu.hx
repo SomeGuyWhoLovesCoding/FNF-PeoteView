@@ -32,16 +32,17 @@ class OptionsMenu extends MenuInput {
         // --- The "tab" hint sprite ---
         // A pixel-art key cap pinned 5 pixels in from the top-right corner of
         // the options screen. It reads "tab", and TAB is the key that switches
-        // categories. The texture is 15x7 pixels of art rendered at eight
-        // times that size (120x56) — the nearest-neighbor filtering keeps the
-        // pixels crisp — and an invisible, padded click area around it
-        // switches categories like the TAB key does: LEFT for the next
-        // category, RIGHT for the previous one, both wrapping around at the
-        // ends like the keyboard navigation.
-        static inline var TAB_HINT_WIDTH = 15;
-        static inline var TAB_HINT_HEIGHT = 7;
+        // categories. The texture is 30x14 pixels of art — twice the original
+        // resolution, with 5px-wide glyphs, so the text stays readable — and
+        // it is rendered at four times that size (120x56; nearest-neighbor
+        // filtering keeps the pixels crisp). An invisible, padded click area
+        // around it switches categories like the TAB key does: LEFT for the
+        // next category, RIGHT for the previous one, both wrapping around at
+        // the ends like the keyboard navigation.
+        static inline var TAB_HINT_WIDTH = 30;
+        static inline var TAB_HINT_HEIGHT = 14;
         static inline var TAB_HINT_MARGIN = 5;
-        static inline var TAB_HINT_SCALE = 8;
+        static inline var TAB_HINT_SCALE = 4;
         static inline var TAB_HINT_CLICK_PADDING = 10;
         static inline var TAB_HINT_TEXTURE_NAME:String = "optionsTabHintPixelTex";
         static var tabHintBuf(default, null):Buffer<OptionsTabHintSprite>;
@@ -70,7 +71,7 @@ class OptionsMenu extends MenuInput {
                 createTabHint();
         }
 
-        /** Creates a tiny pixel-art "tab" texture in code, like the noteskin grid. */
+        /** Creates the pixel-art "tab" texture in code, like the noteskin grid. */
         static function createTabHint() {
                 if (tabHintProg != null)
                         return;
@@ -100,15 +101,28 @@ class OptionsMenu extends MenuInput {
                                 pixels.set(idx + 3, 210);
                         }
                 }
-                // 3x5 lowercase glyphs: t, a, b. One-pixel spacing between letters.
-                var glyphs:Array<Array<Int>> = [[6, 2, 2, 2, 3], [0, 6, 1, 7, 5], [4, 4, 6, 5, 6]];
-                var glyphX = [2, 6, 10];
+                // Lowercase glyphs drawn as 5px-wide string bitmaps ("#" = letter
+                // pixel), baseline-aligned on row 11: t and b get 10-row
+                // ascenders, a is 7-row x-height. The content is 3 glyphs * 5
+                // + 2 gaps * 2 = 19px wide, centered in the 28px inner width.
+                var glyphs:Array<Array<String>> = [
+                        // t: stem, crossbar on row 4, foot curving right at the baseline
+                        ["..#..", "..#..", "####.", "..#..", "..#..", "..#..", "..#..", "..#..", "..#..", "..##."],
+                        // a: arch, bowl closing mid-letter, right stem to the baseline
+                        [".###.", "#...#", "#...#", "#####", "....#", "....#", "....#"],
+                        // b: ascender stem, bowl from row 4 down to the baseline
+                        ["#....", "#....", "####.", "#...#", "#...#", "#...#", "#...#", "#...#", "#...#", "####."]
+                ];
+                var glyphX = [5, 12, 19];
+                var glyphY = [2, 5, 2];
                 for (g in 0...glyphs.length) {
-                        for (gy in 0...5) {
-                                for (gx in 0...3) {
-                                        if ((glyphs[g][gy] & (1 << (2 - gx))) == 0)
+                        var rows = glyphs[g];
+                        for (gy in 0...rows.length) {
+                                var row = rows[gy];
+                                for (gx in 0...row.length) {
+                                        if (row.charAt(gx) != "#")
                                                 continue;
-                                        var idx = ((gy + 1) * width + glyphX[g] + gx) * 4;
+                                        var idx = ((glyphY[g] + gy) * width + glyphX[g] + gx) * 4;
                                         pixels.set(idx, 235);
                                         pixels.set(idx + 1, 235);
                                         pixels.set(idx + 2, 245);
@@ -134,7 +148,7 @@ class OptionsMenu extends MenuInput {
                 tabHintProg = new CustomProgram(tabHintBuf);
                 OptionsTabHintSprite.init(tabHintProg, TAB_HINT_TEXTURE_NAME, texture);
                 tabHintSprite = new OptionsTabHintSprite();
-                // Four times the art size; the clip stays 15x7 so the texture
+                // Four times the art size; the clip stays 30x14 so the texture
                 // simply stretches across the quad (crisp, nearest-filtered).
                 tabHintSprite.w = TAB_HINT_WIDTH * TAB_HINT_SCALE;
                 tabHintSprite.h = TAB_HINT_HEIGHT * TAB_HINT_SCALE;
