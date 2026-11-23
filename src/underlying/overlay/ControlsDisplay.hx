@@ -65,10 +65,16 @@ class ControlsDisplay extends OptionsSubDisplay {
 	var maniaSubBindNum(default, null):Int = 0;
 	var lastBindingTime:Float = 0;
 
+	// Deep copy of every mania's keybind slots, taken when mania binding mode
+	// is entered. Cancelling the session (the ui.back keybind or ESC) restores
+	// it, so an aborted session leaves the old keybind settings that were in
+	// use for the mania untouched; committing (TAB, the ENTER toggle, or
+	// filling the last slot) discards it.
+	var maniaBindingSnapshot:Array<Array<Array<KeyCode>>> = null;
+
 	var alertDupebind:Bool = false;
 	var alertDupebindKeyName:String = "";
 	var alertDupebindConflictName:String = "";
-	var alertKeybindReset:Bool = false;
 
 	var _lastInfoText:String = null; // last string pushed to the shared infoText
 
@@ -102,6 +108,7 @@ class ControlsDisplay extends OptionsSubDisplay {
 		bindingMania = false;
 		maniaBindNum = 0;
 		maniaSubBindNum = 0;
+		maniaBindingSnapshot = null;
 		alphaMultiplier = 1.0;
 	}
 
@@ -124,6 +131,9 @@ class ControlsDisplay extends OptionsSubDisplay {
 			bindingMania = false;
 			maniaBindNum = 0;
 			maniaSubBindNum = 0;
+			// TAB exits with the changes kept — the snapshot is only for a
+			// cancelled session.
+			maniaBindingSnapshot = null;
 			Main.current.playCancelSound();
 		}
 	}
@@ -143,6 +153,10 @@ class ControlsDisplay extends OptionsSubDisplay {
 			bindingMania = !bindingMania;
 			maniaBindNum = 0;
 			maniaSubBindNum = 0;
+			// Entering the session snapshots every mania's keybinds (the
+			// session can switch manias with ui.left/right); toggling it off
+			// with ENTER keeps the changes, like TAB does.
+			maniaBindingSnapshot = bindingMania ? snapshotManiaKeybinds() : null;
 			Main.current.playScrollSound();
 		} else if (selected >= 0 && selected < controlFields.length) {
 			binding = true;
@@ -173,8 +187,10 @@ class ControlsDisplay extends OptionsSubDisplay {
 		// The shared infoText only ever shows the mania input readout and the
 		// binding alerts — no browsing descriptions (the "tab" sprite replaced
 		// the old instruction texts). In the mania readout the current mania
-		// key (#M1#) and the key number (#M2#) are colored, and the bottom
-		// line is the red (#M3#) ESC hint — ESC cancels via onKeyDown.
+		// key (#M1#) and the key number (#M2#) are colored; the bottom line is
+		// the red (#M3#) cancel hint, naming the configured cancel keybind
+		// (ui.back — the UI_BACK action OptionsMenu routes to cancelBinding(),
+		// BACKSPACE by default) rather than a hard-coded key.
 		var combined = "";
 		if (bindingMania) {
 			var keybindsArr = maniaKeybindArray(curManiaNum);
@@ -184,12 +200,11 @@ class ControlsDisplay extends OptionsSubDisplay {
 				if (slot != null && maniaSubBindNum >= 0 && maniaSubBindNum < slot.length)
 					keyName = KeyCodeConverter.getSimpleKeyName(slot[maniaSubBindNum]);
 			}
-			combined = 'MANIA ${curManiaNum + 1}K\nKEY #M2#${maniaBindNum + 1}#M2#\n#M1#${keyName}#M1#\n#M3#Make sure to press ESC to cancel.#M3#';
+			var cancelKeyName = KeyCodeConverter.getSimpleKeyName(cast SaveData.state.controls.ui.back);
+			combined = 'MANIA ${curManiaNum + 1}K\nKEY #M2#${maniaBindNum + 1}#M2#\n#M1#${keyName}#M1#\n#M3#Make sure to press ${cancelKeyName} to cancel.#M3#';
 		}
 		if (alertDupebind)
 			combined = '#M3#${alertDupebindKeyName} is already bound to:\n${alertDupebindConflictName}\nTry a different key.#M3#';
-		else if (alertKeybindReset)
-			combined = "#M3#Successfully reset current MANIA.#M3#";
 
 		if (combined != _lastInfoText) {
 			_lastInfoText = combined;
@@ -226,7 +241,27 @@ class ControlsDisplay extends OptionsSubDisplay {
 		if (bindingMania) {
 			bindingMania = false;
 			maniaBindNum = 0;
+			maniaSubBindNum = 0;
 			removeEvents = true;
+			// Cancelling resets back to the old keybind settings that were in
+			// use before the session started: restore the entry snapshot (it
+			// covers every mania, since ui.left/right can switch the target
+			// mania mid-session).
+			if (maniaBindingSnapshot != null) {
+				SaveData.state.controls.game.keybindArray = [
+					for (mania in maniaBindingSnapshot) mania == null ? null : [for (slot in mania) slot == null ? null : slot.copy()]
+				];
+				maniaBindingSnapshot = null;
+				// Same refresh the mania completion path does: reload the
+				// action bindings, re-focus the menu's actions onto the fresh
+				// handle, and refresh any live strumlines so they drop the
+				// half-bound session keys.
+				Main.current.controls.reload();
+				if (parent != null && parent.opened) {
+					Main.current.stateMachine.setFocus(parent);
+				}
+				refreshLiveStrumlines();
+			}
 		}
 		if (parent != null && parent.opened && removeEvents) {
 			Main.current.playCancelSound();
@@ -250,7 +285,12 @@ class ControlsDisplay extends OptionsSubDisplay {
 		}
 
 		if (bindingMania) {
-			if (keyCode == BIND_KEY || keyCode == KeyCode.ESCAPE)
+			// TAB and ESC stay reserved (they exit / cancel). The ui.back
+			// keybind — the cancel key named in the readout's bottom line —
+			// cancels the session through the menu's UI_BACK action
+			// (OptionsMenu routes it to cancelBinding()), so it must never
+			// register as a mania key either.
+			if (keyCode == BIND_KEY || keyCode == KeyCode.ESCAPE || keyCode == SaveData.state.controls.ui.back)
 				return;
 
 			// Use the configured UI binds, not hard-coded keycodes. The accept
@@ -301,6 +341,39 @@ class ControlsDisplay extends OptionsSubDisplay {
 		if (all == null || maniaId < 0 || maniaId >= all.length || all[maniaId] == null)
 			return [];
 		return all[maniaId];
+	}
+
+	/**
+		Deep copy of every mania's keybind slots — the "old keybind settings"
+		that cancelling a mania binding session resets back to.
+	**/
+	function snapshotManiaKeybinds():Array<Array<Array<KeyCode>>> {
+		var all = SaveData.state.controls.game.keybindArray;
+		if (all == null)
+			return null;
+		return [
+			for (mania in all) mania == null ? null : [for (slot in mania) slot == null ? null : slot.copy()]
+		];
+	}
+
+	/**
+		Refresh any live playfield strumlines after mania keybinds changed
+		underneath them — a key pressed mid-binding, or the snapshot restored
+		on cancel — so live notes answer to the current binds.
+	**/
+	function refreshLiveStrumlines() {
+		var playField = Main.current.playField;
+		if (playField == null)
+			return;
+		if (playField.mania == curManiaNum + 1) {
+			var noteSystem = playField.noteSystem;
+			if (noteSystem != null) {
+				var strumlines = noteSystem.strumlines;
+				for (i in 0...strumlines.length) {
+					strumlines[i].updateKeybinds();
+				}
+			}
+		}
 	}
 
 	function findManiaConflict(keyCode:KeyCode, maniaId:Int, currentSlot:Int, currentSub:Int):String {
@@ -372,7 +445,7 @@ class ControlsDisplay extends OptionsSubDisplay {
 					alertDupebind = false;
 					alertDupebindKeyName = "";
 					alertDupebindConflictName = "";
-				}, 7000);
+				}, 500);
 			}
 			return;
 		}
@@ -440,64 +513,44 @@ class ControlsDisplay extends OptionsSubDisplay {
 			return;
 		}
 
-		if (keyCode == controls.ui.back) {
-			var defaults = SaveData.getDefaultState();
-			controls.game.keybindArray[id] = defaults.controls.game.keybindArray[id];
-			alertKeybindReset = true;
-			haxe.Timer.delay(() -> {
-				alertKeybindReset = false;
-			}, 3000);
-			maniaBindNum = 0;
-			SaveData.save();
-			Main.current.playCancelSound();
+		// (The ui.back keybind used to reset the mania to factory defaults
+		// here; it now cancels the session instead — see the exclusion in
+		// onKeyDown and the snapshot restore in cancelBinding().)
+		if (keyCode == controls.game.reset && maniaSubBindNum == 1) {
+			keybindArr[maniaSubBindNum] = KeyCode.UNKNOWN;
 		} else {
-			if (keyCode == controls.game.reset && maniaSubBindNum == 1) {
-				keybindArr[maniaSubBindNum] = KeyCode.UNKNOWN;
-			} else {
-				var maniaConflict = findManiaConflict(keyCode, id, maniaBindNum, maniaSubBindNum);
-				if (maniaConflict != "") {
-					alertDupebind = true;
-					alertDupebindKeyName = KeyCodeConverter.getSimpleKeyName(keyCode);
-					alertDupebindConflictName = maniaConflict;
-					haxe.Timer.delay(() -> {
-						alertDupebind = false;
-						alertDupebindKeyName = "";
-						alertDupebindConflictName = "";
-					}, 7000);
-					Main.current.playCancelSound();
-					return;
-				}
-				var uiGameConflict = findConflict(keyCode, -1, false);
-				if (uiGameConflict != "") {
-					alertDupebind = true;
-					alertDupebindKeyName = KeyCodeConverter.getSimpleKeyName(keyCode);
-					alertDupebindConflictName = uiGameConflict;
-					haxe.Timer.delay(() -> {
-						alertDupebind = false;
-						alertDupebindKeyName = "";
-						alertDupebindConflictName = "";
-					}, 7000);
-					Main.current.playCancelSound();
-					return;
-				}
-				keybindArr[maniaSubBindNum] = keyCode;
+			var maniaConflict = findManiaConflict(keyCode, id, maniaBindNum, maniaSubBindNum);
+			if (maniaConflict != "") {
+				alertDupebind = true;
+				alertDupebindKeyName = KeyCodeConverter.getSimpleKeyName(keyCode);
+				alertDupebindConflictName = maniaConflict;
+				haxe.Timer.delay(() -> {
+					alertDupebind = false;
+					alertDupebindKeyName = "";
+					alertDupebindConflictName = "";
+				}, 500);
+				Main.current.playCancelSound();
+				return;
 			}
-			maniaBindNum++;
-			Main.current.playScrollSound();
+			var uiGameConflict = findConflict(keyCode, -1, false);
+			if (uiGameConflict != "") {
+				alertDupebind = true;
+				alertDupebindKeyName = KeyCodeConverter.getSimpleKeyName(keyCode);
+				alertDupebindConflictName = uiGameConflict;
+				haxe.Timer.delay(() -> {
+					alertDupebind = false;
+					alertDupebindKeyName = "";
+					alertDupebindConflictName = "";
+				}, 500);
+				Main.current.playCancelSound();
+				return;
+			}
+			keybindArr[maniaSubBindNum] = keyCode;
 		}
+		maniaBindNum++;
+		Main.current.playScrollSound();
 
-		var playField = Main.current.playField;
-		if (playField != null) {
-			if (playField.mania == curManiaNum + 1) {
-				var noteSystem = playField.noteSystem;
-				if (noteSystem != null) {
-					var strumlines = noteSystem.strumlines;
-					for (i in 0...strumlines.length) {
-						strumlines[i].updateKeybinds();
-					}
-				}
-			}
-		}
+		refreshLiveStrumlines();
 
 		if (maniaBindNum <= keybindsArr.length - 1) {
 			return;
@@ -505,6 +558,7 @@ class ControlsDisplay extends OptionsSubDisplay {
 
 		bindingMania = false;
 		maniaBindNum = 0;
+		maniaBindingSnapshot = null;
 		fixMania();
 		SaveData.save();
 		Main.current.controls.reload();
@@ -531,7 +585,7 @@ class ControlsDisplay extends OptionsSubDisplay {
 			return;
 		closed = true;
 
-		if (binding)
+		if (binding || bindingMania)
 			cancelBinding();
 		resetHostState();
 		alphaMultiplier = 1.0;
