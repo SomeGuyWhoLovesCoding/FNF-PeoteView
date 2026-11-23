@@ -107,6 +107,18 @@ class NoteSystem {
 	var notePool(default, null):NotePool;
 	var virtualNoteBuffer(default, null):NoteVB;
 
+	/**
+	 * The two-dimensional judgement system — a 1-bit [lane][index] array
+	 * with range registration (see JudgementSystem). Replaces the flat
+	 * per-note File judgement flag: an ambient-occluded visual note (a
+	 * sprite with several chart notes merged into it) registers its whole
+	 * global-index span on its lane's row when it is hit or missed, so
+	 * every note the sprite represents resolves with its head and none
+	 * can scroll past un-judged, lingering on the strumline as a fake
+	 * "not pressed yet" overlap part.
+	**/
+	var judgement(default, null):JudgementSystem;
+
 	/** Per-lane movement LUTs: movementLUTs[strumline][receptor_index] */
 	var movementLUTs(default, null):Array<Array<NoteMovementLUT>>;
 
@@ -136,6 +148,11 @@ class NoteSystem {
 		}
 
 		virtualNoteBuffer = new NoteVB(strumlines.length, 1 << 8);
+
+		// Judgement state for this playthrough — one 1-bit [lane][index]
+		// row per strumline, sized to the loaded chart. Must exist before
+		// the first update() pass below (processNotes reads it per note).
+		judgement = new JudgementSystem(strumlines.length, Int64.toInt(File.getLength()));
 
 		// Build movement LUTs — one per (strumline, receptor lane).
 		// Replaces per-note Math.cos/Math.sin with precomputed offset lookups.
@@ -167,6 +184,12 @@ class NoteSystem {
 	function update(pos:Int64) {
 		movingBackward = pos < _stableLastPos;
 		_stableLastPos = pos;
+
+		// The chart can grow under the editor (addNote mid-session) — keep
+		// the judgement array's index capacity ahead of the chart length.
+		// No-op in gameplay, where the chart is frozen.
+		if (judgement != null)
+			judgement.ensureCapacity(strumlines.length, Int64.toInt(File.getLength()));
 
 		virtualNoteBuffer.clear();
 
@@ -398,7 +421,7 @@ class NoteSystem {
 			// far side here (at most the anchor note can be far-future).
 			if (n.position < late || n.position > early)
 				return;
-			if (n.index == index && clampLane(n.lane, laneCount) == lane && !File.getJudgement(i)) {
+			if (n.index == index && clampLane(n.lane, laneCount) == lane && !judgement.isJudged(lane, i)) {
 				// Among hittable notes keep the earliest (smallest position) so a
 				// jack progresses in order; once `found`, only a smaller index can
 				// replace it.
@@ -428,6 +451,43 @@ class NoteSystem {
 		}
 
 		return bestId;
+	}
+
+	/**
+	 * Player-press registration for one visual note hit. Judges the
+	 * pressed head AND every ambient-occluded note merged into its
+	 * sprite — the whole global-index range the sprite covers on the
+	 * two-dimensional judgement array — as hit, so one press resolves
+	 * the entire visual group and no fake overlap part stays pending
+	 * as "not pressed yet" once the visual note is gone.
+	 * @param noteIndex The head's global chart index (from
+	 *                  findPlayerHitNote — the earliest un-judged note).
+	 * @param lane      The strumline row (the note's clamped stored lane).
+	 * @param index     The column (receptor index) of the note.
+	 * @return The size of the visual group (head + merged notes) — the
+	 *         notesInOne the press is scored with.
+	**/
+	function registerPlayerHit(noteIndex:Int64, lane:Int, index:Int):Int64 {
+		var pool = notePool;
+		var groupSize:Int64 = 1;
+		var tail = noteIndex;
+
+		if (pool != null) {
+			var slot = Int64.toInt(noteIndex);
+			var sprite:VirtualNote = slot < pool.virtualNoteSlots.length ? pool.virtualNoteSlots[slot] : null;
+			if (sprite != null) {
+				// The merge state the last processNotes pass left on the
+				// head's sprite: the group's size and range tail.
+				groupSize = sprite.notesInOne;
+				tail = sprite.judgementRangeEnd;
+			}
+			// No sprite bound (the head was never drawn, or it despawned
+			// between the pass and the press): register the head alone —
+			// getNotesFromRange resolves whatever the span still holds.
+		}
+
+		judgement.judgeRangeHit(lane, index, noteIndex, tail);
+		return groupSize;
 	}
 
 	function drawNote(pos:Int64, note:MetaNote, diff:Float, _id:Int64):VirtualNote {
@@ -503,8 +563,9 @@ class NoteSystem {
 		if (sustainExists)
 			leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
 
-		// Judgement-gated state reads
-		var judged:Bool = File.getJudgement(_id);
+		// Judgement-gated state reads — from the two-dimensional judgement
+		// system now (the [lane][index] bit), not the flat File flag.
+		var judged:Bool = judgement.isJudged(lane, _id);
 		var isHit:Bool = judged && !File.getHitFlag(_id); // judged + flag=false → hit
 		var isMissed:Bool = judged && File.getHitFlag(_id); // judged + flag=true → missed
 		var isResolved:Bool = receptor.sustainResolved;
@@ -573,7 +634,12 @@ class NoteSystem {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
 					File.setHitFlag(_id, true); // chosen to miss
 					isMissed = true;
-					File.setJudgement(_id, true);
+					// Miss the WHOLE ambient-occlusion group with its head —
+					// same range registration as the hit path, missed
+					// flavor, so the miss scoring's notesInOne matches the
+					// number of notes actually resolved and no merged note
+					// stays pending past the hit window.
+					judgement.judgeRangeMiss(lane, index, _id, noteSpr.judgementRangeEnd);
 
 					var type = note.type;
 
@@ -606,7 +672,16 @@ class NoteSystem {
 				// opponent hit: judged as hit (missed=false)
 				File.setHitFlag(_id, false);
 				isHit = true;
-				File.setJudgement(_id, true);
+				// Hit the WHOLE ambient-occlusion group with its head: every
+				// chart note merged into this sprite (the global-index range
+				// it covers) resolves in one range registration. This is the
+				// botplay path too — botplay routes the player strumline
+				// through the opponent branch, and before this registration
+				// the merged notes never passed through drawNote at all, so
+				// after a dense spam part they piled up un-judged and the
+				// engine mistook the fake overlap parts for notes still
+				// waiting to be pressed.
+				judgement.judgeRangeHit(lane, index, _id, noteSpr.judgementRangeEnd);
 
 				if (!rec.confirmed())
 					rec.confirm();

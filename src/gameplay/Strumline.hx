@@ -226,9 +226,15 @@ class Strumline {
 				rec.noteToHit_sprite = null;
 			}
 
-			// mark as hit: missed=false, then set judgement
-			File.setHitFlag(noteIndex, false);
-			File.setJudgement(noteIndex, true);
+			// Mark as hit: missed=false, then judge — the WHOLE ambient
+			// occlusion group this visual note represents. One press
+			// registers every note merged into the sprite (by the visual
+			// note's lane and index, over the global-index range it
+			// covers), so no fake overlap part can stay pending as "not
+			// pressed yet" once the visual is gone. Returns the group
+			// size to score the press with.
+			var lane = NoteSystem.clampLane(noteToHit.lane, parent.strumlines.length);
+			var notesInOne = parent.registerPlayerHit(noteIndex, lane, noteToHit.index);
 
 			rec.sustainToHold_duration = noteToHit.duration;
 			rec.sustainResolved = false;
@@ -244,10 +250,10 @@ class Strumline {
 			var timing = (_timing / parent._cachedHitbox) * 0.9;
 
 			if (@:privateAccess pf.onNoteHit.__listeners.length != 0)
-				pf.onNoteHit.dispatch(noteToHit, timing, 1);
+				pf.onNoteHit.dispatch(noteToHit, timing, notesInOne);
 			if (pf.field != null)
-				pf.field.hitNote(noteToHit, timing, 1);
-			pf.hitNote(noteToHit, timing, 1, noteIndex);
+				pf.field.hitNote(noteToHit, timing, notesInOne);
+			pf.hitNote(noteToHit, timing, notesInOne, noteIndex);
 
 			// A sustain of 80ms or less never registers an ending in the
 			// completion pass (see NoteSystem's duration gate), so finish it
@@ -281,8 +287,10 @@ class Strumline {
 		var sustainIndex = rec.sustainToHold_index;
 
 		// Sustain release fires if: note exists, correct lane, was hit, and not yet resolved
+		// (judgement read from the two-dimensional [lane][index] bit).
 		var hitflag = File.getHitFlag(sustainIndex);
-		var sustainReleaseCallbackCanRun = sustainToRelease != null && sustainToRelease.index == index && File.getJudgement(sustainIndex) && !hitflag
+		var sustainReleaseCallbackCanRun = sustainToRelease != null && sustainToRelease.index == index
+			&& parent.judgement.isJudged(NoteSystem.clampLane(sustainToRelease.lane, parent.strumlines.length), sustainIndex) && !hitflag
 			&& !rec.sustainResolved;
 
 		if (sustainReleaseCallbackCanRun) {
@@ -343,6 +351,7 @@ class Strumline {
 			if (rec != null) {
 				rec.ambientOccludeYPrev = 0;
 				rec.ambientOccludeYCur = 0;
+				rec.ambientOccludeHead = null;
 			}
 		}
 	}
@@ -366,6 +375,7 @@ class Strumline {
 					rec.noteToHit = null;
 					rec.noteToHit_sprite = null;
 					rec.sustainToHold = null;
+					rec.ambientOccludeHead = null;
 				}
 			}
 			receptors = null;

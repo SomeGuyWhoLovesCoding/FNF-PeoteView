@@ -111,8 +111,6 @@ class NoteSpawner {
 
 		var i = (minBottom != -1 && bottom < minBottom) ? minBottom : bottom;
 		var scrollSpeed = parent.parent.scrollSpeed;
-		var noteSpr:VirtualNote = null;
-		var j:Int = 0;
 
 		// Precompute overlap scale inverse once for the entire loop
 		var overlapInv = getOverlapScaleInv();
@@ -139,14 +137,28 @@ class NoteSpawner {
 
 			receptor.ambientOccludeYCur = newY;
 
-			var shouldOverlap = noteSpr != null
-				&& shouldNotesOverlap(prevNote, n, noteSpr, rec, receptor.ambientOccludeYPrev, receptor.ambientOccludeYCur, overlapInv);
+			// Merge target is THIS column's ambient-occlusion group head —
+			// never the globally last drawn sprite, which can belong to a
+			// chord partner on another column of the same lane.
+			var headSpr = receptor.ambientOccludeHead;
+			var shouldOverlap = headSpr != null
+				&& shouldNotesOverlap(prevNote, n, headSpr, rec, receptor.ambientOccludeYPrev, receptor.ambientOccludeYCur, overlapInv);
 
 			if (shouldOverlap) {
-				mergeNoteIntoSprite(noteSpr, i);
+				mergeNoteIntoSprite(headSpr, i, lane);
 			} else {
-				++j;
-				noteSpr = parent.drawNote(pos, n, diff, i);
+				headSpr = parent.drawNote(pos, n, diff, i);
+				receptor.ambientOccludeHead = headSpr;
+				if (headSpr != null) {
+					// New group head for this column. drawNote() has just
+					// read the sprite's carried-over merge state
+					// (notesInOne / judgementRangeEnd from the previous
+					// pass — see NotePool.getNote), so only NOW restart
+					// the per-pass accumulation; the merges below build
+					// the group back up within this pass.
+					headSpr.notesInOne = 1;
+					headSpr.judgementRangeEnd = i;
+				}
 			}
 
 			strumline.setPrevNote(n.index, n);
@@ -421,9 +433,23 @@ class NoteSpawner {
 			&& prev.index == current.index;
 	}
 
-	inline function mergeNoteIntoSprite(noteSpr:VirtualNote, i:Int64) {
+	inline function mergeNoteIntoSprite(noteSpr:VirtualNote, i:Int64, lane:Int) {
 		var alphaToAdd = File.getHitFlag(i) ? Note.defaultMissAlpha : Note.defaultAlpha;
 		noteSpr.addedAlpha = Math.min(noteSpr.addedAlpha + alphaToAdd, 256);
 		noteSpr.notesInOne++;
+		// The visual note now covers every global index up to this member —
+		// extend the judgement range its head registers when hit or missed.
+		noteSpr.judgementRangeEnd = i;
+
+		// Late-joining member of an already-judged group: the head was hit
+		// or missed before this note ever merged in (spawn-frame hits,
+		// seek edges). Inherit the head's judgement NOW so no merged note
+		// can stay pending forever as an un-judged "not pressed yet"
+		// ghost — the flaw that showed up after dense spam sections.
+		var headIdx = noteSpr.globalIndex;
+		if (parent.judgement.isJudged(lane, headIdx) && !parent.judgement.isJudged(lane, i)) {
+			File.setHitFlag(i, File.getHitFlag(headIdx));
+			parent.judgement.setJudged(lane, i);
+		}
 	}
 }

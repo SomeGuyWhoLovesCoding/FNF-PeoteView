@@ -87,11 +87,22 @@ class NotePool {
 			if (slot >= virtualNoteSlots.length)
 				virtualNoteSlots.resize(slot + 1);
 			virtualNoteSlots[slot] = obj;
+
+			// Fresh binding: initialize the ambient-occlusion merge state.
+			// On REBINDS (obj != null: same note still visible from last
+			// frame) notesInOne and judgementRangeEnd are deliberately
+			// PRESERVED — they still carry the merge group's size and tail
+			// from the previous pass, so a hit or miss that fires inside
+			// drawNote() (before this frame's merges re-accumulate in
+			// processNotes) sees the FULL group, not just the head. That
+			// is what lets one hit judge every note merged into the
+			// sprite with a single judgement-range registration.
+			obj.notesInOne = 1;
+			obj.judgementRangeEnd = index;
 		}
 
 		obj.initialAlpha = Note.defaultAlpha;
 		obj.addedAlpha = 0;
-		obj.notesInOne = 1;
 		obj.ref = n;
 		return obj;
 	}
