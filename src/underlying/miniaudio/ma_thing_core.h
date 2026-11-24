@@ -1330,7 +1330,14 @@ public:
         streamLpfState.clear();
         if (stretchPipe) { delete stretchPipe; stretchPipe = nullptr; }
         longestDecoderIndex = 0;
-        playbackRate.store(1.0f, std::memory_order_release);
+        // playbackRate deliberately NOT reset here: it is GLOBAL
+        // mixer state, not per-pipeline state. loadFiles() runs
+        // destroy() as its first step (loadFiles -> destroy ->
+        // build), so resetting here silently reverted the global
+        // rate to 1x on every song (re)load - chart restarts
+        // (backwards seeks) and song-end transitions included. The
+        // rate now survives the rebuild; Mixer.load re-asserts it
+        // on the Haxe side as well.
         mixerState.store(3, std::memory_order_release);
         predictInit.store(false, std::memory_order_relaxed);
         predictBaseTimeNs.store(0, std::memory_order_relaxed);

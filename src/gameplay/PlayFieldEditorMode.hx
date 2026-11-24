@@ -214,8 +214,11 @@ class PlayFieldEditorMode {
 	function build() {
 		field.songPosition = 0;
 		smoothPosition = 0;
-		playbackRate = 1.0;
-		Mixer.speed = 1.0;
+		// The playback rate is global mixer state: the editor INHERITS it
+		// instead of stomping back to 1x on entry, so a rate dialed in
+		// before a seek-restart or a song end survives into the next
+		// session. CTRL+DOWN / CTRL+UP write it globally via Mixer.speed.
+		playbackRate = Mixer.speed;
 
 		// The HUD must be visible the instant the editor appears — the
 		// gameplay fade-in (alphaLerp toward 1 on songStarted) would
@@ -966,9 +969,11 @@ class PlayFieldEditorMode {
 			instructionsPopup.dispose();
 			instructionsPopup = null;
 		}
-		// Never leak a non-1x rate into gameplay or the menus — the
-		// editor's rate is editor-only state.
-		Mixer.speed = 1.0;
+		// The global playback rate is deliberately NOT reset here: it is
+		// global mixer state and must survive the editor closing —
+		// including the song-end exit (stopSong → MAIN_MENU). Mixer.load
+		// re-asserts it on every fresh pipeline, so nothing leaks or
+		// drops. Step the ladder back with CTRL+DOWN if 1x is wanted.
 		if (strumlineInput != null) {
 			strumlineInput.dispose();
 			strumlineInput = null;

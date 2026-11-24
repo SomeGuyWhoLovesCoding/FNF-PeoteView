@@ -85,6 +85,17 @@ class Mixer {
 		trackCount = files.length;
 		length = MiniAudio.getDuration();
 
+		// The playback rate is GLOBAL mixer state, not per-song: a fresh
+		// load must not drop it. loadFiles rebuilds the whole pipeline
+		// (loadFiles → destroy → build on the C++ side); the engine-side
+		// atomic is no longer reset by that rebuild, and this re-assert
+		// puts the current rate on whatever pipeline just came up — so
+		// backwards-seek restarts and song-end transitions keep the rate
+		// that was dialed in.
+		#if (cpp || hl)
+		MiniAudio.setPlaybackRate(speed);
+		#end
+
 		// Unified channel system: route the inst and voices into the
 		// surround buses (BACKGROUND / CENTER, SUB available) and
 		// re-assert the saved stereo / Surround Sound 3.1 output mode

@@ -36,7 +36,8 @@ import lime.ui.MouseWheelMode;
 	               stored lane. A hold-edit press keeps
 	               the note with whatever duration was dialed in (every wheel
 	               notch / drag step was already written to the chart).
-	               RIGHT: removes the note in the hovered slot.
+	               RIGHT: removes the note in the hovered slot, or the
+	               nearest note within half a snap step of it (findNoteNear).
 	* mouseWheel — shifts the song position forward or backward (Ctrl = 4x;
 	               while hold-editing it edits the sustain length instead.
 
@@ -452,7 +453,11 @@ class StrumlineNoteInteraction {
 						lutCtx = null;
 					}
 					hoverTimeMs = snapTime(yToTimeMs(y, anchor.y));
-					hoverOccupied = findNoteAt(li, si, hoverTimeMs) >= 0;
+					// Occupied = a note sits at the slot OR within half a
+					// snap step of it: the ghost turns red across the whole
+					// area a right-click removes from (findNoteNear), not
+					// just the exact cell.
+					hoverOccupied = findNoteNear(li, si, hoverTimeMs) >= 0;
 					return true;
 				}
 			}
@@ -465,7 +470,9 @@ class StrumlineNoteInteraction {
 		Binary search by position, then walk equal positions. A note at the
 		same time+lane with a DIFFERENT notetype also counts — hold-editing
 		any of them is the same gesture (the type is preserved per-note on
-		the duration rewrite).
+		the duration rewrite). This is the EXACT-slot matcher: placement
+		and LMB pickup use it, so the press always acts on precisely the
+		cell the ghost shows. Removal uses findNoteNear instead.
 	*/
 	function findNoteAt(lane:Int, strumlineIdx:Int, timeMs:Float):Int64 {
 		var len = File.getLength();
@@ -493,6 +500,61 @@ class StrumlineNoteInteraction {
 			i++;
 		}
 		return -1;
+	}
+
+	/**
+		Removal targeting. A binary search captures the note RANGE around
+		the snapped time — half a snap step to each side (the same
+		catchment the event lane uses) — and the captured range is then
+		FILTERED down to the lane index + strumline actually selected,
+		keeping whichever remaining note lies NEAREST the snap. So: a note
+		exactly on the slot (distance 0) always wins, and an off-grid note
+		(a loaded chart, a hold-tail release) is still removable by
+		clicking the cell it straddles. Everything the filter rejects —
+		other lanes, other strumlines, notes beyond half a step — is
+		ignored. Placement/pickup stays EXACT (findNoteAt); this
+		looseness is for removal only.
+	**/
+	function findNoteNear(lane:Int, strumlineIdx:Int, timeMs:Float):Int64 {
+		var len = File.getLength();
+		if (len <= 0)
+			return -1;
+
+		var target = MetaNote.floatToMetaNotePosition(timeMs);
+		var tol = MetaNote.floatToMetaNotePosition(parent.editorMode.snapMs * 0.5);
+		var loPos = target - tol;
+		var hiPos = target + tol;
+
+		// Binary search to the first note inside the captured range...
+		var lo:Int64 = 0, hi:Int64 = len;
+		while (lo < hi) {
+			var mid:Int64 = (lo + hi) >> 1;
+			if (File.getNote(mid).position < loPos)
+				lo = mid + 1;
+			else
+				hi = mid;
+		}
+
+		// ...then walk it, filter out what was not meant to be selected
+		// (other lanes / strumlines / beyond the catchment), and keep the
+		// note closest to the snap (ties go to the earliest).
+		var best:Int64 = -1;
+		var bestDist:Int64 = 0;
+		var i = lo;
+		while (i < len) {
+			var n = File.getNote(i);
+			if (n.position > hiPos)
+				break;
+			if (n.index == lane && NoteSystem.clampLane(n.lane, parent.noteSystem.strumlines.length) == strumlineIdx) {
+				var d = n.position > target ? n.position - target : target - n.position;
+				if (best < 0 || d < bestDist) {
+					best = i;
+					bestDist = d;
+				}
+			}
+			i++;
+		}
+		return best;
 	}
 
 	// ==================================================================
@@ -1126,7 +1188,12 @@ class StrumlineNoteInteraction {
 				return;
 			}
 			if (detectHitbox(local.x, local.y) && hoverLane >= 0) {
-				var id = findNoteAt(hoverLane, hoverStrumline, hoverTimeMs);
+				// Removal targeting: binary-search the half-snap range
+				// around the snapped slot and keep the nearest note on
+				// this lane index + strumline (findNoteNear) — a note
+				// exactly on the slot always wins, off-grid neighbors
+				// within the catchment are still removable.
+				var id = findNoteNear(hoverLane, hoverStrumline, hoverTimeMs);
 				if (id >= 0 && parent.editorMode.editorRemove(id)) {
 					Main.current.playScrollSound();
 					parent.editorMode.onChartEdited();
@@ -1293,12 +1360,13 @@ class StrumlineNoteInteraction {
 				square.y = Std.int(cy - size * 0.5);
 				square.r = 45; // diamond orientation over the lane
 
-				// Red = occupied (right-click removes), green = empty
-				// (click adds). Under the v2 format the hovered
-				// strumline goes into the note's STORED lane, so the
-				// pen's notetype always rides along unchanged — no more
-				// violet coercion square.
-				var occupied = showHeld ? findNoteAt(lane, strumlineIdx, timeMs) >= 0 : hoverOccupied;
+				// Red = a right-click removes from here (a note sits at
+				// the slot or within half a snap step of it), green =
+				// clean add. Under the v2 format the hovered strumline
+				// goes into the note's STORED lane, so the pen's notetype
+				// always rides along unchanged — no more violet coercion
+				// square.
+				var occupied = showHeld ? findNoteNear(lane, strumlineIdx, timeMs) >= 0 : hoverOccupied;
 				if (occupied) {
 					square.c = 0xFF0000FF; // red = a note is already there
 				} else {
