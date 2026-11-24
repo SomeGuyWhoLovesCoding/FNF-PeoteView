@@ -470,7 +470,10 @@ class PlayFieldEditorMode {
 	function seekLineCount(mod:KeyModifier):Int {
 		if ((mod & KeyModifier.CTRL) == 0)
 			return 1;
-		return Std.int(Math.max(1, Math.round(4000 / snapMs)));
+		// Math.round returns Float — Std.int() lands it as the Int the
+		// caller's Int signature promised (min one line, never zero).
+		var lines = Std.int(Math.round(4000 / snapMs));
+		return lines < 1 ? 1 : lines;
 	}
 
 	/**

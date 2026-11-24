@@ -28,11 +28,17 @@ import lime.ui.MouseWheelMode;
 	               On the event lane: adds/removes placeholder events. On
 	               background: starts the pan gesture; a TRIPLE
 	               background click/tap toggles the instructions popup.
-	               SELECTION (v3.3): CTRL+press starts a MARQUEE band
-	               (drag = rubber-band select, live; SHIFT adds to the
-	               selection instead of replacing; an unmoved CTRL press
-	               clears it), and SHIFT+press on a note toggles just
-	               that note in/out of the selection.
+               SELECTION (v3.3): CTRL+press starts a MARQUEE band
+               (drag = rubber-band select, live; SHIFT adds to the
+               selection instead of replacing; an unmoved CTRL press
+               clears it), and SHIFT+press on a note toggles just
+               that note in/out of the selection. v3.6: a note is
+               captured when ANY of its boundary touches the band —
+               the drawn rectangle's AABB intersect, every edge
+               inclusive — and the whole selection renders as ONE
+               single bounding-box sprite (the tight box of every
+               selected note's drawn rectangle, cyan), never a
+               per-note element pool.
 	* mouseUp    — LEFT: ends the gesture — a hold-edit keeps the note
 	               with whatever duration was dialed in (every wheel
 	               notch / drag step was already written to the chart),
@@ -235,36 +241,27 @@ class StrumlineNoteInteraction {
 	/** SHIFT held at band start — the box ADDS to the selection instead of replacing it. */
 	var marqueeAdditive:Bool = false;
 	/**
-		The SELECTION BOX sprite (v3.4): fill + edge outline elements that
-		draw the band; the class normalizes the corner pair and owns all
-		five rects. Replaces the old single translucent marqueeRect — a
-		dedicated element class, as requested.
+		The DRAG BAND sprite (v3.4): fill + edge outline elements that
+		draw the marquee box while it is being banded; the class
+		normalizes the corner pair and owns all five rects. Warm white.
 	**/
 	var selectionBox:SelectionBoxSprite;
 	/**
-		v3.5 SEPARATE GRAPHIC: the box and the per-note selection elements
-		no longer share one buffer/program. The elements can OVERLAP — each
-		other, and the box while it is being dragged over selected notes —
-		and shared-buffer blending made those overlaps nondeterministic
-		mud. The box now draws from its OWN program (selBuf/selProg below)
-		and the note elements from selElemBuf/selElemProg, added to the
-		display AFTER the box's program: box below, elements above, in
-		note order — deterministic whatever the overlaps are. Each element
-		is a SelectionNoteSprite (fill + 1px edges, the box's visual
-		language, sized to the note it marks).
+		THE SELECTION BOUNDS sprite (v3.6): ONE single rectangle holding
+		the EXACT selection — the tight bounding box of every selected
+		note's DRAWN rectangle (a note counts when ANY of its boundary is
+		inside the drag band: touching the band's edge selects it). One
+		sprite object, five rects, CYAN tint so it is never confused with
+		the white drag band. THE optimal form: no per-note element pool
+		that bounces every note into its own sprites — the whole
+		selection is one bounding box, one update pass, recomputed only
+		when the selection or the view actually changes something about
+		it. Idles at w=h=0 when nothing is selected.
 	**/
-	/** Pooled per-note selection elements (lazily bound like the grid). */
-	var selNotes:Array<SelectionNoteSprite> = [];
-	/** The BOX's own buffer (fill + four edges, five elements). */
+	var selectionBounds:SelectionBoxSprite;
+	/** The selection graphics' shared buffer (2 sprites × 5 elements). */
 	var selBuf:Buffer<RepeatSprite>;
 	var selProg:CustomProgram;
-	/** The ELEMENTS' own buffer (SEL_MAX SelectionNoteSprites, 5 rects each). */
-	var selElemBuf:Buffer<RepeatSprite>;
-	var selElemProg:CustomProgram;
-	/** True while the element pool is bound. */
-	var selActive:Bool = false;
-	/** Max simultaneously highlighted notes — the view window is bounded anyway. */
-	static inline var SEL_MAX:Int = 512;
 
 	var display(default, null):CustomDisplay;
 
@@ -299,17 +296,15 @@ class StrumlineNoteInteraction {
 		// the first frame the grid alpha goes non-zero.
 		gridBuf = new Buffer<RepeatSprite>(GRID_MAX_ROWS * 2, 2, true);
 		gridProg = new CustomProgram(gridBuf);
-		// The selection overlay, SPLIT (v3.5): the BOX's five elements in
-		// their own buffer (always bound, w=0 when idle), and the per-note
-		// SELECTION ELEMENTS in a separate one (up to SEL_MAX
-		// SelectionNoteSprites = 5 rects each, lazily bound the first
-		// frame a selection exists). Two programs so overlapping
-		// elements never blend against the box nondeterministically.
-		selBuf = new Buffer<RepeatSprite>(5, 2, true);
+		// The selection overlay (v3.6): ONE buffer holding TWO
+		// SelectionBoxSprites — the white drag band and the cyan
+		// selection BOUNDS (the single bounding box of the whole
+		// selection) — ten elements total, no per-note pool.
+		selBuf = new Buffer<RepeatSprite>(10, 2, true);
 		selProg = new CustomProgram(selBuf);
-		selElemBuf = new Buffer<RepeatSprite>(SEL_MAX * 5, 2, true);
-		selElemProg = new CustomProgram(selElemBuf);
 		selectionBox = new SelectionBoxSprite();
+		selectionBounds = new SelectionBoxSprite();
+		selectionBounds.setTint(0x00FFFFFF, 0x00FFFFFF, 0.14, 0.75);
 	}
 
 	function addEvents() {
@@ -724,8 +719,16 @@ class StrumlineNoteInteraction {
 			} else {
 				lutCtx = null;
 			}
-			var t0 = yToTimeMs(minY, note.y);
-			var t1 = yToTimeMs(maxY, note.y);
+			// BOUNDARY-TOUCH (v3.6): a note selects when ANY of its
+			// boundary is inside the band — so the band's Y span must
+			// be the inverse of the band's edges EXPANDED by the note's
+			// half drawn height on each side (a note whose TOP edge
+			// barely grazes the band's top, or whose BOTTOM edge grazes
+			// the band's bottom, is in). The X side is already an
+			// inclusive-rect intersect below.
+			var halfH = Math.max(1.0, note.h * note.scale * 0.5);
+			var t0 = yToTimeMs(minY - halfH, note.y);
+			var t1 = yToTimeMs(maxY + halfH, note.y);
 			if (t0 > t1) {
 				var tmp = t0;
 				t0 = t1;
@@ -777,10 +780,19 @@ class StrumlineNoteInteraction {
 					// side of the column center.
 					var halfW = note.w * strumline.scale * 0.5;
 					var cx = note.x + halfW;
-					// TOUCHES: the note's [cx-halfW, cx+halfW] intersects
-					// the box's [minX, maxX] (inclusive — edge contact
-					// selects the note).
-					if (cx + halfW >= minX && cx - halfW <= maxX)
+					// TOUCHES (v3.6, any boundary): the note's drawn
+					// RECTANGLE [cx±halfW] × [cy±halfH] intersects the
+					// band's rect — inclusive on every edge, so grazing
+					// the note's top/bottom/left/right boundary with the
+					// band's edge selects it. cy is drawNote's exact
+					// center-Y math (lane-0 LUT + this receptor anchor);
+					// the position-span prefilter above already bounds the
+					// walk, this is the precise test.
+					var cy = drawnCenterY(note, strumline, si, n.position);
+					var halfH = note.h * note.scale * 0.5;
+					var xTouch = cx + halfW >= minX && cx - halfW <= maxX;
+					var yTouch = cy + halfH >= minY && cy - halfH <= maxY;
+					if (xTouch && yTouch)
 						ids.push(i);
 				}
 			}
@@ -794,35 +806,63 @@ class StrumlineNoteInteraction {
 	}
 
 	/**
-		Per-frame selection rendering (v3.5: TWO graphics, two programs).
-		The BOX (fill + edges, from SelectionBoxSprite) draws from its own
-		program while banding; one SelectionNoteSprite per VISIBLE selected
-		note — its own graphic, in the elements' separate program layered
-		ABOVE the box's — so overlapping elements stay individually
-		readable (each element's 1px edge survives another element's fill).
-		The walk binary-searches into the visible position window, so a
-		select-all on a huge chart still costs only the notes on screen.
+		The exact Y of a note's drawn-rectangle CENTER (the same math
+		drawNote and the ghost square use: the strumline's lane-0 movement
+		LUT over the diff value, plus this receptor's anchor and half the
+		drawn height). Shared by the boundary-touch capture test and the
+		selection-bounds computation so the two can never disagree.
+	**/
+	function drawnCenterY(note:Note, strumline:Strumline, si:Int, position:Int64):Float {
+		var renderPos = playheadMs();
+		var timeMs = MetaNote.metaNotePositionToSongTime(position);
+		var d = -(timeMs - renderPos) * scrollSpeedClamped();
+		if (parent.downScroll)
+			d = -d;
+		var luts = parent.noteSystem != null ? parent.noteSystem.movementLUTs : null;
+		var lut = strumline.receptors[0] != null && luts != null && si < luts.length && luts[si].length > 0 ? luts[si][0] : null;
+		var scale = lut != null && lut.hasExtendedLUT ? lut.lookupScale(Std.int(d), note.scale) * note.scale : note.scale;
+		return note.y + (lut != null ? lut.lookupY(Std.int(d)) : Std.int(d)) + note.h * scale * 0.5;
+	}
+
+	/** The clamped scroll speed (never 0) — shared center-Y math uses this. */
+	function scrollSpeedClamped():Float {
+		var sp = parent.scrollSpeed;
+		return sp <= 0 ? 1 : sp;
+	}
+
+	/**
+		Per-frame selection rendering (v3.6: ONE single bounds sprite).
+		TWO SelectionBoxSprite instances share one buffer: the white DRAG
+		BAND while banding, and the cyan SELECTION BOUNDS — ONE rectangle
+		holding the EXACT selection: the tight bounding box of every
+		visible selected note's drawn rectangle. No per-note element
+		pool: one sprite, five rects, one update — optimal. The walk
+		binary-searches into the visible position window, so a select-all
+		on a huge chart still costs only the notes on screen; the bounds
+		box only needs the extremes (running min/max), never a list.
 	**/
 	function updateSelectionVisual() {
 		var em = parent.editorMode;
 		if (em == null || em.edits == null) {
 			if (selectionBox != null && selectionBox.boxActive())
 				selectionBox.hideBox();
+			if (selectionBounds != null && selectionBounds.boxActive())
+				selectionBounds.hideBox();
 			if (selBuf != null) {
 				try {
 					if (selectionBox != null)
 						selectionBox.updateIn(selBuf);
+					if (selectionBounds != null)
+						selectionBounds.updateIn(selBuf);
 					selBuf.update();
 				} catch (e:Dynamic) {}
 			}
-			if (selElemBuf != null && selActive)
-				hideSelQuads();
 			return;
 		}
 		var edits = em.edits;
 		var noteSystem = parent.noteSystem;
 
-		// The selection box itself (fill + edge outline) — its OWN graphic.
+		// The white drag band (fill + edge outline) while banding.
 		if (marqueeing) {
 			selectionBox.setBox(marqueeX0, marqueeY0, marqueeX1, marqueeY1);
 		} else if (selectionBox.boxActive()) {
@@ -830,32 +870,19 @@ class StrumlineNoteInteraction {
 		}
 
 		if (noteSystem == null || !edits.hasSelection()) {
-			if (selActive)
-				hideSelQuads();
+			if (selectionBounds.boxActive())
+				selectionBounds.hideBox();
 			try {
 				selectionBox.updateIn(selBuf);
+				selectionBounds.updateIn(selBuf);
 				selBuf.update();
 			} catch (e:Dynamic) {}
 			return;
 		}
 
-		// Lazily bind the ELEMENT pool the first frame a selection exists
-		// (same pattern as the grid) — in the ELEMENTS' buffer, not the
-		// box's: the two graphics never share a program.
-		if (!selActive) {
-			while (selNotes.length < SEL_MAX) {
-				var e = new SelectionNoteSprite();
-				selNotes.push(e);
-				e.addToBuffer(selElemBuf);
-			}
-			selActive = true;
-		}
-
 		var strumlines = noteSystem.strumlines;
 		var renderPos = playheadMs();
-		var scrollSpeed = parent.scrollSpeed;
-		if (scrollSpeed <= 0)
-			scrollSpeed = 1;
+		var scrollSpeed = scrollSpeedClamped();
 
 		// The visible window: the spawn distance ahead of the playhead
 		// plus the despawn tail (a little slack past the notes).
@@ -871,9 +898,15 @@ class StrumlineNoteInteraction {
 				hiIdx = mid;
 		}
 
-		var qi = 0;
+		// THE single bounding box of the whole selection: running
+		// extremes over every VISIBLE selected note's drawn rectangle
+		// (the exact X and Y extents the capture test used — the box is
+		// exact: it tightly contains every selected note that is on
+		// screen right now).
+		var haveBounds = false;
+		var bMinX = 0.0, bMaxX = 0.0, bMinY = 0.0, bMaxY = 0.0;
 		var i = loIdx;
-		while (i < len && qi < SEL_MAX) {
+		while (i < len) {
 			var n = File.getNote(i);
 			if (n.position > winHi)
 				break;
@@ -882,52 +915,45 @@ class StrumlineNoteInteraction {
 				var strumline = strumlines[si];
 				if (strumline != null && n.index >= 0 && n.index < strumline.length && strumline.receptors[n.index] != null) {
 					var note = strumline.receptors[n.index].note;
-					// Column center — the same cx the hitboxes use.
-					var size = note.w * strumline.scale;
-					var cx = note.x + size * 0.5;
-					// Drawn center Y — drawNote's exact math (the
-					// strumline's lane-0 LUT + this lane's receptor
-					// anchor), the same as the ghost square.
-					var timeMs = MetaNote.metaNotePositionToSongTime(n.position);
-					var d = -(timeMs - renderPos) * scrollSpeed;
-					if (parent.downScroll)
-						d = -d;
-					var lut = strumline.receptors[0] != null && noteSystem.movementLUTs != null && si < noteSystem.movementLUTs.length && noteSystem.movementLUTs[si].length > 0 ? noteSystem.movementLUTs[si][0] : null;
-					var scale = lut != null && lut.hasExtendedLUT ? lut.lookupScale(Std.int(d), note.scale) * note.scale : note.scale;
-					var cy = note.y + (lut != null ? lut.lookupY(Std.int(d)) : Std.int(d)) + note.h * scale * 0.5;
-
-					// THE separate graphic: this note's selection element
-					// (fill + 1px edges) in its own program above the box.
-					selNotes[qi++].setHighlight(cx, cy, size);
+					var halfW = note.w * strumline.scale * 0.5;
+					var cx = note.x + halfW;
+					var cy = drawnCenterY(note, strumline, si, n.position);
+					var halfH = note.h * note.scale * 0.5;
+					if (!haveBounds) {
+						bMinX = cx - halfW;
+						bMaxX = cx + halfW;
+						bMinY = cy - halfH;
+						bMaxY = cy + halfH;
+						haveBounds = true;
+					} else {
+						if (cx - halfW < bMinX) bMinX = cx - halfW;
+						if (cx + halfW > bMaxX) bMaxX = cx + halfW;
+						if (cy - halfH < bMinY) bMinY = cy - halfH;
+						if (cy + halfH > bMaxY) bMaxY = cy + halfH;
+					}
 				}
 			}
 			i++;
 		}
-		for (k in qi...selNotes.length)
-			selNotes[k].hide();
+		if (haveBounds)
+			selectionBounds.setBox(bMinX, bMinY, bMaxX, bMaxY);
+		else
+			selectionBounds.hideBox();
 
 		try {
-			for (e in selNotes)
-				e.updateIn(selElemBuf);
-			selElemBuf.update();
 			selectionBox.updateIn(selBuf);
+			selectionBounds.updateIn(selBuf);
 			selBuf.update();
 		} catch (e:Dynamic) {}
 	}
 
-	/** Unbinds every selection element (selection emptied / teardown). */
+	/** Hides the selection bounds sprite (kept bound in the buffer; zero-size = invisible). */
 	function hideSelQuads() {
-		if (!selActive)
+		if (selectionBounds == null)
 			return;
-		selActive = false;
-		for (e in selNotes) {
-			try
-				e.removeFromBuffer(selElemBuf)
-			catch (e:Dynamic) {}
-		}
-		selNotes.resize(0);
+		selectionBounds.hideBox();
 		try
-			selElemBuf.update()
+			selBuf.update()
 		catch (e:Dynamic) {}
 	}
 
@@ -1647,7 +1673,7 @@ class StrumlineNoteInteraction {
 				// (edits.removeNotesByIds). The selection is cleared by
 				// the per-removal remaps as the ids leave the chart.
 				var ids = findNotesNear(hoverLane, hoverStrumline, hoverTimeMs);
-				if (ids.length > 0 && parent.editorMode.edits.removeNotesByIds(ids) != 0) {
+				if (ids.length > 0 && parent.editorMode.edits.removeNotesByIds(ids) > 0) {
 					Main.current.playScrollSound();
 					parent.editorMode.onChartEdited();
 				}
@@ -2061,16 +2087,12 @@ class StrumlineNoteInteraction {
 	function attach() {
 		// The grid program goes in BEFORE the square's so the interaction
 		// markers stay visible above the grid lines. The selection
-		// graphics sit between them: the BOX's program above the grid,
-		// and the ELEMENTS' program directly after the box's (v3.5: a
-		// separate graphic in its own program, layered ABOVE the box so
-		// overlapping elements stay deterministic) — both below the ghost.
+		// program (drag band + selection bounds, ONE buffer) sits between
+		// them: above the grid, below the ghost.
 		if (!gridProg.isIn(display))
 			display.addProgram(gridProg);
 		if (!selProg.isIn(display))
 			display.addProgram(selProg);
-		if (!selElemProg.isIn(display))
-			display.addProgram(selElemProg);
 		if (!squareProg.isIn(display))
 			display.addProgram(squareProg);
 		if (!eventMarkerProg.isIn(display))
@@ -2084,16 +2106,19 @@ class StrumlineNoteInteraction {
 		holdTail.w = 0;
 		holdTail.h = 0;
 		selectionBox.hideBox();
+		selectionBounds.hideBox();
 		squareBuf.addElement(square);
 		squareBuf.addElement(holdTail);
 		squareBuf.addElement(eventGhost);
 		selectionBox.addToBuffer(selBuf);
+		selectionBounds.addToBuffer(selBuf);
 		try {
 			squareBuf.updateElement(square);
 			squareBuf.updateElement(holdTail);
 			squareBuf.updateElement(eventGhost);
 			squareBuf.update();
 			selectionBox.updateIn(selBuf);
+			selectionBounds.updateIn(selBuf);
 			selBuf.update();
 		} catch (e) {}
 		addEvents();
@@ -2111,6 +2136,7 @@ class StrumlineNoteInteraction {
 			squareBuf.removeElement(holdTail);
 			squareBuf.removeElement(eventGhost);
 			selectionBox.removeFromBuffer(selBuf);
+			selectionBounds.removeFromBuffer(selBuf);
 		} catch (e) {}
 		for (m in eventMarkers) {
 			try
@@ -2122,8 +2148,6 @@ class StrumlineNoteInteraction {
 			display.removeProgram(squareProg);
 		if (eventMarkerProg.isIn(display))
 			display.removeProgram(eventMarkerProg);
-		if (selElemProg.isIn(display))
-			display.removeProgram(selElemProg);
 		if (selProg.isIn(display))
 			display.removeProgram(selProg);
 		if (gridProg.isIn(display))
@@ -2136,7 +2160,7 @@ class StrumlineNoteInteraction {
 		holdTail = null;
 		eventGhost = null;
 		selectionBox = null;
-		selNotes = null;
+		selectionBounds = null;
 		if (squareBuf != null) {
 			try
 				squareBuf.clear()
@@ -2161,16 +2185,9 @@ class StrumlineNoteInteraction {
 			catch (e) {}
 			selBuf = null;
 		}
-		if (selElemBuf != null) {
-			try
-				selElemBuf.clear()
-			catch (e:Dynamic) {}
-			selElemBuf = null;
-		}
 		squareProg = null;
 		eventMarkerProg = null;
 		gridProg = null;
 		selProg = null;
-		selElemProg = null;
 	}
 }

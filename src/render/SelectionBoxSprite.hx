@@ -1,23 +1,19 @@
 package render;
 
 /**
-	The editor's SELECTION BOX element sprite (v3.4, v3.5): an
-	axis-aligned rectangle band drawn from two drag corner points — a
-	translucent fill plus a bright 1px edge outline — that visually
-	drives selecting every chart note the box touches.
+	The editor's axis-aligned selection rectangle element sprite (v3.4,
+	evolved through v3.5 → v3.6): FIVE plain RepeatSprites (a translucent
+	fill + a bright 1px edge outline drawn inward) owned as ONE sprite
+	object, normalized from any corner pair.
 
-	The class owns FIVE plain RepeatSprites (the fill + the four edge
-	lines) and normalizes any corner pair into the axis-aligned rect; it
-	never touches the chart itself (the interaction layer feeds it
-	corners and reads `boxActive()`). Kept as one sprite OBJECT so the
-	owner only ever handles "the selection box", not five loose rects.
-
-	v3.5: the per-NOTE selection graphic moved OUT of this buffer into
-	its own class, SelectionNoteSprite, with its OWN buffer + program —
-	the elements can overlap each other and the box, so they render in a
-	program of their own layered above this box's (see SelectionNoteSprite
-	for why the separation exists). This class is now purely the BOX:
-	the band being dragged, nothing else.
+	TWO instances live in the editor (v3.6): the DRAG BAND — the box
+	being dragged by the mouse, warm white — and the SELECTION BOUNDS —
+	ONE single rectangle holding the EXACT selection: the tight bounding
+	box of every selected note's drawn rectangle, cyan, rendered from
+	the same buffer. One sprite object for the WHOLE selection (five
+	rects total) instead of a bouncing pool of per-note elements — the
+	optimal single-draw form; the class never touches the chart itself
+	(the interaction layer feeds corners and reads `boxActive()`).
 
 	@since Development
 **/
@@ -30,6 +26,24 @@ class SelectionBoxSprite {
 	var edgeBottom:RepeatSprite;
 	var edgeLeft:RepeatSprite;
 	var edgeRight:RepeatSprite;
+
+	/**
+		One-time tint for the five elements (the drag band stays warm
+		white; the selection-bounds instance goes cyan so the two are
+		never confused). Call before the first `updateIn` — the colors
+		stick on the element objects.
+	**/
+	function setTint(fillColor:Int, edgeColor:Int, fillAlpha:Float, edgeAlpha:Float) {
+		fill.c = fillColor;
+		fill.c.aF = fillAlpha;
+		fill.c.luminanceF = 0.05;
+		for (e in [edgeTop, edgeBottom, edgeLeft, edgeRight]) {
+			e.c = edgeColor;
+			e.c.aF = edgeAlpha;
+			e.c.luminanceF = 0.15;
+			e.r = 0;
+		}
+	}
 
 	/**
 		Updates the box from its two drag corners (any corner order —
