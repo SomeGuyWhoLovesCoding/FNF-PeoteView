@@ -470,7 +470,7 @@ class PlayFieldEditorMode {
 	function seekLineCount(mod:KeyModifier):Int {
 		if ((mod & KeyModifier.CTRL) == 0)
 			return 1;
-		return Math.max(1, Math.round(4000 / snapMs));
+		return Std.int(Math.max(1, Math.round(4000 / snapMs)));
 	}
 
 	/**
@@ -831,7 +831,7 @@ class PlayFieldEditorMode {
 		// (the count is live — remaps keep it exact across edits).
 		var selStr = '';
 		if (edits != null && edits.hasSelection())
-			selStr = ' | sel: ${edits.selectedCount}';
+			selStr = ' | sel: ${edits.selected.length}';
 		if (field.noteSystem != null && field.noteSystem.noteSpawner != null) {
 			var spawner = field.noteSystem.noteSpawner;
 			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | $typeStr$latStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"}$laneStr$selStr'

@@ -1,16 +1,27 @@
 package gameplay;
 
+import haxe.Int64;
+
 /**
 	A chart note's raw fields — the complete undo record for one note.
 	Position-keyed (not global-index-keyed): every structural edit shifts
 	the global indexes after it, so undo entries must re-resolve by fields.
 **/
-typedef EditNoteData = {
-	position:Int64,
-	duration:Int,
-	index:Int,
-	type:Int,
-	lane:Int
+@:publicFields
+class EditNoteData {
+	var position:Int64 = 0;
+	var duration:Int = 0;
+	var index:Int = 0;
+	var type:Int = 0;
+	var lane:Int = 0;
+
+	function new(position:Int64 = 0, duration:Int = 0, index:Int = 0, type:Int = 0, lane:Int = 0) {
+		this.position = position;
+		this.duration = duration;
+		this.index = index;
+		this.type = type;
+		this.lane = lane;
+	}
 }
 
 /**
@@ -21,10 +32,17 @@ typedef EditNoteData = {
 	notes — paste, cut, delete-selection — is ONE undo step: one command,
 	one CTRL+Z.
 **/
-typedef EditCmd = {
-	kind:Int,
-	befores:Array<EditNoteData>,
-	afters:Array<EditNoteData>
+@:publicFields
+class EditCmd {
+	var kind:Int = 0;
+	var befores:Array<EditNoteData> = null;
+	var afters:Array<EditNoteData> = null;
+
+	function new(kind:Int, befores:Array<EditNoteData>, afters:Array<EditNoteData>) {
+		this.kind = kind;
+		this.befores = befores;
+		this.afters = afters;
+	}
 }
 
 /**
@@ -34,13 +52,14 @@ typedef EditCmd = {
 
 	=== Why selection lives with the history ===
 
-	The selection is a set of global chart indexes, and every structural
-	edit (place, remove, undo, paste...) shifts the indexes after the edit
-	point. Since ALL structural writes funnel through this class's
-	recorders, each write also REMAPS the selection set (insert at id k
-	shifts selected ids >= k up by one; remove at k shifts ids > k down
-	and drops k) — so the selection survives arbitrary edits, undos and
-	redos without ever pointing at the wrong note.
+	The selection is an ascending-sorted array of global chart indexes,
+	and every structural edit (place, remove, undo, paste...) shifts the
+	indexes after the edit point. Since ALL structural writes funnel
+	through this class's recorders, each write also REMAPS the selection
+	array (insert at id k shifts selected ids >= k up by one; remove at k
+	shifts ids > k down and drops k) — the array is sorted, so both
+	remaps only touch the tail. The selection thus survives arbitrary
+	edits, undos and redos without ever pointing at the wrong note.
 
 	=== Selection ===
 
@@ -48,7 +67,7 @@ typedef EditCmd = {
 	SHIFT+click toggles one note; CTRL+A selects everything; ESC or a
 	plain click on empty background clears. (The mouse gesture side —
 	hit-testing, the live rectangle, the highlight overlay — lives in
-	StrumlineNoteInteraction, which reports the captured id sets here.)
+	StrumlineNoteInteraction, which reports the captured id arrays here.)
 
 	=== Clipboard ===
 
@@ -81,13 +100,13 @@ class EditorEditSystem {
 	// -------------------------------------------------------------------
 
 	/**
-		The selected notes' global chart indexes. Maintained ONLY through
-		this class (the recorders remap it on every structural write) —
-		never let an id in here go stale.
+		The selected notes' global chart indexes, ASCENDING-sorted and
+		duplicate-free. Maintained ONLY through this class (the recorders
+		remap it on every structural write) — never let an id in here go
+		stale. Sorted order is what keeps the remaps tail-only and the
+		membership tests a binary search.
 	**/
-	var selected:Int64Map<Bool> = new Int64Map<Bool>();
-	/** Selected note count (kept in sync with `selected`). */
-	var selectedCount:Int = 0;
+	var selected:Array<Int64> = [];
 
 	// -------------------------------------------------------------------
 	// Clipboard
@@ -119,20 +138,40 @@ class EditorEditSystem {
 	// Selection
 	// ===================================================================
 
+	/** Binary-search lower bound of `v` in an ascending Int64 array. */
+	static function lowerBound(arr:Array<Int64>, v:Int64):Int {
+		var lo = 0, hi = arr.length;
+		while (lo < hi) {
+			var mid = (lo + hi) >> 1;
+			if (arr[mid] < v)
+				lo = mid + 1;
+			else
+				hi = mid;
+		}
+		return lo;
+	}
+
+	/** Ascending Int64 comparator (the sort/insert order of `selected`). */
+	static function compareIds(a:Int64, b:Int64):Int {
+		if (a == b)
+			return 0;
+		return a < b ? -1 : 1;
+	}
+
 	inline function isSelected(id:Int64):Bool {
-		return selected.exists(id);
+		var i = lowerBound(selected, id);
+		return i < selected.length && selected[i] == id;
 	}
 
 	/** True when at least one note is selected. */
 	inline function hasSelection():Bool {
-		return selectedCount > 0;
+		return selected.length > 0;
 	}
 
 	function clearSelection() {
-		if (selectedCount == 0)
+		if (selected.length == 0)
 			return;
-		selected = new Int64Map<Bool>();
-		selectedCount = 0;
+		selected.resize(0);
 	}
 
 	/**
@@ -142,31 +181,35 @@ class EditorEditSystem {
 	function toggleSelected(id:Int64):Bool {
 		if (id < 0 || id >= File.getLength())
 			return false;
-		if (selected.exists(id)) {
-			selected.remove(id);
-			selectedCount--;
+		var i = lowerBound(selected, id);
+		if (i < selected.length && selected[i] == id) {
+			selected.splice(i, 1);
 			return false;
 		}
-		selected.set(id, true);
-		selectedCount++;
+		selected.insert(i, id); // lowerBound IS the sorted insert point
 		return true;
 	}
 
 	/**
 		Replaces the selection with exactly these ids (a marquee that
-		started without SHIFT). Invalid ids are dropped.
+		started without SHIFT). Invalid ids and duplicates are dropped.
 	**/
 	function selectIds(ids:Array<Int64>) {
-		var next = new Int64Map<Bool>();
-		var count = 0;
+		var len = File.getLength();
+		var next:Array<Int64> = [];
 		for (id in ids) {
-			if (id < 0 || id >= File.getLength())
+			if (id < 0 || id >= len)
 				continue;
-			next.set(id, true);
-			count++;
+			next.push(id);
 		}
-		selected = next;
-		selectedCount = count;
+		next.sort(compareIds);
+		// Drop duplicates (equal neighbors after the sort).
+		var dedup:Array<Int64> = [];
+		for (id in next) {
+			if (dedup.length == 0 || dedup[dedup.length - 1] != id)
+				dedup.push(id);
+		}
+		selected = dedup;
 	}
 
 	/**
@@ -174,13 +217,14 @@ class EditorEditSystem {
 		WITH SHIFT — additive banding).
 	**/
 	function addIdsToSelection(ids:Array<Int64>) {
+		var len = File.getLength();
 		for (id in ids) {
-			if (id < 0 || id >= File.getLength())
+			if (id < 0 || id >= len)
 				continue;
-			if (!selected.exists(id)) {
-				selected.set(id, true);
-				selectedCount++;
-			}
+			var i = lowerBound(selected, id);
+			if (i < selected.length && selected[i] == id)
+				continue; // already selected
+			selected.insert(i, id);
 		}
 	}
 
@@ -191,16 +235,13 @@ class EditorEditSystem {
 			clearSelection();
 			return;
 		}
-		var next = new Int64Map<Bool>();
-		var count = 0;
+		var next:Array<Int64> = [];
 		var i:Int64 = 0;
 		while (i < len) {
-			next.set(i, true);
-			count++;
+			next.push(i);
 			i++;
 		}
-		selected = next;
-		selectedCount = count;
+		selected = next; // 0..len-1 — ascending by construction
 	}
 
 	// ===================================================================
@@ -218,7 +259,7 @@ class EditorEditSystem {
 		var id = File.addNote(position, duration, index, type, lane);
 		if (id >= 0) {
 			remapForInsert(id);
-			pushCmd({kind: 0, befores: null, afters: [readNoteData(id)]});
+			pushCmd(new EditCmd(0, null, [readNoteData(id)]));
 		}
 		return id;
 	}
@@ -234,7 +275,7 @@ class EditorEditSystem {
 		var data = readNoteData(id);
 		File.removeNote(id);
 		remapForRemove(id);
-		pushCmd({kind: 1, befores: [data], afters: null});
+		pushCmd(new EditCmd(1, [data], null));
 		return true;
 	}
 
@@ -248,18 +289,18 @@ class EditorEditSystem {
 		if (oldId < 0 || oldId >= File.getLength())
 			return -1;
 		var before = readNoteData(oldId);
-		var wasSelected = selected.exists(oldId);
+		var wasSelected = isSelected(oldId);
 		File.removeNote(oldId);
 		remapForRemove(oldId);
 		var newId = File.addNote(position, duration, index, type, lane);
 		if (newId < 0)
 			return -1;
 		remapForInsert(newId);
-		if (wasSelected && !selected.exists(newId)) {
-			selected.set(newId, true);
-			selectedCount++;
+		if (wasSelected && !isSelected(newId)) {
+			var i = lowerBound(selected, newId);
+			selected.insert(i, newId);
 		}
-		pushCmd({kind: 2, befores: [before], afters: [readNoteData(newId)]});
+		pushCmd(new EditCmd(2, [before], [readNoteData(newId)]));
 		return newId;
 	}
 
@@ -273,11 +314,11 @@ class EditorEditSystem {
 		copied.
 	**/
 	function copy():Bool {
-		if (selectedCount == 0)
+		if (selected.length == 0)
 			return false;
 		var len = File.getLength();
 		var datas:Array<EditNoteData> = [];
-		for (id in selected.keys()) {
+		for (id in selected) {
 			if (id < 0 || id >= len)
 				continue;
 			datas.push(readNoteData(id));
@@ -287,7 +328,7 @@ class EditorEditSystem {
 		sortByPosition(datas, false);
 		var base = datas[0].position;
 		for (d in datas)
-			d.position = d.position - base;
+			d.position = d.position - base; // fresh objects — safe to mutate
 		clipboard = datas;
 		return true;
 	}
@@ -297,7 +338,7 @@ class EditorEditSystem {
 		step puts everything back (selected again).
 	**/
 	function cut():Bool {
-		if (editingActive() || selectedCount == 0)
+		if (editingActive() || selected.length == 0)
 			return false;
 		if (!copy())
 			return false;
@@ -325,7 +366,7 @@ class EditorEditSystem {
 			var abs = target + d.position;
 			if (findNoteAtSlot(d.index, d.lane, abs) >= 0)
 				continue; // occupied slot — skip, never overwrite
-			toAdd.push({position: abs, duration: d.duration, index: d.index, type: d.type, lane: d.lane});
+			toAdd.push(new EditNoteData(abs, d.duration, d.index, d.type, d.lane));
 		}
 		if (toAdd.length == 0)
 			return false;
@@ -341,7 +382,7 @@ class EditorEditSystem {
 			return false;
 
 		var afters = [for (id in added) readNoteData(id)];
-		pushCmd({kind: 0, befores: null, afters: afters});
+		pushCmd(new EditCmd(0, null, afters));
 		selectIds(added); // the pasted set is selected — move/copy it again at once
 		Main.current.playScrollSound();
 		parent.onChartEdited();
@@ -354,21 +395,22 @@ class EditorEditSystem {
 		selection is empty afterwards by construction.
 	**/
 	function deleteSelection():Bool {
-		if (editingActive() || selectedCount == 0)
+		if (editingActive() || selected.length == 0)
 			return false;
-		var ids = [for (id in selected.keys()) id];
+		var ids = selected.copy(); // ascending; `selected` mutates as we go
 		if (ids.length == 0)
 			return false;
 		// Remove DESCENDING: deleting id k only shifts ids above k, so
 		// the lower ids in this list stay valid as the loop runs.
-		ids.sort(function(a:Int64, b:Int64):Int {
-			return a > b ? -1 : (a < b ? 1 : 0);
-		});
-		var befores = [for (id in ids) readNoteData(id)];
-		for (id in ids)
-			silentRemove(id);
-		sortByPosition(befores, false); // ascending — stable undo re-add order
-		pushCmd({kind: 1, befores: befores, afters: null});
+		var befores:Array<EditNoteData> = [];
+		var k = ids.length - 1;
+		while (k >= 0) {
+			befores.push(readNoteData(ids[k]));
+			silentRemove(ids[k]);
+			k--;
+		}
+		befores.reverse(); // ascending — stable undo re-add order
+		pushCmd(new EditCmd(1, befores, null));
 		Main.current.playScrollSound();
 		parent.onChartEdited();
 		return true;
@@ -390,18 +432,18 @@ class EditorEditSystem {
 				for (d in afters)
 					removeNoteByData(d);
 			case 1: // undo removes → put them back, selected again
-				var ids = [];
+				var ids:Array<Int64> = [];
 				for (d in cmd.befores)
 					ids.push(silentAdd(d));
 				selectIds(ids);
 			default: // undo a replace → remove the replacement, restore the original
 				var curId = findNoteByData(cmd.afters[0]);
-				var wasSelected = curId >= 0 && selected.exists(curId);
+				var wasSelected = curId >= 0 && isSelected(curId);
 				if (removeNoteByData(cmd.afters[0])) {
 					var id = silentAdd(cmd.befores[0]);
-					if (wasSelected && id >= 0 && !selected.exists(id)) {
-						selected.set(id, true);
-						selectedCount++;
+					if (wasSelected && id >= 0 && !isSelected(id)) {
+						var i = lowerBound(selected, id);
+						selected.insert(i, id);
 					}
 				}
 		}
@@ -417,7 +459,7 @@ class EditorEditSystem {
 		var cmd = redoStack.pop();
 		switch (cmd.kind) {
 			case 0: // redo adds (e.g. a paste) → re-add them, selected again
-				var ids = [];
+				var ids:Array<Int64> = [];
 				for (d in cmd.afters)
 					ids.push(silentAdd(d));
 				selectIds(ids);
@@ -428,12 +470,12 @@ class EditorEditSystem {
 					removeNoteByData(d);
 			default: // redo a replace → remove the original, put the replacement back
 				var oldId = findNoteByData(cmd.befores[0]);
-				var wasSelected = oldId >= 0 && selected.exists(oldId);
+				var wasSelected = oldId >= 0 && isSelected(oldId);
 				if (removeNoteByData(cmd.befores[0])) {
 					var id = silentAdd(cmd.afters[0]);
-					if (wasSelected && id >= 0 && !selected.exists(id)) {
-						selected.set(id, true);
-						selectedCount++;
+					if (wasSelected && id >= 0 && !isSelected(id)) {
+						var i = lowerBound(selected, id);
+						selected.insert(i, id);
 					}
 				}
 		}
@@ -455,7 +497,7 @@ class EditorEditSystem {
 	/** Reads one note's full fields by global chart index. */
 	function readNoteData(id:Int64):EditNoteData {
 		var n = File.getNote(id);
-		return {position: n.position, duration: n.duration, index: n.index, type: n.type, lane: n.lane};
+		return new EditNoteData(n.position, n.duration, n.index, n.type, n.lane);
 	}
 
 	private function pushCmd(cmd:EditCmd) {
@@ -488,38 +530,36 @@ class EditorEditSystem {
 
 	/**
 		Selection remap after an insert at index `at`: every selected id
-		at/after it shifts up by one.
+		at/after it shifts up by one. The array is sorted ascending, so the
+		remap only walks the tail from `at`'s lower bound onward.
 	**/
 	function remapForInsert(at:Int64) {
-		if (selectedCount == 0)
+		if (selected.length == 0)
 			return;
-		var next = new Int64Map<Bool>();
-		var count = 0;
-		for (id in selected.keys()) {
-			next.set(id >= at ? id + 1 : id, true);
-			count++;
+		var k = lowerBound(selected, at);
+		while (k < selected.length) {
+			selected[k] = selected[k] + 1;
+			k++;
 		}
-		selected = next;
-		selectedCount = count;
 	}
 
 	/**
-		Selection remap after a removal at index `at`: ids above it shift
-		down by one; the removed note itself leaves the selection.
+		Selection remap after a removal at index `at`: the removed note
+		itself leaves the selection; ids above it shift down by one.
+		Sorted ascending — again a tail-only walk.
 	**/
 	function remapForRemove(at:Int64) {
-		if (selectedCount == 0)
+		if (selected.length == 0)
 			return;
-		var next = new Int64Map<Bool>();
-		var count = 0;
-		for (id in selected.keys()) {
-			if (id == at)
+		var k = lowerBound(selected, at);
+		while (k < selected.length) {
+			if (selected[k] == at) {
+				selected.splice(k, 1); // next element slides into k
 				continue;
-			next.set(id > at ? id - 1 : id, true);
-			count++;
+			}
+			selected[k] = selected[k] - 1; // > at (== was spliced) → down one
+			k++;
 		}
-		selected = next;
-		selectedCount = count;
 	}
 
 	/** In-place sort by position; pass desc=true for descending. */
