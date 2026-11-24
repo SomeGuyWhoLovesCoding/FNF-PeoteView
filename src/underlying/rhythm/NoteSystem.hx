@@ -297,6 +297,7 @@ class NoteSystem {
 					if (headVirtual != null
 						&& row == headRow
 						&& virtualNote.ref.type == headVirtual.ref.type
+						&& virtualNote.ref.lane == virtualNote.ref.lane // note: i just realized this wasn't added earlier
 						&& virtualNote.ref.duration == headVirtual.ref.duration) {
 						// Fold into the head sprite: accumulate the
 						// occlusion shading and skip this note's own
