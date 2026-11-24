@@ -14,7 +14,10 @@ import lime.ui.MouseWheelMode;
 	* mouseMove  — detects which strumline / lane / time-step hitbox the
 	               cursor is over and moves the ghost square there. When the
 	               snapped slot already holds a note, the square turns red
-	               (right-click removes); otherwise it is green (click adds).
+	               (right-click removes); otherwise it is green (click
+	               adds) — or NAVY (v3.7) while the clipboard holds
+	               something: the paste anchors at the cursor's slot, so
+	               the navy square says "the copied notes land HERE".
 	               While LMB is held on a note, the drag sets the sustain
 	               length; while held on BACKGROUND, the drag PANS the chart
 	               (the song position follows the cursor's Y slide).
@@ -48,7 +51,11 @@ import lime.ui.MouseWheelMode;
 	               click-away is no longer background-only). RIGHT: a
 	               v3.4 BATCH removal — every note in the hovered slot's
 	               snap catchment goes at once (findNotesNear → one undo
-	               command); a plain RMB elsewhere deselects too.
+	               command) — and v3.7 extends the click-away rule to
+	               the RIGHT button's own dead ends: a RIGHT-click that
+	               did nothing (no event to remove on the event lane, no
+	               note to batch-remove on a slot) deselects, exactly
+	               like a dead LEFT-click elsewhere.
 	* mouseWheel — shifts the song position forward or backward (Ctrl = 4x;
 	               while hold-editing it edits the sustain length instead.
 
@@ -463,6 +470,28 @@ class StrumlineNoteInteraction {
 		if (step <= 0)
 			return timeMs;
 		return Math.round(timeMs / step) * step;
+	}
+
+	/**
+		The PASTE TARGET (v3.7): the cursor's slot when it is on the
+		grid — the hovered column + hovered strumline + the snapped
+		hover time, exactly the slot the ghost square is showing. The
+		paste anchors there (the cursor's column/strumline become the
+		paste's ORIGIN, offsets wrap from it); null when the cursor is
+		off the grid, so the caller falls back to the playhead. Reads
+		the live hover state — hover*, not down* — so it never anchors at
+		a press that ended elsewhere.
+	**/
+	function pasteCursorSlot():{index:Int, lane:Int, timeMs:Float} {
+		if (hoverLane < 0 || hoverStrumline < 0)
+			return null;
+		var strumlines = parent.noteSystem.strumlines;
+		if (hoverStrumline >= strumlines.length)
+			return null;
+		var strumline = strumlines[hoverStrumline];
+		if (hoverLane >= strumline.length)
+			return null;
+		return {index: hoverLane, lane: hoverStrumline, timeMs: hoverTimeMs};
 	}
 
 	/**
@@ -1223,7 +1252,10 @@ class StrumlineNoteInteraction {
 	}
 
 	/** Removes any event within half a snap step of the snapped cursor time. */
-	function removeEventNear(timeMs:Float) {
+	/** Removes every placeholder event within half a snap step of the time
+	 *  (and returns true when it removed ANYTHING — a no-event RIGHT-click
+	 *  is one of the "did nothing" cases the release path deselects on). */
+	function removeEventNear(timeMs:Float):Bool {
 		loadEvents();
 		var halfStep = parent.editorMode.snapMs * 0.5;
 		var found = false;
@@ -1240,6 +1272,7 @@ class StrumlineNoteInteraction {
 			Main.current.playScrollSound();
 			rebuildEventMarkers();
 		}
+		return found;
 	}
 
 	/**
@@ -1661,12 +1694,14 @@ class StrumlineNoteInteraction {
 
 		if (button == MouseButton.RIGHT) {
 			// The event lane eats RMB first (remove event near cursor).
+			// removeEventNear returns whether it actually removed — a
+			// no-event RIGHT-click is one of the "did nothing" RMB cases.
 			var local = toLocal(x, y);
+			var acted = false;
 			if (detectEventLane(local.x, local.y)) {
-				removeEventNear(hoverEventTimeMs);
-				return;
+				acted = removeEventNear(hoverEventTimeMs);
 			}
-			if (detectHitbox(local.x, local.y) && hoverLane >= 0) {
+			if (!acted && detectHitbox(local.x, local.y) && hoverLane >= 0) {
 				// v3.4 batch removal: the SAME snap catchment walk as the
 				// single-note removal, but EVERY note in the neighborhood
 				// goes — one gesture, one undo command
@@ -1676,13 +1711,18 @@ class StrumlineNoteInteraction {
 				if (ids.length > 0 && parent.editorMode.edits.removeNotesByIds(ids) > 0) {
 					Main.current.playScrollSound();
 					parent.editorMode.onChartEdited();
+					acted = true;
 				}
-			} else if (parent.editorMode != null && parent.editorMode.edits != null
+			}
+			// v3.7: a RIGHT-click whose intent did NOTHING — no event to
+			// remove, or a lane slot with nothing to batch-remove —
+			// DESELECTS (the same click-away rule the left button already
+			// follows). A right-click that removed something keeps the
+			// selection the removal remaps left behind. Modifiers (SHIFT/
+			// CTRL) still protect the selection exactly as for LMB.
+			if (!acted && parent.editorMode != null && parent.editorMode.edits != null
 				&& !shiftPressed && !ctrlPressed
 				&& parent.editorMode.edits.hasSelection()) {
-				// A plain RMB on non-slot ground: not a removal gesture —
-				// it clears the whole selection (v3.4: a click of EITHER
-				// button, no SHIFT/CTRL, deselects everything).
 				parent.editorMode.edits.clearSelection();
 				parent.editorMode.updateReadout();
 			}
@@ -1849,13 +1889,25 @@ class StrumlineNoteInteraction {
 
 				// Red = a right-click removes from here (a note sits at
 				// the slot or within half a snap step of it), green =
-				// clean add. Under the v2 format the hovered strumline
+				// clean add. NAVY (v3.7) = a clipboard exists — the
+				// paste anchors at THIS slot: the cursor's column +
+				// strumline + snapped time are the paste's origin, so
+				// wherever the navy cursor is when CTRL+V lands, the
+				// copied notes land (offsets wrapping around the mania /
+				// strumline count). Occupancy still wins on top of navy
+				// (a red square over an occupied slot stays a removal
+				// cue even with a clipboard — the paste would skip that
+				// slot anyway). Under the v2 format the hovered strumline
 				// goes into the note's STORED lane, so the pen's notetype
 				// always rides along unchanged — no more violet coercion
 				// square.
+				var em = parent.editorMode;
+				var hasClip = em != null && em.edits != null && em.edits.hasClipboard();
 				var occupied = showHeld ? findNoteNear(lane, strumlineIdx, timeMs) >= 0 : hoverOccupied;
 				if (occupied) {
 					square.c = 0xFF0000FF; // red = a note is already there
+				} else if (hasClip) {
+					square.c = 0x1B1B8CFF; // navy = clipboard exists, paste lands HERE
 				} else {
 					square.c = 0x00FF00FF; // green = clean add
 				}

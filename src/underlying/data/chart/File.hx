@@ -121,6 +121,25 @@ extern class File {
 	@:native("removeNotesFromRangeArray") static function removeNotesFromRangeArray():Int;
 	/** Drops everything staged (an aborted gesture — selection changed mid-stage, etc.). */
 	@:native("clearStaged") static function clearStaged():Void;
+	// === Mirror API (v3.7) — in-place column flip, undo = same call again ===
+	/**
+		Stage one inclusive [lo..hi] global id range to mirror (the
+		selection's id ranges). Ranges are NOT normalized at commit — the
+		flip is an involution per note, so an id staged twice lands back
+		on its original column.
+	**/
+	@:native("stageMirrorRange") static function stageMirrorRange(lo:Int64, hi:Int64):Void;
+	/**
+		Commits every staged mirror range as ONE locked pass: every
+		note's column index becomes indexLo + indexHi - index (the
+		mirror axis pair read off the SELECTION's column bounds). In
+		place — no note is added or removed, ids never move (the store
+		orders by position only) — so the selection survives untouched
+		and UNDO/REDO replay exactly this call on the same ranges:
+		"mirror the notes back", no remove-and-readd. Returns the number
+		of notes flipped.
+	**/
+	@:native("mirrorNotesFromSelectionRanges") static function mirrorNotesFromSelectionRanges(indexLo:Int, indexHi:Int):Int;
 	/** Number of ranges in the persistent added-range block filled by the last addNotes call. */
 	@:native("getAddedRangeCount") static function getAddedRangeCount():Int;
 	/** Range `at`'s inclusive lower id (or -1 when out of range). */
@@ -243,6 +262,16 @@ class File {
 
 	@:hlNative("chart_file", "clearStaged")
 	public static function clearStaged():Void {}
+
+	// === Mirror API (v3.7) — see the cpp target's docs for the contract ===
+
+	@:hlNative("chart_file", "stageMirrorRange")
+	public static function stageMirrorRange(lo:hl.I64, hi:hl.I64):Void {}
+
+	@:hlNative("chart_file", "mirrorNotesFromSelectionRanges")
+	public static function mirrorNotesFromSelectionRanges(indexLo:Int, indexHi:Int):Int {
+		return 0;
+	}
 
 	@:hlNative("chart_file", "getAddedRangeCount")
 	public static function getAddedRangeCount():Int {

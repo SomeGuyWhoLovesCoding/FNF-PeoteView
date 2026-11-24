@@ -1622,6 +1622,23 @@ public:
 		return u.baseId + (int64_t)slot;
 	}
 
+	// (v3.7) In-place column flip for ONE note: index := sum - index
+	// (the mirror axis pair's sum). Touches ONLY the 10-bit index field
+	// of last4 — position, duration, type and lane are untouched, the
+	// note stays exactly where it is in every ordering, and its shard's
+	// image is invalidated for the next save.
+	void mirrorIndex(int64_t id, int32_t sum) {
+		const size_t ui = unitById(id);
+		ensureOpen(ui);
+		Unit& u = units[ui];
+		ChartNote& n = u.note((size_t)(id - u.baseId));
+		const uint32_t idx = (n.last4 >> 8) & 0x3FF;
+		const uint32_t mirrored = (uint32_t)(sum) - idx; // sum in [0..2046], idx in [0..1023]: fits
+		n.last4 = (n.last4 & ~(0x3FFu << 8)) | ((mirrored & 0x3FFu) << 8);
+		u.dirty = true;
+		modifiedBits.set(ui, true);
+	}
+
 	void remove(int64_t id) {
 		const size_t ui = unitById(id);
 		ensureOpen(ui);
@@ -2588,9 +2605,26 @@ public:
 		stagedRanges.push_back(sr);
 	}
 
+	// === Mirror staging (v3.7) ===
+	// The selection's id ranges, staged for the in-place column flip.
+	// Kept SEPARATE from stagedRanges: a gesture stages either a removal
+	// or a mirror, never both, and the mirror's commit semantics differ
+	// (involution — no normalization needed, see mirrorNotes).
+	std::vector<StagedRange> stagedMirrorRanges;
+
 	void clearStaged() {
 		stagedNotes.clear();
 		stagedRanges.clear();
+		stagedMirrorRanges.clear();
+	}
+
+	// Stages one inclusive [lo..hi] id range for the mirror commit.
+	void stageMirrorRange(int64_t lo, int64_t hi) {
+		if (lo > hi) return;
+		StagedRange sr;
+		sr.lo = lo;
+		sr.hi = hi;
+		stagedMirrorRanges.push_back(sr);
 	}
 
 	// Appends one [lo, hi] pair to the added-range block, merging it with
@@ -2711,6 +2745,42 @@ public:
 		}
 		if (removed > 0) dirty = true;
 		return (int32_t)removed;
+	}
+
+	// === Mirror commit (v3.7) — see chart_file.h for the contract ===
+	// Rewrites the column index of every note in the staged mirror
+	// ranges IN PLACE: index := indexLo + indexHi - index. An
+	// involution per note — running the commit twice restores every
+	// original column — so undo/redo literally replay this call on the
+	// same ranges. No add/remove happens: the store orders notes by
+	// position only, so ids stay put and the selection (a set of ids)
+	// needs no remap. Ranges are only clamped to the live store size;
+	// they are deliberately NOT normalized (an id staged twice flips
+	// twice = lands back on its original column — harmless), and the
+	// walk order does not matter for the same reason. Returns the number
+	// of notes flipped.
+	int32_t mirrorNotes(int32_t indexLo, int32_t indexHi) {
+		if (stagedMirrorRanges.empty()) return 0;
+		if (indexLo < 0) indexLo = 0;
+		if (indexHi < indexLo) { const int32_t t = indexLo; indexLo = indexHi; indexHi = t; }
+		if (indexHi > 1023) indexHi = 1023; // the 10-bit column field's cap
+		std::vector<StagedRange> ranges;
+		ranges.swap(stagedMirrorRanges);
+		std::lock_guard<std::mutex> lk(dataMutex);
+		int64_t flipped = 0;
+		const int32_t sum = indexLo + indexHi;
+		for (const StagedRange& sr : ranges) {
+			int64_t lo = sr.lo < 0 ? 0 : sr.lo;
+			int64_t hi = sr.hi;
+			if (hi >= store.size()) hi = (int64_t)store.size() - 1;
+			for (int64_t id = lo; id <= hi; ++id) {
+				if (id >= (int64_t)store.size() || id < 0) continue;
+				store.mirrorIndex(id, sum);
+				++flipped;
+			}
+		}
+		if (flipped > 0) dirty = true;
+		return (int32_t)flipped;
 	}
 
 	int32_t getAddedRangeCount() const { return addedRangeCount; }
@@ -2859,6 +2929,18 @@ int32_t core_removeNotesFromRangeArray() {
 void core_clearStaged() {
 	if (!gReader) return;
 	gReader->clearStaged();
+}
+
+// === Mirror API (v3.7) — see chart_file.h ===
+
+void core_stageMirrorRange(int64_t lo, int64_t hi) {
+	if (!gReader) return;
+	gReader->stageMirrorRange(lo, hi);
+}
+
+int32_t core_mirrorNotesFromSelectionRanges(int32_t indexLo, int32_t indexHi) {
+	if (!gReader) return 0;
+	return gReader->mirrorNotes(indexLo, indexHi);
 }
 
 int32_t core_getAddedRangeCount() {

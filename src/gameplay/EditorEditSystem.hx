@@ -48,6 +48,14 @@ class EditNoteData {
 	notes — paste, cut, delete-selection, batch removal — is ONE undo
 	step: one command, one CTRL+Z.
 
+	v3.7 — kind 3 = MIRROR (only `addedRanges`, reused as the id-range
+	list): the in-place column flip of the selection. The commit is an
+	involution, so undo and redo are THE SAME REPLAY — both call
+	mirrorCommit on the recorded ranges with the recorded axis pair.
+	The axis pair is carried on `befores` as a single synthetic entry
+	(indexLo in `index`, indexHi in `lane` — position/duration/type all
+	zero): no other field of the command is meaningful for kind 3.
+
 	v3.5 — `addedRanges`: THE EXACT INDEX RANGE ARRAY of a command's
 	added notes. Every batch add goes through File.addNotes (the bulk
 	extern), which computes the final global indexes of the newly added
@@ -123,16 +131,35 @@ class EditCmd {
 	=== Clipboard ===
 
 	CTRL+C captures the selection's fields with positions RELATIVE to
-	the earliest selected note, so a paste lands the pattern wherever the
-	playhead is — THE MINIMAL DATA: one EditNoteData (5 ints) per copied
-	note, nothing else, and the clipboard preserves every copied note's
-	fields verbatim (an occupied slot at paste time only SKIPS landing
-	that one note; nothing is dropped from the clipboard itself).
-	CTRL+X = copy + delete-selection (one undo step). CTRL+V re-adds the
-	clipboard at the snapped playhead — slots that already hold a note
-	(same lane index + stored strumline + position) are SKIPPED, never
-	overwritten — and selects what it pasted, so the next
+	the earliest selected note — THE MINIMAL DATA: one EditNoteData
+	(5 ints) per copied note, nothing else, and the clipboard preserves
+	every copied note's fields verbatim (an occupied slot at paste time
+	only SKIPS landing that one note; nothing is dropped from the
+	clipboard itself). CTRL+X = copy + delete-selection (one undo
+	step). CTRL+V (v3.7) re-adds the clipboard anchored at the NAVY
+	CURSOR SLOT — the hovered strumline column + the snapped hover time
+	(the same slot the ghost square shows; playhead fallback when the
+	cursor is off the grid): the cursor's column becomes the paste's
+	COLUMN ORIGIN and the cursor's strumline its STRUMLINE ORIGIN, each
+	copied note's column/strumline offset wraps MODULO the strumline's
+	mania / Main.STRUMLINE_COUNT — a pattern copied off ONE strumline
+	never drops a note: an offset that walks past the last column wraps
+	around to the first (and a 2-strumline offset steps onto the other
+	side). Slots that already hold a note are SKIPPED, never
+	overwritten, and the pasted set becomes the selection, so the next
 	SHIFT-marquee/copy/cut acts on the fresh copies immediately.
+
+	=== Mirror (v3.7) ===
+
+	ALT+M mirrors the selection's columns IN PLACE through the C++
+	extern File.mirrorNotesFromSelectionRanges: every note's column
+	index becomes indexLo + indexHi - index, the pair read off the
+	selection's own column bounds (a 4K selection over columns 1..4
+	flips 1<->4, 2<->3). One FFI commit per gesture, ids never move
+	(the store orders by position only), the selection survives
+	untouched, and undo/redo REPLAY the same call on the same id
+	ranges — the flip is an involution, so the "undo" is literally
+	"mirror the notes back", no remove-and-readd.
 
 	=== Undo / redo (v3.5: bulk externs + the exact index ranges) ===
 
@@ -586,22 +613,63 @@ class EditorEditSystem {
 		undoing the paste removes exactly those indexes (and NOTHING
 		else) via File.removeNotesFromRangeArray. The pasted notes become
 		the new selection. One undo step removes them all.
+
+		v3.7 — THE PASTE ANCHOR IS THE CURSOR SLOT, NOT THE PLAYHEAD:
+		when the mouse cursor is over the strumlines, the paste anchors
+		at the hovered column + hovered strumline + the snapped hover
+		time (the exact slot the ghost square shows — the navy square
+		while a clipboard exists says "paste lands HERE"); the playhead
+		is only the fallback for a cursor off the grid. The cursor's
+		slot becomes the paste ORIGIN: every copied note lands at its
+		copied column OFFSET from the cursor's column, WRAPPED modulo
+		the mania (and its strumline offset wrapped modulo
+		Main.STRUMLINE_COUNT) — so a pattern copied off one strumline
+		never drops a note when pasted at a cursor near the right edge:
+		an offset that walks past the last column wraps to the first
+		(and a 2-strumline offset steps onto the other side). The
+		copied-at-time fields (durations, types, relative positions)
+		ride along unchanged.
 	**/
 	function paste():Bool {
 		if (editingActive() || clipboard == null || clipboard.length == 0)
 			return false;
 		var si = parent.strumlineInput;
-		var targetMs = si != null ? si.snapTime(parent.field.songPosition) : parent.field.songPosition;
+		var mania = Chart.header.mania;
+		if (mania < 1)
+			mania = 1;
+		var strumlineCount = Main.STRUMLINE_COUNT;
+
+		// The paste anchor: the CURSOR slot when the cursor is on the
+		// grid, the snapped playhead otherwise. The cursor's column and
+		// strumline become the paste's ORIGIN (offsets wrap from there).
+		var targetMs = parent.field.songPosition;
+		var originIndex = 0;
+		var originLane = 0;
+		if (si != null) {
+			var cursorIndex = si.pasteCursorSlot();
+			if (cursorIndex != null) {
+				targetMs = cursorIndex.timeMs;
+				originIndex = cursorIndex.index;
+				originLane = cursorIndex.lane;
+			} else {
+				targetMs = si.snapTime(parent.field.songPosition);
+			}
+		}
 		var target = MetaNote.floatToMetaNotePosition(targetMs);
 
 		// Stage exactly what will land: an occupied slot is skipped —
 		// pasting twice in place is a no-op, not a stack of duplicates.
+		// Column/strumline offsets wrap from the cursor origin (a
+		// single-strumline selection pasted at the right edge wraps
+		// around instead of dropping notes).
 		var toAdd:Array<EditNoteData> = [];
 		for (d in clipboard) {
 			var abs = target + d.position;
-			if (findNoteAtSlot(d.index, d.lane, abs) >= 0)
+			var landIndex = (originIndex + d.index) % mania;
+			var landLane = (originLane + d.lane) % strumlineCount;
+			if (findNoteAtSlot(landIndex, landLane, abs) >= 0)
 				continue; // occupied slot — skip, never overwrite
-			toAdd.push(new EditNoteData(abs, d.duration, d.index, d.type, d.lane));
+			toAdd.push(new EditNoteData(abs, d.duration, landIndex, d.type, landLane));
 		}
 		if (toAdd.length == 0)
 			return false;
@@ -626,6 +694,73 @@ class EditorEditSystem {
 		Main.current.playScrollSound();
 		parent.onChartEdited();
 		return true;
+	}
+
+	/** True when the clipboard holds something (the navy square signal). */
+	function hasClipboard():Bool {
+		return clipboard != null && clipboard.length > 0;
+	}
+
+	/**
+		ALT+M (v3.7): mirrors the selection's columns IN PLACE — one
+		gesture, ONE C++ commit. The mirror axis pair is read off the
+		selection's own column bounds: indexLo/indexHi = the min/max
+		column index among the selected notes, so a selection over
+		columns 1..4 flips 1<->4 and 2<->3 (a full-strumline selection
+		flips the whole mania). Every note keeps its position, duration,
+		type and strumline; only the column changes, and ids never move,
+		so the selection survives EXACTLY as it was. UNDO IS THE SAME
+		CALL AGAIN (an involution — kind 3 replays the commit on the
+		recorded ranges), per "just mirror the notes back": no
+		remove-and-readd, no re-resolution.
+	**/
+	function mirrorSelection():Bool {
+		if (editingActive() || selected.length == 0)
+			return false;
+		// The selection's column bounds = the mirror axis pair. A
+		// selection on one column (lo == hi) is a fixed point — flipping
+		// maps every note onto itself; still recorded (and undoable as
+		// itself) for a uniform gesture history.
+		var indexLo = 0x3FF, indexHi = 0;
+		var len = File.getLength();
+		for (r in selected) {
+			var i = r.lo;
+			while (i <= r.hi) {
+				if (i >= 0 && i < len) {
+					var idx = File.getNote(i).index;
+					if (idx < indexLo)
+						indexLo = idx;
+					if (idx > indexHi)
+						indexHi = idx;
+				}
+				i++;
+			}
+		}
+		if (indexLo > indexHi) // empty selection spans — nothing to flip
+			return false;
+
+		var flipped = mirrorCommit(selected, indexLo, indexHi);
+		if (flipped <= 0)
+			return false;
+		pushCmd(new EditCmd(3, [new EditNoteData(0, 0, indexLo, 0, indexHi)], null, selected.copy()));
+		Main.current.playScrollSound();
+		parent.onChartEdited();
+		return true;
+	}
+
+	/**
+		The shared mirror commit — the gesture and the kind-3 undo/redo
+		replay all go through here: stage the id ranges, ONE
+		File.mirrorNotesFromSelectionRanges call. Returns the number of
+		notes flipped.
+	**/
+	function mirrorCommit(ranges:Array<SelRange>, indexLo:Int, indexHi:Int):Int {
+		if (ranges.length == 0)
+			return 0;
+		File.clearStaged();
+		for (r in ranges)
+			File.stageMirrorRange(r.lo, r.hi);
+		return File.mirrorNotesFromSelectionRanges(indexLo, indexHi);
 	}
 
 	/**
@@ -667,7 +802,9 @@ class EditorEditSystem {
 		File.removeNotesFromRangeArray removes every note the command
 		added and nothing else; kind-1 undoes re-add the captured fields
 		via ONE File.addNotes and record the new ranges on the command
-		(the following redo removes exactly those).
+		(the following redo removes exactly those); kind-3 (mirror)
+		replays the SAME commit — an involution, so the replay IS the
+		inverse ("mirror the notes back").
 	**/
 	function undo() {
 		if (undoStack.length == 0 || editingActive())
@@ -692,6 +829,9 @@ class EditorEditSystem {
 					}
 				}
 				selectIds(ids);
+			case 3: // undo a mirror → MIRROR THE NOTES BACK: the same replay
+				var axis = cmd.befores[0];
+				mirrorCommit(cmd.addedRanges != null ? cmd.addedRanges : [], axis.index, axis.lane);
 			default: // undo a replace → remove the replacement, restore the original
 				var curId = findNoteByData(cmd.afters[0]);
 				var wasSelected = curId >= 0 && isSelected(curId);
@@ -706,7 +846,12 @@ class EditorEditSystem {
 		parent.onChartEdited();
 	}
 
-	/** CTRL+Y — re-applies the newest undone edit (batch-aware, index-exact). */
+	/**
+		CTRL+Y — re-applies the newest undone edit (batch-aware,
+		index-exact). Kind-3 (mirror) re-plays the same commit with the
+		recorded axis pair on the recorded id ranges — the flip is an
+		involution, so redo is the replay that undo just un-did.
+	**/
 	function redo() {
 		if (redoStack.length == 0 || editingActive())
 			return;
@@ -722,6 +867,9 @@ class EditorEditSystem {
 				cmd.addedRanges = null;
 				if (ranges != null && ranges.length > 0)
 					bulkRemoveRanges(ranges);
+			case 3: // redo a mirror → the same replay, forward is inverse here
+				var axis = cmd.befores[0];
+				mirrorCommit(cmd.addedRanges != null ? cmd.addedRanges : [], axis.index, axis.lane);
 			default: // redo a replace → remove the original, put the replacement back
 				var oldId = findNoteByData(cmd.befores[0]);
 				var wasSelected = oldId >= 0 && isSelected(oldId);

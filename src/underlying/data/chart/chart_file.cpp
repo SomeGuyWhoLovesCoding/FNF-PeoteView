@@ -97,6 +97,16 @@ int32_t removeNotesFromRangeArray(void) {
     return core_removeNotesFromRangeArray();
 }
 
+// === Mirror API (v3.7) — in-place column flip, undo = same call again ===
+
+void stageMirrorRange(int64_t lo, int64_t hi) {
+    core_stageMirrorRange(lo, hi);
+}
+
+int32_t mirrorNotesFromSelectionRanges(int32_t indexLo, int32_t indexHi) {
+    return core_mirrorNotesFromSelectionRanges(indexLo, indexHi);
+}
+
 void clearStaged(void) {
     core_clearStaged();
 }

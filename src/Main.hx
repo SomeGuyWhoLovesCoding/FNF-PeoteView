@@ -27,6 +27,18 @@ class Main extends Application {
 	static inline var INITIAL_WIDTH = 1280;
 
 	static inline var INITIAL_HEIGHT = 720;
+
+	/**
+		The number of strumlines the game builds (opponent + player). A
+		SINGLE global — every consumer reads it instead of hardcoding 2:
+		NoteSystem's creation loop (and its X layout math, which divides
+		by it), the editor's clipboard wrap (a pasted note's strumline
+		offset wraps mod this), and any future mania-vs-side logic. The
+		editor's paste/mirror features added in v3.7 were the reason the
+		hardcoded 2 finally got centralized — changing the strumline
+		count is now a ONE-LINE change.
+	**/
+	static inline var STRUMLINE_COUNT = 2;
 	static var VARIABLE_WIDTH(get, never):Int;
 	static var VARIABLE_HEIGHT(get, never):Int;
 

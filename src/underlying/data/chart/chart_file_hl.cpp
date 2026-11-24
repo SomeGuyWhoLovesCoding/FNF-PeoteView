@@ -117,6 +117,16 @@ HL_PRIM int64_t HL_NAME(getAddedRangeHi)(int at) {
     return core_getAddedRangeHi(at);
 }
 
+// === Mirror API (v3.7) — see chart_file.h ===
+
+HL_PRIM void HL_NAME(stageMirrorRange)(int64_t lo, int64_t hi) {
+    core_stageMirrorRange(lo, hi);
+}
+
+HL_PRIM int HL_NAME(mirrorNotesFromSelectionRanges)(int indexLo, int indexHi) {
+    return core_mirrorNotesFromSelectionRanges(indexLo, indexHi);
+}
+
 // ============================================================================
 // Haxe bindings
 // ============================================================================
@@ -145,3 +155,5 @@ DEFINE_PRIM(_VOID, clearStaged, _NO_ARG)
 DEFINE_PRIM(_I32,  getAddedRangeCount, _NO_ARG)
 DEFINE_PRIM(_I64,  getAddedRangeLo, _I32)
 DEFINE_PRIM(_I64,  getAddedRangeHi, _I32)
+DEFINE_PRIM(_VOID, stageMirrorRange, _I64 _I64)
+DEFINE_PRIM(_I32,  mirrorNotesFromSelectionRanges, _I32 _I32)

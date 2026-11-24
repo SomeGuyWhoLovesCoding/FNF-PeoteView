@@ -349,8 +349,12 @@ class PlayFieldEditorMode {
 					}
 					return;
 				case KeyCode.V:
-					// Paste at the snapped playhead; occupied slots are
-					// skipped, and what lands becomes the new selection.
+					// Paste anchored at the CURSOR SLOT (v3.7: the navy
+					// square's column + strumline + snapped time — offsets
+					// wrap modulo the mania / strumline count; playhead
+					// fallback when the cursor is off the grid). Occupied
+					// slots are skipped, and what lands becomes the new
+					// selection.
 					if (edits != null) {
 						edits.paste();
 						updateReadout();
@@ -455,6 +459,18 @@ class PlayFieldEditorMode {
 				// one CTRL+Z brings every note back (selected again).
 				if (edits != null)
 					edits.deleteSelection();
+			case KeyCode.M:
+				// ALT+M (v3.7): mirror the selection's columns in place —
+				// the flip axis pair is the selection's own column bounds
+				// (a selection over columns 1..4 flips 1<->4, 2<->3; the
+				// whole mania when everything is selected). One C++
+				// commit; undo is the same call again ("mirror the notes
+				// back"). Plain M (no ALT) stays unbound — M is not a
+				// seek/snap/pen key and should not become one by accident.
+				if ((mod & KeyModifier.ALT) != 0 && edits != null) {
+					if (edits.mirrorSelection())
+						updateReadout();
+				}
 			case KeyCode.S:
 				if ((mod & KeyModifier.CTRL) != 0)
 					saveChartToDisk();

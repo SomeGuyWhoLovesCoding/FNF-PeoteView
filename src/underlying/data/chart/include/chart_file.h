@@ -87,4 +87,26 @@ int32_t addNotes(void);
 void stageRemovalRange(int64_t lo, int64_t hi);
 int32_t removeNotesFromRangeArray(void);
 void clearStaged(void);
+
+// === Mirror API (v3.7) — in-place column flip, undo = same call again ===
+// mirrorNotesFromSelectionRanges rewrites the 10-bit column index of
+// every note whose global id sits in a staged mirror range: index :=
+// indexLo + indexHi - index (an INVOLUTION — running it twice returns
+// every note to its original column). In-place: no note is added or
+// removed, ids never move (the store orders by position only), so the
+// selection (a set of ids) survives untouched and UNDO/REDO simply
+// replay the same call on the same ranges — "mirror the notes back".
+//   stageMirrorRange: queue one inclusive [lo..hi] id range to mirror.
+//   mirrorNotesFromSelectionRanges: commit every staged range as ONE
+//                  locked pass (ranges are NOT normalized — mirror is
+//                  an involution per note, so double-staging an id
+//                  flips it twice = back to the original column; and
+//                  ranges are clamped to the store bounds only).
+//                  Returns the number of notes flipped.
+//   indexLo/indexHi: the SELECTION's column-index bounds — the mirror
+//                  axis pair (e.g. a 4K selection over columns 1..4
+//                  flips 1<->4, 2<->3; pass the full mania for a
+//                  whole-strumline mirror).
+int32_t mirrorNotesFromSelectionRanges(int32_t indexLo, int32_t indexHi);
+void stageMirrorRange(int64_t lo, int64_t hi);
 #endif /* CHART_FILE_H */

@@ -127,10 +127,17 @@ class NoteSystem {
 		var inputSystem = parent.inputSystem;
 		var mania = Chart.header.mania;
 
-		for (i in 0...2) {
-			var strumline = new Strumline(STRUMLINE_X_OFFSET + Std.int(Main.INITIAL_WIDTH * (i * 0.5)),
+		// v3.7: the count is the Main.STRUMLINE_COUNT global, NOT a
+		// hardcoded 2 — the editor's paste lane-wrap reads the same
+		// global, so a different strumline setup is a one-line change in
+		// Main. The X layout divides the screen width by the count
+		// (i / count), which for the default 2 is exactly the old
+		// i * 0.5 spacing; the LAST strumline stays the player's.
+		var strumlineCount = Main.STRUMLINE_COUNT;
+		for (i in 0...strumlineCount) {
+			var strumline = new Strumline(STRUMLINE_X_OFFSET + Std.int(Main.INITIAL_WIDTH * (i / strumlineCount)),
 				parent.downScroll ? Main.INITIAL_HEIGHT - STRUMLINE_Y_OFFSET_DOWNSCROLL : STRUMLINE_Y_OFFSET, typeToHandle[i], 0, 0, mania, this);
-			strumline.playable = i == 1;
+			strumline.playable = i == strumlineCount - 1;
 			strumline.applyNoteskinProperties(typeToHandle[i], mania - 1);
 			strumlines.push(strumline);
 		}
@@ -938,7 +945,7 @@ class NoteSystem {
 	function resetStrumlines(resetAnims:Bool = true) {
 		for (i in 0...strumlines.length) {
 			var strumline = strumlines[i];
-			strumline.x = STRUMLINE_X_OFFSET + Std.int(Main.INITIAL_WIDTH * (i * 0.5));
+			strumline.x = STRUMLINE_X_OFFSET + Std.int(Main.INITIAL_WIDTH * (i / strumlines.length)); // v3.7: same /count layout as the creation loop (Main.STRUMLINE_COUNT)
 			strumline.y = parent.downScroll ? Main.INITIAL_HEIGHT - STRUMLINE_Y_OFFSET_DOWNSCROLL : STRUMLINE_Y_OFFSET;
 			if (resetAnims)
 				strumline.resetAnimations();
