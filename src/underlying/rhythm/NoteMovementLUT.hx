@@ -100,8 +100,8 @@ class NoteMovementLUT {
 
 		for (i in 0...entries) {
 			var d:Float = base + i;
-			offsetX[i] = Math.round(d * c);
-			offsetY[i] = Math.round(d * s);
+			offsetX[i] = Std.int(d * c);
+			offsetY[i] = Std.int(d * s);
 		}
 
 		hasExtendedLUT = false;
@@ -142,8 +142,8 @@ class NoteMovementLUT {
 		this.maxDiff = maxDiff != null ? maxDiff : DEFAULT_MAX_DIFF;
 		this.entries = this.maxDiff - this.minDiff + 1;
 
-		this.cosDir = Math.cos(scrollDirection * 0.01745329);
-		this.sinDir = Math.sin(scrollDirection * 0.01745329);
+		this.cosDir = Std.int(Math.cos(scrollDirection * 0.01745329) * 1000) * 0.001;
+		this.sinDir = Std.int(Math.sin(scrollDirection * 0.01745329) * 1000) * 0.001;
 
 		ensureCapacity();
 
@@ -180,8 +180,8 @@ class NoteMovementLUT {
 
 			var result = sweep.run(i, diff, scrollSpeed, receptorX, receptorY, index, type, baseResult);
 			if (result != null) {
-				offsetX[i] = Math.round(result.x - receptorX);
-				offsetY[i] = Math.round(result.y - receptorY);
+				offsetX[i] = Std.int(result.x - receptorX);
+				offsetY[i] = Std.int(result.y - receptorY);
 				scaleLUT[i] = result.scale;
 				sustainRotLUT[i] = result.sustainRot;
 				scrollMulLUT[i] = result.scrollMultiplier;
@@ -189,8 +189,8 @@ class NoteMovementLUT {
 				// Formula aborted for this diff — linear fallback.
 				// scale falls back to the identity multiplier (1.0), since
 				// drawNote() multiplies by rec.scale at runtime.
-				offsetX[i] = Math.round(diff * c);
-				offsetY[i] = Math.round(diff * s);
+				offsetX[i] = Std.int(diff * c);
+				offsetY[i] = Std.int(diff * s);
 				scaleLUT[i] = 1.0;
 				sustainRotLUT[i] = 0.0;
 				scrollMulLUT[i] = 1.0;
