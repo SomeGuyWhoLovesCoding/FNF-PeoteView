@@ -83,7 +83,7 @@ class PlayFieldEditorMode {
 	}
 
 	/**
-		The notetype number the editor places (ALT+LEFT/RIGHT cycles it).
+		The notetype number the editor places (UP/DOWN cycles it).
 		Purely a skin/behavior id (NoteSystem.typeToHandle) — the strumline
 		a note draws on comes from its STORED lane (the hovered strumline at
 		placement), so the type can be dialed freely without moving sides.
@@ -127,18 +127,19 @@ class PlayFieldEditorMode {
 	static inline var UNDO_LIMIT:Int = 256;
 
 	// -------------------------------------------------------------------
-	// Real-time step/beat grid (G cycles; see StrumlineNoteInteraction)
+	// Real-time step/beat grid (ON by default; see StrumlineNoteInteraction)
 	// -------------------------------------------------------------------
 
 	/**
-		Alpha of the real-time step/beat grid (0..1). 0 (the DEFAULT)
-		disables the grid entirely — no row updates, no elements bound,
-		zero cost. ANY other value switches it on: from then on the grid
-		rows update every frame by song position through the scroll-speed
-		math and the conductor's step/beat mapping, spanning each
-		strumline's full width. G cycles 0 → 0.15 → 0.3 → 0.
+		Alpha of the real-time step/beat grid (0..1). ON BY DEFAULT at
+		0.15 — the grid rows update every frame by song position through
+		the scroll-speed math and the conductor's step/beat mapping,
+		spanning each strumline's full width. Setting this to 0 disables
+		the grid entirely (no row updates, no elements bound, zero cost);
+		any non-zero value brings it back. There is no keybind — it is a
+		property, not a mode.
 	**/
-	var gridAlpha:Float = 0;
+	var gridAlpha:Float = 0.15;
 
 	// -------------------------------------------------------------------
 	// Smooth scroll (wheel/arrow seeks while SILENT) — render-side lerp
@@ -167,10 +168,10 @@ class PlayFieldEditorMode {
 	static inline var SMOOTH_SNAP_MS:Float = 4.0;
 
 	// -------------------------------------------------------------------
-	// Playback rate (ALT+[ / ALT+])
+	// Playback rate (CTRL+DOWN / CTRL+UP)
 	// -------------------------------------------------------------------
 
-	/** Current editor playback rate (ALT+[ / ALT+] cycles it). */
+	/** Current editor playback rate (CTRL+DOWN / CTRL+UP cycles it). */
 	var playbackRate:Float = 1.0;
 
 	/**
@@ -186,10 +187,11 @@ class PlayFieldEditorMode {
 	// -------------------------------------------------------------------
 
 	/**
-		When true, the PLAYER keybinds place notes at the playhead
-		(ALT+LEFT/RIGHT still cycle the notetype while paused — and retype
-		the held note, see StrumlineNoteInteraction.retypeHeldNote). Lets
-		you chart with the keyboard alone, Arrow-Vortex style.
+		When true, the PLAYER keybinds TOGGLE notes at the playhead (place
+		when the snapped slot is empty, remove when it holds one; UP/DOWN
+		still cycles the notetype while paused — and retypes the held
+		note, see StrumlineNoteInteraction.retypeHeldNote). Lets you chart
+		with the keyboard alone, Arrow-Vortex style.
 	**/
 	var keybindPlaceMode:Bool = false;
 
@@ -318,8 +320,9 @@ class PlayFieldEditorMode {
 		// CTRL+Z / CTRL+Y: undo / redo the last chart edit. Works frozen
 		// or playing — the undo records are field-keyed (position +
 		// duration + lane + index + type), so they stay resolvable across
-		// the global-index shifts every structural edit causes. Other
-		// CTRL combos (S save, LEFT/RIGHT seeks) fall through untouched.
+		// the global-index shifts every structural edit causes. CTRL+UP /
+		// CTRL+DOWN step the playback rate. Other CTRL combos (S save,
+		// LEFT/RIGHT far seeks) fall through to their handlers below.
 		if ((mod & KeyModifier.CTRL) != 0) {
 			switch (code) {
 				case KeyCode.Z:
@@ -328,14 +331,19 @@ class PlayFieldEditorMode {
 				case KeyCode.Y:
 					redo();
 					return;
+				case KeyCode.UP:
+					cyclePlaybackRate(1);
+					return;
+				case KeyCode.DOWN:
+					cyclePlaybackRate(-1);
+					return;
 				default:
 			}
 		}
 
 		// F2 toggles keybind placement: the player keybinds place notes
 		// at the playhead on whichever lane they map to. (Was F1 — F1 is
-		// the instructions card now. Checked BEFORE the ALT branch so
-		// ALT+F2 can never be eaten by it, and before the keybind-place
+		// the instructions card now. Checked before the keybind-place
 		// dispatch so the toggle key itself never places a note.)
 		if (code == KeyCode.F2) {
 			keybindPlaceMode = !keybindPlaceMode;
@@ -343,69 +351,35 @@ class PlayFieldEditorMode {
 			return;
 		}
 
-		// Keybind placement mode: every player keybind press places (or
-		// removes, when ALT is held) a note at the playhead on that
-		// keybind's lane. Runs even while the ALT modifier is held —
-		// ALT+keybind is the remove gesture.
+		// Keybind placement mode: every player keybind press TOGGLES the
+		// note at the playhead on that keybind's lane — place when the
+		// snapped slot is empty, remove when it already holds one. One
+		// gesture, no modifier to remember.
 		if (keybindPlaceMode) {
 			var lane = laneForBind(code);
 			if (lane >= 0) {
-				placeAtPlayhead(lane, (mod & KeyModifier.ALT) != 0);
+				var remove = false;
+				if (strumlineInput != null)
+					remove = strumlineInput.findNoteAt(lane, 1, strumlineInput.snapTime(field.songPosition)) >= 0;
+				placeAtPlayhead(lane, remove);
 				return;
 			}
 			// Non-player keys still fall through to the binds below
 			// (seek, snap, notetype) — only the PLAYER keys are captured.
 		}
 
-		// ALT+LEFT / ALT+RIGHT cycle the notetype number the editor
-		// places (wrapped through 0..255, the chart's 8-bit type field).
-		// Works paused or not — in keybind-place mode this is how you
-		// re-color the pen without the mouse. While a note is HELD
-		// (mouse hold-edit or the duration state), the same keys also
-		// RETYPE that held note — the type is coerced to the note's own
-		// strumline (the routing table decides the side, a mismatched
-		// type would jump strumlines) — and the pen follows, so the next
-		// placement uses the type you just dialed in.
-		if ((mod & KeyModifier.ALT) != 0) {
-			switch (code) {
-				case KeyCode.LEFT:
-					notetype = notetype <= 0 ? 255 : notetype - 1;
-					if (strumlineInput != null)
-						notetype = strumlineInput.retypeHeldNote(notetype);
-					updateReadout();
-				case KeyCode.RIGHT:
-					notetype = notetype >= 255 ? 0 : notetype + 1;
-					if (strumlineInput != null)
-						notetype = strumlineInput.retypeHeldNote(notetype);
-					updateReadout();
-				case KeyCode.LEFT_BRACKET:
-					cyclePlaybackRate(-1);
-				case KeyCode.RIGHT_BRACKET:
-					cyclePlaybackRate(1);
-				default:
-					// With ALT held the user asked for the notetype
-					// action; eat the key.
-					return;
-			}
-			return;
-		}
-
-		// SHIFT+[ / SHIFT+] adjust the latency compensation ±10 ms —
-		// works frozen or playing (the latency feeds noteTime, which drives
-		// note hits/misses and receptor timing live). The editor is where
-		// you CALIBRATE latency (hear a hit, adjust, hear it again), so it
-		// must work without playback running.
+		// SHIFT+UP / SHIFT+DOWN lengthen/shorten the hold note being
+		// edited (the duration-change state) by one snap step — same
+		// axis as the pen dial, the SHIFT rung of it.
 		if ((mod & KeyModifier.SHIFT) != 0) {
 			switch (code) {
-				case KeyCode.LEFT_BRACKET:
-					field.latencyCompensation -= 10;
-					field.updateNoteLatency();
-					updateReadout();
+				case KeyCode.UP:
+					if (strumlineInput != null)
+						strumlineInput.nudgeHoldDuration(1);
 					return;
-				case KeyCode.RIGHT_BRACKET:
-					field.latencyCompensation += 10;
-					field.updateNoteLatency();
-					updateReadout();
+				case KeyCode.DOWN:
+					if (strumlineInput != null)
+						strumlineInput.nudgeHoldDuration(-1);
 					return;
 				default:
 			}
@@ -413,33 +387,79 @@ class PlayFieldEditorMode {
 
 		switch (code) {
 			case KeyCode.LEFT:
-				seekTo(field.songPosition - ((mod & KeyModifier.CTRL) != 0 ? 4000 : 1000));
+				// Step to the previous grid line (CTRL: a ~4s jump that
+				// still lands exactly ON a line).
+				seekGridLines(-1, seekLineCount(mod));
 			case KeyCode.RIGHT:
-				seekTo(field.songPosition + ((mod & KeyModifier.CTRL) != 0 ? 4000 : 1000));
+				seekGridLines(1, seekLineCount(mod));
 			case KeyCode.UP:
-				// UI up/down lengthen/shorten the hold note being edited
-				// (the duration-change state) by one snap step.
+				// Cycle the pen's notetype (wrapped through 0..255, the
+				// chart's 8-bit type field) — the readout shows it live.
+				// While a note is HELD (mouse hold-edit or the duration
+				// state), the same key RETYPES that held note and the pen
+				// follows — one control dials the type everywhere.
+				notetype = notetype >= 255 ? 0 : notetype + 1;
 				if (strumlineInput != null)
-					strumlineInput.nudgeHoldDuration(1);
+					notetype = strumlineInput.retypeHeldNote(notetype);
+				updateReadout();
 			case KeyCode.DOWN:
+				notetype = notetype <= 0 ? 255 : notetype - 1;
 				if (strumlineInput != null)
-					strumlineInput.nudgeHoldDuration(-1);
+					notetype = strumlineInput.retypeHeldNote(notetype);
+				updateReadout();
 			case KeyCode.MINUS:
+				// Latency compensation -10ms (- / = is less / more; the
+				// readout shows the live value). Works frozen or playing
+				// — the editor is where you CALIBRATE latency (hear a
+				// hit, adjust, hear it again).
+				field.latencyCompensation -= 10;
+				field.updateNoteLatency();
+				updateReadout();
+			case KeyCode.EQUALS:
+				field.latencyCompensation += 10;
+				field.updateNoteLatency();
+				updateReadout();
+			case KeyCode.LEFT_BRACKET:
 				// Halve the snap multiplier (finer grid), floored at 1/32nds.
 				snapMultiplier = Math.max(snapMultiplier / 2, 0.03125);
-			case KeyCode.EQUALS:
+			case KeyCode.RIGHT_BRACKET:
 				// Double the snap multiplier (coarser grid), capped at 16 beats.
 				snapMultiplier = Math.min(snapMultiplier * 2, 64);
 			case KeyCode.S:
 				if ((mod & KeyModifier.CTRL) != 0)
 					saveChartToDisk();
-			case KeyCode.G:
-				// Cycle the step/beat grid alpha (0 = off — the default).
-				gridAlpha = gridAlpha <= 0 ? 0.15 : (gridAlpha < 0.3 ? 0.3 : 0);
-				Main.current.playScrollSound();
-				updateReadout();
 			default:
 		}
+	}
+
+	/**
+		Grid-line seek: how many snap lines one LEFT/RIGHT press steps —
+		plain presses walk ONE line; CTRL presses cover ~4 seconds worth
+		(rounded to whole lines, so the landing spot is still on the grid).
+	**/
+	function seekLineCount(mod:KeyModifier):Int {
+		if ((mod & KeyModifier.CTRL) == 0)
+			return 1;
+		return Std.int(Math.max(1, Math.round(4000 / snapMs)));
+	}
+
+	/**
+		Steps the playhead by whole grid lines. `dir` +1 walks forward,
+		-1 backward; `lines` is the step count. The math lands STRICTLY
+		past the current position's line (floor for forward, ceil for
+		backward), so repeated presses walk the grid line by line no
+		matter where the playhead currently sits — including after a
+		continuous wheel pan or a fling left it off-grid.
+	**/
+	function seekGridLines(dir:Int, lines:Int) {
+		var step = snapMs;
+		if (step <= 0)
+			step = 1;
+		var pos = field.songPosition;
+		var target = dir > 0
+			? (Math.floor(pos / step) + lines) * step
+			: (Math.ceil(pos / step) - lines) * step;
+		seekTo(target);
 	}
 
 	// -------------------------------------------------------------------
@@ -474,8 +494,10 @@ class PlayFieldEditorMode {
 		Place (or with `remove`, delete) a note at the CURRENT playhead
 		time on the PLAYER strumline (written straight into the note's
 		stored lane). Snapped to the grid, and the type used is the
-		editor's selected notetype — ALT+LEFT/RIGHT re-colors this pen
-		live.
+		editor's selected notetype — UP/DOWN re-colors this pen live. The
+		keybind-placement dispatch passes the slot's occupancy as
+		`remove`, which makes every player-key press a toggle: place when
+		empty, remove when occupied.
 	**/
 	function placeAtPlayhead(lane:Int, remove:Bool) {
 		if (strumlineInput == null)
@@ -916,13 +938,12 @@ class PlayFieldEditorMode {
 		var laneStr = '';
 		if (strumlineInput != null && strumlineInput.hoverStrumline >= 0)
 			laneStr = ' | lane: ${strumlineInput.hoverStrumline}';
-		var gridStr = gridAlpha <= 0 ? ' | grid: OFF' : ' | grid: $gridAlpha';
 		if (field.noteSystem != null && field.noteSystem.noteSpawner != null) {
 			var spawner = field.noteSystem.noteSpawner;
-			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | $typeStr$latStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"}$laneStr$gridStr'
+			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | $typeStr$latStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"}$laneStr'
 				+ ' | bottom: ${spawner.bottom} | top: ${spawner.top}';
 		} else {
-			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | $typeStr$latStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"}$laneStr$gridStr | bottom: - | top: -';
+			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | $typeStr$latStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"}$laneStr | bottom: - | top: -';
 		}
 
 		// Re-center for the readout's own width (hud.update positioned the

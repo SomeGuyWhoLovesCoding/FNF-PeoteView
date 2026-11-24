@@ -24,14 +24,14 @@ import lime.ui.MouseWheelMode;
 	               there; release just ends it). On an existing note: the
 	               same hold-duration state on that note, AND its type is
 	               picked up into the editor's pen (the next placement
-	               re-uses it; ALT+LEFT/RIGHT now retype the HELD note).
+	               re-uses it; UP/DOWN retype the HELD note live).
 	               On the event lane: adds/removes placeholder events. On
 	               background: starts the pan gesture; a TRIPLE
 	               background click/tap toggles the instructions popup.
 	* mouseUp    — LEFT: a plain press on an empty slot (no drag beyond the
 	               slop) adds a note there via `File.addNote(position, 0,
 	               lane, editorMode.notetype, hoveredStrumline)` — the
-	               notetype comes from the editor's ALT+LEFT/RIGHT selector
+	               notetype comes from the editor's UP/DOWN selector
 	               and the hovered strumline is written into the note's
 	               stored lane. A hold-edit press keeps
 	               the note with whatever duration was dialed in (every wheel
@@ -200,8 +200,8 @@ class StrumlineNoteInteraction {
 
 	// -------------------------------------------------------------------
 	// Real-time step/beat grid — alpha-gated by
-	// PlayFieldEditorMode.gridAlpha (0 = disabled, the DEFAULT: no
-	// updates, no elements bound, zero cost).
+	// PlayFieldEditorMode.gridAlpha (ON by default at 0.15; 0 disables:
+	// no updates, no elements bound, zero cost).
 	// -------------------------------------------------------------------
 	/** Pooled horizontal grid lines (GRID_MAX_ROWS per strumline). */
 	var gridLines:Array<RepeatSprite> = [];
@@ -889,9 +889,9 @@ class StrumlineNoteInteraction {
 
 	/**
 		Steps the hold-edited note's duration by `steps` snap steps (UI
-		UP/DOWN while in the duration-change state). Works both while the
-		mouse is still held (the classic hold-edit) and after a
-		press-drag-release edit is re-entered via UI keys.
+		SHIFT+UP / SHIFT+DOWN while in the duration-change state). Works
+		both while the mouse is still held (the classic hold-edit) and
+		after a press-drag-release edit is re-entered via UI keys.
 	**/
 	function nudgeHoldDuration(steps:Int) {
 		if (!holdEditing || downNoteId < 0)
@@ -901,7 +901,7 @@ class StrumlineNoteInteraction {
 	}
 
 	/**
-		ALT+LEFT/RIGHT while a note is held (hold-edit state): retype that
+		UP/DOWN while a note is held (hold-edit state): retype that
 		note to the pen's new type. The note KEEPS its stored lane — the
 		v2 format stores the strumline on the note, so a retype can never
 		move it to the other strumline. With no held note it is a no-op
@@ -1039,7 +1039,7 @@ class StrumlineNoteInteraction {
 				// Pen pickup: pressing an EXISTING note makes its type the
 				// editor-global pen type — the next placement (mouse or
 				// keybind) re-uses exactly what you just grabbed, and
-				// ALT+LEFT/RIGHT retype THIS note because it is the held
+				// UP/DOWN retype THIS note because it is the held
 				// one. (A freshly placed note does NOT do this — its type
 				// was just coerced by the placement, and re-writing the
 				// pen would fight the user's chosen pen type.)
@@ -1344,10 +1344,10 @@ class StrumlineNoteInteraction {
 	// ==================================================================
 
 	/**
-		Per-frame grid refresh. Gated by the editor's gridAlpha: at 0 (the
-		default) the grid is fully DISABLED — this early-outs after one
-		boolean check, no rows update, no elements stay bound. At any other
-		alpha the rows update in real time: every step of the conductor's
+		Per-frame grid refresh. Gated by the editor's gridAlpha (ON by
+		default): at 0 the grid is fully DISABLED — this early-outs after
+		one boolean check, no rows update, no elements stay bound. At any
+		other alpha the rows update in real time: every step of the conductor's
 		grid (16ths at the current bpm) inside the visible window becomes a
 		horizontal line spanning the strumline's FULL width (first
 		receptor's x .. last receptor's x + its drawn width), positioned by

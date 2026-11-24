@@ -665,8 +665,8 @@ class NoteSystem {
 					sustainSpr.r = lut.lookupSustainRot(d);
 					var scrollMul = lut.lookupScrollMul(d);
 					if (scrollMul != 1.0) {
-						noteSpr.diff = Math.round(d * scrollMul);
-						sustainSpr.w = Math.round(sustainSpr.w * scrollMul);
+						noteSpr.diff = Std.int(d * scrollMul);
+						sustainSpr.w = Std.int(sustainSpr.w * scrollMul);
 					}
 				} else {
 					noteMovement.run(this, noteSpr, sustainSpr, receptor, index, note.type, false);
@@ -724,8 +724,8 @@ class NoteSystem {
 			sustainSpr.r = lut.lookupSustainRot(d);
 			var scrollMul = lut.lookupScrollMul(d);
 			if (scrollMul != 1.0) {
-				noteSpr.diff = Math.round(d * scrollMul);
-				sustainSpr.w = Math.round(sustainSpr.w * scrollMul);
+				noteSpr.diff = Std.int(d * scrollMul);
+				sustainSpr.w = Std.int(sustainSpr.w * scrollMul);
 			}
 		}
 
