@@ -3,6 +3,22 @@ package gameplay;
 import haxe.Int64;
 
 /**
+	One inclusive span of selected note indexes: every id in [lo..hi] is
+	selected. The selection is stored as a sorted list of these — see
+	EditorEditSystem.selected.
+**/
+@:publicFields
+class SelRange {
+	var lo:Int64 = 0;
+	var hi:Int64 = 0;
+
+	function new(lo:Int64 = 0, hi:Int64 = 0) {
+		this.lo = lo;
+		this.hi = hi;
+	}
+}
+
+/**
 	A chart note's raw fields — the complete undo record for one note.
 	Position-keyed (not global-index-keyed): every structural edit shifts
 	the global indexes after it, so undo entries must re-resolve by fields.
@@ -29,8 +45,8 @@ class EditNoteData {
 	(only `befores`), 2 = replace (one entry each — the duration/retype
 	gesture, which is one remove+re-add pair the user experiences as ONE
 	edit). Add/remove carry ARRAYS so a single gesture that touches many
-	notes — paste, cut, delete-selection — is ONE undo step: one command,
-	one CTRL+Z.
+	notes — paste, cut, delete-selection, batch removal — is ONE undo
+	step: one command, one CTRL+Z.
 **/
 @:publicFields
 class EditCmd {
@@ -52,22 +68,35 @@ class EditCmd {
 
 	=== Why selection lives with the history ===
 
-	The selection is an ascending-sorted array of global chart indexes,
-	and every structural edit (place, remove, undo, paste...) shifts the
-	indexes after the edit point. Since ALL structural writes funnel
-	through this class's recorders, each write also REMAPS the selection
-	array (insert at id k shifts selected ids >= k up by one; remove at k
-	shifts ids > k down and drops k) — the array is sorted, so both
-	remaps only touch the tail. The selection thus survives arbitrary
-	edits, undos and redos without ever pointing at the wrong note.
+	The selection is a set of global chart indexes, and every structural
+	edit (place, remove, undo, paste...) shifts the indexes after the edit
+	point. Since ALL structural writes funnel through this class's
+	recorders, each write also REMAPS the selection (insert at id k shifts
+	selected ids >= k up by one; remove at k shifts ids > k down and drops
+	k) — so the selection survives arbitrary edits, undos and redos
+	without ever pointing at the wrong note.
+
+	=== The storage: RANGES, not a flat id list ===
+
+	The set is kept as a sorted array of INCLUSIVE [lo..hi] spans
+	(SelRange), non-overlapping and merged-touching. A contiguous block —
+	select-all, a marquee band over a dense chart, a pasted pattern —
+	compresses to a handful of Int64 PAIRS no matter how many notes it
+	covers: selecting a MILLION notes costs a few ranges, membership is a
+	binary search over the ranges (O(log ranges)), and the structural
+	remaps walk only the range tail — O(ranges) per edit instead of
+	O(selected). The per-note work (reading fields, removing) is still
+	per-note by necessity, but the bookkeeping never blows up.
 
 	=== Selection ===
 
-	CTRL+drag on the strumlines is a marquee (rubber-band) rectangle;
-	SHIFT+click toggles one note; CTRL+A selects everything; ESC or a
-	plain click on empty background clears. (The mouse gesture side —
-	hit-testing, the live rectangle, the highlight overlay — lives in
-	StrumlineNoteInteraction, which reports the captured id arrays here.)
+	CTRL+drag on the strumlines bands the SELECTION BOX sprite
+	(SelectionBoxSprite — StrumlineNoteInteraction renders it and reports
+	the captured id sets here); every note the box TOUCHES is selected,
+	live on every move. SHIFT+drag adds the band to the existing
+	selection instead of replacing it; SHIFT+click toggles one note;
+	CTRL+A selects everything (ONE range); a plain click of EITHER
+	button (no SHIFT, no CTRL) — or ESC — clears the whole selection.
 
 	=== Clipboard ===
 
@@ -82,11 +111,11 @@ class EditCmd {
 	=== Undo / redo ===
 
 	CTRL+Z / CTRL+Y, field-keyed records, cap 256, a new edit clears the
-	redo history — the same machine the editor always had, now batch-
-	aware: undoing a delete/cut re-adds the notes AND re-selects them;
-	redoing a paste re-adds and re-selects the pasted set. All of it is
-	refused while a mouse hold-edit is in flight (its state tracks a note
-	id the history would invalidate underneath it).
+	redo history — batch-aware: undoing a delete/cut/batch-removal
+	re-adds the notes AND re-selects them; redoing a paste re-adds and
+	re-selects the pasted set. All of it is refused while a mouse
+	hold-edit is in flight (its state tracks a note id the history would
+	invalidate underneath it).
 
 	@since Development
 **/
@@ -100,13 +129,14 @@ class EditorEditSystem {
 	// -------------------------------------------------------------------
 
 	/**
-		The selected notes' global chart indexes, ASCENDING-sorted and
-		duplicate-free. Maintained ONLY through this class (the recorders
-		remap it on every structural write) — never let an id in here go
-		stale. Sorted order is what keeps the remaps tail-only and the
-		membership tests a binary search.
+		The selected notes' global chart indexes as inclusive [lo..hi]
+		spans, sorted ascending, non-overlapping, adjacent spans merged.
+		Maintained ONLY through this class (the recorders remap it on
+		every structural write) — never let an id in here go stale. This is
+		the size optimization: contiguous selections compress to a few
+		Int64 pairs however many notes they cover.
 	**/
-	var selected:Array<Int64> = [];
+	var selected:Array<SelRange> = [];
 
 	// -------------------------------------------------------------------
 	// Clipboard
@@ -135,15 +165,19 @@ class EditorEditSystem {
 	}
 
 	// ===================================================================
-	// Selection
+	// Selection — range storage primitives
 	// ===================================================================
 
-	/** Binary-search lower bound of `v` in an ascending Int64 array. */
-	static function lowerBound(arr:Array<Int64>, v:Int64):Int {
+	/**
+		Binary-search lower bound over the ranges: the index of the FIRST
+		range whose lo is > v. The range that could CONTAIN v is the one
+		before it (the last range with lo <= v).
+	**/
+	static function lowerBoundRange(arr:Array<SelRange>, v:Int64):Int {
 		var lo = 0, hi = arr.length;
 		while (lo < hi) {
 			var mid = (lo + hi) >> 1;
-			if (arr[mid] < v)
+			if (arr[mid].lo <= v)
 				lo = mid + 1;
 			else
 				hi = mid;
@@ -151,16 +185,17 @@ class EditorEditSystem {
 		return lo;
 	}
 
-	/** Ascending Int64 comparator (the sort/insert order of `selected`). */
-	static function compareIds(a:Int64, b:Int64):Int {
-		if (a == b)
-			return 0;
-		return a < b ? -1 : 1;
+	/** Number of selected notes — sum of the span widths, O(ranges). */
+	function selectionSize():Int64 {
+		var n:Int64 = 0;
+		for (r in selected)
+			n += r.hi - r.lo + 1;
+		return n;
 	}
 
 	inline function isSelected(id:Int64):Bool {
-		var i = lowerBound(selected, id);
-		return i < selected.length && selected[i] == id;
+		var i = lowerBoundRange(selected, id);
+		return i > 0 && selected[i - 1].hi >= id;
 	}
 
 	/** True when at least one note is selected. */
@@ -175,24 +210,62 @@ class EditorEditSystem {
 	}
 
 	/**
+		Inserts one selected id at its sorted position and merges it with
+		any neighbor it touches (up to two merges). The id is selected
+		afterwards by construction.
+	**/
+	function insertId(id:Int64) {
+		var i = lowerBoundRange(selected, id);
+		// Touching the range before? (its hi is id-1 or more)
+		var mergedBefore = i > 0 && selected[i - 1].hi + 1 >= id;
+		// Touching the range after? (its lo is id+1 or less)
+		var mergedAfter = i < selected.length && selected[i].lo <= id + 1;
+		if (mergedBefore && mergedAfter) {
+			// Fuse all three: before absorbs id AND the after-range.
+			selected[i - 1].hi = selected[i].hi;
+			selected.splice(i, 1);
+		} else if (mergedBefore) {
+			selected[i - 1].hi = id;
+		} else if (mergedAfter) {
+			selected[i].lo = id;
+		} else {
+			selected.insert(i, new SelRange(id, id));
+		}
+	}
+
+	/**
 		SHIFT+click: toggles one note in/out of the selection. Returns the
-		note's NEW selected state (false also when id is invalid).
+		note's NEW selected state (false also when id is invalid). Removing
+		splits the span; adding merges with neighbors.
 	**/
 	function toggleSelected(id:Int64):Bool {
 		if (id < 0 || id >= File.getLength())
 			return false;
-		var i = lowerBound(selected, id);
-		if (i < selected.length && selected[i] == id) {
-			selected.splice(i, 1);
+		var i = lowerBoundRange(selected, id);
+		if (i > 0 && selected[i - 1].hi >= id) {
+			// Inside the span [lo..hi]: subtract the single id.
+			var r = selected[i - 1];
+			if (r.lo == id && r.hi == id) {
+				selected.splice(i - 1, 1); // it was a singleton — gone
+			} else if (r.lo == id) {
+				r.lo = id + 1;
+			} else if (r.hi == id) {
+				r.hi = id - 1;
+			} else {
+				// Split into [lo..id-1] and [id+1..hi].
+				selected.insert(i, new SelRange(id + 1, r.hi));
+				r.hi = id - 1;
+			}
 			return false;
 		}
-		selected.insert(i, id); // lowerBound IS the sorted insert point
+		insertId(id);
 		return true;
 	}
 
 	/**
-		Replaces the selection with exactly these ids (a marquee that
-		started without SHIFT). Invalid ids and duplicates are dropped.
+		Replaces the selection with exactly these ids (a selection box
+		that started without SHIFT, a paste, an undo restore). Invalid ids
+		are dropped; the result is normalized into spans.
 	**/
 	function selectIds(ids:Array<Int64>) {
 		var len = File.getLength();
@@ -202,46 +275,109 @@ class EditorEditSystem {
 				continue;
 			next.push(id);
 		}
-		next.sort(compareIds);
-		// Drop duplicates (equal neighbors after the sort).
-		var dedup:Array<Int64> = [];
-		for (id in next) {
-			if (dedup.length == 0 || dedup[dedup.length - 1] != id)
-				dedup.push(id);
-		}
-		selected = dedup;
+		selected = spansFromIds(next);
 	}
 
 	/**
-		Adds these ids to the existing selection (a marquee that started
-		WITH SHIFT — additive banding).
+		Adds these ids to the existing selection (a box band that started
+		WITH SHIFT — additive banding). Merge-based: O(ids + ranges).
 	**/
 	function addIdsToSelection(ids:Array<Int64>) {
 		var len = File.getLength();
+		var valid:Array<Int64> = [];
 		for (id in ids) {
 			if (id < 0 || id >= len)
 				continue;
-			var i = lowerBound(selected, id);
-			if (i < selected.length && selected[i] == id)
-				continue; // already selected
-			selected.insert(i, id);
+			valid.push(id);
 		}
+		var incoming = spansFromIds(valid);
+		if (incoming.length == 0)
+			return;
+		// Two-pointer union of the two sorted, normalized span lists.
+		var union:Array<SelRange> = [];
+		var a = 0, b = 0;
+		while (a < selected.length || b < incoming.length) {
+			// Pick the next span (by lo) from whichever list holds it.
+			var r:SelRange;
+			if (b >= incoming.length || (a < selected.length && selected[a].lo <= incoming[b].lo)) {
+				r = selected[a];
+				a++;
+			} else {
+				r = incoming[b];
+				b++;
+			}
+			// Merge into the running tail when touching/overlapping.
+			if (union.length > 0 && union[union.length - 1].hi + 1 >= r.lo) {
+				if (r.hi > union[union.length - 1].hi)
+					union[union.length - 1].hi = r.hi;
+			} else {
+				union.push(r);
+			}
+		}
+		selected = union;
 	}
 
-	/** CTRL+A: every note in the chart. */
+	/** CTRL+A: every note in the chart — ONE span, whatever the size. */
 	function selectAll() {
 		var len = File.getLength();
 		if (len <= 0) {
 			clearSelection();
 			return;
 		}
-		var next:Array<Int64> = [];
-		var i:Int64 = 0;
-		while (i < len) {
-			next.push(i);
-			i++;
+		selected = [new SelRange(0, len - 1)];
+	}
+
+	/**
+		Builds the normalized span list from an arbitrary id collection:
+		sort ascending, drop duplicates, coalesce touching ids into spans.
+		This is where the compression happens — a million consecutive ids
+		become one [lo..hi] pair.
+	**/
+	static function spansFromIds(ids:Array<Int64>):Array<SelRange> {
+		if (ids.length == 0)
+			return [];
+		ids.sort(function(a:Int64, b:Int64):Int {
+			if (a == b)
+				return 0;
+			return a < b ? -1 : 1;
+		});
+		var spans:Array<SelRange> = [];
+		var runLo = ids[0];
+		var runHi = ids[0];
+		for (i in 1...ids.length) {
+			var id = ids[i];
+			if (id == runHi)
+				continue; // duplicate
+			if (id == runHi + 1) {
+				runHi = id; // extends the current span
+			} else {
+				spans.push(new SelRange(runLo, runHi));
+				runLo = id;
+				runHi = id;
+			}
 		}
-		selected = next; // 0..len-1 — ascending by construction
+		spans.push(new SelRange(runLo, runHi));
+		return spans;
+	}
+
+	/**
+		Re-establishes the invariant after a remap: walk the spans and
+		fuse any that now touch (hi + 1 == next.lo) or overlap. O(ranges);
+		drops empty spans (lo > hi) outright.
+	**/
+	function coalesceRanges() {
+		var out:Array<SelRange> = [];
+		for (r in selected) {
+			if (r.lo > r.hi)
+				continue; // emptied by a removal remap
+			if (out.length > 0 && out[out.length - 1].hi + 1 >= r.lo) {
+				if (r.hi > out[out.length - 1].hi)
+					out[out.length - 1].hi = r.hi;
+			} else {
+				out.push(r);
+			}
+		}
+		selected = out;
 	}
 
 	// ===================================================================
@@ -280,6 +416,26 @@ class EditorEditSystem {
 	}
 
 	/**
+		Editor REMOVE of a whole id SET — the batch-removal gesture (the
+		v3.4 right-click sweep): one recorded command, one CTRL+Z puts
+		every note back. The ids need not be selected; invalid ids are
+		dropped. The notes leave the selection via the per-removal remaps
+		as they go. Returns the count removed.
+	**/
+	function removeNotesByIds(ids:Array<Int64>):Int {
+		var len = File.getLength();
+		var valid:Array<Int64> = [];
+		for (id in ids) {
+			if (id < 0 || id >= len)
+				continue;
+			valid.push(id);
+		}
+		if (valid.length == 0)
+			return 0;
+		return removeIdsInternal(valid);
+	}
+
+	/**
 		Editor REPLACE — the duration/retype gesture: one remove + one
 		re-add the user experiences as a single edit, recorded as a single
 		undo entry. A replaced note that was selected stays selected (on
@@ -296,10 +452,8 @@ class EditorEditSystem {
 		if (newId < 0)
 			return -1;
 		remapForInsert(newId);
-		if (wasSelected && !isSelected(newId)) {
-			var i = lowerBound(selected, newId);
-			selected.insert(i, newId);
-		}
+		if (wasSelected && !isSelected(newId))
+			insertId(newId);
 		pushCmd(new EditCmd(2, [before], [readNoteData(newId)]));
 		return newId;
 	}
@@ -318,10 +472,15 @@ class EditorEditSystem {
 			return false;
 		var len = File.getLength();
 		var datas:Array<EditNoteData> = [];
-		for (id in selected) {
-			if (id < 0 || id >= len)
-				continue;
-			datas.push(readNoteData(id));
+		// Range order IS id order (ascending), and the store is
+		// position-sorted — so ids ascending == positions ascending.
+		for (r in selected) {
+			var i = r.lo;
+			while (i <= r.hi) {
+				if (i >= 0 && i < len)
+					datas.push(readNoteData(i));
+				i++;
+			}
 		}
 		if (datas.length == 0)
 			return false;
@@ -397,20 +556,19 @@ class EditorEditSystem {
 	function deleteSelection():Bool {
 		if (editingActive() || selected.length == 0)
 			return false;
-		var ids = selected.copy(); // ascending; `selected` mutates as we go
+		// Materialize the selection's ids (ascending) — the spans mutate
+		// as the removals remap them.
+		var ids:Array<Int64> = [];
+		for (r in selected.copy()) {
+			var i = r.lo;
+			while (i <= r.hi) {
+				ids.push(i);
+				i++;
+			}
+		}
 		if (ids.length == 0)
 			return false;
-		// Remove DESCENDING: deleting id k only shifts ids above k, so
-		// the lower ids in this list stay valid as the loop runs.
-		var befores:Array<EditNoteData> = [];
-		var k = ids.length - 1;
-		while (k >= 0) {
-			befores.push(readNoteData(ids[k]));
-			silentRemove(ids[k]);
-			k--;
-		}
-		befores.reverse(); // ascending — stable undo re-add order
-		pushCmd(new EditCmd(1, befores, null));
+		removeIdsInternal(ids);
 		Main.current.playScrollSound();
 		parent.onChartEdited();
 		return true;
@@ -441,10 +599,8 @@ class EditorEditSystem {
 				var wasSelected = curId >= 0 && isSelected(curId);
 				if (removeNoteByData(cmd.afters[0])) {
 					var id = silentAdd(cmd.befores[0]);
-					if (wasSelected && id >= 0 && !isSelected(id)) {
-						var i = lowerBound(selected, id);
-						selected.insert(i, id);
-					}
+					if (wasSelected && id >= 0 && !isSelected(id))
+						insertId(id);
 				}
 		}
 		redoStack.push(cmd);
@@ -473,10 +629,8 @@ class EditorEditSystem {
 				var wasSelected = oldId >= 0 && isSelected(oldId);
 				if (removeNoteByData(cmd.befores[0])) {
 					var id = silentAdd(cmd.afters[0]);
-					if (wasSelected && id >= 0 && !isSelected(id)) {
-						var i = lowerBound(selected, id);
-						selected.insert(i, id);
-					}
+					if (wasSelected && id >= 0 && !isSelected(id))
+						insertId(id);
 				}
 		}
 		undoStack.push(cmd);
@@ -530,36 +684,80 @@ class EditorEditSystem {
 
 	/**
 		Selection remap after an insert at index `at`: every selected id
-		at/after it shifts up by one. The array is sorted ascending, so the
-		remap only walks the tail from `at`'s lower bound onward.
+		at/after it shifts up by one. Per span: spans fully at/after it
+		shift up; a span straddling it grows at the top. A final coalesce
+		fuses anything the shift made touch. O(ranges) — NOT O(selected):
+		a million-note selection remaps in a few steps.
 	**/
 	function remapForInsert(at:Int64) {
 		if (selected.length == 0)
 			return;
-		var k = lowerBound(selected, at);
-		while (k < selected.length) {
-			selected[k] = selected[k] + 1;
-			k++;
+		for (r in selected) {
+			if (r.lo >= at) {
+				r.lo += 1;
+				r.hi += 1;
+			} else if (r.hi >= at) {
+				r.hi += 1; // lo < at <= hi: the top end shifts up
+			}
 		}
+		coalesceRanges();
 	}
 
 	/**
 		Selection remap after a removal at index `at`: the removed note
-		itself leaves the selection; ids above it shift down by one.
-		Sorted ascending — again a tail-only walk.
+		itself leaves the selection; ids above it shift down by one. Per
+		span: a span containing `at` keeps its lo and loses its top end
+		(the removed id drops out, everything above slides down into
+		place); spans fully above shift down. Empty spans drop, touching
+		spans re-fuse — again O(ranges).
 	**/
 	function remapForRemove(at:Int64) {
 		if (selected.length == 0)
 			return;
-		var k = lowerBound(selected, at);
-		while (k < selected.length) {
-			if (selected[k] == at) {
-				selected.splice(k, 1); // next element slides into k
-				continue;
+		for (r in selected) {
+			if (r.hi < at)
+				continue; // entirely below — untouched
+			if (r.lo > at) {
+				r.lo -= 1;
+				r.hi -= 1; // entirely above — slides down
+			} else {
+				r.hi -= 1; // lo <= at <= hi: the id `at` drops, top slides down
 			}
-			selected[k] = selected[k] - 1; // > at (== was spliced) → down one
-			k++;
 		}
+		coalesceRanges(); // drops emptied spans, fuses re-touching ones
+	}
+
+	/**
+		The shared batch-removal core: removes exactly these ids (already
+		validated, taken in any order) as ONE kind-1 command. DESCENDING
+		per-span removal keeps the lower ids valid while the higher ones
+		disappear; `selected` follows along through the per-removal
+		remaps. Returns the count removed.
+	**/
+	function removeIdsInternal(ids:Array<Int64>):Int {
+		var spans = spansFromIds(ids);
+		var befores:Array<EditNoteData> = [];
+		var removed = 0;
+		// Spans in REVERSE order; ids within each span high→low.
+		var s = spans.length - 1;
+		while (s >= 0) {
+			var r = spans[s];
+			var i = r.hi;
+			while (i >= r.lo) {
+				if (i >= 0 && i < File.getLength()) {
+					befores.push(readNoteData(i));
+					silentRemove(i);
+					removed++;
+				}
+				i--;
+			}
+			s--;
+		}
+		if (removed > 0) {
+			befores.reverse(); // ascending — stable undo re-add order
+			pushCmd(new EditCmd(1, befores, null));
+		}
+		return removed;
 	}
 
 	/** In-place sort by position; pass desc=true for descending. */

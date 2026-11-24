@@ -828,10 +828,12 @@ class PlayFieldEditorMode {
 		if (strumlineInput != null && strumlineInput.hoverStrumline >= 0)
 			laneStr = ' | lane: ${strumlineInput.hoverStrumline}';
 		// The selection segment appears only while something is selected
-		// (the count is live — remaps keep it exact across edits).
+		// (the count is live — remaps keep it exact across edits; the
+		// selection is stored as RANGES, so the count is summed, not
+		// array length).
 		var selStr = '';
 		if (edits != null && edits.hasSelection())
-			selStr = ' | sel: ${edits.selected.length}';
+			selStr = ' | sel: ${edits.selectionSize()}';
 		if (field.noteSystem != null && field.noteSystem.noteSpawner != null) {
 			var spawner = field.noteSystem.noteSpawner;
 			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | $typeStr$latStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"}$laneStr$selStr'
