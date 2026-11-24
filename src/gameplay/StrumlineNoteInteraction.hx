@@ -28,14 +28,17 @@ import lime.ui.MouseWheelMode;
 	               On the event lane: adds/removes placeholder events. On
 	               background: starts the pan gesture; a TRIPLE
 	               background click/tap toggles the instructions popup.
-	* mouseUp    — LEFT: a plain press on an empty slot (no drag beyond the
-	               slop) adds a note there via `File.addNote(position, 0,
-	               lane, editorMode.notetype, hoveredStrumline)` — the
-	               notetype comes from the editor's UP/DOWN selector
-	               and the hovered strumline is written into the note's
-	               stored lane. A hold-edit press keeps
-	               the note with whatever duration was dialed in (every wheel
-	               notch / drag step was already written to the chart).
+	               SELECTION (v3.3): CTRL+press starts a MARQUEE band
+	               (drag = rubber-band select, live; SHIFT adds to the
+	               selection instead of replacing; an unmoved CTRL press
+	               clears it), and SHIFT+press on a note toggles just
+	               that note in/out of the selection.
+	* mouseUp    — LEFT: ends the gesture — a hold-edit keeps the note
+	               with whatever duration was dialed in (every wheel
+	               notch / drag step was already written to the chart),
+	               a pan release with motion flings, a plain unmoved
+	               background press DESELECTS (click-away), and a marquee
+	               release keeps its live-captured set.
 	               RIGHT: removes the note in the hovered slot, or the
 	               nearest note within half a snap step of it (findNoteNear).
 	* mouseWheel — shifts the song position forward or backward (Ctrl = 4x;
@@ -213,6 +216,33 @@ class StrumlineNoteInteraction {
 	/** Max rows drawn per strumline — covers the spawn window at sane BPMs. */
 	static inline var GRID_MAX_ROWS:Int = 64;
 
+	// -------------------------------------------------------------------
+	// v3.3 Selection — marquee capture + highlight overlay. The STATE
+	// (the id set, the clipboard, the history) lives in
+	// PlayFieldEditorMode.edits (EditorEditSystem); this layer owns the
+	// gestures, the hit-testing and the rendering.
+	// -------------------------------------------------------------------
+	/** True while a CTRL+LMB drag is banding the marquee rectangle. */
+	var marqueeing:Bool = false;
+	/** Marquee start corner (display-local, the press point). */
+	var marqueeX0:Float = 0;
+	var marqueeY0:Float = 0;
+	/** Marquee current corner (display-local, tracks the cursor). */
+	var marqueeX1:Float = 0;
+	var marqueeY1:Float = 0;
+	/** SHIFT held at marquee start — the band ADDS to the selection instead of replacing it. */
+	var marqueeAdditive:Bool = false;
+	/** The marquee rectangle (translucent white fill). */
+	var marqueeRect:RepeatSprite;
+	/** Pooled highlight quads over selected notes (lazily bound like the grid). */
+	var selQuads:Array<RepeatSprite> = [];
+	var selBuf:Buffer<RepeatSprite>;
+	var selProg:CustomProgram;
+	/** True while the highlight quads are bound. */
+	var selActive:Bool = false;
+	/** Max simultaneously highlighted notes — the view window is bounded anyway. */
+	static inline var SEL_MAX:Int = 512;
+
 	var display(default, null):CustomDisplay;
 
 	var eventsActive(default, null):Bool = false;
@@ -246,6 +276,15 @@ class StrumlineNoteInteraction {
 		// the first frame the grid alpha goes non-zero.
 		gridBuf = new Buffer<RepeatSprite>(GRID_MAX_ROWS * 2, 2, true);
 		gridProg = new CustomProgram(gridBuf);
+		// The selection overlay: the marquee rectangle (always bound,
+		// w=0 when idle) + up to SEL_MAX highlight quads (lazily bound
+		// the first frame a selection exists).
+		selBuf = new Buffer<RepeatSprite>(1 + SEL_MAX, 2, true);
+		selProg = new CustomProgram(selBuf);
+		marqueeRect = new RepeatSprite(0, 0, 0, 0);
+		marqueeRect.c = 0xFFFFFFFF;
+		marqueeRect.c.aF = 0.12;
+		marqueeRect.r = 0;
 	}
 
 	function addEvents() {
@@ -558,6 +597,272 @@ class StrumlineNoteInteraction {
 	}
 
 	// ==================================================================
+	// v3.3 Selection — marquee capture + highlight rendering
+	// ==================================================================
+
+	/**
+		Live marquee capture, run on every mouse move past the slop while
+		banding. The rectangle's Y span maps to a time span PER STRUMLINE
+		(the lane-0 movement LUT + receptor anchor — the same inverse the
+		ghost square uses), its X span to the lane columns. A note is
+		captured when its OWN strumline's time span contains it AND its
+		lane column's center is inside the rectangle's X span; the result
+		replaces (or, with SHIFT at press, adds to) the selection. The
+		candidate walk is a binary search into the global tick range, so
+		the cost is bounded by the notes actually inside the band's time
+		span — not the chart.
+	**/
+	function recomputeMarqueeSelection() {
+		var em = parent.editorMode;
+		var noteSystem = parent.noteSystem;
+		if (em == null || em.edits == null || noteSystem == null)
+			return;
+		var strumlines = noteSystem.strumlines;
+		if (strumlines.length == 0)
+			return;
+
+		var minX = Math.min(marqueeX0, marqueeX1);
+		var maxX = Math.max(marqueeX0, marqueeX1);
+		var minY = Math.min(marqueeY0, marqueeY1);
+		var maxY = Math.max(marqueeY0, marqueeY1);
+		if (maxX - minX < 1 || maxY - minY < 1)
+			return;
+
+		// Per-strumline time spans (as tick positions), plus the global
+		// envelope for the binary search below.
+		var siLo:Array<Int64> = [];
+		var siHi:Array<Int64> = [];
+		var globalLo:Int64 = 0;
+		var globalHi:Int64 = 0;
+		var haveSpan:Bool = false;
+		var luts = noteSystem.movementLUTs;
+		for (si in 0...strumlines.length) {
+			var strumline = strumlines[si];
+			if (strumline.length == 0 || strumline.receptors[0] == null) {
+				siLo.push(0);
+				siHi.push(-1); // empty span — nothing can match
+				continue;
+			}
+			var note = strumline.receptors[0].note;
+			// yToTimeMs reads the lutCtx globals — feed it THIS
+			// strumline's lane-0 context so the inverse matches how
+			// notes draw here.
+			if (luts != null && si < luts.length && luts[si].length > 0) {
+				lutCtx = luts[si][0];
+				lutCtxNoteY = note.y;
+				lutCtxNoteH = note.h;
+				lutCtxScale = note.scale;
+			} else {
+				lutCtx = null;
+			}
+			var t0 = yToTimeMs(minY, note.y);
+			var t1 = yToTimeMs(maxY, note.y);
+			if (t0 > t1) {
+				var tmp = t0;
+				t0 = t1;
+				t1 = tmp;
+			}
+			var lo = MetaNote.floatToMetaNotePosition(t0);
+			var hi = MetaNote.floatToMetaNotePosition(t1);
+			siLo.push(lo);
+			siHi.push(hi);
+			if (!haveSpan) {
+				globalLo = lo;
+				globalHi = hi;
+				haveSpan = true;
+			} else {
+				if (lo < globalLo)
+					globalLo = lo;
+				if (hi > globalHi)
+					globalHi = hi;
+			}
+		}
+		if (!haveSpan)
+			return; // no strumline contributed a span
+
+		// Binary search into the global tick envelope, then walk and
+		// filter: right strumline time span + lane column inside the
+		// rectangle's X span.
+		var len = File.getLength();
+		var loIdx:Int64 = 0, hiIdx:Int64 = len;
+		while (loIdx < hiIdx) {
+			var mid:Int64 = (loIdx + hiIdx) >> 1;
+			if (File.getNote(mid).position < globalLo)
+				loIdx = mid + 1;
+			else
+				hiIdx = mid;
+		}
+
+		var ids:Array<Int64> = [];
+		var i = loIdx;
+		while (i < len) {
+			var n = File.getNote(i);
+			if (n.position > globalHi)
+				break;
+			var si = NoteSystem.clampLane(n.lane, strumlines.length);
+			if (n.position >= siLo[si] && n.position <= siHi[si]) {
+				var strumline = strumlines[si];
+				if (n.index >= 0 && n.index < strumline.length && strumline.receptors[n.index] != null) {
+					var note = strumline.receptors[n.index].note;
+					var halfW = note.w * strumline.scale * 0.5;
+					var cx = note.x + halfW;
+					if (cx >= minX - halfW && cx <= maxX + halfW)
+						ids.push(i);
+				}
+			}
+			i++;
+		}
+
+		if (marqueeAdditive)
+			em.edits.addIdsToSelection(ids);
+		else
+			em.edits.selectIds(ids);
+	}
+
+	/**
+		Per-frame selection rendering: the marquee rectangle (while
+		banding) + one translucent cyan quad per VISIBLE selected note.
+		The walk binary-searches into the visible position window, so a
+		select-all on a huge chart still costs only the notes on screen.
+	**/
+	function updateSelectionVisual() {
+		var em = parent.editorMode;
+		if (em == null || em.edits == null) {
+			if (marqueeRect != null && marqueeRect.w != 0) {
+				marqueeRect.w = 0;
+				marqueeRect.h = 0;
+			}
+			return;
+		}
+		var edits = em.edits;
+		var noteSystem = parent.noteSystem;
+
+		// The marquee rectangle itself (translucent fill).
+		if (marqueeing) {
+			marqueeRect.x = Std.int(Math.min(marqueeX0, marqueeX1));
+			marqueeRect.y = Std.int(Math.min(marqueeY0, marqueeY1));
+			marqueeRect.w = Std.int(Math.abs(marqueeX1 - marqueeX0));
+			marqueeRect.h = Std.int(Math.abs(marqueeY1 - marqueeY0));
+			marqueeRect.c.setFloatRGB(1, 1, 1);
+			marqueeRect.c.aF = 0.12;
+			marqueeRect.c.luminanceF = 0.05;
+		} else if (marqueeRect.w != 0) {
+			marqueeRect.w = 0;
+			marqueeRect.h = 0;
+		}
+
+		if (noteSystem == null || !edits.hasSelection()) {
+			if (selActive)
+				hideSelQuads();
+			try {
+				selBuf.updateElement(marqueeRect);
+				selBuf.update();
+			} catch (e:Dynamic) {}
+			return;
+		}
+
+		// Lazily bind the highlight pool the first frame a selection
+		// exists (same pattern as the grid).
+		if (!selActive) {
+			while (selQuads.length < SEL_MAX) {
+				var q = new RepeatSprite(0, 0, 0, 0);
+				q.c = 0x00FFFFFF; // cyan
+				q.c.aF = 0;
+				q.c.luminanceF = 0;
+				selQuads.push(q);
+				selBuf.addElement(q);
+			}
+			selActive = true;
+		}
+
+		var strumlines = noteSystem.strumlines;
+		var renderPos = playheadMs();
+		var scrollSpeed = parent.scrollSpeed;
+		if (scrollSpeed <= 0)
+			scrollSpeed = 1;
+
+		// The visible window: the spawn distance ahead of the playhead
+		// plus the despawn tail (a little slack past the notes).
+		var winLo = MetaNote.floatToMetaNotePosition(renderPos - 500);
+		var winHi = MetaNote.floatToMetaNotePosition(renderPos + 1500);
+		var len = File.getLength();
+		var loIdx:Int64 = 0, hiIdx:Int64 = len;
+		while (loIdx < hiIdx) {
+			var mid:Int64 = (loIdx + hiIdx) >> 1;
+			if (File.getNote(mid).position < winLo)
+				loIdx = mid + 1;
+			else
+				hiIdx = mid;
+		}
+
+		var qi = 0;
+		var i = loIdx;
+		while (i < len && qi < SEL_MAX) {
+			var n = File.getNote(i);
+			if (n.position > winHi)
+				break;
+			if (edits.isSelected(i)) {
+				var si = NoteSystem.clampLane(n.lane, strumlines.length);
+				var strumline = strumlines[si];
+				if (strumline != null && n.index >= 0 && n.index < strumline.length && strumline.receptors[n.index] != null) {
+					var note = strumline.receptors[n.index].note;
+					// Column center — the same cx the hitboxes use.
+					var size = note.w * strumline.scale;
+					var cx = note.x + size * 0.5;
+					// Drawn center Y — drawNote's exact math (the
+					// strumline's lane-0 LUT + this lane's receptor
+					// anchor), the same as the ghost square.
+					var timeMs = MetaNote.metaNotePositionToSongTime(n.position);
+					var d = -(timeMs - renderPos) * scrollSpeed;
+					if (parent.downScroll)
+						d = -d;
+					var lut = strumline.receptors[0] != null && noteSystem.movementLUTs != null && si < noteSystem.movementLUTs.length && noteSystem.movementLUTs[si].length > 0 ? noteSystem.movementLUTs[si][0] : null;
+					var scale = lut != null && lut.hasExtendedLUT ? lut.lookupScale(Std.int(d), note.scale) * note.scale : note.scale;
+					var cy = note.y + (lut != null ? lut.lookupY(Std.int(d)) : Std.int(d)) + note.h * scale * 0.5;
+
+					var q = selQuads[qi++];
+					q.x = Std.int(cx - size * 0.575);
+					q.y = Std.int(cy - size * 0.575);
+					q.w = Std.int(size * 1.15);
+					q.h = Std.int(size * 1.15);
+					q.r = 0;
+					q.c.setFloatRGB(0, 1, 1);
+					q.c.aF = 0.30;
+					q.c.luminanceF = 0.10;
+				}
+			}
+			i++;
+		}
+		for (k in qi...selQuads.length) {
+			selQuads[k].w = 0;
+			selQuads[k].h = 0;
+		}
+
+		try {
+			for (q in selQuads)
+				selBuf.updateElement(q);
+			selBuf.updateElement(marqueeRect);
+			selBuf.update();
+		} catch (e:Dynamic) {}
+	}
+
+	/** Unbinds every highlight quad (selection emptied / teardown). */
+	function hideSelQuads() {
+		if (!selActive)
+			return;
+		selActive = false;
+		for (q in selQuads) {
+			try
+				selBuf.removeElement(q)
+			catch (e:Dynamic) {}
+		}
+		selQuads.resize(0);
+		try
+			selBuf.update()
+		catch (e:Dynamic) {}
+	}
+
+	// ==================================================================
 	// The four mouse events
 	// ==================================================================
 
@@ -575,6 +880,17 @@ class StrumlineNoteInteraction {
 		if (isDown) {
 			if (Math.abs(local.x - downX) > CLICK_SLOP || Math.abs(local.y - downY) > CLICK_SLOP)
 				moved = true;
+		}
+
+		// MARQUEE: the drag bands the rectangle and the selection is
+		// recomputed LIVE on every move past the slop (the band replaced
+		// the selection at press time unless SHIFT was held — additive).
+		if (marqueeing && isDown) {
+			marqueeX1 = local.x;
+			marqueeY1 = local.y;
+			if (moved)
+				recomputeMarqueeSelection();
+			return;
 		}
 
 		// Background PAN (R3): LMB held on background + slide shifts the
@@ -941,7 +1257,7 @@ class StrumlineNoteInteraction {
 		var lane = old.lane; // the stored lane rides along unchanged
 
 		// One recorded replace: remove + re-add as a single undo entry.
-		downNoteId = parent.editorMode.replaceNote(downNoteId, position, Std.int(dur), index, type, lane);
+		downNoteId = parent.editorMode.edits.replaceNote(downNoteId, position, Std.int(dur), index, type, lane);
 		if (downNoteId < 0)
 			return; // write failed — stop editing
 
@@ -983,7 +1299,7 @@ class StrumlineNoteInteraction {
 			var index = old.index;
 			var lane = old.lane; // unchanged — retyping never moves sides
 			// One recorded replace: remove + re-add as a single undo entry.
-			downNoteId = parent.editorMode.replaceNote(downNoteId, position, duration, index, penType, lane);
+			downNoteId = parent.editorMode.edits.replaceNote(downNoteId, position, duration, index, penType, lane);
 			if (downNoteId < 0)
 				return penType; // write failed — pen unchanged, stop editing
 			Main.current.playScrollSound();
@@ -1063,6 +1379,29 @@ class StrumlineNoteInteraction {
 			return;
 		}
 
+		if (button == MouseButton.LEFT && ctrlPressed && em != null && em.edits != null) {
+			// CTRL+press = MARQUEE — the selection gesture owns this
+			// press entirely (no placement, no hold-edit, no pan). The
+			// band REPLACES the selection unless SHIFT is also held
+			// (additive banding); a press-release without moving clears
+			// it instead. Like a pan grab, a marquee while the transport
+			// plays stops it — the band is drawn on a frozen chart.
+			isDown = true;
+			moved = false;
+			marqueeing = true;
+			marqueeAdditive = shiftPressed;
+			downX = local.x;
+			downY = local.y;
+			marqueeX0 = local.x;
+			marqueeY0 = local.y;
+			marqueeX1 = local.x;
+			marqueeY1 = local.y;
+			if (!marqueeAdditive)
+				em.edits.clearSelection();
+			haltPlaybackForScroll();
+			return;
+		}
+
 		if (button == MouseButton.LEFT) {
 			isDown = true;
 			moved = false;
@@ -1075,6 +1414,19 @@ class StrumlineNoteInteraction {
 			downLane = hoverLane;
 			downStrumline = hoverStrumline;
 			downTimeMs = hoverTimeMs;
+			// SHIFT+press on a slot: toggle that note into/out of the
+			// SELECTION instead of placing/hold-editing — the press is a
+			// selection verb. Same catchment as removal (findNoteNear),
+			// so off-grid notes are toggleable too. SHIFT on an empty
+			// slot falls through to a normal placement.
+			if (shiftPressed && downOnGrid && em != null && em.edits != null) {
+				var id = findNoteNear(downLane, downStrumline, downTimeMs);
+				if (id >= 0) {
+					em.edits.toggleSelected(id);
+					em.updateReadout();
+					return;
+				}
+			}
 			// Pressing an EXISTING note enters hold-edit mode: the sustain
 			// can now be adjusted with the wheel or by dragging. Pressing
 			// an empty slot adds the note IMMEDIATELY (still holding the
@@ -1090,7 +1442,7 @@ class StrumlineNoteInteraction {
 				// independently of the type, so the ghost's type no
 				// longer needs coercing to a side. editorAdd records the
 				// undo entry.
-				var id = parent.editorMode.editorAdd(MetaNote.floatToMetaNotePosition(downTimeMs), 0, downLane, parent.editorMode.notetype, downStrumline);
+				var id = parent.editorMode.edits.editorAdd(MetaNote.floatToMetaNotePosition(downTimeMs), 0, downLane, parent.editorMode.notetype, downStrumline);
 				if (id >= 0) {
 					downNoteId = id;
 					Main.current.playScrollSound();
@@ -1151,6 +1503,21 @@ class StrumlineNoteInteraction {
 				return;
 			isDown = false;
 
+			// Marquee release: a real band keeps its live-captured set;
+			// an unmoved CTRL+press (no band) clears the selection.
+			if (marqueeing) {
+				marqueeing = false;
+				if (parent.editorMode != null && parent.editorMode.edits != null) {
+					if (!moved)
+						parent.editorMode.edits.clearSelection();
+					parent.editorMode.updateReadout();
+				}
+				var localM = toLocal(x, y);
+				detectHitbox(localM.x, localM.y);
+				updateSquareVisual();
+				return;
+			}
+
 			// The add already happened at mouseDown (placing a note
 			// with the button held goes straight into the duration
 			// state), and every wheel/drag/UI-key write went straight
@@ -1166,9 +1533,15 @@ class StrumlineNoteInteraction {
 			downNoteId = -1;
 			holdEditing = false;
 			holdDragArmed = false;
+			var wasPan = panning;
 			if (panning)
 				startPanFling(); // moving release → Android-style glide
 			panning = false;
+			// A plain click on empty background (a pan that never moved)
+			// DESELECTS — click-away, the standard layer-peeling rule.
+			// A real pan/fling keeps the selection alive.
+			if (wasPan && !moved && parent.editorMode != null && parent.editorMode.edits != null)
+				parent.editorMode.edits.clearSelection();
 
 			if (wasHoldEdit)
 				heldNoopRelease(noteId, holdDurationMs);
@@ -1194,7 +1567,7 @@ class StrumlineNoteInteraction {
 				// exactly on the slot always wins, off-grid neighbors
 				// within the catchment are still removable.
 				var id = findNoteNear(hoverLane, hoverStrumline, hoverTimeMs);
-				if (id >= 0 && parent.editorMode.editorRemove(id)) {
+				if (id >= 0 && parent.editorMode.edits.editorRemove(id)) {
 					Main.current.playScrollSound();
 					parent.editorMode.onChartEdited();
 				}
@@ -1579,6 +1952,10 @@ class StrumlineNoteInteraction {
 		// gridAlpha of 0 skips it entirely), even while hold-editing.
 		updateGridVisual();
 
+		// The selection highlights follow the scroll window (and the
+		// marquee rectangle follows the cursor) — also while hold-editing.
+		updateSelectionVisual();
+
 		// While hold-editing, skip hitbox re-detection — the edited note's
 		// slot is frozen at press time and the ruler square below reads
 		// downTimeMs/holdDurationMs directly. Otherwise keep detecting so
@@ -1595,9 +1972,12 @@ class StrumlineNoteInteraction {
 	/** Add the square's program AFTER notesProg so it renders on top; bind events. */
 	function attach() {
 		// The grid program goes in BEFORE the square's so the interaction
-		// markers stay visible above the grid lines.
+		// markers stay visible above the grid lines. The selection
+		// overlay sits between them: above the grid, below the ghost.
 		if (!gridProg.isIn(display))
 			display.addProgram(gridProg);
+		if (!selProg.isIn(display))
+			display.addProgram(selProg);
 		if (!squareProg.isIn(display))
 			display.addProgram(squareProg);
 		if (!eventMarkerProg.isIn(display))
@@ -1610,14 +1990,20 @@ class StrumlineNoteInteraction {
 		square.h = 0;
 		holdTail.w = 0;
 		holdTail.h = 0;
+		marqueeRect.w = 0;
+		marqueeRect.h = 0;
 		squareBuf.addElement(square);
 		squareBuf.addElement(holdTail);
 		squareBuf.addElement(eventGhost);
+		selBuf.addElement(marqueeRect);
 		try {
 			squareBuf.updateElement(square);
 			squareBuf.updateElement(holdTail);
 			squareBuf.updateElement(eventGhost);
+			squareBuf.updateElement(marqueeRect);
 			squareBuf.update();
+			selBuf.updateElement(marqueeRect);
+			selBuf.update();
 		} catch (e) {}
 		addEvents();
 		var window = Application.current.window;
@@ -1628,10 +2014,12 @@ class StrumlineNoteInteraction {
 	function detach() {
 		removeEvents();
 		hideGrid();
+		hideSelQuads();
 		try {
 			squareBuf.removeElement(square);
 			squareBuf.removeElement(holdTail);
 			squareBuf.removeElement(eventGhost);
+			selBuf.removeElement(marqueeRect);
 		} catch (e) {}
 		for (m in eventMarkers) {
 			try
@@ -1643,6 +2031,8 @@ class StrumlineNoteInteraction {
 			display.removeProgram(squareProg);
 		if (eventMarkerProg.isIn(display))
 			display.removeProgram(eventMarkerProg);
+		if (selProg.isIn(display))
+			display.removeProgram(selProg);
 		if (gridProg.isIn(display))
 			display.removeProgram(gridProg);
 	}
@@ -1652,6 +2042,7 @@ class StrumlineNoteInteraction {
 		square = null;
 		holdTail = null;
 		eventGhost = null;
+		marqueeRect = null;
 		if (squareBuf != null) {
 			try
 				squareBuf.clear()
@@ -1670,8 +2061,15 @@ class StrumlineNoteInteraction {
 			catch (e) {}
 			gridBuf = null;
 		}
+		if (selBuf != null) {
+			try
+				selBuf.clear()
+			catch (e) {}
+			selBuf = null;
+		}
 		squareProg = null;
 		eventMarkerProg = null;
 		gridProg = null;
+		selProg = null;
 	}
 }

@@ -33,30 +33,6 @@ import haxe.Int64;
 
 	@since Development
 **/
-/**
-	A chart note's raw fields — the complete undo record for one note.
-	Position-keyed (not global-index-keyed): every structural edit shifts
-	the global indexes after it, so undo entries must re-resolve by fields.
-**/
-typedef EditNoteData = {
-	position:Int64,
-	duration:Int,
-	index:Int,
-	type:Int,
-	lane:Int
-}
-
-/**
-	One recorded chart edit. kind: 0 = add (only `after`), 1 = remove
-	(only `before`), 2 = replace (both — the duration/retype gesture,
-	which is one remove+re-add pair the user experiences as ONE edit).
-**/
-typedef EditCmd = {
-	kind:Int,
-	before:EditNoteData,
-	after:EditNoteData
-}
-
 @:publicFields
 class PlayFieldEditorMode {
 	/** Owning playfield (never null after construction). */
@@ -116,15 +92,20 @@ class PlayFieldEditorMode {
 	var playing:Bool = false;
 
 	// -------------------------------------------------------------------
-	// Undo / redo (CTRL+Z / CTRL+Y) — field-keyed chart edit history
+	// Edit system — selection + clipboard + undo/redo (EditorEditSystem)
 	// -------------------------------------------------------------------
 
-	/** Recorded chart edits, oldest first. */
-	var undoStack:Array<EditCmd> = [];
-	/** Edits undone, newest first — CTRL+Y re-applies them. */
-	var redoStack:Array<EditCmd> = [];
-	/** History cap (drops the OLDEST entry beyond it). */
-	static inline var UNDO_LIMIT:Int = 256;
+	/**
+		The editor's edit state machine: note selection (CTRL+drag
+		marquee / SHIFT+click toggle / CTRL+A), the clipboard
+		(CTRL+C/X/V) and the undo/redo history (CTRL+Z/Y) — one class,
+		because the selection is a set of global chart indexes that every
+		structural edit shifts: the recorders remap it as they write, so
+		the three stay coherent. EVERY structural editor write goes
+		through it (editorAdd / editorRemove / replaceNote + the batch
+		ops delete/cut/paste).
+	**/
+	var edits:EditorEditSystem;
 
 	// -------------------------------------------------------------------
 	// Real-time step/beat grid (ON by default; see StrumlineNoteInteraction)
@@ -237,6 +218,7 @@ class PlayFieldEditorMode {
 		for (strumline in field.noteSystem.strumlines)
 			strumline.playable = false;
 
+		edits = new EditorEditSystem(this);
 		strumlineInput = new StrumlineNoteInteraction(field);
 		strumlineInput.chartPath = field.chartPathForEditor();
 		strumlineInput.attach();
@@ -292,6 +274,15 @@ class PlayFieldEditorMode {
 			return;
 		}
 
+		// ESC/back: with a live selection, the FIRST press clears it —
+		// the exit popup only comes up once nothing is selected (the
+		// standard "ESC peels one layer at a time" ordering).
+		if ((code == SaveData.state.controls.ui.back || code == KeyCode.ESCAPE) && edits != null && edits.hasSelection()) {
+			edits.clearSelection();
+			updateReadout();
+			return;
+		}
+
 		// ESC/back opens the exit popup (exit editor mode / back to
 		// menu / back to titlescreen).
 		if (code == SaveData.state.controls.ui.back || code == KeyCode.ESCAPE) {
@@ -329,10 +320,41 @@ class PlayFieldEditorMode {
 		if ((mod & KeyModifier.CTRL) != 0) {
 			switch (code) {
 				case KeyCode.Z:
-					undo();
+					if (edits != null)
+						edits.undo();
 					return;
 				case KeyCode.Y:
-					redo();
+					if (edits != null)
+						edits.redo();
+					return;
+				case KeyCode.A:
+					// Select every note in the chart.
+					if (edits != null) {
+						edits.selectAll();
+						updateReadout();
+					}
+					return;
+				case KeyCode.C:
+					// Copy the selection into the clipboard (positions
+					// stored RELATIVE to its earliest note — a paste lands
+					// the pattern at the playhead).
+					if (edits != null && edits.copy())
+						Main.current.playScrollSound();
+					return;
+				case KeyCode.X:
+					// Cut: copy + delete the selection — one undo step.
+					if (edits != null) {
+						edits.cut();
+						updateReadout();
+					}
+					return;
+				case KeyCode.V:
+					// Paste at the snapped playhead; occupied slots are
+					// skipped, and what lands becomes the new selection.
+					if (edits != null) {
+						edits.paste();
+						updateReadout();
+					}
 					return;
 				case KeyCode.UP:
 					cyclePlaybackRate(1);
@@ -428,6 +450,11 @@ class PlayFieldEditorMode {
 			case KeyCode.RIGHT_BRACKET:
 				// Double the snap multiplier (coarser grid), capped at 16 beats.
 				snapMultiplier = Math.min(snapMultiplier * 2, 64);
+			case KeyCode.DELETE, KeyCode.BACKSPACE:
+				// Remove the whole selection — ONE recorded command, so
+				// one CTRL+Z brings every note back (selected again).
+				if (edits != null)
+					edits.deleteSelection();
 			case KeyCode.S:
 				if ((mod & KeyModifier.CTRL) != 0)
 					saveChartToDisk();
@@ -443,7 +470,7 @@ class PlayFieldEditorMode {
 	function seekLineCount(mod:KeyModifier):Int {
 		if ((mod & KeyModifier.CTRL) == 0)
 			return 1;
-		return Std.int(Math.max(1, Math.round(4000 / snapMs)));
+		return Math.max(1, Math.round(4000 / snapMs));
 	}
 
 	/**
@@ -513,7 +540,7 @@ class PlayFieldEditorMode {
 
 		if (remove) {
 			var id = strumlineInput.findNoteAt(lane, 1, timeMs);
-			if (id >= 0 && editorRemove(id)) {
+			if (id >= 0 && edits.editorRemove(id)) {
 				Main.current.playScrollSound();
 				onChartEdited();
 			}
@@ -525,7 +552,7 @@ class PlayFieldEditorMode {
 			// note's stored lane; the pen type rides along as-is (the
 			// lane no longer depends on the type's routing). editorAdd
 			// records the undo entry.
-			var id = editorAdd(MetaNote.floatToMetaNotePosition(timeMs), 0, lane, notetype, 1);
+			var id = edits.editorAdd(MetaNote.floatToMetaNotePosition(timeMs), 0, lane, notetype, 1);
 			if (id >= 0) {
 				Main.current.playScrollSound();
 				onChartEdited();
@@ -714,151 +741,10 @@ class PlayFieldEditorMode {
 		}
 	}
 
-	// -------------------------------------------------------------------
-	// Recorded chart edits (every editor write goes through these)
-	// -------------------------------------------------------------------
-
-	/** Reads one note's full fields by global chart index. */
-	function readNoteData(id:Int64):EditNoteData {
-		var n = File.getNote(id);
-		return {position: n.position, duration: n.duration, index: n.index, type: n.type, lane: n.lane};
-	}
-
-	private function pushCmd(cmd:EditCmd) {
-		undoStack.push(cmd);
-		if (undoStack.length > UNDO_LIMIT)
-			undoStack.shift();
-		// A new edit invalidates the redo history (standard editor rule).
-		redoStack.resize(0);
-	}
-
-	/**
-		Editor ADD: File.addNote wrapped with undo recording. Returns the
-		new note's global chart index (or -1), exactly like File.addNote.
-	**/
-	function editorAdd(position:Int64, duration:Int, index:Int, type:Int, lane:Int):Int64 {
-		var id = File.addNote(position, duration, index, type, lane);
-		if (id >= 0)
-			pushCmd({kind: 0, before: null, after: readNoteData(id)});
-		return id;
-	}
-
-	/**
-		Editor REMOVE: File.removeNote wrapped with undo recording (the
-		note's fields are captured BEFORE the removal). Returns true when
-		something was removed.
-	**/
-	function editorRemove(id:Int64):Bool {
-		if (id < 0)
-			return false;
-		var data = readNoteData(id);
-		File.removeNote(id);
-		pushCmd({kind: 1, before: data, after: null});
-		return true;
-	}
-
-	/**
-		Editor REPLACE — the duration/retype gesture: one remove + one
-		re-add the user experiences as a single edit, recorded as a single
-		undo entry. Returns the new note's global chart index (or -1).
-	**/
-	function replaceNote(oldId:Int64, position:Int64, duration:Int, index:Int, type:Int, lane:Int):Int64 {
-		if (oldId < 0 || oldId >= File.getLength())
-			return -1;
-		var before = readNoteData(oldId);
-		File.removeNote(oldId);
-		var newId = File.addNote(position, duration, index, type, lane);
-		if (newId < 0)
-			return -1;
-		pushCmd({kind: 2, before: before, after: readNoteData(newId)});
-		return newId;
-	}
-
-	/**
-		Finds the chart index of the note with EXACTLY these fields (the
-		store is position-sorted, so binary-search the position then match
-		fields among the ties). Undo resolves its targets this way instead
-		of caching global indexes — every structural edit shifts the
-		indexes after it, but fields are stable. Duplicate notes with
-		identical fields are interchangeable for this purpose.
-	**/
-	function findNoteByData(d:EditNoteData):Int64 {
-		if (d == null)
-			return -1;
-		var len = File.getLength();
-		if (len <= 0)
-			return -1;
-		var lo:Int64 = 0, hi:Int64 = len;
-		while (lo < hi) {
-			var mid:Int64 = (lo + hi) >> 1;
-			if (File.getNote(mid).position < d.position)
-				lo = mid + 1;
-			else
-				hi = mid;
-		}
-		var i = lo;
-		while (i < len) {
-			var n = File.getNote(i);
-			if (n.position != d.position)
-				break;
-			if (n.duration == d.duration && n.index == d.index && n.type == d.type && n.lane == d.lane)
-				return i;
-			i++;
-		}
-		return -1;
-	}
-
-	/** CTRL+Z — inverse-applies the newest recorded edit. */
-	function undo() {
-		if (undoStack.length == 0)
-			return;
-		// Never fight an in-flight mouse edit (hold-duration drag): its
-		// state tracks a note id the undo would invalidate underneath it.
-		if (strumlineInput != null && (strumlineInput.isDown || strumlineInput.holdEditing))
-			return;
-		var cmd = undoStack.pop();
-		switch (cmd.kind) {
-			case 0: // undo an add → remove it again
-				removeNoteByData(cmd.after);
-			case 1: // undo a remove → put it back
-				File.addNote(cmd.before.position, cmd.before.duration, cmd.before.index, cmd.before.type, cmd.before.lane);
-			default: // undo a replace → remove the replacement, restore the original
-				if (removeNoteByData(cmd.after))
-					File.addNote(cmd.before.position, cmd.before.duration, cmd.before.index, cmd.before.type, cmd.before.lane);
-		}
-		redoStack.push(cmd);
-		Main.current.playScrollSound();
-		onChartEdited();
-	}
-
-	/** CTRL+Y — re-applies the newest undone edit. */
-	function redo() {
-		if (redoStack.length == 0)
-			return;
-		if (strumlineInput != null && (strumlineInput.isDown || strumlineInput.holdEditing))
-			return;
-		var cmd = redoStack.pop();
-		switch (cmd.kind) {
-			case 0: // redo an add
-				File.addNote(cmd.after.position, cmd.after.duration, cmd.after.index, cmd.after.type, cmd.after.lane);
-			case 1: // redo a remove
-				removeNoteByData(cmd.before);
-			default: // redo a replace
-				if (removeNoteByData(cmd.before))
-					File.addNote(cmd.after.position, cmd.after.duration, cmd.after.index, cmd.after.type, cmd.after.lane);
-		}
-		undoStack.push(cmd);
-		Main.current.playScrollSound();
-		onChartEdited();
-	}
-
-	private function removeNoteByData(d:EditNoteData):Bool {
-		var id = findNoteByData(d);
-		if (id < 0)
-			return false;
-		File.removeNote(id);
-		return true;
-	}
+	// The recorders (editorAdd / editorRemove / replaceNote), the
+	// undo/redo machine and the selection/clipboard state live in
+	// EditorEditSystem (`edits`) — every structural write goes through
+	// them so the selection's note-id set stays coherent.
 
 	/**
 		Persists the chart. NOTE: must not be named `saveChart` — the
@@ -941,12 +827,17 @@ class PlayFieldEditorMode {
 		var laneStr = '';
 		if (strumlineInput != null && strumlineInput.hoverStrumline >= 0)
 			laneStr = ' | lane: ${strumlineInput.hoverStrumline}';
+		// The selection segment appears only while something is selected
+		// (the count is live — remaps keep it exact across edits).
+		var selStr = '';
+		if (edits != null && edits.hasSelection())
+			selStr = ' | sel: ${edits.selectedCount}';
 		if (field.noteSystem != null && field.noteSystem.noteSpawner != null) {
 			var spawner = field.noteSystem.noteSpawner;
-			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | $typeStr$latStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"}$laneStr'
+			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | $typeStr$latStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"}$laneStr$selStr'
 				+ ' | bottom: ${spawner.bottom} | top: ${spawner.top}';
 		} else {
-			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | $typeStr$latStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"}$laneStr | bottom: - | top: -';
+			scoreTxt.text = 'pos: ${field.songPosition} | rate: x$rateStr | $typeStr$latStr | kbd: ${keybindPlaceMode ? "ON" : "OFF"}$laneStr$selStr | bottom: - | top: -';
 		}
 
 		// Re-center for the readout's own width (hud.update positioned the

@@ -56,6 +56,12 @@ class EditorInstructionsPopup {
 		"Wheel while holding a note - sustain length",
 		"Drag the background - pan (a moving release flings)",
 		"",
+		"SELECTION & CLIPBOARD",
+		"CTRL+drag - marquee select (live)   |   SHIFT+drag - add to it",
+		"SHIFT+click - toggle one   |   CTRL+A - select all",
+		"CTRL+C / CTRL+X / CTRL+V - copy / cut / paste at playhead",
+		"DELETE - remove the selection   |   ESC or a click - clear",
+		"",
 		"EVENT LANE (the left column)",
 		"Left Mouse Button - add a placeholder event",
 		"Right Mouse Button - remove one near it",
@@ -99,8 +105,19 @@ class EditorInstructionsPopup {
 		body.outlineSize = 1;
 
 		// Size the panel from the MEASURED text (font metrics differ per
-		// atlas), with padding; clamp so it always fits the screen.
+		// atlas), with padding. If the card ever grows too tall for the
+		// screen, the BODY is rebuilt at a smaller scale so it fits —
+		// the panel clamps below then never bite.
 		var padX = 34, padTop = 26, padBottom = 30;
+		var maxBodyH = Main.INITIAL_HEIGHT - 20 - padTop - padBottom - title.height - 18;
+		if (body.height > maxBodyH && body.height > 0) {
+			var bodyScale = 0.6 * (maxBodyH / body.height);
+			body = new Text('instructionsBodySmall', 0, 0, display, BODY_LINES.join("\n"));
+			body.multiline = true;
+			body.scale = bodyScale;
+			body.outlineColor = 0x000000FF;
+			body.outlineSize = 1;
+		}
 		var panelW = Std.int(Math.max(title.width, body.width) + padX * 2);
 		var panelH = Std.int(title.height + 18 + body.height + padTop + padBottom);
 		if (panelW > Main.INITIAL_WIDTH - 20)
