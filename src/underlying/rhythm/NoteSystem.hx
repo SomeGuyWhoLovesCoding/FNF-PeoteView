@@ -142,7 +142,11 @@ class NoteSystem {
 			strumlines.push(strumline);
 		}
 
-		virtualNoteBuffer = new NoteVB(strumlines.length, 1 << 8);
+		// v3.7.1: 1 << 10 — the column axis covers the full 10-bit index
+		// field (0..1023), matching the editor's paste-wrap mania cap
+		// and any 10-bit chart the store can hold; 1 << 8 capped it at
+		// 256 columns, which a 10-bit mania could silently walk past.
+		virtualNoteBuffer = new NoteVB(strumlines.length, 1 << 10);
 
 		// Build movement LUTs — one per (strumline, receptor lane).
 		// Replaces per-note Math.cos/Math.sin with precomputed offset lookups.
@@ -386,6 +390,7 @@ class NoteSystem {
 					if (headSustain != null
 						&& row == headRow
 						&& virtualSustain.ref.ref.type == headSustain.ref.ref.type
+						&& virtualSustain.ref.ref.lane == headSustain.ref.ref.lane
 						&& virtualSustain.ref.ref.duration == headSustain.ref.ref.duration) {
 						continue;
 					}
