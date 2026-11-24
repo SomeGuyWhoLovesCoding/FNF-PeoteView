@@ -61,6 +61,7 @@ class EditorInstructionsPopup {
 		"SHIFT+drag - add the touched notes to the selection",
 		"SHIFT+click - toggle one   |   CTRL+A - select all",
 		"CTRL+C / CTRL+X / CTRL+V - copy / cut / paste at playhead",
+		"Undo of a paste removes exactly what the paste added",
 		"DELETE - remove the selection",
 		"Any plain click (no SHIFT/CTRL) or ESC - clear everything",
 		"",

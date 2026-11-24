@@ -51,4 +51,40 @@ void clearJudgements(void);
 int32_t getNotesFromRange(int32_t strumlineCount, int32_t lane, int32_t index,
     int64_t fromIndex, int64_t toIndex);
 int64_t getRangeNoteAt(int32_t at);
+
+// === Bulk edit API (v3.5) — stage, then commit ONE call ===
+// The editor's batch gestures (paste, delete-selection, undo/redo of
+// either) stage their notes/ranges first, then commit with ONE call that
+// crosses the FFI once instead of once per note.
+//   stageNote:      queue one note's raw fields (same units as addNote).
+//   addNotes:       commit every staged note in ONE locked pass, ascending
+//                   by position (ties keep staging order). Returns the
+//                   number added and fills the ADDED-RANGE BLOCK: the
+//                   exact final global indexes of the newly added notes as
+//                   inclusive, coalesced [lo..hi] ranges (see below).
+//   stageRemovalRange: queue one inclusive [lo..hi] id range to remove.
+//   removeNotesFromRangeArray: commit every staged range as ONE call —
+//                   the ranges are normalized (sorted, touching/overlapping
+//                   merged, clamped) so an id can never be removed twice,
+//                   then walked highest-first. Returns the count removed.
+//   clearStaged:    drop everything staged (an aborted gesture).
+//
+// === The exact-index guarantee of addNotes ===
+// A per-note add() return id goes stale the moment a later add lands at or
+// below it. addNotes() instead records, per equal-position group, the
+// FIRST member's returned id r and the group size m — the group occupies
+// EXACTLY [r .. r+m-1], final and unshiftable: later groups insert above,
+// never into, that range (greater positions land after it; smaller
+// positions land before it, and the range's ids only ever get RELATIVELY
+// shifted by baseId re-centers, not invalidated). THE EXACT FINAL IDS of
+// the paste are therefore knowable in advance — this is what makes
+// undoing a paste 100% correct by index, no field re-resolution needed.
+int32_t getAddedRangeCount(void);
+int64_t getAddedRangeLo(int32_t at);
+int64_t getAddedRangeHi(int32_t at);
+void stageNote(int64_t position, int duration, int index, int type, int lane);
+int32_t addNotes(void);
+void stageRemovalRange(int64_t lo, int64_t hi);
+int32_t removeNotesFromRangeArray(void);
+void clearStaged(void);
 #endif /* CHART_FILE_H */

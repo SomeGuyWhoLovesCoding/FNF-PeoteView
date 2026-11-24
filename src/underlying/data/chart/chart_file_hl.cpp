@@ -83,6 +83,40 @@ HL_PRIM int64_t HL_NAME(getRangeNoteAt)(int at) {
     return core_getRangeNoteAt(at);
 }
 
+// === Bulk edit API (v3.5) — stage notes/ranges, then commit once ===
+
+HL_PRIM void HL_NAME(stageNote)(int64_t position, int duration, int index, int type, int lane) {
+    core_stageNote(position, duration, index, type, lane);
+}
+
+HL_PRIM int HL_NAME(addNotes)(_NO_ARG) {
+    return core_addNotes();
+}
+
+HL_PRIM void HL_NAME(stageRemovalRange)(int64_t lo, int64_t hi) {
+    core_stageRemovalRange(lo, hi);
+}
+
+HL_PRIM int HL_NAME(removeNotesFromRangeArray)(_NO_ARG) {
+    return core_removeNotesFromRangeArray();
+}
+
+HL_PRIM void HL_NAME(clearStaged)(_NO_ARG) {
+    core_clearStaged();
+}
+
+HL_PRIM int HL_NAME(getAddedRangeCount)(_NO_ARG) {
+    return core_getAddedRangeCount();
+}
+
+HL_PRIM int64_t HL_NAME(getAddedRangeLo)(int at) {
+    return core_getAddedRangeLo(at);
+}
+
+HL_PRIM int64_t HL_NAME(getAddedRangeHi)(int at) {
+    return core_getAddedRangeHi(at);
+}
+
 // ============================================================================
 // Haxe bindings
 // ============================================================================
@@ -103,3 +137,11 @@ DEFINE_PRIM(_VOID, setEditorMode, _BOOL)
 DEFINE_PRIM(_VOID, clearJudgements, _NO_ARG)
 DEFINE_PRIM(_I32,  getNotesFromRange, _I32 _I32 _I32 _I64 _I64)
 DEFINE_PRIM(_I64,  getRangeNoteAt, _I32)
+DEFINE_PRIM(_VOID, stageNote, _I64 _I32 _I32 _I32 _I32)
+DEFINE_PRIM(_I32,  addNotes, _NO_ARG)
+DEFINE_PRIM(_VOID, stageRemovalRange, _I64 _I64)
+DEFINE_PRIM(_I32,  removeNotesFromRangeArray, _NO_ARG)
+DEFINE_PRIM(_VOID, clearStaged, _NO_ARG)
+DEFINE_PRIM(_I32,  getAddedRangeCount, _NO_ARG)
+DEFINE_PRIM(_I64,  getAddedRangeLo, _I32)
+DEFINE_PRIM(_I64,  getAddedRangeHi, _I32)

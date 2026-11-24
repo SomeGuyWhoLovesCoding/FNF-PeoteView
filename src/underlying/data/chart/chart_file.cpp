@@ -77,3 +77,38 @@ int32_t getNotesFromRange(int32_t strumlineCount, int32_t lane, int32_t index,
 int64_t getRangeNoteAt(int32_t at) {
     return core_getRangeNoteAt(at);
 }
+
+// === Bulk edit API (v3.5) — stage notes/ranges, then commit once ===
+// See chart_file.h for the contract (the exact-index guarantee of addNotes).
+
+void stageNote(int64_t position, int duration, int index, int type, int lane) {
+    core_stageNote(position, duration, index, type, lane);
+}
+
+int32_t addNotes(void) {
+    return core_addNotes();
+}
+
+void stageRemovalRange(int64_t lo, int64_t hi) {
+    core_stageRemovalRange(lo, hi);
+}
+
+int32_t removeNotesFromRangeArray(void) {
+    return core_removeNotesFromRangeArray();
+}
+
+void clearStaged(void) {
+    core_clearStaged();
+}
+
+int32_t getAddedRangeCount(void) {
+    return core_getAddedRangeCount();
+}
+
+int64_t getAddedRangeLo(int32_t at) {
+    return core_getAddedRangeLo(at);
+}
+
+int64_t getAddedRangeHi(int32_t at) {
+    return core_getAddedRangeHi(at);
+}

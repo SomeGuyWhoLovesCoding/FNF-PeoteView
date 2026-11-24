@@ -79,6 +79,54 @@ extern class File {
 	@:native("getNotesFromRange") static function getNotesFromRange(strumlineCount:Int, lane:Int, index:Int, fromIndex:Int64, toIndex:Int64):Int;
 	/** Reads entry `at` of the persistent block filled by the last getNotesFromRange call (-1 when out of range). */
 	@:native("getRangeNoteAt") static function getRangeNoteAt(at:Int):Int64;
+
+	// === Bulk edit API (v3.5) — stage, then commit ONE call ===
+	// The batch gestures (paste, delete-selection, undo/redo of either)
+	// stage every note/range first, then commit once: ONE lock, ONE FFI
+	// crossing instead of one per note. The per-note fields and units are
+	// exactly addNote()'s; the removal ranges are inclusive global id
+	// ranges, normalized (sorted, touching/overlapping merged, clamped) on
+	// the C++ side so no id can ever be removed twice.
+	/**
+	 * Stage one note to add (fields exactly as addNote's). The staging
+	 * buffers live on the C++ side — no Haxe-side accumulation.
+	 */
+	@:native("stageNote") static function stageNote(position:Int64, duration:Int, index:Int, type:Int, lane:Int):Void;
+	/**
+	 * Commits every staged note as ONE bulk insert, ascending by position
+	 * (ties keep staging order). Returns the number added and fills the
+	 * ADDED-RANGE BLOCK on the C++ side: the exact final global indexes
+	 * of the newly added notes as inclusive coalesced [lo..hi] ranges —
+	 * read with getAddedRangeCount/Lo/Hi. THE key point for undo: a
+	 * per-note add() id goes stale the moment a later add lands at or
+	 * below it; addNotes' group ranges are FINAL by construction (a
+	 * group of m ties around the first member's id r occupies exactly
+	 * [r .. r+m-1], later groups land strictly above it), so they are the
+	 * 100%-correct removal input for undoing the paste.
+	 */
+	@:native("addNotes") static function addNotes():Int;
+	/**
+	 * Stage one inclusive [lo..hi] global id range to remove. Overlapping/
+	 * touching staged ranges are merged at commit — an id staged twice is
+	 * removed once.
+	 */
+	@:native("stageRemovalRange") static function stageRemovalRange(lo:Int64, hi:Int64):Void;
+	/**
+	 * Commits every staged range as ONE bulk removal, highest id first so
+	 * lower ids stay valid while the higher ones disappear. Returns the
+	 * number of notes removed. THE undo-of-paste path: pass the paste's
+	 * recorded added-ranges — removing exactly those indexes removes
+	 * every note the paste added and nothing else.
+	 */
+	@:native("removeNotesFromRangeArray") static function removeNotesFromRangeArray():Int;
+	/** Drops everything staged (an aborted gesture — selection changed mid-stage, etc.). */
+	@:native("clearStaged") static function clearStaged():Void;
+	/** Number of ranges in the persistent added-range block filled by the last addNotes call. */
+	@:native("getAddedRangeCount") static function getAddedRangeCount():Int;
+	/** Range `at`'s inclusive lower id (or -1 when out of range). */
+	@:native("getAddedRangeLo") static function getAddedRangeLo(at:Int):Int64;
+	/** Range `at`'s inclusive upper id (or -1 when out of range). */
+	@:native("getAddedRangeHi") static function getAddedRangeHi(at:Int):Int64;
 }
 #elseif hl
 class File {
@@ -169,6 +217,45 @@ class File {
 
 	@:hlNative("chart_file", "getRangeNoteAt")
 	public static function getRangeNoteAt(at:Int):hl.I64 {
+		return -1;
+	}
+
+	// === Bulk edit API (v3.5) — stage, then commit ONE call ===
+	// See the cpp target's docs for the full contract, including the
+	// exact-index guarantee of addNotes (its added-range block is the
+	// 100%-correct removal input for undoing a paste). ===
+
+	@:hlNative("chart_file", "stageNote")
+	public static function stageNote(position:hl.I64, duration:Int, index:Int, type:Int, lane:Int):Void {}
+
+	@:hlNative("chart_file", "addNotes")
+	public static function addNotes():Int {
+		return 0;
+	}
+
+	@:hlNative("chart_file", "stageRemovalRange")
+	public static function stageRemovalRange(lo:hl.I64, hi:hl.I64):Void {}
+
+	@:hlNative("chart_file", "removeNotesFromRangeArray")
+	public static function removeNotesFromRangeArray():Int {
+		return 0;
+	}
+
+	@:hlNative("chart_file", "clearStaged")
+	public static function clearStaged():Void {}
+
+	@:hlNative("chart_file", "getAddedRangeCount")
+	public static function getAddedRangeCount():Int {
+		return 0;
+	}
+
+	@:hlNative("chart_file", "getAddedRangeLo")
+	public static function getAddedRangeLo(at:Int):hl.I64 {
+		return -1;
+	}
+
+	@:hlNative("chart_file", "getAddedRangeHi")
+	public static function getAddedRangeHi(at:Int):hl.I64 {
 		return -1;
 	}
 }

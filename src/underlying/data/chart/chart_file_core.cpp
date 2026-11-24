@@ -2536,6 +2536,193 @@ public:
 		return rangeBlock[(size_t)at];
 	}
 
+	// ================================================================
+	// Bulk edit API (v3.5) — stage, then commit ONE call.
+	//
+	// The editor's batch gestures (paste, delete-selection, undo/redo of
+	// either) used to cross the FFI per note: one addNote()/removeNote()
+	// call each, every one paying lock + lookup + index-shift. The bulk API
+	// collapses a whole batch into a single commit while keeping the store
+	// semantics byte-identical (each note still goes through the same
+	// add()/remove() paths — under ONE lock instead of one per note).
+	//
+	// addNotes() also computes THE EXACT FINAL GLOBAL INDEXES of the newly
+	// added notes, compressed into inclusive ranges in the persistent
+	// added-range block below — the 100%-correct undo input. The ids a
+	// per-note add() returns go stale the moment a later add lands at or
+	// below them, so they are NOT used; see the proof comment in addNotes().
+	// ================================================================
+
+	// Staging buffers (editor-thread only — the commits take the lock).
+	struct StagedNote {
+		uint64_t position;
+		uint32_t duration, index, type, lane;
+	};
+	std::vector<StagedNote> stagedNotes;
+	struct StagedRange { int64_t lo, hi; };
+	std::vector<StagedRange> stagedRanges;
+
+	// The added-range result block: pairs of [lo, hi] global indexes,
+	// sorted ascending, merged-touching — read back through
+	// getAddedRangeCount()/getAddedRangeLo()/getAddedRangeHi() with zero
+	// allocation (the same persistent-block pattern as rangeBlock).
+	std::vector<int64_t> addedRanges; // flattened [lo0, hi0, lo1, hi1, ...]
+	int32_t addedRangeCount = 0;
+
+	void stageNote(uint64_t position, uint32_t duration, uint32_t index,
+	    uint32_t type, uint32_t lane) {
+		StagedNote sn;
+		sn.position = position;
+		sn.duration = duration;
+		sn.index = index;
+		sn.type = type;
+		sn.lane = lane;
+		stagedNotes.push_back(sn);
+	}
+
+	void stageRemovalRange(int64_t lo, int64_t hi) {
+		if (lo > hi) return;
+		StagedRange sr;
+		sr.lo = lo;
+		sr.hi = hi;
+		stagedRanges.push_back(sr);
+	}
+
+	void clearStaged() {
+		stagedNotes.clear();
+		stagedRanges.clear();
+	}
+
+	// Appends one [lo, hi] pair to the added-range block, merging it with
+	// the tail when it touches or overlaps (callers emit in ascending id
+	// order, so the merge only ever looks at the last entry).
+	void pushAddedRange(int64_t lo, int64_t hi) {
+		if (lo > hi) return;
+		if (addedRangeCount > 0) {
+			const int64_t lastHi = addedRanges[(size_t)(2 * (addedRangeCount - 1) + 1)];
+			if (lo <= lastHi + 1) { // touching or overlapping — fuse
+				if (hi > lastHi)
+					addedRanges[(size_t)(2 * (addedRangeCount - 1) + 1)] = hi;
+				return;
+			}
+		}
+		addedRanges.push_back(lo);
+		addedRanges.push_back(hi);
+		++addedRangeCount;
+	}
+
+	// Commits EVERY staged note in one locked pass. Returns the number of
+	// notes added; the exact final global indexes of those notes land in
+	// the added-range block as inclusive, coalesced ranges.
+	//
+	// === THE EXACT-INDEX PROOF (why the group ranges are final) ===
+	// The staged batch is sorted ascending by position and inserted in that
+	// order. Consider one equal-position group of m notes (ties keep
+	// staging order). The FIRST member's add() returns r — the store's
+	// lower-bound slot for that position. Every LATER member of the group
+	// has the SAME position, so its lower bound is that same slot r (the
+	// previously inserted group members sit there): each lands at r and
+	// pushes the earlier members up by one. After all m inserts the group
+	// occupies EXACTLY [r .. r+m-1]. Notes with a strictly greater
+	// position always insert after the group (never shifting it), and
+	// notes with a strictly smaller position insert below it — so the range
+	// is final once the group is done. Groups emit ascending, disjoint,
+	// possibly touching ranges — pushAddedRange coalesces those into the
+	// minimal range array.
+	int32_t addNotes() {
+		addedRangeCount = 0;
+		addedRanges.clear(); // persistent capacity stays; contents reset
+		if (!stagedNotes.empty()) {
+			std::stable_sort(stagedNotes.begin(), stagedNotes.end(),
+			    [](const StagedNote& a, const StagedNote& b) { return a.position < b.position; });
+			std::lock_guard<std::mutex> lk(dataMutex);
+			dirty = true;
+			size_t i = 0;
+			int64_t added = 0;
+			while (i < stagedNotes.size()) {
+				size_t j = i + 1;
+				while (j < stagedNotes.size()
+				    && stagedNotes[j].position == stagedNotes[i].position) ++j;
+				const size_t m = j - i;
+				int64_t firstId = -1;
+				for (size_t k = i; k < j; ++k) {
+					const StagedNote& sn = stagedNotes[k];
+					const int64_t id = store.add(packNote(sn.position, sn.duration,
+					    sn.index, sn.type, sn.lane));
+					if (k == i) firstId = id;
+					++added;
+				}
+				if (firstId >= 0)
+					pushAddedRange(firstId, firstId + (int64_t)m - 1);
+				i = j;
+			}
+		}
+		stagedNotes.clear();
+		return (int32_t)addedRangesTotal();
+	}
+
+	// Sum of the added-range block's widths — the note count it represents.
+	int64_t addedRangesTotal() const {
+		int64_t n = 0;
+		for (int32_t k = 0; k < addedRangeCount; ++k)
+			n += addedRanges[(size_t)(2 * k + 1)] - addedRanges[(size_t)(2 * k)] + 1;
+		return n;
+	}
+
+	// Commits EVERY staged removal range as one removal. The ranges are
+	// normalized first (sorted, overlapping/touching merged, clamped to the
+	// store bounds) so double-staging an id can never remove it twice;
+	// the pass then walks the ranges DESCENDING (highest id first), which
+	// keeps every not-yet-removed lower id valid — the same discipline the
+	// Haxe-side batch removal used, minus the per-note FFI boundary.
+	// Returns the number of notes removed.
+	int32_t removeNotesFromRangeArray() {
+		if (stagedRanges.empty()) return 0;
+		// Normalize: sort by lo, then merge touching/overlapping.
+		std::sort(stagedRanges.begin(), stagedRanges.end(),
+		    [](const StagedRange& a, const StagedRange& b) { return a.lo < b.lo; });
+		std::vector<StagedRange> merged;
+		for (const StagedRange& sr : stagedRanges) {
+			if (!merged.empty() && sr.lo <= merged.back().hi + 1) {
+				if (sr.hi > merged.back().hi) merged.back().hi = sr.hi;
+			}
+			else {
+				merged.push_back(sr);
+			}
+		}
+		stagedRanges.clear();
+		std::lock_guard<std::mutex> lk(dataMutex);
+		int64_t removed = 0;
+		for (auto it = merged.rbegin(); it != merged.rend(); ++it) {
+			int64_t hi = it->hi;
+			int64_t lo = it->lo;
+			// Clamps read the LIVE store size: an earlier (higher) range's
+			// removals shrank the store, so a later range's clamps must not
+			// use a snapshot. Ranges walk DESCENDING, so lower ranges stay
+			// valid while the higher ones disappear.
+			if (hi >= (int64_t)store.size()) hi = (int64_t)store.size() - 1;
+			if (lo < 0) lo = 0;
+			for (int64_t id = hi; id >= lo; --id) {
+				if (id >= (int64_t)store.size() || id < 0) continue;
+				store.remove(id);
+				++removed;
+			}
+			if (store.size() <= 0) break;
+		}
+		if (removed > 0) dirty = true;
+		return (int32_t)removed;
+	}
+
+	int32_t getAddedRangeCount() const { return addedRangeCount; }
+	int64_t getAddedRangeLo(int32_t at) const {
+		if (at < 0 || at >= addedRangeCount) return -1;
+		return addedRanges[(size_t)(2 * at)];
+	}
+	int64_t getAddedRangeHi(int32_t at) const {
+		if (at < 0 || at >= addedRangeCount) return -1;
+		return addedRanges[(size_t)(2 * at + 1)];
+	}
+
 	bool save() {
 		std::lock_guard<std::mutex> lk(dataMutex);
 		if (filename.empty() || !store.writeTo(filename.c_str())) return false;
@@ -2644,4 +2831,47 @@ int32_t core_getNotesFromRange(int32_t strumlineCount, int32_t lane, int32_t ind
 int64_t core_getRangeNoteAt(int32_t at) {
 	if (!gReader) return -1;
 	return gReader->getRangeNoteAt(at);
+}
+
+// === Bulk edit API (v3.5) — see the ChartFileReader bulk section ===
+
+void core_stageNote(int64_t position, int32_t duration, int32_t index, int32_t type, int32_t lane) {
+	if (!gReader) return;
+	gReader->stageNote(static_cast<uint64_t>(position), static_cast<uint32_t>(duration),
+		static_cast<uint32_t>(index), static_cast<uint32_t>(type), static_cast<uint32_t>(lane));
+}
+
+int32_t core_addNotes() {
+	if (!gReader) return 0;
+	return gReader->addNotes();
+}
+
+void core_stageRemovalRange(int64_t lo, int64_t hi) {
+	if (!gReader) return;
+	gReader->stageRemovalRange(lo, hi);
+}
+
+int32_t core_removeNotesFromRangeArray() {
+	if (!gReader) return 0;
+	return gReader->removeNotesFromRangeArray();
+}
+
+void core_clearStaged() {
+	if (!gReader) return;
+	gReader->clearStaged();
+}
+
+int32_t core_getAddedRangeCount() {
+	if (!gReader) return 0;
+	return gReader->getAddedRangeCount();
+}
+
+int64_t core_getAddedRangeLo(int32_t at) {
+	if (!gReader) return -1;
+	return gReader->getAddedRangeLo(at);
+}
+
+int64_t core_getAddedRangeHi(int32_t at) {
+	if (!gReader) return -1;
+	return gReader->getAddedRangeHi(at);
 }

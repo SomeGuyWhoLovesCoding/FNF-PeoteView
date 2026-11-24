@@ -1,18 +1,23 @@
 package render;
 
 /**
-	The editor's SELECTION BOX element sprite (v3.4): an axis-aligned
-	rectangle band drawn from two drag corner points — a translucent fill
-	plus a bright 1px edge outline — that visually drives selecting every
-	chart note the box touches.
+	The editor's SELECTION BOX element sprite (v3.4, v3.5): an
+	axis-aligned rectangle band drawn from two drag corner points — a
+	translucent fill plus a bright 1px edge outline — that visually
+	drives selecting every chart note the box touches.
 
 	The class owns FIVE plain RepeatSprites (the fill + the four edge
 	lines) and normalizes any corner pair into the axis-aligned rect; it
 	never touches the chart itself (the interaction layer feeds it
 	corners and reads `boxActive()`). Kept as one sprite OBJECT so the
-	owner only ever handles "the selection box", not five loose rects —
-	the elements ride in the owner's Buffer<RepeatSprite> with the
-	selection highlight quads (above the grid program, below the ghost).
+	owner only ever handles "the selection box", not five loose rects.
+
+	v3.5: the per-NOTE selection graphic moved OUT of this buffer into
+	its own class, SelectionNoteSprite, with its OWN buffer + program —
+	the elements can overlap each other and the box, so they render in a
+	program of their own layered above this box's (see SelectionNoteSprite
+	for why the separation exists). This class is now purely the BOX:
+	the band being dragged, nothing else.
 
 	@since Development
 **/

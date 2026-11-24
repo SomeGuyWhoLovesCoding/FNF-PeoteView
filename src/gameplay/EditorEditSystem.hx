@@ -47,17 +47,35 @@ class EditNoteData {
 	edit). Add/remove carry ARRAYS so a single gesture that touches many
 	notes — paste, cut, delete-selection, batch removal — is ONE undo
 	step: one command, one CTRL+Z.
+
+	v3.5 — `addedRanges`: THE EXACT INDEX RANGE ARRAY of a command's
+	added notes. Every batch add goes through File.addNotes (the bulk
+	extern), which computes the final global indexes of the newly added
+	notes as coalesced inclusive ranges — the group-insertion proof
+	lives on File.addNotes. Those ranges are recorded here the moment
+	the add lands, and undoing the command removes EXACTLY those indexes
+	via File.removeNotesFromRangeArray (the bulk removal extern): no
+	field re-resolution, no missed or extra indexes — 100% correct by
+	construction. INVARIANT: addedRanges is meaningful exactly while the
+	command's added notes EXIST in the chart (paste/editorAdd set it on
+	the undoStack; undo clears it moving the cmd to the redoStack; an
+	undo-of-remove re-add sets it on the redoStack so the following redo
+	removes those exact indexes again). null = the added notes are not
+	currently in the chart.
 **/
 @:publicFields
 class EditCmd {
 	var kind:Int = 0;
 	var befores:Array<EditNoteData> = null;
 	var afters:Array<EditNoteData> = null;
+	/** Exact current global index ranges of this command's added notes (null while they are not in the chart). */
+	var addedRanges:Array<SelRange> = null;
 
-	function new(kind:Int, befores:Array<EditNoteData>, afters:Array<EditNoteData>) {
+	function new(kind:Int, befores:Array<EditNoteData>, afters:Array<EditNoteData>, addedRanges:Array<SelRange> = null) {
 		this.kind = kind;
 		this.befores = befores;
 		this.afters = afters;
+		this.addedRanges = addedRanges;
 	}
 }
 
@@ -97,23 +115,42 @@ class EditCmd {
 	selection instead of replacing it; SHIFT+click toggles one note;
 	CTRL+A selects everything (ONE range); a plain click of EITHER
 	button (no SHIFT, no CTRL) — or ESC — clears the whole selection.
+	The per-note selection GRAPHIC is a separate element class
+	(SelectionNoteSprite, v3.5) in its own program, layered above the
+	box's — the elements can overlap, so the two graphics never share a
+	buffer.
 
 	=== Clipboard ===
 
-	CTRL+C captures the selection's fields with positions RELATIVE to the
-	earliest selected note, so a paste lands the pattern wherever the
-	playhead is. CTRL+X = copy + delete-selection (one undo step).
-	CTRL+V re-adds the clipboard at the snapped playhead — slots that
-	already hold a note (same lane index + stored strumline + position)
-	are SKIPPED, never overwritten — and selects what it pasted, so the
-	next SHIFT-marquee/copy/cut acts on the fresh copies immediately.
+	CTRL+C captures the selection's fields with positions RELATIVE to
+	the earliest selected note, so a paste lands the pattern wherever the
+	playhead is — THE MINIMAL DATA: one EditNoteData (5 ints) per copied
+	note, nothing else, and the clipboard preserves every copied note's
+	fields verbatim (an occupied slot at paste time only SKIPS landing
+	that one note; nothing is dropped from the clipboard itself).
+	CTRL+X = copy + delete-selection (one undo step). CTRL+V re-adds the
+	clipboard at the snapped playhead — slots that already hold a note
+	(same lane index + stored strumline + position) are SKIPPED, never
+	overwritten — and selects what it pasted, so the next
+	SHIFT-marquee/copy/cut acts on the fresh copies immediately.
 
-	=== Undo / redo ===
+	=== Undo / redo (v3.5: bulk externs + the exact index ranges) ===
 
-	CTRL+Z / CTRL+Y, field-keyed records, cap 256, a new edit clears the
-	redo history — batch-aware: undoing a delete/cut/batch-removal
-	re-adds the notes AND re-selects them; redoing a paste re-adds and
-	re-selects the pasted set. All of it is refused while a mouse
+	Every batch gesture commits through the chart extern's BULK API —
+	File.addNotes / File.removeNotesFromRangeArray — ONE commit per
+	gesture: one lock, one FFI crossing, instead of one addNote/
+	removeNote per note. addNotes() computes THE EXACT FINAL GLOBAL
+	INDEXES of the newly added notes as inclusive coalesced ranges (the
+	added-range block — the group-insertion proof lives on File.addNotes),
+	and those ranges are recorded on the command. Undo of an add is then
+	index-exact: removeNotesFromRangeArray removes exactly those indexes
+	— every note the paste added and NOTHING else — and undoing a remove
+	re-adds the fields via ONE bulk add, records the NEW ranges on the
+	command, and the redo that follows removes exactly those. Because the
+	stacks are applied strictly LIFO, the chart state seen when a command
+	is un-applied is exactly the state right after it was applied — the
+	recorded ranges are always current. CTRL+Z / CTRL+Y, cap 256, a new
+	edit clears the redo history. All of it is refused while a mouse
 	hold-edit is in flight (its state tracks a note id the history would
 	invalidate underneath it).
 
@@ -145,7 +182,8 @@ class EditorEditSystem {
 	/**
 		The copied notes, positions RELATIVE to the earliest one (subtract
 		at copy time; paste adds the playhead target back). null = nothing
-		copied yet.
+		copied yet. THE MINIMAL DATA: raw fields only, one object per
+		copied note — every copy/paste is preserved with nothing extra.
 	**/
 	var clipboard:Array<EditNoteData> = null;
 
@@ -279,6 +317,32 @@ class EditorEditSystem {
 	}
 
 	/**
+		Replaces the selection with exactly these SPANS (already
+		normalized — a bulk add's added-range array, the restored ranges of
+		an undone paste). Clamped to the store, merged defensively.
+	**/
+	function selectRanges(ranges:Array<SelRange>) {
+		var len = File.getLength();
+		var out:Array<SelRange> = [];
+		for (r in ranges) {
+			var lo = r.lo, hi = r.hi;
+			if (lo < 0)
+				lo = 0;
+			if (hi >= len)
+				hi = len - 1;
+			if (lo > hi)
+				continue;
+			if (out.length > 0 && out[out.length - 1].hi + 1 >= lo) {
+				if (hi > out[out.length - 1].hi)
+					out[out.length - 1].hi = hi;
+			} else {
+				out.push(new SelRange(lo, hi));
+			}
+		}
+		selected = out;
+	}
+
+	/**
 		Adds these ids to the existing selection (a box band that started
 		WITH SHIFT — additive banding). Merge-based: O(ids + ranges).
 	**/
@@ -383,25 +447,28 @@ class EditorEditSystem {
 	// ===================================================================
 	// The recorders — EVERY structural editor write goes through these,
 	// so the selection remap and the history stay coherent everywhere.
-	// (Same contracts as when these lived on PlayFieldEditorMode.)
+	// The batch paths commit through the BULK externs (v3.5); the
+	// single-note replace gesture still uses the per-note externs.
 	// ===================================================================
 
 	/**
-		Editor ADD: File.addNote wrapped with undo recording and selection
-		remapping. Returns the new note's global chart index (or -1),
-		exactly like File.addNote.
+		Editor ADD: the bulk extern wrapped with undo recording and
+		selection remapping. ONE note or a thousand — one File.addNotes
+		commit, and the added-range block yields the exact final index of
+		the new note for the undo record. Returns the new note's global
+		chart index (or -1), exactly like File.addNote.
 	**/
 	function editorAdd(position:Int64, duration:Int, index:Int, type:Int, lane:Int):Int64 {
-		var id = File.addNote(position, duration, index, type, lane);
-		if (id >= 0) {
-			remapForInsert(id);
-			pushCmd(new EditCmd(0, null, [readNoteData(id)]));
-		}
-		return id;
+		var ranges = bulkAdd([new EditNoteData(position, duration, index, type, lane)]);
+		if (ranges.length == 0)
+			return -1;
+		remapForInsertSpan(ranges);
+		pushCmd(new EditCmd(0, null, [readNoteData(ranges[0].lo)], ranges));
+		return ranges[0].lo;
 	}
 
 	/**
-		Editor REMOVE: File.removeNote wrapped with undo recording (the
+		Editor REMOVE: the bulk extern wrapped with undo recording (the
 		note's fields are captured BEFORE the removal) and selection
 		remapping. Returns true when something was removed.
 	**/
@@ -409,8 +476,7 @@ class EditorEditSystem {
 		if (id < 0 || id >= File.getLength())
 			return false;
 		var data = readNoteData(id);
-		File.removeNote(id);
-		remapForRemove(id);
+		bulkRemoveRanges([new SelRange(id, id)]);
 		pushCmd(new EditCmd(1, [data], null));
 		return true;
 	}
@@ -419,8 +485,9 @@ class EditorEditSystem {
 		Editor REMOVE of a whole id SET — the batch-removal gesture (the
 		v3.4 right-click sweep): one recorded command, one CTRL+Z puts
 		every note back. The ids need not be selected; invalid ids are
-		dropped. The notes leave the selection via the per-removal remaps
-		as they go. Returns the count removed.
+		dropped. The notes leave the selection via the span remaps. ONE
+		File.removeNotesFromRangeArray commit, however many notes. Returns
+		the count removed.
 	**/
 	function removeNotesByIds(ids:Array<Int64>):Int {
 		var len = File.getLength();
@@ -448,10 +515,11 @@ class EditorEditSystem {
 		var wasSelected = isSelected(oldId);
 		File.removeNote(oldId);
 		remapForRemove(oldId);
-		var newId = File.addNote(position, duration, index, type, lane);
-		if (newId < 0)
+		var ranges = bulkAdd([new EditNoteData(position, duration, index, type, lane)]);
+		if (ranges.length == 0)
 			return -1;
-		remapForInsert(newId);
+		remapForInsertSpan(ranges);
+		var newId = ranges[0].lo;
 		if (wasSelected && !isSelected(newId))
 			insertId(newId);
 		pushCmd(new EditCmd(2, [before], [readNoteData(newId)]));
@@ -507,11 +575,17 @@ class EditorEditSystem {
 	}
 
 	/**
-		CTRL+V: re-adds the clipboard at the snapped playhead position.
-		Slots that already hold a note (same lane index + stored
-		strumline + position) are skipped, never overwritten — pasting
-		twice in place is a no-op, not a stack of duplicates. The pasted
-		notes become the new selection. One undo step removes them all.
+		CTRL+V: re-adds the clipboard at the snapped playhead position —
+		via ONE File.addNotes commit. THE MINIMAL DATA: the clipboard
+		holds exactly the copied notes' raw fields, and only the notes
+		that will actually land are staged (an occupied slot — same lane
+		index + stored strumline + position — is skipped: never staged,
+		never overwritten, never dropped from the clipboard itself).
+		The bulk add's added-range block then gives THE EXACT FINAL
+		INDEXES of the newly added notes, recorded on the command, so
+		undoing the paste removes exactly those indexes (and NOTHING
+		else) via File.removeNotesFromRangeArray. The pasted notes become
+		the new selection. One undo step removes them all.
 	**/
 	function paste():Bool {
 		if (editingActive() || clipboard == null || clipboard.length == 0)
@@ -520,6 +594,8 @@ class EditorEditSystem {
 		var targetMs = si != null ? si.snapTime(parent.field.songPosition) : parent.field.songPosition;
 		var target = MetaNote.floatToMetaNotePosition(targetMs);
 
+		// Stage exactly what will land: an occupied slot is skipped —
+		// pasting twice in place is a no-op, not a stack of duplicates.
 		var toAdd:Array<EditNoteData> = [];
 		for (d in clipboard) {
 			var abs = target + d.position;
@@ -530,19 +606,23 @@ class EditorEditSystem {
 		if (toAdd.length == 0)
 			return false;
 
-		sortByPosition(toAdd, false);
-		var added:Array<Int64> = [];
-		for (d in toAdd) {
-			var id = silentAdd(d);
-			if (id >= 0)
-				added.push(id);
-		}
-		if (added.length == 0)
+		// ONE bulk commit; `ranges` = the exact final indexes of the
+		// pasted notes (coalesced inclusive spans, ascending).
+		var ranges = bulkAdd(toAdd);
+		if (ranges.length == 0)
 			return false;
 
-		var afters = [for (id in added) readNoteData(id)];
-		pushCmd(new EditCmd(0, null, afters));
-		selectIds(added); // the pasted set is selected — move/copy it again at once
+		remapForInsertSpan(ranges);
+		var afters:Array<EditNoteData> = [];
+		for (r in ranges) {
+			var i = r.lo;
+			while (i <= r.hi) {
+				afters.push(readNoteData(i));
+				i++;
+			}
+		}
+		pushCmd(new EditCmd(0, null, afters, ranges));
+		selectRanges(ranges); // the pasted set is selected — move/copy it again at once
 		Main.current.playScrollSound();
 		parent.onChartEdited();
 		return true;
@@ -550,14 +630,14 @@ class EditorEditSystem {
 
 	/**
 		DELETE / BACKSPACE: removes every selected note as ONE recorded
-		command (one undo restores them all, selected again). The
-		selection is empty afterwards by construction.
+		command (one bulk commit, one CTRL+Z restores them all, selected
+		again). The selection is empty afterwards by construction.
 	**/
 	function deleteSelection():Bool {
 		if (editingActive() || selected.length == 0)
 			return false;
 		// Materialize the selection's ids (ascending) — the spans mutate
-		// as the removals remap them.
+		// as the removal remaps them.
 		var ids:Array<Int64> = [];
 		for (r in selected.copy()) {
 			var i = r.lo;
@@ -575,24 +655,42 @@ class EditorEditSystem {
 	}
 
 	// ===================================================================
-	// Undo / redo (CTRL+Z / CTRL+Y)
+	// Undo / redo (CTRL+Z / CTRL+Y) — index-exact for the batch paths
 	// ===================================================================
 
-	/** CTRL+Z — inverse-applies the newest recorded edit (batch-aware). */
+	/**
+		CTRL+Z — inverse-applies the newest recorded edit (batch-aware,
+		index-exact). The stacks are applied strictly LIFO, so the chart
+		state seen here is exactly the state right after this command was
+		applied — its recorded added-ranges are still current. Kind-0
+		undoes (paste, add) stage those ranges and ONE
+		File.removeNotesFromRangeArray removes every note the command
+		added and nothing else; kind-1 undoes re-add the captured fields
+		via ONE File.addNotes and record the new ranges on the command
+		(the following redo removes exactly those).
+	**/
 	function undo() {
 		if (undoStack.length == 0 || editingActive())
 			return;
 		var cmd = undoStack.pop();
 		switch (cmd.kind) {
-			case 0: // undo adds → remove them again (order irrelevant: re-resolved by fields)
-				var afters = cmd.afters.copy();
-				sortByPosition(afters, true);
-				for (d in afters)
-					removeNoteByData(d);
-			case 1: // undo removes → put them back, selected again
+			case 0: // undo adds → remove EXACTLY the recorded added ranges
+				var ranges = cmd.addedRanges;
+				cmd.addedRanges = null; // the added notes are about to be gone
+				if (ranges != null && ranges.length > 0)
+					bulkRemoveRanges(ranges);
+			case 1: // undo removes → put them back (ONE bulk add), selected again
 				var ids:Array<Int64> = [];
-				for (d in cmd.befores)
-					ids.push(silentAdd(d));
+				var ranges = bulkAdd(cmd.befores);
+				cmd.addedRanges = ranges; // exact while they exist — the redo input
+				remapForInsertSpan(ranges);
+				for (r in ranges) {
+					var i = r.lo;
+					while (i <= r.hi) {
+						ids.push(i);
+						i++;
+					}
+				}
 				selectIds(ids);
 			default: // undo a replace → remove the replacement, restore the original
 				var curId = findNoteByData(cmd.afters[0]);
@@ -608,22 +706,22 @@ class EditorEditSystem {
 		parent.onChartEdited();
 	}
 
-	/** CTRL+Y — re-applies the newest undone edit (batch-aware). */
+	/** CTRL+Y — re-applies the newest undone edit (batch-aware, index-exact). */
 	function redo() {
 		if (redoStack.length == 0 || editingActive())
 			return;
 		var cmd = redoStack.pop();
 		switch (cmd.kind) {
-			case 0: // redo adds (e.g. a paste) → re-add them, selected again
-				var ids:Array<Int64> = [];
-				for (d in cmd.afters)
-					ids.push(silentAdd(d));
-				selectIds(ids);
-			case 1: // redo removes → remove them again
-				var befores = cmd.befores.copy();
-				sortByPosition(befores, true);
-				for (d in befores)
-					removeNoteByData(d);
+			case 0: // redo adds (e.g. a paste) → re-add them (ONE bulk add), selected again
+				var ranges = bulkAdd(cmd.afters);
+				cmd.addedRanges = ranges; // exact again — the next undo's input
+				remapForInsertSpan(ranges);
+				selectRanges(ranges);
+			case 1: // redo removes → remove EXACTLY the re-added ranges
+				var ranges = cmd.addedRanges;
+				cmd.addedRanges = null;
+				if (ranges != null && ranges.length > 0)
+					bulkRemoveRanges(ranges);
 			default: // redo a replace → remove the original, put the replacement back
 				var oldId = findNoteByData(cmd.befores[0]);
 				var wasSelected = oldId >= 0 && isSelected(oldId);
@@ -663,9 +761,88 @@ class EditorEditSystem {
 	}
 
 	/**
+		THE BULK ADD: stages every note's raw fields on the C++ side and
+		commits them with ONE File.addNotes() call — one lock, one FFI
+		crossing, however many notes. Returns THE EXACT FINAL INDEX RANGES
+		of the newly added notes (ascending, coalesced inclusive spans,
+		read back from the extern's added-range block) — the 100%-correct
+		undo input: undoing the add removes exactly these indexes. Does
+		NOT touch the selection — callers remap with remapForInsertSpan.
+	**/
+	function bulkAdd(datas:Array<EditNoteData>):Array<SelRange> {
+		if (datas.length == 0)
+			return [];
+		File.clearStaged();
+		for (d in datas)
+			File.stageNote(d.position, d.duration, d.index, d.type, d.lane);
+		if (File.addNotes() <= 0)
+			return [];
+		var count = File.getAddedRangeCount();
+		var ranges:Array<SelRange> = [];
+		for (k in 0...count) {
+			var lo = File.getAddedRangeLo(k);
+			var hi = File.getAddedRangeHi(k);
+			if (lo >= 0 && hi >= lo)
+				ranges.push(new SelRange(lo, hi));
+		}
+		return ranges;
+	}
+
+	/**
+		THE BULK REMOVE: stages every inclusive [lo..hi] removal range on
+		the C++ side and commits them ALL with ONE
+		File.removeNotesFromRangeArray() call — the ranges are normalized
+		there (sorted, touching/overlapping merged, clamped) so an id
+		staged twice is removed once, and the pass walks highest-id-first
+		so lower ids stay valid. The selection is then remapped per span,
+		descending — sequential descending span remaps are exactly the
+		store's end state (a surviving id's final index is its original
+		index minus the removed ids below it, whichever span held them).
+		Returns the number of notes removed. THE undo-of-paste path:
+		passing a paste command's recorded added-ranges removes every
+		note the paste added and nothing else.
+	**/
+	function bulkRemoveRanges(ranges:Array<SelRange>):Int {
+		if (ranges.length == 0)
+			return 0;
+		var len = File.getLength();
+		// Clamp every span against the CURRENT length (the commit removes
+		// them all at once, so every clamp sees the pre-commit length).
+		var spans:Array<SelRange> = [];
+		for (r in ranges) {
+			var lo = r.lo, hi = r.hi;
+			if (lo < 0)
+				lo = 0;
+			if (hi >= len)
+				hi = len - 1;
+			if (lo <= hi)
+				spans.push(new SelRange(lo, hi));
+		}
+		if (spans.length == 0)
+			return 0;
+		// ONE commit for the whole set.
+		File.clearStaged();
+		for (r in spans)
+			File.stageRemovalRange(r.lo, r.hi);
+		var removed = File.removeNotesFromRangeArray();
+		// Then the selection remaps, descending — same end state the
+		// store reached (spans disjoint here: spansFromIds / coalesced
+		// added-ranges / pre-merged inputs).
+		spans.sort(function(a:SelRange, b:SelRange):Int {
+			if (a.lo == b.lo)
+				return 0;
+			return a.lo > b.lo ? -1 : 1;
+		});
+		for (r in spans)
+			remapForRemoveSpan(r.lo, r.hi);
+		return removed;
+	}
+
+	/**
 		Add WITHOUT recording — the undo/redo playback path (the command
 		is already on a stack, moving between them). Still remaps the
-		selection so ids stay coherent.
+		selection so ids stay coherent. Single-note; the batch paths use
+		bulkAdd.
 	**/
 	function silentAdd(d:EditNoteData):Int64 {
 		var id = File.addNote(d.position, d.duration, d.index, d.type, d.lane);
@@ -704,6 +881,39 @@ class EditorEditSystem {
 	}
 
 	/**
+		Selection remap after a BULK insert whose notes now occupy
+		[lo..hi] (count = hi-lo+1 ids, all at/after lo): every selected
+		id at/after lo shifts up by count. Same shape as the single
+		insert, with count instead of 1. The ranges replay in ascending
+		lo order — the same order the bulk add inserted the groups — so
+		each span's shift sees the cumulative ids exactly as the store
+		did. O(ranges per insert-range).
+	**/
+	function remapForInsertSpan(ranges:Array<SelRange>) {
+		if (selected.length == 0 || ranges.length == 0)
+			return;
+		var sorted = ranges.copy();
+		sorted.sort(function(a:SelRange, b:SelRange):Int {
+			if (a.lo == b.lo)
+				return 0;
+			return a.lo < b.lo ? -1 : 1;
+		});
+		for (r in sorted) {
+			var at = r.lo;
+			var count:Int64 = r.hi - r.lo + 1;
+			for (s in selected) {
+				if (s.lo >= at) {
+					s.lo += count;
+					s.hi += count;
+				} else if (s.hi >= at) {
+					s.hi += count; // lo < at <= hi: the top end shifts up
+				}
+			}
+		}
+		coalesceRanges();
+	}
+
+	/**
 		Selection remap after a removal at index `at`: the removed note
 		itself leaves the selection; ids above it shift down by one. Per
 		span: a span containing `at` keeps its lo and loses its top end
@@ -728,35 +938,56 @@ class EditorEditSystem {
 	}
 
 	/**
+		Selection remap after a SPAN removal [lo..hi] (count = hi-lo+1):
+		the removed ids leave the selection; ids above hi shift down by
+		count. A span straddling the removal keeps its lo and its top
+		slides down by count — the dropped ids are exactly replaced by the
+		shifted-down ones above them, so a contiguous span stays
+		CONTIGUOUS ([5..10] minus [7..8] → 5,6 stay, 9,10 shift to 7,8
+		→ [5..8]). O(ranges).
+	**/
+	function remapForRemoveSpan(lo:Int64, hi:Int64) {
+		if (selected.length == 0)
+			return;
+		var count:Int64 = hi - lo + 1;
+		for (r in selected) {
+			if (r.hi < lo)
+				continue; // entirely below — untouched
+			if (r.lo > hi) {
+				r.lo -= count;
+				r.hi -= count; // entirely above — slides down
+			} else {
+				r.hi -= count; // straddles: the hole is filled by the shift
+			}
+		}
+		coalesceRanges(); // drops emptied spans, fuses re-touching ones
+	}
+
+	/**
 		The shared batch-removal core: removes exactly these ids (already
-		validated, taken in any order) as ONE kind-1 command. DESCENDING
-		per-span removal keeps the lower ids valid while the higher ones
-		disappear; `selected` follows along through the per-removal
-		remaps. Returns the count removed.
+		validated, taken in any order) as ONE kind-1 command — the fields
+		captured BEFORE the removal (while every id is still valid,
+		ascending for the stable undo re-add order), then ONE
+		File.removeNotesFromRangeArray commit (descending spans), the
+		selection following along via the per-span remaps. Returns the
+		count removed.
 	**/
 	function removeIdsInternal(ids:Array<Int64>):Int {
 		var spans = spansFromIds(ids);
+		if (spans.length == 0)
+			return 0;
 		var befores:Array<EditNoteData> = [];
-		var removed = 0;
-		// Spans in REVERSE order; ids within each span high→low.
-		var s = spans.length - 1;
-		while (s >= 0) {
-			var r = spans[s];
-			var i = r.hi;
-			while (i >= r.lo) {
-				if (i >= 0 && i < File.getLength()) {
+		for (r in spans) {
+			var i = r.lo;
+			while (i <= r.hi) {
+				if (i >= 0 && i < File.getLength())
 					befores.push(readNoteData(i));
-					silentRemove(i);
-					removed++;
-				}
-				i--;
+				i++;
 			}
-			s--;
 		}
-		if (removed > 0) {
-			befores.reverse(); // ascending — stable undo re-add order
+		var removed = bulkRemoveRanges(spans);
+		if (removed > 0)
 			pushCmd(new EditCmd(1, befores, null));
-		}
 		return removed;
 	}
 
@@ -773,10 +1004,10 @@ class EditorEditSystem {
 	/**
 		Finds the chart index of the note with EXACTLY these fields (the
 		store is position-sorted, so binary-search the position then match
-		fields among the ties). Undo resolves its targets this way instead
-		of caching global indexes — every structural edit shifts the
-		indexes after it, but fields are stable. Duplicate notes with
-		identical fields are interchangeable for this purpose.
+		fields among the ties). Only the kind-2 replace undo/redo resolves
+		its targets this way — the batch paths are INDEX-exact via the
+		bulk externs' added-range blocks and never need this. Duplicate
+		notes with identical fields are interchangeable for this purpose.
 	**/
 	function findNoteByData(d:EditNoteData):Int64 {
 		if (d == null)

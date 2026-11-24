@@ -241,11 +241,27 @@ class StrumlineNoteInteraction {
 		dedicated element class, as requested.
 	**/
 	var selectionBox:SelectionBoxSprite;
-	/** Pooled highlight quads over selected notes (lazily bound like the grid). */
-	var selQuads:Array<RepeatSprite> = [];
+	/**
+		v3.5 SEPARATE GRAPHIC: the box and the per-note selection elements
+		no longer share one buffer/program. The elements can OVERLAP — each
+		other, and the box while it is being dragged over selected notes —
+		and shared-buffer blending made those overlaps nondeterministic
+		mud. The box now draws from its OWN program (selBuf/selProg below)
+		and the note elements from selElemBuf/selElemProg, added to the
+		display AFTER the box's program: box below, elements above, in
+		note order — deterministic whatever the overlaps are. Each element
+		is a SelectionNoteSprite (fill + 1px edges, the box's visual
+		language, sized to the note it marks).
+	**/
+	/** Pooled per-note selection elements (lazily bound like the grid). */
+	var selNotes:Array<SelectionNoteSprite> = [];
+	/** The BOX's own buffer (fill + four edges, five elements). */
 	var selBuf:Buffer<RepeatSprite>;
 	var selProg:CustomProgram;
-	/** True while the highlight quads are bound. */
+	/** The ELEMENTS' own buffer (SEL_MAX SelectionNoteSprites, 5 rects each). */
+	var selElemBuf:Buffer<RepeatSprite>;
+	var selElemProg:CustomProgram;
+	/** True while the element pool is bound. */
 	var selActive:Bool = false;
 	/** Max simultaneously highlighted notes — the view window is bounded anyway. */
 	static inline var SEL_MAX:Int = 512;
@@ -283,11 +299,16 @@ class StrumlineNoteInteraction {
 		// the first frame the grid alpha goes non-zero.
 		gridBuf = new Buffer<RepeatSprite>(GRID_MAX_ROWS * 2, 2, true);
 		gridProg = new CustomProgram(gridBuf);
-		// The selection overlay: the selection box's five elements
-		// (always bound, w=0 when idle) + up to SEL_MAX highlight quads
-		// (lazily bound the first frame a selection exists).
-		selBuf = new Buffer<RepeatSprite>(5 + SEL_MAX, 2, true);
+		// The selection overlay, SPLIT (v3.5): the BOX's five elements in
+		// their own buffer (always bound, w=0 when idle), and the per-note
+		// SELECTION ELEMENTS in a separate one (up to SEL_MAX
+		// SelectionNoteSprites = 5 rects each, lazily bound the first
+		// frame a selection exists). Two programs so overlapping
+		// elements never blend against the box nondeterministically.
+		selBuf = new Buffer<RepeatSprite>(5, 2, true);
 		selProg = new CustomProgram(selBuf);
+		selElemBuf = new Buffer<RepeatSprite>(SEL_MAX * 5, 2, true);
+		selElemProg = new CustomProgram(selElemBuf);
 		selectionBox = new SelectionBoxSprite();
 	}
 
@@ -773,8 +794,12 @@ class StrumlineNoteInteraction {
 	}
 
 	/**
-		Per-frame selection rendering: the selection box sprite (while
-		banding) + one translucent cyan quad per VISIBLE selected note.
+		Per-frame selection rendering (v3.5: TWO graphics, two programs).
+		The BOX (fill + edges, from SelectionBoxSprite) draws from its own
+		program while banding; one SelectionNoteSprite per VISIBLE selected
+		note — its own graphic, in the elements' separate program layered
+		ABOVE the box's — so overlapping elements stay individually
+		readable (each element's 1px edge survives another element's fill).
 		The walk binary-searches into the visible position window, so a
 		select-all on a huge chart still costs only the notes on screen.
 	**/
@@ -790,12 +815,14 @@ class StrumlineNoteInteraction {
 					selBuf.update();
 				} catch (e:Dynamic) {}
 			}
+			if (selElemBuf != null && selActive)
+				hideSelQuads();
 			return;
 		}
 		var edits = em.edits;
 		var noteSystem = parent.noteSystem;
 
-		// The selection box itself (fill + edge outline).
+		// The selection box itself (fill + edge outline) — its OWN graphic.
 		if (marqueeing) {
 			selectionBox.setBox(marqueeX0, marqueeY0, marqueeX1, marqueeY1);
 		} else if (selectionBox.boxActive()) {
@@ -812,16 +839,14 @@ class StrumlineNoteInteraction {
 			return;
 		}
 
-		// Lazily bind the highlight pool the first frame a selection
-		// exists (same pattern as the grid).
+		// Lazily bind the ELEMENT pool the first frame a selection exists
+		// (same pattern as the grid) — in the ELEMENTS' buffer, not the
+		// box's: the two graphics never share a program.
 		if (!selActive) {
-			while (selQuads.length < SEL_MAX) {
-				var q = new RepeatSprite(0, 0, 0, 0);
-				q.c = 0x00FFFFFF; // cyan
-				q.c.aF = 0;
-				q.c.luminanceF = 0;
-				selQuads.push(q);
-				selBuf.addElement(q);
+			while (selNotes.length < SEL_MAX) {
+				var e = new SelectionNoteSprite();
+				selNotes.push(e);
+				e.addToBuffer(selElemBuf);
 			}
 			selActive = true;
 		}
@@ -871,45 +896,38 @@ class StrumlineNoteInteraction {
 					var scale = lut != null && lut.hasExtendedLUT ? lut.lookupScale(Std.int(d), note.scale) * note.scale : note.scale;
 					var cy = note.y + (lut != null ? lut.lookupY(Std.int(d)) : Std.int(d)) + note.h * scale * 0.5;
 
-					var q = selQuads[qi++];
-					q.x = Std.int(cx - size * 0.575);
-					q.y = Std.int(cy - size * 0.575);
-					q.w = Std.int(size * 1.15);
-					q.h = Std.int(size * 1.15);
-					q.r = 0;
-					q.c.setFloatRGB(0, 1, 1);
-					q.c.aF = 0.30;
-					q.c.luminanceF = 0.10;
+					// THE separate graphic: this note's selection element
+					// (fill + 1px edges) in its own program above the box.
+					selNotes[qi++].setHighlight(cx, cy, size);
 				}
 			}
 			i++;
 		}
-		for (k in qi...selQuads.length) {
-			selQuads[k].w = 0;
-			selQuads[k].h = 0;
-		}
+		for (k in qi...selNotes.length)
+			selNotes[k].hide();
 
 		try {
-			for (q in selQuads)
-				selBuf.updateElement(q);
+			for (e in selNotes)
+				e.updateIn(selElemBuf);
+			selElemBuf.update();
 			selectionBox.updateIn(selBuf);
 			selBuf.update();
 		} catch (e:Dynamic) {}
 	}
 
-	/** Unbinds every highlight quad (selection emptied / teardown). */
+	/** Unbinds every selection element (selection emptied / teardown). */
 	function hideSelQuads() {
 		if (!selActive)
 			return;
 		selActive = false;
-		for (q in selQuads) {
+		for (e in selNotes) {
 			try
-				selBuf.removeElement(q)
+				e.removeFromBuffer(selElemBuf)
 			catch (e:Dynamic) {}
 		}
-		selQuads.resize(0);
+		selNotes.resize(0);
 		try
-			selBuf.update()
+			selElemBuf.update()
 		catch (e:Dynamic) {}
 	}
 
@@ -2043,11 +2061,16 @@ class StrumlineNoteInteraction {
 	function attach() {
 		// The grid program goes in BEFORE the square's so the interaction
 		// markers stay visible above the grid lines. The selection
-		// overlay sits between them: above the grid, below the ghost.
+		// graphics sit between them: the BOX's program above the grid,
+		// and the ELEMENTS' program directly after the box's (v3.5: a
+		// separate graphic in its own program, layered ABOVE the box so
+		// overlapping elements stay deterministic) — both below the ghost.
 		if (!gridProg.isIn(display))
 			display.addProgram(gridProg);
 		if (!selProg.isIn(display))
 			display.addProgram(selProg);
+		if (!selElemProg.isIn(display))
+			display.addProgram(selElemProg);
 		if (!squareProg.isIn(display))
 			display.addProgram(squareProg);
 		if (!eventMarkerProg.isIn(display))
@@ -2099,6 +2122,8 @@ class StrumlineNoteInteraction {
 			display.removeProgram(squareProg);
 		if (eventMarkerProg.isIn(display))
 			display.removeProgram(eventMarkerProg);
+		if (selElemProg.isIn(display))
+			display.removeProgram(selElemProg);
 		if (selProg.isIn(display))
 			display.removeProgram(selProg);
 		if (gridProg.isIn(display))
@@ -2111,6 +2136,7 @@ class StrumlineNoteInteraction {
 		holdTail = null;
 		eventGhost = null;
 		selectionBox = null;
+		selNotes = null;
 		if (squareBuf != null) {
 			try
 				squareBuf.clear()
@@ -2135,9 +2161,16 @@ class StrumlineNoteInteraction {
 			catch (e) {}
 			selBuf = null;
 		}
+		if (selElemBuf != null) {
+			try
+				selElemBuf.clear()
+			catch (e:Dynamic) {}
+			selElemBuf = null;
+		}
 		squareProg = null;
 		eventMarkerProg = null;
 		gridProg = null;
 		selProg = null;
+		selElemProg = null;
 	}
 }
