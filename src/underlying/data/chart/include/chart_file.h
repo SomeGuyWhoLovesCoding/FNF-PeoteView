@@ -31,17 +31,14 @@ void setHitFlag(int64_t globalIndex, bool value);
 void setEditorMode(bool value);
 //void destroyAllJudgements(void);
 
-// === Two-dimensional judgement system (N lane rows x M note-index bits) ===
-// 1 bit per (lane, global note index), packed 64 indexes per word, persistent
-// for the chart's lifetime and grown geometrically (never per call).
-//   lane:  strumline row — the note's stored lane, clamped by the caller
-//   index: global chart note index
-bool getJudgement2D(int32_t lane, int64_t index);
-void setJudgement2D(int32_t lane, int64_t index, bool value);
-// Bulk set/clear of an index RANGE on one lane's row (word-aligned fills).
-// Other lanes' notes interleaved inside the span keep their own bits.
-void registerJudgementRange(int32_t lane, int64_t fromIndex, int64_t toIndex, bool value);
-// Clears every judgement bit (fresh judgement state).
+// === Judgement state (per-shard, in-RAM, flat) ===
+// Every shard owns its own flat judgement bit array: allocated freshly
+// zeroed when the shard opens, kept index-aligned across note
+// inserts/removes, and destroyed when the shard closes — so a shard that
+// leaves the LRU window and comes back is automatically un-judged.
+//   getJudgement/setJudgement: the flat per-note bits (shard-relative)
+// clearJudgements: zeroes the judgement bits of the ACTIVE shards only
+// (closed shards have no state; they reopen freshly zeroed).
 void clearJudgements(void);
 
 // === getNotesFromRange (persistent result block + custom length) ===

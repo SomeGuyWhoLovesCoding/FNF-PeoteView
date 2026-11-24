@@ -51,24 +51,15 @@ extern class File {
 	@:native("setHitFlag") static function setHitFlag(globalIndex:Int64, value:Bool):Void;
 	@:native("setEditorMode") static function setEditorMode(value:Bool):Void;
 
-	// === Two-dimensional judgement system (N lane rows x M note-index bits) ===
-	// 1 bit per (lane, global note index), packed 64 indexes per word and
-	// persistent in the chart file's C++ side for the chart's lifetime —
-	// grown geometrically, never reallocated per call. The lane dimension
-	// is what makes range registration safe: notes of other lanes
-	// interleaved inside a span keep their bits in their own rows.
-	@:native("getJudgement2D") static function getJudgement2D(lane:Int, index:Int64):Bool;
-	@:native("setJudgement2D") static function setJudgement2D(lane:Int, index:Int64, value:Bool):Void;
-
-	/**
-	 * Bulk-registers a RANGE of global note indexes as judged (or not) on
-	 * one lane's row, with word-aligned fills — no per-note reads.
-	 *   lane:      strumline row (the note's clamped stored lane)
-	 *   fromIndex: first global chart index of the range (inclusive)
-	 *   toIndex:   last global chart index of the range (inclusive)
-	 */
-	@:native("registerJudgementRange") static function registerJudgementRange(lane:Int, fromIndex:Int64, toIndex:Int64, value:Bool):Void;
-	/** Clears every judgement bit (fresh judgement state). */
+	// === Judgement state (per-shard, in-RAM, flat) ===
+	// Every chart shard owns its own flat judgement bit array inside the
+	// chart file's C++ side: allocated freshly zeroed when the shard
+	// opens, kept index-aligned across note inserts/removes, and destroyed
+	// when the shard closes — a shard that leaves the LRU window and comes
+	// back is automatically un-judged, so no manual index zero-out is ever
+	// needed for that. getJudgement/setJudgement above read/write those
+	// per-note bits; clearJudgements zeroes ONLY the active shards.
+	/** Zeroes the judgement bits of the ACTIVE shards (closed shards reopen freshly zeroed). */
 	@:native("clearJudgements") static function clearJudgements():Void;
 
 	/**
@@ -164,20 +155,9 @@ class File {
 	@:hlNative("chart_file", "setEditorMode")
 	public static function setEditorMode(value:Bool):Void {};
 
-	// === Two-dimensional judgement system (N lane rows x M note-index
-	// bits) + getNotesFromRange (persistent block, custom length).
+	// === Judgement state (per-shard, in-RAM, flat) +
+	// getNotesFromRange (persistent block, custom length).
 	// See the cpp target's docs for the semantics. ===
-
-	@:hlNative("chart_file", "getJudgement2D")
-	public static function getJudgement2D(lane:Int, index:hl.I64):Bool {
-		return false;
-	}
-
-	@:hlNative("chart_file", "setJudgement2D")
-	public static function setJudgement2D(lane:Int, index:hl.I64, value:Bool):Void {}
-
-	@:hlNative("chart_file", "registerJudgementRange")
-	public static function registerJudgementRange(lane:Int, fromIndex:hl.I64, toIndex:hl.I64, value:Bool):Void {}
 
 	@:hlNative("chart_file", "clearJudgements")
 	public static function clearJudgements():Void {}

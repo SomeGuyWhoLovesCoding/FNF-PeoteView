@@ -215,13 +215,13 @@ class Strumline {
 			}
 
 			// Mark as hit: missed=false, then judge ONE note per press on
-			// the two-dimensional [lane][index] bit inside the chart
-			// extern. The visual overlap folding is render-only
-			// (NoteSystem.renderVirtualNotes) and never touches judging:
-			// every note counts on its own timing, so combo counting
-			// stays 100% accurate even inside dense spam merges.
+			// its own flat shard bit inside the chart extern. The visual
+			// overlap folding is render-only (NoteSystem.renderVirtualNotes)
+			// and never touches judging: every note counts on its own
+			// timing, so combo counting stays 100% accurate even inside
+			// dense spam merges.
 			File.setHitFlag(noteIndex, false);
-			File.setJudgement2D(NoteSystem.clampLane(noteToHit.lane, parent.strumlines.length), noteIndex, true);
+			File.setJudgement(noteIndex, true);
 
 			rec.sustainToHold_duration = noteToHit.duration;
 			rec.sustainResolved = false;
@@ -274,11 +274,10 @@ class Strumline {
 		var sustainIndex = rec.sustainToHold_index;
 
 		// Sustain release fires if: note exists, correct lane, was hit, and not yet resolved
-		// (judgement read from the two-dimensional [lane][index] bit inside
-		// the chart extern).
+		// (judgement read from the note's own flat shard bit).
 		var hitflag = File.getHitFlag(sustainIndex);
 		var sustainReleaseCallbackCanRun = sustainToRelease != null && sustainToRelease.index == index
-			&& File.getJudgement2D(NoteSystem.clampLane(sustainToRelease.lane, parent.strumlines.length), sustainIndex) && !hitflag
+			&& File.getJudgement(sustainIndex) && !hitflag
 			&& !rec.sustainResolved;
 
 		if (sustainReleaseCallbackCanRun) {

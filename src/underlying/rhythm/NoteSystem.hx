@@ -581,7 +581,7 @@ class NoteSystem {
 			// far side here (at most the anchor note can be far-future).
 			if (n.position < late || n.position > early)
 				return;
-			if (n.index == index && clampLane(n.lane, laneCount) == lane && !File.getJudgement2D(lane, i)) {
+			if (n.index == index && clampLane(n.lane, laneCount) == lane && !File.getJudgement(i)) {
 				// Among hittable notes keep the earliest (smallest position) so a
 				// jack progresses in order; once `found`, only a smaller index can
 				// replace it.
@@ -686,10 +686,11 @@ class NoteSystem {
 		if (sustainExists)
 			leftover = Std.int(MetaNote.metaNotePositionToSongTime(pos - position));
 
-		// Judgement-gated state reads — from the two-dimensional judgement
-		// system inside the chart file extern (the native [lane][index]
-		// bit), not the flat per-note flag.
-		var judged:Bool = File.getJudgement2D(lane, _id);
+		// Judgement-gated state reads — the flat per-note bit, which lives
+		// in the note's OWN shard: an in-RAM array allocated freshly zeroed
+		// when the shard opens and destroyed when it closes (no manual
+		// zero-out passes; a re-opened shard is automatically un-judged).
+		var judged:Bool = File.getJudgement(_id);
 		var isHit:Bool = judged && !File.getHitFlag(_id); // judged + flag=false → hit
 		var isMissed:Bool = judged && File.getHitFlag(_id); // judged + flag=true → missed
 		var isResolved:Bool = receptor.sustainResolved;
@@ -758,10 +759,10 @@ class NoteSystem {
 					noteSpr.initialAlpha = Note.defaultMissAlpha;
 					File.setHitFlag(_id, true); // chosen to miss
 					isMissed = true;
-					// Judged on the two-dimensional [lane][index] bit —
-					// one note, one judgement, one combo entry: every note
-					// of the chart counts on its own timing.
-					File.setJudgement2D(lane, _id, true);
+					// Judged on the note's own flat shard bit — one note,
+					// one judgement, one combo entry: every note of the
+					// chart counts on its own timing.
+					File.setJudgement(_id, true);
 
 					var type = note.type;
 
@@ -794,13 +795,13 @@ class NoteSystem {
 				// opponent hit: judged as hit (missed=false)
 				File.setHitFlag(_id, false);
 				isHit = true;
-				// Judged on the two-dimensional [lane][index] bit — one
-				// note, one judgement, one combo entry. This is the botplay
-				// path too (botplay routes the player strumline through the
-				// opponent branch): every note of a dense spam burst hits
-				// and counts on its own timing, 100% accurate, while the
-				// RENDER block folds their pixels into one visual note.
-				File.setJudgement2D(lane, _id, true);
+				// Judged on the note's own flat shard bit — one note, one
+				// judgement, one combo entry. This is the botplay path too
+				// (botplay routes the player strumline through the opponent
+				// branch): every note of a dense spam burst hits and counts
+				// on its own timing, 100% accurate, while the RENDER block
+				// folds their pixels into one visual note.
+				File.setJudgement(_id, true);
 
 				if (!rec.confirmed())
 					rec.confirm();

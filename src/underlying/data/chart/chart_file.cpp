@@ -61,19 +61,7 @@ void setEditorMode(bool value) {
     core_setEditorMode(value);
 }
 
-// === Two-dimensional judgement system (N lane rows x M note-index bits) ===
-
-bool getJudgement2D(int32_t lane, int64_t index) {
-    return core_getJudgement2D(lane, index);
-}
-
-void setJudgement2D(int32_t lane, int64_t index, bool value) {
-    core_setJudgement2D(lane, index, value);
-}
-
-void registerJudgementRange(int32_t lane, int64_t fromIndex, int64_t toIndex, bool value) {
-    core_registerJudgementRange(lane, fromIndex, toIndex, value);
-}
+// === Judgement state (per-shard, in-RAM, flat) — see chart_file.h ===
 
 void clearJudgements(void) {
     core_clearJudgements();

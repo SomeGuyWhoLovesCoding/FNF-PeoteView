@@ -198,6 +198,20 @@ class StrumlineNoteInteraction {
 	var squareBuf:Buffer<RepeatSprite>;
 	var squareProg:CustomProgram;
 
+	// -------------------------------------------------------------------
+	// Real-time step/beat grid — alpha-gated by
+	// PlayFieldEditorMode.gridAlpha (0 = disabled, the DEFAULT: no
+	// updates, no elements bound, zero cost).
+	// -------------------------------------------------------------------
+	/** Pooled horizontal grid lines (GRID_MAX_ROWS per strumline). */
+	var gridLines:Array<RepeatSprite> = [];
+	var gridBuf:Buffer<RepeatSprite>;
+	var gridProg:CustomProgram;
+	/** True while the grid elements are bound (alpha went non-zero). */
+	var gridActive:Bool = false;
+	/** Max rows drawn per strumline — covers the spawn window at sane BPMs. */
+	static inline var GRID_MAX_ROWS:Int = 64;
+
 	var display(default, null):CustomDisplay;
 
 	var eventsActive(default, null):Bool = false;
@@ -227,6 +241,10 @@ class StrumlineNoteInteraction {
 		eventGhost.r = 45;
 		eventMarkerBuf = new Buffer<RepeatSprite>(32, 2, true);
 		eventMarkerProg = new CustomProgram(eventMarkerBuf);
+		// The step/beat grid pool: 64 rows x 2 strumlines, lazily bound
+		// the first frame the grid alpha goes non-zero.
+		gridBuf = new Buffer<RepeatSprite>(GRID_MAX_ROWS * 2, 2, true);
+		gridProg = new CustomProgram(gridBuf);
 	}
 
 	function addEvents() {
@@ -860,8 +878,8 @@ class StrumlineNoteInteraction {
 		var type = old.type;
 		var lane = old.lane; // the stored lane rides along unchanged
 
-		File.removeNote(downNoteId);
-		downNoteId = File.addNote(position, Std.int(dur), index, type, lane);
+		// One recorded replace: remove + re-add as a single undo entry.
+		downNoteId = parent.editorMode.replaceNote(downNoteId, position, Std.int(dur), index, type, lane);
 		if (downNoteId < 0)
 			return; // write failed — stop editing
 
@@ -902,8 +920,8 @@ class StrumlineNoteInteraction {
 			var duration = old.duration;
 			var index = old.index;
 			var lane = old.lane; // unchanged — retyping never moves sides
-			File.removeNote(downNoteId);
-			downNoteId = File.addNote(position, duration, index, penType, lane);
+			// One recorded replace: remove + re-add as a single undo entry.
+			downNoteId = parent.editorMode.replaceNote(downNoteId, position, duration, index, penType, lane);
 			if (downNoteId < 0)
 				return penType; // write failed — pen unchanged, stop editing
 			Main.current.playScrollSound();
@@ -1008,8 +1026,9 @@ class StrumlineNoteInteraction {
 				// hold-editing. The NOTETYPE comes from the pen as-is —
 				// the v2 note stores the lane (the hovered strumline)
 				// independently of the type, so the ghost's type no
-				// longer needs coercing to a side.
-				var id = File.addNote(MetaNote.floatToMetaNotePosition(downTimeMs), 0, downLane, parent.editorMode.notetype, downStrumline);
+				// longer needs coercing to a side. editorAdd records the
+				// undo entry.
+				var id = parent.editorMode.editorAdd(MetaNote.floatToMetaNotePosition(downTimeMs), 0, downLane, parent.editorMode.notetype, downStrumline);
 				if (id >= 0) {
 					downNoteId = id;
 					Main.current.playScrollSound();
@@ -1108,8 +1127,7 @@ class StrumlineNoteInteraction {
 			}
 			if (detectHitbox(local.x, local.y) && hoverLane >= 0) {
 				var id = findNoteAt(hoverLane, hoverStrumline, hoverTimeMs);
-				if (id >= 0) {
-					File.removeNote(id);
+				if (id >= 0 && parent.editorMode.editorRemove(id)) {
 					Main.current.playScrollSound();
 					parent.editorMode.onChartEdited();
 				}
@@ -1322,6 +1340,146 @@ class StrumlineNoteInteraction {
 	}
 
 	// ==================================================================
+	// Real-time step/beat grid
+	// ==================================================================
+
+	/**
+		Per-frame grid refresh. Gated by the editor's gridAlpha: at 0 (the
+		default) the grid is fully DISABLED — this early-outs after one
+		boolean check, no rows update, no elements stay bound. At any other
+		alpha the rows update in real time: every step of the conductor's
+		grid (16ths at the current bpm) inside the visible window becomes a
+		horizontal line spanning the strumline's FULL width (first
+		receptor's x .. last receptor's x + its drawn width), positioned by
+		song position through the exact scroll-speed math notes use (the
+		movement LUT), with beat rows drawn brighter and a touch thicker
+		than plain step rows.
+	**/
+	function updateGridVisual() {
+		var em = parent.editorMode;
+		var alpha = em != null ? em.gridAlpha : 0;
+		if (alpha <= 0) {
+			if (gridActive)
+				hideGrid();
+			return;
+		}
+
+		var conductor = Main.conductor;
+		var noteSystem = parent.noteSystem;
+		if (conductor == null || noteSystem == null || noteSystem.strumlines.length == 0) {
+			if (gridActive)
+				hideGrid();
+			return;
+		}
+
+		if (!gridActive) {
+			// First frame ON: pool and bind the line elements.
+			var wanted = GRID_MAX_ROWS * noteSystem.strumlines.length;
+			while (gridLines.length < wanted) {
+				var line = new RepeatSprite(0, 0, 0, 0);
+				line.c.setFloatRGB(0.4, 0.55, 1.0);
+				line.c.aF = 0;
+				line.c.luminanceF = 0;
+				gridLines.push(line);
+				gridBuf.addElement(line);
+			}
+			gridActive = true;
+		}
+
+		// Rows for the note window: the spawn distance ahead of the
+		// playhead plus the despawn tail behind it (a little slack each
+		// way so the grid extends past the notes).
+		var renderPos = playheadMs();
+		var scrollSpeed = parent.scrollSpeed;
+		if (scrollSpeed <= 0)
+			scrollSpeed = 1;
+
+		var s0 = Math.floor(conductor.stepAt(renderPos - 400));
+		var s1 = Math.ceil(conductor.stepAt(renderPos + 1400));
+		if (s1 - s0 > GRID_MAX_ROWS)
+			s1 = s0 + GRID_MAX_ROWS;
+
+		for (si in 0...noteSystem.strumlines.length) {
+			var strumline = noteSystem.strumlines[si];
+			if (strumline.length == 0)
+				continue;
+			var first = strumline.receptors[0];
+			var last = strumline.receptors[strumline.length - 1];
+			if (first == null || last == null || first.note == null || last.note == null)
+				continue;
+
+			// The strumline's full width: first receptor's x through the
+			// last receptor's x plus its drawn width.
+			var x0 = Std.int(first.note.x);
+			var fullW = Std.int((last.note.x + last.note.w * strumline.scale) - x0);
+
+			// The row's Y rides the same movement LUT the notes use
+			// (column 0 as the reference), so custom noteskin formulas
+			// move the grid with the notes instead of drifting past them.
+			var lut = noteSystem.movementLUTs[si][0];
+			var baseY = first.note.y;
+
+			for (k in 0...GRID_MAX_ROWS) {
+				var line = gridLines[si * GRID_MAX_ROWS + k];
+				var stepIdx = s0 + k;
+				if (k >= s1 - s0) {
+					line.w = 0; // outside the window — draw nothing
+					continue;
+				}
+
+				var timeMs = conductor.stepTime(stepIdx);
+				// drawNote's exact diff convention: -(time - now) * speed,
+				// negated again for downscroll.
+				var d = -(timeMs - renderPos) * scrollSpeed;
+				if (parent.downScroll)
+					d = -d;
+				var y = lut != null ? baseY + lut.lookupY(Std.int(d)) : baseY + Std.int(d);
+
+				// Beat rows: the beat coordinate at this row's time lands
+				// on an integer. Brighter and a touch thicker than steps.
+				var beatCoord = conductor.beatAt(timeMs);
+				var isBeat = Math.abs(beatCoord - Math.round(beatCoord)) < 0.05;
+
+				line.x = x0;
+				line.y = Std.int(y);
+				line.w = fullW;
+				line.h = isBeat ? 3 : 2;
+				if (isBeat) {
+					line.c.setFloatRGB(1, 1, 1);
+					line.c.aF = alpha;
+					line.c.luminanceF = alpha;
+				} else {
+					line.c.setFloatRGB(0.4, 0.55, 1.0);
+					line.c.aF = alpha * 0.45;
+					line.c.luminanceF = alpha * 0.45;
+				}
+			}
+		}
+
+		try {
+			for (line in gridLines)
+				gridBuf.updateElement(line);
+			gridBuf.update();
+		} catch (e) {}
+	}
+
+	/** Unbinds every grid line element (alpha returned to 0 / teardown). */
+	function hideGrid() {
+		if (!gridActive)
+			return;
+		gridActive = false;
+		for (line in gridLines) {
+			try
+				gridBuf.removeElement(line)
+			catch (e) {}
+		}
+		gridLines.resize(0);
+		try
+			gridBuf.update()
+		catch (e) {}
+	}
+
+	// ==================================================================
 	// Frame update + attach/detach (called by the PlayField editor branch)
 	// ==================================================================
 
@@ -1349,6 +1507,10 @@ class StrumlineNoteInteraction {
 			rebuildEventMarkers();
 		}
 
+		// The step/beat grid updates in real time (alpha-gated — a
+		// gridAlpha of 0 skips it entirely), even while hold-editing.
+		updateGridVisual();
+
 		// While hold-editing, skip hitbox re-detection — the edited note's
 		// slot is frozen at press time and the ruler square below reads
 		// downTimeMs/holdDurationMs directly. Otherwise keep detecting so
@@ -1364,6 +1526,10 @@ class StrumlineNoteInteraction {
 
 	/** Add the square's program AFTER notesProg so it renders on top; bind events. */
 	function attach() {
+		// The grid program goes in BEFORE the square's so the interaction
+		// markers stay visible above the grid lines.
+		if (!gridProg.isIn(display))
+			display.addProgram(gridProg);
 		if (!squareProg.isIn(display))
 			display.addProgram(squareProg);
 		if (!eventMarkerProg.isIn(display))
@@ -1393,6 +1559,7 @@ class StrumlineNoteInteraction {
 
 	function detach() {
 		removeEvents();
+		hideGrid();
 		try {
 			squareBuf.removeElement(square);
 			squareBuf.removeElement(holdTail);
@@ -1408,6 +1575,8 @@ class StrumlineNoteInteraction {
 			display.removeProgram(squareProg);
 		if (eventMarkerProg.isIn(display))
 			display.removeProgram(eventMarkerProg);
+		if (gridProg.isIn(display))
+			display.removeProgram(gridProg);
 	}
 
 	function dispose() {
@@ -1427,7 +1596,14 @@ class StrumlineNoteInteraction {
 			catch (e) {}
 			eventMarkerBuf = null;
 		}
+		if (gridBuf != null) {
+			try
+				gridBuf.clear()
+			catch (e) {}
+			gridBuf = null;
+		}
 		squareProg = null;
 		eventMarkerProg = null;
+		gridProg = null;
 	}
 }

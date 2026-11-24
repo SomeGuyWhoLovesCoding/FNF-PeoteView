@@ -190,6 +190,50 @@ class Conductor
 	}
 
 	/**
+		The continuous STEP coordinate of an arbitrary song time — the exact
+		offset math `set_time` runs for its trackers, exposed as a query.
+		This is the single source of the time→step mapping: visual elements
+		that need to position themselves on the step/beat grid (the editor's
+		strumline grid, for one) call this instead of re-deriving anything
+		from `bpm`, so bpm changes, time-signature changes and offsets stay
+		correct everywhere at once.
+		@param songTime The song time (ms) to map.
+		@return The continuous step coordinate at that time (integers are
+		step boundaries).
+	**/
+	inline function stepAt(songTime:Float):Float
+	{
+		var calc = (songTime + offset) - offsetTime;
+		return stepOffset + calc / stepCrochet;
+	}
+
+	/**
+		The continuous BEAT coordinate of an arbitrary song time — the beat
+		sibling of `stepAt` (same offset math, `crochet` spacing). Integers
+		are beat boundaries.
+		@param songTime The song time (ms) to map.
+		@return The continuous beat coordinate at that time.
+	**/
+	inline function beatAt(songTime:Float):Float
+	{
+		var calc = (songTime + offset) - offsetTime;
+		return beatOffset + calc / crochet;
+	}
+
+	/**
+		The inverse of `stepAt`: the song time of a continuous step
+		coordinate. Feeding it the integers around `stepAt(now)` yields the
+		times of the surrounding step boundaries — everything a grid needs
+		to place its rows.
+		@param step The continuous step coordinate.
+		@return The song time (ms) of that coordinate.
+	**/
+	inline function stepTime(step:Float):Float
+	{
+		return offsetTime - offset + (step - stepOffset) * stepCrochet;
+	}
+
+	/**
 		Resets the conductor.
 	**/
 	inline function reset():Void
