@@ -102,6 +102,7 @@
 
 #include <assert.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 #include <sys/types.h>
 #include <algorithm>
@@ -114,6 +115,18 @@
 #include <ostream>
 #include <string>
 #include <utility>
+
+// Windows/MSVC portability: ssize_t is POSIX and absent from MSVC's
+// CRT (its <sys/types.h> never defines it), which breaks the
+// size_type typedef in btree_common_params and node_stats below on
+// the whole Windows build. Define it as the pointer-sized signed
+// integer — same width and signedness as POSIX ssize_t on both
+// ILP32 and Windows x64 (LLP64). The _SSIZE_T_DEFINED guard matches
+// the name other Windows toolchains use, so this never double-defines.
+#if defined(_WIN32) && !defined(_SSIZE_T_DEFINED)
+typedef intptr_t ssize_t;
+#define _SSIZE_T_DEFINED
+#endif
 
 #ifndef NDEBUG
 #define NDEBUG 1
