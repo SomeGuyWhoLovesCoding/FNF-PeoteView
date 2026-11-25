@@ -171,12 +171,29 @@ class NoteSpawner {
 	// receptor repositions, notesBuf GPU flush) is skipped. Every other
 	// caller keeps the default true and resets exactly once, here at the
 	// end, as before.
-	function resetNotes(songPosition:Float, pushToOffset:Float = 0, resetStrumlinesAfter:Bool = true) {
+	//
+	// lightReset: the chart-mutation path (NoteSystem.onChartMutated —
+	// every editor add/remove/replace/undo/paste). A chart edit does not
+	// move the playhead, reposition receptors, or touch scroll
+	// direction/speed/formula — the inputs of all the heavyweight reset
+	// work are UNCHANGED, so none of it applies. What an edit does
+	// invalidate is the window's global indexes (the store re-sorted):
+	// those are re-derived below by binary search, O(log n). Skipped in
+	// light mode: notePool.reset() (notesBuf clear + receptor re-add +
+	// next-frame re-acquire and full re-upload of every visible note)
+	// and the tail resetStrumlines() (per-lane 4097-entry LUT rebuild +
+	// per-strumline notesBuf.update() GPU flush + per-receptor
+	// ReceptorTimer allocation). The render pool reconciles itself on
+	// the next frame via beginFrame/endFrame — the exact mechanism the
+	// frozen seek relies on, where notes slide in and out of the window
+	// with no reset at all (PlayFieldEditorMode.seekTo, frozen branch).
+	function resetNotes(songPosition:Float, pushToOffset:Float = 0, resetStrumlinesAfter:Bool = true, lightReset:Bool = false) {
 		var pf = parent.parent;
 		if (pf.disposed || pf.died)
 			return;
 
-		parent.notePool.reset();
+		if (!lightReset)
+			parent.notePool.reset();
 
 		var len = File.getLength();
 		if (len <= 0)
@@ -232,7 +249,7 @@ class NoteSpawner {
 		curBottomNote = bottom < len ? File.getNote(bottom) : null;
 		curTopNote = top < len ? File.getNote(top) : null;
 
-		if (resetStrumlinesAfter)
+		if (resetStrumlinesAfter && !lightReset)
 			parent.resetStrumlines();
 	}
 }

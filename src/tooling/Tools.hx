@@ -220,11 +220,14 @@ class Tools {
 
 	/**
 		v3.8.3: editor hot-path attribution print. The edit chain
-		(store op → onChartEdited → onSongPositionJump → window/LUT/
-		buffer rebuild) is one synchronous call; when the whole thing
+		(store op → onChartEdited → onChartMutated → window re-derivation
+		by binary search) is one synchronous call; when the whole thing
 		costs a frame or more, print the split so the blame lands on the
 		right layer instead of on "the C++ chart". One print per second
 		max per tag — a burst of drag-edits doesn't flood the console.
+		(v3.8.6: the LUT/buffer rebuild halves of the chain were removed
+		from the edit path — onChartEdited no longer routes through the
+		full onSongPositionJump teardown.)
 	**/
 	static var perfLastStamp:Map<String, Float> = new Map();
 

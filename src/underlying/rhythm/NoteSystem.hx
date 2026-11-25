@@ -196,6 +196,35 @@ class NoteSystem {
 		}
 	}
 
+	/**
+	 * A chart MUTATION (editor add/remove/replace/undo/paste), as opposed
+	 * to a position jump: the playhead does NOT move and nothing about the
+	 * strumlines changed. The edit's only render-side effect is that the
+	 * store re-sorted, which invalidated the window's global indexes —
+	 * so only the window is re-derived here (binary search, O(log n)).
+	 *
+	 * Everything a real jump pays for is provably redundant here:
+	 *   - resetStrumlines() — rebuilds movement LUTs (per lane x 4097
+	 *     entries) from scrollDirection/speed/formula inputs that the
+	 *     edit did not touch;
+	 *   - notePool.reset() — notesBuf.clear() + receptor re-add, then a
+	 *     next-frame re-acquire and CPU→GPU re-upload of every visible
+	 *     note, when the pool already reconciles itself each frame via
+	 *     beginFrame/endFrame;
+	 *   - per-strumline notesBuf.update() flushes and per-receptor
+	 *     ReceptorTimer allocations during that reset.
+	 *
+	 * The render pool self-heals exactly like the frozen seek path
+	 * (PlayFieldEditorMode.seekTo, frozen branch): notes slide in and
+	 * out of the window with no teardown at all.
+	 */
+	function onChartMutated(pos:Int64) {
+		_stableLastPos = pos;
+
+		if (noteSpawner != null)
+			noteSpawner.resetNotes(MetaNote.metaNotePositionToSongTime(pos), 0, false, true);
+	}
+
 	private function refreshRendering(noteTime:Float) {
 		// Receptors are persistent in the buffer — just update animations.
 		// Pooled spawned notes are managed by notePool.beginFrame/endFrame.

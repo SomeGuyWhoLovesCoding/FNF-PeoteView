@@ -768,16 +768,24 @@ class PlayFieldEditorMode {
 		Called by StrumlineNoteInteraction after every successful
 		add/remove/duration write. Rebuilds the note system's window at
 		the current (frozen) position so the edit is visible the same
-		frame: a structural edit shifts global indices AFTER the edit
+		frame: a structural edit shifts global indexes AFTER the edit
 		point (the sharded store re-sorts), which invalidates every
 		cached window/index until the next rebuild.
+
+		v3.8.6: routes to noteSystem.onChartMutated — the light chart-
+		mutation reset (window binary search only). The old path went
+		through onSongPositionJump's full jump teardown (resetStrumlines'
+		LUT rebuild, notePool.reset's buffer clear + next-frame full
+		re-upload, per-strumline GPU flushes) — costs whose inputs a
+		chart edit never touches. The render pool reconciles itself next
+		frame via beginFrame/endFrame, same as the frozen seek.
 	**/
 	function onChartEdited() {
 		dirtyChart = true;
 
 		if (field.noteSystem != null) {
 			var pos = MetaNote.floatToMetaNotePosition(field.songPosition);
-			field.noteSystem.onSongPositionJump(pos);
+			field.noteSystem.onChartMutated(pos);
 		}
 	}
 
