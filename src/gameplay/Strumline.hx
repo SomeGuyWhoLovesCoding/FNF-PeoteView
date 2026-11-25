@@ -48,19 +48,19 @@ class Strumline {
 		return y = value;
 	}
 
-	inline function set_offsetX(value:Int) {
+	function set_offsetX(value:Int) {
 		offsetX = value;
 		set_x(x);
 		return value;
 	}
 
-	inline function set_offsetY(value:Int) {
+	function set_offsetY(value:Int) {
 		offsetY = value;
 		set_y(y);
 		return value;
 	}
 
-	inline function set_noteskinHandle(handle:NoteskinHandle) {
+	function set_noteskinHandle(handle:NoteskinHandle) {
 		noteskinHandle = handle;
 		var scale = this.scale; // use current scale
 
@@ -89,7 +89,7 @@ class Strumline {
 		return scale = value;
 	}
 
-	inline function set_gap(value:Int) {
+	function set_gap(value:Int) {
 		gap = value;
 		set_x(x);
 		return value;

@@ -71,7 +71,7 @@ class NotePool {
 	 * @param index The global note index for array access.
 	 * @return The allocated VirtualNote at the given index.
 	 */
-	inline function getNote(id:Int, n:MetaNote, index:Int64):VirtualNote {
+	function getNote(id:Int, n:MetaNote, index:Int64):VirtualNote {
 		var slot = Int64.toInt(index);
 
 		// Fast path: this global index was drawn last frame and is still
@@ -104,7 +104,7 @@ class NotePool {
 	 * @param index The global note index for array access.
 	 * @return The allocated VirtualSustain at the given index.
 	 */
-	inline function getSustain(id:Int, n:MetaNote, index:Int64):VirtualSustain {
+	function getSustain(id:Int, n:MetaNote, index:Int64):VirtualSustain {
 		var slot = Int64.toInt(index);
 
 		var obj:VirtualSustain = null;
@@ -130,7 +130,7 @@ class NotePool {
 	 * @param n The underlying meta note to deactivate.
 	 * @param index The global note index.
 	 */
-	inline function putNote(n:MetaNote, index:Int64) {
+	function putNote(n:MetaNote, index:Int64) {
 		var slot = Int64.toInt(index);
 		if (slot < virtualNoteSlots.length) {
 			var obj = virtualNoteSlots[slot];
@@ -148,7 +148,7 @@ class NotePool {
 	 * @param n The underlying meta note to deactivate.
 	 * @param index The global note index.
 	 */
-	inline function putSustain(n:MetaNote, index:Int64) {
+	function putSustain(n:MetaNote, index:Int64) {
 		var slot = Int64.toInt(index);
 		if (slot < virtualSustainSlots.length) {
 			var obj = virtualSustainSlots[slot];

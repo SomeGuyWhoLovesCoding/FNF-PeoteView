@@ -78,7 +78,7 @@ class Note implements Element {
 	// If toNote() is called but cache was populated by press(), we must re-lookup.
 	var cachedClipState:NoteState = -1;
 
-	inline public function new(x:Int, y:Int, w:Int, h:Int, handle:NoteskinHandle, scale:Float = 1.0, initialAlpha:Float = 1.0, addedAlpha:Float = 0.0) {
+	public function new(x:Int, y:Int, w:Int, h:Int, handle:NoteskinHandle, scale:Float = 1.0, initialAlpha:Float = 1.0, addedAlpha:Float = 0.0) {
 		setProperties(x, y, w, h, scale, initialAlpha, addedAlpha);
 		setHandle(handle);
 		reset();
@@ -120,7 +120,7 @@ class Note implements Element {
 		cachedClipState = IDLE;
 	}
 
-	inline public function toNote() {
+	public function toNote() {
 		state = COLOR;
 		if (handle == null)
 			return;
@@ -140,7 +140,7 @@ class Note implements Element {
 		cachedClipState = COLOR;
 	}
 
-	inline public function press() {
+	public function press() {
 		state = PRESS;
 		if (handle == null)
 			return;
@@ -157,7 +157,7 @@ class Note implements Element {
 		cachedClipState = PRESS;
 	}
 
-	inline public function confirm() {
+	public function confirm() {
 		state = CONFIRM;
 		if (handle == null)
 			return;
