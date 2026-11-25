@@ -4,15 +4,13 @@
 #include <string>
 #include <cstdint>
 #include <cstring>
+#include <cstdio>
 #include <mutex>
 #include <algorithm>
 #include <unordered_map>
 #include <thread>
-#include <mutex>
-#include <vector>
-#include <algorithm>
-#include <cstring>
-#include <cstdint>
+#include <condition_variable>
+#include <chrono>
 
 // cpp-btree 1.0.1 (Google, Apache 2.0 — vendored under include/cpp-btree
 // with its COPYING): the per-shard ordered map the v3.8 store builds on.
@@ -1858,12 +1856,28 @@ public:
 	}
 
 	bool writeTo(const char* path) {
+		std::vector<uint8_t> out;
+		if (!snapshotTo(out)) return false;
+		std::ofstream fout(path, std::ios::binary | std::ios::trunc);
+		if (!fout) return false;
+		fout.write(reinterpret_cast<const char*>(out.data()),
+			(std::streamsize)out.size());
+		return fout.good();
+	}
+
+	// v3.8.3: the pure half of writeTo — serialize the whole chart to
+	// a fresh FVC4 byte image WITHOUT touching disk or live unit state.
+	// This is what the deferred saver snapshots under the store lock;
+	// the caller (writeTo synchronously, ChartSaver on the writer
+	// thread) decides where/when the bytes land. A caller that needs
+	// writeTo's post-save restructure (units reloaded from images) still
+	// calls writeTo.
+	bool snapshotTo(std::vector<uint8_t>& out) {
 		struct Piece {
 			uint64_t startTick = 0;
 			uint32_t noteCount = 0;
 			const std::vector<uint8_t>* cached = nullptr;
 			std::vector<uint8_t> image;
-			size_t srcUnit = 0;
 		};
 		std::vector<Piece> pieces;
 		std::vector<std::vector<ChartNote>> flats;
@@ -1874,7 +1888,6 @@ public:
 				p.startTick = u.startTick;
 				p.noteCount = u.noteCount;
 				p.cached = &u.image;
-				p.srcUnit = ui;
 				pieces.push_back(std::move(p));
 				continue;
 			}
@@ -1901,7 +1914,6 @@ public:
 				Piece p;
 				p.startTick = r.startTick;
 				p.noteCount = r.noteCount;
-				p.srcUnit = ui;
 				pieces.push_back(std::move(p));
 				flats.emplace_back(data + beg, data + end);
 			}
@@ -1913,9 +1925,9 @@ public:
 			for (Piece& p : pieces)
 				if (!p.cached) p.image = std::move(images[k++]);
 		}
-		std::vector<uint8_t> out;
 		size_t totalOut = sizeof(Fvc4Header) + pieces.size() * sizeof(Fvc4SegEntry);
 		for (const Piece& p : pieces) totalOut += p.cached ? p.cached->size() : p.image.size();
+		out.clear();
 		out.reserve(totalOut);
 		Fvc4Header hdr{};
 		std::memcpy(hdr.magic, "FVC4", 4);
@@ -1935,50 +1947,6 @@ public:
 			const std::vector<uint8_t>& img = p.cached ? *p.cached : p.image;
 			out.insert(out.end(), img.begin(), img.end());
 		}
-		std::ofstream fout(path, std::ios::binary | std::ios::trunc);
-		if (!fout) return false;
-		fout.write(reinterpret_cast<const char*>(out.data()), (std::streamsize)out.size());
-		if (!fout.good()) return false;
-
-		std::vector<Unit> next;
-		next.reserve(pieces.size());
-		std::vector<size_t> newLru;
-		size_t newOpen = 0;
-		int64_t base = 0;
-		size_t pi = 0;
-		for (size_t ui = 0; ui < units.size(); ++ui) {
-			Unit& u = units[ui];
-			if (!u.dirty && !u.image.empty()) {
-				Unit nu = std::move(u);
-				nu.baseId = base;
-				base += (int64_t)nu.size();
-				if (nu.open) { newLru.push_back(next.size()); ++newOpen; }
-				next.push_back(std::move(nu));
-				++pi;
-			}
-			else {
-				while (pi < pieces.size() && pieces[pi].srcUnit == ui) {
-					Unit nu;
-					nu.startTick = pieces[pi].startTick;
-					nu.noteCount = pieces[pi].noteCount;
-					nu.baseId = base;
-					base += (int64_t)nu.noteCount;
-					nu.image = std::move(pieces[pi].image);
-					next.push_back(std::move(nu));
-					++pi;
-				}
-				u.freeBlock();
-				u.judge = BitArray();
-				u.hit = BitArray();
-				u.open = false;
-				u.dirty = false;
-			}
-		}
-		units.swap(next);
-		lru.swap(newLru);
-		openCount = newOpen;
-		lastUnit = 0;
-		modifiedBits.init(units.size());
 		return true;
 	}
 
@@ -2022,6 +1990,123 @@ static bool ends_with_fvc(const std::string& str) {
 	if (suffix.size() > str.size()) return false;
 	return str.compare(str.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
+
+// === v3.8.3: THE DEFERRED SAVER ==========================================
+// Saves no longer run on the game thread: save() snapshots the store to
+// a complete FVC4 byte image under the store lock (the only part that
+// reads live shard state) and queues it here. A single writer thread
+// then writes path+".tmp" and renames it over the target — an ATOMIC
+// replace, so a crash mid-write leaves the previous chart intact.
+// Coalescing: a queued write to the same path is replaced by the newer
+// one (only the newest bytes of each path ever hit the disk). Anyone
+// who needs the bytes on disk immediately — an explicit save-and-wait,
+// a reload of the same file, chart destroy, or process exit — calls
+// drain(), which joins the writer and flushes everything queued so far.
+class ChartSaver {
+public:
+	struct Job {
+		std::string path;
+		std::vector<uint8_t> bytes;
+	};
+	static void queue(std::string path, std::vector<uint8_t>&& bytes) {
+		instance().enqueue(Job{ std::move(path), std::move(bytes) });
+	}
+	// Block until every job queued BEFORE this call is on disk. The
+	// writer thread keeps running (later jobs may still be pending);
+	// call shutdown() to stop it entirely (process exit).
+	static void drain() { instance().flush(); }
+	static void shutdown() { instance().stop(); }
+
+private:
+	ChartSaver() : stopFlag(false) {
+		writer = std::thread([this] { run(); });
+	}
+	~ChartSaver() { stop(); }
+
+	static ChartSaver& instance() {
+		static ChartSaver s;
+		return s;
+	}
+
+	void enqueue(Job&& j) {
+		{
+			std::lock_guard<std::mutex> lk(qMutex);
+			// Coalesce: a pending write to the same path is superseded.
+			for (Job& p : pending)
+				if (p.path == j.path) { p.bytes = std::move(j.bytes); notify(); return; }
+			pending.push_back(std::move(j));
+		}
+		notify();
+	}
+	void notify() {
+		// The writer waits on the CV; wake it. (Called with qMutex held.)
+		cv.notify_all();
+	}
+	void flush() {
+		std::unique_lock<std::mutex> lk(qMutex);
+		done.wait(lk, [this] { return pending.empty() && !writing; });
+	}
+	void stop() {
+		{
+			std::lock_guard<std::mutex> lk(qMutex);
+			stopFlag = true;
+		}
+		cv.notify_all();
+		if (writer.joinable()) writer.join();
+	}
+	void run() {
+		for (;;) {
+			Job j;
+			{
+				std::unique_lock<std::mutex> lk(qMutex);
+				cv.wait(lk, [this] { return stopFlag || !pending.empty(); });
+				if (stopFlag && pending.empty()) return;
+				if (pending.empty()) continue;
+				j = std::move(pending.front());
+				pending.erase(pending.begin());
+				writing = true;
+			}
+			writeJob(j);
+			{
+				std::lock_guard<std::mutex> lk(qMutex);
+				writing = false;
+				done.notify_all();
+			}
+		}
+	}
+	static void writeJob(const Job& j) {
+		const std::string tmp = j.path + ".tmp";
+		{
+			std::ofstream fout(tmp, std::ios::binary | std::ios::trunc);
+			if (!fout) {
+				std::cerr << "  [ Chart File ] deferred save: cannot open " << tmp << std::endl;
+				return;
+			}
+			fout.write(reinterpret_cast<const char*>(j.bytes.data()),
+				(std::streamsize)j.bytes.size());
+			if (!fout.good()) {
+				std::cerr << "  [ Chart File ] deferred save: write failed for " << tmp << std::endl;
+				return;
+			}
+		}
+		// rename() over the target: POSIX atomic replace. MSVC's rename
+		// fails when the target exists, so remove first there (the tiny
+		// gap is Windows-only and the .tmp copy is still a full backup).
+#ifdef _WIN32
+		std::remove(j.path.c_str());
+#endif
+		if (std::rename(tmp.c_str(), j.path.c_str()) != 0) {
+			std::cerr << "  [ Chart File ] deferred save: rename failed " << tmp << " -> " << j.path << std::endl;
+		}
+	}
+	std::mutex qMutex;
+	std::condition_variable cv;
+	std::condition_variable done;
+	std::vector<Job> pending;
+	std::thread writer;
+	bool writing = false;
+	bool stopFlag = false;
+};
 
 class ChartFileReader {
 private:
@@ -2588,7 +2673,18 @@ public:
 public:
 	ChartFileReader() = default;
 	~ChartFileReader() {
-		if (dirty && loadedFromDisk && !filename.empty()) save();
+		// v3.8.3: the destructor NEVER encodes and never blocks:
+		// unsaved edits are snapshot to bytes and queued; the writer
+		// thread lands them on disk while the game thread is already
+		// moving on (destroy and reload both drain as needed).
+		if (dirty && loadedFromDisk && !filename.empty()) {
+			std::lock_guard<std::mutex> lk(dataMutex);
+			std::vector<uint8_t> bytes;
+			if (store.snapshotTo(bytes)) {
+				dirty = false;
+				ChartSaver::queue(filename, std::move(bytes));
+			}
+		}
 	}
 
 	void setEditorMode(bool enabled) { editorMode = enabled; }
@@ -3152,18 +3248,36 @@ public:
 	}
 
 	bool save() {
-		std::lock_guard<std::mutex> lk(dataMutex);
-		if (filename.empty() || !store.writeTo(filename.c_str())) return false;
-		dirty = false;
+		// v3.8.3 DEFERRED SAVE: snapshot the store to bytes under the
+		// lock, hand them to the background writer, and DRAIN before
+		// returning — an explicit save's contract is "the bytes are on
+		// disk when true comes back" (the editor's CTRL+S plays its
+		// confirmation sound on that true). The snapshot itself is the
+		// cheap part; the encode+write runs on the writer thread while
+		// THIS thread is free to drain without holding the store lock.
+		// The automatic paths that nobody waits on (the destructor's
+		// final save, LRU closes) queue and return immediately — that
+		// is where the deferral pays.
+		std::vector<uint8_t> bytes;
+		{
+			std::lock_guard<std::mutex> lk(dataMutex);
+			if (filename.empty()) return false;
+			if (!store.snapshotTo(bytes)) return false;
+			dirty = false;
+			ChartSaver::queue(filename, std::move(bytes));
+		}
+		ChartSaver::drain();
 		return true;
 	}
 
 	bool saveAs(const char* path) {
 		std::lock_guard<std::mutex> lk(dataMutex);
-		if (!store.writeTo(path)) return false;
+		std::vector<uint8_t> bytes;
+		if (!store.snapshotTo(bytes)) return false;
 		filename = path;
 		loadedFromDisk = true;
 		dirty = false;
+		ChartSaver::queue(path, std::move(bytes));
 		return true;
 	}
 
@@ -3181,13 +3295,44 @@ public:
 
 static ChartFileReader* gReader = nullptr;
 
+// v3.8.3: per-op timing for the editor-facing mutators. Normal ops
+// (µs) stay silent; anything over 0.5 ms prints its cost so a
+// regression shows up in the console the moment it appears. The single
+// most common false reading — a mutator called with NO chart loaded
+// (the reader was destroyed) — prints its own line at the call site,
+// so a 0.00 ms average over ops that did nothing can't masquerade as
+// performance. Store ops that DO run print: name, wall time, and the
+// shard count — the "70 ms add" class of reports then attributes
+// itself (store µs here + the rest above it in Haxe).
+static void reportOpMs(const char* op, std::chrono::steady_clock::time_point t0, bool ran) {
+	const double ms = std::chrono::duration<double, std::milli>(
+		std::chrono::steady_clock::now() - t0).count();
+	if (ms < 0.5) return;
+	std::cout << "  [ Chart File ] " << op << " took " << ms << " ms"
+		<< (ran ? "" : " (no-op)")
+		<< " (store: " << (gReader ? gReader->testStore()->segmentCount() : 0) << " segments)"
+		<< std::endl;
+}
+
+// Process-exit guarantee: the game's exit paths (and the test runner)
+// can call core_destroyChart(), but a plain `return` from main can
+// leave the writer thread mid-job. This joins the writer at static
+// destruction, AFTER main returns — every queued save lands on disk.
+class ChartSaverExit {
+public:
+	~ChartSaverExit() { ChartSaver::shutdown(); }
+};
+static ChartSaverExit gChartSaverExit;
+
 void core_loadChart(const char* path) {
+	ChartSaver::drain(); // same-path reload must see the newest bytes
 	if (gReader) { delete gReader; gReader = nullptr; }
 	gReader = new ChartFileReader();
 	gReader->open(path);
 }
 
 void core_createChart(const char* path) {
+	ChartSaver::drain(); // the new chart's file may have pending bytes
 	if (gReader) { delete gReader; gReader = nullptr; }
 	gReader = new ChartFileReader();
 	gReader->createNew(path);
@@ -3195,6 +3340,7 @@ void core_createChart(const char* path) {
 
 void core_destroyChart() {
 	if (gReader) { delete gReader; gReader = nullptr; }
+	ChartSaver::drain(); // queued edits of the destroyed chart land
 }
 
 bool core_saveChart() { if (!gReader) return false; return gReader->save(); }
@@ -3204,10 +3350,16 @@ int64_t core_getNote_first8(int64_t index) { if (!gReader) return 0; return (int
 int core_getNote_last4(int64_t index) { if (!gReader) return 0; return (int)gReader->getNote_last4(index); }
 
 int64_t core_addNote(int64_t position, int duration, int index, int type, int lane) {
-	if (!gReader) return -1;
-	return gReader->addNote(static_cast<uint64_t>(position), static_cast<uint32_t>(duration),
+	if (!gReader) {
+		std::cout << "  [ Chart File ] addNote: no chart loaded (call loadChart/createChart first)" << std::endl;
+		return -1;
+	}
+	const auto t0 = std::chrono::steady_clock::now();
+	const int64_t id = gReader->addNote(static_cast<uint64_t>(position), static_cast<uint32_t>(duration),
 		static_cast<uint32_t>(index), static_cast<uint32_t>(type),
 		static_cast<uint32_t>(lane));
+	reportOpMs("addNote", t0, id >= 0);
+	return id;
 }
 
 void core_insertNote(int64_t globalPosition, int duration, int index, int type) {
@@ -3216,7 +3368,15 @@ void core_insertNote(int64_t globalPosition, int duration, int index, int type) 
 		static_cast<uint8_t>(index), static_cast<uint8_t>(type));
 }
 
-void core_removeNote(int64_t globalIndex) { if (!gReader) return; gReader->removeNote(globalIndex); }
+void core_removeNote(int64_t globalIndex) {
+	if (!gReader) {
+		std::cout << "  [ Chart File ] removeNote: no chart loaded (call loadChart/createChart first)" << std::endl;
+		return;
+	}
+	const auto t0 = std::chrono::steady_clock::now();
+	gReader->removeNote(globalIndex);
+	reportOpMs("removeNote", t0, true);
+}
 int64_t core_getLength() { if (!gReader) return 0; return gReader->getLength(); }
 
 bool core_getJudgement(int64_t globalIndex) {
@@ -3270,8 +3430,14 @@ void core_stageNote(int64_t position, int32_t duration, int32_t index, int32_t t
 }
 
 int32_t core_addNotes() {
-	if (!gReader) return 0;
-	return gReader->addNotes();
+	if (!gReader) {
+		std::cout << "  [ Chart File ] addNotes: no chart loaded (call loadChart/createChart first)" << std::endl;
+		return 0;
+	}
+	const auto t0 = std::chrono::steady_clock::now();
+	const int32_t n = gReader->addNotes();
+	reportOpMs("addNotes", t0, n > 0);
+	return n;
 }
 
 void core_stageRemovalRange(int64_t lo, int64_t hi) {
@@ -3280,8 +3446,14 @@ void core_stageRemovalRange(int64_t lo, int64_t hi) {
 }
 
 int32_t core_removeNotesFromRangeArray() {
-	if (!gReader) return 0;
-	return gReader->removeNotesFromRangeArray();
+	if (!gReader) {
+		std::cout << "  [ Chart File ] removeNotesFromRangeArray: no chart loaded (call loadChart/createChart first)" << std::endl;
+		return 0;
+	}
+	const auto t0 = std::chrono::steady_clock::now();
+	const int32_t n = gReader->removeNotesFromRangeArray();
+	reportOpMs("removeNotes", t0, n > 0);
+	return n;
 }
 
 void core_clearStaged() {

@@ -218,6 +218,27 @@ class Tools {
 		#end
 	}
 
+	/**
+		v3.8.3: editor hot-path attribution print. The edit chain
+		(store op → onChartEdited → onSongPositionJump → window/LUT/
+		buffer rebuild) is one synchronous call; when the whole thing
+		costs a frame or more, print the split so the blame lands on the
+		right layer instead of on "the C++ chart". One print per second
+		max per tag — a burst of drag-edits doesn't flood the console.
+	**/
+	static var perfLastStamp:Map<String, Float> = new Map();
+
+	static function perf(tag:String, ms:Float) {
+		if (ms < 5.0)
+			return;
+		final now = haxe.Timer.stamp();
+		final last = perfLastStamp.get(tag);
+		if (last != null && now - last < 1.0)
+			return;
+		perfLastStamp.set(tag, now);
+		Sys.println('  [ Perf ] ${tag}: ${formatTime(ms, true)}');
+	}
+
 	static function formatTime(ms:Float, showMS:Bool = false):String {
 		var milliseconds:Int = Std.int(ms * 0.1) % 100;
 		var seconds:Int = Std.int(ms * 0.001);
