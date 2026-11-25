@@ -41,10 +41,11 @@ class EditorInstructionsPopup {
 	var buf:Buffer<RepeatSprite>;
 	var prog:CustomProgram;
 
-	// --- Drag state (the title bar handle) ---
+	// --- Drag state (the title bar handle; Int — RepeatSprite's
+	// x/y/w/h are Int fields, so the drag math stays Int throughout) ---
 	var dragging:Bool = false;
-	var dragOffX:Float = 0;
-	var dragOffY:Float = 0;
+	var dragOffX:Int = 0;
+	var dragOffY:Int = 0;
 
 	// --- Layout constants ---
 	static final TITLE_H:Int = 34;
@@ -161,7 +162,7 @@ class EditorInstructionsPopup {
 
 		// The drag handle: the full-width bar at the top of the panel.
 		titleBar = new RepeatSprite(panel.x, panel.y, panelW, TITLE_H + Std.int(title.height));
-		titleBar.c = 0x2A2A40FF;
+		titleBar.c = 0x2A2A4FFF;
 
 		// The close corner (top-right of the title bar).
 		closeButton = new RepeatSprite(panel.x + panelW - CLOSE_SZ - 6, panel.y + 6, CLOSE_SZ, CLOSE_SZ);
@@ -226,8 +227,8 @@ class EditorInstructionsPopup {
 
 	/** True when (x, y) is inside the window panel. */
 	function hitPanel(x:Float, y:Float):Bool {
-		return x >= panel.x && x <= panel.x + panel.width
-			&& y >= panel.y && y <= panel.y + panel.height;
+		return x >= panel.x && x <= panel.x + panel.w
+			&& y >= panel.y && y <= panel.y + panel.h;
 	}
 
 	/**
@@ -246,12 +247,12 @@ class EditorInstructionsPopup {
 			close();
 			return;
 		}
-		// Title bar: begin a drag.
-		if (y >= titleBar.y && y <= titleBar.y + titleBar.height
-			&& x >= titleBar.x && x <= titleBar.x + titleBar.width) {
+		// Title bar: begin a drag (Int offsets — x/y are Int fields).
+		if (y >= titleBar.y && y <= titleBar.y + titleBar.h
+			&& x >= titleBar.x && x <= titleBar.x + titleBar.w) {
 			dragging = true;
-			dragOffX = x - panel.x;
-			dragOffY = y - panel.y;
+			dragOffX = Std.int(x) - panel.x;
+			dragOffY = Std.int(y) - panel.y;
 			return;
 		}
 		// Inside the panel otherwise: keep open (reading).
@@ -265,11 +266,11 @@ class EditorInstructionsPopup {
 	function drag(x:Float, y:Float) {
 		if (!dragging || !opened)
 			return;
-		var nx = x - dragOffX;
-		var ny = y - dragOffY;
+		var nx = Std.int(x) - dragOffX;
+		var ny = Std.int(y) - dragOffY;
 		// Clamp to the screen so the window can never be dragged off.
-		nx = Math.max(0, Math.min(nx, Main.INITIAL_WIDTH - panel.width));
-		ny = Math.max(0, Math.min(ny, Main.INITIAL_HEIGHT - panel.height));
+		nx = Std.int(Math.max(0, Math.min(nx, Main.INITIAL_WIDTH - panel.w)));
+		ny = Std.int(Math.max(0, Math.min(ny, Main.INITIAL_HEIGHT - panel.h)));
 		var dx = nx - panel.x;
 		var dy = ny - panel.y;
 		if (dx == 0 && dy == 0)
@@ -278,7 +279,7 @@ class EditorInstructionsPopup {
 		panel.y = ny;
 		titleBar.x = nx;
 		titleBar.y = ny;
-		closeButton.x = nx + panel.width - CLOSE_SZ - 6;
+		closeButton.x = nx + panel.w - CLOSE_SZ - 6;
 		closeButton.y = ny + 6;
 		title.x += dx;
 		title.y += dy;
