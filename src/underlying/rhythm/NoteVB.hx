@@ -47,6 +47,7 @@ class NoteVB {
 	 * Initializes the virtual note and sustain buffer.
 	**/
 	function new(lanes:Int, indexes:Int) {
+		this.lanes = lanes;
 		notes = [];
 		sustains = [];
 		noteLength = [];
@@ -83,12 +84,16 @@ class NoteVB {
 		touchedSusCount = 0;
 	}
 
-	/**
-	 * @param note The virtual note you want to add.
-	**/
+	// The lane axis of every buffer in here is the note's STORED lane
+	// (the strumline id, clamped like the engine routes it) — NOT its
+	// notetype. v3.8: this used to be `ref.type`, which keyed two notes
+	// with identical properties EXCEPT the lane into the SAME bucket
+	// and the ambient-occlusion fold then merged them into one sprite —
+	// exactly the "notes left the first lane and went into the second"
+	// the paste-to-other-lane gesture surfaced.
 	inline function addNote(note:VirtualNote) {
 		var ref = note.ref;
-		var lane = ref.type;
+		var lane = NoteSystem.clampLane(ref.lane, lanes);
 		var idx = ref.index;
 		var arr = notes[lane][idx];
 		var len = noteLength[lane][idx];
@@ -106,7 +111,7 @@ class NoteVB {
 	**/
 	inline function addSustain(sustain:VirtualSustain, note:VirtualNote) {
 		var ref = note.ref;
-		var lane = ref.type;
+		var lane = NoteSystem.clampLane(ref.lane, lanes);
 		var idx = ref.index;
 		var arr = sustains[lane][idx];
 		var len = sustainLength[lane][idx];
@@ -118,6 +123,8 @@ class NoteVB {
 		if (len > sustainCap[lane][idx])
 			sustainCap[lane][idx] = len;
 	}
+
+	var lanes(default, null):Int;
 
 	inline function registerTouchedNote(lane:Int, idx:Int) {
 		if (touchedNoteCount < touchedNoteLane.length) {

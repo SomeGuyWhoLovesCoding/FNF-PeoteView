@@ -127,6 +127,17 @@ HL_PRIM int HL_NAME(mirrorNotesFromSelectionRanges)(int indexLo, int indexHi) {
     return core_mirrorNotesFromSelectionRanges(indexLo, indexHi);
 }
 
+// === Shift API (v3.8) — see chart_file.h ===
+
+HL_PRIM void HL_NAME(stageShiftRange)(int64_t lo, int64_t hi) {
+    core_stageShiftRange(lo, hi);
+}
+
+HL_PRIM int HL_NAME(shiftNotesFromSelectionRanges)(int dIndex, int dLane,
+    int mania, int strumlineCount) {
+    return core_shiftNotesFromSelectionRanges(dIndex, dLane, mania, strumlineCount);
+}
+
 // ============================================================================
 // Haxe bindings
 // ============================================================================
@@ -157,3 +168,5 @@ DEFINE_PRIM(_I64,  getAddedRangeLo, _I32)
 DEFINE_PRIM(_I64,  getAddedRangeHi, _I32)
 DEFINE_PRIM(_VOID, stageMirrorRange, _I64 _I64)
 DEFINE_PRIM(_I32,  mirrorNotesFromSelectionRanges, _I32 _I32)
+DEFINE_PRIM(_VOID, stageShiftRange, _I64 _I64)
+DEFINE_PRIM(_I32,  shiftNotesFromSelectionRanges, _I32 _I32 _I32 _I32)

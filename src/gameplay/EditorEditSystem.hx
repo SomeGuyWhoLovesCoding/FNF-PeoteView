@@ -56,6 +56,15 @@ class EditNoteData {
 	(indexLo in `index`, indexHi in `lane` — position/duration/type all
 	zero): no other field of the command is meaningful for kind 3.
 
+	v3.8 — kind 4 = SHIFT (only `addedRanges`, reused as the id-range
+	list): the in-place column/lane move of the selection
+	(File.shiftNotesFromSelectionRanges — the wrap-modulo landing
+	discipline of the paste). Undo shifts by the INVERSE delta, redo
+	by the original: `befores` carries one synthetic entry — dIndex in
+	`position`, dLane in `duration`, mania in `index`, strumlineCount
+	in `lane` (type zero). Ids never move, so the recorded ranges stay
+	valid for both replays.
+
 	v3.5 — `addedRanges`: THE EXACT INDEX RANGE ARRAY of a command's
 	added notes. Every batch add goes through File.addNotes (the bulk
 	extern), which computes the final global indexes of the newly added
@@ -768,6 +777,55 @@ class EditorEditSystem {
 	}
 
 	/**
+		v3.8 — ALT+LEFT / ALT+RIGHT shift the selection's COLUMNS by one
+		(wrapping modulo the mania), CTRL+ALT+LEFT / CTRL+ALT+RIGHT
+		shift its LANES by one (wrapping modulo Main.STRUMLINE_COUNT) —
+		the exact wrap discipline the paste lands notes with ("wrap it
+		around the same way you'd bulk-add for paste"). ONE C++ commit
+		(File.shiftNotesFromSelectionRanges) over the selection's id
+		ranges: an in-place field rewrite, so no note is added or
+		removed, ids never move and the selection survives EXACTLY as
+		it was. UNDO replays the INVERSE delta (-dIndex, -dLane) on the
+		same ranges — a shift by its own inverse — recorded on the
+		command (kind 4); redo replays the original delta forward.
+	**/
+	function shiftSelection(dIndex:Int, dLane:Int):Bool {
+		if (editingActive() || selected.length == 0)
+			return false;
+		if (dIndex == 0 && dLane == 0)
+			return false;
+		var mania = Chart.header.mania;
+		if (mania < 1)
+			mania = 1;
+		var strumlineCount = Main.STRUMLINE_COUNT;
+		var shifted = shiftCommit(selected, dIndex, dLane, mania, strumlineCount);
+		if (shifted <= 0)
+			return false;
+		// Kind 4: the recorded undo input is the INVERSE delta on the
+		// same ranges (a shift by -d is the exact inverse of +d).
+		pushCmd(new EditCmd(4, [new EditNoteData(dIndex, dLane, mania, 0, strumlineCount)],
+			null, selected.copy()));
+		Main.current.playScrollSound();
+		parent.onChartEdited();
+		return true;
+	}
+
+	/**
+		The shared shift commit — the gesture and the kind-4 undo/redo
+		replay all go through here: stage the id ranges, ONE
+		File.shiftNotesFromSelectionRanges call. Returns the number of
+		notes shifted.
+	**/
+	function shiftCommit(ranges:Array<SelRange>, dIndex:Int, dLane:Int, mania:Int, strumlineCount:Int):Int {
+		if (ranges.length == 0)
+			return 0;
+		File.clearStaged();
+		for (r in ranges)
+			File.stageShiftRange(r.lo, r.hi);
+		return File.shiftNotesFromSelectionRanges(dIndex, dLane, mania, strumlineCount);
+	}
+
+	/**
 		The shared mirror commit — the gesture and the kind-3 undo/redo
 		replay all go through here: stage the id ranges, ONE
 		File.mirrorNotesFromSelectionRanges call. Returns the number of
@@ -851,6 +909,10 @@ class EditorEditSystem {
 			case 3: // undo a mirror → MIRROR THE NOTES BACK: the same replay
 				var axis = cmd.befores[0];
 				mirrorCommit(cmd.addedRanges != null ? cmd.addedRanges : [], axis.index, axis.lane);
+			case 4: // undo a shift → SHIFT BY THE INVERSE DELTA on the same ranges
+				var d = cmd.befores[0];
+				shiftCommit(cmd.addedRanges != null ? cmd.addedRanges : [],
+					-d.position, -d.duration, d.index, d.lane);
 			default: // undo a replace → remove the replacement, restore the original
 				var curId = findNoteByData(cmd.afters[0]);
 				var wasSelected = curId >= 0 && isSelected(curId);
@@ -889,6 +951,10 @@ class EditorEditSystem {
 			case 3: // redo a mirror → the same replay, forward is inverse here
 				var axis = cmd.befores[0];
 				mirrorCommit(cmd.addedRanges != null ? cmd.addedRanges : [], axis.index, axis.lane);
+			case 4: // redo a shift → the original delta forward again
+				var d = cmd.befores[0];
+				shiftCommit(cmd.addedRanges != null ? cmd.addedRanges : [],
+					d.position, d.duration, d.index, d.lane);
 			default: // redo a replace → remove the original, put the replacement back
 				var oldId = findNoteByData(cmd.befores[0]);
 				var wasSelected = oldId >= 0 && isSelected(oldId);

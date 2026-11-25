@@ -140,6 +140,22 @@ extern class File {
 		of notes flipped.
 	**/
 	@:native("mirrorNotesFromSelectionRanges") static function mirrorNotesFromSelectionRanges(indexLo:Int, indexHi:Int):Int;
+	// === Shift API (v3.8) — in-place column/lane move (Alt+arrows) ===
+	/**
+		Stage one inclusive [lo..hi] global id range to shift (the
+		selection's id ranges). Ranges are NOT normalized at commit —
+		the shift is a pure field rewrite per note.
+	**/
+	@:native("stageShiftRange") static function stageShiftRange(lo:Int64, hi:Int64):Void;
+	/**
+		Commits every staged shift range as ONE locked pass: every
+		note's column becomes wrapMod(column + dIndex, mania) and its
+		lane wrapMod(lane + dLane, strumlineCount) — the exact landing
+		discipline of the paste. In place — ids never move — so the
+		selection survives untouched and UNDO/REDO replay the inverse
+		delta on the same ranges. Returns the number of notes shifted.
+	**/
+	@:native("shiftNotesFromSelectionRanges") static function shiftNotesFromSelectionRanges(dIndex:Int, dLane:Int, mania:Int, strumlineCount:Int):Int;
 	/** Number of ranges in the persistent added-range block filled by the last addNotes call. */
 	@:native("getAddedRangeCount") static function getAddedRangeCount():Int;
 	/** Range `at`'s inclusive lower id (or -1 when out of range). */
@@ -270,6 +286,16 @@ class File {
 
 	@:hlNative("chart_file", "mirrorNotesFromSelectionRanges")
 	public static function mirrorNotesFromSelectionRanges(indexLo:Int, indexHi:Int):Int {
+		return 0;
+	}
+
+	// === Shift API (v3.8) — see the cpp target's docs for the contract ===
+
+	@:hlNative("chart_file", "stageShiftRange")
+	public static function stageShiftRange(lo:hl.I64, hi:hl.I64):Void {}
+
+	@:hlNative("chart_file", "shiftNotesFromSelectionRanges")
+	public static function shiftNotesFromSelectionRanges(dIndex:Int, dLane:Int, mania:Int, strumlineCount:Int):Int {
 		return 0;
 	}
 

@@ -107,6 +107,17 @@ int32_t mirrorNotesFromSelectionRanges(int32_t indexLo, int32_t indexHi) {
     return core_mirrorNotesFromSelectionRanges(indexLo, indexHi);
 }
 
+// === Shift API (v3.8) — in-place column/lane move (Alt+arrows) ===
+
+void stageShiftRange(int64_t lo, int64_t hi) {
+    core_stageShiftRange(lo, hi);
+}
+
+int32_t shiftNotesFromSelectionRanges(int32_t dIndex, int32_t dLane,
+    int32_t mania, int32_t strumlineCount) {
+    return core_shiftNotesFromSelectionRanges(dIndex, dLane, mania, strumlineCount);
+}
+
 void clearStaged(void) {
     core_clearStaged();
 }

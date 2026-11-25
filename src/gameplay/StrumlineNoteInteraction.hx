@@ -993,9 +993,15 @@ class StrumlineNoteInteraction {
 	function mouseMove(x:Float, y:Float) {
 		if (parent.disposed || parent.paused)
 			return;
-		// The exit popup owns ALL input while open.
-		if (parent.editorMode != null && parent.editorMode.anyPopupOpen())
+		// The exit popup owns ALL input while open. The instructions
+		// WINDOW's drag gets the move FIRST (the handle follows the
+		// cursor while a title-bar press is held).
+		if (parent.editorMode != null && parent.editorMode.anyPopupOpen()) {
+			if (parent.editorMode.instructionsPopup != null
+				&& parent.editorMode.instructionsPopup.opened)
+				parent.editorMode.instructionsPopup.drag(x, y);
 			return;
+		}
 
 		var local = toLocal(x, y);
 		hoverX = local.x;
@@ -1486,11 +1492,13 @@ class StrumlineNoteInteraction {
 			tripleClicks = 0; // the popup consumed this gesture
 			return;
 		}
-		// The instructions card dismisses on any click.
+		// The instructions WINDOW (v3.8): the title bar drags it, the
+		// close corner dismisses, a click inside keeps it open, and a
+		// click outside dismisses — the routing lives in the popup.
 		if (em != null && em.instructionsPopup != null && em.instructionsPopup.opened) {
 			if (button == MouseButton.LEFT)
 				em.instructionsPopup.click(x, y);
-			tripleClicks = 0; // the card consumed this gesture — no close/re-open dance
+			tripleClicks = 0; // the window consumed this gesture — no close/re-open dance
 			return;
 		}
 
@@ -1622,9 +1630,14 @@ class StrumlineNoteInteraction {
 	function mouseUp(x:Float, y:Float, button:MouseButton) {
 		if (parent.disposed || parent.paused)
 			return;
-		// The exit popup owns ALL input while open.
-		if (parent.editorMode != null && parent.editorMode.anyPopupOpen())
+		// The exit popup owns ALL input while open. The instructions
+		// WINDOW's drag ends here (a handle release anywhere).
+		if (parent.editorMode != null && parent.editorMode.anyPopupOpen()) {
+			if (parent.editorMode.instructionsPopup != null
+				&& parent.editorMode.instructionsPopup.opened)
+				parent.editorMode.instructionsPopup.release(x, y);
 			return;
+		}
 
 		if (button == MouseButton.LEFT) {
 			if (!isDown)

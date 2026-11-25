@@ -414,6 +414,27 @@ class PlayFieldEditorMode {
 			}
 		}
 
+		// ALT+LEFT / ALT+RIGHT (v3.8): shift the SELECTION's columns by
+		// one, wrapping modulo the mania; CTRL+ALT+LEFT / RIGHT shifts
+		// its LANES by one, wrapping modulo Main.STRUMLINE_COUNT — the
+		// paste's wrap discipline. Checked BEFORE the plain arrow
+		// seeks so the ALT rung never moves the playhead, and before
+		// the CTRL block above (CTRL+ALT must not be swallowed as a
+		// CTRL combo).
+		if ((mod & KeyModifier.ALT) != 0 && (code == KeyCode.LEFT || code == KeyCode.RIGHT)) {
+			var dir = code == KeyCode.RIGHT ? 1 : -1;
+			var dIndex = 0, dLane = 0;
+			if ((mod & KeyModifier.CTRL) != 0)
+				dLane = dir; // CTRL+ALT: the strumline axis
+			else
+				dIndex = dir; // ALT: the column axis
+			if (edits != null && edits.hasSelection()) {
+				if (edits.shiftSelection(dIndex, dLane))
+					updateReadout();
+			}
+			return;
+		}
+
 		switch (code) {
 			case KeyCode.LEFT:
 				// Step to the previous grid line (CTRL: a ~4s jump that

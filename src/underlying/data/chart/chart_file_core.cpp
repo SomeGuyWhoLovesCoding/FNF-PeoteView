@@ -8,6 +8,18 @@
 #include <algorithm>
 #include <unordered_map>
 #include <thread>
+#include <mutex>
+#include <vector>
+#include <algorithm>
+#include <cstring>
+#include <cstdint>
+
+// cpp-btree 1.0.1 (Google, Apache 2.0 — vendored under include/cpp-btree
+// with its COPYING): the per-shard ordered map the v3.8 store builds on.
+// Each open shard's notes live in a btree_map<position, ChartNote>, so a
+// single insert/remove is O(log n) WITHIN the shard (and the shards are
+// bounded by SHARD_TICKS/SEGMENT_NOTE_BUDGET, so the logs stay tiny).
+#include "cpp-btree/btree_map.h"
 #include <atomic>
 #include <exception>
 #ifdef _WIN32
@@ -1281,6 +1293,19 @@ public:
 	};
 
 private:
+	// === The v3.8 btree shard (cpp-btree) ===
+	// Every OPEN shard's live notes live in a btree_map keyed by
+	// (position, tieRank): the tree is the AUTHORITATIVE ordered
+	// structure, so a single insert/remove is O(log n) within the
+	// shard — the individual-note O(1)-class goal, since shard trees
+	// are bounded (SHARD_TICKS + SEGMENT_NOTE_BUDGET). The tie rank is
+	// a monotonic counter, so notes with EQUAL positions keep their
+	// INSERTION order (the store's ordering contract; the added-range
+	// exactness of addNotes depends on it). A flat, lazily-materialized
+	// cache mirrors the tree in-order: id-based reads (getFirst8/
+	// getLast4/judge/hit — id is the in-order RANK) stay O(1), and the
+	// sequential render/judge walks stay exactly as fast as the old
+	// gap buffer. Mutations go THROUGH the tree and refresh the cache.
 	struct Unit {
 		uint64_t startTick = 0;
 		int64_t  baseId = 0;
@@ -1288,61 +1313,97 @@ private:
 		bool open = false;
 		bool dirty = false;
 		std::vector<uint8_t> image;
-		std::vector<ChartNote> buf;
-		size_t gapStart = 0;
-		size_t gapLen = 0;
+		typedef std::pair<uint64_t, uint64_t> Key; // (position, tieRank)
+		typedef btree::btree_map<Key, ChartNote> TreeMap;
+		TreeMap notesTree;
+		uint64_t tieCounter = 0;
+		// The in-order flat cache (derived; never authoritative): the
+		// ChartNotes in ascending (position, tieRank) order, with the
+		// keys in a parallel array so note(i) stays O(1) AND
+		// contiguous() hands the codec a plain ChartNote*.
+		mutable std::vector<ChartNote> flatData;
+		mutable std::vector<Key> flatKeys;
+		mutable bool flatValid = false;
 		BitArray judge;
 		BitArray hit;
-		size_t gapEnd() const { return gapStart + gapLen; }
-		size_t live() const { return buf.size() - gapLen; }
+		size_t live() const { return notesTree.size(); }
 		size_t size() const { return open ? live() : (size_t)noteCount; }
-		size_t physOf(size_t i) const { return i < gapStart ? i : i + gapLen; }
-		ChartNote& note(size_t i) { return buf[physOf(i)]; }
-		const ChartNote& note(size_t i) const { return buf[physOf(i)]; }
-		void moveGap(size_t k) {
-			if (k == gapStart) return;
-			if (k < gapStart) {
-				const size_t cnt = gapStart - k;
-				std::memmove(buf.data() + gapEnd() - cnt, buf.data() + k,
-					cnt * sizeof(ChartNote));
+		// Rebuilds the flat cache from the tree (one ascending walk —
+		// paid once per structural change, not per read).
+		void materialize() const {
+			if (flatValid) return;
+			flatData.clear();
+			flatKeys.clear();
+			flatData.reserve(notesTree.size());
+			flatKeys.reserve(notesTree.size());
+			for (const auto& kv : notesTree) {
+				flatKeys.push_back(kv.first);
+				flatData.push_back(kv.second);
 			}
-			else {
-				const size_t cnt = k - gapStart;
-				std::memmove(buf.data() + gapStart, buf.data() + gapEnd(),
-					cnt * sizeof(ChartNote));
-			}
-			gapStart = k;
+			flatValid = true;
 		}
-		void growHole(size_t need) {
-			const size_t n = live();
-			const size_t hole = std::max(need, n / 4 + 64);
-			const size_t oldSize = buf.size();
-			const size_t suffix = oldSize - gapEnd();
-			buf.resize(oldSize + hole);
-			if (suffix)
-				std::memmove(buf.data() + gapEnd() + hole, buf.data() + gapEnd(),
-					suffix * sizeof(ChartNote));
-			gapLen += hole;
+		void invalidate() { flatValid = false; }
+		const ChartNote& note(size_t i) const {
+			materialize();
+			return flatData[i];
 		}
-		void insertAt(size_t k, const ChartNote& cn) {
-			if (gapLen == 0) growHole(1);
-			moveGap(k);
-			buf[gapStart] = cn;
-			++gapStart;
-			--gapLen;
+		// In-place field rewrite at rank i (mirror/shift): writes BOTH
+		// the tree entry and the cache copy — ids never move, only the
+		// packed fields change, so neither ordering nor cache validity
+		// is disturbed.
+		void setNote(size_t i, const ChartNote& cn) {
+			materialize();
+			const Key key = flatKeys[i];
+			flatData[i] = cn;
+			auto it = notesTree.find(key);
+			if (it != notesTree.end())
+				it->second = cn;
 		}
-		void eraseAt(size_t k) {
-			moveGap(k);
-			++gapLen;
+		// O(log n) insert; ties land AFTER existing equal positions
+		// (monotonic tie rank). Returns the in-order slot it landed at
+		// (the binary search over the sorted cache keys). The cache is
+		// materialized BEFORE the tree insert so the rebuild (if stale)
+		// excludes the new note — then tree and cache grow together.
+		size_t treeInsert(const ChartNote& cn) {
+			materialize();
+			const uint64_t pos = notePos(cn);
+			const uint64_t tie = ++tieCounter;
+			const Key key(pos, tie);
+			notesTree.insert(std::make_pair(key, cn)); // unique keys by construction
+			// Slot = number of cached entries strictly before `key`
+			// (equal positions carry smaller tie ranks — all "before").
+			const size_t slot = (size_t)(std::lower_bound(flatKeys.begin(), flatKeys.end(), key)
+				- flatKeys.begin());
+			flatKeys.insert(flatKeys.begin() + (long)slot, key);
+			flatData.insert(flatData.begin() + (long)slot, cn);
+			judge.insert(slot, false);
+			hit.insert(slot, false);
+			return slot;
 		}
+		// O(log n) erase by in-order slot (id rank). The key is read off
+		// the flat cache, erased from the tree, and the cache entry
+		// removed — judge/hit bits shift with it.
+		void treeErase(size_t slot) {
+			materialize();
+			const Key key = flatKeys[slot];
+			notesTree.erase(key);
+			flatKeys.erase(flatKeys.begin() + (long)slot);
+			flatData.erase(flatData.begin() + (long)slot);
+			judge.erase(slot);
+			hit.erase(slot);
+		}
+		// Contiguous ascending export (encode/save): the flat cache IS
+		// the ascending order already.
 		const ChartNote* contiguous() {
-			moveGap(live());
-			return buf.data();
+			materialize();
+			return flatData.empty() ? nullptr : flatData.data();
 		}
 		void freeBlock() {
-			std::vector<ChartNote>().swap(buf);
-			gapStart = 0;
-			gapLen = 0;
+			notesTree.clear();
+			tieCounter = 0;
+			flatData.clear();
+			flatKeys.clear();
+			flatValid = true; // an empty cache is trivially valid
 		}
 	};
 
@@ -1385,12 +1446,18 @@ private:
 			return;
 		}
 		{
-			u.buf.clear();
-			u.gapStart = 0;
-			u.gapLen = 0;
+			u.notesTree.clear();
+			u.tieCounter = 0;
+			// The flat cache is derived — a fresh open must mark it stale
+			// (the tree is about to be repopulated; the cache rebuilds on
+			// the first materialize()).
+			u.flatKeys.clear();
+			u.flatData.clear();
+			u.flatValid = false;
+			std::vector<ChartNote> flat;
 			const bool ok = !u.image.empty()
-				&& fvc3_decode(u.image.data(), u.image.size(), u.buf)
-				&& u.buf.size() == (size_t)u.noteCount;
+				&& fvc3_decode(u.image.data(), u.image.size(), flat)
+				&& flat.size() == (size_t)u.noteCount;
 			if (!ok) {
 				std::cerr << "  [ Chart File ] CORRUPT SEGMENT — refusing to decode" << std::endl;
 				u.freeBlock();
@@ -1405,12 +1472,16 @@ private:
 				touch(ui);
 				return;
 			}
-			u.gapStart = u.buf.size();
-			u.gapLen = 0;
+			// Populate the btree in ascending key order (the fastest path —
+			// every insert lands at end()). Ties keep the decoded order via
+			// the monotonic tie counter.
+			for (const ChartNote& cn : flat)
+				u.notesTree.insert(u.notesTree.end(),
+					std::make_pair(Unit::Key(notePos(cn), ++u.tieCounter), cn));
 			u.open = true;
 			u.dirty = false;
-			u.judge.init(u.buf.size());
-			u.hit.init(u.buf.size());
+			u.judge.init(u.notesTree.size());
+			u.hit.init(u.notesTree.size());
 			++openCount;
 		}
 		touch(ui);
@@ -1419,6 +1490,8 @@ private:
 	void closeUnit(Unit& u) {
 		if (!u.open) return;
 		if (u.dirty) {
+			// The flat cache IS the ascending export — hand it to the codec.
+			u.materialize();
 			u.image = fvc3_encode(u.contiguous(), u.live());
 			u.noteCount = (uint32_t)u.live();
 		}
@@ -1471,6 +1544,42 @@ public:
 	~ShardedNoteStore() = default;
 	ShardedNoteStore(const ShardedNoteStore&) = delete;
 	ShardedNoteStore& operator=(const ShardedNoteStore&) = delete;
+
+	// v3.8: the public shard-of-id probe (used by the bulk removal's
+	// touched-shard collection). Returns SIZE_MAX when out of range.
+	size_t unitIdOf(int64_t id) const {
+		if (id < 0 || units.empty()) return SIZE_MAX;
+		const size_t ui = unitById(id);
+		if (ui >= units.size()) return SIZE_MAX;
+		if (id < units[ui].baseId || id >= units[ui].baseId + (int64_t)units[ui].size())
+			return SIZE_MAX;
+		return ui;
+	}
+
+	// v3.8: the per-shard AFTERWORK of a bulk removal — the dense
+	// rebuilds that can run on TWO THREADS once the id walk is done:
+	// BitArray compaction is per-shard (disjoint state), the flat
+	// caches re-materialize per shard, and the tree stays authoritative
+	// throughout. Called after the descending remove() walk. The walk
+	// may have ERASED emptied shards from the units vector, so the
+	// touched-shard set is re-derived safely: every CURRENTLY-OPEN
+	// shard (a cache only exists for open shards; an emptied+erased
+	// shard is gone entirely, and untouched closed shards have no
+	// cache to rebuild).
+	void postRemoveOpenShards() {
+		std::vector<Unit*> openUnits;
+		for (Unit& u : units)
+			if (u.open) openUnits.push_back(&u);
+		if (openUnits.size() >= 2) {
+			const size_t half = openUnits.size() / 2;
+			chart_dual_run(
+				[&] { for (size_t k = 0; k < half; ++k) openUnits[k]->materialize(); },
+				[&] { for (size_t k = half; k < openUnits.size(); ++k) openUnits[k]->materialize(); });
+		}
+		else if (!openUnits.empty()) {
+			openUnits[0]->materialize();
+		}
+	}
 
 	int64_t size() const { return totalNotes; }
 	bool empty() const { return totalNotes == 0; }
@@ -1541,6 +1650,64 @@ public:
 		return u.hit.get((size_t)(id - u.baseId));
 	}
 
+	// === v3.8 dual-thread bulk add support (see addNotes' plan/commit
+	// split) — tree-only writes the two threads perform on DISJOINT
+	// shards, plus the routing/slot probes the plan phase uses. ===
+
+	// Routing probe: the shard a position would land in TODAY, no
+	// shard creation, no LRU traffic (the plan phase calls this).
+	size_t routeOf(uint64_t pos) const { return findUnitByPos(pos); }
+
+	// The lower-bound slot of a position in a shard's CURRENT live tree
+	// (no insert): the r of the exact-index proof, computed before the
+	// group's members are written.
+	size_t shardLowerBound(size_t ui, uint64_t pos) {
+		ensureOpen(ui);
+		Unit& u = units[ui];
+		u.materialize();
+		const Unit::Key probe(pos, UINT64_MAX);
+		return (size_t)(std::lower_bound(u.flatKeys.begin(), u.flatKeys.end(), probe)
+			- u.flatKeys.begin());
+	}
+
+	// Tree-only group write: inserts one equal-position group's members
+	// into their shard at the PLANNED slot run r..r+m-1, in staging
+	// order (the proof's contiguous-run requirement), WITHOUT touching
+	// any shared accounting (baseIds/totalNotes/LRU/units). The caller
+	// runs the accounting fixup once, after both threads join.
+	void insertPlanned(size_t ui, size_t slot, const ChartNote* cns, size_t m) {
+		Unit& u = units[ui];
+		u.materialize();
+		// Sanity (debug builds): the planned run must be within bounds.
+		// The parity split guarantees this thread is the ONLY writer to
+		// this shard, and the plan already accounted for this group's
+		// members + every earlier group in the same shard.
+		for (size_t k = 0; k < m; ++k) {
+			const uint64_t pos = notePos(cns[k]);
+			const uint64_t tie = ++u.tieCounter;
+			const Unit::Key key(pos, tie);
+			u.notesTree.insert(std::make_pair(key, cns[k]));
+			const size_t at = slot + k; // the planned run position
+			u.flatKeys.insert(u.flatKeys.begin() + (long)at, key);
+			u.flatData.insert(u.flatData.begin() + (long)at, cns[k]);
+			u.judge.insert(at, false);
+			u.hit.insert(at, false);
+		}
+		u.dirty = true;
+		modifiedBits.set(ui, true);
+	}
+
+	// Post-join accounting fixup: rebuild the shard baseIds/totalNotes
+	// from the shard live counts (one ascending walk), and LRU-touch the
+	// shards the batch wrote (so a bulk paste keeps its shards warm).
+	void rebuildAccounting(const std::vector<size_t>& touchedShards) {
+		rebuildTotals();
+		for (size_t ui : touchedShards) touch(ui);
+	}
+
+	// A shard's current baseId (the planned-id emission in addNotes).
+	int64_t shardBaseId(size_t ui) const { return units[ui].baseId; }
+
 	int64_t add(const ChartNote& cn) {
 		const uint64_t pos = notePos(cn);
 		size_t ui = findUnitByPos(pos);
@@ -1584,36 +1751,11 @@ public:
 			}
 		}
 		Unit& u = units[ui];
-		const size_t n = u.live();
-		size_t slot;
-		if (n == 0) {
-			slot = 0;
-		}
-		else if (pos > notePos(u.note(n - 1))) {
-			slot = n;
-		}
-		else if (pos < notePos(u.note(0))) {
-			slot = 0;
-		}
-		else {
-			const size_t g = u.gapStart;
-			if (g < n && pos <= notePos(u.note(g))
-				&& (g == 0 || pos > notePos(u.note(g - 1)))) {
-				slot = g;
-			}
-			else {
-				size_t lo = 0, hi = n;
-				while (lo < hi) {
-					const size_t mid = lo + (hi - lo) / 2;
-					if (notePos(u.note(mid)) < pos) lo = mid + 1;
-					else hi = mid;
-				}
-				slot = lo;
-			}
-		}
-		u.insertAt(slot, cn);
-		u.judge.insert(slot, false);
-		u.hit.insert(slot, false);
+		// O(log n) via the tree: the slot is the in-order rank the note
+		// lands at (treeInsert walks the tree internally; the returned
+		// slot IS the id offset). Ties land after every existing equal
+		// position — insertion order, the store's contract.
+		const size_t slot = u.treeInsert(cn);
 		u.dirty = true;
 		modifiedBits.set(ui, true);
 		++totalNotes;
@@ -1631,10 +1773,41 @@ public:
 		const size_t ui = unitById(id);
 		ensureOpen(ui);
 		Unit& u = units[ui];
-		ChartNote& n = u.note((size_t)(id - u.baseId));
+		const size_t slot = (size_t)(id - u.baseId);
+		ChartNote n = u.note(slot); // a COPY: note() returns const& from the cache
 		const uint32_t idx = (n.last4 >> 8) & 0x3FF;
 		const uint32_t mirrored = (uint32_t)(sum) - idx; // sum in [0..2046], idx in [0..1023]: fits
 		n.last4 = (n.last4 & ~(0x3FFu << 8)) | ((mirrored & 0x3FFu) << 8);
+		u.setNote(slot, n); // rewrite tree + cache in place
+		u.dirty = true;
+		modifiedBits.set(ui, true);
+	}
+
+	// (v3.8) In-place column/lane move for ONE note: the wrap-modulo
+	// shift the editor's Alt+arrow gestures use. Column wraps modulo
+	// the mania, lane modulo the strumline count — the exact landing
+	// discipline of the v3.7.1 paste. Position, duration and type are
+	// untouched, the note's orderings never change, ids never move.
+	void shiftNote(int64_t id, int32_t dIndex, int32_t dLane, int32_t mania,
+	    int32_t strumlineCount) {
+		const size_t ui = unitById(id);
+		ensureOpen(ui);
+		Unit& u = units[ui];
+		const size_t slot = (size_t)(id - u.baseId);
+		ChartNote n = u.note(slot); // copy — note() hands back const&
+		const uint32_t idx = (n.last4 >> 8) & 0x3FF;
+		const uint32_t lane = (n.last4 >> 26) & 0x3F;
+		// Non-negative modulo (C++ % keeps the dividend's sign; the
+		// editor's deltas can be negative — Alt+Left is dIndex -1).
+		auto wrapMod = [](int64_t v, int64_t m) -> int64_t {
+			const int64_t r = v % m;
+			return r < 0 ? r + m : r;
+		};
+		const uint32_t newIdx = (uint32_t)wrapMod((int64_t)idx + dIndex, mania);
+		const uint32_t newLane = (uint32_t)wrapMod((int64_t)lane + dLane, strumlineCount);
+		n.last4 = (n.last4 & ~(0x3FFu << 8)) | (newIdx << 8);
+		n.last4 = (n.last4 & ~(0x3Fu << 26)) | (newLane << 26);
+		u.setNote(slot, n);
 		u.dirty = true;
 		modifiedBits.set(ui, true);
 	}
@@ -1644,9 +1817,7 @@ public:
 		ensureOpen(ui);
 		Unit& u = units[ui];
 		const size_t slot = (size_t)(id - u.baseId);
-		u.eraseAt(slot);
-		u.judge.erase(slot);
-		u.hit.erase(slot);
+		u.treeErase(slot);
 		u.dirty = true;
 		modifiedBits.set(ui, true);
 		--totalNotes;
@@ -2616,6 +2787,7 @@ public:
 		stagedNotes.clear();
 		stagedRanges.clear();
 		stagedMirrorRanges.clear();
+		stagedShiftRanges.clear();
 	}
 
 	// Stages one inclusive [lo..hi] id range for the mirror commit.
@@ -2625,6 +2797,21 @@ public:
 		sr.lo = lo;
 		sr.hi = hi;
 		stagedMirrorRanges.push_back(sr);
+	}
+
+	// === Shift staging (v3.8) ===
+	// The selection's id ranges, staged for the in-place column/lane
+	// move. Kept separate from the mirror ranges (same reasoning): a
+	// gesture stages exactly one kind.
+	std::vector<StagedRange> stagedShiftRanges;
+
+	// Stages one inclusive [lo..hi] id range for the shift commit.
+	void stageShiftRange(int64_t lo, int64_t hi) {
+		if (lo > hi) return;
+		StagedRange sr;
+		sr.lo = lo;
+		sr.hi = hi;
+		stagedShiftRanges.push_back(sr);
 	}
 
 	// Appends one [lo, hi] pair to the added-range block, merging it with
@@ -2645,32 +2832,94 @@ public:
 		++addedRangeCount;
 	}
 
-	// Commits EVERY staged note in one locked pass. Returns the number of
-	// notes added; the exact final global indexes of those notes land in
-	// the added-range block as inclusive, coalesced ranges.
-	//
+	// === v3.8: THE TWO-THREAD BULK ADD (plan / commit / fixup) ===
 	// === THE EXACT-INDEX PROOF (why the group ranges are final) ===
-	// The staged batch is sorted ascending by position and inserted in that
-	// order. Consider one equal-position group of m notes (ties keep
-	// staging order). The FIRST member's add() returns r — the store's
-	// lower-bound slot for that position. Every LATER member of the group
-	// has the SAME position, so its lower bound is that same slot r (the
-	// previously inserted group members sit there): each lands at r and
-	// pushes the earlier members up by one. After all m inserts the group
-	// occupies EXACTLY [r .. r+m-1]. Notes with a strictly greater
-	// position always insert after the group (never shifting it), and
-	// notes with a strictly smaller position insert below it — so the range
-	// is final once the group is done. Groups emit ascending, disjoint,
-	// possibly touching ranges — pushAddedRange coalesces those into the
-	// minimal range array.
+	// The staged batch is sorted ascending by position and inserted in
+	// that order. Consider one equal-position group of m notes (ties
+	// keep staging order). The FIRST member lands at the store's
+	// lower-bound slot r for that position. Every LATER member of the
+	// group has the SAME position, so its lower bound is that same slot
+	// r (the previously inserted group members sit there): each lands
+	// at r and pushes the earlier members up by one. After all m
+	// inserts the group occupies EXACTLY [r .. r+m-1]. Notes with a
+	// strictly greater position always insert after the group (never
+	// shifting it), and notes with a strictly smaller position insert
+	// below it — so the range is final once the group is done. Groups
+	// emit ascending, disjoint, possibly touching ranges —
+	// pushAddedRange coalesces those into the minimal range array.
+	//
+	// The exact-index proof is position-local: an equal-position group
+	// of m notes, inserted as a contiguous in-order run at the store's
+	// lower-bound slot r for that position, ends up occupying exactly
+	// [r .. r+m-1]. The dual path therefore PLANS first (sequential,
+	// under the lock, no tree writes): each group's shard and its r are
+	// computed from the batch + live trees alone — r from ONE
+	// lower-bound search, adjusted by the pending inserts already
+	// planned into that shard (all of them sit at or below this group's
+	// position by the ascending walk, so the arithmetic is exact).
+	// COMMIT then writes groups on TWO THREADS (chart_dual_run) split
+	// by parity — but ONLY when no shard receives groups from BOTH
+	// halves (a shared shard would take interleaved writes; the check
+	// is a sorted-intersection of the two halves' shard sets). Each
+	// thread's writes are tree-only (insertPlanned) on shards no other
+	// thread touches: zero shared state. FIXUP (after the join) does
+	// the shared accounting once: rebuildTotals + one LRU touch per
+	// written shard. New-shard creation (an insert beyond the current
+	// range) can't be planned safely — the batch falls back to the
+	// sequential store.add() loop, identical semantics, one thread.
+	// The added-range block is emitted from the PLANNED ids (the
+	// group's final id = shard baseId + r, final and unshiftable by
+	// the proof), so undo stays 100% index-exact on either path.
 	int32_t addNotes() {
 		addedRangeCount = 0;
 		addedRanges.clear(); // persistent capacity stays; contents reset
-		if (!stagedNotes.empty()) {
-			std::stable_sort(stagedNotes.begin(), stagedNotes.end(),
-			    [](const StagedNote& a, const StagedNote& b) { return a.position < b.position; });
-			std::lock_guard<std::mutex> lk(dataMutex);
-			dirty = true;
+		if (stagedNotes.empty()) {
+			return 0;
+		}
+		std::stable_sort(stagedNotes.begin(), stagedNotes.end(),
+		    [](const StagedNote& a, const StagedNote& b) { return a.position < b.position; });
+		std::lock_guard<std::mutex> lk(dataMutex);
+		dirty = true;
+		struct Group { size_t begin, count; uint64_t position; };
+		std::vector<Group> groups;
+		{
+			size_t i = 0;
+			while (i < stagedNotes.size()) {
+				size_t j = i + 1;
+				while (j < stagedNotes.size()
+				    && stagedNotes[j].position == stagedNotes[i].position) ++j;
+				Group g;
+				g.begin = i; g.count = j - i; g.position = stagedNotes[i].position;
+				groups.push_back(g);
+				i = j;
+			}
+		}
+		// --- PLAN (sequential, exact; may bail to the fallback) ---
+		struct Plan { size_t groupIndex, shard, slot; };
+		std::vector<Plan> plan;
+		plan.reserve(groups.size());
+		std::vector<size_t> pendingInShard;
+		bool fallback = false;
+		for (size_t gi = 0; gi < groups.size() && !fallback; ++gi) {
+			const Group& g = groups[gi];
+			const size_t ui = store.routeOf(g.position);
+			if (ui == store.shardCount()) { fallback = true; break; }
+			store.shardLowerBound(ui, g.position); // ensureOpen side effect
+			if (pendingInShard.size() <= ui) pendingInShard.resize(ui + 1, 0);
+			// r = the tree's lower bound (which already reflects every
+			// LATER position below g's) + the pending inserts planned
+			// into this shard (positions <= g.position by construction).
+			const size_t r = store.shardLowerBound(ui, g.position) + pendingInShard[ui];
+			Plan p;
+			p.groupIndex = gi;
+			p.shard = ui;
+			p.slot = r;
+			plan.push_back(p);
+			pendingInShard[ui] += g.count;
+		}
+		if (fallback) {
+			// The sequential path (new shard creation / any unplannable
+			// batch): the original store.add() loop.
 			size_t i = 0;
 			int64_t added = 0;
 			while (i < stagedNotes.size()) {
@@ -2690,6 +2939,64 @@ public:
 					pushAddedRange(firstId, firstId + (int64_t)m - 1);
 				i = j;
 			}
+			stagedNotes.clear();
+			return (int32_t)addedRangesTotal();
+		}
+		// --- COMMIT (two threads when provably safe) ---
+		// Split the plan by parity; each half is ascending and writes
+		// only its shards' trees. Safe iff the halves' shard sets are
+		// disjoint (a shared shard would interleave tree writes).
+		bool shardShared = false;
+		{
+			std::vector<size_t> evenShards, oddShards;
+			for (const Plan& p : plan)
+				(p.groupIndex % 2 ? oddShards : evenShards).push_back(p.shard);
+			std::sort(evenShards.begin(), evenShards.end());
+			std::sort(oddShards.begin(), oddShards.end());
+			size_t a = 0, b = 0;
+			while (a < evenShards.size() && b < oddShards.size()) {
+				if (evenShards[a] == oddShards[b]) { shardShared = true; break; }
+				if (evenShards[a] < oddShards[b]) ++a; else ++b;
+			}
+		}
+		auto commitHalf = [&](const std::vector<size_t>& idxs) {
+			for (size_t which : idxs) {
+				const Plan& p = plan[which];
+				const Group& g = groups[p.groupIndex];
+				// The group's members, packed, in staging order — the
+				// contiguous-run requirement of the proof.
+				std::vector<ChartNote> cns;
+				cns.reserve(g.count);
+				for (size_t k = g.begin; k < g.begin + g.count; ++k) {
+					const StagedNote& sn = stagedNotes[k];
+					cns.push_back(packNote(sn.position, sn.duration, sn.index, sn.type, sn.lane));
+				}
+				store.insertPlanned(p.shard, p.slot, cns.data(), g.count);
+			}
+		};
+		if (!shardShared && plan.size() >= 2) {
+			std::vector<size_t> evenIdx, oddIdx;
+			for (size_t pi = 0; pi < plan.size(); ++pi)
+				(plan[pi].groupIndex % 2 ? oddIdx : evenIdx).push_back(pi);
+			chart_dual_run([&] { commitHalf(evenIdx); }, [&] { commitHalf(oddIdx); });
+		}
+		else {
+			std::vector<size_t> allIdx(plan.size());
+			for (size_t pi = 0; pi < plan.size(); ++pi) allIdx[pi] = pi;
+			commitHalf(allIdx);
+		}
+		// --- FIXUP (sequential, once): accounting + LRU. The planned
+		// ids are final (the proof), so emit the added-range block now.
+		std::vector<size_t> writtenShards;
+		for (const Plan& p : plan)
+			writtenShards.push_back(p.shard);
+		std::sort(writtenShards.begin(), writtenShards.end());
+		writtenShards.erase(std::unique(writtenShards.begin(), writtenShards.end()), writtenShards.end());
+		store.rebuildAccounting(writtenShards);
+		for (const Plan& p : plan) {
+			const Group& g = groups[p.groupIndex];
+			const int64_t firstId = store.shardBaseId(p.shard) + (int64_t)p.slot;
+			pushAddedRange(firstId, firstId + (int64_t)g.count - 1);
 		}
 		stagedNotes.clear();
 		return (int32_t)addedRangesTotal();
@@ -2702,6 +3009,11 @@ public:
 			n += addedRanges[(size_t)(2 * k + 1)] - addedRanges[(size_t)(2 * k)] + 1;
 		return n;
 	}
+
+	// v3.8: the per-shard AFTERWORK of a bulk removal — dense per-shard
+	// rebuilds on TWO THREADS via the store's postRemoveShards (disjoint
+	// shard state = race-free halves). The reader's pass stays thin: the
+	// id walk collects touched shards, then hands them over.
 
 	// Commits EVERY staged removal range as one removal. The ranges are
 	// normalized first (sorted, overlapping/touching merged, clamped to the
@@ -2727,6 +3039,14 @@ public:
 		stagedRanges.clear();
 		std::lock_guard<std::mutex> lk(dataMutex);
 		int64_t removed = 0;
+		// v3.8: the id walk stays SEQUENTIAL (ids shift as notes leave;
+		// exactness demands it). The per-shard afterwork (flat-cache
+		// re-materialization) runs afterwards on TWO THREADS: a shard
+		// that the walk EMPTIED is erased from the units vector, so
+		// indexes collected DURING the walk would dangle — the safe set
+		// is the store's CURRENT open shards (any shard the walk touched
+		// is either still open now or was erased; unopened shards have
+		// no cache at all).
 		for (auto it = merged.rbegin(); it != merged.rend(); ++it) {
 			int64_t hi = it->hi;
 			int64_t lo = it->lo;
@@ -2743,7 +3063,10 @@ public:
 			}
 			if (store.size() <= 0) break;
 		}
-		if (removed > 0) dirty = true;
+		if (removed > 0) {
+			dirty = true;
+			store.postRemoveOpenShards();
+		}
 		return (int32_t)removed;
 	}
 
@@ -2781,6 +3104,41 @@ public:
 		}
 		if (flipped > 0) dirty = true;
 		return (int32_t)flipped;
+	}
+
+	// === Shift commit (v3.8) — the Alt+arrow column/lane move ===
+	// Rewrites every note in the staged shift ranges IN PLACE: column
+	// := wrapMod(column + dIndex, mania), lane := wrapMod(lane + dLane,
+	// strumlineCount) — the EXACT wrap discipline the v3.7.1 paste
+	// lands notes with (non-negative modulo; Haxe's % keeps the
+	// dividend's sign, so C++ % here needs the same guard — both
+	// operands arrive non-negative from the editor, but the wrap is
+	// written explicitly anyway). Positions, durations, types are
+	// untouched and no note is added or removed: ids never move, so
+	// the selection survives untouched and UNDO/REDO replay the
+	// mirrored delta (-dIndex, -dLane) on the same ranges — a shift by
+	// its own inverse. Returns the number of notes shifted.
+	int32_t shiftNotes(int32_t dIndex, int32_t dLane, int32_t mania,
+	    int32_t strumlineCount) {
+		if (stagedShiftRanges.empty()) return 0;
+		if (mania < 1) mania = 1;
+		if (strumlineCount < 1) strumlineCount = 1;
+		std::vector<StagedRange> ranges;
+		ranges.swap(stagedShiftRanges);
+		std::lock_guard<std::mutex> lk(dataMutex);
+		int64_t shifted = 0;
+		for (const StagedRange& sr : ranges) {
+			int64_t lo = sr.lo < 0 ? 0 : sr.lo;
+			int64_t hi = sr.hi;
+			if (hi >= store.size()) hi = (int64_t)store.size() - 1;
+			for (int64_t id = lo; id <= hi; ++id) {
+				if (id >= (int64_t)store.size() || id < 0) continue;
+				store.shiftNote(id, dIndex, dLane, mania, strumlineCount);
+				++shifted;
+			}
+		}
+		if (shifted > 0) dirty = true;
+		return (int32_t)shifted;
 	}
 
 	int32_t getAddedRangeCount() const { return addedRangeCount; }
@@ -2941,6 +3299,19 @@ void core_stageMirrorRange(int64_t lo, int64_t hi) {
 int32_t core_mirrorNotesFromSelectionRanges(int32_t indexLo, int32_t indexHi) {
 	if (!gReader) return 0;
 	return gReader->mirrorNotes(indexLo, indexHi);
+}
+
+// === Shift API (v3.8) — see chart_file.h for the contract ===
+
+void core_stageShiftRange(int64_t lo, int64_t hi) {
+	if (!gReader) return;
+	gReader->stageShiftRange(lo, hi);
+}
+
+int32_t core_shiftNotesFromSelectionRanges(int32_t dIndex, int32_t dLane,
+    int32_t mania, int32_t strumlineCount) {
+	if (!gReader) return 0;
+	return gReader->shiftNotes(dIndex, dLane, mania, strumlineCount);
 }
 
 int32_t core_getAddedRangeCount() {

@@ -109,4 +109,19 @@ void clearStaged(void);
 //                  whole-strumline mirror).
 int32_t mirrorNotesFromSelectionRanges(int32_t indexLo, int32_t indexHi);
 void stageMirrorRange(int64_t lo, int64_t hi);
+
+// === Shift API (v3.8) — in-place column/lane move (Alt+arrows) ===
+// shiftNotesFromSelectionRanges rewrites the 10-bit column index and the
+// 6-bit lane of every note whose global id sits in a staged shift
+// range: column := wrapMod(column + dIndex, mania), lane :=
+// wrapMod(lane + dLane, strumlineCount) — the exact landing discipline
+// of the paste (non-negative modulo wrap, "wrap it around the same way
+// you'd bulk-add for paste"). In place: no note is added or removed,
+// ids never move, so the selection survives untouched; UNDO/REDO
+// replay the inverse delta (-dIndex, -dLane) on the same ranges.
+//   stageShiftRange: queue one inclusive [lo..hi] id range to shift.
+//   Returns the number of notes shifted.
+int32_t shiftNotesFromSelectionRanges(int32_t dIndex, int32_t dLane,
+    int32_t mania, int32_t strumlineCount);
+void stageShiftRange(int64_t lo, int64_t hi);
 #endif /* CHART_FILE_H */

@@ -300,8 +300,8 @@ class NoteSystem {
 					// === AMBIENT OCCLUSION (render-side folding) ===
 					if (headVirtual != null
 						&& row == headRow
+						&& virtualNote.ref.lane == headVirtual.ref.lane
 						&& virtualNote.ref.type == headVirtual.ref.type
-						&& virtualNote.ref.lane == virtualNote.ref.lane // note: i just realized this wasn't added earlier
 						&& virtualNote.ref.duration == headVirtual.ref.duration) {
 						// Fold into the head sprite: accumulate the
 						// occlusion shading and skip this note's own
@@ -390,7 +390,6 @@ class NoteSystem {
 					if (headSustain != null
 						&& row == headRow
 						&& virtualSustain.ref.ref.type == headSustain.ref.ref.type
-						&& virtualSustain.ref.ref.lane == headSustain.ref.ref.lane
 						&& virtualSustain.ref.ref.duration == headSustain.ref.ref.duration) {
 						continue;
 					}
