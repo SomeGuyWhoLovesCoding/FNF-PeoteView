@@ -221,6 +221,14 @@ class NoteSystem {
 	function onChartMutated(pos:Int64) {
 		_stableLastPos = pos;
 
+		// The edit may have ERASED notes the render buffer still holds
+		// refs to (a remove/undo). The next update() would clear() first
+		// anyway, but between this edit and that update the buffer is
+		// walkable — and a stale ref into erased store memory is exactly
+		// the class of bug the clear-before-walk rule exists for. One
+		// O(touched) pass, not the O(lanes x 1024) full scan.
+		virtualNoteBuffer.clear();
+
 		if (noteSpawner != null)
 			noteSpawner.resetNotes(MetaNote.metaNotePositionToSongTime(pos), 0, false, true);
 	}

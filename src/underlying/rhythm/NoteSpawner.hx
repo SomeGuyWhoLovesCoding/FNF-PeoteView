@@ -38,6 +38,11 @@ class NoteSpawner {
 	var timeSpentOnIt:Float = 0;
 	var timeSpentOnItIncrement:Float = 0;
 
+	// Set by the light reset (onChartMutated) so the binary-search edge
+	// recycle runs exactly once per mutation — after the new window is
+	// derived, before the edges take effect (v3.8.7).
+	var notePoolNeedsEdgeRecycle:Bool = false;
+
 	function update(pos:Int64) {
 		_lastbottom = bottom;
 		_lasttop = top;
@@ -187,6 +192,14 @@ class NoteSpawner {
 	// the next frame via beginFrame/endFrame — the exact mechanism the
 	// frozen seek relies on, where notes slide in and out of the window
 	// with no reset at all (PlayFieldEditorMode.seekTo, frozen branch).
+	//
+	// v3.8.7: the binary search JUMPS the window edges, so slot
+	// bindings that fell outside the new window would never be recycled
+	// by the cull loops the search replaced (the leak: free stacks
+	// deplete one binding per edit while the slots hold refs into a
+	// store the edit may have erased). recycleWindowEdges recycles
+	// exactly the two edge strips the window no longer covers — O(shift)
+	// — before the new edges take effect.
 	function resetNotes(songPosition:Float, pushToOffset:Float = 0, resetStrumlinesAfter:Bool = true, lightReset:Bool = false) {
 		var pf = parent.parent;
 		if (pf.disposed || pf.died)
@@ -194,6 +207,8 @@ class NoteSpawner {
 
 		if (!lightReset)
 			parent.notePool.reset();
+		else
+			notePoolNeedsEdgeRecycle = true;
 
 		var len = File.getLength();
 		if (len <= 0)
@@ -237,6 +252,16 @@ class NoteSpawner {
 
 		var newBottom = lowerBound(minPos);
 		var newTop = upperBound(maxPos);
+
+		// v3.8.7: recycle the old window's slot bindings (see
+		// NotePool.recycleWindowRange). Must run BEFORE the window edges
+		// take their new values — the strip is measured from the OLD
+		// window, and a structural edit inside the window shifts
+		// in-window indexes without moving the edges at all.
+		if (notePoolNeedsEdgeRecycle) {
+			notePoolNeedsEdgeRecycle = false;
+			parent.notePool.recycleWindowRange(bottom, top);
+		}
 
 		minBottom = lowerBound(songPos + MetaNote.floatToMetaNotePosition(pushToOffset));
 

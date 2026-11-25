@@ -131,6 +131,17 @@ class NotePool {
 	 * @param index The global note index.
 	 */
 	function putNote(n:MetaNote, index:Int64) {
+		recycleNoteAt(index);
+	}
+
+	/**
+	 * Recycles the VirtualNote binding at a global index — the shared body
+	 * of putNote and the light-reset edge recycler. Returns the binding to
+	 * the free stack and clears its slot WITHOUT touching any GPU state;
+	 * the next getNote at this index rebinds a slot in place (or pops from
+	 * the stack this just fed).
+	 */
+	function recycleNoteAt(index:Int64) {
 		var slot = Int64.toInt(index);
 		if (slot < virtualNoteSlots.length) {
 			var obj = virtualNoteSlots[slot];
@@ -149,6 +160,14 @@ class NotePool {
 	 * @param index The global note index.
 	 */
 	function putSustain(n:MetaNote, index:Int64) {
+		recycleSustainAt(index);
+	}
+
+	/**
+	 * Recycles the VirtualSustain binding at a global index — the shared
+	 * body of putSustain and the light-reset edge recycler.
+	 */
+	function recycleSustainAt(index:Int64) {
 		var slot = Int64.toInt(index);
 		if (slot < virtualSustainSlots.length) {
 			var obj = virtualSustainSlots[slot];
@@ -159,6 +178,52 @@ class NotePool {
 			}
 		}
 	}
+
+	/**
+	 * LIGHT-RESET WINDOW RECYCLE (v3.8.7 — the memory leak fix).
+	 *
+	 * The light chart-mutation path (NoteSystem.onChartMutated →
+	 * resetNotes(lightReset)) re-derives the window by binary search —
+	 * O(log n) — instead of walking the cull loops. The cull loops'
+	 * putNote/putSustain recycle a slot binding the moment it leaves the
+	 * window; a BINARY SEARCH never walks those indexes — and a
+	 * structural edit INSIDE the window (insert/remove between bottom
+	 * and top) doesn't even move the edges: every in-window global index
+	 * above the edit point shifts by ±1 while its binding stays parked
+	 * in the old slot. Parked bindings are the leak:
+	 *
+	 *   1. their free-stack entries never return — the pool compensates
+	 *      by allocating a fresh VirtualNote/VirtualSustain on the next
+	 *      rebind, so the object count grows toward "one per slot key
+	 *      ever touched" over an editing session instead of staying
+	 *      window-sized (the regression v3.8.6's lightReset introduced);
+	 *   2. worse, a parked binding's ref keeps rooting a MetaNote the
+	 *      edit may have ERASED (remove/undo) — a stale pointer that
+	 *      survives until its slot key is re-bound by pure luck.
+	 *
+	 * This recycles the ENTIRE old window strip [lo, hi) — both edges
+	 * and every in-between slot a structural edit may have shifted.
+	 * Cost: O(window size), a few dozen pushes — never O(chart length),
+	 * and no GPU buffer is touched. The next frame's processNotes
+	 * rebinds the current window entirely from the free stack: zero
+	 * allocations, every ref freshly bound to the note now living at
+	 * that global index. This is exactly what the old notePool.reset()
+	 * guaranteed (free stacks rebuilt from ALL slots), minus the
+	 * notesBuf clear / receptor re-add / full re-upload.
+	 *
+	 * @param lo old window bottom
+	 * @param hi old window top
+	 */
+	function recycleWindowRange(lo:Int64, hi:Int64) {
+		var i = Int64.toInt(lo);
+		var end = Int64.toInt(hi);
+		while (i < end) {
+			recycleNoteAt(i);
+			recycleSustainAt(i);
+			i++;
+		}
+	}
+
 
 	// =================================================================
 	//  Peote Note / Sustain element pool  (GPU-buffer-persistent)
