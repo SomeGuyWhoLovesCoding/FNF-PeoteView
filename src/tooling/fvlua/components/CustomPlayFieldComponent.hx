@@ -83,6 +83,7 @@ class CustomPlayFieldComponent extends LuaComponentObject {
 			var field = playField.field;
 			if (field == null)
 				return;
+			// NOTE: metanote's lane was finally readded for the now-finalized 12 byte chart note, so lane actually refects
 			field.defaultCameraXpos[lane] = x;
 			field.defaultCameraYpos[lane] = y;
 		});

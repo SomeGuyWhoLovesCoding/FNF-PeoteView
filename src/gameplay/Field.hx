@@ -202,35 +202,35 @@ class Field {
 	var defaultCameraXpos:Array<Float> = [-50, 50];
 	var defaultCameraYpos:Array<Float> = [0, 0];
 
-	inline function charFromNoteType(type:Int) {
-		return (type == 0 ? opponent : player);
+	inline function charFromNoteLane(lane:Int) {
+		return (lane == 0 ? opponent : player);
 	}
 
 	inline function hitNote(note:MetaNote, timing:Float) {
-		sing(note.index, (note.type == 0 ? opponent : player), false, note.duration > 80 && timing < parent.hitbox * 0.5);
+		sing(note.index, (note.lane == 0 ? opponent : player), false, note.duration > 80 && timing < parent.hitbox * 0.5);
 
 		// defaults to when you want to implement your own custom camera logic
 		// whether you want to replicate the logic of vanilla's or if you just want some mid-song cutscene camera
 		if (turnoncustomcamera)
 			return;
 
-		targetCamera.x = defaultCameraXpos[note.type];
-		targetCamera.y = defaultCameraYpos[note.type];
+		targetCamera.x = defaultCameraXpos[note.lane];
+		targetCamera.y = defaultCameraYpos[note.lane];
 	}
 
 	inline function missNote(note:MetaNote) {
-		var char = charFromNoteType(note.type);
+		var char = charFromNoteLane(note.lane);
 		sing(note.index, char, true, false);
 	}
 
 	inline function completeSustain(note:MetaNote) {
-		var char = charFromNoteType(note.type);
+		var char = charFromNoteLane(note.lane);
 		// char.singAnimationFinished = true;
 		sing(note.index, char, false, false, true);
 	}
 
 	inline function releaseSustain(note:MetaNote) {
-		var char = charFromNoteType(note.type);
+		var char = charFromNoteLane(note.lane);
 		sing(note.index, char, true, false);
 	}
 
