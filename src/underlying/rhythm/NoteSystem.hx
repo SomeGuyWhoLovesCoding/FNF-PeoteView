@@ -190,7 +190,9 @@ class NoteSystem {
 		resetStrumlines();
 
 		if (noteSpawner != null) {
-			noteSpawner.resetNotes(MetaNote.metaNotePositionToSongTime(pos), pushToOffset);
+			// false: resetStrumlines() above already ran this edit's reset —
+			// the spawner must not repeat it (LUT rebuild + GPU flush x2).
+			noteSpawner.resetNotes(MetaNote.metaNotePositionToSongTime(pos), pushToOffset, false);
 		}
 	}
 

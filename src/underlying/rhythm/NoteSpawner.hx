@@ -165,7 +165,13 @@ class NoteSpawner {
 			curBottomNote = File.getNote(bottom);
 	}
 
-	function resetNotes(songPosition:Float, pushToOffset:Float = 0) {
+	// resetStrumlinesAfter: the per-edit path (NoteSystem.onSongPositionJump)
+	// already ran resetStrumlines() itself before calling in, so it passes
+	// false and the duplicate rebuild (movement LUTs over every lane x 4097,
+	// receptor repositions, notesBuf GPU flush) is skipped. Every other
+	// caller keeps the default true and resets exactly once, here at the
+	// end, as before.
+	function resetNotes(songPosition:Float, pushToOffset:Float = 0, resetStrumlinesAfter:Bool = true) {
 		var pf = parent.parent;
 		if (pf.disposed || pf.died)
 			return;
@@ -226,6 +232,7 @@ class NoteSpawner {
 		curBottomNote = bottom < len ? File.getNote(bottom) : null;
 		curTopNote = top < len ? File.getNote(top) : null;
 
-		parent.resetStrumlines();
+		if (resetStrumlinesAfter)
+			parent.resetStrumlines();
 	}
 }
