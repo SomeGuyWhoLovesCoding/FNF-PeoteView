@@ -776,14 +776,8 @@ class PlayFieldEditorMode {
 		dirtyChart = true;
 
 		if (field.noteSystem != null) {
-			// v3.8.3 attribution: time the per-edit rebuild chain. The
-			// store op itself is instrumented on the C++ side (reportOpMs);
-			// this print is everything AFTER it — window/LUT/buffer rebuild
-			// — so a "70 ms add" splits into its real layers in the console.
-			var stamp = haxe.Timer.stamp();
 			var pos = MetaNote.floatToMetaNotePosition(field.songPosition);
 			field.noteSystem.onSongPositionJump(pos);
-			Tools.perf('editor rebuild (add/remove)', (haxe.Timer.stamp() - stamp) * 1000.0);
 		}
 	}
 

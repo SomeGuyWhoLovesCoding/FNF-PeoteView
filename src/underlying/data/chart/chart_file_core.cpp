@@ -10,7 +10,6 @@
 #include <unordered_map>
 #include <thread>
 #include <condition_variable>
-#include <chrono>
 
 // cpp-btree 1.0.1 (Google, Apache 2.0 — vendored under include/cpp-btree
 // with its COPYING): the per-shard ordered map the v3.8 store builds on.
@@ -1284,6 +1283,12 @@ public:
 	static constexpr size_t   SEGMENT_MAX_SHARDS = 32;
 	static constexpr uint32_t SEGMENT_NOTE_BUDGET = 4096;
 
+	// The stage-level pipeline bench (scripts/bench_pipeline_stages.py)
+	// replicates the per-op members on identical types to time them in
+	// isolation — the bench's whole point is measuring the stages the
+	// store's own profile cannot split apart.
+	friend struct ChartPipelineBench;
+
 	struct Segment {
 		uint64_t startTick = 0;
 		uint32_t noteCount = 0;
@@ -2018,6 +2023,11 @@ public:
 	static void shutdown() { instance().stop(); }
 
 private:
+	// Function-local static: its destructor runs at static destruction
+	// (after main returns) and stop() drains+joins there — the process-
+	// exit guarantee for queued writes. Nothing else may touch it after
+	// that point, so no separate exit joiner exists (a namespace-scope
+	// one would double-stop this already-destructed object — UB).
 	ChartSaver() : stopFlag(false) {
 		writer = std::thread([this] { run(); });
 	}
@@ -3295,35 +3305,6 @@ public:
 
 static ChartFileReader* gReader = nullptr;
 
-// v3.8.3: per-op timing for the editor-facing mutators. Normal ops
-// (µs) stay silent; anything over 0.5 ms prints its cost so a
-// regression shows up in the console the moment it appears. The single
-// most common false reading — a mutator called with NO chart loaded
-// (the reader was destroyed) — prints its own line at the call site,
-// so a 0.00 ms average over ops that did nothing can't masquerade as
-// performance. Store ops that DO run print: name, wall time, and the
-// shard count — the "70 ms add" class of reports then attributes
-// itself (store µs here + the rest above it in Haxe).
-static void reportOpMs(const char* op, std::chrono::steady_clock::time_point t0, bool ran) {
-	const double ms = std::chrono::duration<double, std::milli>(
-		std::chrono::steady_clock::now() - t0).count();
-	if (ms < 0.5) return;
-	std::cout << "  [ Chart File ] " << op << " took " << ms << " ms"
-		<< (ran ? "" : " (no-op)")
-		<< " (store: " << (gReader ? gReader->testStore()->segmentCount() : 0) << " segments)"
-		<< std::endl;
-}
-
-// Process-exit guarantee: the game's exit paths (and the test runner)
-// can call core_destroyChart(), but a plain `return` from main can
-// leave the writer thread mid-job. This joins the writer at static
-// destruction, AFTER main returns — every queued save lands on disk.
-class ChartSaverExit {
-public:
-	~ChartSaverExit() { ChartSaver::shutdown(); }
-};
-static ChartSaverExit gChartSaverExit;
-
 void core_loadChart(const char* path) {
 	ChartSaver::drain(); // same-path reload must see the newest bytes
 	if (gReader) { delete gReader; gReader = nullptr; }
@@ -3354,12 +3335,9 @@ int64_t core_addNote(int64_t position, int duration, int index, int type, int la
 		std::cout << "  [ Chart File ] addNote: no chart loaded (call loadChart/createChart first)" << std::endl;
 		return -1;
 	}
-	const auto t0 = std::chrono::steady_clock::now();
-	const int64_t id = gReader->addNote(static_cast<uint64_t>(position), static_cast<uint32_t>(duration),
+	return gReader->addNote(static_cast<uint64_t>(position), static_cast<uint32_t>(duration),
 		static_cast<uint32_t>(index), static_cast<uint32_t>(type),
 		static_cast<uint32_t>(lane));
-	reportOpMs("addNote", t0, id >= 0);
-	return id;
 }
 
 void core_insertNote(int64_t globalPosition, int duration, int index, int type) {
@@ -3373,9 +3351,7 @@ void core_removeNote(int64_t globalIndex) {
 		std::cout << "  [ Chart File ] removeNote: no chart loaded (call loadChart/createChart first)" << std::endl;
 		return;
 	}
-	const auto t0 = std::chrono::steady_clock::now();
 	gReader->removeNote(globalIndex);
-	reportOpMs("removeNote", t0, true);
 }
 int64_t core_getLength() { if (!gReader) return 0; return gReader->getLength(); }
 
@@ -3434,10 +3410,7 @@ int32_t core_addNotes() {
 		std::cout << "  [ Chart File ] addNotes: no chart loaded (call loadChart/createChart first)" << std::endl;
 		return 0;
 	}
-	const auto t0 = std::chrono::steady_clock::now();
-	const int32_t n = gReader->addNotes();
-	reportOpMs("addNotes", t0, n > 0);
-	return n;
+	return gReader->addNotes();
 }
 
 void core_stageRemovalRange(int64_t lo, int64_t hi) {
@@ -3450,10 +3423,7 @@ int32_t core_removeNotesFromRangeArray() {
 		std::cout << "  [ Chart File ] removeNotesFromRangeArray: no chart loaded (call loadChart/createChart first)" << std::endl;
 		return 0;
 	}
-	const auto t0 = std::chrono::steady_clock::now();
-	const int32_t n = gReader->removeNotesFromRangeArray();
-	reportOpMs("removeNotes", t0, n > 0);
-	return n;
+	return gReader->removeNotesFromRangeArray();
 }
 
 void core_clearStaged() {
