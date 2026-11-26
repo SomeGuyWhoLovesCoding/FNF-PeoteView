@@ -124,4 +124,45 @@ void stageMirrorRange(int64_t lo, int64_t hi);
 int32_t shiftNotesFromSelectionRanges(int32_t dIndex, int32_t dLane,
     int32_t mania, int32_t strumlineCount);
 void stageShiftRange(int64_t lo, int64_t hi);
+
+// === GTFR — Generate Notes From Range (v3.9.0 note-spawn protocol) ===
+// The virtual-note render state lives in the chart extern (packed,
+// grow-only arenas — see chart_file_core.cpp). The host drives an
+// exactly-once loop; NOTE returns the packed first8 (the bits MetaNote
+// decodes), INDEX the store id of that same note, RECYCLE the drop of
+// that id's dead bindings. head/tail live here — the host's start/end
+// loop variables are loop decoration.
+void   gtfrStart(int64_t startIndex, int64_t endIndex);
+// The render frame boundary: resets the touched column chains (the
+// next sweep's binds re-thread). Bindings and the free list are kept.
+void   gtfrFrameBegin(void);
+bool   gtfrProgress(int64_t start, int64_t end);
+int64_t gtfrNoteThenAdvance(void);
+int64_t gtfrIndexThenAdvance(void);
+// The last4 of the note NOTE handed out this body — read WITHOUT
+// advancing, so the host builds the MetaNote decode struct from the
+// same note (position|duration-low16 from NOTE, duration-high8|index|
+// type|lane from here).
+uint32_t gtfrNoteLast4(void);
+void   gtfrVirtualNoteRecycle(void);
+// Host-side bind of computed render state (slot keyed by the note's
+// global id; reused in place, popped from the free list, or grown).
+void   gtfrBindNote(int64_t gidx, int32_t diff, int32_t sx, int32_t sy,
+    float initialAlpha, float addedAlpha, float scale,
+    int32_t notesInOne, bool sustainExists, bool judged,
+    bool hitFlag, int32_t lane);
+void   gtfrBindSustain(int64_t gidx, int32_t diff, int32_t sx, int32_t sy,
+    int32_t w, int32_t length, float alpha, float speed,
+    float scale, float r);
+// Arena reads: capacity + raw word pointers (packed 4-word note slots,
+// 6-word sustain slots; -1 in the gidx word marks a free slot).
+int64_t  gtfrNoteSlots(void);
+int64_t  gtfrSustainSlots(void);
+const int64_t* gtfrNoteData(void);
+const int64_t* gtfrSustainData(void);
+// Column-chain access for the AO fold walk: head slot of a (lane,
+// index) column and the next-slot link of any slot (chained at bind
+// time; chains reset per frame by gtfrFrameBegin).
+int32_t gtfrColumnHead(int32_t lane, int32_t index);
+int32_t gtfrSlotNext(int32_t slot);
 #endif /* CHART_FILE_H */

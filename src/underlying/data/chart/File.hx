@@ -5,6 +5,7 @@ package underlying.data.chart;
 **/
 #if cpp
 import cpp.ConstCharStar;
+import cpp.RawPointer;
 
 @:buildXml('<include name="../../../chartFileBuild.xml" />')
 @:unreflective @:keep
@@ -162,6 +163,79 @@ extern class File {
 	@:native("getAddedRangeLo") static function getAddedRangeLo(at:Int):Int64;
 	/** Range `at`'s inclusive upper id (or -1 when out of range). */
 	@:native("getAddedRangeHi") static function getAddedRangeHi(at:Int):Int64;
+
+	// ==================================================================
+	// GTFR — Generate Notes From Range (v3.9.0 note-spawn protocol).
+	//
+	// The virtual-note render state lives in the chart extern as packed,
+	// grow-only arenas (transparent compression, the chart format's own
+	// idiom; fast reads via the raw word pointers below). The host
+	// drives an exactly-once loop — head/tail live on the C++ side, the
+	// start/end loop variables are loop decoration:
+	//
+	//     File.GTFR_START(start, end);
+	//     while (File.GTFR_PROGRESS(start, end)) {
+	//         var note:MetaNote = File.GTFR_NOTE_THEN_ADVANCE();
+	//         var noteIndex:Int64 = File.GTFR_INDEX_THEN_ADVANCE();
+	//         File.GTFR_VIRTUAL_NOTE_RECYCLE();
+	//     }
+	//
+	// PROGRESS arms the per-body advance latch; the body's first
+	// *_THEN_ADVANCE call consumes it. NOTE returns the packed first8
+	// (the bits MetaNote decodes), INDEX the store id of that same
+	// note, RECYCLE the drop of that id's dead arena bindings.
+	// ==================================================================
+	@:native("gtfrStart") static function GTFR_START(startIndex:Int64, endIndex:Int64):Void;
+	@:native("gtfrFrameBegin") static function GTFR_FRAME_BEGIN():Void;
+	@:native("gtfrProgress") static function GTFR_PROGRESS(start:Int64, end:Int64):Bool;
+	@:native("gtfrNoteThenAdvance") static function GTFR_NOTE_THEN_ADVANCE():Int64;
+	@:native("gtfrIndexThenAdvance") static function GTFR_INDEX_THEN_ADVANCE():Int64;
+	@:native("gtfrNoteLast4") static function GTFR_NOTE_LAST4():Int;
+	@:runtime inline static function GTFR_NOTE():MetaNote {
+		return new MetaNote.MetaNoteImpl(GTFR_NOTE_THEN_ADVANCE(), GTFR_NOTE_LAST4());
+	}
+	@:native("gtfrVirtualNoteRecycle") static function GTFR_VIRTUAL_NOTE_RECYCLE():Void;
+	/** Host bind of computed note render state (slot keyed by global id — reused in place, popped from the free list, or grown). */
+	@:native("gtfrBindNote") static function GTFR_BIND_NOTE(gidx:Int64, diff:Int, sx:Int, sy:Int, initialAlpha:Float, addedAlpha:Float, scale:Float, notesInOne:Int, sustainExists:Bool, judged:Bool, hitFlag:Bool, lane:Int):Void;
+	/** Host bind of computed sustain render state (one sustain per note, keyed by the same global id). */
+	@:native("gtfrBindSustain") static function GTFR_BIND_SUSTAIN(gidx:Int64, diff:Int, sx:Int, sy:Int, w:Int, length:Int, alpha:Float, speed:Float, scale:Float, r:Float):Void;
+	/** Live note bindings in the arena (diagnostic). */
+	@:native("gtfrNoteSlots") static function GTFR_NOTE_SLOTS():Int64;
+	/** Live sustain bindings in the arena (diagnostic). */
+	@:native("gtfrSustainSlots") static function GTFR_SUSTAIN_SLOTS():Int64;
+	/**
+	 * Raw packed-word pointer of the note arena — the zero-FFI read
+	 * path. 4 words per slot, `used` live slots (call GTFR_NOTE_SLOTS
+	 * first; capacity above it is zero-filled and never live):
+	 *   word0: diff(32) | Sx(16) | gidxValid | notesInOne(8)
+	 *          | sustainExists | judged | hitFlag | lane(3)
+	 *   word1: globalIndex (-1 = free slot)
+	 *   word2: initialAlphaF(32) | addedAlphaF(32)
+	 *   word3: scaleF(32) | Sy(32, signed)
+	 * Stable until the next growth; re-fetch each frame.
+	 */
+	@:native("gtfrNoteData") static function GTFR_NOTE_DATA():RawPointer<Int64>;
+	/**
+	 * Raw packed-word pointer of the sustain arena. 6 words per slot,
+	 * live slots per GTFR_SUSTAIN_SLOTS:
+	 *   word0: diff(32) | Sx(16) | Sy(16)
+	 *   word1: w(32) | length(32)
+	 *   word2: alphaF(32) | speedF(32)
+	 *   word3: scaleF(32) | rF(32)
+	 *   word4: globalIndex (-1 = free slot)
+	 */
+	@:native("gtfrSustainData") static function GTFR_SUSTAIN_DATA():RawPointer<Int64>;
+	/**
+	 * Head slot of a (lane, index) column chain — the AO fold walk's
+	 * entry point. Chains are threaded at bind time and reset per frame
+	 * by GTFR_FRAME_BEGIN. -1 = empty column.
+	 */
+	@:native("gtfrColumnHead") static function GTFR_COLUMN_HEAD(lane:Int, index:Int):Int;
+	/**
+	 * Next slot in a column chain (-1 = end). Follow from the head;
+	 * chain order is bind order = chart order.
+	 */
+	@:native("gtfrSlotNext") static function GTFR_SLOT_NEXT(slot:Int):Int;
 }
 #elseif hl
 class File {
@@ -311,6 +385,67 @@ class File {
 
 	@:hlNative("chart_file", "getAddedRangeHi")
 	public static function getAddedRangeHi(at:Int):hl.I64 {
+		return -1;
+	}
+
+	// === GTFR (v3.9.0) — see the cpp target's docs for the protocol ===
+
+	@:hlNative("chart_file", "gtfrStart")
+	public static function GTFR_START(startIndex:hl.I64, endIndex:hl.I64):Void {}
+
+	@:hlNative("chart_file", "gtfrFrameBegin")
+	public static function GTFR_FRAME_BEGIN():Void {}
+
+	@:hlNative("chart_file", "gtfrProgress")
+	public static function GTFR_PROGRESS(start:hl.I64, end:hl.I64):Bool {
+		return false;
+	}
+
+	@:hlNative("chart_file", "gtfrNoteThenAdvance")
+	public static function GTFR_NOTE_THEN_ADVANCE():hl.I64 {
+		return 0;
+	}
+
+	@:hlNative("chart_file", "gtfrIndexThenAdvance")
+	public static function GTFR_INDEX_THEN_ADVANCE():hl.I64 {
+		return 0;
+	}
+
+	@:hlNative("chart_file", "gtfrNoteLast4")
+	public static function GTFR_NOTE_LAST4():Int {
+		return 0;
+	}
+
+	@:runtime inline public static function GTFR_NOTE():MetaNote {
+		return new MetaNote.MetaNoteImpl(GTFR_NOTE_THEN_ADVANCE(), GTFR_NOTE_LAST4());
+	}
+
+	@:hlNative("chart_file", "gtfrVirtualNoteRecycle")
+	public static function GTFR_VIRTUAL_NOTE_RECYCLE():Void {}
+
+	@:hlNative("chart_file", "gtfrBindNote")
+	public static function GTFR_BIND_NOTE(gidx:hl.I64, diff:Int, sx:Int, sy:Int, initialAlpha:Float, addedAlpha:Float, scale:Float, notesInOne:Int, sustainExists:Bool, judged:Bool, hitFlag:Bool, lane:Int):Void {}
+
+	@:hlNative("chart_file", "gtfrBindSustain")
+	public static function GTFR_BIND_SUSTAIN(gidx:hl.I64, diff:Int, sx:Int, sy:Int, w:Int, length:Int, alpha:Float, speed:Float, scale:Float, r:Float):Void {}
+
+	@:hlNative("chart_file", "gtfrNoteSlots")
+	public static function GTFR_NOTE_SLOTS():hl.I64 {
+		return 0;
+	}
+
+	@:hlNative("chart_file", "gtfrSustainSlots")
+	public static function GTFR_SUSTAIN_SLOTS():hl.I64 {
+		return 0;
+	}
+
+	@:hlNative("chart_file", "gtfrColumnHead")
+	public static function GTFR_COLUMN_HEAD(lane:Int, index:Int):Int {
+		return -1;
+	}
+
+	@:hlNative("chart_file", "gtfrSlotNext")
+	public static function GTFR_SLOT_NEXT(slot:Int):Int {
 		return -1;
 	}
 }

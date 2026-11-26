@@ -2118,6 +2118,254 @@ private:
 	bool stopFlag = false;
 };
 
+// ============================================================================
+// GTFR ARENAS (v3.9.0) — the virtual-note/sustain render state, packed
+// with the chart format's own compression idiom (bit-packed int64 words,
+// shift-decoded on read) and living INSIDE the chart extern. Persistent,
+// GROW-ONLY, never shrunk or freed between songs: memory is stable for
+// a whole session. The old Haxe-side pool (NotePool + NoteVB + the
+// global-index slot arrays whose keys orphaned on every chart edit) is
+// REPLACED by these arenas — bindings are re-derived every frame from
+// the iteration itself, so a stale binding cannot exist past one frame.
+// ============================================================================
+
+// Packed VirtualNote: 10 words / 80 bytes per slot — the chart note's
+// own two words embedded verbatim (the chart format's compression idiom
+// applied to the render state), plus the render fields.
+//   word0: diff(32) | Sx(16) | notesInOne(8) | sustainExists(1)
+//          | judged(1) | hitFlag(1) | lane(3, clamped)
+//   word1: globalIndex (64) — the store id; <0 = free slot
+//   word2: initialAlphaF(32) | addedAlphaF(32)
+//   word3: scaleF(32) | Sy(32, signed)
+//   word4: the chart note's first8, verbatim (position|duration-low16)
+//   word5: the chart note's last4, verbatim (duration-high8|index|type|lane)
+//   word6..9: reserved (0)
+struct GtfrNoteArena {
+	static constexpr int32_t COLUMN_LANES = 8;   // 3-bit lane field
+	static constexpr int32_t COLUMN_AXIS = 1024; // 10-bit index field
+	static constexpr int32_t COLUMN_COUNT = COLUMN_LANES * COLUMN_AXIS;
+
+	std::vector<int64_t> words;     // 10 per slot
+	std::vector<int32_t> freeNext;  // per-slot intrusive free list (-1 end)
+	int32_t freeHead = -1;           // first free slot, -1 = none
+	int32_t count = 0;              // live bindings (diagnostic)
+	// used = high-water mark of HANDED-OUT slots. The vector above it is
+	// zero-filled CAPACITY: never scanned (a zero word decodes as gidx 0 —
+	// a false positive), never allocated from (the bind path used to
+	// take "first slot past capacity", which grew the vector on every
+	// bind — the OOM the arena test caught).
+	int32_t used = 0;
+
+	// COLUMN CHAINS (the old NoteVB's per-(lane,index) lists, flat and
+	// inside the extern): every bound slot is threaded into its column
+	// at bind time; FRAME_BEGIN clears the touched columns' chains, the
+	// frame's binds re-thread. The render walk walks chains for the AO
+	// fold (slot order inside a chain is bind order = chart order).
+	std::vector<int32_t> colHead;   // per column: first slot this frame
+	std::vector<int32_t> colTail;   // per column: last slot this frame
+	std::vector<int32_t> colNext;   // per slot: next slot in the column
+	std::vector<int32_t> touched;   // columns threaded since FRAME_BEGIN
+	std::vector<uint8_t> touchedFlag;
+
+	void initColumns() {
+		colHead.assign(COLUMN_COUNT, -1);
+		colTail.assign(COLUMN_COUNT, -1);
+		touchedFlag.assign(COLUMN_COUNT, 0);
+		touched.clear();
+	}
+
+	// Per-frame boundary: clears the touched columns' chains. Bindings
+	// and the free list are untouched — the frame's binds re-thread.
+	void frameBegin() {
+		for (size_t t = 0; t < touched.size(); ++t) {
+			const int32_t c = touched[t];
+			colHead[(size_t)c] = -1;
+			colTail[(size_t)c] = -1;
+			touchedFlag[(size_t)c] = 0;
+		}
+		touched.clear();
+	}
+
+	void thread(int32_t slot, int32_t column) {
+		if (column < 0 || column >= COLUMN_COUNT) return;
+		if (colHead.empty()) initColumns();
+		// colNext is per-slot: it must cover `slot` too (ensure() sizes it
+		// for the word capacity; a freshly taken slot writes here before
+		// its pack() — size first, never index past the end).
+		if ((size_t)slot >= colNext.size())
+			colNext.resize((size_t)slot + 1, -1);
+		if (colHead[(size_t)column] < 0) {
+			colHead[(size_t)column] = slot;
+			if (!touchedFlag[(size_t)column]) {
+				touchedFlag[(size_t)column] = 1;
+				touched.push_back(column);
+			}
+		} else {
+			colNext[(size_t)colTail[(size_t)column]] = slot;
+		}
+		colTail[(size_t)column] = slot;
+		colNext[(size_t)slot] = -1;
+	}
+
+	void ensure(int32_t capacity) {
+		size_t want = (size_t)capacity * 10;
+		if (words.size() < want) {
+			size_t grow = words.size() ? words.size() * 2 : 256;
+			if (grow < want) grow = want;
+			words.resize(grow, 0);        // grow-only: capacity never shrinks
+			freeNext.resize(grow / 10, -1);
+			colNext.resize(grow / 10, -1);
+		}
+	}
+
+	// Takes a slot for a fresh binding: the free list first, else the
+	// next never-handed-out slot (bumping the high-water mark).
+	int32_t takeSlot() {
+		if (freeHead >= 0) {
+			const int32_t s = freeHead;
+			freeHead = freeNext[(size_t)s];
+			return s;
+		}
+		const int32_t s = used;
+		used++;
+		ensure(used);
+		return s;
+	}
+
+	void pack(int32_t slot, int64_t gidx, int32_t diff, int32_t sx, int32_t sy,
+	          float initialAlpha, float addedAlpha, float scale,
+	          uint32_t notesInOne, bool sustainExists, bool judged,
+	          bool hitFlag, uint32_t lane) {
+		ensure(slot + 1);
+		if (slot + 1 > used) used = slot + 1;
+		int64_t* w = &words[(size_t)slot * 10];
+		w[0] = (int64_t)(uint32_t)diff
+			| ((int64_t)((uint32_t)sx & 0xFFFFULL) << 32)
+			| ((int64_t)(notesInOne & 0xFFULL) << 49)
+			| ((int64_t)(sustainExists ? 1 : 0) << 57)
+			| ((int64_t)(judged ? 1 : 0) << 58)
+			| ((int64_t)(hitFlag ? 1 : 0) << 59)
+			| ((int64_t)(lane & 0x7ULL) << 60);
+		w[1] = gidx;
+		int32_t a; memcpy(&a, &initialAlpha, 4);
+		int32_t b; memcpy(&b, &addedAlpha, 4);
+		w[2] = (int64_t)(uint32_t)a | ((int64_t)(uint32_t)b << 32);
+		int32_t s; memcpy(&s, &scale, 4);
+		w[3] = (int64_t)(uint32_t)s | ((int64_t)(int64_t)(uint32_t)sy << 32);
+	}
+
+	// Embeds the chart note's own two words verbatim (the compression
+	// idiom: the render walk decodes type/duration/lane straight off the
+	// arena slot, zero extra reads). w4 = first8, w5 = last4.
+	void packChartNote(int32_t slot, uint64_t first8, uint32_t last4) {
+		if (slot < 0 || (size_t)(slot + 1) * 10 > words.size()) return;
+		int64_t* w = &words[(size_t)slot * 10];
+		w[4] = (int64_t)first8;
+		w[5] = (int64_t)(uint32_t)last4;
+	}
+
+	void freeSlot(int32_t slot) {
+		if (slot < 0 || (size_t)(slot + 1) * 10 > words.size()) return;
+		if (slot >= used) return;                    // capacity, not a live slot
+		if (words[(size_t)slot * 10 + 1] < 0) return; // already free
+		words[(size_t)slot * 10 + 1] = -1;
+		freeNext[(size_t)slot] = freeHead;
+		freeHead = slot;
+		if (count > 0) count--;
+	}
+
+	// Unbinds the slot bound to gidx, if any. Chart edits shift global
+	// indexes, so the caller re-derives the whole window right after —
+	// stale bindings cannot survive the frame. Scans only USED slots.
+	void freeByGidx(int64_t gidx) {
+		if (gidx < 0) return;
+		for (int32_t s = 0; s < used; ++s)
+			if (words[(size_t)s * 10 + 1] == gidx) freeSlot(s);
+	}
+
+	int64_t findGidx(int64_t gidx) const {
+		for (int32_t s = 0; s < used; ++s)
+			if (words[(size_t)s * 10 + 1] == gidx) return (int64_t)s;
+		return -1;
+	}
+};
+
+// Packed VirtualSustain: 6 words / 48 bytes per slot.
+//   word0: diff(32) | Sx(16) | Sy(16)
+//   word1: w(32) | length(32)
+//   word2: alphaF(32) | speedF(32)
+//   word3: scaleF(32) | rF(32)
+//   word4: globalIndex (64) — the store id; <0 = free slot
+//   word5: reserved (0)
+struct GtfrSustainArena {
+	std::vector<int64_t> words;     // 6 per slot
+	std::vector<int32_t> freeNext;
+	int32_t freeHead = -1;
+	int32_t count = 0;
+	// used = high-water mark of handed-out slots (see GtfrNoteArena):
+	// the vector above it is zero-filled capacity — never scanned
+	// (zero decodes as gidx 0), never allocated from.
+	int32_t used = 0;
+
+	void ensure(int32_t capacity) {
+		size_t want = (size_t)capacity * 6;
+		if (words.size() < want) {
+			size_t grow = words.size() ? words.size() * 2 : 256;
+			if (grow < want) grow = want;
+			words.resize(grow, 0);
+			freeNext.resize(grow / 6, -1);
+		}
+	}
+
+	int32_t takeSlot() {
+		if (freeHead >= 0) {
+			const int32_t s = freeHead;
+			freeHead = freeNext[(size_t)s];
+			return s;
+		}
+		const int32_t s = used;
+		used++;
+		ensure(used);
+		return s;
+	}
+
+	void pack(int32_t slot, int64_t gidx, int32_t diff, int32_t sx, int32_t sy,
+	          int32_t w, int32_t length, float alpha, float speed,
+	          float scale, float r) {
+		ensure(slot + 1);
+		if (slot + 1 > used) used = slot + 1;
+		int64_t* a = &words[(size_t)slot * 6];
+		a[0] = (int64_t)(uint32_t)diff
+			| ((int64_t)((uint32_t)sx & 0xFFFFULL) << 32)
+			| ((int64_t)((uint32_t)sy & 0xFFFFULL) << 48);
+		a[1] = (int64_t)(uint32_t)w | ((int64_t)(uint32_t)length << 32);
+		int32_t al; memcpy(&al, &alpha, 4);
+		int32_t sp; memcpy(&sp, &speed, 4);
+		a[2] = (int64_t)(uint32_t)al | ((int64_t)(uint32_t)sp << 32);
+		int32_t sc; memcpy(&sc, &scale, 4);
+		int32_t rr; memcpy(&rr, &r, 4);
+		a[3] = (int64_t)(uint32_t)sc | ((int64_t)(uint32_t)rr << 32);
+		a[4] = gidx;
+		a[5] = 0;
+	}
+
+	void freeSlot(int32_t slot) {
+		if (slot < 0 || (size_t)(slot + 1) * 6 > words.size()) return;
+		if (slot >= used) return;                    // capacity, not live
+		if (words[(size_t)slot * 6 + 4] < 0) return;
+		words[(size_t)slot * 6 + 4] = -1;
+		freeNext[(size_t)slot] = freeHead;
+		freeHead = slot;
+		if (count > 0) count--;
+	}
+
+	void freeByGidx(int64_t gidx) {
+		if (gidx < 0) return;
+		for (int32_t s = 0; s < used; ++s)
+			if (words[(size_t)s * 6 + 4] == gidx) freeSlot(s);
+	}
+};
+
 class ChartFileReader {
 private:
 	std::string filename;
@@ -2831,6 +3079,199 @@ public:
 	}
 
 	// ================================================================
+	// GTFR — Generate Notes From Range (v3.9.0 note-spawn protocol).
+	//
+	// The host drives an exactly-once loop (head/tail live here; the
+	// host's start/end loop variables are decoration — PROGRESS reads
+	// only head/tail):
+	//
+	//     File.GTFR_START(startIndex, endIndex);
+	//     while (File.GTFR_PROGRESS(start, end)) {
+	//         var note:MetaNote = File.GTFR_NOTE_THEN_ADVANCE();
+	//         var noteIndex:Int64 = File.GTFR_INDEX_THEN_ADVANCE();
+	//         File.GTFR_VIRTUAL_NOTE_RECYCLE();
+	//     }
+	//
+	// NOTE returns the note's packed first8 (position|duration-low16) —
+	// the exact bits MetaNote decodes. INDEX returns the store id the
+	// note lived at (the id BEFORE the advance: NOTE and INDEX describe
+	// the SAME note). RECYCLE drops the dead binding of that id — O(1)
+	// free-list push, no scan of the GPU state. Head advances exactly
+	// once per body (the first *_THEN_ADVANCE call); later calls observe
+	// the advanced state.
+	// ================================================================
+
+	GtfrNoteArena gtfrNotes;      // packed virtual-note state
+	GtfrSustainArena gtfrSustains; // packed virtual-sustain state
+	int64_t gtfrHead = 0;         // iteration cursor (store index)
+	int64_t gtfrTail = 0;         // one past the last in-range index
+	bool gtfrLatch = true;        // armed per body; first advance eats it
+	int64_t gtfrLastNote = -1;    // the id NOTE read this body
+	bool gtfrFrameBound = false;  // one BIND sweep per frame
+
+	void gtfrStart(int64_t startIndex, int64_t endIndex) {
+		std::lock_guard<std::mutex> lk(dataMutex);
+		const int64_t len = (int64_t)store.size();
+		if (startIndex < 0) startIndex = 0;
+		if (endIndex > len) endIndex = len;
+		if (endIndex < startIndex) endIndex = startIndex;
+		gtfrHead = startIndex;
+		gtfrTail = endIndex;
+		gtfrLatch = true;
+	}
+
+	// The render frame boundary: the next GTFR_START sweep re-threads
+	// the column chains from scratch. Bindings and the free list are
+	// untouched — only the touched columns' chain heads reset.
+	void gtfrFrameBegin() {
+		std::lock_guard<std::mutex> lk(dataMutex);
+		gtfrNotes.frameBegin();
+	}
+
+	// TRUE while head < tail — and ARMS the per-body latch: the host's
+	// while-condition is what delimits a body, so each TRUE return arms
+	// exactly one advance for the body that follows. The body's FIRST
+	// *_THEN_ADVANCE call consumes the arm and advances head; later body
+	// calls observe the advanced state. PROGRESS is the loop's only
+	// recurring call, which is what makes the protocol exactly-once.
+	bool gtfrProgress(int64_t, int64_t) {
+		if (gtfrHead >= gtfrTail) return false;
+		gtfrLatch = true;
+		return true;
+	}
+
+	int64_t gtfrNoteThenAdvance() {
+		std::lock_guard<std::mutex> lk(dataMutex);
+		const int64_t len = (int64_t)store.size();
+		const int64_t id = gtfrHead;
+		if (id < 0 || id >= len) { gtfrLastNote = -1; return -1; }
+		gtfrLastNote = id;
+		if (gtfrLatch) {
+			gtfrHead = id + 1;
+			gtfrLatch = false;
+		}
+		return (int64_t)store.getFirst8(id);
+	}
+
+	int64_t gtfrIndexThenAdvance() {
+		return gtfrLastNote;
+	}
+
+	// The last4 of the note NOTE handed out this body (duration-high8 |
+	// index | type | lane) — read WITHOUT advancing, so the host builds
+	// the MetaNote decode struct from the same note:
+	//     var note:MetaNote = File.GTFR_NOTE_THEN_ADVANCE();
+	// (see File.hx's @:runtime inline wrapper).
+	uint32_t gtfrNoteLast4() {
+		std::lock_guard<std::mutex> lk(dataMutex);
+		const int64_t len = (int64_t)store.size();
+		if (gtfrLastNote < 0 || gtfrLastNote >= len) return 0;
+		return store.getLast4(gtfrLastNote);
+	}
+
+	void gtfrVirtualNoteRecycle() {
+		gtfrNotes.freeByGidx(gtfrLastNote);
+		gtfrSustains.freeByGidx(gtfrLastNote);
+	}
+
+	// --- arena bind path (host writes computed render state) -----------
+
+	// Binds this note's render state into a slot: reuses the slot already
+	// bound to this id (in-place update), else pops the free list, else
+	// grows (capacity only ever grows). Called by the host loop AFTER its
+	// LUT/movement computation per note. sustainExists flags the note's
+	// sustain presence so the render walk can skip empty entries. The
+	// chart note's own two words are embedded verbatim (the compression
+	// idiom — the render walk decodes type/duration/lane off the slot),
+	// and the slot is threaded into its (lane, index) column chain for
+	// the AO fold walk.
+	void gtfrBindNote(int64_t gidx, int32_t diff, int32_t sx, int32_t sy,
+	                  float initialAlpha, float addedAlpha, float scale,
+	                  int32_t notesInOne, bool sustainExists, bool judged,
+	                  bool hitFlag, int32_t lane) {
+		std::lock_guard<std::mutex> lk(dataMutex);
+		if (gidx < 0 || gidx >= (int64_t)store.size()) return;
+		int32_t slot = (int32_t)gtfrNotes.findGidx(gidx);
+		if (slot < 0) {
+			slot = gtfrNotes.takeSlot();
+			gtfrNotes.count++;
+		}
+		gtfrNotes.pack(slot, gidx, diff, sx, sy, initialAlpha, addedAlpha,
+			scale, (uint32_t)notesInOne, sustainExists, judged, hitFlag,
+			(uint32_t)(lane < 0 ? 0 : (lane > 7 ? 7 : lane)));
+		gtfrNotes.packChartNote(slot, store.getFirst8(gidx), store.getLast4(gidx));
+		// Thread into the column chain: column = lane * 1024 + index.
+		const uint32_t last4 = store.getLast4(gidx);
+		const int32_t column = (int32_t)(lane < 0 ? 0 : (lane > 7 ? 7 : lane))
+			* GtfrNoteArena::COLUMN_AXIS + (int32_t)((last4 >> 8) & 0x3FF);
+		gtfrNotes.thread(slot, column);
+	}
+
+	// Binds a sustain's render state, same discipline (slot keyed by the
+	// owning note's id: one sustain per note, exactly the old contract).
+	// The owning note slot's word9 links the sustain slot for the render
+	// walk (find the note, read its sustain off the linked slot).
+	void gtfrBindSustain(int64_t gidx, int32_t diff, int32_t sx, int32_t sy,
+	                     int32_t w, int32_t length, float alpha, float speed,
+	                     float scale, float r) {
+		std::lock_guard<std::mutex> lk(dataMutex);
+		if (gidx < 0 || gidx >= (int64_t)store.size()) return;
+		int32_t slot = -1;
+		for (int32_t s = 0; s < gtfrSustains.used; ++s) {
+			if (gtfrSustains.words[(size_t)s * 6 + 4] == gidx) { slot = s; break; }
+		}
+		if (slot < 0) {
+			slot = gtfrSustains.takeSlot();
+			gtfrSustains.count++;
+		}
+		gtfrSustains.pack(slot, gidx, diff, sx, sy, w, length, alpha,
+			speed, scale, r);
+		// Link the sustain into the owning note slot's word9.
+		const int64_t noteSlotWord = gtfrNotes.findGidx(gidx);
+		if (noteSlotWord >= 0) {
+			gtfrNotes.words[(size_t)noteSlotWord * 10 + 9] = slot;
+		}
+	}
+
+	// --- arena read access (host pulls packed words; zero decode C++) ---
+	int32_t gtfrNoteCount() const { return gtfrNotes.count; }
+	int32_t gtfrSustainCount() const { return gtfrSustains.count; }
+	// Live-slot count the host's raw-pointer walk iterates: the USED
+	// high-water mark (capacity above it is zero-filled and never live).
+	int64_t gtfrNoteSlots() const { return (int64_t)gtfrNotes.used; }
+	int64_t gtfrSustainSlots() const { return (int64_t)gtfrSustains.used; }
+	int64_t gtfrNoteWord(int32_t slot, int32_t word) {
+		const size_t idx = (size_t)slot * 10 + (size_t)word;
+		return (idx < gtfrNotes.words.size()) ? gtfrNotes.words[idx] : 0;
+	}
+	int64_t gtfrSustainWord(int32_t slot, int32_t word) {
+		const size_t idx = (size_t)slot * 6 + (size_t)word;
+		return (idx < gtfrSustains.words.size()) ? gtfrSustains.words[idx] : 0;
+	}
+	// Raw data pointers for the host's zero-FFI read loop (see File.hx's
+	// extern block: Pointer.fromRaw + at(i)). Stable until the next
+	// ensure() growth — the host re-fetches each frame.
+	const int64_t* gtfrNoteData() { return gtfrNotes.words.data(); }
+	const int64_t* gtfrSustainData() { return gtfrSustains.words.data(); }
+
+	// --- column-chain access (the AO fold walk) -----------------------
+	// The walk starts at a column's head slot and follows colNext — all
+	// flat int32 arrays the host reads via raw pointers too.
+	int64_t gtfrColumnCount() const { return GtfrNoteArena::COLUMN_COUNT; }
+	int32_t gtfrColumnHead(int32_t lane, int32_t index) {
+		if (gtfrNotes.colHead.empty()) return -1;
+		const int32_t column = lane * GtfrNoteArena::COLUMN_AXIS + index;
+		if (column < 0 || column >= GtfrNoteArena::COLUMN_COUNT) return -1;
+		return gtfrNotes.colHead[(size_t)column];
+	}
+	int32_t gtfrSlotNext(int32_t slot) {
+		if (slot < 0 || (size_t)slot >= gtfrNotes.colNext.size()) return -1;
+		return gtfrNotes.colNext[(size_t)slot];
+	}
+	const int32_t* gtfrColNextData() { return gtfrNotes.colNext.data(); }
+	const int32_t* gtfrColHeadData() { return gtfrNotes.colHead.data(); }
+
+	// ================================================================
 	// Bulk edit API (v3.5) — stage, then commit ONE call.
 	//
 	// The editor's batch gestures (paste, delete-selection, undo/redo of
@@ -3469,4 +3910,98 @@ int64_t core_getAddedRangeLo(int32_t at) {
 int64_t core_getAddedRangeHi(int32_t at) {
 	if (!gReader) return -1;
 	return gReader->getAddedRangeHi(at);
+}
+// === GTFR — Generate Notes From Range (v3.9.0) ===
+// See the ChartFileReader GTFR section for the protocol contract.
+
+void core_gtfrStart(int64_t startIndex, int64_t endIndex) {
+	if (!gReader) { return; }
+	gReader->gtfrStart(startIndex, endIndex);
+}
+
+bool core_gtfrProgress(int64_t start, int64_t end) {
+	if (!gReader) return false;
+	return gReader->gtfrProgress(start, end);
+}
+
+int64_t core_gtfrNoteThenAdvance() {
+	if (!gReader) return -1;
+	return gReader->gtfrNoteThenAdvance();
+}
+
+int64_t core_gtfrIndexThenAdvance() {
+	if (!gReader) return -1;
+	return gReader->gtfrIndexThenAdvance();
+}
+
+void core_gtfrVirtualNoteRecycle() {
+	if (!gReader) return;
+	gReader->gtfrVirtualNoteRecycle();
+}
+
+void core_gtfrBindNote(int64_t gidx, int32_t diff, int32_t sx, int32_t sy,
+	float initialAlpha, float addedAlpha, float scale,
+	int32_t notesInOne, bool sustainExists, bool judged,
+	bool hitFlag, int32_t lane) {
+	if (!gReader) return;
+	gReader->gtfrBindNote(gidx, diff, sx, sy, initialAlpha, addedAlpha,
+		scale, notesInOne, sustainExists, judged, hitFlag, lane);
+}
+
+void core_gtfrBindSustain(int64_t gidx, int32_t diff, int32_t sx, int32_t sy,
+	int32_t w, int32_t length, float alpha, float speed,
+	float scale, float r) {
+	if (!gReader) return;
+	gReader->gtfrBindSustain(gidx, diff, sx, sy, w, length, alpha,
+		speed, scale, r);
+}
+
+int64_t core_gtfrNoteSlots() {
+	if (!gReader) return 0;
+	return gReader->gtfrNoteSlots();
+}
+
+int64_t core_gtfrSustainSlots() {
+	if (!gReader) return 0;
+	return gReader->gtfrSustainSlots();
+}
+
+const int64_t* core_gtfrNoteData() {
+	if (!gReader) return nullptr;
+	return gReader->gtfrNoteData();
+}
+
+const int64_t* core_gtfrSustainData() {
+	if (!gReader) return nullptr;
+	return gReader->gtfrSustainData();
+}
+
+uint32_t core_gtfrNoteLast4() {
+	if (!gReader) return 0;
+	return gReader->gtfrNoteLast4();
+}
+
+void core_gtfrFrameBegin() {
+	if (!gReader) return;
+	gReader->gtfrFrameBegin();
+}
+
+int32_t core_gtfrColumnHead(int32_t lane, int32_t index) {
+	if (!gReader) return -1;
+	return gReader->gtfrColumnHead(lane, index);
+}
+
+int32_t core_gtfrSlotNext(int32_t slot) {
+	if (!gReader) return -1;
+	return gReader->gtfrSlotNext(slot);
+}
+
+const int32_t* core_gtfrColNextData() {
+	if (!gReader) return nullptr;
+	return gReader->gtfrColNextData();
+}
+
+const int32_t* core_gtfrColHeadData() {
+	if (!gReader) return nullptr;
+	return gReader->gtfrColHeadData();
 }
