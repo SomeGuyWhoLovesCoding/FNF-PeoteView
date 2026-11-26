@@ -102,11 +102,27 @@ static std::atomic<bool> g_maThingSurround{false};
 #define SURROUND_LPF_COEF   0.016951f
 #define SURROUND_LFE_BASS_GAIN 0.75f
 #define SURROUND_LFE_FULL_GAIN 1.0f
-// Background bed spread: how much of the stereo bed goes to the rear
-// quad. The mains stay at FL/FR; the rears get a delayed-free mono blend
-// so a stereo-only song still fills the room (the "compensate for no
-// rears" ask) without doubling perceived loudness at the front.
-#define SURROUND_REAR_GAIN  0.6f
+// v3.9.0 room discipline — the REAR ANCHOR TONE. The song never spreads
+// into BL/BR/SL/SR (the environment around the song's front image stays
+// untouched); those channels carry an inaudible 20 Hz sine at amplitude
+// 0.001 instead, offset so NO SAMPLE ever lands exactly on zero (the
+// tone's zero crossings fall between sample points — see
+// rearAnchorPhase()/rearAnchor()). It keeps the channels alive so the
+// receiver never sleeps on them and never renormalizes the front image.
+#define SURROUND_ANCHOR_HZ      20.0f
+#define SURROUND_ANCHOR_AMP     0.001f
+// The tone is MIN-BIASED BY CONSTRUCTION: sample = amp*(0.5 + 0.49*sin).
+// Even when sinf returns -1.0f EXACTLY (float32 argument reduction does
+// that for phases within ~2.4e-7 of 3*pi/2, which the phase orbit hits
+// within ~10 minutes of frames), 0.5f + 0.49f*(-1.0f) = 0.01f > 0 — the
+// sample can never be zero, in any float mode, at any phase. Range
+// [amp*0.01, amp*0.99]; the ~5e-4 DC center is inaudible and keeps the
+// channels alive so the receiver never sleeps on them or renormalizes
+// the front image. (The earlier "amp + amp*sin" form hits exact 0.0f at
+// sinf == -1.0f; the surround test caught both that and the phase-
+// drift precision loss, hence the 2*pi wrap below.)
+#define SURROUND_ANCHOR_BIAS    0.5f
+#define SURROUND_ANCHOR_SPAN    0.49f
 
 // ---- SubBusDSP constants --------------------------------------------------
 #define SUB_LPF_BODY_HZ   55.0f
@@ -1525,12 +1541,37 @@ private:
         s.asyncState.loadingBufferValidFrames = framesRead;
         s.asyncState.loadingBufferReady.store(true, std::memory_order_release);
     }
-    void routeStreamToOutput(size_t index, const float* stage, float* out, ma_uint32 outFrames, int outCh) {
-        const int route = streamChannels[index].load(std::memory_order_acquire);
+    // The anchor tone's phase — advances 2*pi*20/SAMPLE_RATE per frame,
+    // shared by every 8-channel writer (one tone for the whole device).
+    float rearAnchorPhase = SURROUND_ANCHOR_PHASE0;
+    // Adds the anchor tone's next sample to the four rear channels of ONE
+    // output frame: the min-biased sine (amp*(0.5 + 0.49*sin) — see the
+    // constants' comment) is strictly positive even at sinf == -1.0f, and
+    // the phase advances one sample period (wrapped at 2*pi).
+    inline void rearAnchor(float* d) {
+        const float tone = SURROUND_ANCHOR_AMP
+            * (SURROUND_ANCHOR_BIAS + SURROUND_ANCHOR_SPAN * sinf(rearAnchorPhase));
+        d[4] += tone; d[5] += tone; d[6] += tone; d[7] += tone;
+        rearAnchorPhase += (float)(2.0 * 3.14159265358979323846 * SURROUND_ANCHOR_HZ / SAMPLE_RATE);
+        // Wrap to [0, 2pi): a growing phase loses sinf's argument-reduction
+        // precision (the surround test caught min-sample hitting 0 after
+        // ~2.5 hours of frames). Bounded phase keeps the bias guarantee
+        // exact forever.
+        if (rearAnchorPhase > 6.2831855f) rearAnchorPhase -= 6.2831855f;
+    }
+    void routeStreamToOutput(size_t index, const float* stage, float* out, ma_uint32 outFrames, int outCh) {        const int route = streamChannels[index].load(std::memory_order_acquire);
         float lpf = streamLpfState[index];
         if (outCh == SURROUND_CHANNEL_COUNT) {
             // Channel indices (Microsoft 7.1 order, see MA_THING_SURROUND_MAP):
             //   0 FL  1 FR  2 C  3 LFE  4 BL  5 BR  6 SL  7 SR
+            // v3.9.0 room discipline: the song NEVER spreads into the rears
+            // (BL/BR/SL/SR) — the environment around the song's front image
+            // stays untouched. Those four channels instead carry the ANCHOR
+            // TONE: a DC-biased 20 Hz sine at amplitude 0.001 (sample =
+            // amp + amp*sin — strictly positive by construction; see the
+            // constants' comment). Inaudible, but it keeps the channels
+            // 'alive' so the receiver never sleeps on them and never
+            // renormalizes the front image.
             switch (route) {
                 case MA_CH_CENTER:
                     for (ma_uint32 f = 0; f < outFrames; f++) {
@@ -1540,31 +1581,30 @@ private:
                         float* d = out + f * outCh;
                         d[2] += mono;
                         d[3] += lpf * SURROUND_LFE_BASS_GAIN;
+                        rearAnchor(d);
                     } break;
                 case MA_CH_SUB:
                     for (ma_uint32 f = 0; f < outFrames; f++) {
                         float sl = stage[f * 2], sr = stage[f * 2 + 1];
                         float mono = (sl + sr) * 0.5f;
                         lpf += SURROUND_LPF_COEF * (mono - lpf);
-                        out[f * outCh + 3] += lpf * SURROUND_LFE_FULL_GAIN;
+                        float* d = out + f * outCh;
+                        d[3] += lpf * SURROUND_LFE_FULL_GAIN;
+                        rearAnchor(d);
                     } break;
                 case MA_CH_BACKGROUND:
                 default:
-                    // The song bed: mains stay FL/FR; the same stereo is
-                    // spread across the rear quad at SURROUND_REAR_GAIN so
-                    // a stereo-only song fills the whole 7.1 room ("no
-                    // rears in the song" compensation). Bass still goes to
-                    // LFE via the one-pole LPF.
+                    // The song bed: the instrumental stays strictly on the
+                    // mains FL/FR (plus its bass-managed LFE fill). The rears
+                    // get NOTHING of the song — only the anchor tone.
                     for (ma_uint32 f = 0; f < outFrames; f++) {
                         float sl = stage[f * 2], sr = stage[f * 2 + 1];
                         float mono = (sl + sr) * 0.5f;
                         lpf += SURROUND_LPF_COEF * (mono - lpf);
                         float* d = out + f * outCh;
                         d[0] += sl; d[1] += sr;
-                        float rear = mono * SURROUND_REAR_GAIN;
-                        d[4] += rear; d[5] += rear;   // back L/R
-                        d[6] += rear; d[7] += rear;   // side L/R
                         d[3] += lpf * SURROUND_LFE_BASS_GAIN;
+                        rearAnchor(d);
                     } break;
             }
         }
@@ -2039,6 +2079,9 @@ class AudioMixerManager {
 public:
     AudioMixerManager() = default;
     ~AudioMixerManager() { destroy(); }
+    // The mixer device's anchor-tone phase (see the SURROUND_ANCHOR_
+    // constants; the AudioSystem device has its own per-stream phases).
+    std::atomic<float> anchorPhase{SURROUND_ANCHOR_PHASE0};
     /**
         Same wedged-device discipline as AudioSystem: the sfx/background
         device is heap-allocated, lifecycle calls run under the watchdog,
@@ -2359,16 +2402,21 @@ private:
                     if (track->active.load(std::memory_order_acquire)) track->readFrames(stage, chunk);
                 for (SoundEffectPool* pool : mixer->sfxSnapshot[r])
                     pool->readFrames(stage, chunk, bufStart + done, masterVol);
-                // spread: mains + rear quad + LFE (mono bass, one-pole LPF
-                // per chunk — stateless across chunks is fine for a bed)
+                // v3.9.0 spread: the music/SFX bed stays strictly on the
+                // mains FL/FR (menu music too never touches the room); the
+                // rears carry only the shared anchor tone.
                 for (ma_uint32 f = 0; f < chunk; f++) {
                     float sl = stage[f * 2], sr = stage[f * 2 + 1];
-                    float mono = (sl + sr) * 0.5f;
                     float* d = out + (size_t)(done + f) * outCh;
                     d[0] += sl; d[1] += sr;
-                    float rear = mono * SURROUND_REAR_GAIN;
-                    d[4] += rear; d[5] += rear;
-                    d[6] += rear; d[7] += rear;
+                    const float tone = SURROUND_ANCHOR_AMP
+                        * (SURROUND_ANCHOR_BIAS + SURROUND_ANCHOR_SPAN
+                           * sinf(mixer->anchorPhase.load(std::memory_order_relaxed)));
+                    d[4] += tone; d[5] += tone; d[6] += tone; d[7] += tone;
+                    float ph = mixer->anchorPhase.load(std::memory_order_relaxed)
+                        + (float)(2.0 * 3.14159265358979323846 * SURROUND_ANCHOR_HZ / SAMPLE_RATE);
+                    if (ph > 6.2831855f) ph -= 6.2831855f;  // wrap: see rearAnchor
+                    mixer->anchorPhase.store(ph, std::memory_order_relaxed);
                 }
                 done += chunk;
             }
