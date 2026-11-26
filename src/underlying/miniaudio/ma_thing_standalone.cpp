@@ -1,7 +1,7 @@
 /*
  * ma_thing_standalone.cpp
  * Plain C++ global interface — links against ma_thing_core.h.
- * No HashLink dependency. 
+ * No HashLink dependency.
  */
 
 // These implementation macros must be defined in exactly one translation unit.

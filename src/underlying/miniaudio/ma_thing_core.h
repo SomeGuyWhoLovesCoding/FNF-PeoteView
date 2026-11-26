@@ -104,10 +104,11 @@ static std::atomic<bool> g_maThingSurround{false};
 #define SURROUND_LFE_FULL_GAIN 1.0f
 // v3.9.0 room discipline — the REAR ANCHOR TONE. The song never spreads
 // into BL/BR/SL/SR (the environment around the song's front image stays
-// untouched); those channels carry an inaudible 20 Hz tone instead —
-// never zero by construction (see the MIN-BIASED block just below).
-// It keeps the channels alive so the receiver never sleeps on them and
-// never renormalizes the front image.
+// untouched); those channels carry an inaudible 20 Hz sine at amplitude
+// 0.001 instead, offset so NO SAMPLE ever lands exactly on zero (the
+// tone's zero crossings fall between sample points — see
+// rearAnchorPhase()/rearAnchor()). It keeps the channels alive so the
+// receiver never sleeps on them and never renormalizes the front image.
 #define SURROUND_ANCHOR_HZ      20.0f
 #define SURROUND_ANCHOR_AMP     0.001f
 // The tone is MIN-BIASED BY CONSTRUCTION: sample = amp*(0.5 + 0.49*sin).
@@ -122,11 +123,6 @@ static std::atomic<bool> g_maThingSurround{false};
 // drift precision loss, hence the 2*pi wrap below.)
 #define SURROUND_ANCHOR_BIAS    0.5f
 #define SURROUND_ANCHOR_SPAN    0.49f
-// The phase the anchor oscillators start at (both the per-stream
-// rearAnchorPhase and the mixer's anchorPhase). Any value works — the
-// tone is never-zero by construction — this just pins a deterministic
-// start.
-#define SURROUND_ANCHOR_PHASE0  0.261799f
 
 // ---- SubBusDSP constants --------------------------------------------------
 #define SUB_LPF_BODY_HZ   55.0f
@@ -2383,10 +2379,10 @@ private:
         const int outCh = mixer->playbackChannels.load(std::memory_order_relaxed);
         memset(out, 0, sizeof(float) * frameCount * outCh);
         // The tracks/SFX are stereo; when the device runs the 8-channel
-        // map the bed stays strictly on the mains FL/FR and the four rear
-        // channels carry the shared anchor tone only (the v3.9.0 room
-        // discipline — same as the AudioSystem song routing). A plain
-        // stereo mix scratch buffer keeps readFrames() unchanged.
+        // map the content is spread the same way the AudioSystem spreads
+        // the song bed (mains FL/FR, rear quad at SURROUND_REAR_GAIN,
+        // bass to LFE) so menu music also fills the room. A plain stereo
+        // mix scratch buffer keeps readFrames() unchanged.
         float stage[512 * CHANNEL_COUNT];
         ma_uint64 bufStart = mixer->outFramesTotal.fetch_add(frameCount, std::memory_order_relaxed);
         mixer->lastAnchorFrame.store(bufStart, std::memory_order_relaxed);

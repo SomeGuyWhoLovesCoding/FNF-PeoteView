@@ -14,12 +14,6 @@ import underlying.rhythm.NoteVB.VirtualSustain;
 	This approach eliminates constant object allocation/destruction, providing a significant performance boost.
 	It also allows for direct access to notes and sustains by their global note index.
 	This is a very important class for the note system, and it is used in the NoteSystem class to manage all active and pooled notes/sustains.
-
-	v3.9.0: the peote ELEMENT half of this pool is now a PARKED, GROW-ONLY
-	stack — elements are created once, enter the GPU buffer once, and are
-	never removed in steady state; despawned elements are parked (scale 0,
-	alpha 0) instead of removeElement'd. The VirtualNote/VirtualSustain
-	binding half (slots + free stacks) is unchanged.
 	@since Development
 **/
 @:publicFields
@@ -37,26 +31,19 @@ class NotePool {
 
 	// Peote element pools — these persist in the GPU buffer and are
 	// updated in-place each frame instead of being destroyed/recreated.
-	// v3.9.0: the stack is now PARKED, not recycled. Elements are created
-	// ONCE (the first time the stack grows past them) and their buffer
-	// membership NEVER changes afterwards: acquire just walks up the stack,
-	// endFrame PARKS the surplus (scale 0 / alpha 0 — one properties write,
-	// flushed by the same notesBuf.update() the frame already does).
-	// No removeElement ever runs in steady state, so the buffer's internal
-	// element array is never re-packed — the churn (add/remove/re-add per
-	// spawn/despawn) was the residual memory creep's home turf. The stack
-	// only ever grows; a frame is just "how deep the renderer walked".
 	var pooledNotes(default, null):Stack<Note>;
 	var pooledSustains(default, null):Stack<Sustain>;
 
-	// The element stack: entry i is the i-th note element ever created.
-	// Only grows; entries are never removed or reordered.
-	var parkedNotes(default, null):Array<Note>;
-	var parkedSustains(default, null):Array<Sustain>;
+	// Active peote elements currently residing in the GPU buffers.
+	// Index 0 is the oldest slot; new slots are appended at the end.
+	var activeNotes(default, null):Array<Note>;
+	var activeSustains(default, null):Array<Sustain>;
 
-	// Frame-sync cursor: this frame's walk depth into the stacks above.
+	// Frame-sync counters: how many slots were used last frame vs. this frame.
 	var noteSlot:Int = 0;
 	var sustainSlot:Int = 0;
+	var prevNoteCount:Int = 0;
+	var prevSustainCount:Int = 0;
 
 	var parent(default, null):NoteSystem;
 
@@ -72,8 +59,8 @@ class NotePool {
 		virtualSustainSlots = [];
 		pooledNotes = new Stack<Note>();
 		pooledSustains = new Stack<Sustain>();
-		parkedNotes = [];
-		parkedSustains = [];
+		activeNotes = [];
+		activeSustains = [];
 	}
 
 	/**
@@ -239,14 +226,12 @@ class NotePool {
 
 
 	// =================================================================
-	//  Peote Note / Sustain element pool  (v3.9.0: parked, grow-only)
+	//  Peote Note / Sustain element pool  (GPU-buffer-persistent)
 	// =================================================================
 
 	/**
 	 * Called at the start of each render frame.
-	 * Resets the acquire cursor so the walk restarts from the stack's
-	 * bottom (slot 0). The stack itself is untouched — its entries and
-	 * their buffer memberships are permanent.
+	 * Resets the acquire counters so slots are filled from 0.
 	 */
 	inline function beginFrame() {
 		noteSlot = 0;
@@ -254,74 +239,72 @@ class NotePool {
 	}
 
 	/**
-	 * Acquire the pooled Note for this frame's walk position. The element
-	 * was created ONCE (the first time the stack grew to it), is already
-	 * inside `notesBuf`, and will stay there forever — set its properties
-	 * and the frame's notesBuf.update() flushes them. Growing the stack
-	 * (a busier frame than any before it) is the only allocating case, and
-	 * it only ever grows.
+	 * Acquire a pooled Note for rendering.  The returned Note is already
+	 * inside `notesBuf` — just set its properties and it will be picked up
+	 * by the next `notesBuf.update()`.
+	 *
+	 * Reuses an active slot when possible (in-place update), otherwise
+	 * pops from the free stack or allocates a fresh Note and calls
+	 * `addElement` to place it in the buffer.
 	 */
 	function acquireNote():Note {
-		if (noteSlot < parkedNotes.length)
-			return parkedNotes[noteSlot++];
+		if (noteSlot < prevNoteCount) {
+			return activeNotes[noteSlot++];
+		}
 		var note = pooledNotes.pop();
-		if (note == null)
+		if (note == null) {
 			note = new Note(0, 0, 0, 0, NoteSystem.typeToHandle[0]);
+		}
 		NoteSystem.notesBuf.addElement(note);
-		parkedNotes.push(note);
-		noteSlot = parkedNotes.length;
+		activeNotes.push(note);
+		noteSlot++;
 		return note;
 	}
 
 	/**
-	 * Acquire the pooled Sustain for this frame's walk position. Same
-	 * contract as `acquireNote`, for `sustainsBuf`.
+	 * Acquire a pooled Sustain for rendering.  Same contract as
+	 * `acquireNote` but for `sustainsBuf`.
 	 */
 	function acquireSustain():Sustain {
-		if (sustainSlot < parkedSustains.length)
-			return parkedSustains[sustainSlot++];
+		if (sustainSlot < prevSustainCount) {
+			return activeSustains[sustainSlot++];
+		}
 		var sustain = pooledSustains.pop();
-		if (sustain == null)
+		if (sustain == null) {
 			sustain = new Sustain(-9999, -9999, 0, 0, NoteSystem.typeToHandle[0], 0, 1, 1, 0);
+		}
 		NoteSystem.sustainsBuf.addElement(sustain);
-		parkedSustains.push(sustain);
-		sustainSlot = parkedSustains.length;
+		activeSustains.push(sustain);
+		sustainSlot++;
 		return sustain;
 	}
 
 	/**
-	 * Called at the end of each render frame: every element ABOVE this
-	 * frame's high-water mark is PARKED — scale 0, alpha 0 (initial and
-	 * added) — one properties write each, flushed to the GPU by the same
-	 * notesBuf.update() the frame already performs. Nothing is removed
-	 * from the buffer, nothing is pushed to a free stack, and the
-	 * buffer's element array is never re-packed: a parked element is a
-	 * fully in-buffer, zero-sized sprite that costs one property slot.
+	 * Called at the end of each render frame.
+	 * Any active slots that were NOT acquired this frame are released:
+	 * removed from the GPU buffer and pushed back onto the free stack.
 	 *
-	 * The `prevNoteCount` high-water bookkeeping of the old pool is
-	 * dropped entirely — the stack's own length IS the capacity, and
-	 * the next beginFrame() starts the walk from the bottom again.
+	 * Because notes are always acquired sequentially from slot 0 and
+	 * released from the tail, removals never shift intermediate elements.
 	 */
 	function endFrame() {
-		var i = noteSlot;
-		var n = parkedNotes.length;
-		while (i < n) {
-			var note = parkedNotes[i];
-			note.scale = 0;
-			note.initialAlpha = 0;
-			note.addedAlpha = 0;
-			i++;
+		// Release unused notes (from the tail — no shifting)
+		while (noteSlot < prevNoteCount) {
+			var note = activeNotes.pop();
+			NoteSystem.notesBuf.removeElement(note);
+			pooledNotes.push(note);
+			prevNoteCount--;
 		}
+		prevNoteCount = noteSlot;
 
-		i = sustainSlot;
-		n = parkedSustains.length;
-		while (i < n) {
-			var sustain = parkedSustains[i];
-			sustain.scale = 0;
-			sustain.c.aF = 0;
-			sustain.c.luminanceF = 0;
-			i++;
+		// Release unused sustains (from the tail — no shifting)
+		while (sustainSlot < prevSustainCount) {
+			var sustain = activeSustains.pop();
+			NoteSystem.sustainsBuf.removeElement(sustain);
+			pooledSustains.push(sustain);
+			prevSustainCount--;
 		}
+		prevSustainCount = sustainSlot;
 	}
 
 	/**
@@ -330,8 +313,8 @@ class NotePool {
 	 * `notesBuf.clear()` / `sustainsBuf.clear()` afterwards.
 	 */
 	function dispose() {
-		parkedNotes = null;
-		parkedSustains = null;
+		activeNotes = null;
+		activeSustains = null;
 		pooledNotes = null;
 		pooledSustains = null;
 		inactiveVirtualNotes = null;
@@ -341,16 +324,9 @@ class NotePool {
 	}
 
 	/**
-	 * Resets the element stack for a song-position jump: the buffers are
-	 * cleared (the elements' memberships die with the buffer, not one by
-	 * one), receptors are re-added as the only persistent elements, and
-	 * the whole stack is rebuilt onto the free stacks so the next frame's
-	 * walk grows it back element-by-element — exactly once each, fresh
-	 * `addElement` per element, never a duplicate.
-	 *
-	 * The VirtualNote/VirtualSustain binding half resets exactly as
-	 * before (free stacks rebuilt from the slot arrays so recycled
-	 * virtual objects survive the jump instead of being orphaned).
+	 * Resets the pool for a song-position jump.
+	 * Clears the GPU buffers entirely, re-adds the persistent receptor
+	 * notes, and returns all pooled elements to their free stacks.
 	 */
 	function reset() {
 		// Clear buffers and re-add receptors (the only persistent elements)
@@ -362,21 +338,21 @@ class NotePool {
 		}
 		NoteSystem.sustainsBuf.clear();
 
-		// The parked stack dies with the buffer (its memberships were
-		// per-buffer, and notesBuf.clear() just destroyed them all) —
-		// hand every element back to the free stack so the next frame
-		// re-creates the buffer memberships ONE at a time. No element is
-		// ever addElement'd twice: the stack arrays are dropped.
-		for (note in parkedNotes) {
+		// Return active pooled elements to free stacks
+		// (already removed from the buffer by clear above)
+		for (note in activeNotes) {
 			pooledNotes.push(note);
 		}
-		for (sustain in parkedSustains) {
+		for (sustain in activeSustains) {
 			pooledSustains.push(sustain);
 		}
-		parkedNotes.resize(0);
-		parkedSustains.resize(0);
+
+		activeNotes.resize(0);
+		activeSustains.resize(0);
 		noteSlot = 0;
 		sustainSlot = 0;
+		prevNoteCount = 0;
+		prevSustainCount = 0;
 
 		// Rebuild the free stacks from the slot arrays so recycled
 		// virtual objects survive the jump instead of being orphaned.
