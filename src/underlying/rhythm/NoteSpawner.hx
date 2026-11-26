@@ -1,24 +1,15 @@
 package underlying.rhythm;
 
-import underlying.data.chart.File;
-import underlying.data.chart.MetaNote;
-
 /**
-	This is where notes behave when interconnected to the note system.
-	The behavior pass COUNTS EVERY NOTE: processNotes draws — and therefore
-	judges — each note in the window on its own timing. No overlap folding
-	happens here anymore; the ambient note occlusion lives in the render
-	block now (NoteSystem.renderVirtualNotes / renderVirtualSustains),
-	which is decoupled from this pass, so combo counting stays 100%
-	accurate while the pixels still fold.
-
-	v3.9.0: the spawn pass drives the chart extern's GTFR protocol — the
-	virtual-note state lives in the extern's packed, grow-only arenas,
-	not in Haxe objects. `generateNotesFromRange_startIterationFromTimeRange`
-	is the exactly-once loop the C++ side guarantees (head/tail live there;
-	the loop's start/end variables are loop decoration).
-	@since Development
-**/
+ * This is where notes behave when interconnected to the note system.
+ * The behavior pass COUNTS EVERY NOTE: processNotes draws — and therefore
+ * judges — each note in the window on its own timing. No overlap folding
+ * happens here anymore; the ambient note occlusion lives in the render
+ * block now (NoteSystem.renderVirtualNotes / renderVirtualSustains),
+ * which is decoupled from this pass, so combo counting stays 100%
+ * accurate while the pixels still fold.
+ * @since Development
+ */
 @:publicFields
 class NoteSpawner {
 	var bottom:Int64;
@@ -46,6 +37,11 @@ class NoteSpawner {
 
 	var timeSpentOnIt:Float = 0;
 	var timeSpentOnItIncrement:Float = 0;
+
+	// Set by the light reset (onChartMutated) so the binary-search edge
+	// recycle runs exactly once per mutation — after the new window is
+	// derived, before the edges take effect (v3.8.7).
+	var notePoolNeedsEdgeRecycle:Bool = false;
 
 	function update(pos:Int64) {
 		_lastbottom = bottom;
@@ -79,15 +75,6 @@ class NoteSpawner {
 		processNotes(pos);
 	}
 
-	/**
-		v3.9.0 — the GTFR window sweep. The whole window [bottom, top)
-		runs through the chart extern's exactly-once protocol: NOTE hands
-		back the packed first8+last4 (the bits MetaNote decodes — no
-		boxing, the decode struct is a stack value), INDEX the store id
-		of that same note, RECYCLE drops that id's dead arena bindings.
-		drawNote is the behavior pass (judge/score/receptor work) and the
-		GTFR binds carry the render state out.
-	**/
 	function processNotes(pos:Int64) {
 		// pos is already latency-corrected noteTime as Int64 from PlayField
 		// No conductor.offset adjustment needed
@@ -101,21 +88,18 @@ class NoteSpawner {
 		// scored individually (100% accurate combo counting); only the
 		// PIXELS fold, purely visually, at render time.
 
-		if (parent.strumlines.length == 0)
-			return; // no receptors available; nothing can be drawn
-
-		var scrollSpeed = parent.parent.scrollSpeed;
 		var i = (minBottom != -1 && bottom < minBottom) ? minBottom : bottom;
+		var scrollSpeed = parent.parent.scrollSpeed;
 
-		File.GTFR_START(i, top);
-		while (File.GTFR_PROGRESS(i, top)) {
-			var note:MetaNote = File.GTFR_NOTE();
-			var noteIndex:Int64 = File.GTFR_INDEX_THEN_ADVANCE();
-			File.GTFR_VIRTUAL_NOTE_RECYCLE();
-
-			var diff = (MetaNote.metaNotePositionToSongTime(note.position - pos)) * scrollSpeed;
-			parent.drawNote(pos, note, diff, noteIndex);
+		while (i < top) {
+			if (parent.strumlines.length == 0)
+				break; // no receptors available; nothing can be drawn
+			var n = File.getNote(i);
+			var diff = (MetaNote.metaNotePositionToSongTime(n.position - pos)) * scrollSpeed;
+			parent.drawNote(pos, n, diff, i);
+			++i;
 		}
+
 	}
 
 	function cullTop(pos:Int64) {
@@ -154,14 +138,14 @@ class NoteSpawner {
 		var len = File.getLength();
 
 		// === FORWARD: Exclude notes that have despawned ===
-		// The despawned note's arena binding is dropped by the GTFR
-		// RECYCLE the next time the window sweep crosses its id — the
-		// v3.9.0 discipline (no cull-time pool calls at all).
 		while (bottom < len) {
 			var n = File.getNote(bottom);
 			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - n.position;
 			if (despawnCheck <= despawnDist)
 				break;
+			var notePool = parent.notePool;
+			notePool.putNote(n, bottom);
+			notePool.putSustain(n, bottom);
 			++bottom;
 		}
 
@@ -197,18 +181,38 @@ class NoteSpawner {
 	// every editor add/remove/replace/undo/paste). A chart edit does not
 	// move the playhead, reposition receptors, or touch scroll
 	// direction/speed/formula — the inputs of all the heavyweight reset
-	// work are UNCHANGED, so none of it applies. What an edit DOES
+	// work are UNCHANGED, so none of it applies. What an edit does
 	// invalidate is the window's global indexes (the store re-sorted):
-	// the GTFR discipline covers it — the old window is swept with
-	// recycle-only (every binding drops), then the new window's normal
-	// processNotes rebinds from the iteration itself. No binary search,
-	// no free stacks, no GPU reset at all.
+	// those are re-derived below by binary search, O(log n). Skipped in
+	// light mode: notePool.reset() (notesBuf clear + receptor re-add +
+	// next-frame re-acquire and full re-upload of every visible note)
+	// and the tail resetStrumlines() (per-lane 4097-entry LUT rebuild +
+	// per-strumline notesBuf.update() GPU flush + per-receptor
+	// ReceptorTimer allocation). The render pool reconciles itself on
+	// the next frame via beginFrame/endFrame — the exact mechanism the
+	// frozen seek relies on, where notes slide in and out of the window
+	// with no reset at all (PlayFieldEditorMode.seekTo, frozen branch).
+	//
+	// v3.8.7: the binary search JUMPS the window edges, so slot
+	// bindings that fell outside the new window would never be recycled
+	// by the cull loops the search replaced (the leak: free stacks
+	// deplete one binding per edit while the slots hold refs into a
+	// store the edit may have erased). recycleWindowEdges recycles
+	// exactly the two edge strips the window no longer covers — O(shift)
+	// — before the new edges take effect.
 	function resetNotes(songPosition:Float, pushToOffset:Float = 0, resetStrumlinesAfter:Bool = true, lightReset:Bool = false) {
 		var pf = parent.parent;
 		if (pf.disposed || pf.died)
 			return;
 
+		if (!lightReset)
+			parent.notePool.reset();
+		else
+			notePoolNeedsEdgeRecycle = true;
+
 		var len = File.getLength();
+		if (len <= 0)
+			return;
 
 		var songPos = MetaNote.floatToMetaNotePosition(songPosition);
 		// Window mirrors the cull semantics exactly:
@@ -216,6 +220,9 @@ class NoteSpawner {
 		//            <= despawnDist  <=>  notePos >= songPos - despawnDist)
 		//   top    = first note OUTSIDE spawn range (notePos - songPos
 		//            >= spawnDist  <=>  notePos > songPos + spawnDist)
+		// The old `songPos - spawnDist` top bound was an INVERTED offset
+		// that made top <= bottom on every reset, leaving the window
+		// empty until the next update's cull loops healed it.
 		var minPos:Int64 = songPos - despawnDist;
 		var maxPos:Int64 = songPos + spawnDist;
 
@@ -243,23 +250,18 @@ class NoteSpawner {
 			return lo;
 		}
 
-		// v3.9.0: on a chart edit the OLD window's arena bindings are
-		// recycled with the GTFR loop itself — the same exactly-once
-		// protocol, recycle-only (no drawNote): every binding of the
-		// old window drops in one pass, then the next update()'s
-		// processNotes rebinds the new window from the iteration.
-		// Stale bindings cannot survive the edit's frame.
-		if (lightReset) {
-			File.GTFR_START(bottom, top);
-			while (File.GTFR_PROGRESS(bottom, top)) {
-				File.GTFR_NOTE_THEN_ADVANCE();
-				File.GTFR_INDEX_THEN_ADVANCE();
-				File.GTFR_VIRTUAL_NOTE_RECYCLE();
-			}
-		}
-
 		var newBottom = lowerBound(minPos);
 		var newTop = upperBound(maxPos);
+
+		// v3.8.7: recycle the old window's slot bindings (see
+		// NotePool.recycleWindowRange). Must run BEFORE the window edges
+		// take their new values — the strip is measured from the OLD
+		// window, and a structural edit inside the window shifts
+		// in-window indexes without moving the edges at all.
+		if (notePoolNeedsEdgeRecycle) {
+			notePoolNeedsEdgeRecycle = false;
+			parent.notePool.recycleWindowRange(bottom, top);
+		}
 
 		minBottom = lowerBound(songPos + MetaNote.floatToMetaNotePosition(pushToOffset));
 

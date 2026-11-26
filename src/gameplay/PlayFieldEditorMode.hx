@@ -772,13 +772,13 @@ class PlayFieldEditorMode {
 		point (the sharded store re-sorts), which invalidates every
 		cached window/index until the next rebuild.
 
-		v3.9.0: routes to noteSystem.onChartMutated — the light chart-
-		mutation reset (window binary search + the GTFR recycle-only
-		sweep of the old window's arena bindings). The old path went
+		v3.8.6: routes to noteSystem.onChartMutated — the light chart-
+		mutation reset (window binary search only). The old path went
 		through onSongPositionJump's full jump teardown (resetStrumlines'
-		LUT rebuild, per-strumline GPU flushes) — costs whose inputs a
-		chart edit never touches. The next frame's GTFR sweep rebinds the
-		new window from the iteration itself; nothing is torn down.
+		LUT rebuild, notePool.reset's buffer clear + next-frame full
+		re-upload, per-strumline GPU flushes) — costs whose inputs a
+		chart edit never touches. The render pool reconciles itself next
+		frame via beginFrame/endFrame, same as the frozen seek.
 	**/
 	function onChartEdited() {
 		dirtyChart = true;

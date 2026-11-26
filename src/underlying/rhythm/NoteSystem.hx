@@ -2,17 +2,10 @@ package underlying.rhythm;
 
 import underlying.rhythm.NoteVB.VirtualNote;
 import underlying.rhythm.NoteVB.VirtualSustain;
-import underlying.data.chart.File;
 import underlying.rhythm.NoteMovementLUT;
-import cpp.Pointer;
-import cpp.RawPointer;
 
 /**
  * This is where notes and strumlines render in accordance to the note spawner.
- * v3.9.0: the render state lives in the chart extern's GTFR arenas (packed
- * words, grow-only). drawNote computes and BINDS; the render walk reads the
- * packed words straight off the raw pointer and pushes them into the parked
- * render pool.
  * @since Development
  */
 @:publicFields
@@ -111,7 +104,8 @@ class NoteSystem {
 	var strumlines(default, null):Array<Strumline>;
 	var noteSpawner(default, null):NoteSpawner;
 	var noteMovement(default, null):NoteMovementSystem;
-	var renderPool(default, null):RenderPool;
+	var notePool(default, null):NotePool;
+	var virtualNoteBuffer(default, null):NoteVB;
 
 	/** Per-lane movement LUTs: movementLUTs[strumline][receptor_index] */
 	var movementLUTs(default, null):Array<Array<NoteMovementLUT>>;
@@ -148,9 +142,11 @@ class NoteSystem {
 			strumlines.push(strumline);
 		}
 
-		// v3.9.0: the per-(lane,index) virtual-note buffer is GONE — the
-		// render state lives in the chart extern's GTFR arenas (packed
-		// words read off the raw pointer in renderNotes below).
+		// v3.7.1: 1 << 10 — the column axis covers the full 10-bit index
+		// field (0..1023), matching the editor's paste-wrap mania cap
+		// and any 10-bit chart the store can hold; 1 << 8 capped it at
+		// 256 columns, which a 10-bit mania could silently walk past.
+		virtualNoteBuffer = new NoteVB(strumlines.length, 1 << 10);
 
 		// Build movement LUTs — one per (strumline, receptor lane).
 		// Replaces per-note Math.cos/Math.sin with precomputed offset lookups.
@@ -159,7 +155,7 @@ class NoteSystem {
 		movementLUTs = [];
 		rebuildMovementLUTs();
 
-		renderPool = new RenderPool(this);
+		notePool = new NotePool(this);
 		noteSpawner = new NoteSpawner(this);
 		noteMovement = new NoteMovementSystem(this);
 
@@ -182,6 +178,8 @@ class NoteSystem {
 	function update(pos:Int64) {
 		movingBackward = pos < _stableLastPos;
 		_stableLastPos = pos;
+
+		virtualNoteBuffer.clear();
 
 		if (noteSpawner != null)
 			noteSpawner.update(pos);
@@ -223,20 +221,21 @@ class NoteSystem {
 	function onChartMutated(pos:Int64) {
 		_stableLastPos = pos;
 
-		// v3.9.0: the old window's arena bindings are recycled by the
-		// spawner's light reset (the GTFR recycle-only sweep — every
-		// binding of the old window drops in one exactly-once pass, then
-		// the next update()'s processNotes rebinds from the iteration
-		// itself). No render-side teardown happens here at all: no
-		// notesBuf clear, no receptor re-add, no GPU flush — stale
-		// bindings cannot survive the edit's frame by construction.
+		// The edit may have ERASED notes the render buffer still holds
+		// refs to (a remove/undo). The next update() would clear() first
+		// anyway, but between this edit and that update the buffer is
+		// walkable — and a stale ref into erased store memory is exactly
+		// the class of bug the clear-before-walk rule exists for. One
+		// O(touched) pass, not the O(lanes x 1024) full scan.
+		virtualNoteBuffer.clear();
+
 		if (noteSpawner != null)
 			noteSpawner.resetNotes(MetaNote.metaNotePositionToSongTime(pos), 0, false, true);
 	}
 
 	private function refreshRendering(noteTime:Float) {
 		// Receptors are persistent in the buffer — just update animations.
-		// Pooled spawned notes are managed by renderPool.beginFrame/endFrame.
+		// Pooled spawned notes are managed by notePool.beginFrame/endFrame.
 
 		// Editor mode: receptors never animate at all — nothing ever hits
 		// a note there, so no confirm/press/reset timers ever get set.
@@ -262,13 +261,10 @@ class NoteSystem {
 		// false there); the latency split below is the vanilla gameplay path.
 		var t = parent.playfieldEditorMode ? parent.songPosition : (parent.startedCountdown ? parent.noteTime : parent.songPosition);
 		refreshRendering(t);
-		// The frame boundary for the column chains: the last GTFR sweep
-		// (processNotes, this frame) threaded them; the next sweep will
-		// re-thread. One call, no scan.
-		File.GTFR_FRAME_BEGIN();
-		renderPool.beginFrame();
+		notePool.beginFrame();
 		renderVirtualNotes(pos);
-		renderPool.endFrame();
+		renderVirtualSustains(pos);
+		notePool.endFrame();
 		// Pooled elements had their @set("properties") fields modified in-place.
 		// Flush all pending CPU→GPU changes so the new positions/alphas/etc.
 		// actually take effect this frame.
@@ -280,59 +276,39 @@ class NoteSystem {
 		catch (e) {}
 	}
 
-	// The frame's raw arena pointers (one fromRaw per frame each; at()
-	// reads are zero-FFI). Fields declared here so the walk helpers share.
-	var _noteArena:Pointer<Int64>;
-	var _sustainArena:Pointer<Int64>;
-
-	// The draw pass's scratch pair — exactly one per NoteSystem,
-	// allocated once, reused for EVERY note of every frame (the old
-	// NotePool handed out one VirtualNote per chart note; the values
-	// now flow into the GTFR arena at the end of drawNote, so the
-	// scratch never carries state between notes except what the head
-	// below resets).
-	var drawScratchNote:VirtualNote = new VirtualNote(0, 0, 0);
-	var drawScratchSustain:VirtualSustain = new VirtualSustain(-9999, -9999, 0, 0);
-
 	// ==================================================================
-	// RENDER BLOCK + AMBIENT NOTE OCCLUSION (v3.9.0 — the GTFR arena walk)
+	// RENDER BLOCK + AMBIENT NOTE OCCLUSION
 	//
 	// Note behavior (processNotes) and rendering are decoupled: the
 	// behavior pass counts and judges EVERY note on its own timing, and
 	// the ambient occlusion — the overlap folding that merges notes
 	// rendering on the same pixel row into one sprite — lives HERE, in
-	// this render block, purely visually. The walk reads the chart
-	// extern's packed arena straight off the RAW POINTER (zero FFI per
-	// field: one Pointer.fromRaw per frame, then at() reads), sorts by
-	// (lane, index) column and row, and consecutive packed slots of one
-	// column on the same linear scroll row with the same type and
-	// duration fold into the first one's sprite: the head accumulates
-	// their alpha as occlusion shading and every folded note skips its
-	// own pooled element — the sprite-count win the AO look was built
-	// for. Gameplay is untouched by the folding: each folded note still
+	// this render block, purely visually. Consecutive VirtualNotes of
+	// one (lane, index) column on the same linear scroll row
+	// (Math.floor of the note's scroll diff — the exact criterion the
+	// old spawn-pass merge used, independent of the LUT and of Std.int
+	// truncation, so PAST notes fold as tightly as upcoming ones) with
+	// the same type and duration fold into the first one's sprite: the
+	// head accumulates their alpha as occlusion shading (a missed member
+	// dims with its own miss alpha) and every folded note skips its own
+	// pooled element — the sprite-count win the AO look was built for.
+	// Gameplay is untouched by the folding: each folded note still
 	// judges, hits, misses and counts on its own timing, so combo
 	// counting stays 100% accurate.
-	//
-	// Packed slot layout (10 words; the chart note's own two words are
-	// embedded verbatim at w4/w5 — the compression idiom):
-	//   w0: diff(32) | Sx(16) | notesInOne(8) | sustainExists | judged
-	//       | hitFlag | lane(3)     w1: globalIndex (-1 = free)
-	//   w2: initialAlphaF(32) | addedAlphaF(32)
-	//   w3: scaleF(32) | Sy(32)    w4: chart first8   w5: chart last4
 	// ==================================================================
 	function renderVirtualNotes(pos:Int64) {
 		var downScroll = parent.downScroll;
 		var scrollSpeed = _cachedScrollSpeed;
-
-		// The frame's raw pointers (one fromRaw per frame, zero FFI per
-		// field read). The walk reads packed words straight off them.
-		_noteArena = Pointer.fromRaw(File.GTFR_NOTE_DATA());
-		_sustainArena = Pointer.fromRaw(File.GTFR_SUSTAIN_DATA());
-
-		for (i in 0...strumlines.length) {
+		var virtualNotes = virtualNoteBuffer.notes;
+		for (i in 0...virtualNotes.length) {
+			var lane = virtualNotes[i];
 			var strumline = strumlines[i];
 			var maxReceptor = strumline.receptors.length;
-			for (j in 0...maxReceptor) {
+			for (j in 0...Std.int(Math.min(lane.length, maxReceptor))) {
+				var index = lane[j];
+				var length = virtualNoteBuffer.noteLength[i][j];
+				if (length == 0)
+					continue;
 				var receptor = strumline.receptors[j];
 				var strumReceptor = receptor.note;
 
@@ -342,112 +318,143 @@ class NoteSystem {
 				if (downScroll)
 					baseScrollDir += 180;
 
-				// AO group state for this column's walk (chain order is
-				// bind order = chart order, so consecutive chain slots are
-				// consecutive notes of the column — the fold's chain).
-				var headActive = false;
-				var headNote:Note = null;
-				var headRow:Float = 0;
-				var headType = -1;
-				var headDuration = -1;
+				// AO group state for this column's walk (slot order is
+				// chart order, so consecutive slots are consecutive notes
+				// of the column — the chain the folding follows).
+				var headVirtual:VirtualNote = null; // last rendered note of this column
+				var headNote:Note = null; // its pooled render note
+				var headRow:Float = 0; // its linear scroll row
 				var noteToHitIdx = receptor.noteToHit_index;
 				var hitSprite:Note = null;
 
-				var slot = File.GTFR_COLUMN_HEAD(i, j);
-				while (slot >= 0) {
-					var sw = slot * 10;
-					var w0 = _noteArena.at(sw);
-					var w1 = _noteArena.at(sw + 1);
-					var w2 = _noteArena.at(sw + 2);
-					var w3 = _noteArena.at(sw + 3);
-					var w4 = _noteArena.at(sw + 4);
-					var w5 = _noteArena.at(sw + 5);
+				var k = 0;
+				while (k < length) {
+					var virtualNote:VirtualNote = index[k];
+					k++;
+					if (virtualNote == null)
+						continue;
 
-					var gidx = w1;
-					var chartPos = w4 & 0x0000FFFFFFFFFFFF;
-					var chartLast4 = w5.low;
-					var noteType = (chartLast4 >>> 18) & 0xFF;
-					var duration = ((w4.high) & 0xFFFF) | ((chartLast4 & 0xFF) << 16);
-					var sustainExists = ((w0.low >>> 25) & 1) != 0;
-
-					var row = Math.floor(MetaNote.metaNotePositionToSongTime(chartPos - pos) * scrollSpeed);
+					var row = Math.floor(MetaNote.metaNotePositionToSongTime(virtualNote.ref.position - pos) * scrollSpeed);
 
 					// === AMBIENT OCCLUSION (render-side folding) ===
-					if (headActive
+					if (headVirtual != null
 						&& row == headRow
-						&& noteType == headType
-						&& duration == headDuration) {
+						&& virtualNote.ref.lane == headVirtual.ref.lane
+						&& virtualNote.ref.type == headVirtual.ref.type
+						&& virtualNote.ref.duration == headVirtual.ref.duration) {
 						// Fold into the head sprite: accumulate the
 						// occlusion shading and skip this note's own
 						// pooled element entirely.
+						headVirtual.addedAlpha = Math.min(headVirtual.addedAlpha + virtualNote.initialAlpha, 256);
+						headVirtual.notesInOne++;
 						if (headNote != null)
-							headNote.addedAlpha = Math.min(headNote.addedAlpha + Float.int32ToFloat(w2.low), 256);
+							headNote.addedAlpha = headVirtual.addedAlpha;
 						// A folded note can still be the receptor's
 						// noteToHit (the earliest un-judged note) — its
 						// visual IS the head sprite.
-						if (noteToHitIdx == gidx)
+						if (noteToHitIdx == virtualNote.globalIndex)
 							hitSprite = headNote;
-					} else {
-						headActive = true;
-						headRow = row;
-						headType = noteType;
-						headDuration = duration;
-
-						var handle = typeToHandle[noteType];
-						var note = renderPool.acquireNote();
-
-						if (note.handle != handle || note.texUnit != handle.texUnit || note.texSlot != handle.texSlot)
-							note.setHandle(handle);
-						note.x = (w0.low >>> 16) & 0xFFFF;
-						note.y = w3.high;
-						note.scale = Float.int32ToFloat(w3.low);
-						note.initialAlpha = Float.int32ToFloat(w2.low);
-						note.addedAlpha = Float.int32ToFloat(w2.high);
-
-						note.mania_for_clipruntimehelper = mania;
-						note.diff = -w0.low;
-						note.scrollDirection = baseScrollDir;
-
-						note.changeID(j);
-						note.toNote();
-
-						headNote = note;
-						if (noteToHitIdx == gidx)
-							hitSprite = note;
-
-						// === SUSTAIN (the note slot's word9 links its
-						// sustain slot — one acquire, no lookup) ===
-						if (sustainExists) {
-							var sSlot = Int64.toInt(_noteArena.at(sw + 9));
-							if (sSlot >= 0 && _sustainArena != null) {
-								var ssw = sSlot * 6;
-								var sw0 = _sustainArena.at(ssw);
-								var sw1 = _sustainArena.at(ssw + 1);
-								var sw2 = _sustainArena.at(ssw + 2);
-								var sw3 = _sustainArena.at(ssw + 3);
-								var sustain = renderPool.acquireSustain();
-								var sHandle = typeToHandle[noteType];
-								if (sustain.handle != sHandle || sustain.texUnit != sHandle.texUnit || sustain.texSlot != sHandle.texSlot)
-									sustain.setHandle(sHandle);
-								sustain.x = (sw0.low >>> 16) & 0xFFFF;
-								sustain.y = (sw0.low >>> 48) & 0xFFFF;
-								sustain.w = sw1.low;
-								sustain.speed = Float.int32ToFloat(sw2.high);
-								sustain.scale = Float.int32ToFloat(sw3.low);
-								sustain.mania_for_clipruntimehelper = mania;
-								sustain.length = sw1.high;
-								sustain.c.aF = Float.int32ToFloat(sw2.low);
-								sustain.c.luminanceF = Float.int32ToFloat(sw2.low);
-								sustain.diff = -sw0.low;
-								sustain.scrollDirection = baseScrollDir;
-								sustain.changeID(j);
-							}
-						}
+						continue;
 					}
 
-					slot = File.GTFR_SLOT_NEXT(slot);
+					headVirtual = virtualNote;
+					headRow = row;
+					var handle = typeToHandle[virtualNote.ref.type];
+					var note = notePool.acquireNote();
+
+					if (note.handle != handle || note.texUnit != handle.texUnit || note.texSlot != handle.texSlot)
+						note.setHandle(handle);
+					note.x = virtualNote.Sx;
+					note.y = virtualNote.Sy;
+					note.scale = virtualNote.scale;
+					note.initialAlpha = virtualNote.initialAlpha;
+					note.addedAlpha = virtualNote.addedAlpha;
+
+					note.mania_for_clipruntimehelper = mania;
+					note.diff = -virtualNote.diff;
+					note.scrollDirection = baseScrollDir;
+
+					note.changeID(j);
+					note.toNote();
+
+					headNote = note;
+					if (noteToHitIdx == virtualNote.globalIndex)
+						hitSprite = note;
 				}
 				receptor.noteToHit_sprite = hitSprite;
+			}
+		}
+	}
+
+	function renderVirtualSustains(pos:Int64) {
+		var downScroll = parent.downScroll;
+		var scrollSpeed = _cachedScrollSpeed;
+		var virtualSustains = virtualNoteBuffer.sustains;
+		for (i in 0...virtualSustains.length) {
+			var lane = virtualSustains[i];
+			var strumline = strumlines[i];
+			var maxReceptor = strumline.receptors.length;
+			for (j in 0...Std.int(Math.min(lane.length, maxReceptor))) {
+				var index = lane[j];
+				var length = virtualNoteBuffer.sustainLength[i][j];
+				var receptor = strumline.receptors[j];
+				var strumReceptor = receptor.note;
+
+				// Lane-constant values hoisted from inner loop
+				var mania = strumline.length;
+				var baseScrollDir = strumReceptor.scrollDirection;
+				var baseRot = baseScrollDir;
+				if (downScroll) {
+					baseRot += 180;
+					baseScrollDir += 180;
+				}
+
+				// AO group state for this column's walk.
+				var headSustain:VirtualSustain = null; // last rendered sustain of this column
+				var headRow:Float = 0; // its linear scroll row
+
+				for (k in 0...length) {
+					var virtualSustain:VirtualSustain = index[k];
+					if (virtualSustain == null)
+						continue;
+
+					var row = Math.floor(MetaNote.metaNotePositionToSongTime(virtualSustain.ref.ref.position - pos) * scrollSpeed);
+
+					// === AMBIENT OCCLUSION (render-side folding) ===
+					// Identical trails: same scroll row, same type and
+					// duration render the exact same sustain — fold them
+					// into the one already drawn. (The behavior pass
+					// counts and judges each of these notes separately;
+					// only the duplicated pixels fold away.)
+					if (headSustain != null
+						&& row == headRow
+						&& virtualSustain.ref.ref.type == headSustain.ref.ref.type
+						&& virtualSustain.ref.ref.duration == headSustain.ref.ref.duration) {
+						continue;
+					}
+
+					headSustain = virtualSustain;
+					headRow = row;
+					var handle = typeToHandle[virtualSustain.ref.ref.type];
+					var sustain = notePool.acquireSustain();
+
+					if (sustain.handle != handle || sustain.texUnit != handle.texUnit || sustain.texSlot != handle.texSlot)
+						sustain.setHandle(handle);
+					sustain.x = virtualSustain.Sx;
+					sustain.y = virtualSustain.Sy;
+					sustain.w = virtualSustain.w;
+					sustain.speed = virtualSustain.speed;
+					sustain.scale = virtualSustain.scale;
+
+					sustain.mania_for_clipruntimehelper = mania;
+					sustain.length = virtualSustain.length;
+					sustain.c.aF = virtualSustain.alpha;
+					sustain.c.luminanceF = virtualSustain.alpha;
+					sustain.diff = -virtualSustain.diff;
+					sustain.scrollDirection = baseScrollDir;
+					sustain.r = baseRot;
+					sustain.changeID(j);
+				}
 			}
 		}
 	}
@@ -669,34 +676,13 @@ class NoteSystem {
 		var strumline = strumlines[lane];
 		var receptor = strumline.receptors[index];
 		var rec = receptor.note;
+		var handle = NoteSystem.typeToHandle[note.type];
 
-		// The scratch pair (one pair per NoteSystem, reused every note
-		// of every frame — see NoteVB.hx's v3.9.0 comment): the behavior
-		// pass fills them below, and the GTFR binds at the end pack the
-		// values into the chart extern's arena. No pool, no per-note
-		// allocation, no boxing.
-		var noteSpr = drawScratchNote;
-		var sustainSpr = duration != 0 ? drawScratchSustain : null;
+		var noteSpr = notePool.getNote(index, note, _id);
+		if (noteSpr == null)
+			return noteSpr;
+		var sustainSpr = duration != 0 ? notePool.getSustain(index, note, _id) : null;
 		var sustainExists = duration != 0;
-		// Per-note scratch reset (the state the old pool's getNote/getSustain
-		// used to hand back fresh — the scratch is otherwise shared).
-		noteSpr.initialAlpha = Note.defaultAlpha;
-		noteSpr.addedAlpha = 0;
-		noteSpr.scale = 1;
-		noteSpr.diff = 0;
-		noteSpr.Sx = 0;
-		noteSpr.Sy = 0;
-		noteSpr.globalIndex = _id;
-		if (sustainSpr != null) {
-			sustainSpr.alpha = Sustain.defaultAlpha;
-			sustainSpr.speed = 1;
-			sustainSpr.scale = 1;
-			sustainSpr.r = 0;
-			sustainSpr.diff = 0;
-			sustainSpr.w = 0;
-			sustainSpr.length = 0;
-			sustainSpr.ref = noteSpr;
-		}
 
 		// === PLAYFIELD EDITOR: pure render, zero gameplay ===
 		// In playfieldEditorMode notes never hit, never miss, never judge:
@@ -736,16 +722,12 @@ class NoteSystem {
 				} else {
 					noteMovement.run(this, noteSpr, sustainSpr, receptor, index, note.type, false);
 				}
-				File.GTFR_BIND_SUSTAIN(_id, sustainSpr.diff, sustainSpr.Sx, sustainSpr.Sy,
-					sustainSpr.w, sustainSpr.length, sustainSpr.alpha, sustainSpr.speed,
-					sustainSpr.scale, sustainSpr.r);
+				virtualNoteBuffer.addSustain(sustainSpr, noteSpr);
 			} else if (!lut.hasExtendedLUT) {
 				noteMovement.run(this, noteSpr, null, receptor, index, note.type, false);
 			}
 
-			File.GTFR_BIND_NOTE(_id, noteSpr.diff, noteSpr.Sx, noteSpr.Sy,
-				noteSpr.initialAlpha, noteSpr.addedAlpha, noteSpr.scale, 1,
-				sustainExists, false, false, lane);
+			virtualNoteBuffer.addNote(noteSpr);
 			return noteSpr;
 		}
 
@@ -976,23 +958,19 @@ class NoteSystem {
 				receptor.sustainActive = !isResolved;
 		}
 
-		// When the LUT has extended data (interp baked in), scale/sustainRot/
-		// scrollMul were already applied inline above — skip the redundant
-		// noteMovement.run() call. This saves ~2000 method calls + array
-		// traversals + followNote() calls per frame for 2000 notes.
-		if (!lutExtended)
-			noteMovement.run(this, noteSpr, sustainSpr, receptor, index, note.type, isHit);
+		if (noteSpr != null) {
+			// When the LUT has extended data (interp baked in), scale/sustainRot/
+			// scrollMul were already applied inline above — skip the redundant
+			// noteMovement.run() call. This saves ~2000 method calls + array
+			// traversals + followNote() calls per frame for 2000 notes.
+			if (!lutExtended)
+				noteMovement.run(this, noteSpr, sustainSpr, receptor, index, note.type, isHit);
+			if (sustainExists)
+				virtualNoteBuffer.addSustain(sustainSpr, noteSpr);
+		}
 
-		// The GTFR binds: the note always, the sustain when one exists.
-		// The packed words carry this to the render walk (and the sustain
-		// slot links off the note slot's word9).
-		File.GTFR_BIND_NOTE(_id, noteSpr.diff, noteSpr.Sx, noteSpr.Sy,
-			noteSpr.initialAlpha, noteSpr.addedAlpha, noteSpr.scale, 1,
-			sustainExists, judged, isHit, lane);
-		if (sustainExists && sustainSpr != null)
-			File.GTFR_BIND_SUSTAIN(_id, sustainSpr.diff, sustainSpr.Sx, sustainSpr.Sy,
-				sustainSpr.w, sustainSpr.length, sustainSpr.alpha, sustainSpr.speed,
-				sustainSpr.scale, sustainSpr.r);
+		if (!isHit)
+			virtualNoteBuffer.addNote(noteSpr);
 
 		return noteSpr;
 	}
@@ -1119,9 +1097,11 @@ class NoteSystem {
 	}
 
 	function dispose() {
-		if (renderPool != null) {
-			renderPool.dispose();
-			renderPool = null;
+		virtualNoteBuffer.clear();
+
+		if (notePool != null) {
+			notePool.dispose();
+			notePool = null;
 		}
 
 		notesBuf.clear();
