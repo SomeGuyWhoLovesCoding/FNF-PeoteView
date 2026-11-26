@@ -112,23 +112,13 @@ class NoteSpawner {
 		var len = File.getLength();
 		var notePool = parent.notePool;
 
-		// v3.9.2 FIRST-FRAME HEAL: a reset that primed entries before
-		// the first cull ran can leave the cache epoch's base ABOVE the
-		// window the culls are about to establish (fetchNote primes at
-		// whatever index was asked for first — the first reset reads
-		// bottom's note). Anchoring the base to the CURRENT bottom here
-		// (a no-op whenever the base already sits at or below bottom —
-		// the steady state) guarantees every fetch in this pass maps
-		// inside the cached span, so cullTop's probes are all cache
-		// hits and the walk allocates nothing.
-		notePool.advanceWindowTo(bottom);
-
 		// === FORWARD: Include notes now within spawn range ===
-		// v3.9.1/v3.9.2: this loop is where entering notes get their
-		// cache entry PRIMED (a pooled MetaNote, re-SET in place —
-		// zero steady-state allocation); the cull itself only probes
-		// ONE note per step — the note at the edge — so the misses here
-		// are one per NEW window member, the exact rate the pool pays.
+		// v3.9.1: this loop is where entering notes get their cache
+		// entry PRIMED (fetchNote caches a note the first time the
+		// window touches it); the cull itself only probes ONE note per
+		// step — the note at the edge — so the fetches here are one per
+		// NEW window member, the exact rate the cache is supposed to
+		 // pay.
 		while (top < len) {
 			var n = notePool.fetchNote(top);
 			if (n.position - pos >= spawnDist)
@@ -146,21 +136,11 @@ class NoteSpawner {
 		// as an invariant once both culls have run. The old guard is what
 		// wedged the renderer in empty sections (top == bottom could
 		// never move backward).
-		//
-		// v3.9.2: the backward probe is gated on movingBackward. In pure
-		// forward play the edge note is IN THE CACHE (primed on entry,
-		// still cached — nothing re-fetches it off the top), so this loop
-		// would pay one UNPOOLED getNote per frame for a check the window
-		// arithmetic already answers. Backward play (a seek) re-opens
-		// the window above and may read notes the cache no longer
-		// covers — those fetch uncached and re-prime, as designed.
-		if (parent.movingBackward) {
-			while (top > 0) {
-				var n = notePool.fetchNote(top - 1);
-				if (n.position - pos < spawnDist)
-					break;
-				--top;
-			}
+		while (top > 0) {
+			var n = notePool.fetchNote(top - 1);
+			if (n.position - pos < spawnDist)
+				break;
+			--top;
 		}
 
 		if (top < len)
@@ -172,13 +152,9 @@ class NoteSpawner {
 		var notePool = parent.notePool;
 
 		// === FORWARD: Exclude notes that have despawned ===
-		// v3.9.2: the despawn probe reads through the cache too — the
-		// note at `advancedBottom` is the window's bottom edge, cached
-		// since it entered, so the probe is a cache hit (the old plain
-		// getNote here was the last per-frame allocation in the walk).
 		var advancedBottom = bottom;
 		while (advancedBottom < len) {
-			var n = notePool.fetchNote(advancedBottom);
+			var n = File.getNote(advancedBottom);
 			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - n.position;
 			if (despawnCheck <= despawnDist)
 				break;
@@ -186,26 +162,14 @@ class NoteSpawner {
 			notePool.putSustain(n, advancedBottom);
 			++advancedBottom;
 		}
-		// v3.9.1/v3.9.2: the window-note cache compacts here, exactly
-		// where the leading edge advances — the dropped indexes can never
-		// be fetched again (every hot walk anchors inside [bottom, top)),
+		// v3.9.1: the window-note cache compacts here, exactly where the
+		// leading edge advances — the dropped indexes can never be
+		// fetched again (every hot walk anchors inside [bottom, top)),
 		// and the re-base keeps the cache array window-sized for the
-		// whole playthrough instead of growing to chart length. The
-		// dropped POOLED MetaNotes return to the free pool inside
-		// advanceWindowTo and are re-SET for the next entering note:
-		// steady state recycles the same window-sized object set forever.
+		// whole playthrough instead of growing to chart length.
 		if (advancedBottom != bottom) {
 			notePool.advanceWindowTo(advancedBottom);
 			bottom = advancedBottom;
-			// v3.9.2 STALE-REF SWEEP: pooled MetaNotes are MUTATED in
-			// place now — a receptor (noteToHit / sustainToHold) still
-			// holding one of the notes that just despawned is pointing
-			// at an object whose fields are about to be re-set for a
-			// NEW note. The old architecture never had this hazard: each
-			// note was its own object. Clear the receptor fields whose
-			// note fell out of the window here — the same note-leave
-			// moment update() already handles for movingBackward.
-			sweepReceptorsForLeftNotes();
 		}
 
 		// === BACKWARD: Include notes now back in range ===
@@ -217,60 +181,22 @@ class NoteSpawner {
 		// < spawnDist. The old guard is the other half of the empty-window
 		// wedge (an empty section scrolled INTO could never reopen
 		// backward either).
-		// v3.9.2: gated on movingBackward — in pure forward play
-		// bottom only ever advances (the despawn pass above), so this
-		// loop's probe would pay one uncached getNote per frame for a
-		// question the window arithmetic already answered. Backward play
-		// (a seek) re-opens the window below and re-primes through
-		// fetchNote as designed.
-		if (parent.movingBackward) {
-			while (bottom > 0) {
-				var n = notePool.fetchNote(bottom - 1);
-				var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - n.position;
-				if (despawnCheck > despawnDist)
-					break;
-				--bottom;
-			}
-			notePool.advanceWindowTo(bottom);
+		// v3.9.1: the window-note cache re-bases to whatever bottom walks
+		// DOWN to as well (advanceWindowTo handles a negative drop as a
+		// no-op; the re-fetches below this point are uncached reads of
+		// indexes the cache no longer covers — they re-prime on the next
+		// forward pass through fetchNote).
+		while (bottom > 0) {
+			var n = File.getNote(bottom - 1);
+			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - n.position;
+			if (despawnCheck > despawnDist)
+				break;
+			--bottom;
 		}
+		notePool.advanceWindowTo(bottom);
 
 		if (bottom < len)
 			curBottomNote = notePool.fetchNote(bottom);
-	}
-
-	/**
-	 * v3.9.2: clears the per-receptor note references whose notes just
-	 * left the window. Pooled MetaNotes are re-set in place when their
-	 * slot re-enters the pool, so a receptor holding a departed note
-	 * would read the fields of a DIFFERENT note (judgement reads by
-	 * index stay correct — receptor.noteToHit_index is the authority;
-	 * the object ref is only a field cache). Cost: receptors x 4 field
-	 * writes, only on frames where the leading edge actually advanced
-	 * (the despawn tick — a few times a second on normal charts, the
-	 * wall rate on spam charts).
-	 */
-	function sweepReceptorsForLeftNotes() {
-		for (i in 0...parent.strumlines.length) {
-			var strumline = parent.strumlines[i];
-			for (j in 0...strumline.receptors.length) {
-				var receptor = strumline.receptors[j];
-				if (receptor.noteToHit != null) {
-					var gi = receptor.noteToHit_index;
-					if (gi < bottom || gi >= top) {
-						receptor.noteToHit = null;
-						receptor.noteToHit_index = 0;
-					}
-				}
-				if (receptor.sustainToHold != null) {
-					var sgi = receptor.sustainToHold_index;
-					if (sgi < bottom || sgi >= top) {
-						receptor.sustainToHold = null;
-						receptor.sustainToHold_index = 0;
-						receptor.sustainToHold_duration = 0;
-					}
-				}
-			}
-		}
 	}
 
 	// resetStrumlinesAfter: the per-edit path (NoteSystem.onSongPositionJump)
@@ -329,16 +255,11 @@ class NoteSpawner {
 		var minPos:Int64 = songPos - despawnDist;
 		var maxPos:Int64 = songPos + spawnDist;
 
-		// v3.9.2: the search probes read through fetchNote — they converge
-		// on the new window's edges, so the last probes prime exactly the
-		// edge notes the next frame reads (and the pool takes the middle
-		// probe misses back, re-set for entering notes). Allocation-free
-		// on every target: a miss pops a pooled MetaNote and re-sets it.
 		function lowerBound(target:Int64):Int64 {
 			var lo:Int64 = 0, hi:Int64 = len;
 			while (lo < hi) {
 				var mid = (lo + hi) >> 1;
-				if (parent.notePool.fetchNote(mid).position < target)
+				if (File.getNote(mid).position < target)
 				lo = mid + 1;
 				else
 				hi = mid;
@@ -350,7 +271,7 @@ class NoteSpawner {
 			var lo:Int64 = 0, hi:Int64 = len;
 			while (lo < hi) {
 				var mid = (lo + hi) >> 1;
-				if (parent.notePool.fetchNote(mid).position <= target)
+				if (File.getNote(mid).position <= target)
 				lo = mid + 1;
 				else
 				hi = mid;

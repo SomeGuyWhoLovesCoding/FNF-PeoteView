@@ -22,14 +22,6 @@ extern class File {
 	@:runtime inline static function getNote(atIndex:Int64):MetaNote {
 		return new MetaNote.MetaNoteImpl(getNote_first8(atIndex), Int64.toInt(getNote_last4(atIndex)));
 	}
-	// v3.9.2: the ZERO-ALLOCATION read — the pool's window cache re-sets a
-	// pooled MetaNote's packed fields in place instead of constructing a
-	// fresh object per fetch. Packed fields cross the FFI as the same
-	// primitives getNote itself uses (first8:Int64, last4 as Int32), so
-	// there is no new extern and no allocation on any target.
-	@:runtime inline static function fetchNote(atIndex:Int64, out:MetaNote.MetaNoteImpl):Void {
-		out.set(getNote_first8(atIndex).high, getNote_last4(atIndex).low);
-	}
 	@:native("insertNote") static function insertNote(atGlobalPosition:Int64, duration:Int, index:Int, type:Int):Void;
 	/**
 	 * Adds a note from its raw fields — the editor-facing API.
@@ -194,13 +186,6 @@ class File {
 	//BOTTLENECK: low per-call heap allocation of MetaNoteImpl in the note-read path; GC churn if called per-frame in note loops | FIX: return the packed Int64 and decode in the caller, or fill a reusable scratch MetaNote via out-param
 	@:runtime inline public static function getNote(atIndex:Int64):MetaNote {
 		return new MetaNote.MetaNoteImpl(getNote_first8(atIndex), Int64.toInt(getNote_last4(atIndex)));
-	}
-
-	// v3.9.2: the ZERO-ALLOCATION read — the pool's window cache re-sets a
-	// pooled MetaNote's packed fields in place instead of constructing a
-	// fresh object per fetch (see the cpp target's fetchNote docs).
-	@:runtime inline public static function fetchNote(atIndex:Int64, out:MetaNoteImpl):Void {
-		out.set(getNote_first8(atIndex), getNote_last4(atIndex));
 	}
 
 	@:hlNative("chart_file", "insertNote")
