@@ -131,4 +131,14 @@ class MetaNoteImpl {
 		this.high = high;
 		this.low = low;
 	}
+
+	// v3.9.2: in-place field rewrite for the pooled window-note cache.
+	// A pooled MetaNote is RE-SET to a newly entered note's packed fields
+	// instead of being re-allocated — steady-state note-window handling
+	// performs ZERO allocations on any target. Untyped args on purpose:
+	// same signature shape as new(), call sites pass Int64/UInt32.
+	public inline function set(high, low) {
+		this.high = high;
+		this.low = low;
+	}
 }
