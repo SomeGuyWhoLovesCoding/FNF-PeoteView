@@ -502,7 +502,7 @@ class NoteSystem {
 		if (nextId >= len)
 			return baseThreshold;
 
-		var nextNote = notePool.fetchNote(nextId);
+		var nextNote = File.getNote(nextId);
 
 		// Time gap (ms) between the start of this note and the start of the next.
 		var timeGapMs = MetaNote.metaNotePositionToSongTime(nextNote.position - currentNote.position);
@@ -547,12 +547,7 @@ class NoteSystem {
 		var sameLaneTimeGap = 0.0;
 
 		while (nextSameLaneId < len) {
-			// v3.9.1: this forward walk is the heaviest scan on wall
-			// charts (it crosses every OTHER column's note hunting the
-			// next same-column one — ~770 getNote allocations per hit on
-			// the 768-column chart). It runs entirely inside the window
-			// ahead of the just-hit note, so it reads through the cache.
-			var n = notePool.fetchNote(nextSameLaneId);
+			var n = File.getNote(nextSameLaneId);
 			var gapMs = MetaNote.metaNotePositionToSongTime(n.position - currentNote.position);
 
 			// Stop scanning if we've passed the window where the cap could matter
@@ -608,16 +603,12 @@ class NoteSystem {
 
 		// Binary search the first index whose note position is >= `target`.
 		// Notes are position-sorted, so this is a safe monotonic search.
-		// v3.9.1: the search range is [spawner.bottom, spawner.top) —
-		// entirely inside the window — so every probe reads the pool's
-		// window-note cache (fetchNote) instead of allocating a fresh
-		// MetaNote per probe; only O(log n) probes per press.
 		inline function lowerBoundPos(lo:Int64, hi:Int64, target:Int64):Int64 {
 			var l = lo;
 			var h = hi;
 			while (l < h) {
 				var mid:Int64 = Int64.add(l, Int64.div(Int64.sub(h, l), 2));
-				if (notePool.fetchNote(mid).position < target)
+				if (File.getNote(mid).position < target)
 					l = Int64.add(mid, 1);
 				else
 					h = mid;
@@ -636,7 +627,7 @@ class NoteSystem {
 		var found = false;
 
 		inline function consider(i:Int64) {
-			var n = notePool.fetchNote(i);
+			var n = File.getNote(i);
 			// Window guard: a loop only breaks on its near side, so check the
 			// far side here (at most the anchor note can be far-future).
 			if (n.position < late || n.position > early)
@@ -655,7 +646,7 @@ class NoteSystem {
 		// Backward: notes at or just before the playhead (already somewhat late).
 		var i = bi;
 		while (i >= spawner.bottom) {
-			if (notePool.fetchNote(i).position < late)
+			if (File.getNote(i).position < late)
 				break;
 			consider(i);
 			i = Int64.sub(i, 1);
@@ -664,7 +655,7 @@ class NoteSystem {
 		// Forward: upcoming notes within the hit window.
 		i = Int64.add(p, 1);
 		while (i < spawner.top) {
-			if (notePool.fetchNote(i).position > early)
+			if (File.getNote(i).position > early)
 				break;
 			consider(i);
 			i = Int64.add(i, 1);

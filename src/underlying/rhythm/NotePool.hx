@@ -54,42 +54,6 @@ class NotePool {
 	var parkedNotes(default, null):Array<Note>;
 	var parkedSustains(default, null):Array<Sustain>;
 
-	// =================================================================
-	//  WINDOW NOTE CACHE  (v3.9.1 — the 2.35M-note-chart memory fix)
-	// =================================================================
-	// File.getNote() is an FFI call that CONSTRUCTS a fresh MetaNote
-	// object on every invocation — it cannot return a reference into
-	// the C++ store. On a 2,359,436-note chart the per-frame window
-	// walk re-fetches every in-window note every frame (measured:
-	// ~4,189 getNote calls/frame at 60fps — 226 MILLION MetaNote
-	// allocations across one 901-second playthrough), and the scans
-	// (computeDynamicHoldThreshold's same-column forward walk, the
-	// hit-note search, the sustain passes) each fetch again per note.
-	// All of those reads are IN-WINDOW: a note inside [bottom, top) is
-	// fetched many times per frame and its fields never change while
-	// it stays there.
-	//
-	// This cache is populated ONCE per note, at the exact moment it
-	// ENTERS the window (cullTop's forward loop — the same place its
-	// VirtualNote slot binds), and every subsequent read of an
-	// in-window index is served from it. Cache axis is WINDOW-RELATIVE
-	// (globalIndex - windowBase), so the array stays window-sized
-	// (~5,700 entries on the worst chart measured, vs the 2.36M-entry
-	// global-axis slot array the old pool grew to — 18MB of monotonic
-	// growth that nothing ever reclaimed).
-	//
-	// Invalidation is the existing recycleWindowRange discipline:
-	// every chart mutation funnels through onChartMutated → light
-	// reset → recycleWindowRange, which already strips the strip of
-	// bindings an edit invalidated; the cache rides the exact same
-	// strip (and reset() drops it with the window). Edits can also
-	// rewrite a note's FIELDS in place without moving indexes
-	// (mirror/shift) — those strip a wider [lo,hi) span via the light
-	// reset's edge recycle, so the affected entries are re-fetched.
-	var windowNotes:Array<MetaNote>;
-	var windowBase:Int64 = -1; // global index of windowNotes[0]
-	var windowCount:Int = 0;   // live entries in windowNotes
-
 	// Frame-sync cursor: this frame's walk depth into the stacks above.
 	var noteSlot:Int = 0;
 	var sustainSlot:Int = 0;
@@ -271,145 +235,6 @@ class NotePool {
 			recycleSustainAt(i);
 			i++;
 		}
-		// The window-note cache rides the same strip: the edit may have
-		// erased or shifted exactly these indexes. (The light reset runs
-		// this BEFORE the window edges move, so lo/hi are the OLD window
-		// — the strip the bindings were recycled for, which is exactly
-		// the strip the cache holds stale entries for.)
-		stripWindowNotes(lo, hi);
-	}
-
-
-	// =================================================================
-	//  WINDOW NOTE CACHE  (v3.9.1)
-	// =================================================================
-
-	/**
-	 * Serves a MetaNote for an in-window global index WITHOUT a fresh
-	 * File.getNote allocation: windowNotes[i - windowBase] when primed,
-	 * a priming fetch (one allocation, once per note) when not, and the
-	 * plain uncached fetch for anything outside the cached span (the
-	 * cull edge probes, binary searches, editor scans — all O(log n)
-	 * paths whose allocation rate is a handful per frame, not the
-	 * thousands the in-window walks produce).
-	 *
-	 * The per-frame hot walks (processNotes, findPlayerHitNote's in-
-	 * window scans, computeDynamicHoldThreshold's forward walk) call
-	 * this instead of File.getNote; each note pays ONE allocation when
-	 * it enters the window and ZERO while it stays in it.
-	 */
-	inline function fetchNote(index:Int64):MetaNote {
-		var i = Int64.toInt(index - windowBase);
-		// Test the ENTRY, not a live-count bound: stripped strips leave
-		// holes inside the cached span, so windowCount < array length.
-		if (i >= 0 && i < windowNotes.length && windowNotes[i] != null)
-			return windowNotes[i];
-		var n = File.getNote(index);
-		// Prime opportunistically: this index is (or is about to be) in
-		// the window — cache it under the CURRENT window base so the
-		// walk that follows reads it from the cache.
-		primeWindowNote(index, n);
-		return n;
-	}
-
-	/**
-	 * Cache one note's MetaNote at its window-relative slot, growing
-	 * the array from the front as the window first forms. windowBase
-	 * only ever tracks `bottom` (see advanceWindowTo), so the array
-	 * stays window-sized for the whole playthrough.
-	 */
-	function primeWindowNote(index:Int64, n:MetaNote) {
-		if (windowBase < 0) {
-			windowBase = index;
-			windowNotes = [];
-		}
-		var i = Int64.toInt(index - windowBase);
-		if (i < 0)
-			return; // below the cached span — re-fetched uncached (rare: only before the first advance)
-		while (windowNotes.length < i + 1)
-			windowNotes.push(null);
-		if (windowNotes[i] == null)
-			windowCount++;
-		windowNotes[i] = n;
-	}
-
-	/**
-	 * THE CACHE'S MEMORY DISCIPLINE — called from cullBottom's despawn
-	 * pass, right where the window's leading edge advances. Drops the
-	 * entries below the new bottom (they can never be fetched again:
-	 * every hot walk is anchored inside [bottom, top)) and re-bases the
-	 * array so its LENGTH stays window-sized: entries shift down in
-	 * place (a fixed-distance move, no reallocation, GC-visible only
-	 * as the array's length shrinking — never as growth).
-	 *
-	 * On the measured chart the array holds ~5,700 entries for the
-	 * whole 901 seconds instead of growing to 2,359,436.
-	 */
-	function advanceWindowTo(newBottom:Int64) {
-		if (windowBase < 0) {
-			windowBase = newBottom;
-			return;
-		}
-		var drop = Int64.toInt(newBottom - windowBase);
-		if (drop == 0)
-			return;
-		if (drop < 0) {
-			// BACKWARD window (a seek that walked bottom DOWN): the cache
-			// must EXTEND ITS FRONT to cover the indexes below the old
-			// base, or every fetch below the base would miss (and its
-			// priming would be silently discarded by primeWindowNote).
-			// Prepend the new span: the holes fill on the next fetch.
-			var grow = -drop;
-			var oldLen = windowNotes.length;
-			windowNotes.resize(oldLen + grow);
-			for (k in 0...oldLen)
-				windowNotes[oldLen + grow - 1 - k] = windowNotes[oldLen - 1 - k];
-			for (k in 0...grow)
-				windowNotes[k] = null;
-			windowBase = newBottom;
-			// windowCount unchanged: only nulls were prepended
-			return;
-		}
-		if (drop >= windowNotes.length) {
-			windowNotes.resize(0);
-			windowCount = 0;
-			windowBase = newBottom;
-			return;
-		}
-		// in-place shift: [drop...length) -> [0...length-drop)
-		var keep = windowNotes.length - drop;
-		for (k in 0...keep)
-			windowNotes[k] = windowNotes[k + drop];
-		windowNotes.resize(keep);
-		windowBase = newBottom;
-		// recount (cheap, window-sized)
-		var cnt = 0;
-		for (k in 0...keep)
-			if (windowNotes[k] != null)
-				cnt++;
-		windowCount = cnt;
-	}
-
-	/**
-	 * Invalidate a strip of cached MetaNotes (the light-reset edge
-	 * recycle path — mirror/shift rewrote fields in place, structural
-	 * edits erased notes). Nulling drops the only extra root the store
-	 // doesn't own; the next fetchNote re-primes from the FFI.
-	 */
-	function stripWindowNotes(lo:Int64, hi:Int64) {
-		if (windowBase < 0)
-			return;
-		var a = Int64.toInt(lo - windowBase);
-		var b = Int64.toInt(hi - windowBase);
-		if (a < 0)
-			a = 0;
-		if (b > windowNotes.length)
-			b = windowNotes.length;
-		for (k in a...b)
-			if (windowNotes[k] != null) {
-				windowNotes[k] = null;
-				windowCount--;
-			}
 	}
 
 
@@ -513,9 +338,6 @@ class NotePool {
 		inactiveVirtualSusses = null;
 		virtualNoteSlots = null;
 		virtualSustainSlots = null;
-		windowNotes = null;
-		windowBase = -1;
-		windowCount = 0;
 	}
 
 	/**
@@ -569,14 +391,5 @@ class NotePool {
 			if (obj != null)
 				inactiveVirtualSusses.push(obj);
 		virtualSustainSlots.resize(0);
-
-		// The window-note cache dies with the window it described: a
-		// jump re-derives [bottom, top) from scratch, and every cached
-		// MetaNote ref was anchored to the OLD window's indexes. The
-		// next frame's fetchNote calls re-prime from the FFI, one
-		// allocation per note as the new window forms.
-		windowNotes.resize(0);
-		windowBase = -1;
-		windowCount = 0;
 	}
 }

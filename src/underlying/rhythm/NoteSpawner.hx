@@ -94,13 +94,7 @@ class NoteSpawner {
 		while (i < top) {
 			if (parent.strumlines.length == 0)
 				break; // no receptors available; nothing can be drawn
-			// v3.9.1: the in-window walk reads through the pool's
-			// window-note cache (fetchNote) — one MetaNote allocation per
-			// note when it ENTERS the window, zero per frame after that.
-			// The old File.getNote(i) here allocated ~4,190 fresh
-			// MetaNotes per frame on a 2.36M-note chart (the walk
-			// re-fetched every in-window note every frame).
-			var n = parent.notePool.fetchNote(i);
+			var n = File.getNote(i);
 			var diff = (MetaNote.metaNotePositionToSongTime(n.position - pos)) * scrollSpeed;
 			parent.drawNote(pos, n, diff, i);
 			++i;
@@ -110,17 +104,10 @@ class NoteSpawner {
 
 	function cullTop(pos:Int64) {
 		var len = File.getLength();
-		var notePool = parent.notePool;
 
 		// === FORWARD: Include notes now within spawn range ===
-		// v3.9.1: this loop is where entering notes get their cache
-		// entry PRIMED (fetchNote caches a note the first time the
-		// window touches it); the cull itself only probes ONE note per
-		// step — the note at the edge — so the fetches here are one per
-		// NEW window member, the exact rate the cache is supposed to
-		 // pay.
 		while (top < len) {
-			var n = notePool.fetchNote(top);
+			var n = File.getNote(top);
 			if (n.position - pos >= spawnDist)
 				break;
 			++top;
@@ -137,39 +124,29 @@ class NoteSpawner {
 		// wedged the renderer in empty sections (top == bottom could
 		// never move backward).
 		while (top > 0) {
-			var n = notePool.fetchNote(top - 1);
+			var n = File.getNote(top - 1);
 			if (n.position - pos < spawnDist)
 				break;
 			--top;
 		}
 
 		if (top < len)
-			curTopNote = notePool.fetchNote(top);
+			curTopNote = File.getNote(top);
 	}
 
 	function cullBottom(pos:Int64) {
 		var len = File.getLength();
-		var notePool = parent.notePool;
 
 		// === FORWARD: Exclude notes that have despawned ===
-		var advancedBottom = bottom;
-		while (advancedBottom < len) {
-			var n = File.getNote(advancedBottom);
+		while (bottom < len) {
+			var n = File.getNote(bottom);
 			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - n.position;
 			if (despawnCheck <= despawnDist)
 				break;
-			notePool.putNote(n, advancedBottom);
-			notePool.putSustain(n, advancedBottom);
-			++advancedBottom;
-		}
-		// v3.9.1: the window-note cache compacts here, exactly where the
-		// leading edge advances — the dropped indexes can never be
-		// fetched again (every hot walk anchors inside [bottom, top)),
-		// and the re-base keeps the cache array window-sized for the
-		// whole playthrough instead of growing to chart length.
-		if (advancedBottom != bottom) {
-			notePool.advanceWindowTo(advancedBottom);
-			bottom = advancedBottom;
+			var notePool = parent.notePool;
+			notePool.putNote(n, bottom);
+			notePool.putSustain(n, bottom);
+			++bottom;
 		}
 
 		// === BACKWARD: Include notes now back in range ===
@@ -181,11 +158,6 @@ class NoteSpawner {
 		// < spawnDist. The old guard is the other half of the empty-window
 		// wedge (an empty section scrolled INTO could never reopen
 		// backward either).
-		// v3.9.1: the window-note cache re-bases to whatever bottom walks
-		// DOWN to as well (advanceWindowTo handles a negative drop as a
-		// no-op; the re-fetches below this point are uncached reads of
-		// indexes the cache no longer covers — they re-prime on the next
-		// forward pass through fetchNote).
 		while (bottom > 0) {
 			var n = File.getNote(bottom - 1);
 			var despawnCheck = pos - MetaNote.intToMetaNoteDuration(n.duration) - n.position;
@@ -193,10 +165,9 @@ class NoteSpawner {
 				break;
 			--bottom;
 		}
-		notePool.advanceWindowTo(bottom);
 
 		if (bottom < len)
-			curBottomNote = notePool.fetchNote(bottom);
+			curBottomNote = File.getNote(bottom);
 	}
 
 	// resetStrumlinesAfter: the per-edit path (NoteSystem.onSongPositionJump)
@@ -282,14 +253,6 @@ class NoteSpawner {
 		var newBottom = lowerBound(minPos);
 		var newTop = upperBound(maxPos);
 
-		// v3.9.1: the re-derived window anchors a fresh cache epoch —
-		// the light reset's edge recycle (recycleWindowRange) ran with
-		// the OLD window's strip, and the new [bottom, top) can be far
-		// from the old one (a seek). Re-basing the cache to the NEW
-		// bottom drops everything the new window left behind; the
-		// prime-on-fetch behavior rebuilds exactly what it covers.
-		parent.notePool.advanceWindowTo(newBottom);
-
 		// v3.8.7: recycle the old window's slot bindings (see
 		// NotePool.recycleWindowRange). Must run BEFORE the window edges
 		// take their new values — the strip is measured from the OLD
@@ -308,8 +271,8 @@ class NoteSpawner {
 		// bottom/top are EXCLUSIVE window ends — both can legitimately be
 		// == len (playhead past the last note). File.getNote(len) would
 		// read out of bounds, so null them there instead.
-		curBottomNote = bottom < len ? parent.notePool.fetchNote(bottom) : null;
-		curTopNote = top < len ? parent.notePool.fetchNote(top) : null;
+		curBottomNote = bottom < len ? File.getNote(bottom) : null;
+		curTopNote = top < len ? File.getNote(top) : null;
 
 		if (resetStrumlinesAfter && !lightReset)
 			parent.resetStrumlines();
