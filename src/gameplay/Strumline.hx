@@ -196,8 +196,12 @@ class Strumline {
 		var note = rec.note;
 
 		// No per-frame arming pre-pass; find the hit candidate at press time.
+		// v3.9.1: the candidate index is in-window (findPlayerHitNote
+		// searches the spawner's window only), so read it through the
+		// pool's window-note cache — a press costs zero MetaNote
+		// allocations once the note is cached.
 		var noteIndex = parent.findPlayerHitNote(this, index);
-		var noteToHit = noteIndex >= 0 ? File.getNote(noteIndex) : null;
+		var noteToHit = noteIndex >= 0 ? parent.notePool.fetchNote(noteIndex) : null;
 
 		if (noteToHit != null) {
 			var pf = parent.parent;
