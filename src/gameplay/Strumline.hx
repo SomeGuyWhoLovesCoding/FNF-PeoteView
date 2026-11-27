@@ -207,10 +207,18 @@ class Strumline {
 			}
 
 			var sprite = rec.noteToHit_sprite;
-			if (sprite != null) {
+			// F9: generation guard — the sprite was cached by a render pass
+			// under notePool.noteGeneration; if elements were released since
+			// (endFrame tail-release, a jump reset), this object may already
+			// belong to a different note. The bytePos guard below only
+			// catches the REMOVED case, not the re-acquired case.
+			if (sprite != null && rec.noteToHit_spriteGen == parent.notePool.noteGeneration) {
 				sprite.initialAlpha = 0;
 				if (@:privateAccess sprite.bytePos != -1)
 					NoteSystem.notesBuf.updateElement(sprite);
+				rec.noteToHit_sprite = null;
+			} else if (sprite != null) {
+				// Stale sprite reference: drop it without writing through.
 				rec.noteToHit_sprite = null;
 			}
 
@@ -330,6 +338,11 @@ class Strumline {
 	}
 
 	function dispose() {
+		// F5: NoteSystem.dispose() clears the static GPU buffers BEFORE it
+		// pops the strumlines, so by the time we get here every element's
+		// bytePos is already -1 and nulling these fields cannot leave a
+		// half-removed element behind. Order inside this method doesn't
+		// matter — only that the buffers cleared first (they did).
 		if (receptors != null) {
 			while (receptors.length > 0) {
 				var rec = receptors.pop();

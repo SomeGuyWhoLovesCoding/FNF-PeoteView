@@ -3441,8 +3441,13 @@ private class NoteskinEditorRenderer {
 	}
 
 	function createSustains() {
+		// F6: release the previous batch into the free list instead of
+		// dropping them for the GC — they get re-added and re-stamped below.
 		for (s in state.sustainSprites) {
-			NoteskinEditor.sustainBuf.removeElement(s);
+			if (s != null)
+				NoteskinEditor.sustainBuf.removeElement(s);
+			if (s != null)
+				NoteskinEditor.sustainPool.push(s);
 		}
 		state.sustainSprites = [];
 
@@ -3459,7 +3464,17 @@ private class NoteskinEditorRenderer {
 			var bodyClip = state.clipEditor.getClipForIndex(bodyIdxArr[i]);
 			var tailClip = state.clipEditor.getClipForIndex(tailIdxArr[i]);
 
-			var sustain = new Sustain(Std.int(pos.x), Std.int(pos.y), 100, 30, state.noteskinHandle, -90, 1.0, 1.0, 0);
+			var sustain = NoteskinEditor.sustainPool.pop(); // F6: reuse a released preview element
+			if (sustain == null)
+				sustain = new Sustain(Std.int(pos.x), Std.int(pos.y), 100, 30, state.noteskinHandle, -90, 1.0, 1.0, 0);
+			else {
+				sustain.setHandle(state.noteskinHandle); // re-bind to the current skin's texture slot
+				// Absolute reset — the += xOffset below is relative, so a
+				// pooled element must start from this receptor's position,
+				// not wherever its previous life left it.
+				sustain.x = Std.int(pos.x);
+				sustain.y = Std.int(pos.y);
+			}
 			sustain.mania_for_clipruntimehelper = state.maxReceptors;
 
 			// Center sustain on the receptor's visual center so it
@@ -5359,6 +5374,16 @@ class NoteskinEditor {
 	static var sustainProg:CustomProgram;
 
 	var sustainSprites:Array<Sustain> = [];
+	// F6: free list for sustain preview elements. createSustains() used to
+	// allocate a fresh Sustain per receptor on every visual rebuild (mania
+	// change, clip edit, handle swap...) and removeElement the old ones —
+	// pure GC churn plus one GLBufferPointer alloc per addElement, the same
+	// bottleneck the grid sprites below already got a pool for. The pool
+	// holds sustain elements that were removed from sustainBuf; they are
+	// re-added and re-stamped in place instead of re-allocated. Static like
+	// sustainBuf: the buffer survives dispose, so pooled elements stay
+	// valid across editor sessions.
+	static var sustainPool:Array<Sustain> = [];
 	var showSustainPreview:Bool = false;
 	var sustainRotations:Array<Float> = []; // per-receptor visual rotation (degrees)
 
@@ -5752,8 +5777,13 @@ class NoteskinEditor {
 		}
 		if (sustainSprites != null) {
 			for (s in sustainSprites) {
-				if (s != null && sustainBuf != null)
+				if (s != null && sustainBuf != null) {
 					sustainBuf.removeElement(s);
+					// F6: keep the element for the next session — the
+					// static buffer survives dispose, and a fresh editor
+					// re-stamps pooled elements instead of allocating.
+					NoteskinEditor.sustainPool.push(s);
+				}
 			}
 		}
 		if (gridSprites != null) {

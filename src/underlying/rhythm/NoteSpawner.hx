@@ -15,7 +15,13 @@ class NoteSpawner {
 	var bottom:Int64;
 	var top:Int64;
 
-	static var minBottom:Int64 = -1;
+	// F12: minBottom is per-session state (the lowest note index whose miss
+	// side effects have already run), so it is an INSTANCE field — as a
+	// static it survived any dispose that was skipped (crash paths) and a
+	// new session inherited a stale value from a previous chart, silently
+	// censoring its window (invisible, un-judged notes until the playhead
+	// passed the stale index). Initialized per instance below.
+	var minBottom:Int64 = -1;
 
 	var _lastbottom:Int64;
 	var _lasttop:Int64;
@@ -33,6 +39,7 @@ class NoteSpawner {
 
 		bottom = 0;
 		top = 0;
+		minBottom = -1; // F12: fresh session, fresh censor guard
 	}
 
 	var timeSpentOnIt:Float = 0;
@@ -166,8 +173,28 @@ class NoteSpawner {
 			--bottom;
 		}
 
+		// F7: reclaim the dead slot prefix once it dwarfs the live window
+		// — a long forward scroll otherwise leaves one dead (null) entry
+		// per chart note in the global-indexed slot arrays forever.
+		parent.notePool.compactSlots(bottom, top);
+
 		if (bottom < len)
 			curBottomNote = File.getNote(bottom);
+	}
+
+	// v3.8.7 + F4: full-strip recycle for structural edits detected at
+	// recycle time (NotePool.putNote/putSustain identity mismatch). The
+	// light-reset strip is measured from the window edges; this variant
+	// covers the UNION of the window and the minBottom cursor — every
+	// slot key a shifted binding can be parked in — because processNotes
+	// starts iterating at max(minBottom, bottom) and bindings between
+	// minBottom and bottom were never recycled by the measured strip.
+	function recycleWindowForEdit() {
+		var lo = bottom;
+		var hi = top;
+		if (minBottom != -1 && minBottom < lo)
+			lo = minBottom;
+		parent.notePool.recycleWindowRange(lo, hi);
 	}
 
 	// resetStrumlinesAfter: the per-edit path (NoteSystem.onSongPositionJump)
@@ -260,7 +287,15 @@ class NoteSpawner {
 		// in-window indexes without moving the edges at all.
 		if (notePoolNeedsEdgeRecycle) {
 			notePoolNeedsEdgeRecycle = false;
-			parent.notePool.recycleWindowRange(bottom, top);
+			// F4: recycle the UNION of the old window and the minBottom
+			// cursor — bindings parked between minBottom and bottom (the
+			// processNotes iteration start) were missed by the plain
+			// [bottom, top) strip and stayed rooting stale MetaNotes.
+			var lo = bottom;
+			var hi = top;
+			if (minBottom != -1 && minBottom < lo)
+				lo = minBottom;
+			parent.notePool.recycleWindowRange(lo, hi);
 		}
 
 		minBottom = lowerBound(songPos + MetaNote.floatToMetaNotePosition(pushToOffset));
@@ -276,5 +311,8 @@ class NoteSpawner {
 
 		if (resetStrumlinesAfter && !lightReset)
 			parent.resetStrumlines();
+
+		// (F7 compaction note: reset() above already emptied and re-based
+		// the slot arrays at 0, so there is nothing left to compact here.)
 	}
 }

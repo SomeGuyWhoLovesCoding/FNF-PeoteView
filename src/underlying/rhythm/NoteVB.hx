@@ -95,6 +95,14 @@ class NoteVB {
 		var ref = note.ref;
 		var lane = NoteSystem.clampLane(ref.lane, lanes);
 		var idx = ref.index;
+		// Guard the index axis the same way the lane is clamped: a corrupted
+		// or hand-edited chart can store an index beyond the 10-bit axis the
+		// buffer was built with, which would null-deref mid-render (and, before
+		// the render loops were made exception-safe, desync the pool's frame
+		// counters). A note with a bogus receptor index can never render, so
+		// dropping it here is the correct action.
+		if (idx < 0 || idx >= notes[lane].length)
+			return;
 		var arr = notes[lane][idx];
 		var len = noteLength[lane][idx];
 		if (len == 0)
@@ -113,6 +121,9 @@ class NoteVB {
 		var ref = note.ref;
 		var lane = NoteSystem.clampLane(ref.lane, lanes);
 		var idx = ref.index;
+		// Same index-axis guard as addNote (see there).
+		if (idx < 0 || idx >= sustains[lane].length)
+			return;
 		var arr = sustains[lane][idx];
 		var len = sustainLength[lane][idx];
 		if (len == 0)
@@ -219,6 +230,17 @@ class VirtualNote {
 	var Sx(get, set):Int;
 	var Sy(get, set):Int;
 
+	// F2 guard: true while this binding sits on the inactiveVirtualNotes
+	// free stack. The pool's slots and free stacks must be mutually
+	// exclusive by construction — before this bit, an object could live on
+	// a stack AND in a slot at once (edit → recycleWindowRange → seek →
+	// reset pushed the same object twice), and two getNote calls could then
+	// return the SAME object bound to two different slot keys (aliased
+	// rendering + use-after-recycle). Every push goes through
+	// NotePool.recycleNoteAt, which refuses duplicates; reset() routes
+	// through it too.
+	var onFreeStack:Bool = false;
+
 	// helpers (put these where convenient)
 	inline static function toSigned16(u:Int):Int {
 		var v = u & 0xFFFF;
@@ -323,6 +345,10 @@ class VirtualSustain {
 		Sxy = (Sxy & 0x0000FFFF) | (u << 16);
 		return value;
 	}
+
+	// F2 guard: true while this binding sits on the inactiveVirtualSusses
+	// free stack — same construction as VirtualNote.onFreeStack (see there).
+	var onFreeStack:Bool = false;
 
 	// size (4 bytes)
 	var wh:Int;

@@ -11,6 +11,12 @@ class Receptor {
 
 	var noteToHit:MetaNote;
 	var noteToHit_sprite:Note;
+	// F9: the notePool.noteGeneration value the sprite above was cached
+	// under. Strumline.press() refuses to write through the sprite when the
+	// pool's generation has moved on (the element was released to the free
+	// stack and re-acquired by an unrelated note between the render pass
+	// that cached it and the press — same object, wrong note).
+	var noteToHit_spriteGen:Int = -1;
 	var noteToHit_index:Int64;
 
 	var sustainToHold:MetaNote;
@@ -35,6 +41,7 @@ class Receptor {
 	function resetState() {
 		noteToHit = null;
 		noteToHit_sprite = null;
+		noteToHit_spriteGen = -1;
 		noteToHit_index = 0;
 
 		sustainToHold = null;

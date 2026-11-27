@@ -251,6 +251,11 @@ class NoteSystem {
 					canMess = true;
 				if (canMess && !editorRender) {
 					receptor.updateAnimation(noteTime);
+					// F8: receptor clip writes (@set("properties") fields via
+					// press/reset/confirm) are flushed by renderNotes' blanket
+					// update — flag it so an animation on a frame with zero
+					// pooled notes still uploads.
+					notePool.notesDirty = true;
 				}
 			}
 		}
@@ -260,20 +265,47 @@ class NoteSystem {
 		// Editor mode always uses its own songPosition (startedCountdown is
 		// false there); the latency split below is the vanilla gameplay path.
 		var t = parent.playfieldEditorMode ? parent.songPosition : (parent.startedCountdown ? parent.noteTime : parent.songPosition);
-		refreshRendering(t);
+		// beginFrame BEFORE refreshRendering: the receptor animations below
+		// raise the notesDirty flag, and beginFrame() is what resets it —
+		// the other order would wipe the flag the receptors just raised.
 		notePool.beginFrame();
-		renderVirtualNotes(pos);
-		renderVirtualSustains(pos);
+		refreshRendering(t);
+
+		// F1: the acquire loops must not leave the pool's frame counters
+		// desynced when an exception escapes mid-loop (a malformed chart
+		// entry, a full buffer, a null ref). endFrame() is exception-safe
+		// and re-bases the counters to wherever the loops got to, so the
+		// next frame starts consistent. The error is logged, not swallowed
+		// — silent catches are how the original leak hid.
+		try {
+			renderVirtualNotes(pos);
+			renderVirtualSustains(pos);
+		} catch (e) {
+			trace('NoteSystem render error: $e');
+		}
 		notePool.endFrame();
+
 		// Pooled elements had their @set("properties") fields modified in-place.
 		// Flush all pending CPU→GPU changes so the new positions/alphas/etc.
 		// actually take effect this frame.
-		try
-			notesBuf.update()
-		catch (e) {}
-		try
-			sustainsBuf.update()
-		catch (e) {}
+		// F8: only flush when something was acquired/written this frame.
+		// peote's Buffer.update() rewrites the byte range of ALL contained
+		// elements from offset 0 — it is not a dirty upload — so calling it
+		// on an idle frame re-uploads every receptor for nothing.
+		if (notePool.notesDirty) {
+			try
+				notesBuf.update()
+			catch (e) {
+				trace('notesBuf.update failed: $e');
+			}
+		}
+		if (notePool.sustainsDirty) {
+			try
+				sustainsBuf.update()
+			catch (e) {
+				trace('sustainsBuf.update failed: $e');
+			}
+		}
 	}
 
 	// ==================================================================
@@ -362,6 +394,13 @@ class NoteSystem {
 					var handle = typeToHandle[virtualNote.ref.type];
 					var note = notePool.acquireNote();
 
+					// F15: this triple-compare silently assumes texUnit/texSlot
+					// stability — NoteskinManager.registerTexture only ever
+					// APPENDS to textureCache (slots are never freed, by
+					// design, see its disposeSkin comment), so a handle's
+					// (texUnit, texSlot) pair is immutable for the process
+					// lifetime. If that ever changes, this change-detection
+					// breaks silently and skins bleed into each other.
 					if (note.handle != handle || note.texUnit != handle.texUnit || note.texSlot != handle.texSlot)
 						note.setHandle(handle);
 					note.x = virtualNote.Sx;
@@ -381,7 +420,13 @@ class NoteSystem {
 					if (noteToHitIdx == virtualNote.globalIndex)
 						hitSprite = note;
 				}
+				// F9: cache the generation this sprite was acquired under.
+				// Strumline.press() compares it against notePool.noteGeneration
+				// before writing to the sprite — an element released by a
+				// later endFrame and re-acquired by an unrelated note is the
+				// same OBJECT, and only the generation proves otherwise.
 				receptor.noteToHit_sprite = hitSprite;
+				receptor.noteToHit_spriteGen = (hitSprite != null) ? notePool.noteGeneration : -1;
 			}
 		}
 	}
@@ -681,8 +726,15 @@ class NoteSystem {
 		var noteSpr = notePool.getNote(index, note, _id);
 		if (noteSpr == null)
 			return noteSpr;
-		var sustainSpr = duration != 0 ? notePool.getSustain(index, note, _id) : null;
+		// F3: the sustain binding is acquired LAZILY, at the sites that
+		// actually add it to the render buffer. It used to be acquired
+		// unconditionally whenever duration != 0 — including for notes
+		// whose trail is never rendered (hit heads during an opponent
+		// hold) — which starved the sustain free stack for the whole hold
+		// and inflated the tier-1 live set far beyond the rendered
+		// population on sustain-heavy charts.
 		var sustainExists = duration != 0;
+		var sustainSpr:VirtualSustain = null;
 
 		// === PLAYFIELD EDITOR: pure render, zero gameplay ===
 		// In playfieldEditorMode notes never hit, never miss, never judge:
@@ -704,8 +756,10 @@ class NoteSystem {
 			noteSpr.Sy = rec.y + lut.lookupY(noteSpr.diff);
 			noteSpr.scale = lut.hasExtendedLUT ? lut.lookupScale(noteSpr.diff, rec.scale) * rec.scale : rec.scale;
 
+			if (sustainExists)
+				sustainSpr = notePool.getSustain(index, note, _id); // F3: lazy acquire at the path that consumes it
+
 			if (sustainSpr != null) {
-				sustainSpr.ref = noteSpr;
 				sustainSpr.speed = parent.scrollSpeed;
 				sustainSpr.scale = rec.scale;
 				sustainSpr.length = duration - SUSTAIN_TAIL;
@@ -722,6 +776,7 @@ class NoteSystem {
 				} else {
 					noteMovement.run(this, noteSpr, sustainSpr, receptor, index, note.type, false);
 				}
+				sustainSpr.ref = noteSpr; // F3: bind the ref at the acquire site
 				virtualNoteBuffer.addSustain(sustainSpr, noteSpr);
 			} else if (!lut.hasExtendedLUT) {
 				noteMovement.run(this, noteSpr, null, receptor, index, note.type, false);
@@ -767,6 +822,15 @@ class NoteSystem {
 		// When no interp, lookupScale falls through to rec.scale directly.
 		var lutExtended = lut.hasExtendedLUT;
 		noteSpr.scale = lutExtended ? lut.lookupScale(d, rec.scale) * rec.scale : rec.scale;
+
+		// F3: lazy sustain acquire — after the editor early-return, whenever
+		// the trail renders or is held. Hit heads still run the sustain
+		// section below every frame while the hold is in progress (their
+		// trail follows the receptor and addSustain is unconditional at the
+		// tail), so the binding is needed for every gameplay sustain note;
+		// the waste removed is the editor path's acquire-then-early-return.
+		if (sustainExists)
+			sustainSpr = notePool.getSustain(index, note, _id);
 
 		// Inline extended LUT: sustainRot + scrollMultiplier.
 		// This eliminates the redundant noteMovement.run() call below when
@@ -1099,13 +1163,21 @@ class NoteSystem {
 	function dispose() {
 		virtualNoteBuffer.clear();
 
+		// F5: teardown order matters. The static GPU buffers are cleared
+		// FIRST — this resets bytePos of every contained element (receptors
+		// and pooled notes alike) to -1 — and only then do the pool's own
+		// references (free stacks, active arrays, slots) die, and only then
+		// do the strumlines null their receptor.note fields. Anything that
+		// accidentally touches an element mid-teardown sees a consistent
+		// state, and no pooled Note can stay rooted by the pool after its
+		// buffer membership ended.
+		notesBuf.clear();
+		sustainsBuf.clear();
+
 		if (notePool != null) {
 			notePool.dispose();
 			notePool = null;
 		}
-
-		notesBuf.clear();
-		sustainsBuf.clear();
 
 		if (strumlines != null) {
 			while (strumlines.length != 0) {
@@ -1134,7 +1206,8 @@ class NoteSystem {
 		display.removeProgram(sustainProg);
 		display.removeProgram(notesProg);
 
-		NoteSpawner.minBottom = 0;
+		// (minBottom is an instance field now — F12 — so it dies with the
+		// spawner; nothing left to reset here.)
 		for (i in 0...256) {
 			var defaultHandle = NoteskinManager.get("default");
 			NoteSystem.typeToHandle[i] = defaultHandle;
