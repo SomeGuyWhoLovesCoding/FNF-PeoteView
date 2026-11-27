@@ -119,6 +119,10 @@ abstract MetaNote(MetaNoteImpl) from MetaNoteImpl to MetaNoteImpl {
 /**
  * The underlying struct implementation of the MetaNote class, to be specific.
  */
+#if cpp
+@:unreflective
+#end
+@:struct
 class MetaNoteImpl {
 	public var high:Int64;
 	public var low:#if cpp cpp.UInt32 #elseif hl hl.UI32 #else Int #end;

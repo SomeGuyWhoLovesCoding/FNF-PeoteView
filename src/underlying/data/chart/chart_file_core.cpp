@@ -11,12 +11,8 @@
 #include <thread>
 #include <condition_variable>
 
-// cpp-btree 1.0.1 (Google, Apache 2.0 — vendored under include/cpp-btree
-// with its COPYING): the per-shard ordered map the v3.8 store builds on.
-// Each open shard's notes live in a btree_map<position, ChartNote>, so a
-// single insert/remove is O(log n) WITHIN the shard (and the shards are
-// bounded by SHARD_TICKS/SEGMENT_NOTE_BUDGET, so the logs stay tiny).
-#include "cpp-btree/btree_map.h"
+// chart_file_core.cpp ships with no third-party ordered container: the
+// shard store is fully self-contained (see the F18 quad-tree below).
 #include <atomic>
 #include <exception>
 #ifdef _WIN32
@@ -1279,6 +1275,17 @@ public:
 	static constexpr uint64_t POS_MASK = 0x0000FFFFFFFFFFFFULL;
 	static constexpr uint64_t SHARD_TICKS = 25000000ULL;
 	static constexpr size_t OPEN_SHARD_BUDGET = 256;
+	// F17: the LRU used to bound ONLY the number of open shards. Segment
+	// packing is density-driven (the planner's note budget is an early-
+	// close hint, not a cap), so a chart like the 2.36M-note/90s fvc —
+	// 159 segments x ~14.8k notes each — never reaches 256 open shards:
+	// nothing ever closed and the WHOLE chart materialized in RAM (147 MB
+	// steady-state for a 1.96s render window). A note-count budget bounds
+	// memory by notes regardless of how the on-disk segments were packed.
+	// 1M notes ~= 60 MB worst case (btree + flat cache + bits) — generous
+	// headroom over the ~70k-note render window, while still forcing dense
+	// charts to stream through the LRU like sparse ones always did.
+	static constexpr size_t OPEN_NOTE_BUDGET = 1024 * 1024;
 	static constexpr size_t   SEGMENT_MIN_SHARDS = 2;
 	static constexpr size_t   SEGMENT_MAX_SHARDS = 32;
 	static constexpr uint32_t SEGMENT_NOTE_BUDGET = 4096;
@@ -1296,19 +1303,42 @@ public:
 	};
 
 private:
-	// === The v3.8 btree shard (cpp-btree) ===
-	// Every OPEN shard's live notes live in a btree_map keyed by
-	// (position, tieRank): the tree is the AUTHORITATIVE ordered
-	// structure, so a single insert/remove is O(log n) within the
-	// shard — the individual-note O(1)-class goal, since shard trees
-	// are bounded (SHARD_TICKS + SEGMENT_NOTE_BUDGET). The tie rank is
-	// a monotonic counter, so notes with EQUAL positions keep their
-	// INSERTION order (the store's ordering contract; the added-range
-	// exactness of addNotes depends on it). A flat, lazily-materialized
-	// cache mirrors the tree in-order: id-based reads (getFirst8/
-	// getLast4/judge/hit — id is the in-order RANK) stay O(1), and the
-	// sequential render/judge walks stay exactly as fast as the old
-	// gap buffer. Mutations go THROUGH the tree and refresh the cache.
+private:
+	// === The F18 quad-tree shard (replaces the v3.8 btree + flat cache) ===
+	// Every OPEN shard's live notes live in a shallow 4-ary position tree
+	// whose LEAVES are flat sorted vectors of (position, tie, ChartNote)
+	// — "the plain note list, quad-chunked". A leaf holds up to
+	// QUAD_LEAF_CAP (16,384) entries; when it overflows it splits at the
+	// median into TWO half-size leaves (the capacity rule), and the 4-ary
+	// interior nodes bisect their child slots the same way when they
+	// fill, so the tree grows by halving at every level. Depth stays
+	// tiny: 4M notes in one shard is 256 leaves = depth 4.
+	//
+	// Why this beats the btree + flat-cache pair it replaces:
+	//   - the old single-note insert/erase was an O(shard) double
+	//     memmove in the CACHE (flatKeys + flatData insert/erase shifted
+	//     up to the whole shard per note) — the quad-tree only ever
+	//     moves entries inside ONE leaf (<= 16,384 x 28 B), plus one
+	//     O(node pool) count/minKey recompute (a few hundred nodes at
+	//     extreme sizes, ~1 at normal shard sizes).
+	//   - the cache was a full SECOND copy of the shard rebuilt per
+	//     structural sweep (postRemoveOpenShards materialized EVERY
+	//     open shard after a bulk edit); the leaves ARE the storage now,
+	//     so that afterwork disappears entirely.
+	//   - per-open-note memory: 28 B (16 B key + 12 B note) plus vector
+	//     slack, vs the btree's ~56 B/node path PLUS the cache's 28 B.
+	//   - bulk runs (addNotes' insertPlanned) land in ONE leaf-vector
+	//     insert per group instead of a tree insert + two cache
+	//     memmoves per note.
+	//   - sequential reads (the render/judge hot path) carry a cursor:
+	//     thousands of consecutive ids never leave one leaf.
+	//
+	// The ordering contract is unchanged: Key = (position, tieRank),
+	// tieRank from a monotonic counter, so equal positions keep their
+	// insertion order — the added-range exactness of addNotes still
+	// holds (insertPlanned's planned-slot proof needs no changes).
+	// Id-based reads (id is the in-order RANK) walk subtree counts:
+	// O(log4 leafCount) node hops + one in-leaf lookup.
 	struct Unit {
 		uint64_t startTick = 0;
 		int64_t  baseId = 0;
@@ -1317,98 +1347,548 @@ private:
 		bool dirty = false;
 		std::vector<uint8_t> image;
 		typedef std::pair<uint64_t, uint64_t> Key; // (position, tieRank)
-		typedef btree::btree_map<Key, ChartNote> TreeMap;
-		TreeMap notesTree;
+		typedef std::pair<Key, ChartNote> Entry;
+
+		// The leaf capacity rule: a leaf holding more than this splits
+		// into two halves (median cut), recursively up the tree.
+		static constexpr uint32_t QUAD_LEAF_CAP = 16384;
+
+		// One pool node: a leaf (owning its entry vector, sorted by Key)
+		// or an interior node (up to 4 child slots, ascending minKey).
+		// Child slots hold pool indices; slot 0 means "unused" (the
+		// root itself lives at pool index 0, so real children are never
+		// index 0). subtreeCount == 0 marks a dead subtree — every walk
+		// skips dead children, and emptied leaves are pruned from their
+		// parent immediately (quadPrune), so dead slots never persist.
+		struct QuadNode {
+			uint32_t child[4] = { 0, 0, 0, 0 };
+			uint32_t nodeCount = 0;    // interior: used child slots
+			bool leaf = true;
+			uint64_t subtreeCount = 0; // live entries under this node
+			Key minKey = { 0, 0 };     // smallest live key under this node
+			std::vector<Entry> entries; // leaf only, ascending by Key
+		};
+
+		std::vector<QuadNode> nodes; // nodes[0] = root
 		uint64_t tieCounter = 0;
-		// The in-order flat cache (derived; never authoritative): the
-		// ChartNotes in ascending (position, tieRank) order, with the
-		// keys in a parallel array so note(i) stays O(1) AND
-		// contiguous() hands the codec a plain ChartNote*.
-		mutable std::vector<ChartNote> flatData;
-		mutable std::vector<Key> flatKeys;
-		mutable bool flatValid = false;
-		BitArray judge;
-		BitArray hit;
-		size_t live() const { return notesTree.size(); }
+		size_t liveCount = 0;
+
+		// Sequential-read cursor (see note()): the leaf + rank base of
+		// the last read. 0xFFFFFFFF = invalid.
+		mutable uint32_t curLeaf = 0xFFFFFFFFu;
+		mutable size_t curBase = 0;
+
+		Unit() { quadInit(); }
+
+		size_t live() const { return liveCount; }
 		size_t size() const { return open ? live() : (size_t)noteCount; }
-		// Rebuilds the flat cache from the tree (one ascending walk —
-		// paid once per structural change, not per read).
-		void materialize() const {
-			if (flatValid) return;
-			flatData.clear();
-			flatKeys.clear();
-			flatData.reserve(notesTree.size());
-			flatKeys.reserve(notesTree.size());
-			for (const auto& kv : notesTree) {
-				flatKeys.push_back(kv.first);
-				flatData.push_back(kv.second);
+
+		void quadInit() {
+			nodes.clear();
+			tieCounter = 0;
+			liveCount = 0;
+			curLeaf = 0xFFFFFFFFu;
+			curBase = 0;
+			nodes.push_back(QuadNode()); // the root: a fresh empty leaf
+		}
+
+		// --- maintenance: counts + minKeys, recomputed bottom-up ---
+		// After ANY structural change (insert / erase / split / prune),
+		// one O(pool) pass restores every node's subtreeCount and
+		// minKey. The pool is a few hundred nodes even at multi-million
+		// note shards, so this replaces the old design's fragile
+		// incremental path fixups with something obviously correct.
+		void quadRecompute(uint32_t ni) {
+			QuadNode& n = nodes[ni];
+			if (n.leaf) {
+				n.subtreeCount = n.entries.size();
+				n.minKey = n.entries.empty() ? Key(0, 0) : n.entries.front().first;
+				return;
 			}
-			flatValid = true;
+			uint64_t total = 0;
+			bool first = true;
+			for (uint32_t c = 0; c < n.nodeCount; ++c) {
+				const uint32_t ci = n.child[c];
+				if (ci == 0) continue;
+				quadRecompute(ci);
+				const QuadNode& ch = nodes[ci];
+				if (ch.subtreeCount == 0) continue;
+				if (first) { n.minKey = ch.minKey; first = false; }
+				total += ch.subtreeCount;
+			}
+			n.subtreeCount = total;
+			if (first) n.minKey = Key(0, 0); // no live child
 		}
-		void invalidate() { flatValid = false; }
-		const ChartNote& note(size_t i) const {
-			materialize();
-			return flatData[i];
+
+		// --- path search: root .. target, with the child SLOT used at
+		// each step (slot[d] is the slot of path[d] holding path[d+1]).
+		// DFS over used slots; depth-bounded for safety.
+		bool quadPathRec(uint32_t cur, uint32_t target,
+			uint32_t* path, uint32_t* slot, uint32_t& depth) const {
+			if (depth >= 24) return false;
+			path[depth] = cur;
+			++depth;
+			if (cur == target) return true;
+			const QuadNode& n = nodes[cur];
+			if (n.leaf) { --depth; return false; }
+			for (uint32_t c = 0; c < n.nodeCount; ++c) {
+				const uint32_t ci = n.child[c];
+				if (ci == 0) continue;
+				slot[depth - 1] = c;
+				if (quadPathRec(ci, target, path, slot, depth)) return true;
+			}
+			--depth;
+			return false;
 		}
-		// In-place field rewrite at rank i (mirror/shift): writes BOTH
-		// the tree entry and the cache copy — ids never move, only the
-		// packed fields change, so neither ordering nor cache validity
-		// is disturbed.
-		void setNote(size_t i, const ChartNote& cn) {
-			materialize();
-			const Key key = flatKeys[i];
-			flatData[i] = cn;
-			auto it = notesTree.find(key);
-			if (it != notesTree.end())
-				it->second = cn;
+
+		// --- lookups ---
+		// The leaf that would hold `key` (or the last leaf when key is
+		// beyond everything). Children are visited in slot order, which
+		// is ascending-minKey order by construction.
+		uint32_t quadLeafFor(const Key& key) const {
+			uint32_t ni = 0;
+			for (;;) {
+				const QuadNode& n = nodes[ni];
+				if (n.leaf) return ni;
+				uint32_t next = 0;
+				for (uint32_t c = 0; c < n.nodeCount; ++c) {
+					const uint32_t ci = n.child[c];
+					const QuadNode& ch = nodes[ci];
+					if (ci == 0 || ch.subtreeCount == 0) continue;
+					if (!(key < ch.minKey)) next = ci;
+					else break;
+				}
+				if (next == 0) {
+					// key sorts before every live child: first live one.
+					for (uint32_t c = 0; c < n.nodeCount; ++c) {
+						const uint32_t ci = n.child[c];
+						if (ci != 0 && nodes[ci].subtreeCount != 0) { next = ci; break; }
+					}
+					if (next == 0) return ni; // no live child (empty shard)
+				}
+				ni = next;
+			}
 		}
-		// O(log n) insert; ties land AFTER existing equal positions
-		// (monotonic tie rank). Returns the in-order slot it landed at
-		// (the binary search over the sorted cache keys). The cache is
-		// materialized BEFORE the tree insert so the rebuild (if stale)
-		// excludes the new note — then tree and cache grow together.
-		size_t treeInsert(const ChartNote& cn) {
-			materialize();
+
+		// Rank walk: the leaf + in-leaf offset of in-order rank r.
+		void quadLocate(size_t r, uint32_t& leafOut, uint32_t& offOut) const {
+			uint32_t ni = 0;
+			if (nodes[0].leaf) {
+				leafOut = 0;
+				offOut = (uint32_t)std::min<size_t>(r, nodes[0].entries.size());
+				return;
+			}
+			for (;;) {
+				const QuadNode& n = nodes[ni];
+				if (n.leaf) {
+					leafOut = ni;
+					offOut = (uint32_t)std::min<size_t>(r, n.entries.size());
+					return;
+				}
+				bool descended = false;
+				for (uint32_t c = 0; c < n.nodeCount; ++c) {
+					const uint32_t ci = n.child[c];
+					const QuadNode& ch = nodes[ci];
+					if (ci == 0 || ch.subtreeCount == 0) continue;
+					if (r < ch.subtreeCount) { ni = ci; descended = true; break; }
+					r -= ch.subtreeCount;
+				}
+				if (!descended) {
+					// Out of range: clamp into the last live leaf.
+					uint32_t last = quadLastLeaf();
+					leafOut = last;
+					offOut = nodes[last].entries.empty() ? 0
+						: (uint32_t)nodes[last].entries.size() - 1;
+					return;
+				}
+			}
+		}
+
+		uint32_t quadLastLeaf() const {
+			uint32_t ni = 0;
+			for (;;) {
+				const QuadNode& n = nodes[ni];
+				if (n.leaf) return ni;
+				uint32_t next = 0;
+				for (uint32_t c = 0; c < n.nodeCount; ++c) {
+					const uint32_t ci = n.child[c];
+					if (ci != 0 && nodes[ci].subtreeCount != 0) next = ci;
+				}
+				if (next == 0) return ni;
+				ni = next;
+			}
+		}
+
+		// Total live entries in leaves ordered BEFORE leaf `leafIdx`.
+		size_t quadRankOfLeaf(uint32_t leafIdx) const {
+			size_t before = 0;
+			uint32_t path[24]; uint32_t slot[24]; uint32_t depth = 0;
+			if (!quadPathRec(0, leafIdx, path, slot, depth)) return 0;
+			for (uint32_t d = 0; d + 1 < depth; ++d) {
+				const QuadNode& n = nodes[path[d]];
+				for (uint32_t c = 0; c < n.nodeCount; ++c) {
+					const uint32_t ci = n.child[c];
+					if (ci == path[d + 1]) break;
+					if (ci == 0) continue;
+					const QuadNode& ch = nodes[ci];
+					if (ch.subtreeCount != 0) before += ch.subtreeCount;
+				}
+			}
+			return before;
+		}
+
+		// First in-order rank whose key >= `key` (the shardLowerBound
+		// probe the bulk-add plan phase uses).
+		size_t quadLowerBound(const Key& key) const {
+			if (liveCount == 0) return 0;
+			const uint32_t li = quadLeafFor(key);
+			const QuadNode& leaf = nodes[li];
+			size_t lo = 0, hi = leaf.entries.size();
+			while (lo < hi) {
+				const size_t mid = (lo + hi) / 2;
+				if (leaf.entries[mid].first < key) lo = mid + 1;
+				else hi = mid;
+			}
+			return quadRankOfLeaf(li) + lo;
+		}
+
+		// --- structural: split / attach / prune ---
+		// Split an over-capacity leaf at the median into two halves and
+		// attach the right half as its sibling; recurse while a piece is
+		// still over capacity (bulk runs can overshoot by a lot).
+		void quadMaybeSplit(uint32_t li) {
+			if (nodes[li].entries.size() <= QUAD_LEAF_CAP) return;
+			std::vector<Entry> es = std::move(nodes[li].entries); // pool-stable
+			const size_t n = es.size();
+			const size_t mid = n / 2;
+			QuadNode rn;
+			rn.leaf = true;
+			rn.entries.assign(es.begin() + (long)mid, es.end());
+			nodes.push_back(std::move(rn));
+			const uint32_t ri = (uint32_t)(nodes.size() - 1);
+			nodes[li].entries.assign(es.begin(), es.begin() + (long)mid);
+			nodes[li].leaf = true;
+			attachSibling(li, ri);
+			quadMaybeSplit(li);
+			quadMaybeSplit(ri);
+		}
+
+		// Attach pool node `ri` as the sibling immediately right of
+		// `cur`. Grows a new root when cur IS the root; bisects a full
+		// parent (4 used slots) into two interiors and recurses one
+		// level up. Pure slot surgery — counts/minKeys are restored by
+		// the caller's quadRecompute(0).
+		void attachSibling(uint32_t cur, uint32_t ri) {
+			uint32_t path[24]; uint32_t slot[24]; uint32_t depth = 0;
+			if (!quadPathRec(0, cur, path, slot, depth) || depth < 2) {
+				// cur is the root (or unreachable): grow a new root.
+				QuadNode oldRoot = std::move(nodes[0]);
+				nodes.push_back(std::move(oldRoot));
+				const uint32_t a = (uint32_t)(nodes.size() - 1);
+				QuadNode root;
+				root.leaf = false;
+				root.nodeCount = 2;
+				root.child[0] = a;
+				root.child[1] = ri;
+				nodes[0] = std::move(root);
+				return;
+			}
+			const uint32_t pi = path[depth - 2];
+			const uint32_t at = slot[depth - 2] + 1; // right after cur
+			if (nodes[pi].nodeCount < 4) {
+				QuadNode& p = nodes[pi];
+				for (uint32_t c = p.nodeCount; c > at; --c)
+					p.child[c] = p.child[c - 1];
+				p.child[at] = ri;
+				p.nodeCount += 1;
+				return;
+			}
+			// Full parent (4 used slots): bisect the slots into two
+			// interiors, place ri in the half its position demands, and
+			// attach the right half as the parent's own sibling.
+			QuadNode old = std::move(nodes[pi]);
+			const uint32_t half = old.nodeCount / 2; // 4 -> 2 + 2
+			QuadNode L, R;
+			L.leaf = R.leaf = false;
+			for (uint32_t c = 0; c < half; ++c) L.child[L.nodeCount++] = old.child[c];
+			for (uint32_t c = half; c < old.nodeCount; ++c) R.child[R.nodeCount++] = old.child[c];
+			if (at <= half) {
+				for (uint32_t c = L.nodeCount; c > at; --c) L.child[c] = L.child[c - 1];
+				L.child[at] = ri;
+				L.nodeCount += 1;
+			}
+			else {
+				const uint32_t rat = at - half;
+				for (uint32_t c = R.nodeCount; c > rat; --c) R.child[c] = R.child[c - 1];
+				R.child[rat] = ri;
+				R.nodeCount += 1;
+			}
+			nodes[pi] = std::move(L);
+			nodes.push_back(std::move(R));
+			const uint32_t rIdx = (uint32_t)(nodes.size() - 1);
+			attachSibling(pi, rIdx); // one level up
+		}
+
+		// Remove an emptied node from its parent (slot compaction),
+		// cascading while parents empty out. The root is never removed.
+		void quadPrune(uint32_t ni) {
+			uint32_t path[24]; uint32_t slot[24]; uint32_t depth = 0;
+			if (!quadPathRec(0, ni, path, slot, depth) || depth < 2) return;
+			const uint32_t pi = path[depth - 2];
+			const uint32_t at = slot[depth - 2];
+			QuadNode& p = nodes[pi];
+			for (uint32_t c = at; c + 1 < p.nodeCount; ++c)
+				p.child[c] = p.child[c + 1];
+			p.child[p.nodeCount - 1] = 0;
+			p.nodeCount -= 1;
+			std::vector<Entry>().swap(nodes[ni].entries); // F16: free now
+			if (p.nodeCount == 0) quadPrune(pi);
+		}
+
+		// --- the public shard surface (same semantics as the old
+		//     btree + cache pair) ---
+		// Bulk-load a sorted run (decode / adopt path): leaves of
+		// QUAD_LEAF_CAP stacked bottom-up into 4-ary interiors. O(n).
+		void quadLoadSorted(const ChartNote* data, size_t n) {
+			quadInit();
+			if (n == 0) return;
+			liveCount = n;
+			tieCounter = n; // loaded tie ranks are 1..n
+			std::vector<uint32_t> level;
+			for (size_t beg = 0; beg < n; ) {
+				const size_t take = std::min<size_t>(QUAD_LEAF_CAP, n - beg);
+				QuadNode lf;
+				lf.leaf = true;
+				lf.entries.resize(take);
+				for (size_t k = 0; k < take; ++k)
+					lf.entries[k] = Entry(
+						Key(notePos(data[beg + k]), (uint64_t)(beg + k + 1)),
+						data[beg + k]);
+				nodes.push_back(std::move(lf));
+				level.push_back((uint32_t)(nodes.size() - 1));
+				beg += take;
+			}
+			while (level.size() > 1) {
+				std::vector<uint32_t> up;
+				for (size_t g = 0; g < level.size(); g += 4) {
+					const size_t cnt = std::min<size_t>(4, level.size() - g);
+					QuadNode nd;
+					nd.leaf = false;
+					nd.nodeCount = (uint32_t)cnt;
+					for (size_t k = 0; k < cnt; ++k) nd.child[k] = level[g + k];
+					nodes.push_back(std::move(nd));
+					up.push_back((uint32_t)(nodes.size() - 1));
+				}
+				level.swap(up);
+			}
+			// The single top node becomes the root; compact the pool so
+			// the load leaves zero scaffolding behind (F16 discipline).
+			{
+				QuadNode top = std::move(nodes[level[0]]);
+				nodes[0] = std::move(top);
+				std::vector<uint32_t> remap(nodes.size(), 0);
+				std::vector<bool> keep(nodes.size(), false);
+				std::vector<uint32_t> stack;
+				keep[0] = true;
+				stack.push_back(0);
+				while (!stack.empty()) {
+					const uint32_t curN = stack.back();
+					stack.pop_back();
+					const QuadNode& nd = nodes[curN];
+					if (nd.leaf) continue;
+					for (uint32_t c = 0; c < nd.nodeCount; ++c) {
+						const uint32_t ci = nd.child[c];
+						if (ci != 0 && !keep[ci]) { keep[ci] = true; stack.push_back(ci); }
+					}
+				}
+				std::vector<QuadNode> pool;
+				pool.push_back(std::move(nodes[0]));
+				for (uint32_t i = 0; i < nodes.size(); ++i)
+					if (keep[i] && i != 0) {
+						remap[i] = (uint32_t)pool.size();
+						pool.push_back(std::move(nodes[i]));
+					}
+				for (QuadNode& nd : pool)
+					for (uint32_t c = 0; c < 4; ++c)
+						if (nd.child[c] != 0) nd.child[c] = remap[nd.child[c]];
+				nodes.swap(pool);
+			}
+			quadRecompute(0);
+		}
+
+		// In-order leaf list (live leaves only).
+		void quadCollectLeaves(uint32_t ni, std::vector<uint32_t>& out) const {
+			const QuadNode& n = nodes[ni];
+			if (n.leaf) {
+				if (!n.entries.empty()) out.push_back(ni);
+				return;
+			}
+			for (uint32_t c = 0; c < n.nodeCount; ++c) {
+				const uint32_t ci = n.child[c];
+				if (ci == 0 || nodes[ci].subtreeCount == 0) continue;
+				quadCollectLeaves(ci, out);
+			}
+		}
+
+		// Contiguous ascending export (encode / save): one pass over
+		// the leaves fills the caller's buffer.
+		void quadExport(std::vector<ChartNote>& out) const {
+			out.clear();
+			out.reserve(liveCount);
+			if (nodes.empty()) return;
+			std::vector<uint32_t> order;
+			quadCollectLeaves(0, order);
+			for (uint32_t li : order)
+				for (const Entry& e : nodes[li].entries)
+					out.push_back(e.second);
+		}
+
+		// Id-based read (rank r). Carries a sequential cursor: the
+		// render/judge loops sweep ids in ascending runs, so the leaf
+		// of the previous read almost always holds the next id too.
+		const ChartNote& note(size_t r) const {
+			static ChartNote zero = { 0, 0 };
+			if (liveCount == 0) return zero; // defensive (callers clamp)
+			if (curLeaf != 0xFFFFFFFFu) {
+				const QuadNode& lf = nodes[curLeaf];
+				if (r >= curBase && r - curBase < lf.entries.size())
+					return lf.entries[r - curBase].second;
+			}
+			uint32_t li, off;
+			quadLocate(r, li, off);
+			curLeaf = li;
+			curBase = r - off;
+			return nodes[li].entries[off].second;
+		}
+
+		// In-place field rewrite at rank r (mirror/shift): only the
+		// packed fields change — keys never move, ids never move.
+		void setNote(size_t r, const ChartNote& cn) {
+			uint32_t li, off;
+			quadLocate(r, li, off);
+			nodes[li].entries[off].second = cn;
+		}
+
+		// Fast count/minKey fix for a pure APPEND into leaf `li` (the
+		// new key >= everything live): no split happened, so the tree
+		// shape is untouched — only the counts on the root-to-leaf path
+		// grow by one, and no minKey changes. This is the decode-rebuild
+		// and editor-paint shape (ascending runs), where a full
+		// quadRecompute per note made appends needlessly O(leaves).
+		void quadFixAppend(uint32_t li) {
+			uint32_t path[24]; uint32_t slot[24]; uint32_t depth = 0;
+			if (!quadPathRec(0, li, path, slot, depth)) return;
+			for (uint32_t d = 0; d < depth; ++d)
+				nodes[path[d]].subtreeCount += 1;
+		}
+
+		// Insert; ties land AFTER existing equal positions (monotonic
+		// tie rank). Judge/hit bits shift with the insertion exactly
+		// like the old treeInsert did. Returns the in-order rank.
+		size_t quadInsert(const ChartNote& cn) {
 			const uint64_t pos = notePos(cn);
 			const uint64_t tie = ++tieCounter;
 			const Key key(pos, tie);
-			notesTree.insert(std::make_pair(key, cn)); // unique keys by construction
-			// Slot = number of cached entries strictly before `key`
-			// (equal positions carry smaller tie ranks — all "before").
-			const size_t slot = (size_t)(std::lower_bound(flatKeys.begin(), flatKeys.end(), key)
-				- flatKeys.begin());
-			flatKeys.insert(flatKeys.begin() + (long)slot, key);
-			flatData.insert(flatData.begin() + (long)slot, cn);
-			judge.insert(slot, false);
-			hit.insert(slot, false);
-			return slot;
+			curLeaf = 0xFFFFFFFFu;
+			if (liveCount == 0) {
+				QuadNode& root = nodes[0];
+				root.leaf = true;
+				root.nodeCount = 0;
+				root.entries.clear();
+				root.entries.push_back(Entry(key, cn));
+				liveCount = 1;
+				quadRecompute(0);
+				judge.insert(0, false);
+				hit.insert(0, false);
+				return 0;
+			}
+			const uint32_t li = quadLeafFor(key);
+			size_t lo = 0, hi = nodes[li].entries.size();
+			while (lo < hi) {
+				const size_t mid = (lo + hi) / 2;
+				if (nodes[li].entries[mid].first < key) lo = mid + 1;
+				else hi = mid;
+			}
+			const size_t rank = quadRankOfLeaf(li) + lo;
+			judge.insert(rank, false);
+			hit.insert(rank, false);
+			nodes[li].entries.insert(nodes[li].entries.begin() + (long)lo,
+				Entry(key, cn));
+			++liveCount;
+			// Append fast path: the key landed at the very end of the
+			// LAST live leaf — no minKey anywhere changed, no split can
+			// have been needed (capacity is checked below), so a full
+			// recompute is waste. (Ascending runs — decode rebuilds,
+			// editor paints — take this every note.)
+			const bool appended = (lo == nodes[li].entries.size() - 1)
+				&& nodes[li].entries.size() <= QUAD_LEAF_CAP
+				&& li == quadLastLeaf();
+			if (appended) {
+				quadFixAppend(li);
+				return rank;
+			}
+			quadMaybeSplit(li);
+			quadRecompute(0);
+			return rank;
 		}
-		// O(log n) erase by in-order slot (id rank). The key is read off
-		// the flat cache, erased from the tree, and the cache entry
-		// removed — judge/hit bits shift with it.
-		void treeErase(size_t slot) {
-			materialize();
-			const Key key = flatKeys[slot];
-			notesTree.erase(key);
-			flatKeys.erase(flatKeys.begin() + (long)slot);
-			flatData.erase(flatData.begin() + (long)slot);
-			judge.erase(slot);
-			hit.erase(slot);
+
+		// Bulk run insert at the PLANNED in-order slot (insertPlanned's
+		// exact-index contract): one leaf-vector insert for the whole
+		// run. Judge/hit bits are the CALLER's job (it knows the exact
+		// per-bit ranks).
+		void quadInsertRun(size_t slot, const Entry* es, size_t m) {
+			if (m == 0) return;
+			curLeaf = 0xFFFFFFFFu;
+			if (liveCount == 0) {
+				QuadNode& root = nodes[0];
+				root.leaf = true;
+				root.nodeCount = 0;
+				root.entries.assign(es, es + m);
+				liveCount = m;
+				quadRecompute(0);
+				return;
+			}
+			uint32_t li, off;
+			quadLocate(slot, li, off);
+			nodes[li].entries.insert(nodes[li].entries.begin() + (long)off,
+				es, es + m);
+			liveCount += m;
+			quadMaybeSplit(li);
+			quadRecompute(0);
 		}
-		// Contiguous ascending export (encode/save): the flat cache IS
-		// the ascending order already.
-		const ChartNote* contiguous() {
-			materialize();
-			return flatData.empty() ? nullptr : flatData.data();
+
+		// Erase by rank (judge/hit bits shift with it).
+		void quadErase(size_t r) {
+			if (liveCount == 0) return;
+			curLeaf = 0xFFFFFFFFu;
+			uint32_t li, off;
+			quadLocate(r, li, off);
+			nodes[li].entries.erase(nodes[li].entries.begin() + (long)off);
+			--liveCount;
+			judge.erase(r);
+			hit.erase(r);
+			quadRecompute(0);
+			if (nodes[li].entries.empty() && li != 0)
+				quadPrune(li);
 		}
+
+		BitArray judge;
+		BitArray hit;
+
+		// F16: close must LITERALLY deallocate. Every leaf's entry
+		// vector is swapped empty, then the pool itself — a closed
+		// shard holds NOTHING but its compressed image (plus one fresh
+		// empty root so the unit stays usable).
 		void freeBlock() {
-			notesTree.clear();
+			for (QuadNode& n : nodes)
+				std::vector<Entry>().swap(n.entries);
+			std::vector<QuadNode>().swap(nodes);
 			tieCounter = 0;
-			flatData.clear();
-			flatKeys.clear();
-			flatValid = true; // an empty cache is trivially valid
+			liveCount = 0;
+			quadInit();
 		}
 	};
+
 
 	std::vector<Unit> units;
 	int64_t totalNotes = 0;
@@ -1432,10 +1912,26 @@ private:
 			}
 		}
 		lru.insert(lru.begin(), ui);
-		while (lru.size() > OPEN_SHARD_BUDGET) {
+		// F17: evict to BOTH budgets — shard count AND live note count
+		// (dense charts never hit the shard budget; see OPEN_NOTE_BUDGET).
+		// Always evict from the LRU tail (least recently used), never the
+		// shard just touched. Re-scan the tail after every close: closing
+		// one shard may not be enough, and the LRU entry must be popped
+		// before its unit index is considered again.
+		while (lru.size() > OPEN_SHARD_BUDGET || openNoteCount() > OPEN_NOTE_BUDGET) {
 			closeUnit(units[lru.back()]);
 			lru.pop_back();
 		}
+	}
+
+	// F17: total live notes across OPEN shards (the eviction metric).
+	// Closed shards report noteCount (their encoded census) — only open
+	// shards hold real memory, so only their live() counts.
+	size_t openNoteCount() const {
+		size_t n = 0;
+		for (const Unit& u : units)
+			if (u.open) n += u.live();
+		return n;
 	}
 
 	void ensureOpen(size_t ui) {
@@ -1449,14 +1945,7 @@ private:
 			return;
 		}
 		{
-			u.notesTree.clear();
-			u.tieCounter = 0;
-			// The flat cache is derived — a fresh open must mark it stale
-			// (the tree is about to be repopulated; the cache rebuilds on
-			// the first materialize()).
-			u.flatKeys.clear();
-			u.flatData.clear();
-			u.flatValid = false;
+			u.quadInit();
 			std::vector<ChartNote> flat;
 			const bool ok = !u.image.empty()
 				&& fvc3_decode(u.image.data(), u.image.size(), flat)
@@ -1475,16 +1964,16 @@ private:
 				touch(ui);
 				return;
 			}
-			// Populate the btree in ascending key order (the fastest path —
-			// every insert lands at end()). Ties keep the decoded order via
-			// the monotonic tie counter.
-			for (const ChartNote& cn : flat)
-				u.notesTree.insert(u.notesTree.end(),
-					std::make_pair(Unit::Key(notePos(cn), ++u.tieCounter), cn));
+			// F18: the decoded run is already ascending — one leaf-stacking
+			// load, no per-note inserts. Ties keep the decoded order via the
+			// monotonic tie ranks the loader assigns.
+			u.quadLoadSorted(flat.data(), flat.size());
+			flat.clear();
+			flat.shrink_to_fit();
 			u.open = true;
 			u.dirty = false;
-			u.judge.init(u.notesTree.size());
-			u.hit.init(u.notesTree.size());
+			u.judge.init(u.live());
+			u.hit.init(u.live());
 			++openCount;
 		}
 		touch(ui);
@@ -1493,14 +1982,20 @@ private:
 	void closeUnit(Unit& u) {
 		if (!u.open) return;
 		if (u.dirty) {
-			// The flat cache IS the ascending export — hand it to the codec.
-			u.materialize();
-			u.image = fvc3_encode(u.contiguous(), u.live());
+			// F18: the leaves export ascending in one pass — the codec
+			// gets the same contiguous array the old flat cache handed it.
+			std::vector<ChartNote> flat;
+			u.quadExport(flat);
+			u.image = fvc3_encode(flat.data(), flat.size());
 			u.noteCount = (uint32_t)u.live();
 		}
 		u.freeBlock();
-		u.judge = BitArray();
-		u.hit = BitArray();
+		// F16: move-assign (not copy) so the destination's backing buffer
+		// is actually freed — BitArray has no user-declared special members,
+		// so `= BitArray()` binds the COPY-assignment operator, which
+		// reuses the destination's vector storage and retains capacity.
+		u.judge = std::move(BitArray());
+		u.hit = std::move(BitArray());
 		u.open = false;
 		u.dirty = false;
 		--openCount;
@@ -1569,19 +2064,15 @@ public:
 	// shard (a cache only exists for open shards; an emptied+erased
 	// shard is gone entirely, and untouched closed shards have no
 	// cache to rebuild).
+	// F18: the quad-tree HAS no derived cache — the leaves are the
+	// storage, and quadErase kept them exact during the walk. The old
+	// dual-thread re-materialization afterwork is a no-op now; the
+	// function stays (caller contract) and simply resets the read
+	// cursors the sequential sweep may have left pointing at moved
+	// entries.
 	void postRemoveOpenShards() {
-		std::vector<Unit*> openUnits;
 		for (Unit& u : units)
-			if (u.open) openUnits.push_back(&u);
-		if (openUnits.size() >= 2) {
-			const size_t half = openUnits.size() / 2;
-			chart_dual_run(
-				[&] { for (size_t k = 0; k < half; ++k) openUnits[k]->materialize(); },
-				[&] { for (size_t k = half; k < openUnits.size(); ++k) openUnits[k]->materialize(); });
-		}
-		else if (!openUnits.empty()) {
-			openUnits[0]->materialize();
-		}
+			if (u.open) u.curLeaf = 0xFFFFFFFFu;
 	}
 
 	int64_t size() const { return totalNotes; }
@@ -1661,16 +2152,14 @@ public:
 	// shard creation, no LRU traffic (the plan phase calls this).
 	size_t routeOf(uint64_t pos) const { return findUnitByPos(pos); }
 
-	// The lower-bound slot of a position in a shard's CURRENT live tree
+	// The lower-bound slot of a position in a shard's CURRENT live store
 	// (no insert): the r of the exact-index proof, computed before the
 	// group's members are written.
 	size_t shardLowerBound(size_t ui, uint64_t pos) {
 		ensureOpen(ui);
 		Unit& u = units[ui];
-		u.materialize();
 		const Unit::Key probe(pos, UINT64_MAX);
-		return (size_t)(std::lower_bound(u.flatKeys.begin(), u.flatKeys.end(), probe)
-			- u.flatKeys.begin());
+		return u.quadLowerBound(probe);
 	}
 
 	// Tree-only group write: inserts one equal-position group's members
@@ -1678,24 +2167,23 @@ public:
 	// order (the proof's contiguous-run requirement), WITHOUT touching
 	// any shared accounting (baseIds/totalNotes/LRU/units). The caller
 	// runs the accounting fixup once, after both threads join.
+	// F18: the whole run lands with ONE leaf-vector insert (plus the
+	// judge/hit bit shifts, which the exact ranks below cover) instead
+	// of a tree insert + two cache memmoves per note.
 	void insertPlanned(size_t ui, size_t slot, const ChartNote* cns, size_t m) {
 		Unit& u = units[ui];
-		u.materialize();
-		// Sanity (debug builds): the planned run must be within bounds.
-		// The parity split guarantees this thread is the ONLY writer to
-		// this shard, and the plan already accounted for this group's
-		// members + every earlier group in the same shard.
+		// The run's entries, packed with fresh monotonic tie ranks so
+		// the group keeps its staging order after equal positions.
+		std::vector<Unit::Entry> es;
+		es.reserve(m);
+		for (size_t k = 0; k < m; ++k)
+			es.emplace_back(Unit::Key(notePos(cns[k]), ++u.tieCounter), cns[k]);
 		for (size_t k = 0; k < m; ++k) {
-			const uint64_t pos = notePos(cns[k]);
-			const uint64_t tie = ++u.tieCounter;
-			const Unit::Key key(pos, tie);
-			u.notesTree.insert(std::make_pair(key, cns[k]));
 			const size_t at = slot + k; // the planned run position
-			u.flatKeys.insert(u.flatKeys.begin() + (long)at, key);
-			u.flatData.insert(u.flatData.begin() + (long)at, cns[k]);
 			u.judge.insert(at, false);
 			u.hit.insert(at, false);
 		}
+		u.quadInsertRun(slot, es.data(), m);
 		u.dirty = true;
 		modifiedBits.set(ui, true);
 	}
@@ -1754,11 +2242,11 @@ public:
 			}
 		}
 		Unit& u = units[ui];
-		// O(log n) via the tree: the slot is the in-order rank the note
-		// lands at (treeInsert walks the tree internally; the returned
-		// slot IS the id offset). Ties land after every existing equal
-		// position — insertion order, the store's contract.
-		const size_t slot = u.treeInsert(cn);
+		// F18: one leaf-local insert; the slot is the in-order rank the
+		// note lands at (the returned rank IS the id offset). Ties land
+		// after every existing equal position — insertion order, the
+		// store's contract.
+		const size_t slot = u.quadInsert(cn);
 		u.dirty = true;
 		modifiedBits.set(ui, true);
 		++totalNotes;
@@ -1820,7 +2308,7 @@ public:
 		ensureOpen(ui);
 		Unit& u = units[ui];
 		const size_t slot = (size_t)(id - u.baseId);
-		u.treeErase(slot);
+		u.quadErase(slot);
 		u.dirty = true;
 		modifiedBits.set(ui, true);
 		--totalNotes;
@@ -1832,8 +2320,9 @@ public:
 				++k;
 			}
 			u.freeBlock();
-			u.judge = BitArray();
-			u.hit = BitArray();
+			// F16: move-assign frees the buffers (see closeUnit).
+			u.judge = std::move(BitArray());
+			u.hit = std::move(BitArray());
 			if (u.open) { u.open = false; --openCount; }
 			u.dirty = false;
 			units.erase(units.begin() + ui);
@@ -1886,6 +2375,7 @@ public:
 		};
 		std::vector<Piece> pieces;
 		std::vector<std::vector<ChartNote>> flats;
+		std::vector<ChartNote> quadExportBuf; // F18: reused per-shard export buffer
 		for (size_t ui = 0; ui < units.size(); ++ui) {
 			Unit& u = units[ui];
 			if (!u.dirty && !u.image.empty()) {
@@ -1897,7 +2387,10 @@ public:
 				continue;
 			}
 			if (u.live() == 0) continue;
-			const ChartNote* data = u.contiguous();
+			// F18: one ascending export fills a local buffer (the leaves
+			// own the storage; there is no standing flat cache anymore).
+			u.quadExport(quadExportBuf);
+			const ChartNote* data = quadExportBuf.data();
 			const size_t n = u.live();
 			std::vector<ChartSegShard> infos;
 			std::vector<size_t> offs;
