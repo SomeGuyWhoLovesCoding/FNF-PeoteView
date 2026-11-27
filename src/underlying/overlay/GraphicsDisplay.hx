@@ -345,7 +345,7 @@ class GraphicsDisplay extends OptionsSubDisplay {
                                 return SaveData.state.preferences.antialiasing ? "ON" : "OFF";
                         case "vsync":
                                 #if LIME_840
-                                return window.vsyncMode == VSyncMode.Adaptive ? "ON" : "OFF";
+                                return window.vsyncMode == VSyncMode.ADAPTIVE ? "ON" : "OFF";
                                 #else
                                 return "OFF";
                                 #end

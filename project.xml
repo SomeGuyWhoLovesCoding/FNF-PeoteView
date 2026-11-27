@@ -24,6 +24,7 @@
 			<haxelib name="linc_luajit_funkinview" unless="FV_NO_LUA" />
 			<!-- For debugging -->
 			<!--<haxelib name="hxcpp-debug-server" if="debug" />-->
+			<haxelib name="libhxcpp" />
 
 
 	<!-- Flags & Defines -->

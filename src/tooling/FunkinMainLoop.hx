@@ -22,16 +22,16 @@ class FunkinMainLoop {
 	static function run(frameRate:Float, uncapped:Bool, vsync:Bool = false) {
 		#if LIME_840
 		FRAMEOPTS = {
-			timePrecision: TimePrecision.HighResolution,
-			busyWait: BusyWaitMode.Auto,
-			uncapMode: uncapped ? UncapMode.Soft : UncapMode.Off
+			timePrecision: TimePrecision.HIGH_RESOLUTION,
+			busyWait: BusyWaitMode.AUTO,
+			uncapMode: uncapped ? UncapMode.SOFT : UncapMode.OFF
 		};
 		#end
 		var uncappedModeStr:String = uncapped ? "Soft" : "Off";
 		Sys.println('[ System ] Framerate set to $frameRate with uncapped mode set to ${uncappedModeStr} and vsync set to ${vsync}');
 		Application.current.window.frameRate = FRAMERATE = frameRate;
 		#if LIME_840
-		Application.current.configureFrameTiming(FrameProfile.Precision, FRAMEOPTS, vsync ? VSyncMode.Adaptive : VSyncMode.Off);
+		Application.current.configureFrameTiming(FrameProfile.PRECISION, FRAMEOPTS, vsync ? VSyncMode.ADAPTIVE : VSyncMode.OFF);
 		#end
 	}
 }
