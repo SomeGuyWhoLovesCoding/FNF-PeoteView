@@ -66,28 +66,43 @@ class Sustain implements Element {
 	**/
 	@texUnit public var texUnit:Int = 0;
 
-	@texSlot public var texSlot:Int = 0;
+	// F23: texSlot dropped — the game's textures are created slotless
+	// (slotsX=1, slotsY=1), so slot 0 is the identity and the field was
+	// never anything but 0.
 
 	// ========================================================================
 	// Texture Coordinates (body = "hold piece", tail = "hold end")
 	// ========================================================================
+	// F23: all nine fields are Int now. Every writer stores integer pixel
+	// coordinates (BasicNoteskinClip.clipX..clipH are Int) or one of
+	// 0/90/180/270 (TextureRotation.toDegrees():Int) — the Float
+	// declarations were paying 4 bytes each for values that fit a short.
+	// Int-declared @custom fields pack as 2-byte shorts in the buffer
+	// (same mechanism as Note's clipX/Y/W/H); the vertex shader
+	// promotes them to float varyings, so vec4(bodyX, bodyY, bodyW,
+	// bodyH) and the slice() shader are byte-identical in behavior.
+	// 9 fields x 2 bytes = 18 bytes/sustain saved.
 	// Body texture rect in pixels: (x, y, w, h).
-	@varying @custom @set("properties") public var bodyX:Float = 0.0;
-	@varying @custom @set("properties") public var bodyY:Float = 0.0;
-	@varying @custom @set("properties") public var bodyW:Float = 0.0;
-	@varying @custom @set("properties") public var bodyH:Float = 0.0;
+	@varying @custom @set("properties") public var bodyX:Int = 0;
+	@varying @custom @set("properties") public var bodyY:Int = 0;
+	@varying @custom @set("properties") public var bodyW:Int = 0;
+	@varying @custom @set("properties") public var bodyH:Int = 0;
 
 	// Tail texture rect in pixels: (x, y, w, h).
-	@varying @custom @set("properties") public var tailX:Float = 0.0;
-	@varying @custom @set("properties") public var tailY:Float = 0.0;
-	@varying @custom @set("properties") public var tailW:Float = 0.0;
-	@varying @custom @set("properties") public var tailH:Float = 0.0;
+	@varying @custom @set("properties") public var tailX:Int = 0;
+	@varying @custom @set("properties") public var tailY:Int = 0;
+	@varying @custom @set("properties") public var tailW:Int = 0;
+	@varying @custom @set("properties") public var tailH:Int = 0;
 
 	// Texture rotation in degrees: 0, 90, 180, or 270.
-	@varying @custom @set("properties") public var texRotation:Float = 0.0;
+	@varying @custom @set("properties") public var texRotation:Int = 0;
 
-	@varying @custom public var invTileWidth:Float = 100.0;
-	@varying @custom public var invTileHeight:Float = 100.0;
+	// F23: invTileWidth/invTileHeight are GONE as element fields. The
+	// slice() shader always used the literals baked at injection time
+	// (1.0/texture.width, 1.0/texture.height — the function PARAMETERS
+	// shadowed these varyings, so the per-element values were never
+	// sampled). setProgramsSustainShader now passes the literals
+	// directly in the color formula. 8 bytes/sustain saved.
 
 	// ========================================================================
 	// State
@@ -122,14 +137,13 @@ class Sustain implements Element {
 	}
 
 	/**
-		Propagate `texUnit` / `texSlot` from a noteskin handle to this
-		sustain. Called from the constructor and from
-		`Strumline.set_noteskinHandle` whenever the active skin changes.
+		Propagate `texUnit` from a noteskin handle to this sustain.
+		Called from the constructor and from `Strumline.set_noteskinHandle`
+		whenever the active skin changes.
 
-		After this call, the sustain's `@texUnit` / `@texSlot`
-		attributes point at the new skin's slot in
-		`NoteskinManager.textureCache`, so the shader will sample from
-		that skin's sheet on the next draw.
+		After this call, the sustain's `@texUnit` attribute points at the
+		new skin's slot in `NoteskinManager.textureCache`, so the shader
+		will sample from that skin's sheet on the next draw.
 
 		If `handle` is null, this is a no-op.
 	**/
@@ -138,9 +152,9 @@ class Sustain implements Element {
 			return;
 		this.handle = handle;
 		texUnit = handle.texUnit;
-		texSlot = handle.texSlot;
-		invTileWidth = 1.0 / (handle.texture.width / handle.texture.slotsX);
-		invTileHeight = 1.0 / handle.texture.height;
+		// F23: texSlot dropped (slotless textures) and invTileWidth/
+		// invTileHeight dropped (the shader bakes the literals — the
+		// per-element values were never sampled, see class doc).
 	}
 
 	/**
@@ -163,7 +177,7 @@ class Sustain implements Element {
 		tailW = tailClip.clipW;
 		tailH = tailClip.clipH;
 
-		h = Math.round(bodyH);
+		h = bodyH; // F23: bodyH is Int now — no rounding needed
 
 		texRotation = bodyClip.rotation.toDegrees();
 

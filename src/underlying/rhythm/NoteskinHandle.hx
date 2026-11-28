@@ -676,7 +676,7 @@ class NoteskinHandle {
 			}
 		');
 
-		program.setColorFormula('c * slice(noteTexV2_ID, vec4(bodyX, bodyY, bodyW, bodyH), vec4(tailX, tailY, tailW, tailH), texRotation, invTileWidth, invTileHeight)');
+		program.setColorFormula('c * slice(noteTexV2_ID, vec4(bodyX, bodyY, bodyW, bodyH), vec4(tailX, tailY, tailW, tailH), texRotation, $invTileW, $invTileH)');
 	}
 
 	/**

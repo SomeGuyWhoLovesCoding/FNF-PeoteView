@@ -79,7 +79,18 @@ class NoteSystem {
 		handle.loadTexture();
 
 		if (notesBuf == null) {
-			notesBuf = new Buffer<Note>(256, 256);
+			// F22: autoShrink on. The buffer grows by 256 when full and
+			// shrinks back by 256 once capacity exceeds usage by
+			// growSize*1.5 = 384 slots — that gap IS the hysteresis that
+			// keeps scrubbing/seeking (which swings the parked tail up
+			// and down by a few hundred) from thrashing the GL buffer,
+			// while a real density collapse (chart switch, editor jump
+			// to a sparse section) returns the memory. The trim itself
+			// happens in NotePool.endFrame via removeElement on the
+			// parked tail, which is physically last in the buffer, so
+			// peote takes its O(1) _maxElements-- branch — no element is
+			// ever moved and the receptors-first order is preserved.
+			notesBuf = new Buffer<Note>(256, 256, true);
 		}
 
 		if (notesProg == null) {
@@ -90,7 +101,8 @@ class NoteSystem {
 		}
 
 		if (sustainsBuf == null) {
-			sustainsBuf = new Buffer<Sustain>(256, 256);
+			// F22: same autoShrink policy as the note buffer.
+			sustainsBuf = new Buffer<Sustain>(256, 256, true);
 		}
 
 		if (sustainProg == null) {
@@ -394,14 +406,13 @@ class NoteSystem {
 					var handle = typeToHandle[virtualNote.ref.type];
 					var note = notePool.acquireNote();
 
-					// F15: this triple-compare silently assumes texUnit/texSlot
-					// stability — NoteskinManager.registerTexture only ever
-					// APPENDS to textureCache (slots are never freed, by
-					// design, see its disposeSkin comment), so a handle's
-					// (texUnit, texSlot) pair is immutable for the process
-					// lifetime. If that ever changes, this change-detection
-					// breaks silently and skins bleed into each other.
-					if (note.handle != handle || note.texUnit != handle.texUnit || note.texSlot != handle.texSlot)
+					// F15/F23: texSlot is gone from the elements (slotless
+					// textures) — the handle compare alone is the change
+					// detection now. NoteskinManager.registerTexture only
+					// ever APPENDS to textureCache (a handle's texUnit is
+					// immutable for the process lifetime, see its
+					// disposeSkin comment), so this cannot miss a switch.
+					if (note.handle != handle)
 						note.setHandle(handle);
 					note.x = virtualNote.Sx;
 					note.y = virtualNote.Sy;
@@ -483,7 +494,8 @@ class NoteSystem {
 					var handle = typeToHandle[virtualSustain.ref.ref.type];
 					var sustain = notePool.acquireSustain();
 
-					if (sustain.handle != handle || sustain.texUnit != handle.texUnit || sustain.texSlot != handle.texSlot)
+					// F23: same as notes — texSlot is gone, handle compare only.
+					if (sustain.handle != handle)
 						sustain.setHandle(handle);
 					sustain.x = virtualSustain.Sx;
 					sustain.y = virtualSustain.Sy;

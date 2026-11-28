@@ -433,13 +433,36 @@ class NotePool {
 	}
 
 	/**
-	 * Called at the end of each render frame (F19 semantics, F21 fix).
+	 * Called at the end of each render frame (F19 semantics, F21 fix,
+	 * F22 trim).
 	 *
 	 * Every element BEYOND this frame's order count is PARKED off-screen
-	 * — not removed from the buffer. Elements never leave the GPU buffer
-	 * between frames, so the per-frame addElement/removeElement churn
-	 * (and the orphaned-element states it could leave behind on an
-	 * exception) is structurally gone.
+	 * first — then, if the parked tail has grown past a hysteresis gap,
+	 * its TOP elements are removed from the buffer entirely (F22), so
+	 * the buffer's autoShrink can return GPU memory. Ordering guarantee
+	 * that makes this safe: the store's slot order IS the buffer's
+	 * element order (acquire order = addElement order), and receptors
+	 * were added first — so a store element at slot k sits at buffer
+	 * index receptorCount + k, and the parked tail is the PHYSICALLY
+	 * LAST run of the buffer. removeElement on a physically-last
+	 * element is peote's O(1) `_maxElements--` branch: nothing moves,
+	 * nothing is re-uploaded, the receptors-first invariant and the
+	 * draw order of everything that remains are untouched.
+	 *
+	 * TRIM HYSTERESIS (matches peote's autoShrink arithmetic): the
+	 * buffers are `new Buffer(256, 256, autoShrink=true)`, so a buffer
+	 * only shrinks when `_maxElements <= capacity - 384` (growSize*1.5).
+	 * Trimming the tail to exactly the live count would make every
+	 * frame's tiny count swing re-grow/re-shrink the GL buffer
+	 * (changeBufferSize = realloc + full re-upload + VAO rebind). So the
+	 * trim only fires when the parked tail exceeds TRIM_GAP slots
+	 * (= 384, same gap peote needs below the CURRENT capacity before it
+	 * will shrink), and when it fires it trims to `live + TRIM_GAP/2`
+	 * — leaving headroom for the next swing-up — then lets removeElement
+	 * walk peote's own shrink condition. Scrubbing a dense section
+	 * moves the live count by a few hundred either way and never pays a
+	 * realloc; a real density collapse (chart switch via reset(), seek
+	 * to a sparse section, song end) pays at most one realloc series.
 	 *
 	 * F21: parking may ONLY write fields the render loops UNCONDITIONALLY
 	 * rewrite on the next acquire — x/y and the alphas for Notes, x/y/w
@@ -462,6 +485,8 @@ class NotePool {
 	 * parks identically. The frameOpen flag keeps a double endFrame a
 	 * no-op.
 	 */
+	static var TRIM_GAP:Int = 384;
+
 	function endFrame() {
 		if (!frameOpen)
 			return;
@@ -483,6 +508,20 @@ class NotePool {
 		}
 		prevNoteCount = noteSlot;
 
+		// F22: trim an oversized parked tail out of the buffer. The tail
+		// is physically last, so removing from the TOP of the store
+		// backwards keeps every removal on peote's O(1) no-swap path.
+		// Trim target leaves half the gap as headroom.
+		if (n - noteSlot > TRIM_GAP) {
+			var keep = noteSlot + Std.int(TRIM_GAP / 2);
+			var k = n - 1;
+			while (k >= keep) {
+				NoteSystem.notesBuf.removeElement(noteStore[k]);
+				noteStore.pop();
+				k--;
+			}
+		}
+
 		// Park the unused tail of the sustain store. w IS parked here —
 		// the sustain render loop unconditionally rewrites w every
 		// acquire — but h is a clip-derived field owned by changeID()
@@ -499,6 +538,17 @@ class NotePool {
 			j++;
 		}
 		prevSustainCount = sustainSlot;
+
+		// F22: same trim for sustains.
+		if (m - sustainSlot > TRIM_GAP) {
+			var keepSus = sustainSlot + Std.int(TRIM_GAP / 2);
+			var k = m - 1;
+			while (k >= keepSus) {
+				NoteSystem.sustainsBuf.removeElement(sustainStore[k]);
+				sustainStore.pop();
+				k--;
+			}
+		}
 	}
 
 	/**

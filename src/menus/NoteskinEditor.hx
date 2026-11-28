@@ -1070,8 +1070,8 @@ private class NoteskinEditorClipEditor {
 			var basicClip = state.clipEditor.getBasicClipForState(clip, state.currentState);
 			var sx = note.x + basicClip.offsX * scale;
 			var sy = note.y + basicClip.offsY * scale;
-			var sw = note.w * scale;
-			var sh = note.h * scale;
+			var sw = note.clipWidth * scale;
+			var sh = note.clipHeight * scale;
 			if (mouseX >= sx && mouseX <= sx + sw && mouseY >= sy && mouseY <= sy + sh) {
 				return i;
 			}
@@ -1089,8 +1089,8 @@ private class NoteskinEditorClipEditor {
 		if (note == null)
 			return false;
 		var scale = state.currentConfig.scale;
-		var sw = note.w * scale;
-		var sh = note.h * scale;
+		var sw = note.clipWidth * scale;
+		var sh = note.clipHeight * scale;
 		return (note.x + sw > 0 && note.x < Main.INITIAL_WIDTH && note.y + sh > 0 && note.y < Main.INITIAL_HEIGHT);
 	}
 
@@ -3275,10 +3275,8 @@ private class NoteskinEditorRenderer {
 				note.clipY = basicClip.clipY;
 				note.clipWidth = basicClip.clipW;
 				note.clipHeight = basicClip.clipH;
-				note.clipSizeX = basicClip.clipW;
-				note.clipSizeY = basicClip.clipH;
-				note.w = basicClip.clipW;
-				note.h = basicClip.clipH;
+				note.clipWidth = basicClip.clipW;
+				note.clipHeight = basicClip.clipH;
 				note.ox = basicClip.offsX;
 				note.oy = basicClip.offsY;
 			default:
@@ -3314,9 +3312,7 @@ private class NoteskinEditorRenderer {
 		if (clip == null)
 			return false;
 		return note.clipX != clip.clipX || note.clipY != clip.clipY
-			|| note.w != clip.clipW || note.h != clip.clipH
 			|| note.clipWidth != clip.clipW || note.clipHeight != clip.clipH
-			|| note.clipSizeX != clip.clipW || note.clipSizeY != clip.clipH
 			|| note.ox != clip.offsX || note.oy != clip.offsY;
 	}
 
@@ -3398,10 +3394,8 @@ private class NoteskinEditorRenderer {
 					note.clipY = basicClip.clipY - NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
 					note.clipWidth = sheetW + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
 					note.clipHeight = sheetH + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-					note.clipSizeX = sheetW + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-					note.clipSizeY = sheetH + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-					note.w = sheetW + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
-					note.h = sheetH + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+					note.clipWidth = sheetW + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
+					note.clipHeight = sheetH + NoteskinEditor.SPRITESHEET_VIEW_OFFSET;
 					note.ox = basicClip.offsX;
 					note.oy = basicClip.offsY;
 					note.x -= Math.round(NoteskinEditor.SPRITESHEET_VIEW_OFFSET * scale);
@@ -4889,8 +4883,8 @@ private class NoteskinEditorInputHandler {
 		var clip = state.clipEditor.getSelectedClip();
 		var sx = note.x + clip.offsX * scale;
 		var sy = note.y + clip.offsY * scale;
-		var sw = note.w * scale;
-		var sh = note.h * scale;
+		var sw = note.clipWidth * scale;
+		var sh = note.clipHeight * scale;
 
 		var inSprite = mouseX >= sx && mouseX <= sx + sw && mouseY >= sy && mouseY <= sy + sh;
 
@@ -4937,8 +4931,8 @@ private class NoteskinEditorInputHandler {
 		var clip = state.clipEditor.getSelectedClip();
 		var sx = note.x + clip.offsX * scale;
 		var sy = note.y + clip.offsY * scale;
-		var sw = note.w * scale;
-		var sh = note.h * scale;
+		var sw = note.clipWidth * scale;
+		var sh = note.clipHeight * scale;
 
 		// Edge detection margin — how close the cursor must be to register
 		// as "on the edge" vs. "in the middle".
@@ -5205,8 +5199,8 @@ private class NoteskinEditorInputHandler {
 				var scale = state.currentConfig.scale;
 				var sx = note.x + clip.offsX * scale;
 				var sy = note.y + clip.offsY * scale;
-				var sw = note.w * scale;
-				var sh = note.h * scale;
+				var sw = note.clipWidth * scale;
+				var sh = note.clipHeight * scale;
 				var margin = 10;
 
 				var nearRight = Math.abs(mouseX - (sx + sw)) <= margin;
@@ -5246,8 +5240,8 @@ private class NoteskinEditorInputHandler {
 				var scale = state.currentConfig.scale;
 				var sx = note.x;
 				var sy = note.y;
-				var sw = note.w * scale;
-				var sh = note.h * scale;
+				var sw = note.clipWidth * scale;
+				var sh = note.clipHeight * scale;
 				var inSprite = mouseX >= sx && mouseX <= sx + sw && mouseY >= sy && mouseY <= sy + sh;
 				setCursor(inSprite ? MouseCursor.MOVE : MouseCursor.ARROW);
 			}
