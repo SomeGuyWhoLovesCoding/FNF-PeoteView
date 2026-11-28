@@ -396,11 +396,14 @@ class NotePool {
 		if (slot < noteStore.length)
 			return noteStore[slot];
 		// Grow the store by exactly one: create, add to the buffer ONCE,
-		// park it until this frame's writes position it.
+		// park it until this frame's writes position it. F21: the
+		// constructor calls reset(), which applies the idle clip — w/h
+		// are never zeroed here (clip-cache discipline, see endFrame).
 		var note = new Note(0, 0, 0, 0, NoteSystem.typeToHandle[0]);
 		note.x = -9999;
-		note.w = 0;
-		note.h = 0;
+		note.y = -9999;
+		note.initialAlpha = 0;
+		note.addedAlpha = 0;
 		NoteSystem.notesBuf.addElement(note);
 		noteStore.push(note);
 		return note;
@@ -418,24 +421,41 @@ class NotePool {
 		var slot = sustainSlot++;
 		if (slot < sustainStore.length)
 			return sustainStore[slot];
+		// F21: only position is parked — w is rewritten by the sustain
+		// render loop, h is clip-derived (changeID's cache), so neither
+		// is zeroed at birth.
 		var sustain = new Sustain(-9999, -9999, 0, 0, NoteSystem.typeToHandle[0], 0, 1, 1, 0);
-		sustain.w = 0;
+		sustain.x = -9999;
+		sustain.y = -9999;
 		NoteSystem.sustainsBuf.addElement(sustain);
 		sustainStore.push(sustain);
 		return sustain;
 	}
 
 	/**
-	 * Called at the end of each render frame (F19 semantics).
+	 * Called at the end of each render frame (F19 semantics, F21 fix).
 	 *
 	 * Every element BEYOND this frame's order count is PARKED off-screen
-	 * (x=-9999, zero size, zero alpha) — not removed from the buffer.
-	 * Elements never leave the GPU buffer between frames, so the
-	 * per-frame addElement/removeElement churn (and the orphaned-element
-	 * states it could leave behind on an exception) is structurally
-	 * gone: an element is either written this frame (slot < counter) or
-	 * parked (slot >= counter). The store itself lives until
-	 * dispose()/reset().
+	 * — not removed from the buffer. Elements never leave the GPU buffer
+	 * between frames, so the per-frame addElement/removeElement churn
+	 * (and the orphaned-element states it could leave behind on an
+	 * exception) is structurally gone.
+	 *
+	 * F21: parking may ONLY write fields the render loops UNCONDITIONALLY
+	 * rewrite on the next acquire — x/y and the alphas for Notes, x/y/w
+	 * for Sustains. It must NEVER touch w/h (or any clip-derived field)
+	 * of a Note: toNote()'s clip cache treats (handle, id, mania, COLOR)
+	 * as a proof that the clip is STILL APPLIED, and the clip is the only
+	 * writer of w/h/ox/oy. Parking used to zero w/h behind that cache;
+	 * when the store shrank and grew again, a re-acquired element whose
+	 * cache key matched its previous life early-returned from toNote()
+	 * and kept w=h=0 — the note was in the buffer, positioned, and
+	 * INVISIBLE (the "half the notes missing, sparsely" report on the
+	 * 2.35M spam chart, where the folded window count swings wildly and
+	 * park/reactivate cycles are constant). Sustain.changeID() has the
+	 * same cache shape (h never gets rewritten by the render loop), so
+	 * sustains never get their h parked either; x=-9999 alone is off-
+	 * screen for both.
 	 *
 	 * F1: robust against a mid-render exception — the counters are
 	 * wherever the interrupted loop left them, and everything past them
@@ -447,7 +467,8 @@ class NotePool {
 			return;
 		frameOpen = false;
 
-		// Park the unused tail of the note store off-screen.
+		// Park the unused tail of the note store off-screen. Only the
+		// fields renderVirtualNotes rewrites unconditionally next frame.
 		var n = noteStore.length;
 		var i = noteSlot;
 		while (i < n) {
@@ -455,8 +476,6 @@ class NotePool {
 			if (note.x != -9999) { // already parked — skip the write
 				note.x = -9999;
 				note.y = -9999;
-				note.w = 0;
-				note.h = 0;
 				note.initialAlpha = 0;
 				note.addedAlpha = 0;
 			}
@@ -464,7 +483,10 @@ class NotePool {
 		}
 		prevNoteCount = noteSlot;
 
-		// Park the unused tail of the sustain store.
+		// Park the unused tail of the sustain store. w IS parked here —
+		// the sustain render loop unconditionally rewrites w every
+		// acquire — but h is a clip-derived field owned by changeID()
+		// (same cache discipline as Note), so it stays untouched.
 		var m = sustainStore.length;
 		var j = sustainSlot;
 		while (j < m) {
@@ -473,7 +495,6 @@ class NotePool {
 				sustain.x = -9999;
 				sustain.y = -9999;
 				sustain.w = 0;
-				sustain.h = 0;
 			}
 			j++;
 		}
