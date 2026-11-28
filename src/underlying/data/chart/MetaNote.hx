@@ -57,6 +57,31 @@ abstract MetaNote(MetaNoteImpl) from MetaNoteImpl to MetaNoteImpl {
 	var type(get, never):Int;
 	var lane(get, never):Int;
 
+	// F4/F19: by-value equality on the packed words. File.getNote()
+	// builds a FRESH MetaNoteImpl wrapper on every call, so object
+	// identity is never stable across calls — a reference compare
+	// against a stored binding's ref would report "different note" for
+	// the SAME chart note every time. NotePool's structural-edit check
+	// (obj.ref != n) relies on these operators comparing the full
+	// immutable state (high, low) — null-safe on both sides. The casts
+	// to MetaNoteImpl keep the null branches on the IMPL's reference
+	// equality (no recursion back into these ops) and read the fields
+	// off the class directly.
+	@:op(A == B) static inline function eq(a:MetaNote, b:MetaNote):Bool {
+		var ai:MetaNoteImpl = a;
+		var bi:MetaNoteImpl = b;
+		if (ai == null || bi == null)
+			return ai == bi; // null only equals null
+		return ai.high == bi.high && ai.low == bi.low;
+	}
+	@:op(A != B) static inline function neq(a:MetaNote, b:MetaNote):Bool {
+		var ai:MetaNoteImpl = a;
+		var bi:MetaNoteImpl = b;
+		if (ai == null || bi == null)
+			return !(ai == null && bi == null);
+		return ai.high != bi.high || ai.low != bi.low;
+	}
+
 	// Getters
 	inline function get_position():Int64 {
 		return (this.high & POSITION_MASK);

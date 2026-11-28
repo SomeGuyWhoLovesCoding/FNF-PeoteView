@@ -39,15 +39,40 @@ class NotePool {
 	// access converts global index -> local slot through slotBase.
 	var slotBase:Int = 0;
 
-	// Peote element pools — these persist in the GPU buffer and are
-	// updated in-place each frame instead of being destroyed/recreated.
-	var pooledNotes(default, null):Stack<Note>;
-	var pooledSustains(default, null):Stack<Sustain>;
+	// =================================================================
+	//  F19: the index-ordered element store (tier-2 rework)
+	// =================================================================
+	// The pooled Note/Sustain ELEMENTS now live in two persistent arrays
+	// where the ARRAY SLOT IS THE DRAW-ORDER INDEX — the exact order the
+	// render loops emit virtual notes/sustains (which is also the order
+	// the note buffer feeds the sustain buffer: every sustain element is
+	// added to its buffer AFTER the whole note store, so the sustain
+	// buffer sits directly behind the note buffer in GPU element order).
+	//
+	// Why: the old tier-2 pool (free stacks + active arrays) recycled
+	// GPU elements per frame through addElement/removeElement — the
+	// buffer-level bookkeeping churn that left orphaned elements parked
+	// in the buffers between edits (the ~0.5 MB/s growth on the 2.35M
+	// spam chart). In this store an element is addElement-ed EXACTLY
+	// ONCE (when the store grows to its slot) and NEVER removed:
+	//   - acquireNote()/acquireSustain() return store[orderCounter++]
+	//     (growing the store on demand) — in-place property writes
+	//     follow, which is all rendering ever was;
+	//   - endFrame() PARKS every element beyond this frame's order
+	//     count off-screen (x=-9999, w=0, alpha 0) instead of removing
+	//     it — no buffer mutation, no orphan can exist;
+	//   - dispose()/reset() drop the whole store — nothing per-element.
+	//
+	// The store only ever grows to the chart's high-water mark of
+	// simultaneous visible elements (the folded AO sprite count), and
+	// every slot below the current count is live — no gaps, no free
+	// list, no generation churn beyond the existing F9 counter.
 
-	// Active peote elements currently residing in the GPU buffers.
-	// Index 0 is the oldest slot; new slots are appended at the end.
-	var activeNotes(default, null):Array<Note>;
-	var activeSustains(default, null):Array<Sustain>;
+	// The persistent element stores (see the F19 block above). The old
+	// free stacks / active arrays are GONE — every element lives in its
+	// store for the pool's whole lifetime.
+	var noteStore(default, null):Array<Note>;
+	var sustainStore(default, null):Array<Sustain>;
 
 	// Frame-sync counters: how many slots were used last frame vs. this frame.
 	var noteSlot:Int = 0;
@@ -91,10 +116,11 @@ class NotePool {
 		inactiveVirtualSusses = new Stack<VirtualSustain>();
 		virtualNoteSlots = [];
 		virtualSustainSlots = [];
-		pooledNotes = new Stack<Note>();
-		pooledSustains = new Stack<Sustain>();
-		activeNotes = [];
-		activeSustains = [];
+		// F19: the element stores replace the free stacks + active arrays
+		// as the mechanism; the old fields stay as null compatibility
+		// views (nothing may push to them anymore).
+		noteStore = [];
+		sustainStore = [];
 	}
 
 	/**
@@ -357,95 +383,101 @@ class NotePool {
 	}
 
 	/**
-	 * Acquire a pooled Note for rendering.  The returned Note is already
-	 * inside `notesBuf` — just set its properties and it will be picked up
-	 * by the next `notesBuf.update()`.
-	 *
-	 * Reuses an active slot when possible (in-place update), otherwise
-	 * pops from the free stack or allocates a fresh Note and calls
-	 * `addElement` to place it in the buffer.
+	 * Acquire the pooled Note at the NEXT order index (F19). The store's
+	 * slot IS the draw order: the render loops acquire sequentially, so
+	 * store[0..noteSlot) is exactly this frame's emission order. The
+	 * element is already inside `notesBuf` — it was added once when the
+	 * store grew to this slot — so acquiring is an index bump plus a
+	 * lazy grow; all rendering is in-place property writes afterwards.
 	 */
 	function acquireNote():Note {
 		notesDirty = true;
-		if (noteSlot < prevNoteCount) {
-			return activeNotes[noteSlot++];
-		}
-		var note = pooledNotes.pop();
-		if (note == null) {
-			note = new Note(0, 0, 0, 0, NoteSystem.typeToHandle[0]);
-		}
+		var slot = noteSlot++;
+		if (slot < noteStore.length)
+			return noteStore[slot];
+		// Grow the store by exactly one: create, add to the buffer ONCE,
+		// park it until this frame's writes position it.
+		var note = new Note(0, 0, 0, 0, NoteSystem.typeToHandle[0]);
+		note.x = -9999;
+		note.w = 0;
+		note.h = 0;
 		NoteSystem.notesBuf.addElement(note);
-		activeNotes.push(note);
-		noteSlot++;
+		noteStore.push(note);
 		return note;
 	}
 
 	/**
-	 * Acquire a pooled Sustain for rendering.  Same contract as
-	 * `acquireNote` but for `sustainsBuf`.
+	 * Acquire the pooled Sustain at the NEXT order index (F19). Same
+	 * contract as acquireNote. Every sustain element joins sustainsBuf
+	 * only through this growth path, which runs strictly AFTER the note
+	 * render pass — so in element order the sustain buffer's contents
+	 * sit directly behind the note buffer's, the intended layering.
 	 */
 	function acquireSustain():Sustain {
 		sustainsDirty = true;
-		if (sustainSlot < prevSustainCount) {
-			return activeSustains[sustainSlot++];
-		}
-		var sustain = pooledSustains.pop();
-		if (sustain == null) {
-			sustain = new Sustain(-9999, -9999, 0, 0, NoteSystem.typeToHandle[0], 0, 1, 1, 0);
-		}
+		var slot = sustainSlot++;
+		if (slot < sustainStore.length)
+			return sustainStore[slot];
+		var sustain = new Sustain(-9999, -9999, 0, 0, NoteSystem.typeToHandle[0], 0, 1, 1, 0);
+		sustain.w = 0;
 		NoteSystem.sustainsBuf.addElement(sustain);
-		activeSustains.push(sustain);
-		sustainSlot++;
+		sustainStore.push(sustain);
 		return sustain;
 	}
 
 	/**
-	 * Called at the end of each render frame.
-	 * Any active slots that were NOT acquired this frame are released:
-	 * removed from the GPU buffer and pushed back onto the free stack.
+	 * Called at the end of each render frame (F19 semantics).
 	 *
-	 * Because notes are always acquired sequentially from slot 0 and
-	 * released from the tail, removals never shift intermediate elements.
+	 * Every element BEYOND this frame's order count is PARKED off-screen
+	 * (x=-9999, zero size, zero alpha) — not removed from the buffer.
+	 * Elements never leave the GPU buffer between frames, so the
+	 * per-frame addElement/removeElement churn (and the orphaned-element
+	 * states it could leave behind on an exception) is structurally
+	 * gone: an element is either written this frame (slot < counter) or
+	 * parked (slot >= counter). The store itself lives until
+	 * dispose()/reset().
 	 *
-	 * F1: robust against a mid-render exception. The counters always
-	 * describe reality after this call — `noteSlot`/`sustainSlot` are
-	 * wherever the interrupted loop left them, the arrays are truncated
-	 * to exactly the acquired prefix, and the frame is marked closed —
-	 * so the NEXT frame starts from a consistent state instead of
-	 * leaking the un-acquired tail forever. renderNotes() calls this in
-	 * its catch-and-rethrow path; the frameOpen flag makes a second
-	 * call (or a missed beginFrame) a no-op instead of a double drain.
+	 * F1: robust against a mid-render exception — the counters are
+	 * wherever the interrupted loop left them, and everything past them
+	 * parks identically. The frameOpen flag keeps a double endFrame a
+	 * no-op.
 	 */
 	function endFrame() {
 		if (!frameOpen)
 			return;
 		frameOpen = false;
 
-		// Release unused notes (from the tail — no shifting). The loop
-		// bound uses the LIVE array length, not prevNoteCount: after an
-		// exception mid-acquire the array may be longer than prevNoteCount
-		// (fresh pushes) — those are released too, then the counters are
-		// re-based. peote's removeElement is swap-with-last, so batch
-		// releases below only remove from the tail, which is exactly the
-		// O(1) case (the last element swaps with itself).
-		while (activeNotes.length > noteSlot) {
-			var note = activeNotes.pop();
-			NoteSystem.notesBuf.removeElement(note);
-			pooledNotes.push(note);
-			noteGeneration++; // F9: every cached sprite reference is now stale
+		// Park the unused tail of the note store off-screen.
+		var n = noteStore.length;
+		var i = noteSlot;
+		while (i < n) {
+			var note = noteStore[i];
+			if (note.x != -9999) { // already parked — skip the write
+				note.x = -9999;
+				note.y = -9999;
+				note.w = 0;
+				note.h = 0;
+				note.initialAlpha = 0;
+				note.addedAlpha = 0;
+			}
+			i++;
 		}
 		prevNoteCount = noteSlot;
-		if (activeNotes.length != noteSlot)
-			activeNotes.resize(noteSlot); // belt-and-braces after exception paths
 
-		while (activeSustains.length > sustainSlot) {
-			var sustain = activeSustains.pop();
-			NoteSystem.sustainsBuf.removeElement(sustain);
-			pooledSustains.push(sustain);
+		// Park the unused tail of the sustain store.
+		var m = sustainStore.length;
+		var j = sustainSlot;
+		while (j < m) {
+			var sustain = sustainStore[j];
+			if (sustain.x != -9999) {
+				sustain.x = -9999;
+				sustain.y = -9999;
+				sustain.w = 0;
+				sustain.h = 0;
+			}
+			j++;
 		}
 		prevSustainCount = sustainSlot;
-		if (activeSustains.length != sustainSlot)
-			activeSustains.resize(sustainSlot);
 	}
 
 	/**
@@ -456,16 +488,17 @@ class NotePool {
 	 * to -1. To keep a stale pooled Note from being rooted by anything
 	 * that outlives this teardown (a Receptor field, a cached sprite
 	 * reference), every reference the pool itself holds is dropped here —
-	 * free stacks, active arrays, slots — so the elements become
-	 * collectable the moment the last external ref goes away. Receptor
-	 * fields are nulled by Strumline.dispose AFTER the buffers clear (see
-	 * the reordered NoteSystem.dispose).
+	 * the whole element store, the free stacks, the slots — so the
+	 * elements become collectable the moment the last external ref goes
+	 * away. Receptor fields are nulled by Strumline.dispose AFTER the
+	 * buffers clear (see the reordered NoteSystem.dispose).
+	 * F19: the store dies as ONE unit — no per-element buffer surgery,
+	 * because the elements never leave the buffers between frames; the
+	 * buffers' own clear() is what ends their GPU residency.
 	 */
 	function dispose() {
-		activeNotes = null;
-		activeSustains = null;
-		pooledNotes = null;
-		pooledSustains = null;
+		noteStore = null;
+		sustainStore = null;
 		inactiveVirtualNotes = null;
 		inactiveVirtualSusses = null;
 		virtualNoteSlots = null;
@@ -538,9 +571,16 @@ class NotePool {
 	}
 
 	/**
-	 * Resets the pool for a song-position jump.
-	 * Clears the GPU buffers entirely, re-adds the persistent receptor
-	 * notes, and returns all pooled elements to their free stacks.
+	 * Resets the pool for a song-position jump (F19 semantics).
+	 *
+	 * The old reset recycled elements through buffer remove/clear + free
+	 * stacks. The store-based pool has nothing to recycle: the elements
+	 * STAY in the buffers, the order counters rewind to zero, and the
+	 * very next frame parks everything (endFrame with zero acquires) or
+	 * rewrites it in place. Only the static buffers are re-initialized
+	 * so the receptors re-enter first (they must keep their positions in
+	 * the note buffer ahead of the store's elements), which is the same
+	 * element order the first frame after construction had.
 	 */
 	function reset() {
 		// Clear buffers and re-add receptors (the only persistent elements)
@@ -552,17 +592,11 @@ class NotePool {
 		}
 		NoteSystem.sustainsBuf.clear();
 
-		// Return active pooled elements to free stacks
-		// (already removed from the buffer by clear above)
-		for (note in activeNotes) {
-			pooledNotes.push(note);
-		}
-		for (sustain in activeSustains) {
-			pooledSustains.push(sustain);
-		}
-
-		activeNotes.resize(0);
-		activeSustains.resize(0);
+		// F19: the stores die whole — the elements' buffer membership
+		// ended with the clear above, and fresh elements will be created
+		// (and addElement-ed once each) as the next frames demand them.
+		noteStore = [];
+		sustainStore = [];
 		noteSlot = 0;
 		sustainSlot = 0;
 		prevNoteCount = 0;

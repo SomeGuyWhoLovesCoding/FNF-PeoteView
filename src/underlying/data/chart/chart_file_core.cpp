@@ -218,6 +218,7 @@ struct Fvc3BitW {
 
 struct Fvc3BitR {
 	const uint8_t* p; const uint8_t* end; uint32_t acc = 0; int nbits = 0;
+	Fvc3BitR() : p(nullptr), end(nullptr) {} // F20: default for stream cursors
 	Fvc3BitR(const uint8_t* p_, const uint8_t* end_) : p(p_), end(end_) {}
 	bool take(uint32_t& v, int bits) {
 		if (bits == 0) { v = 0; return true; }
@@ -511,6 +512,7 @@ struct Fvc3AcDec {
 	uint32_t range = 0xFFFFFFFFu;
 	uint32_t code = 0;
 	bool bad = false;
+	Fvc3AcDec() : p(nullptr), end(nullptr) {} // F20: default for stream cursors
 	Fvc3AcDec(const uint8_t* p_, const uint8_t* end_) : p(p_), end(end_) {
 		for (int i = 0; i < 5; ++i) code = (code << 8) | nextByte();
 	}
@@ -1202,6 +1204,507 @@ static void radix_sort_notes_inplace(ChartNote* notes, size_t n) {
 	if (src != notes) std::memcpy(notes, src, n * sizeof(ChartNote));
 }
 
+// --- streaming state objects ---
+
+struct Fvc3StreamRaw {
+	const uint8_t* p = nullptr;
+	const uint8_t* end = nullptr;
+	bool ok = false;
+	void init(const uint8_t* data, size_t size, uint64_t noteCount) {
+		// RAW: payload is exactly noteCount ChartNotes
+		ok = (size >= noteCount * sizeof(ChartNote));
+		p = ok ? data : nullptr;
+		end = ok ? data + noteCount * sizeof(ChartNote) : nullptr;
+	}
+	bool pull(ChartNote& out) {
+		if (!ok || p + sizeof(ChartNote) > end) { ok = false; return false; }
+		std::memcpy(&out, p, sizeof(ChartNote));
+		p += sizeof(ChartNote);
+		return true;
+	}
+};
+
+// GRID_KIND streaming: varint header, then (dP, dD, id) triples.
+struct Fvc3StreamGK {
+	const uint8_t* p = nullptr;
+	const uint8_t* end = nullptr;
+	uint64_t grid = 0, prevP = 0;
+	int64_t prevD = 0;
+	uint32_t noteCount = 0, taken = 0;
+	std::vector<uint32_t> kinds;
+	bool ok = false;
+	void init(const uint8_t* data, size_t size, uint64_t noteCount_) {
+		ok = false; taken = 0;
+		p = data; end = data + size;
+		noteCount = (uint32_t)noteCount_;
+		uint64_t kindCount = 0;
+		p = blob_getu(p, end, grid);
+		p = blob_getu(p, end, kindCount);
+		if (!p || grid == 0 || kindCount == 0 || kindCount > FVC3_MAX_KINDS
+			|| kindCount > noteCount) return;
+		kinds.resize((size_t)kindCount);
+		for (uint64_t i = 0; i < kindCount; ++i) {
+			uint64_t k = 0;
+			p = blob_getu(p, end, k);
+			if (!p || (k >> 24) != 0) return;
+			kinds[(size_t)i] = (uint32_t)k;
+		}
+		prevP = 0; prevD = 0;
+		ok = true;
+	}
+	bool pull(ChartNote& out) {
+		if (!ok || taken >= noteCount) return false;
+		uint64_t dP = 0, id = 0; int64_t dD = 0;
+		p = blob_getu(p, end, dP);
+		p = blob_geti(p, end, dD);
+		p = blob_getu(p, end, id);
+		if (!p || id >= kinds.size()) { ok = false; return false; }
+		if (dP > 0xFFFFFFFFFFFFULL) { ok = false; return false; }
+		prevP += dP;
+		prevD += dD;
+		if (prevP > 0xFFFFFFFFFFFFULL / (grid ? grid : 1) + 1) { ok = false; return false; }
+		const uint64_t pos = prevP * grid;
+		if (pos > 0xFFFFFFFFFFFFULL) { ok = false; return false; }
+		if (prevD < 0 || prevD > 0xFFFFFF) { ok = false; return false; }
+		const uint32_t k = kinds[(size_t)id];
+		out = packNote(pos, (uint32_t)prevD, (k >> 16) & 0x3FF, (k >> 8) & 0xFF, k & 0x3F);
+		++taken;
+		return true;
+	}
+	bool consumedAll() const { return ok && taken == noteCount && p == end; }
+};
+
+// ROWS streaming: 2-bit gap class + varint escapes, kind bits, zigzag
+// duration deltas — state identical to fvc3_rows_decode.
+struct Fvc3StreamRows {
+	Fvc3BitR br;
+	std::vector<uint32_t> kinds;
+	uint64_t grid = 0, pos = 0;
+	uint64_t gapCode[3] = { 1, 1, 1 };
+	int64_t prevDur = 0;
+	bool durGrid = false;
+	uint64_t durUnit = 1;
+	int kindBits = 0;
+	uint32_t noteCount = 0, taken = 0;
+	bool ok = false;
+
+	// Pending members of the row being served (rows decode a whole
+	// same-position row at once; pulls hand out one note per call).
+	std::vector<ChartNote> pend;
+	size_t pendHead = 0;
+
+	void init(const uint8_t* data, size_t size, uint32_t noteCount_) {
+		ok = false; taken = 0; pend.clear(); pendHead = 0;
+		const uint8_t* p = data;
+		const uint8_t* end = data + size;
+		noteCount = noteCount_;
+		uint64_t kindCount = 0;
+		p = blob_getu(p, end, grid);
+		p = blob_getu(p, end, kindCount);
+		if (!p || grid == 0 || kindCount == 0 || kindCount > FVC3_MAX_KINDS
+			|| kindCount > noteCount) return;
+		kinds.resize((size_t)kindCount);
+		for (uint64_t i = 0; i < kindCount; ++i) {
+			uint64_t k = 0;
+			p = blob_getu(p, end, k);
+			if (!p || (k >> 24) != 0) return;
+			kinds[(size_t)i] = (uint32_t)k;
+		}
+		p = blob_getu(p, end, gapCode[0]);
+		p = blob_getu(p, end, gapCode[1]);
+		p = blob_getu(p, end, gapCode[2]);
+		if (!p) return;
+		br = Fvc3BitR(p, end);
+		uint32_t durGridBit = 0;
+		if (!br.take(durGridBit, 1)) return;
+		durGrid = durGridBit != 0;
+		durUnit = 1;
+		if (durGrid) {
+			if (!br.takeVarint(durUnit) || durUnit < 2) return;
+		}
+		kindBits = fvc3_kindBits(kindCount);
+		pos = 0; prevDur = 0;
+		ok = true;
+	}
+	bool pull(ChartNote& out) {
+		if (!ok) return false;
+		// Pending members of a partially-served row first — emission
+		// order matches the whole-buffer decoder exactly.
+		if (pendHead < pend.size()) {
+			out = pend[pendHead++];
+			++taken;
+			if (pendHead >= pend.size()) { pend.clear(); pendHead = 0; }
+			return true;
+		}
+		if (taken >= noteCount) return false;
+		uint32_t gc = 0;
+		if (!br.take(gc, 2)) { ok = false; return false; }
+		uint64_t gap;
+		if (gc < 3) gap = gapCode[gc];
+		else { if (!br.takeVarint(gap)) { ok = false; return false; } }
+		if (pos > 0xFFFFFFFFFFFFULL - gap) { ok = false; return false; }
+		pos += gap;
+		uint32_t cc = 0;
+		if (!br.take(cc, 2)) { ok = false; return false; }
+		uint64_t cnt;
+		if (cc < 3) cnt = cc + 1;
+		else {
+			uint64_t c1 = 0;
+			if (!br.takeVarint(c1)) { ok = false; return false; }
+			if (c1 > FVC3_ROWS_MAX_ROW - 1) { ok = false; return false; }
+			cnt = c1 + 1;
+		}
+		if (cnt < 1 || cnt > FVC3_ROWS_MAX_ROW) { ok = false; return false; }
+		if (taken + cnt > (uint64_t)noteCount) { ok = false; return false; }
+		if (pos > 0xFFFFFFFFFFFFULL / grid) { ok = false; return false; }
+		const uint64_t absPos = pos * grid;
+		// Decode the WHOLE row now (all members' kind/dur bits are read
+		// in stream order), then serve member-by-member from pend.
+		pend.clear(); pendHead = 0;
+		for (uint64_t m = 0; m < cnt; ++m) {
+			uint32_t id = 0, flag = 0;
+			if (!br.take(id, kindBits)) { ok = false; return false; }
+			if (id >= kinds.size()) { ok = false; return false; }
+			if (!br.take(flag, 1)) { ok = false; return false; }
+			uint32_t dur = 0;
+			if (flag) {
+				uint64_t zz;
+				if (!br.takeVarint(zz)) { ok = false; return false; }
+				const int64_t dv = (int64_t)((zz >> 1) ^ -(int64_t)(zz & 1));
+				if (dv > (int64_t)0x7FFFFFFFFFFLL || dv < -(int64_t)0x7FFFFFFFFFFLL) { ok = false; return false; }
+				const int64_t raw = prevDur + dv;
+				prevDur = raw;
+				if (raw < 0 || raw > 0xFFFFFF) { ok = false; return false; }
+				if (durGrid) {
+					if (raw > 0xFFFFFF / (int64_t)durUnit) { ok = false; return false; }
+					dur = (uint32_t)(raw * (int64_t)durUnit);
+				}
+				else {
+					dur = (uint32_t)raw;
+				}
+			}
+			const uint32_t k = kinds[id];
+			pend.push_back(packNote(absPos, dur, (k >> 16) & 0x3FF, (k >> 8) & 0xFF, k & 0x3F));
+		}
+		out = pend[pendHead++];
+		++taken;
+		if (pendHead >= pend.size()) { pend.clear(); pendHead = 0; }
+		return true;
+	}
+	bool consumedAll() const { return ok && taken == noteCount && br.consumedExactly(); }
+};
+
+// AC streaming: full port of the match-table + context-tree decoder.
+struct Fvc3StreamAc {
+	Fvc3AcDec rc;
+	std::vector<uint32_t> kinds;
+	Fvc3AcModels M;
+	uint64_t grid = 0, durUnit = 1, wantHash = 0;
+	uint64_t runningHash = 0xcbf29ce484222325ull;
+	uint32_t noteCount = 0, taken = 0;
+
+	static const size_t MATCH_ROWS = 4096;
+	std::vector<uint64_t> rowGap, rowCnt, rowOff;
+	std::vector<uint32_t> rowKinds, rowDurs;
+	std::vector<int32_t> matchTable;
+
+	uint64_t prevGap = 0, prevCount = 1, pos = 0;
+	uint32_t prevKind = 0, prevKind2 = 0;
+	int sinceSustain = 7;
+	int64_t prevDur = 0;
+	int32_t prevSrc = -1;
+	bool prevWasHit = false;
+
+	// Pending row members (decode emits row-at-a-time; pulls are one note).
+	std::vector<ChartNote> pend;
+	size_t pendHead = 0;
+
+	bool ok = false;
+
+	void init(const uint8_t* data, size_t size, uint32_t noteCount_) {
+		ok = false; taken = 0; pend.clear(); pendHead = 0;
+		runningHash = 0xcbf29ce484222325ull;
+		const uint8_t* p = data;
+		const uint8_t* end = data + size;
+		noteCount = noteCount_;
+		uint64_t kindCount = 0;
+		p = blob_getu(p, end, grid);
+		p = blob_getu(p, end, kindCount);
+		if (!p || grid == 0 || kindCount == 0 || kindCount > FVC3_MAX_KINDS
+			|| kindCount > noteCount) return;
+		p = blob_getu(p, end, durUnit);
+		if (!p || durUnit == 0) return;
+		if (end - p < 8) return;
+		wantHash = 0;
+		for (int i = 0; i < 8; ++i) wantHash |= (uint64_t)(*p++) << (8 * i);
+
+		M.init(kindCount);
+		rc = Fvc3AcDec(p, end);
+		kinds.resize((size_t)kindCount);
+		{
+			uint32_t prev = 0;
+			for (uint64_t i = 0; i < kindCount; ++i) {
+				const uint64_t d = fvc3_ac_getU(rc, M.tableVar);
+				if (d > 0xFFFFFFu) return;
+				const uint64_t k = (uint64_t)prev + d;
+				if (k > 0xFFFFFFu) return;
+				kinds[(size_t)i] = (uint32_t)k;
+				prev = (uint32_t)k;
+			}
+		}
+
+		rowGap.clear(); rowCnt.clear(); rowOff.clear(); rowKinds.clear(); rowDurs.clear();
+		rowOff.push_back(0);
+		rowGap.reserve((size_t)noteCount / 2 + 1);
+		rowCnt.reserve((size_t)noteCount / 2 + 1);
+		rowOff.reserve((size_t)noteCount / 2 + 2);
+		rowKinds.reserve(noteCount);
+		rowDurs.reserve(noteCount);
+		matchTable.assign(MATCH_ROWS, -1);
+
+		pos = 0; prevGap = 0; prevCount = 1;
+		prevKind = 0; prevKind2 = 0;
+		sinceSustain = 7; prevDur = 0;
+		prevSrc = -1; prevWasHit = false;
+		ok = true;
+	}
+
+	static void hashNote(uint64_t& h, const ChartNote& n) {
+		const uint8_t* b = reinterpret_cast<const uint8_t*>(&n);
+		for (size_t k = 0; k < sizeof(ChartNote); ++k) { h ^= b[k]; h *= 0x100000001b3ull; }
+	}
+
+	bool pull(ChartNote& out) {
+		if (!ok) return false;
+		// Pending members first (order fidelity with the whole-buffer
+		// decoder: a row is emitted member-by-member).
+		if (pendHead < pend.size()) {
+			out = pend[pendHead++];
+			hashNote(runningHash, out);
+			++taken;
+			if (pendHead >= pend.size()) { pend.clear(); pendHead = 0; }
+			return true;
+		}
+		if (taken >= noteCount) return false;
+
+		const uint32_t h = (uint32_t)((prevGap * 0x9E3779B97F4A7C15ull
+			+ prevCount * 0xC2B2AE3D27D4EB4Full
+			+ (uint64_t)prevKind * 0x165667B19E3779F9ull
+			+ (uint64_t)prevKind2 * 0x27D4EB2F165667C5ull
+			+ (uint64_t)(sinceSustain < 7 ? sinceSustain : 7)) & (MATCH_ROWS - 1));
+		int32_t predRow = -1;
+		if (prevSrc >= 0 && prevSrc + 1 < (int32_t)rowGap.size())
+			predRow = prevSrc + 1;
+		if (predRow < 0) predRow = matchTable[h];
+		if (predRow >= 0) {
+			const uint64_t prCount = rowCnt[(size_t)predRow];
+			const uint64_t prGap = rowGap[(size_t)predRow];
+			if (!rc.bit(M.matchBit[prCount < 8 ? (uint32_t)prCount : 7])) {
+				if (prCount < 1 || prCount > FVC3_ROWS_MAX_ROW) { ok = false; return false; }
+				if (taken + prCount > (uint64_t)noteCount) { ok = false; return false; }
+				if (pos > 0xFFFFFFFFFFFFULL - prGap) { ok = false; return false; }
+				pos += prGap;
+				if (pos > 0xFFFFFFFFFFFFULL / grid) { ok = false; return false; }
+				const uint64_t absPos = pos * grid;
+				const size_t prBeg = (size_t)rowOff[(size_t)predRow];
+				pend.clear(); pendHead = 0;
+				for (uint64_t m = 0; m < prCount; ++m) {
+					const uint32_t id = rowKinds[prBeg + m];
+					const uint32_t du = rowDurs[prBeg + m];
+					if (id >= kinds.size()) { ok = false; return false; }
+					const uint32_t k = kinds[id];
+					uint32_t dur = 0;
+					if (du != 0) {
+						if (du > 0xFFFFFF) { ok = false; return false; }
+						if (durUnit > 1) {
+							if (du > 0xFFFFFF / durUnit) { ok = false; return false; }
+							dur = du * (uint32_t)durUnit;
+						}
+						else {
+							dur = du;
+						}
+					}
+					pend.push_back(packNote(absPos, dur, (k >> 16) & 0x3FF, (k >> 8) & 0xFF, k & 0x3F));
+					if (M.kindCount > 1) { prevKind2 = prevKind; prevKind = id; }
+					if (du != 0) { sinceSustain = 0; prevDur = (int64_t)du; }
+					else ++sinceSustain;
+					rowKinds.push_back(id);
+					rowDurs.push_back(du);
+				}
+				rowGap.push_back(prGap); rowCnt.push_back(prCount);
+				rowOff.push_back(rowKinds.size());
+				matchTable[h] = (int32_t)rowGap.size() - 1;
+				prevGap = prGap; prevCount = prCount;
+				prevSrc = predRow;
+				prevWasHit = true;
+				return pull(out); // hand out the first pending member
+			}
+		}
+
+		uint64_t gap;
+		if (!rc.bit(M.gapSame[fvc3_ac_gapCtx(prevGap, prevWasHit)])) gap = prevGap;
+		else {
+			const uint32_t gctx = fvc3_ac_gapCtx(prevGap, prevWasHit);
+			if (!rc.bit(M.gapIs0[gctx])) gap = 0;
+			else if (!rc.bit(M.gapIs1[gctx])) gap = 1;
+			else if (!rc.bit(M.gapIs2[gctx])) gap = 2;
+			else if (!rc.bit(M.gapIs3[gctx])) gap = 3;
+			else if (!rc.bit(M.gapIs4[gctx])) gap = 4;
+			else {
+				gap = fvc3_ac_getU(rc, M.gapVar);
+				if (gap < 5) { ok = false; return false; }
+			}
+		}
+		if (pos > 0xFFFFFFFFFFFFULL - gap) { ok = false; return false; }
+		pos += gap;
+
+		uint64_t count;
+		if (!rc.bit(M.cntSame[fvc3_ac_cntCtx(prevCount)])) count = prevCount;
+		else {
+			const uint32_t cctx = fvc3_ac_cntCtx(prevCount);
+			if (!rc.bit(M.cntIs1[cctx])) count = 1;
+			else if (!rc.bit(M.cntIs2[cctx])) count = 2;
+			else if (!rc.bit(M.cntIs3[cctx])) count = 3;
+			else {
+				count = fvc3_ac_getU(rc, M.cntVar) + 1;
+				if (count < 4) { ok = false; return false; }
+			}
+		}
+		if (count < 1 || count > FVC3_ROWS_MAX_ROW) { ok = false; return false; }
+		if (taken + count > (uint64_t)noteCount) { ok = false; return false; }
+		if (pos > 0xFFFFFFFFFFFFULL / grid) { ok = false; return false; }
+		const uint64_t absPos = pos * grid;
+
+		uint32_t decIds[256];
+		uint32_t decDurs[256];
+		uint32_t decDurFin[256];
+		for (uint64_t m = 0; m < count; ++m) {
+			uint32_t id = 0;
+			if (M.kindCount > 1) {
+				uint16_t* tree = M.kindCtx ? &M.kind[(size_t)prevKind << M.kindBits] : &M.kind[0];
+				id = fvc3_ac_getTree(rc, tree, M.kindBits);
+				if (id >= kinds.size()) { ok = false; return false; }
+				prevKind2 = prevKind;
+				prevKind = id;
+			}
+			decIds[m] = id;
+			uint32_t dur = 0;
+			if (rc.bit(M.flag[sinceSustain < 7 ? sinceSustain : 7])) {
+				sinceSustain = 0;
+				int64_t raw;
+				if (!rc.bit(M.durZero)) raw = prevDur;
+				else {
+					const uint64_t zz = fvc3_ac_getU(rc, M.durVar);
+					const int64_t dv = (int64_t)((zz >> 1) ^ -(int64_t)(zz & 1));
+					if (dv > (int64_t)0x7FFFFFFFFFFLL || dv < -(int64_t)0x7FFFFFFFFFFLL) { ok = false; return false; }
+					raw = prevDur + dv;
+				}
+				if (raw < 0 || raw > 0xFFFFFF) { ok = false; return false; }
+				if (durUnit > 1) {
+					if (raw > 0xFFFFFF / (int64_t)durUnit) { ok = false; return false; }
+					dur = (uint32_t)(raw * (int64_t)durUnit);
+				}
+				else {
+					dur = (uint32_t)raw;
+				}
+				prevDur = raw;
+				decDurs[m] = raw > 0 ? (uint32_t)raw : 0;
+				decDurFin[m] = dur;
+			}
+			else {
+				++sinceSustain;
+				decDurs[m] = 0;
+				decDurFin[m] = 0;
+			}
+		}
+		pend.clear(); pendHead = 0;
+		for (uint64_t m = 0; m < count; ++m) {
+			const uint32_t k = kinds[decIds[m]];
+			pend.push_back(packNote(absPos, decDurFin[m], (k >> 16) & 0x3FF, (k >> 8) & 0xFF, k & 0x3F));
+		}
+		{
+			for (uint64_t m = 0; m < count; ++m) {
+				rowKinds.push_back(decIds[m]);
+				rowDurs.push_back(decDurs[m]);
+			}
+			rowGap.push_back(gap); rowCnt.push_back(count);
+			rowOff.push_back(rowKinds.size());
+			matchTable[h] = (int32_t)rowGap.size() - 1;
+		}
+		prevSrc = (int32_t)rowGap.size() - 1;
+		prevWasHit = false;
+		prevGap = gap; prevCount = count;
+		return pull(out); // first pending member
+	}
+
+	bool consumedAll() {
+		return ok && taken == noteCount && runningHash == wantHash;
+	}
+};
+
+// The unified streaming front-end: wraps an fvc3 image (header +
+// payload) and hands out ChartNotes one at a time.
+struct Fvc3Stream {
+	Fvc3Header hdr;
+	Fvc3StreamRaw raw;
+	Fvc3StreamGK gk;
+	Fvc3StreamRows rows;
+	Fvc3StreamAc ac;
+	int mode = -1; // 0 raw, 1 rows, 2 ac, 3 gk
+
+	bool init(const uint8_t* data, size_t size) {
+		if (size < sizeof(Fvc3Header)) return false;
+		std::memcpy(&hdr, data, sizeof(hdr));
+		if (std::memcmp(hdr.magic, "FVC3", 4) != 0) return false;
+		const uint8_t* p = data + sizeof(Fvc3Header);
+		const uint8_t* end = data + size;
+		if ((size_t)(end - p) < hdr.payloadBytes) return false;
+		end = p + hdr.payloadBytes;
+		const size_t payload = (size_t)(end - p);
+		switch (hdr.codec) {
+		case FVC3_CODEC_RAW:
+			if (payload % sizeof(ChartNote) != 0) return false;
+			if (payload / sizeof(ChartNote) != hdr.noteCount) return false;
+			raw.init(p, payload, hdr.noteCount);
+			mode = 0;
+			return raw.ok;
+		case FVC3_CODEC_ROWS:
+			rows.init(p, payload, hdr.noteCount);
+			mode = 1;
+			return rows.ok;
+		case FVC3_CODEC_AC:
+			ac.init(p, payload, hdr.noteCount);
+			mode = 2;
+			return ac.ok;
+		case FVC3_CODEC_GRID_KIND:
+			gk.init(p, payload, hdr.noteCount);
+			mode = 3;
+			return gk.ok;
+		default:
+			return false;
+		}
+	}
+	bool pull(ChartNote& out) {
+		switch (mode) {
+		case 0: return raw.pull(out);
+		case 1: return rows.pull(out);
+		case 2: return ac.pull(out);
+		case 3: return gk.pull(out);
+		}
+		return false;
+	}
+	bool consumedAll() {
+		switch (mode) {
+		case 0: return raw.p == raw.end;
+		case 1: return rows.consumedAll();
+		case 2: return ac.consumedAll();
+		case 3: return gk.consumedAll();
+		}
+		return false;
+	}
+	uint32_t noteCount() const { return hdr.noteCount; }
+};
+
 struct ChartSegShard { uint64_t startTick; uint32_t noteCount; bool modified; };
 struct ChartSegRange {
 	size_t firstShard = 0, lastShard = 0;
@@ -1360,13 +1863,27 @@ private:
 		// index 0). subtreeCount == 0 marks a dead subtree — every walk
 		// skips dead children, and emptied leaves are pruned from their
 		// parent immediately (quadPrune), so dead slots never persist.
+		//
+		// F20 dual leaf storage: a leaf holds EITHER a compact array of
+		// bare ChartNotes (the decoded, never-yet-mutated form — the
+		// "re-compressed in RAM" open representation: position is the
+		// sort key by itself, and the tie order is simply the array
+		// order, so each note costs 12 B instead of 28 B) OR the keyed
+		// Entry array (the mutable form — inserts need explicit
+		// (position, tieRank) keys). quadPromoteLeaf converts a compact
+		// leaf to the keyed form lazily, on the FIRST structural edit
+		// that touches it; a shard that is only read (decode → render →
+		// judge → close) never pays the 16 B/note key overhead at all.
 		struct QuadNode {
 			uint32_t child[4] = { 0, 0, 0, 0 };
 			uint32_t nodeCount = 0;    // interior: used child slots
 			bool leaf = true;
+			bool compact = true;       // F20: compact notes vs keyed entries
 			uint64_t subtreeCount = 0; // live entries under this node
 			Key minKey = { 0, 0 };     // smallest live key under this node
-			std::vector<Entry> entries; // leaf only, ascending by Key
+			std::vector<ChartNote> notes;  // compact leaf only, ascending by position
+			std::vector<Entry> entries;    // keyed leaf only, ascending by Key
+			size_t liveSize() const { return compact ? notes.size() : entries.size(); }
 		};
 
 		std::vector<QuadNode> nodes; // nodes[0] = root
@@ -1401,8 +1918,12 @@ private:
 		void quadRecompute(uint32_t ni) {
 			QuadNode& n = nodes[ni];
 			if (n.leaf) {
-				n.subtreeCount = n.entries.size();
-				n.minKey = n.entries.empty() ? Key(0, 0) : n.entries.front().first;
+				n.subtreeCount = n.compact ? n.notes.size() : n.entries.size();
+				if (n.compact)
+					n.minKey = n.notes.empty() ? Key(0, 0)
+						: Key(notePos(n.notes.front()), 0);
+				else
+					n.minKey = n.entries.empty() ? Key(0, 0) : n.entries.front().first;
 				return;
 			}
 			uint64_t total = 0;
@@ -1471,18 +1992,23 @@ private:
 		}
 
 		// Rank walk: the leaf + in-leaf offset of in-order rank r.
+		// F20 fix: an out-of-range rank now clamps to the LAST leaf's
+		// END (offset == size), not size-1 — an appending insert (slot
+		// == liveCount, the addNotes plan's append case) must land
+		// AFTER the final entry, and the old size-1 clamp silently
+		// corrupted it in multi-leaf shards.
 		void quadLocate(size_t r, uint32_t& leafOut, uint32_t& offOut) const {
 			uint32_t ni = 0;
 			if (nodes[0].leaf) {
 				leafOut = 0;
-				offOut = (uint32_t)std::min<size_t>(r, nodes[0].entries.size());
+				offOut = (uint32_t)std::min<size_t>(r, nodes[0].liveSize());
 				return;
 			}
 			for (;;) {
 				const QuadNode& n = nodes[ni];
 				if (n.leaf) {
 					leafOut = ni;
-					offOut = (uint32_t)std::min<size_t>(r, n.entries.size());
+					offOut = (uint32_t)std::min<size_t>(r, n.liveSize());
 					return;
 				}
 				bool descended = false;
@@ -1494,11 +2020,11 @@ private:
 					r -= ch.subtreeCount;
 				}
 				if (!descended) {
-					// Out of range: clamp into the last live leaf.
+					// Out of range: clamp into the last live leaf, at its
+					// END (the only correct landing for an append).
 					uint32_t last = quadLastLeaf();
 					leafOut = last;
-					offOut = nodes[last].entries.empty() ? 0
-						: (uint32_t)nodes[last].entries.size() - 1;
+					offOut = (uint32_t)nodes[last].liveSize();
 					return;
 				}
 			}
@@ -1538,36 +2064,69 @@ private:
 		}
 
 		// First in-order rank whose key >= `key` (the shardLowerBound
-		// probe the bulk-add plan phase uses).
+		// probe the bulk-add plan phase uses). Works on both leaf forms.
 		size_t quadLowerBound(const Key& key) const {
 			if (liveCount == 0) return 0;
 			const uint32_t li = quadLeafFor(key);
 			const QuadNode& leaf = nodes[li];
-			size_t lo = 0, hi = leaf.entries.size();
-			while (lo < hi) {
-				const size_t mid = (lo + hi) / 2;
-				if (leaf.entries[mid].first < key) lo = mid + 1;
-				else hi = mid;
+			size_t lo;
+			if (leaf.compact) {
+				lo = 0;
+				size_t hi = leaf.notes.size();
+				while (lo < hi) {
+					const size_t mid = (lo + hi) / 2;
+					if (Key(notePos(leaf.notes[mid]), 0) < key) lo = mid + 1;
+					else hi = mid;
+				}
+			}
+			else {
+				lo = 0;
+				size_t hi = leaf.entries.size();
+				while (lo < hi) {
+					const size_t mid = (lo + hi) / 2;
+					if (leaf.entries[mid].first < key) lo = mid + 1;
+					else hi = mid;
+				}
 			}
 			return quadRankOfLeaf(li) + lo;
 		}
 
 		// --- structural: split / attach / prune ---
+		// F20: promote a compact leaf to the keyed form (the lazy
+		// decode→mutable transition). Assigns explicit tie ranks 1..n
+		// in array order — the compact form's order IS the tie order,
+		// so the keyed form reproduces it exactly. minKey of the leaf
+		// does not change (same first position), but callers recompute.
+		void quadPromoteLeaf(uint32_t li) {
+			QuadNode& lf = nodes[li];
+			if (!lf.compact) return;
+			std::vector<Entry> es;
+			es.reserve(lf.notes.size());
+			for (size_t k = 0; k < lf.notes.size(); ++k)
+				es.emplace_back(Key(notePos(lf.notes[k]), (uint64_t)(k + 1)), lf.notes[k]);
+			std::vector<ChartNote>().swap(lf.notes); // free the compact form
+			lf.entries = std::move(es);
+			lf.compact = false;
+		}
 		// Split an over-capacity leaf at the median into two halves and
 		// attach the right half as its sibling; recurse while a piece is
 		// still over capacity (bulk runs can overshoot by a lot).
 		void quadMaybeSplit(uint32_t li) {
-			if (nodes[li].entries.size() <= QUAD_LEAF_CAP) return;
+			if (nodes[li].liveSize() <= QUAD_LEAF_CAP) return;
+			// Splits only operate on the keyed form (mutation territory).
+			quadPromoteLeaf(li);
 			std::vector<Entry> es = std::move(nodes[li].entries); // pool-stable
 			const size_t n = es.size();
 			const size_t mid = n / 2;
 			QuadNode rn;
 			rn.leaf = true;
+			rn.compact = false;
 			rn.entries.assign(es.begin() + (long)mid, es.end());
 			nodes.push_back(std::move(rn));
 			const uint32_t ri = (uint32_t)(nodes.size() - 1);
 			nodes[li].entries.assign(es.begin(), es.begin() + (long)mid);
 			nodes[li].leaf = true;
+			nodes[li].compact = false;
 			attachSibling(li, ri);
 			quadMaybeSplit(li);
 			quadMaybeSplit(ri);
@@ -1641,29 +2200,28 @@ private:
 				p.child[c] = p.child[c + 1];
 			p.child[p.nodeCount - 1] = 0;
 			p.nodeCount -= 1;
-			std::vector<Entry>().swap(nodes[ni].entries); // F16: free now
+			std::vector<Entry>().swap(nodes[ni].entries);     // F16: free now
+			std::vector<ChartNote>().swap(nodes[ni].notes);   // F20: both forms
 			if (p.nodeCount == 0) quadPrune(pi);
 		}
 
 		// --- the public shard surface (same semantics as the old
 		//     btree + cache pair) ---
-		// Bulk-load a sorted run (decode / adopt path): leaves of
-		// QUAD_LEAF_CAP stacked bottom-up into 4-ary interiors. O(n).
+		// Bulk-load a sorted run (adopt path): leaves of QUAD_LEAF_CAP
+		// stacked bottom-up into 4-ary interiors, in the F20 COMPACT
+		// form (bare notes — 12 B/note; the tie order is the array
+		// order). O(n).
 		void quadLoadSorted(const ChartNote* data, size_t n) {
 			quadInit();
 			if (n == 0) return;
 			liveCount = n;
-			tieCounter = n; // loaded tie ranks are 1..n
 			std::vector<uint32_t> level;
 			for (size_t beg = 0; beg < n; ) {
 				const size_t take = std::min<size_t>(QUAD_LEAF_CAP, n - beg);
 				QuadNode lf;
 				lf.leaf = true;
-				lf.entries.resize(take);
-				for (size_t k = 0; k < take; ++k)
-					lf.entries[k] = Entry(
-						Key(notePos(data[beg + k]), (uint64_t)(beg + k + 1)),
-						data[beg + k]);
+				lf.compact = true;
+				lf.notes.assign(data + beg, data + beg + take);
 				nodes.push_back(std::move(lf));
 				level.push_back((uint32_t)(nodes.size() - 1));
 				beg += take;
@@ -1716,11 +2274,97 @@ private:
 			quadRecompute(0);
 		}
 
+		// F20: STREAMING load — the shard-open path. Pulls notes from
+		// an Fvc3Stream cursor one at a time (no flat intermediate
+		// vector exists at ANY point), appending to the current compact
+		// leaf and sealing it (starting the next) at QUAD_LEAF_CAP.
+		// Leaves are linked into 4-ary interiors bottom-up at the end,
+		// exactly like quadLoadSorted. tieCounter stays 0: the compact
+		// form carries no tie ranks, and promotion assigns them on
+		// demand. Returns false on a decode error (the caller refuses
+		// the open, same contract as the old fvc3_decode failure).
+		bool quadLoadStream(Fvc3Stream& stream) {
+			quadInit();
+			const uint32_t n = stream.noteCount();
+			if (n == 0) return stream.consumedAll();
+			std::vector<uint32_t> level;
+			uint32_t curLeafIdx = 0;
+			QuadNode* curLeaf = nullptr;
+			liveCount = 0;
+			ChartNote cn;
+			for (uint32_t i = 0; i < n; ++i) {
+				if (!stream.pull(cn)) return false;
+				if (curLeaf == nullptr || curLeaf->notes.size() >= QUAD_LEAF_CAP) {
+					// seal the current leaf (it is already in `level`)
+					// and open the next one
+					QuadNode lf;
+					lf.leaf = true;
+					lf.compact = true;
+					nodes.push_back(std::move(lf));
+					curLeafIdx = (uint32_t)(nodes.size() - 1);
+					curLeaf = &nodes[curLeafIdx];
+					level.push_back(curLeafIdx);
+				}
+				curLeaf->notes.push_back(cn);
+				++liveCount;
+			}
+			if (!stream.consumedAll()) return false;
+			if (liveCount == 0) {
+				quadInit();
+				return true;
+			}
+			while (level.size() > 1) {
+				std::vector<uint32_t> up;
+				for (size_t g = 0; g < level.size(); g += 4) {
+					const size_t cnt = std::min<size_t>(4, level.size() - g);
+					QuadNode nd;
+					nd.leaf = false;
+					nd.nodeCount = (uint32_t)cnt;
+					for (size_t k = 0; k < cnt; ++k) nd.child[k] = level[g + k];
+					nodes.push_back(std::move(nd));
+					up.push_back((uint32_t)(nodes.size() - 1));
+				}
+				level.swap(up);
+			}
+			{
+				QuadNode top = std::move(nodes[level[0]]);
+				nodes[0] = std::move(top);
+				std::vector<uint32_t> remap(nodes.size(), 0);
+				std::vector<bool> keep(nodes.size(), false);
+				std::vector<uint32_t> stack;
+				keep[0] = true;
+				stack.push_back(0);
+				while (!stack.empty()) {
+					const uint32_t curN = stack.back();
+					stack.pop_back();
+					const QuadNode& nd = nodes[curN];
+					if (nd.leaf) continue;
+					for (uint32_t c = 0; c < nd.nodeCount; ++c) {
+						const uint32_t ci = nd.child[c];
+						if (ci != 0 && !keep[ci]) { keep[ci] = true; stack.push_back(ci); }
+					}
+				}
+				std::vector<QuadNode> pool;
+				pool.push_back(std::move(nodes[0]));
+				for (uint32_t i = 0; i < nodes.size(); ++i)
+					if (keep[i] && i != 0) {
+						remap[i] = (uint32_t)pool.size();
+						pool.push_back(std::move(nodes[i]));
+					}
+				for (QuadNode& nd : pool)
+					for (uint32_t c = 0; c < 4; ++c)
+						if (nd.child[c] != 0) nd.child[c] = remap[nd.child[c]];
+				nodes.swap(pool);
+			}
+			quadRecompute(0);
+			return true;
+		}
+
 		// In-order leaf list (live leaves only).
 		void quadCollectLeaves(uint32_t ni, std::vector<uint32_t>& out) const {
 			const QuadNode& n = nodes[ni];
 			if (n.leaf) {
-				if (!n.entries.empty()) out.push_back(ni);
+				if (n.liveSize() != 0) out.push_back(ni);
 				return;
 			}
 			for (uint32_t c = 0; c < n.nodeCount; ++c) {
@@ -1731,16 +2375,22 @@ private:
 		}
 
 		// Contiguous ascending export (encode / save): one pass over
-		// the leaves fills the caller's buffer.
+		// the leaves fills the caller's buffer. Both leaf forms export
+		// in the same order.
 		void quadExport(std::vector<ChartNote>& out) const {
 			out.clear();
 			out.reserve(liveCount);
 			if (nodes.empty()) return;
 			std::vector<uint32_t> order;
 			quadCollectLeaves(0, order);
-			for (uint32_t li : order)
-				for (const Entry& e : nodes[li].entries)
-					out.push_back(e.second);
+			for (uint32_t li : order) {
+				const QuadNode& lf = nodes[li];
+				if (lf.compact)
+					out.insert(out.end(), lf.notes.begin(), lf.notes.end());
+				else
+					for (const Entry& e : lf.entries)
+						out.push_back(e.second);
+			}
 		}
 
 		// Id-based read (rank r). Carries a sequential cursor: the
@@ -1751,22 +2401,30 @@ private:
 			if (liveCount == 0) return zero; // defensive (callers clamp)
 			if (curLeaf != 0xFFFFFFFFu) {
 				const QuadNode& lf = nodes[curLeaf];
-				if (r >= curBase && r - curBase < lf.entries.size())
-					return lf.entries[r - curBase].second;
+				if (r >= curBase && r - curBase < lf.liveSize())
+					return lf.compact ? lf.notes[r - curBase]
+						: lf.entries[r - curBase].second;
 			}
 			uint32_t li, off;
 			quadLocate(r, li, off);
 			curLeaf = li;
 			curBase = r - off;
-			return nodes[li].entries[off].second;
+			const QuadNode& lf = nodes[li];
+			return lf.compact ? lf.notes[off] : lf.entries[off].second;
 		}
 
 		// In-place field rewrite at rank r (mirror/shift): only the
-		// packed fields change — keys never move, ids never move.
+		// packed fields change — keys never move, ids never move. The
+		// compact form stays compact (a field rewrite cannot change the
+		// position: mirror/shift only touch index/lane).
 		void setNote(size_t r, const ChartNote& cn) {
 			uint32_t li, off;
 			quadLocate(r, li, off);
-			nodes[li].entries[off].second = cn;
+			QuadNode& lf = nodes[li];
+			if (lf.compact)
+				lf.notes[off] = cn;
+			else
+				lf.entries[off].second = cn;
 		}
 
 		// Fast count/minKey fix for a pure APPEND into leaf `li` (the
@@ -1793,8 +2451,10 @@ private:
 			if (liveCount == 0) {
 				QuadNode& root = nodes[0];
 				root.leaf = true;
+				root.compact = false;
 				root.nodeCount = 0;
 				root.entries.clear();
+				std::vector<ChartNote>().swap(root.notes);
 				root.entries.push_back(Entry(key, cn));
 				liveCount = 1;
 				quadRecompute(0);
@@ -1803,6 +2463,7 @@ private:
 				return 0;
 			}
 			const uint32_t li = quadLeafFor(key);
+			quadPromoteLeaf(li); // mutation territory: keyed form
 			size_t lo = 0, hi = nodes[li].entries.size();
 			while (lo < hi) {
 				const size_t mid = (lo + hi) / 2;
@@ -1842,7 +2503,9 @@ private:
 			if (liveCount == 0) {
 				QuadNode& root = nodes[0];
 				root.leaf = true;
+				root.compact = false;
 				root.nodeCount = 0;
+				std::vector<ChartNote>().swap(root.notes);
 				root.entries.assign(es, es + m);
 				liveCount = m;
 				quadRecompute(0);
@@ -1850,6 +2513,7 @@ private:
 			}
 			uint32_t li, off;
 			quadLocate(slot, li, off);
+			quadPromoteLeaf(li); // mutation territory: keyed form
 			nodes[li].entries.insert(nodes[li].entries.begin() + (long)off,
 				es, es + m);
 			liveCount += m;
@@ -1863,6 +2527,7 @@ private:
 			curLeaf = 0xFFFFFFFFu;
 			uint32_t li, off;
 			quadLocate(r, li, off);
+			quadPromoteLeaf(li); // mutation territory: keyed form
 			nodes[li].entries.erase(nodes[li].entries.begin() + (long)off);
 			--liveCount;
 			judge.erase(r);
@@ -1880,8 +2545,10 @@ private:
 		// shard holds NOTHING but its compressed image (plus one fresh
 		// empty root so the unit stays usable).
 		void freeBlock() {
-			for (QuadNode& n : nodes)
+			for (QuadNode& n : nodes) {
 				std::vector<Entry>().swap(n.entries);
+				std::vector<ChartNote>().swap(n.notes);
+			}
 			std::vector<QuadNode>().swap(nodes);
 			tieCounter = 0;
 			liveCount = 0;
@@ -1946,10 +2613,19 @@ private:
 		}
 		{
 			u.quadInit();
-			std::vector<ChartNote> flat;
+			// F20: STREAMING open — the compressed image is pulled
+			// note-by-note straight into the quad-tree's compact leaves.
+			// No flat intermediate vector exists at any point, and the
+			// open form is the re-compressed RAM representation (bare
+			// 12-byte notes; the keyed entry form materializes lazily
+			// per leaf on first mutation). The cursor carries each
+			// codec's full validation (payload bounds, AC hash, exact
+			// consumption), so a corrupt image still refuses the open.
+			Fvc3Stream stream;
 			const bool ok = !u.image.empty()
-				&& fvc3_decode(u.image.data(), u.image.size(), flat)
-				&& flat.size() == (size_t)u.noteCount;
+				&& stream.init(u.image.data(), u.image.size())
+				&& stream.noteCount() == u.noteCount
+				&& u.quadLoadStream(stream);
 			if (!ok) {
 				std::cerr << "  [ Chart File ] CORRUPT SEGMENT — refusing to decode" << std::endl;
 				u.freeBlock();
@@ -1964,12 +2640,6 @@ private:
 				touch(ui);
 				return;
 			}
-			// F18: the decoded run is already ascending — one leaf-stacking
-			// load, no per-note inserts. Ties keep the decoded order via the
-			// monotonic tie ranks the loader assigns.
-			u.quadLoadSorted(flat.data(), flat.size());
-			flat.clear();
-			flat.shrink_to_fit();
 			u.open = true;
 			u.dirty = false;
 			u.judge.init(u.live());
